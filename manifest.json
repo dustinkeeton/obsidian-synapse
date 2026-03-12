@@ -1,0 +1,9 @@
+{
+  "id": "auto-notes",
+  "name": "Auto Notes",
+  "version": "0.1.0",
+  "minAppVersion": "0.15.0",
+  "description": "AI-powered note elaboration, audio transcription, and video transcription for Obsidian",
+  "author": "Dustin Keeton",
+  "isDesktopOnly": true
+}
