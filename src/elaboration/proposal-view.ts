@@ -1,0 +1,105 @@
+import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { Proposal } from './types';
+
+export const PROPOSAL_VIEW_TYPE = 'auto-notes-proposal-review';
+
+export class ProposalReviewView extends ItemView {
+	private proposals: Proposal[] = [];
+	private onAccept: (id: string) => Promise<void>;
+	private onReject: (id: string) => Promise<void>;
+	private onDetail: (id: string) => void;
+
+	constructor(
+		leaf: WorkspaceLeaf,
+		callbacks: {
+			onAccept: (id: string) => Promise<void>;
+			onReject: (id: string) => Promise<void>;
+			onDetail: (id: string) => void;
+		}
+	) {
+		super(leaf);
+		this.onAccept = callbacks.onAccept;
+		this.onReject = callbacks.onReject;
+		this.onDetail = callbacks.onDetail;
+	}
+
+	getViewType(): string {
+		return PROPOSAL_VIEW_TYPE;
+	}
+
+	getDisplayText(): string {
+		return 'Auto Notes Proposals';
+	}
+
+	getIcon(): string {
+		return 'sparkles';
+	}
+
+	async onOpen(): Promise<void> {
+		this.render();
+	}
+
+	async onClose(): Promise<void> {
+		this.contentEl.empty();
+	}
+
+	setProposals(proposals: Proposal[]): void {
+		this.proposals = proposals;
+		this.render();
+	}
+
+	private render(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+
+		contentEl.createEl('h3', { text: 'Pending Proposals' });
+
+		const pending = this.proposals.filter(p => p.status === 'pending');
+		if (pending.length === 0) {
+			contentEl.createEl('p', {
+				text: 'No pending proposals. Run "Scan vault" to find stub notes.',
+				cls: 'auto-notes-empty',
+			});
+			return;
+		}
+
+		// Group by source note
+		const grouped = new Map<string, Proposal[]>();
+		for (const p of pending) {
+			const existing = grouped.get(p.sourceNotePath) || [];
+			existing.push(p);
+			grouped.set(p.sourceNotePath, existing);
+		}
+
+		for (const [notePath, noteProposals] of grouped) {
+			const section = contentEl.createDiv({ cls: 'auto-notes-proposal-group' });
+			section.createEl('h4', { text: notePath });
+
+			for (const proposal of noteProposals) {
+				const card = section.createDiv({ cls: 'auto-notes-proposal-card' });
+
+				const reasons = proposal.detectionReasons
+					.map(r => r.type)
+					.join(', ');
+				card.createEl('small', { text: reasons, cls: 'auto-notes-reasons' });
+
+				const preview = proposal.proposedAdditions.slice(0, 200);
+				card.createEl('p', {
+					text: preview + (proposal.proposedAdditions.length > 200 ? '...' : ''),
+					cls: 'auto-notes-preview',
+				});
+
+				const actions = card.createDiv({ cls: 'auto-notes-actions' });
+
+				const viewBtn = actions.createEl('button', { text: 'View' });
+				viewBtn.addEventListener('click', () => this.onDetail(proposal.id));
+
+				const acceptBtn = actions.createEl('button', { text: 'Accept' });
+				acceptBtn.addEventListener('click', () => this.onAccept(proposal.id));
+
+				const rejectBtn = actions.createEl('button', { text: 'Reject' });
+				rejectBtn.addEventListener('click', () => this.onReject(proposal.id));
+			}
+		}
+	}
+}
