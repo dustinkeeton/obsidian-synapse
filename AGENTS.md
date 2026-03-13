@@ -14,7 +14,7 @@ Obsidian plugin providing AI-powered note elaboration, audio transcription, and 
 | `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | `src/settings-tab.ts` | Obsidian settings UI | `AutoNotesSettingTab` |
 | `src/elaboration/` | Stub note detection and proposal generation | `ElaborationModule`, `PROPOSAL_VIEW_TYPE`, types |
-| `src/audio/` | Audio transcription pipeline | `AudioModule`, `AudioTranscriptionModal`, types |
+| `src/audio/` | Audio transcription pipeline (file + inline note embeds) | `AudioModule`, `AudioTranscriptionModal`, `NoteAudioModal`, `AudioEmbed`, types |
 | `src/video/` | Video download, audio extraction, transcription | `VideoModule`, types, `detectPlatform`, `isSupportedUrl` |
 | `src/shared/` | AI client (with model ID resolution), file utils, API helpers, validation | `AIClient`, `writeNote`, `readNote`, `ensureFolder`, `withRetry`, `notifyError`, `wordCount`, `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse` |
 
@@ -41,7 +41,7 @@ main.ts
     └── shared/validation.ts (sanitizeUrl, sanitizePath)
 ```
 
-Key constraint: Video depends on Audio. Audio is initialized before Video in `main.ts:24`.
+Key constraint: Video depends on Audio. Audio is initialized at `main.ts:L23`, Video at `main.ts:L24`.
 
 ## Settings Schema
 
@@ -72,7 +72,7 @@ interface AutoNotesSettings {
 | `maxTokens` | `number` | `2048` |
 | `temperature` | `number` | `0.7` |
 
-Note: `model` stores simplified names (e.g. `'opus'`). `AIClient` resolves these to full API IDs via `resolveModelId()` (e.g. `'opus'` -> `'claude-opus-4-20250514'`).
+Note: `model` stores simplified names (e.g. `'opus'`). `AIClient` resolves these to full API IDs via `resolveModelId()` (e.g. `'opus'` -> `'claude-opus-4-6'`).
 
 ### elaboration
 
@@ -139,6 +139,7 @@ Note: `model` stores simplified names (e.g. `'opus'`). `AIClient` resolves these
 | `auto-notes:review-proposals` | Open proposal review sidebar | `callback` |
 | `auto-notes:clear-proposals` | Clear all pending proposals | `callback` |
 | `auto-notes:transcribe-audio` | Transcribe audio file | `callback` |
+| `auto-notes:transcribe-note-audio` | Transcribe audio embeds from current note | `editorCallback` |
 | `auto-notes:transcribe-video-url` | Transcribe video from URL | `callback` |
 | `auto-notes:transcribe-video-file` | Transcribe local video file (stub) | `callback` |
 | `auto-notes:check-dependencies` | Check external tool availability | `callback` |

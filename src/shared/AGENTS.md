@@ -57,9 +57,9 @@ function sanitizeAIResponse(text: string): string
 ```ts
 // ai-client.ts (module-level)
 const ANTHROPIC_MODEL_MAP: Record<string, string> = {
-  opus: 'claude-opus-4-20250514',
-  sonnet: 'claude-sonnet-4-20250514',
-  haiku: 'claude-haiku-4-20250414',
+  opus: 'claude-opus-4-6',
+  sonnet: 'claude-sonnet-4-6',
+  haiku: 'claude-haiku-4-5-20251001',
 }
 
 function resolveModelId(provider: string, model: string): string
@@ -114,12 +114,12 @@ sanitizeAIResponse(text)
 | Utility | Used By |
 |---------|---------|
 | `AIClient` | `elaboration/proposer.ts`, `audio/post-processor.ts` |
-| `writeNote` | `audio/index.ts`, `video/index.ts` |
+| `writeNote` | `audio/index.ts` (saveTranscription), `video/index.ts` |
 | `ensureFolder` | `elaboration/proposal-store.ts`, `video/index.ts` |
 | `readNote` | (available, not currently used) |
 | `getMarkdownFiles` | (available, not currently used) |
 | `wordCount` | `elaboration/detector.ts` |
-| `notifyError` | `elaboration/index.ts`, `audio/index.ts`, `video/index.ts` |
+| `notifyError` | `elaboration/index.ts`, `audio/index.ts` (openTranscriptionModal + transcribeAndInsert), `video/index.ts` |
 | `withRetry` | (available, not currently used) |
 | `sanitizeUrl` | `video/index.ts`, `video/audio-extractor.ts` |
 | `sanitizePath` | `video/audio-extractor.ts` |

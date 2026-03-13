@@ -93,7 +93,7 @@ interface VideoMetadata {
    │
 5. Read audio file from disk (Node fs.readFileSync)
    │
-6. AudioModule.transcribe(audioData, fileName, { sourceName })
+6. AudioModule.transcribe(audioData, fileName, { sourceName })  — video/index.ts:L78
    │  (See audio/AGENTS.md for transcription pipeline)
    │
 7. Clean up temp audio file (fs.unlinkSync)

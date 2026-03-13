@@ -4,7 +4,7 @@ last-updated: 2026-03-12
 
 # Audio Module
 
-Transcribes audio files from the vault using configurable providers, with optional AI post-processing.
+Transcribes audio files from the vault (standalone or inline note embeds) using configurable providers, with optional AI post-processing.
 
 ## Public API
 
@@ -18,10 +18,25 @@ class AudioModule {
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
   saveTranscription(result: TranscriptionResult, targetPath?: string): Promise<void>
   openTranscriptionModal(): void
+  // Private methods (inline note transcription):
+  // transcribeFromNote(noteFile: TFile): Promise<void>
+  // findAudioEmbeds(content: string, sourcePath: string): AudioEmbed[]
+  // hasTranscriptionBelow(lines: string[], embedLine: number, fileName: string): boolean
+  // transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>
 }
 
 class AudioTranscriptionModal extends Modal {
   constructor(app: App, getSettings: () => AutoNotesSettings, onTranscribe: (file: TFile) => Promise<void>)
+}
+
+interface AudioEmbed {
+  fileName: string
+  file: TFile
+  line: number
+}
+
+class NoteAudioModal extends Modal {
+  constructor(app: App, embeds: AudioEmbed[], onTranscribe: (embeds: AudioEmbed[]) => Promise<void>)
 }
 
 interface TranscriptionResult {
@@ -54,7 +69,8 @@ interface TranscribeOptions {
 | `transcriber.ts` | `Transcriber` | Provider-routed transcription (Whisper API, Deepgram, local); `getWhisperApiKey()` fallback logic |
 | `post-processor.ts` | `PostProcessor` | AI-powered transcript cleanup via `AIClient` |
 | `transcription-modal.ts` | `AudioTranscriptionModal` | File picker modal for vault audio files |
-| `index.ts` | `AudioModule` | Orchestrator, registers command |
+| `note-audio-modal.ts` | `NoteAudioModal`, `AudioEmbed` | Selection modal for audio embeds found in a note |
+| `index.ts` | `AudioModule` | Orchestrator, registers commands (transcribe-audio, transcribe-note-audio) |
 
 ## Data Flow
 
@@ -111,6 +127,30 @@ All under `settings.audio`:
 - Local whisper throws `Error` with guidance to use other providers
 - Post-processed AI output sanitized via `sanitizeAIResponse()` (strips scripts, event handlers, dangerous URIs)
 
+## Inline Note Transcription Flow
+
+```
+1. User triggers command `auto-notes:transcribe-note-audio` (editorCallback)
+   │
+2. AudioModule.transcribeFromNote(noteFile)
+   │  Reads note content, calls findAudioEmbeds()
+   │
+3. findAudioEmbeds(content, sourcePath)
+   │  Regex: /!\[\[(.+\.(?:mp3|wav|m4a|ogg|flac|webm|aac))\]\]/gi
+   │  Resolves each embed to TFile via metadataCache.getFirstLinkpathDest()
+   │  Skips embeds that already have a transcription block below (hasTranscriptionBelow)
+   │
+4. NoteAudioModal — user selects which embeds to transcribe
+   │
+5. transcribeAndInsert(noteFile, selectedEmbeds)
+   │  Processes in reverse line order (so insertions don't shift line numbers)
+   │  2s delay between API requests (rate limit avoidance)
+   │  Inserts blockquote transcription block after each embed line:
+   │    > **Transcription of filename.mp3**
+   │    > ...transcribed text...
+   │  Writes modified content via vault.modify()
+```
+
 ## Video Module Integration
 
-`AudioModule.transcribe()` is called by `VideoModule.processUrl()` at `video/index.ts:L77`. The video module passes extracted audio as `ArrayBuffer` with `sourceName` set to the video title.
+`AudioModule.transcribe()` is called by `VideoModule.processUrl()` at `video/index.ts:L78`. The video module passes extracted audio as `ArrayBuffer` with `sourceName` set to the video title.

@@ -67,13 +67,30 @@ Scans your vault for "stub" notes — short notes, notes with TODO markers, empt
 
 ### Audio Transcription
 
-Transcribes audio files from your vault using cloud speech-to-text APIs, with optional AI post-processing to clean up the transcript.
+Transcribes audio files using cloud speech-to-text APIs, with optional AI post-processing. Supports two workflows: standalone file transcription and inline note transcription.
 
-**How it works**:
+**Standalone transcription** (command: "Transcribe audio file"):
 1. Select an audio file from your vault via the transcription modal (or mic ribbon icon)
 2. The file is sent to your configured transcription provider (Whisper API by default, Deepgram as alternative)
 3. Optionally, the raw transcript is post-processed by AI to remove filler words, add structure, and extract key points
 4. The result is saved as a new note in your `Transcriptions/` folder
+
+**Inline note transcription** (command: "Transcribe audio from current note"):
+1. Open a note that contains audio embeds (e.g., `![[meeting-recording.mp3]]`)
+2. Run the command -- it scans the note for audio embed syntax
+3. A selection modal shows all found audio files; pick which ones to transcribe
+4. Transcriptions are inserted as blockquote blocks directly below each embed in the same note
+5. Already-transcribed embeds (detected by the presence of a transcription block below) are automatically skipped
+6. Multiple embeds are processed in reverse line order so insertions do not shift line numbers
+
+**Output format for inline transcription**:
+```markdown
+![[meeting-recording.mp3]]
+
+> **Transcription of meeting-recording.mp3**
+>
+> ...transcribed text...
+```
 
 ### Video Transcription
 
@@ -101,7 +118,7 @@ Video --+-------> Audio (delegates transcription step)
 
 - **Video depends on Audio**: This is the only cross-feature dependency. Video downloads and extracts audio, then calls `AudioModule.transcribe()` for the actual speech-to-text work. This means Audio must be initialized before Video.
 - **All features use Shared**: The shared layer provides the AI client (multi-provider), file utilities (reading/writing vault notes), input validation (URL/path sanitization), output sanitization (AI response cleaning), and error handling (user notifications with API key redaction).
-- **Features are independently toggleable**: Each can be enabled/disabled in settings. Disabled features don't register commands or consume resources.
+- **Features are independently toggleable**: Each can be enabled/disabled in settings. Disabled features don't register commands or consume resources. Note: ribbon icons currently register unconditionally (see Known Issues in STATUS.md).
 
 ---
 
@@ -171,7 +188,7 @@ Models are selected via provider-specific dropdowns — not free text. Each prov
 | Anthropic | Claude Opus, Claude Sonnet, Claude Haiku |
 | Ollama | Llama 3, Mistral, Code Llama, Gemma |
 
-Anthropic models use simplified names in settings (e.g., `opus`) which are mapped to full API model IDs (e.g., `claude-opus-4-20250514`) at request time by `resolveModelId()` in `ai-client.ts`.
+Anthropic models use simplified names in settings (e.g., `opus`) which are mapped to full API model IDs (e.g., `claude-opus-4-6`) at request time by `resolveModelId()` in `ai-client.ts`.
 
 ### API Key Handling
 
@@ -338,9 +355,14 @@ src/
   settings.ts          Settings interfaces and defaults
   settings-tab.ts      Obsidian settings UI
   elaboration/         Stub detection, proposal generation, review UI
-  audio/               Transcription pipeline and post-processing
+  audio/               Transcription pipeline, inline note transcription, post-processing
+    index.ts           AudioModule (orchestrator, commands, inline transcription logic)
+    note-audio-modal.ts  NoteAudioModal (embed selection UI), AudioEmbed interface
+    transcription-modal.ts  File-picker modal for standalone transcription
+    transcriber.ts     Provider-routed transcription (Whisper, Deepgram, local)
+    post-processor.ts  AI-powered transcript cleanup
   video/               URL detection, yt-dlp/ffmpeg integration
-  shared/              AI client, file utilities, validation, error handling
+  shared/              AI client (with safeRequest wrapper), file utilities, validation, error handling
 ```
 
 ### Key Patterns
