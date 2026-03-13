@@ -6,6 +6,24 @@ export interface ChatMessage {
 	content: string;
 }
 
+/**
+ * Map simplified model names to actual API model IDs.
+ * Anthropic models use short names (sonnet, opus, haiku) in settings
+ * but need full IDs for the API.
+ */
+const ANTHROPIC_MODEL_MAP: Record<string, string> = {
+	opus: 'claude-opus-4-20250514',
+	sonnet: 'claude-sonnet-4-20250514',
+	haiku: 'claude-haiku-4-20250414',
+};
+
+function resolveModelId(provider: string, model: string): string {
+	if (provider === 'anthropic' && model in ANTHROPIC_MODEL_MAP) {
+		return ANTHROPIC_MODEL_MAP[model];
+	}
+	return model;
+}
+
 export class AIClient {
 	constructor(private getSettings: () => AutoNotesSettings) {}
 
@@ -35,6 +53,7 @@ export class AIClient {
 
 	private async callOpenAI(messages: ChatMessage[]): Promise<string> {
 		const { ai } = this.getSettings();
+		const model = resolveModelId(ai.provider, ai.model);
 		const response = await requestUrl({
 			url: 'https://api.openai.com/v1/chat/completions',
 			method: 'POST',
@@ -43,7 +62,7 @@ export class AIClient {
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify({
-				model: ai.model,
+				model,
 				messages,
 				max_tokens: ai.maxTokens,
 				temperature: ai.temperature,
@@ -55,11 +74,12 @@ export class AIClient {
 
 	private async callAnthropic(messages: ChatMessage[]): Promise<string> {
 		const { ai } = this.getSettings();
+		const model = resolveModelId(ai.provider, ai.model);
 		const systemMsg = messages.find(m => m.role === 'system');
 		const nonSystemMsgs = messages.filter(m => m.role !== 'system');
 
 		const body: Record<string, unknown> = {
-			model: ai.model,
+			model,
 			max_tokens: ai.maxTokens,
 			temperature: ai.temperature,
 			messages: nonSystemMsgs.map(m => ({
@@ -100,12 +120,13 @@ export class AIClient {
 			throw new Error('Ollama endpoint must use HTTPS (or HTTP for localhost only)');
 		}
 
+		const model = resolveModelId(ai.provider, ai.model);
 		const response = await requestUrl({
 			url: `${ai.ollamaEndpoint}/api/chat`,
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				model: ai.model,
+				model,
 				messages,
 				stream: false,
 			}),

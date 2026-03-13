@@ -1,5 +1,29 @@
+export type AIProvider = 'openai' | 'anthropic' | 'ollama';
+
+/** Provider-specific model options. Dropdown values, not free text. */
+export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
+	openai: {
+		'gpt-4o': 'GPT-4o',
+		'gpt-4o-mini': 'GPT-4o Mini',
+		'o3': 'o3',
+		'o3-mini': 'o3 Mini',
+		'o4-mini': 'o4 Mini',
+	},
+	anthropic: {
+		'opus': 'Claude Opus',
+		'sonnet': 'Claude Sonnet',
+		'haiku': 'Claude Haiku',
+	},
+	ollama: {
+		'llama3': 'Llama 3',
+		'mistral': 'Mistral',
+		'codellama': 'Code Llama',
+		'gemma': 'Gemma',
+	},
+};
+
 export interface AISettings {
-	provider: 'openai' | 'anthropic' | 'ollama';
+	provider: AIProvider;
 	apiKey: string;
 	ollamaEndpoint: string;
 	model: string;
@@ -48,6 +72,7 @@ export interface AudioOutputSettings {
 export interface AudioSettings {
 	enabled: boolean;
 	transcriptionProvider: 'whisper-api' | 'deepgram' | 'local-whisper';
+	whisperApiKey: string;
 	deepgramApiKey: string;
 	whisperModel: string;
 	localWhisperPath: string;
@@ -97,7 +122,7 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		model: 'gpt-4o',
 		maxTokens: 2048,
 		temperature: 0.7,
-	},
+	} as AISettings,
 	elaboration: {
 		enabled: true,
 		proposalFolderPath: '.auto-notes/proposals',
@@ -120,6 +145,7 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 	audio: {
 		enabled: true,
 		transcriptionProvider: 'whisper-api',
+		whisperApiKey: '',
 		deepgramApiKey: '',
 		whisperModel: 'whisper-1',
 		localWhisperPath: '',

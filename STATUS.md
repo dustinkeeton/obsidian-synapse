@@ -75,6 +75,10 @@ Run `Auto Notes: Check dependencies` command to verify yt-dlp and ffmpeg availab
 - **Security hardening**: Added `validation.ts` (URL/path sanitization, vault boundary check, AI response sanitization), switched `exec` to `execFile`, added request timeouts, added API key redaction in error messages, added Ollama endpoint protocol validation
 - **Documentation**: AGENTS.md files created for all modules, machine-readable and human-readable docs updated
 
+## Future DX Improvements
+
+- **Hot Reload**: Obsidian does not currently have a maintained hot-reload plugin for development. The dev workflow requires manual reload (`Cmd+R` / `Ctrl+R`) after esbuild rebuilds. Building a lightweight hot-reload mechanism (file watcher that triggers plugin reload) would significantly improve the development experience.
+
 ## Next Steps
 
 1. Implement core elaboration detection logic (scored heuristics)
