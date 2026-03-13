@@ -154,12 +154,31 @@ Settings are organized into four groups accessible from the plugin's settings ta
 
 | Group | What it controls |
 |-------|-----------------|
-| **AI** | Provider (OpenAI, Anthropic, Ollama), API key, model, temperature |
+| **AI** | Provider (OpenAI, Anthropic, Ollama), API key (password-masked), model (provider-specific dropdown), temperature |
 | **Elaboration** | Detection thresholds, excluded folders/tags, scan behavior, proposal storage |
-| **Audio** | Transcription provider, language, post-processing options, output folder |
+| **Audio** | Transcription provider, Whisper API key (shown only when needed), Deepgram API key, post-processing options, output folder |
 | **Video** | yt-dlp/ffmpeg paths, temp folder, platform toggles, output folder |
 
 All settings have sensible defaults. The minimum setup is providing an API key for your chosen AI/transcription provider.
+
+### Model Selection
+
+Models are selected via provider-specific dropdowns — not free text. Each provider has a curated list:
+
+| Provider | Available Models |
+|----------|-----------------|
+| OpenAI | GPT-4o, GPT-4o Mini, o3, o3 Mini, o4 Mini |
+| Anthropic | Claude Opus, Claude Sonnet, Claude Haiku |
+| Ollama | Llama 3, Mistral, Code Llama, Gemma |
+
+Anthropic models use simplified names in settings (e.g., `opus`) which are mapped to full API model IDs (e.g., `claude-opus-4-20250514`) at request time by `resolveModelId()` in `ai-client.ts`.
+
+### API Key Handling
+
+- All API key fields use password masking (`type="password"`) and disable autocomplete
+- The **Whisper API key** field appears conditionally: only when the transcription provider is Whisper AND the AI provider is not OpenAI (since OpenAI users already have a valid key via the shared AI key)
+- The transcriber uses fallback logic: `whisperApiKey || ai.apiKey`
+- Deepgram key is validated as non-empty before making the API request
 
 ---
 

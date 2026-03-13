@@ -4,6 +4,88 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-12: Provider-specific model dropdowns instead of free-text input
+
+**Context**: The original model setting was a free-text input where users typed model identifiers (e.g., `claude-sonnet-4-20250514`). This was error-prone — a typo meant a silent API failure, and users had to look up exact model IDs.
+
+**Decision**: Replace the free-text model input with a dropdown populated from `MODEL_OPTIONS`, a provider-keyed map. Each AI provider (OpenAI, Anthropic, Ollama) has its own curated list of models with human-friendly display names. When the user switches providers, the model resets to the first option for that provider.
+
+**Alternatives considered**:
+- Free-text input with validation (still requires users to know model IDs)
+- A single combined dropdown with all models (confusing — shows irrelevant models)
+- Fetching available models from the API at runtime (requires valid API key before configuration is complete)
+
+**Rationale**: Provider-specific dropdowns eliminate typo risk and show only relevant models. Simplified names (e.g., `opus` instead of `claude-opus-4-20250514`) are friendlier; the internal `resolveModelId()` function maps them to full API IDs at request time via `ANTHROPIC_MODEL_MAP`.
+
+**Impact**: Users pick from a curated list. Adding a new model requires updating `MODEL_OPTIONS` in `settings.ts` (and `ANTHROPIC_MODEL_MAP` in `ai-client.ts` for Anthropic models). The settings tab re-renders when the provider changes to show the correct model list.
+
+---
+
+## 2026-03-12: Separate Whisper API key for non-OpenAI providers
+
+**Context**: Whisper transcription requires an OpenAI API key, but users may choose Anthropic or Ollama as their AI provider — meaning their shared `ai.apiKey` is not an OpenAI key.
+
+**Decision**: Add a dedicated `audio.whisperApiKey` field. The transcriber resolves the key with fallback logic: use `whisperApiKey` if set, otherwise fall back to the shared `ai.apiKey`. The settings UI only shows the Whisper API key field when the transcription provider is Whisper AND the AI provider is not OpenAI (since OpenAI users already have a valid key).
+
+**Alternatives considered**:
+- Always require a separate Whisper key (redundant for OpenAI users)
+- Auto-detect and show a warning at transcription time (poor UX — fails only when the user tries to transcribe)
+- Require OpenAI as AI provider to use Whisper (unnecessarily restrictive)
+
+**Rationale**: The fallback pattern (`whisperApiKey || ai.apiKey`) means zero extra configuration for OpenAI users, while Anthropic/Ollama users get a clear, contextual prompt to enter their OpenAI key for Whisper specifically. The conditional UI keeps settings clean.
+
+**Impact**: Anthropic/Ollama users who want Whisper transcription see an additional "OpenAI API Key (Whisper)" field. The field explains why it's needed. OpenAI users see no change.
+
+---
+
+## 2026-03-12: Password masking for all API key inputs
+
+**Context**: API keys were displayed as plain text in the settings tab, making them visible to anyone looking at the screen or in screenshots.
+
+**Decision**: Set `inputEl.type = 'password'` and `inputEl.autocomplete = 'off'` on all API key input fields (AI key, Whisper key, Deepgram key).
+
+**Alternatives considered**:
+- No masking (status quo — keys visible in settings)
+- Show/hide toggle (added complexity for minimal benefit)
+
+**Rationale**: Password masking is a standard UX pattern for sensitive fields. Combined with `autocomplete = 'off'`, it prevents both visual exposure and browser autofill of credentials.
+
+**Impact**: All API key fields show dots instead of the key text. Users can still paste and edit keys normally.
+
+---
+
+## 2026-03-12: Anthropic has no developer-facing transcription API
+
+**Context**: While evaluating whether to add Anthropic as a transcription provider (alongside Whisper and Deepgram), we researched the Anthropic API surface.
+
+**Decision**: Do not add Anthropic as a transcription provider. Anthropic does not offer a speech-to-text or audio transcription API for developers as of March 2026.
+
+**Alternatives considered**:
+- Wait for Anthropic to launch a transcription API (unknown timeline)
+- Use Claude's multimodal capabilities to process audio (not designed for transcription at scale)
+
+**Rationale**: There is no API endpoint to integrate with. Whisper and Deepgram cover the transcription use case well. If Anthropic launches a transcription API in the future, it can be added as a new provider.
+
+**Impact**: None — no code changes needed. Documents the finding so the question doesn't need to be re-researched.
+
+---
+
+## 2026-03-12: Deepgram converted from `requestUrl` to `fetch` with AbortController
+
+**Context**: The Deepgram transcription call originally used Obsidian's `requestUrl`. This was inconsistent with how Whisper already used `fetch` (required for FormData), and `requestUrl` does not support `AbortController` for timeout management.
+
+**Decision**: Convert Deepgram to use native `fetch` with an `AbortController` timeout (5 minutes), matching the Whisper implementation pattern. Also validate that the Deepgram API key is non-empty before making the request.
+
+**Alternatives considered**:
+- Keep `requestUrl` and use a separate timeout mechanism (inconsistent with Whisper pattern)
+- Use `requestUrl` with its built-in timeout (less control, no abort signal)
+
+**Rationale**: Consistency between Whisper and Deepgram request patterns simplifies the code. `AbortController` gives explicit timeout control and properly cancels the underlying request. Empty-key validation fails fast with a clear error message instead of a cryptic 401.
+
+**Impact**: Deepgram requests now have a 5-minute timeout and will abort cleanly on timeout. Empty API key is caught before the request is made.
+
+---
+
 ## 2026-03-12: Centralized input validation layer (`shared/validation.ts`)
 
 **Context**: The architecture audit identified that URLs and file paths were being passed to shell commands (`execFile`) and external APIs without consistent validation. AI-generated text was being written to vault notes without sanitization, creating potential XSS vectors in Obsidian's markdown renderer.

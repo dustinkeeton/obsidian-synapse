@@ -11,12 +11,12 @@ Obsidian plugin providing AI-powered note elaboration, audio transcription, and 
 | Path | Purpose | Public API |
 |------|---------|------------|
 | `src/main.ts` | Plugin entry point, module orchestration | `AutoNotesPlugin` (default export) |
-| `src/settings.ts` | Settings interfaces and defaults | `AutoNotesSettings`, `DEFAULT_SETTINGS` |
+| `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | `src/settings-tab.ts` | Obsidian settings UI | `AutoNotesSettingTab` |
 | `src/elaboration/` | Stub note detection and proposal generation | `ElaborationModule`, `PROPOSAL_VIEW_TYPE`, types |
 | `src/audio/` | Audio transcription pipeline | `AudioModule`, `AudioTranscriptionModal`, types |
 | `src/video/` | Video download, audio extraction, transcription | `VideoModule`, types, `detectPlatform`, `isSupportedUrl` |
-| `src/shared/` | AI client, file utils, API helpers, validation | `AIClient`, `writeNote`, `readNote`, `ensureFolder`, `withRetry`, `notifyError`, `wordCount`, `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse` |
+| `src/shared/` | AI client (with model ID resolution), file utils, API helpers, validation | `AIClient`, `writeNote`, `readNote`, `ensureFolder`, `withRetry`, `notifyError`, `wordCount`, `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse` |
 
 ## Dependency Graph
 
@@ -46,6 +46,13 @@ Key constraint: Video depends on Audio. Audio is initialized before Video in `ma
 ## Settings Schema
 
 ```ts
+type AIProvider = 'openai' | 'anthropic' | 'ollama'
+
+const MODEL_OPTIONS: Record<AIProvider, Record<string, string>>
+// openai:    gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini
+// anthropic: opus (Claude Opus), sonnet (Claude Sonnet), haiku (Claude Haiku)
+// ollama:    llama3, mistral, codellama, gemma
+
 interface AutoNotesSettings {
   ai: AISettings;
   elaboration: ElaborationSettings;
@@ -58,12 +65,14 @@ interface AutoNotesSettings {
 
 | Key | Type | Default |
 |-----|------|---------|
-| `provider` | `'openai' \| 'anthropic' \| 'ollama'` | `'openai'` |
+| `provider` | `AIProvider` | `'openai'` |
 | `apiKey` | `string` | `''` |
 | `ollamaEndpoint` | `string` | `'http://localhost:11434'` |
 | `model` | `string` | `'gpt-4o'` |
 | `maxTokens` | `number` | `2048` |
 | `temperature` | `number` | `0.7` |
+
+Note: `model` stores simplified names (e.g. `'opus'`). `AIClient` resolves these to full API IDs via `resolveModelId()` (e.g. `'opus'` -> `'claude-opus-4-20250514'`).
 
 ### elaboration
 
@@ -89,6 +98,7 @@ interface AutoNotesSettings {
 |-----|------|---------|
 | `enabled` | `boolean` | `true` |
 | `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'local-whisper'` | `'whisper-api'` |
+| `whisperApiKey` | `string` | `''` |
 | `deepgramApiKey` | `string` | `''` |
 | `whisperModel` | `string` | `'whisper-1'` |
 | `localWhisperPath` | `string` | `''` |

@@ -1,6 +1,6 @@
 import { App, normalizePath } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { ensureFolder } from '../shared/file-utils';
+import { ensureFolder } from '../shared';
 import { Proposal } from './types';
 
 export class ProposalStore {
