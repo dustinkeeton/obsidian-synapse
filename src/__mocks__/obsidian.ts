@@ -71,8 +71,33 @@ export class Modal {
 	onClose(): void {}
 }
 
+/** Helper to create a stub DOM element with Obsidian's augmented methods */
+function createStubEl(): any {
+	const el: any = {
+		classList: { add: vi.fn(), remove: vi.fn() },
+		className: '',
+		textContent: '',
+		empty: vi.fn(),
+		createEl: vi.fn().mockImplementation(() => createStubEl()),
+		createDiv: vi.fn().mockImplementation(() => createStubEl()),
+		addEventListener: vi.fn(),
+		closest: vi.fn().mockReturnValue(null),
+	};
+	return el;
+}
+
 export class Notice {
-	constructor(_message: string | DocumentFragment, _duration?: number) {}
+	noticeEl: any;
+	constructor(_message: string | DocumentFragment, _duration?: number) {
+		this.noticeEl = createStubEl();
+		if (typeof _message === 'string') {
+			this.noticeEl.textContent = _message;
+		}
+	}
+	setMessage = vi.fn((msg: string) => {
+		if (this.noticeEl) this.noticeEl.textContent = msg;
+	});
+	hide = vi.fn();
 }
 
 export class PluginSettingTab {
