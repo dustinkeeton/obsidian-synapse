@@ -4,14 +4,12 @@ import { NotificationManager, parseFrontmatter } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentDetailModal } from './enrichment-modal';
 import { EnrichmentStore } from './enrichment-store';
-import { ENRICHMENT_VIEW_TYPE, EnrichmentReviewView } from './enrichment-view';
 import { LinkResolver } from './link-resolver';
 import { PromptBuilder } from './prompt-builder';
 import { TagScorer } from './tag-scorer';
 import { AcceptedItems, EnrichmentProposal, EnrichmentResult, EnrichmentTrigger } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
 
-export { ENRICHMENT_VIEW_TYPE } from './enrichment-view';
 export type {
 	AcceptedItems,
 	EnrichmentProposal,
@@ -30,6 +28,9 @@ export class EnrichmentModule {
 	private promptBuilder: PromptBuilder;
 	private applier: EnrichmentApplier;
 	private store: EnrichmentStore;
+
+	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
+	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
 	constructor(
 		private plugin: Plugin,
@@ -54,14 +55,6 @@ export class EnrichmentModule {
 			})
 		);
 
-		this.plugin.registerView(ENRICHMENT_VIEW_TYPE, (leaf) => {
-			return new EnrichmentReviewView(leaf, {
-				onDetail: (id) => this.showDetail(id),
-				onAcceptAll: (id) => this.acceptAll(id),
-				onReject: (id) => this.rejectProposal(id),
-			});
-		});
-
 		this.plugin.addCommand({
 			id: 'auto-notes:enrich-current-note',
 			name: 'Enrich current note',
@@ -70,12 +63,6 @@ export class EnrichmentModule {
 					await this.enrich(ctx.file.path, 'manual');
 				}
 			},
-		});
-
-		this.plugin.addCommand({
-			id: 'auto-notes:review-enrichments',
-			name: 'Open enrichment review sidebar',
-			callback: () => this.activateView(),
 		});
 
 		this.plugin.addCommand({
@@ -90,6 +77,11 @@ export class EnrichmentModule {
 	}
 
 	onunload(): void {}
+
+	/** Get all pending proposals (called by main.ts for the unified view). */
+	async getPendingProposals(): Promise<EnrichmentProposal[]> {
+		return this.store.loadPending();
+	}
 
 	/**
 	 * Generate an enrichment proposal for a note.
@@ -172,14 +164,15 @@ export class EnrichmentModule {
 			op.finish(
 				`Enrichment proposal: ${result.tags.length} tags, ${result.internalLinks.length} links, ${result.externalLinks.length} refs`
 			);
-			await this.activateView();
+			await this.refreshView();
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			op.error(`Enrichment failed — ${msg}`);
 		}
 	}
 
-	private async acceptAll(id: string): Promise<void> {
+	/** Accept all items in a proposal. Called from unified view. */
+	async acceptAllFromView(id: string): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
 
@@ -196,6 +189,25 @@ export class EnrichmentModule {
 		await this.refreshView();
 	}
 
+	/** Reject a proposal. Called from unified view. */
+	async rejectFromView(id: string): Promise<void> {
+		await this.store.updateStatus(id, 'rejected');
+		this.notifications.info('Enrichment rejected');
+		await this.refreshView();
+	}
+
+	/** Show detail modal for a proposal. Called from unified view. */
+	async showDetailFromView(id: string): Promise<void> {
+		const proposal = await this.store.load(id);
+		if (!proposal) return;
+
+		const modal = new EnrichmentDetailModal(this.plugin.app, proposal, {
+			onAccept: (accepted) => this.acceptSelected(id, accepted),
+			onReject: () => this.rejectFromView(id),
+		});
+		modal.open();
+	}
+
 	private async acceptSelected(
 		id: string,
 		accepted: AcceptedItems
@@ -210,7 +222,7 @@ export class EnrichmentModule {
 			accepted.frontmatter.length > 0;
 
 		if (!hasItems) {
-			await this.rejectProposal(id);
+			await this.rejectFromView(id);
 			return;
 		}
 
@@ -235,12 +247,6 @@ export class EnrichmentModule {
 		await this.refreshView();
 	}
 
-	private async rejectProposal(id: string): Promise<void> {
-		await this.store.updateStatus(id, 'rejected');
-		this.notifications.info('Enrichment rejected');
-		await this.refreshView();
-	}
-
 	private async undoLastEnrichment(filePath: string): Promise<void> {
 		const proposals = await this.store.loadForNote(filePath);
 		const accepted = proposals
@@ -261,42 +267,8 @@ export class EnrichmentModule {
 		this.notifications.success('Enrichment undone');
 	}
 
-	private async showDetail(id: string): Promise<void> {
-		const proposal = await this.store.load(id);
-		if (!proposal) return;
-
-		const modal = new EnrichmentDetailModal(this.plugin.app, proposal, {
-			onAccept: (accepted) => this.acceptSelected(id, accepted),
-			onReject: () => this.rejectProposal(id),
-		});
-		modal.open();
-	}
-
-	async activateView(): Promise<void> {
-		const { workspace } = this.plugin.app;
-		let leaf = workspace.getLeavesOfType(ENRICHMENT_VIEW_TYPE)[0];
-		if (!leaf) {
-			const rightLeaf = workspace.getRightLeaf(false);
-			if (!rightLeaf) return;
-			leaf = rightLeaf;
-			await leaf.setViewState({
-				type: ENRICHMENT_VIEW_TYPE,
-				active: true,
-			});
-		}
-		workspace.revealLeaf(leaf);
-		await this.refreshView();
-	}
-
 	private async refreshView(): Promise<void> {
-		const leaves = this.plugin.app.workspace.getLeavesOfType(
-			ENRICHMENT_VIEW_TYPE
-		);
-		for (const leaf of leaves) {
-			const view = leaf.view as EnrichmentReviewView;
-			const proposals = await this.store.loadPending();
-			view.setProposals(proposals);
-		}
+		await this.onViewRefreshNeeded?.();
 	}
 
 	private isExcluded(file: TFile): boolean {
