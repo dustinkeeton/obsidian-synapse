@@ -20,6 +20,7 @@ export interface VideoProcessOptions {
 	postProcess?: boolean;
 	extractFrames?: boolean;
 	outputPath?: string;
+	insertMode?: boolean;
 }
 
 export interface ExtractionResult {
@@ -35,4 +36,10 @@ export interface VideoMetadata {
 	description?: string;
 	platform?: string;
 	url?: string;
+}
+
+export interface VideoUrlEmbed {
+	url: string;
+	platform: Platform;
+	line: number;
 }
