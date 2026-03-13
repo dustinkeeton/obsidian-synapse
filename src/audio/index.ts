@@ -18,6 +18,9 @@ export class AudioModule {
 	private transcriber: Transcriber;
 	private postProcessor: PostProcessor;
 
+	/** Optional callback invoked after transcription completes. Wired by main.ts for enrichment. */
+	onTranscriptionComplete: ((filePath: string) => void) | null = null;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
@@ -77,6 +80,7 @@ export class AudioModule {
 
 		await writeNote(this.plugin.app, path, content);
 		this.notifications.info(`Transcription saved to ${path}`);
+		this.onTranscriptionComplete?.(path);
 	}
 
 	openTranscriptionModal(): void {
@@ -212,6 +216,7 @@ export class AudioModule {
 		// Write whatever we completed, even if cancelled partway
 		if (completed > 0) {
 			await this.plugin.app.vault.modify(noteFile, content);
+			this.onTranscriptionComplete?.(noteFile.path);
 		}
 		if (!op.cancelled) {
 			op.finish(`Done — ${completed}/${total} transcriptions added`);

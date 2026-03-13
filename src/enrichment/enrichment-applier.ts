@@ -1,0 +1,208 @@
+import { App, TFile } from 'obsidian';
+import { AutoNotesSettings } from '../settings';
+import { mergeTags, parseFrontmatter, serializeFrontmatter } from '../shared';
+import { EnrichmentProposal, AcceptedItems } from './types';
+
+const ENRICHMENT_START = '%% auto-notes-enrichment-start %%';
+const ENRICHMENT_END = '%% auto-notes-enrichment-end %%';
+
+/**
+ * Applies accepted enrichments to a note non-destructively.
+ *
+ * - Tags: merged into frontmatter `tags` array (never removed).
+ * - Internal links: placed in a "Related Notes" section with markers.
+ * - External links: placed in a "References" section with markers.
+ * - Frontmatter: keys added or arrays merged. Never overwrites existing values.
+ *
+ * Marker-based sections enable idempotent updates and surgical undo.
+ */
+export class EnrichmentApplier {
+	constructor(
+		private app: App,
+		private getSettings: () => AutoNotesSettings
+	) {}
+
+	/**
+	 * Apply accepted items from a proposal to the note.
+	 */
+	async apply(proposal: EnrichmentProposal, accepted: AcceptedItems): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
+		if (!(file instanceof TFile)) return;
+
+		const content = await this.app.vault.read(file);
+		const settings = this.getSettings().enrichment;
+		const parsed = parseFrontmatter(content);
+
+		// 1. Merge tags into frontmatter
+		if (accepted.tags.length > 0) {
+			mergeTags(parsed.frontmatter, accepted.tags);
+		}
+
+		// 2. Merge frontmatter attributes
+		const acceptedFmKeys = new Set(accepted.frontmatter);
+		for (const fm of proposal.result.frontmatter) {
+			if (!acceptedFmKeys.has(fm.key)) continue;
+			if (fm.action === 'merge' && Array.isArray(fm.value)) {
+				const existing = parsed.frontmatter[fm.key];
+				if (Array.isArray(existing)) {
+					parsed.frontmatter[fm.key] = [
+						...existing,
+						...fm.value.filter(v => !existing.includes(v)),
+					];
+				} else {
+					parsed.frontmatter[fm.key] = fm.value;
+				}
+			} else {
+				// Only add if key doesn't already exist
+				if (!(fm.key in parsed.frontmatter)) {
+					parsed.frontmatter[fm.key] = fm.value;
+				}
+			}
+		}
+
+		// 3. Build body with enrichment sections
+		let body = parsed.body;
+
+		// Remove existing enrichment sections (idempotent update)
+		body = this.removeEnrichmentSections(body);
+
+		// Build Related Notes section
+		const acceptedLinkPaths = new Set(accepted.internalLinks);
+		const internalLinks = proposal.result.internalLinks.filter(l =>
+			acceptedLinkPaths.has(l.targetPath)
+		);
+
+		if (internalLinks.length > 0) {
+			const linksSection = this.buildLinksSection(
+				internalLinks,
+				settings.relatedNotesHeading
+			);
+			body = body.trimEnd() + '\n\n' + linksSection;
+		}
+
+		// Build References section
+		const acceptedRefUrls = new Set(accepted.externalLinks);
+		const externalLinks = proposal.result.externalLinks.filter(l =>
+			acceptedRefUrls.has(l.url)
+		);
+
+		if (externalLinks.length > 0) {
+			const refsSection = this.buildRefsSection(
+				externalLinks,
+				settings.referencesHeading
+			);
+			body = body.trimEnd() + '\n\n' + refsSection;
+		}
+
+		// Serialize and write
+		const newContent = serializeFrontmatter(parsed.frontmatter, body);
+		await this.app.vault.modify(file, newContent);
+	}
+
+	/**
+	 * Undo enrichments by removing accepted items.
+	 */
+	async undo(proposal: EnrichmentProposal): Promise<void> {
+		if (!proposal.acceptedItems) return;
+
+		const file = this.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
+		if (!(file instanceof TFile)) return;
+
+		const content = await this.app.vault.read(file);
+		const parsed = parseFrontmatter(content);
+
+		// Remove accepted tags
+		if (proposal.acceptedItems.tags.length > 0) {
+			const toRemove = new Set(
+				proposal.acceptedItems.tags.map(t =>
+					t.startsWith('#') ? t.slice(1) : t
+				)
+			);
+			const existing = parsed.frontmatter.tags;
+			if (Array.isArray(existing)) {
+				parsed.frontmatter.tags = existing.filter(
+					t => !toRemove.has(String(t))
+				);
+			}
+		}
+
+		// Remove accepted frontmatter keys
+		for (const key of proposal.acceptedItems.frontmatter) {
+			delete parsed.frontmatter[key];
+		}
+
+		// Remove enrichment sections from body
+		let body = parsed.body;
+		body = this.removeEnrichmentSections(body);
+
+		const newContent = serializeFrontmatter(parsed.frontmatter, body);
+		await this.app.vault.modify(file, newContent);
+	}
+
+	private buildLinksSection(
+		links: { targetPath: string; displayText: string; reason: string }[],
+		heading: string
+	): string {
+		const lines: string[] = [
+			ENRICHMENT_START,
+			`## ${heading}`,
+			'',
+		];
+		for (const link of links) {
+			// Sanitize display text and reason to prevent wikilink/markdown injection
+			const safeDisplay = link.displayText.replace(/[[\]|]/g, '');
+			const safeReason = link.reason.replace(/[[\]()]/g, '');
+			lines.push(`- [[${safeDisplay}]] — ${safeReason}`);
+		}
+		lines.push('', ENRICHMENT_END);
+		return lines.join('\n');
+	}
+
+	private buildRefsSection(
+		refs: { url: string; title: string; reason: string }[],
+		heading: string
+	): string {
+		const lines: string[] = [
+			ENRICHMENT_START,
+			`## ${heading}`,
+			'',
+		];
+		for (const ref of refs) {
+			// Sanitize AI-generated strings to prevent markdown injection
+			const safeTitle = ref.title.replace(/[[\]()]/g, '');
+			const safeReason = ref.reason.replace(/[[\]()]/g, '');
+			// Validate URL scheme before writing to note
+			let safeUrl = ref.url;
+			try {
+				const parsed = new URL(ref.url);
+				if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+					continue; // Skip non-HTTP URLs
+				}
+			} catch {
+				continue; // Skip invalid URLs
+			}
+			lines.push(`- [${safeTitle}](${safeUrl}) — ${safeReason}`);
+		}
+		lines.push('', ENRICHMENT_END);
+		return lines.join('\n');
+	}
+
+	private removeEnrichmentSections(body: string): string {
+		const startMarker = ENRICHMENT_START;
+		const endMarker = ENRICHMENT_END;
+
+		let result = body;
+		while (true) {
+			const startIdx = result.indexOf(startMarker);
+			if (startIdx === -1) break;
+			const endIdx = result.indexOf(endMarker, startIdx);
+			if (endIdx === -1) break;
+
+			const before = result.slice(0, startIdx).trimEnd();
+			const after = result.slice(endIdx + endMarker.length);
+			result = before + after;
+		}
+
+		return result;
+	}
+}

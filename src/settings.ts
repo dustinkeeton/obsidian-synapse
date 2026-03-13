@@ -107,11 +107,36 @@ export interface VideoSettings {
 	output: VideoOutputSettings;
 }
 
+export interface EnrichmentWeightSettings {
+	sameFolder: number;
+	siblingFolder: number;
+	cousinFolder: number;
+	distantFolder: number;
+	decayPerLevel: number;
+	minWeight: number;
+}
+
+export interface EnrichmentSettings {
+	enabled: boolean;
+	autoEnrich: boolean;
+	maxTags: number;
+	maxInternalLinks: number;
+	maxExternalLinks: number;
+	internalLinkThreshold: number;
+	weights: EnrichmentWeightSettings;
+	enrichmentFolderPath: string;
+	excludeFolders: string[];
+	excludeTags: string[];
+	relatedNotesHeading: string;
+	referencesHeading: string;
+}
+
 export interface AutoNotesSettings {
 	ai: AISettings;
 	elaboration: ElaborationSettings;
 	audio: AudioSettings;
 	video: VideoSettings;
+	enrichment: EnrichmentSettings;
 }
 
 export const DEFAULT_SETTINGS: AutoNotesSettings = {
@@ -183,5 +208,26 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 			fileNameTemplate: '{{date}}-{{title}}',
 			includeVideoMetadata: true,
 		},
+	},
+	enrichment: {
+		enabled: true,
+		autoEnrich: true,
+		maxTags: 10,
+		maxInternalLinks: 15,
+		maxExternalLinks: 3,
+		internalLinkThreshold: 0.3,
+		weights: {
+			sameFolder: 1.0,
+			siblingFolder: 0.8,
+			cousinFolder: 0.5,
+			distantFolder: 0.2,
+			decayPerLevel: 0.15,
+			minWeight: 0.1,
+		},
+		enrichmentFolderPath: '.auto-notes/enrichments',
+		excludeFolders: ['templates', '.auto-notes'],
+		excludeTags: ['no-enrich'],
+		relatedNotesHeading: 'Related Notes',
+		referencesHeading: 'References',
 	},
 };

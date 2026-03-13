@@ -150,6 +150,55 @@ export class WorkspaceLeaf {
 	setViewState = vi.fn().mockResolvedValue(undefined);
 }
 
+// --- Metadata helpers ---
+
+export function getAllTags(cache: any): string[] | null {
+	const tags: string[] = [];
+	if (cache?.tags) {
+		for (const t of cache.tags) tags.push(t.tag);
+	}
+	if (cache?.frontmatter?.tags) {
+		const fm = cache.frontmatter.tags;
+		const fmTags = Array.isArray(fm) ? fm : [fm];
+		for (const t of fmTags) {
+			const tag = String(t).startsWith('#') ? String(t) : `#${t}`;
+			if (!tags.includes(tag)) tags.push(tag);
+		}
+	}
+	return tags.length > 0 ? tags : null;
+}
+
+export function parseYaml(yaml: string): any {
+	// Simple YAML parser for tests — handles key: value lines
+	const result: Record<string, any> = {};
+	for (const line of yaml.split('\n')) {
+		const match = line.match(/^(\w[\w-]*)\s*:\s*(.+)/);
+		if (match) {
+			const val = match[2].trim();
+			// Try to parse arrays like [a, b, c]
+			if (val.startsWith('[') && val.endsWith(']')) {
+				result[match[1]] = val.slice(1, -1).split(',').map(s => s.trim());
+			} else {
+				result[match[1]] = val;
+			}
+		}
+	}
+	return result;
+}
+
+export function stringifyYaml(obj: any): string {
+	const lines: string[] = [];
+	for (const [key, value] of Object.entries(obj)) {
+		if (Array.isArray(value)) {
+			lines.push(`${key}:`);
+			for (const item of value) lines.push(`  - ${item}`);
+		} else {
+			lines.push(`${key}: ${value}`);
+		}
+	}
+	return lines.join('\n') + '\n';
+}
+
 // --- Utility functions ---
 
 export function normalizePath(path: string): string {

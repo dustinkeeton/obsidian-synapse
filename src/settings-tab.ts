@@ -347,5 +347,147 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		// ── Note Enrichment ──
+		containerEl.createEl('h2', { text: 'Note Enrichment' });
+
+		new Setting(containerEl)
+			.setName('Enable enrichment')
+			.setDesc('Add tags, links, references, and metadata to notes')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enrichment.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.enrichment.enabled = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Auto-enrich')
+			.setDesc('Automatically generate enrichment proposals after elaboration or transcription')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enrichment.autoEnrich)
+					.onChange(async (value) => {
+						this.plugin.settings.enrichment.autoEnrich = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Max tags per note')
+			.setDesc('Maximum number of tags to suggest')
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.enrichment.maxTags))
+					.onChange(async (value) => {
+						const num = parseInt(value);
+						if (!isNaN(num) && num > 0) {
+							this.plugin.settings.enrichment.maxTags = num;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Max internal links')
+			.setDesc('Maximum number of related note links to suggest')
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.enrichment.maxInternalLinks))
+					.onChange(async (value) => {
+						const num = parseInt(value);
+						if (!isNaN(num) && num > 0) {
+							this.plugin.settings.enrichment.maxInternalLinks = num;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Max external references')
+			.setDesc('Maximum external links to suggest (stingy — keep this low)')
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.enrichment.maxExternalLinks))
+					.onChange(async (value) => {
+						const num = parseInt(value);
+						if (!isNaN(num) && num >= 0) {
+							this.plugin.settings.enrichment.maxExternalLinks = num;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Internal link threshold')
+			.setDesc('Minimum relevance score for internal links (0-1, lower = more liberal)')
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 1, 0.05)
+					.setValue(this.plugin.settings.enrichment.internalLinkThreshold)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.enrichment.internalLinkThreshold = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// Weight settings
+		containerEl.createEl('h3', { text: 'Proximity Weights' });
+
+		type WeightKey = keyof import('./settings').EnrichmentWeightSettings;
+		const weightFields: Array<{ key: WeightKey; name: string; desc: string }> = [
+			{ key: 'sameFolder', name: 'Same folder', desc: 'Weight for files in the same folder' },
+			{ key: 'siblingFolder', name: 'Sibling folder', desc: 'Weight for files in sibling folders' },
+			{ key: 'cousinFolder', name: 'Cousin folder', desc: 'Weight for files two levels apart' },
+			{ key: 'distantFolder', name: 'Distant folder', desc: 'Weight for files in distant folders' },
+			{ key: 'decayPerLevel', name: 'Decay per level', desc: 'Weight reduction per additional folder hop' },
+			{ key: 'minWeight', name: 'Minimum weight', desc: 'Floor weight — distant files are never invisible' },
+		];
+
+		for (const field of weightFields) {
+			const key = field.key;
+			new Setting(containerEl)
+				.setName(field.name)
+				.setDesc(field.desc)
+				.addSlider((slider) =>
+					slider
+						.setLimits(0, 1, 0.05)
+						.setValue(this.plugin.settings.enrichment.weights[key])
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							this.plugin.settings.enrichment.weights[key] = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
+		new Setting(containerEl)
+			.setName('Excluded folders')
+			.setDesc('Comma-separated list of folders to skip for enrichment')
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.enrichment.excludeFolders.join(', '))
+					.onChange(async (value) => {
+						this.plugin.settings.enrichment.excludeFolders =
+							value.split(',').map((s) => s.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Excluded tags')
+			.setDesc('Notes with these tags will skip enrichment')
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.enrichment.excludeTags.join(', '))
+					.onChange(async (value) => {
+						this.plugin.settings.enrichment.excludeTags =
+							value.split(',').map((s) => s.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 }

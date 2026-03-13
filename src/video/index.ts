@@ -23,6 +23,9 @@ export { detectPlatform, isSupportedUrl } from './url-detector';
 export class VideoModule {
 	private extractor: AudioExtractor;
 
+	/** Optional callback invoked after video transcription completes. Wired by main.ts for enrichment. */
+	onTranscriptionComplete: ((filePath: string) => void) | null = null;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
@@ -110,6 +113,7 @@ export class VideoModule {
 			const content = this.formatVideoTranscription(result, extraction.metadata);
 			await writeNote(this.plugin.app, outputPath, content);
 			this.notifications.info(`Transcription saved to ${outputPath}`);
+			this.onTranscriptionComplete?.(outputPath);
 		}
 
 		return result;
@@ -181,6 +185,7 @@ export class VideoModule {
 
 		if (completed > 0) {
 			await this.plugin.app.vault.modify(noteFile, content);
+			this.onTranscriptionComplete?.(noteFile.path);
 		}
 		if (!op.cancelled) {
 			op.finish(`Done — ${completed}/${total} video transcriptions added`);

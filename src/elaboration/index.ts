@@ -17,6 +17,9 @@ export class ElaborationModule {
 	private store: ProposalStore;
 	private scanInterval: number | null = null;
 
+	/** Optional callback invoked after a proposal is accepted. Wired by main.ts for enrichment. */
+	onProposalAccepted: ((filePath: string) => void) | null = null;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
@@ -205,6 +208,7 @@ export class ElaborationModule {
 		await this.store.updateStatus(id, 'accepted');
 		this.notifications.success('Proposal accepted');
 		await this.refreshProposalView();
+		this.onProposalAccepted?.(proposal.sourceNotePath);
 	}
 
 	async rejectProposal(id: string): Promise<void> {
@@ -234,6 +238,7 @@ export class ElaborationModule {
 				await this.store.updateStatus(id, 'accepted');
 				this.notifications.success('Proposal accepted');
 				await this.refreshProposalView();
+				this.onProposalAccepted?.(proposal.sourceNotePath);
 			},
 			onReject: async () => {
 				await this.rejectProposal(id);

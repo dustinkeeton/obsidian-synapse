@@ -4,6 +4,7 @@ import { AutoNotesSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule } from './video';
+import { EnrichmentModule } from './enrichment';
 import { NotificationManager } from './shared';
 
 export default class AutoNotesPlugin extends Plugin {
@@ -13,6 +14,7 @@ export default class AutoNotesPlugin extends Plugin {
 	private elaboration!: ElaborationModule;
 	private audio!: AudioModule;
 	private video!: VideoModule;
+	private enrichment!: EnrichmentModule;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -28,6 +30,7 @@ export default class AutoNotesPlugin extends Plugin {
 		this.elaboration = new ElaborationModule(this, getSettings, this.notifications);
 		this.audio = new AudioModule(this, getSettings, this.notifications);
 		this.video = new VideoModule(this, getSettings, this.audio, this.notifications);
+		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications);
 
 		// Load enabled modules
 		if (this.settings.elaboration.enabled) {
@@ -39,6 +42,22 @@ export default class AutoNotesPlugin extends Plugin {
 		if (this.settings.video.enabled) {
 			await this.video.onload();
 		}
+		if (this.settings.enrichment.enabled) {
+			await this.enrichment.onload();
+		}
+
+		// Wire enrichment callbacks — triggers after other processes complete
+		if (this.settings.enrichment.enabled && this.settings.enrichment.autoEnrich) {
+			this.elaboration.onProposalAccepted = (filePath: string) => {
+				this.enrichment.enrich(filePath, 'elaboration');
+			};
+			this.audio.onTranscriptionComplete = (filePath: string) => {
+				this.enrichment.enrich(filePath, 'transcription');
+			};
+			this.video.onTranscriptionComplete = (filePath: string) => {
+				this.enrichment.enrich(filePath, 'transcription');
+			};
+		}
 
 		// Ribbon icons — delegate to module methods
 		this.addRibbonIcon('sparkles', 'Review elaboration proposals', () => {
@@ -48,12 +67,17 @@ export default class AutoNotesPlugin extends Plugin {
 		this.addRibbonIcon('mic', 'Transcribe audio', () => {
 			this.audio.openTranscriptionModal();
 		});
+
+		this.addRibbonIcon('library', 'Review enrichment proposals', () => {
+			this.enrichment.activateView();
+		});
 	}
 
 	onunload(): void {
 		this.elaboration?.onunload();
 		this.audio?.onunload();
 		this.video?.onunload();
+		this.enrichment?.onunload();
 	}
 
 	async loadSettings(): Promise<void> {
@@ -71,6 +95,10 @@ export default class AutoNotesPlugin extends Plugin {
 	private deepMerge<T>(target: T, source: any): T {
 		const output: any = { ...target };
 		for (const key of Object.keys(source)) {
+			// Guard against prototype pollution
+			if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+				continue;
+			}
 			if (
 				source[key] &&
 				typeof source[key] === 'object' &&
