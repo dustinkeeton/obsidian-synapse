@@ -21,12 +21,7 @@ export class ProposalStore {
 		const fileName = this.proposalFileName(proposal);
 		const path = normalizePath(`${this.folderPath}/${fileName}`);
 		const content = JSON.stringify(proposal, null, 2);
-		const existing = this.app.vault.getAbstractFileByPath(path);
-		if (existing) {
-			await this.app.vault.adapter.write(path, content);
-		} else {
-			await this.app.vault.create(path, content);
-		}
+		await this.app.vault.adapter.write(path, content);
 	}
 
 	async load(id: string): Promise<Proposal | null> {
@@ -87,13 +82,10 @@ export class ProposalStore {
 	}
 
 	private async listProposalFiles(): Promise<string[]> {
-		const folder = this.app.vault.getAbstractFileByPath(
-			normalizePath(this.folderPath)
-		);
-		if (!folder) return [];
-		const files = await this.app.vault.adapter.list(
-			normalizePath(this.folderPath)
-		);
+		const normalized = normalizePath(this.folderPath);
+		const exists = await this.app.vault.adapter.exists(normalized);
+		if (!exists) return [];
+		const files = await this.app.vault.adapter.list(normalized);
 		return files.files.filter(f => f.endsWith('.json'));
 	}
 }
