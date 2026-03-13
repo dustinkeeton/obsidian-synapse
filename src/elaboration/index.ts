@@ -151,7 +151,7 @@ export class ElaborationModule {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
 
-		new ProposalDetailModal(this.plugin.app, proposal, {
+		const modal = new ProposalDetailModal(this.plugin.app, proposal, {
 			onAccept: async (editedContent) => {
 				const file = this.plugin.app.vault.getAbstractFileByPath(
 					proposal.sourceNotePath
@@ -172,6 +172,7 @@ export class ElaborationModule {
 				await this.rejectProposal(id);
 			},
 		});
+		modal.open();
 	}
 
 	private async clearProposals(): Promise<void> {

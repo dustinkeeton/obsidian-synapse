@@ -4,7 +4,14 @@ export async function ensureFolder(app: App, path: string): Promise<void> {
 	const normalized = normalizePath(path);
 	const existing = app.vault.getAbstractFileByPath(normalized);
 	if (!existing) {
-		await app.vault.createFolder(normalized);
+		try {
+			await app.vault.createFolder(normalized);
+		} catch (e) {
+			// Folder may already exist on disk but not in vault cache (e.g. during plugin reload)
+			if (!(e instanceof Error) || !e.message.includes('Folder already exists')) {
+				throw e;
+			}
+		}
 	}
 }
 

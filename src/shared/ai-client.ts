@@ -1,9 +1,25 @@
-import { requestUrl } from 'obsidian';
+import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 
 export interface ChatMessage {
 	role: 'system' | 'user' | 'assistant';
 	content: string;
+}
+
+async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse> {
+	// Don't use throw mode — Obsidian strips the response body on error
+	const response = await requestUrl({ ...options, throw: false });
+	if (response.status >= 400) {
+		let detail: string;
+		try {
+			const body = response.json;
+			detail = body?.error?.message ?? JSON.stringify(body);
+		} catch {
+			detail = response.text || `status ${response.status}`;
+		}
+		throw new Error(`API error (${response.status}): ${detail}`);
+	}
+	return response;
 }
 
 /**
@@ -12,9 +28,9 @@ export interface ChatMessage {
  * but need full IDs for the API.
  */
 const ANTHROPIC_MODEL_MAP: Record<string, string> = {
-	opus: 'claude-opus-4-20250514',
-	sonnet: 'claude-sonnet-4-20250514',
-	haiku: 'claude-haiku-4-20250414',
+	opus: 'claude-opus-4-6',
+	sonnet: 'claude-sonnet-4-6',
+	haiku: 'claude-haiku-4-5-20251001',
 };
 
 function resolveModelId(provider: string, model: string): string {
@@ -54,7 +70,7 @@ export class AIClient {
 	private async callOpenAI(messages: ChatMessage[]): Promise<string> {
 		const { ai } = this.getSettings();
 		const model = resolveModelId(ai.provider, ai.model);
-		const response = await requestUrl({
+		const response = await safeRequest({
 			url: 'https://api.openai.com/v1/chat/completions',
 			method: 'POST',
 			headers: {
@@ -67,7 +83,6 @@ export class AIClient {
 				max_tokens: ai.maxTokens,
 				temperature: ai.temperature,
 			}),
-			throw: true,
 		});
 		return response.json.choices[0].message.content;
 	}
@@ -91,7 +106,7 @@ export class AIClient {
 			body.system = systemMsg.content;
 		}
 
-		const response = await requestUrl({
+		const response = await safeRequest({
 			url: 'https://api.anthropic.com/v1/messages',
 			method: 'POST',
 			headers: {
@@ -100,7 +115,6 @@ export class AIClient {
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify(body),
-			throw: true,
 		});
 		return response.json.content[0].text;
 	}
@@ -121,7 +135,7 @@ export class AIClient {
 		}
 
 		const model = resolveModelId(ai.provider, ai.model);
-		const response = await requestUrl({
+		const response = await safeRequest({
 			url: `${ai.ollamaEndpoint}/api/chat`,
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -130,7 +144,6 @@ export class AIClient {
 				messages,
 				stream: false,
 			}),
-			throw: true,
 		});
 		return response.json.message.content;
 	}
