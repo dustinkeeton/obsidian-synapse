@@ -4,11 +4,9 @@ import { blockquoteOriginal, NotificationManager, sanitizeAIResponse } from '../
 import { PlaceholderDetector } from './detector';
 import { ProposalDetailModal } from './proposal-modal';
 import { ProposalStore } from './proposal-store';
-import { PROPOSAL_VIEW_TYPE, ProposalReviewView } from './proposal-view';
 import { ProposalGenerator } from './proposer';
-import { DetectionResult } from './types';
+import { DetectionResult, Proposal } from './types';
 
-export { PROPOSAL_VIEW_TYPE } from './proposal-view';
 export type { DetectionReason, DetectionResult, Proposal } from './types';
 
 export class ElaborationModule {
@@ -19,6 +17,9 @@ export class ElaborationModule {
 
 	/** Optional callback invoked after a proposal is accepted. Wired by main.ts for enrichment. */
 	onProposalAccepted: ((filePath: string) => void) | null = null;
+
+	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
+	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
 	constructor(
 		private plugin: Plugin,
@@ -32,14 +33,6 @@ export class ElaborationModule {
 
 	async onload(): Promise<void> {
 		await this.store.init();
-
-		this.plugin.registerView(PROPOSAL_VIEW_TYPE, (leaf) => {
-			return new ProposalReviewView(leaf, {
-				onAccept: (id) => this.acceptProposal(id),
-				onReject: (id) => this.rejectProposal(id),
-				onDetail: (id) => this.showProposalDetail(id),
-			});
-		});
 
 		this.plugin.addCommand({
 			id: 'auto-notes:scan-vault',
@@ -55,12 +48,6 @@ export class ElaborationModule {
 					await this.scanNote(ctx.file);
 				}
 			},
-		});
-
-		this.plugin.addCommand({
-			id: 'auto-notes:review-proposals',
-			name: 'Open proposal review sidebar',
-			callback: () => this.activateProposalView(),
 		});
 
 		this.plugin.addCommand({
@@ -86,6 +73,11 @@ export class ElaborationModule {
 		if (this.scanInterval !== null) {
 			window.clearInterval(this.scanInterval);
 		}
+	}
+
+	/** Get all pending proposals (called by main.ts for the unified view). */
+	async getPendingProposals(): Promise<Proposal[]> {
+		return this.store.loadPending();
 	}
 
 	/**
@@ -154,19 +146,19 @@ export class ElaborationModule {
 			genOp.error(`Proposal generation failed — ${msg}`);
 			// Auto-reject proposals created before the error
 			await this.rejectProposalBatch(createdProposalIds);
-			await this.refreshProposalView();
+			await this.refreshView();
 			return 0;
 		}
 
 		if (genOp.cancelled) {
 			// Auto-reject all proposals created during this cancelled run
 			await this.rejectProposalBatch(createdProposalIds);
-			await this.refreshProposalView();
+			await this.refreshView();
 			return 0;
 		}
 
 		genOp.finish(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
-		await this.refreshProposalView();
+		await this.refreshView();
 		return proposalCount;
 	}
 
@@ -182,7 +174,7 @@ export class ElaborationModule {
 				const proposal = await this.proposer.generate(result);
 				await this.store.save(proposal);
 				op.finish('Proposal generated');
-				await this.refreshProposalView();
+				await this.refreshView();
 			} else {
 				op.finish('Note does not appear to be a stub');
 			}
@@ -207,17 +199,17 @@ export class ElaborationModule {
 
 		await this.store.updateStatus(id, 'accepted');
 		this.notifications.success('Proposal accepted');
-		await this.refreshProposalView();
+		await this.refreshView();
 		this.onProposalAccepted?.(proposal.sourceNotePath);
 	}
 
 	async rejectProposal(id: string): Promise<void> {
 		await this.store.updateStatus(id, 'rejected');
 		this.notifications.info('Proposal rejected');
-		await this.refreshProposalView();
+		await this.refreshView();
 	}
 
-	private async showProposalDetail(id: string): Promise<void> {
+	async showProposalDetail(id: string): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
 
@@ -237,7 +229,7 @@ export class ElaborationModule {
 				);
 				await this.store.updateStatus(id, 'accepted');
 				this.notifications.success('Proposal accepted');
-				await this.refreshProposalView();
+				await this.refreshView();
 				this.onProposalAccepted?.(proposal.sourceNotePath);
 			},
 			onReject: async () => {
@@ -253,7 +245,7 @@ export class ElaborationModule {
 			await this.store.delete(p.id);
 		}
 		this.notifications.info(`Cleared ${pending.length} proposals`);
-		await this.refreshProposalView();
+		await this.refreshView();
 	}
 
 	/** Reject a batch of proposals by id (used on cancellation/error) */
@@ -266,25 +258,7 @@ export class ElaborationModule {
 		}
 	}
 
-	async activateProposalView(): Promise<void> {
-		const { workspace } = this.plugin.app;
-		let leaf = workspace.getLeavesOfType(PROPOSAL_VIEW_TYPE)[0];
-		if (!leaf) {
-			const rightLeaf = workspace.getRightLeaf(false);
-			if (!rightLeaf) return;
-			leaf = rightLeaf;
-			await leaf.setViewState({ type: PROPOSAL_VIEW_TYPE, active: true });
-		}
-		workspace.revealLeaf(leaf);
-		await this.refreshProposalView();
-	}
-
-	private async refreshProposalView(): Promise<void> {
-		const leaves = this.plugin.app.workspace.getLeavesOfType(PROPOSAL_VIEW_TYPE);
-		for (const leaf of leaves) {
-			const view = leaf.view as ProposalReviewView;
-			const proposals = await this.store.loadPending();
-			view.setProposals(proposals);
-		}
+	private async refreshView(): Promise<void> {
+		await this.onViewRefreshNeeded?.();
 	}
 }

@@ -6,6 +6,11 @@ import { AudioModule } from './audio';
 import { VideoModule } from './video';
 import { EnrichmentModule } from './enrichment';
 import { NotificationManager } from './shared';
+import {
+	UNIFIED_VIEW_TYPE,
+	UnifiedProposalView,
+	UnifiedItem,
+} from './shared/unified-proposal-view';
 
 export default class AutoNotesPlugin extends Plugin {
 	settings!: AutoNotesSettings;
@@ -31,6 +36,23 @@ export default class AutoNotesPlugin extends Plugin {
 		this.audio = new AudioModule(this, getSettings, this.notifications);
 		this.video = new VideoModule(this, getSettings, this.audio, this.notifications);
 		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications);
+
+		// Register the unified proposal view
+		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
+			return new UnifiedProposalView(leaf, {
+				onElaborationAccept: (id) => this.elaboration.acceptProposal(id),
+				onElaborationReject: (id) => this.elaboration.rejectProposal(id),
+				onElaborationDetail: (id) => this.elaboration.showProposalDetail(id),
+				onEnrichmentAcceptAll: (id) => this.enrichment.acceptAllFromView(id),
+				onEnrichmentReject: (id) => this.enrichment.rejectFromView(id),
+				onEnrichmentDetail: (id) => this.enrichment.showDetailFromView(id),
+			});
+		});
+
+		// Wire refresh callback — both modules call this to update the shared view
+		const refreshView = () => this.refreshUnifiedView();
+		this.elaboration.onViewRefreshNeeded = refreshView;
+		this.enrichment.onViewRefreshNeeded = refreshView;
 
 		// Load enabled modules
 		if (this.settings.elaboration.enabled) {
@@ -59,17 +81,19 @@ export default class AutoNotesPlugin extends Plugin {
 			};
 		}
 
-		// Ribbon icons — delegate to module methods
-		this.addRibbonIcon('sparkles', 'Review elaboration proposals', () => {
-			this.elaboration.activateProposalView();
+		// Single ribbon icon + command for the unified view
+		this.addRibbonIcon('sparkles', 'Review proposals', () => {
+			this.activateUnifiedView();
 		});
 
 		this.addRibbonIcon('mic', 'Transcribe audio', () => {
 			this.audio.openTranscriptionModal();
 		});
 
-		this.addRibbonIcon('library', 'Review enrichment proposals', () => {
-			this.enrichment.activateView();
+		this.addCommand({
+			id: 'auto-notes:review-proposals',
+			name: 'Open proposal review sidebar',
+			callback: () => this.activateUnifiedView(),
 		});
 	}
 
@@ -89,6 +113,42 @@ export default class AutoNotesPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	private async activateUnifiedView(): Promise<void> {
+		const { workspace } = this.app;
+		let leaf = workspace.getLeavesOfType(UNIFIED_VIEW_TYPE)[0];
+		if (!leaf) {
+			const rightLeaf = workspace.getRightLeaf(false);
+			if (!rightLeaf) return;
+			leaf = rightLeaf;
+			await leaf.setViewState({ type: UNIFIED_VIEW_TYPE, active: true });
+		}
+		workspace.revealLeaf(leaf);
+		await this.refreshUnifiedView();
+	}
+
+	private async refreshUnifiedView(): Promise<void> {
+		const leaves = this.app.workspace.getLeavesOfType(UNIFIED_VIEW_TYPE);
+		if (leaves.length === 0) return;
+
+		// Gather items from both modules
+		const items: UnifiedItem[] = [];
+
+		const elaborationProposals = await this.elaboration.getPendingProposals();
+		for (const p of elaborationProposals) {
+			items.push({ kind: 'elaboration', data: p });
+		}
+
+		const enrichmentProposals = await this.enrichment.getPendingProposals();
+		for (const p of enrichmentProposals) {
+			items.push({ kind: 'enrichment', data: p });
+		}
+
+		for (const leaf of leaves) {
+			const view = leaf.view as UnifiedProposalView;
+			view.setItems(items);
+		}
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
