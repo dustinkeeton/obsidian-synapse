@@ -1,6 +1,6 @@
 import { Notice, Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { notifyError, sanitizeAIResponse } from '../shared';
+import { blockquoteOriginal, notifyError, sanitizeAIResponse } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalDetailModal } from './proposal-modal';
 import { ProposalStore } from './proposal-store';
@@ -133,7 +133,8 @@ export class ElaborationModule {
 
 		const content = await this.plugin.app.vault.read(file);
 		const sanitizedAdditions = sanitizeAIResponse(proposal.proposedAdditions);
-		const newContent = content + '\n\n' + sanitizedAdditions;
+		const quotedContent = blockquoteOriginal(content);
+		const newContent = quotedContent + '\n\n' + sanitizedAdditions;
 		await this.plugin.app.vault.modify(file, newContent);
 
 		await this.store.updateStatus(id, 'accepted');
@@ -160,9 +161,10 @@ export class ElaborationModule {
 
 				const content = await this.plugin.app.vault.read(file);
 				const sanitizedContent = sanitizeAIResponse(editedContent);
+				const quotedContent = blockquoteOriginal(content);
 				await this.plugin.app.vault.modify(
 					file,
-					content + '\n\n' + sanitizedContent
+					quotedContent + '\n\n' + sanitizedContent
 				);
 				await this.store.updateStatus(id, 'accepted');
 				new Notice('Auto Notes: Proposal accepted');

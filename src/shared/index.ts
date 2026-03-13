@@ -13,4 +13,5 @@ export {
 	sanitizePath,
 	ensureWithinVault,
 	sanitizeAIResponse,
+	blockquoteOriginal,
 } from './validation';
