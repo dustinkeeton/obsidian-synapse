@@ -4,9 +4,11 @@ import { AutoNotesSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule } from './video';
+import { NotificationManager } from './shared';
 
 export default class AutoNotesPlugin extends Plugin {
 	settings!: AutoNotesSettings;
+	notifications!: NotificationManager;
 
 	private elaboration!: ElaborationModule;
 	private audio!: AudioModule;
@@ -16,12 +18,16 @@ export default class AutoNotesPlugin extends Plugin {
 		await this.loadSettings();
 		this.addSettingTab(new AutoNotesSettingTab(this.app, this));
 
+		// Centralized notification manager
+		this.notifications = new NotificationManager();
+		this.notifications.setStatusBarEl(this.addStatusBarItem());
+
 		const getSettings = () => this.settings;
 
 		// Initialize modules (Audio before Video since Video depends on Audio)
-		this.elaboration = new ElaborationModule(this, getSettings);
-		this.audio = new AudioModule(this, getSettings);
-		this.video = new VideoModule(this, getSettings, this.audio);
+		this.elaboration = new ElaborationModule(this, getSettings, this.notifications);
+		this.audio = new AudioModule(this, getSettings, this.notifications);
+		this.video = new VideoModule(this, getSettings, this.audio, this.notifications);
 
 		// Load enabled modules
 		if (this.settings.elaboration.enabled) {
@@ -42,9 +48,6 @@ export default class AutoNotesPlugin extends Plugin {
 		this.addRibbonIcon('mic', 'Transcribe audio', () => {
 			this.audio.openTranscriptionModal();
 		});
-
-		// Status bar
-		this.addStatusBarItem().setText('Auto Notes: idle');
 	}
 
 	onunload(): void {

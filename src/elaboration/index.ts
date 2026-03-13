@@ -1,11 +1,12 @@
-import { Notice, Plugin, TFile } from 'obsidian';
+import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { blockquoteOriginal, notifyError, sanitizeAIResponse } from '../shared';
+import { blockquoteOriginal, NotificationManager, sanitizeAIResponse } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalDetailModal } from './proposal-modal';
 import { ProposalStore } from './proposal-store';
 import { PROPOSAL_VIEW_TYPE, ProposalReviewView } from './proposal-view';
 import { ProposalGenerator } from './proposer';
+import { DetectionResult } from './types';
 
 export { PROPOSAL_VIEW_TYPE } from './proposal-view';
 export type { DetectionReason, DetectionResult, Proposal } from './types';
@@ -18,7 +19,8 @@ export class ElaborationModule {
 
 	constructor(
 		private plugin: Plugin,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => AutoNotesSettings,
+		private notifications: NotificationManager
 	) {
 		this.detector = new PlaceholderDetector(plugin.app, getSettings);
 		this.proposer = new ProposalGenerator(plugin.app, getSettings);
@@ -66,7 +68,6 @@ export class ElaborationModule {
 
 		const settings = this.getSettings().elaboration;
 		if (settings.scanOnStartup) {
-			// Delay startup scan to let vault index
 			setTimeout(() => this.scanVault(), 5000);
 		}
 
@@ -84,43 +85,107 @@ export class ElaborationModule {
 		}
 	}
 
+	/**
+	 * Two-phase vault scan:
+	 * 1. Lightweight detection pass — identifies stub notes (no API calls)
+	 * 2. Confirmation snackbar — user decides whether to generate proposals
+	 * 3. Heavy proposal generation with cancellation support
+	 */
 	async scanVault(): Promise<number> {
-		try {
-			new Notice('Auto Notes: Scanning vault...');
-			const files = this.plugin.app.vault.getMarkdownFiles();
-			let proposalCount = 0;
+		// --- Phase 1: Detection (lightweight, local-only) ---
+		const scanOp = this.notifications.startOperation('Scanning vault', 'vault-scan');
+		const files = this.plugin.app.vault.getMarkdownFiles();
+		const detected: DetectionResult[] = [];
 
-			for (const file of files) {
-				const result = await this.detector.detect(file);
+		try {
+			for (let i = 0; i < files.length; i++) {
+				scanOp.progress(i + 1, files.length, 'Scanning vault');
+				const result = await this.detector.detect(files[i]);
 				if (result) {
-					const proposal = await this.proposer.generate(result);
-					await this.store.save(proposal);
-					proposalCount++;
+					detected.push(result);
 				}
 			}
-
-			new Notice(`Auto Notes: Found ${proposalCount} notes to elaborate`);
-			await this.refreshProposalView();
-			return proposalCount;
 		} catch (error) {
-			notifyError('Vault scan failed', error);
+			const msg = error instanceof Error ? error.message : String(error);
+			scanOp.error(`Vault scan failed — ${msg}`);
 			return 0;
 		}
+
+		scanOp.finish(`Found ${detected.length} stub notes`);
+
+		if (detected.length === 0) {
+			return 0;
+		}
+
+		// --- Phase 2: Confirmation ---
+		const proceed = await this.notifications.confirm(
+			`Found ${detected.length} stub note${detected.length === 1 ? '' : 's'}. Generate proposals?`,
+			{ proceedLabel: 'Generate', cancelLabel: 'Skip' }
+		);
+
+		if (!proceed) {
+			this.notifications.info('Scan skipped');
+			return 0;
+		}
+
+		// --- Phase 3: Proposal generation (heavy, cancellable) ---
+		const genOp = this.notifications.startOperation(
+			'Generating proposals',
+			'vault-generate'
+		);
+		const createdProposalIds: string[] = [];
+		let proposalCount = 0;
+
+		try {
+			for (let i = 0; i < detected.length; i++) {
+				if (genOp.cancelled) break;
+
+				genOp.progress(i + 1, detected.length, 'Generating proposals');
+				const proposal = await this.proposer.generate(detected[i]);
+				await this.store.save(proposal);
+				createdProposalIds.push(proposal.id);
+				proposalCount++;
+			}
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			genOp.error(`Proposal generation failed — ${msg}`);
+			// Auto-reject proposals created before the error
+			await this.rejectProposalBatch(createdProposalIds);
+			await this.refreshProposalView();
+			return 0;
+		}
+
+		if (genOp.cancelled) {
+			// Auto-reject all proposals created during this cancelled run
+			await this.rejectProposalBatch(createdProposalIds);
+			await this.refreshProposalView();
+			return 0;
+		}
+
+		genOp.finish(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		await this.refreshProposalView();
+		return proposalCount;
 	}
 
 	async scanNote(file: TFile): Promise<void> {
+		const op = this.notifications.startOperation(
+			`Scanning ${file.basename}`,
+			`scan-${file.path}`
+		);
 		try {
 			const result = await this.detector.detect(file);
 			if (result) {
+				op.update(`Generating proposal for ${file.basename}`);
 				const proposal = await this.proposer.generate(result);
 				await this.store.save(proposal);
-				new Notice('Auto Notes: Proposal generated');
+				op.finish('Proposal generated');
 				await this.refreshProposalView();
 			} else {
-				new Notice('Auto Notes: Note does not appear to be a stub');
+				op.finish('Note does not appear to be a stub');
 			}
 		} catch (error) {
-			notifyError('Note scan failed', error);
+			const msg = error instanceof Error ? error.message : String(error);
+			op.error(`Note scan failed — ${msg}`);
 		}
 	}
 
@@ -138,13 +203,13 @@ export class ElaborationModule {
 		await this.plugin.app.vault.modify(file, newContent);
 
 		await this.store.updateStatus(id, 'accepted');
-		new Notice('Auto Notes: Proposal accepted');
+		this.notifications.success('Proposal accepted');
 		await this.refreshProposalView();
 	}
 
 	async rejectProposal(id: string): Promise<void> {
 		await this.store.updateStatus(id, 'rejected');
-		new Notice('Auto Notes: Proposal rejected');
+		this.notifications.info('Proposal rejected');
 		await this.refreshProposalView();
 	}
 
@@ -167,7 +232,7 @@ export class ElaborationModule {
 					quotedContent + '\n\n' + sanitizedContent
 				);
 				await this.store.updateStatus(id, 'accepted');
-				new Notice('Auto Notes: Proposal accepted');
+				this.notifications.success('Proposal accepted');
 				await this.refreshProposalView();
 			},
 			onReject: async () => {
@@ -182,8 +247,18 @@ export class ElaborationModule {
 		for (const p of pending) {
 			await this.store.delete(p.id);
 		}
-		new Notice(`Auto Notes: Cleared ${pending.length} proposals`);
+		this.notifications.info(`Cleared ${pending.length} proposals`);
 		await this.refreshProposalView();
+	}
+
+	/** Reject a batch of proposals by id (used on cancellation/error) */
+	private async rejectProposalBatch(ids: string[]): Promise<void> {
+		for (const id of ids) {
+			await this.store.updateStatus(id, 'rejected');
+		}
+		if (ids.length > 0) {
+			this.notifications.info(`Auto-rejected ${ids.length} proposal${ids.length === 1 ? '' : 's'}`);
+		}
 	}
 
 	async activateProposalView(): Promise<void> {

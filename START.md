@@ -44,3 +44,7 @@ We just got some really good work done. nice job.
 A few refinements should be made the the transcribing video url feature set.
 - The transcription should be posted in the note that you are in, if there is one.
 - The UI flow for transcribing video should be the same as audio. You select the video files in the md file that you're in and the transcription is placed below the url.
+
+### Next
+
+This is starting to feel good, but it's hard to know when things are in flight. please work with the team to discuss and then implement a notification system that feels "reliable." It doesn't need to always be there, but when something has started, is in process, has extra information, has errored, or has finished I should know where to look. It should handle multiple simultaneous events in an elegant way. Some of this is already there but it's not all there. 

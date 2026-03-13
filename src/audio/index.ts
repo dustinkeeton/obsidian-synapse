@@ -1,6 +1,6 @@
-import { Notice, Plugin, TFile } from 'obsidian';
+import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { notifyError, writeNote } from '../shared';
+import { NotificationManager, writeNote } from '../shared';
 import { NoteAudioModal } from './note-audio-modal';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
@@ -20,7 +20,8 @@ export class AudioModule {
 
 	constructor(
 		private plugin: Plugin,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => AutoNotesSettings,
+		private notifications: NotificationManager
 	) {
 		this.transcriber = new Transcriber(getSettings);
 		this.postProcessor = new PostProcessor(getSettings);
@@ -75,7 +76,7 @@ export class AudioModule {
 			targetPath || this.buildOutputPath(result.sourceName, settings);
 
 		await writeNote(this.plugin.app, path, content);
-		new Notice(`Auto Notes: Transcription saved to ${path}`);
+		this.notifications.info(`Transcription saved to ${path}`);
 	}
 
 	openTranscriptionModal(): void {
@@ -83,13 +84,18 @@ export class AudioModule {
 			this.plugin.app,
 			this.getSettings,
 			async (file) => {
+				const op = this.notifications.startOperation(
+					`Transcribing ${file.name}...`,
+					`audio-${file.path}`
+				);
 				try {
-					new Notice('Auto Notes: Transcribing...');
 					const data = await this.plugin.app.vault.readBinary(file);
 					const result = await this.transcribe(data, file.name);
 					await this.saveTranscription(result);
+					op.finish(`Transcription of ${file.name} saved`);
 				} catch (error) {
-					notifyError('Transcription failed', error);
+					const msg = error instanceof Error ? error.message : String(error);
+					op.error(`Transcription failed — ${msg}`);
 				}
 			}
 		).open();
@@ -100,7 +106,7 @@ export class AudioModule {
 		const embeds = this.findAudioEmbeds(content, noteFile.path);
 
 		if (embeds.length === 0) {
-			new Notice('Auto Notes: No audio files found in this note');
+			this.notifications.info('No audio files found in this note');
 			return;
 		}
 
@@ -161,7 +167,10 @@ export class AudioModule {
 		const total = embeds.length;
 		let completed = 0;
 
-		new Notice(`Auto Notes: Transcribing ${total} file(s)...`);
+		const op = this.notifications.startOperation(
+			`Transcribing ${total} audio file(s)...`,
+			`audio-batch-${noteFile.path}`
+		);
 
 		// Process in reverse line order so insertions don't shift line numbers
 		const sorted = [...embeds].sort((a, b) => b.line - a.line);
@@ -169,12 +178,14 @@ export class AudioModule {
 		let content = await this.plugin.app.vault.read(noteFile);
 
 		for (let i = 0; i < sorted.length; i++) {
+			if (op.cancelled) break;
 			const embed = sorted[i];
 			// Delay between requests to avoid API rate limits
 			if (i > 0) {
 				await new Promise(resolve => setTimeout(resolve, 2000));
 			}
 			try {
+				op.progress(completed + 1, total, 'Transcribing audio');
 				const data = await this.plugin.app.vault.readBinary(embed.file);
 				const result = await this.transcribe(data, embed.fileName);
 				const text = result.processed || result.raw;
@@ -193,14 +204,18 @@ export class AudioModule {
 				content = lines.join('\n');
 
 				completed++;
-				new Notice(`Auto Notes: Transcribed ${completed}/${total}`);
 			} catch (error) {
-				notifyError(`Transcription failed for ${embed.fileName}`, error);
+				this.notifications.notifyError(`Transcription failed for ${embed.fileName}`, error);
 			}
 		}
 
-		await this.plugin.app.vault.modify(noteFile, content);
-		new Notice(`Auto Notes: Done — ${completed}/${total} transcriptions added`);
+		// Write whatever we completed, even if cancelled partway
+		if (completed > 0) {
+			await this.plugin.app.vault.modify(noteFile, content);
+		}
+		if (!op.cancelled) {
+			op.finish(`Done — ${completed}/${total} transcriptions added`);
+		}
 	}
 
 	private formatTranscription(result: TranscriptionResult): string {

@@ -1,7 +1,7 @@
-import { Notice, Plugin, TFile } from 'obsidian';
+import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { AudioModule, TranscriptionResult } from '../audio';
-import { ensureFolder, notifyError, sanitizeUrl, writeNote } from '../shared';
+import { ensureFolder, NotificationManager, sanitizeUrl, writeNote } from '../shared';
 import { AudioExtractor } from './audio-extractor';
 import { NoteVideoModal } from './note-video-modal';
 import { findVideoUrls } from './note-scanner';
@@ -26,7 +26,8 @@ export class VideoModule {
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
-		private audioModule: AudioModule
+		private audioModule: AudioModule,
+		private notifications: NotificationManager
 	) {
 		this.extractor = new AudioExtractor(getSettings);
 	}
@@ -57,8 +58,7 @@ export class VideoModule {
 			id: 'auto-notes:transcribe-video-file',
 			name: 'Transcribe local video file',
 			callback: () => {
-				// TODO: Implement file picker for video files
-				new Notice('Auto Notes: Video file transcription coming soon');
+				this.notifications.info('Video file transcription coming soon');
 			},
 		});
 
@@ -73,21 +73,24 @@ export class VideoModule {
 
 	async processUrl(
 		url: string,
-		options?: VideoProcessOptions
+		options?: VideoProcessOptions,
+		parentOp?: { update: (msg: string) => void }
 	): Promise<TranscriptionResult> {
 		// Validate URL before processing
 		const validatedUrl = sanitizeUrl(url);
 		const detected = detectPlatform(validatedUrl);
 		const platform = detected?.platform || 'unknown';
 
-		new Notice(`Auto Notes: Downloading ${platform} video...`);
+		const update = parentOp?.update ?? ((msg: string) => { /* no-op */ });
+
+		update(`Downloading ${platform} video...`);
 		const extraction = await this.extractor.extractFromUrl(validatedUrl);
 
-		new Notice('Auto Notes: Extracting audio...');
+		update('Extracting audio...');
 		const fs = require('fs') as typeof import('fs');
 		const audioData = fs.readFileSync(extraction.audioPath);
 
-		new Notice('Auto Notes: Transcribing...');
+		update('Transcribing...');
 		const result = await this.audioModule.transcribe(
 			audioData.buffer as ArrayBuffer,
 			extraction.metadata.title + '.mp3',
@@ -106,7 +109,7 @@ export class VideoModule {
 			const outputPath = options?.outputPath || this.buildOutputPath(extraction.metadata);
 			const content = this.formatVideoTranscription(result, extraction.metadata);
 			await writeNote(this.plugin.app, outputPath, content);
-			new Notice(`Auto Notes: Transcription saved to ${outputPath}`);
+			this.notifications.info(`Transcription saved to ${outputPath}`);
 		}
 
 		return result;
@@ -117,7 +120,7 @@ export class VideoModule {
 		const embeds = findVideoUrls(content);
 
 		if (embeds.length === 0) {
-			new Notice('Auto Notes: No video URLs found in this note');
+			this.notifications.info('No video URLs found in this note');
 			return;
 		}
 
@@ -137,7 +140,10 @@ export class VideoModule {
 		const total = embeds.length;
 		let completed = 0;
 
-		new Notice(`Auto Notes: Transcribing ${total} video(s)...`);
+		const op = this.notifications.startOperation(
+			`Transcribing ${total} video(s)...`,
+			`video-batch-${noteFile.path}`
+		);
 
 		// Process in reverse line order so insertions don't shift line numbers
 		const sorted = [...embeds].sort((a, b) => b.line - a.line);
@@ -145,12 +151,14 @@ export class VideoModule {
 		let content = await this.plugin.app.vault.read(noteFile);
 
 		for (let i = 0; i < sorted.length; i++) {
+			if (op.cancelled) break;
 			const embed = sorted[i];
 			if (i > 0) {
 				await new Promise(resolve => setTimeout(resolve, 2000));
 			}
 			try {
-				const result = await this.processUrl(embed.url, { insertMode: true });
+				op.progress(completed + 1, total, 'Transcribing video');
+				const result = await this.processUrl(embed.url, { insertMode: true }, op);
 				const text = result.processed || result.raw;
 
 				const lines = content.split('\n');
@@ -166,22 +174,31 @@ export class VideoModule {
 				content = lines.join('\n');
 
 				completed++;
-				new Notice(`Auto Notes: Transcribed ${completed}/${total}`);
 			} catch (error) {
-				notifyError(`Video transcription failed for ${embed.url}`, error);
+				this.notifications.notifyError(`Video transcription failed for ${embed.url}`, error);
 			}
 		}
 
-		await this.plugin.app.vault.modify(noteFile, content);
-		new Notice(`Auto Notes: Done — ${completed}/${total} video transcriptions added`);
+		if (completed > 0) {
+			await this.plugin.app.vault.modify(noteFile, content);
+		}
+		if (!op.cancelled) {
+			op.finish(`Done — ${completed}/${total} video transcriptions added`);
+		}
 	}
 
 	private openUrlModal(): void {
 		new VideoTranscriptionModal(this.plugin.app, async (url) => {
+			const op = this.notifications.startOperation(
+				'Processing video URL...',
+				`video-url-${Date.now()}`
+			);
 			try {
-				await this.processUrl(url);
+				await this.processUrl(url, undefined, op);
+				op.finish('Video transcription saved');
 			} catch (error) {
-				notifyError('Video transcription failed', error);
+				const msg = error instanceof Error ? error.message : String(error);
+				op.error(`Video transcription failed — ${msg}`);
 			}
 		}).open();
 	}
@@ -199,7 +216,8 @@ export class VideoModule {
 			if (!deps.ffmpeg) lines.push('  brew install ffmpeg');
 		}
 
-		new Notice(lines.join('\n'), deps.ytDlp && deps.ffmpeg ? 5000 : 15000);
+		const duration = deps.ytDlp && deps.ffmpeg ? 5000 : 15000;
+		this.notifications.info(lines.join('\n'), duration);
 	}
 
 	private formatVideoTranscription(
