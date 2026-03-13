@@ -48,3 +48,12 @@ A few refinements should be made the the transcribing video url feature set.
 ### Next
 
 This is starting to feel good, but it's hard to know when things are in flight. please work with the team to discuss and then implement a notification system that feels "reliable." It doesn't need to always be there, but when something has started, is in process, has extra information, has errored, or has finished I should know where to look. It should handle multiple simultaneous events in an elegant way. Some of this is already there but it's not all there. 
+
+### Next
+We should work on enrichment now. Whether or not to enrich automatically can be a plugin setting for the user, but it should default to true. "Enrich automatically" simply means that whenever another key process finishes (like elaborate, transcribe, etc), the note is given "enrichments." Use Obisdian to your maximum ability. Remember to ask the plugin-archtect about it. It should create tags, links to other documents, reference links to outside sources, attributes, etc.
+
+The algorithm for choosing what kind of tags should be weighted towards relevancy to the vault at large. Token relevancy with sibling files or those in sibling folders (recursively) should be given more weight than those in from distant folder structures. the weight system should be clear, finite, and easily adjustable. 
+
+You should be liberal with internal links, but stingy with external ones.
+
+This is a complex feature. Plan this out first. Spawn who you need from the team to discuss. After a plan is made, document it and then implement.
