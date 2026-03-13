@@ -2,7 +2,6 @@ import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { NotificationManager, parseFrontmatter } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
-import { EnrichmentDetailModal } from './enrichment-modal';
 import { EnrichmentStore } from './enrichment-store';
 import { LinkResolver } from './link-resolver';
 import { PromptBuilder } from './prompt-builder';
@@ -171,22 +170,9 @@ export class EnrichmentModule {
 		}
 	}
 
-	/** Accept all items in a proposal. Called from unified view. */
-	async acceptAllFromView(id: string): Promise<void> {
-		const proposal = await this.store.load(id);
-		if (!proposal) return;
-
-		const accepted: AcceptedItems = {
-			tags: proposal.result.tags.map(t => t.tag),
-			internalLinks: proposal.result.internalLinks.map(l => l.targetPath),
-			externalLinks: proposal.result.externalLinks.map(r => r.url),
-			frontmatter: proposal.result.frontmatter.map(f => f.key),
-		};
-
-		await this.applier.apply(proposal, accepted);
-		await this.store.updateStatus(id, 'accepted', accepted);
-		this.notifications.success('Enrichment applied');
-		await this.refreshView();
+	/** Accept selected items in a proposal. Called from unified view. */
+	async acceptSelectedFromView(id: string, accepted: AcceptedItems): Promise<void> {
+		await this.acceptSelected(id, accepted);
 	}
 
 	/** Reject a proposal. Called from unified view. */
@@ -194,18 +180,6 @@ export class EnrichmentModule {
 		await this.store.updateStatus(id, 'rejected');
 		this.notifications.info('Enrichment rejected');
 		await this.refreshView();
-	}
-
-	/** Show detail modal for a proposal. Called from unified view. */
-	async showDetailFromView(id: string): Promise<void> {
-		const proposal = await this.store.load(id);
-		if (!proposal) return;
-
-		const modal = new EnrichmentDetailModal(this.plugin.app, proposal, {
-			onAccept: (accepted) => this.acceptSelected(id, accepted),
-			onReject: () => this.rejectFromView(id),
-		});
-		modal.open();
 	}
 
 	private async acceptSelected(
