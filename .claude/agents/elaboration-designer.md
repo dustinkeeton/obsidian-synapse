@@ -3,6 +3,7 @@ name: elaboration-designer
 description: Note elaboration system designer. Specializes in placeholder detection, non-destructive proposal workflows, and AI-powered content expansion.
 skills:
   - note-elaboration
+  - tdd
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
 ---
 

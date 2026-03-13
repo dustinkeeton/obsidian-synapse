@@ -1,7 +1,7 @@
 # Project Status
 
 **Last updated**: 2026-03-12
-**Phase**: Architecture audited, security hardened, inline transcription added
+**Phase**: TDD infrastructure added, video transcription fixes deployed, security hardened
 
 ---
 
@@ -20,8 +20,8 @@
 | Audio -- inline note transcription | Yes | Yes | Yes | No | **Done** |
 | Audio -- transcription (local) | Yes | -- | -- | No | Not started |
 | Audio -- post-processing | Yes | Scaffold | Yes | No | Needs implementation |
-| Video -- URL detection | Yes | Scaffold | Yes | No | Needs implementation |
-| Video -- yt-dlp integration | Yes | Scaffold | Yes | No | Needs implementation |
+| Video -- URL detection | Yes | Yes | Yes | Yes | **Done** |
+| Video -- yt-dlp integration | Yes | Yes | Yes | No | **Done** |
 | Video -- transcription modal | Yes | Stub | -- | No | Needs implementation |
 | Video -- local file transcription | Yes | -- | -- | No | Not started |
 | Video -- frame extraction | Yes | -- | -- | No | Not started (stretch) |
@@ -29,6 +29,8 @@
 | Shared -- validation | Yes | Yes | Yes | No | **Done** |
 | Shared -- file utils (ensureFolder, writeNote) | Yes | Yes | -- | No | **Done** |
 | Shared -- barrel export (index.ts) | Yes | Yes | -- | No | **Done** |
+| Shared -- types (ChatMessage) | Yes | Yes | -- | No | **Done** |
+| Test infrastructure (Vitest, mocks, factories) | Yes | Yes | -- | -- | **Done** |
 
 ---
 
@@ -40,7 +42,9 @@
 - Ribbon icons and commands registered
 - Settings schema with deep merge on load
 - **Inline note transcription**: Scans current note for `![[audio.mp3]]` embeds, presents selection modal, inserts blockquote transcriptions below each embed
-- **Model selection**: Provider-specific dropdowns; Anthropic uses simplified names mapped to current API IDs (`claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`)
+- **Video URL detection**: YouTube (watch, short, Shorts) and TikTok (full, /t/ share, vm.tiktok.com, vt.tiktok.com) with 26 test cases
+- **Video audio extraction**: yt-dlp integration with PATH resolution for Electron, absolute temp paths via `os.tmpdir()`
+- **Model selection**: Provider-specific dropdowns; Anthropic uses simplified names mapped to current API IDs
 - **safeRequest wrapper**: API errors now include provider error messages instead of generic HTTP codes
 - **Vault cache miss handling**: `ensureFolder()` handles "already exists" race condition; `ProposalStore` uses adapter methods to bypass cache
 - **Whisper API key separation**: Dedicated `whisperApiKey` field with fallback to shared `ai.apiKey`
@@ -50,11 +54,10 @@
 - **Subprocess security**: `execFile` with argument arrays (no shell), 5-min timeout, 10MB buffer limit
 - **API key redaction** in error messages
 - **Request timeouts** on all external calls (5 minutes)
+- **Test infrastructure**: Vitest 4.x with Obsidian mocks, mock factories, co-located test files
 
 ## Known Issues / Architectural Notes
 
-- **No test framework**: No test runner configured
-- **AudioEmbed type in wrong file**: `AudioEmbed` interface is in `note-audio-modal.ts` instead of `types.ts` (violates types convention)
 - **Ribbon icons always visible**: Register unconditionally regardless of module enabled state; no `removeRibbonIcon` API
 - **Status bar is static**: Shows "Auto Notes: idle" permanently; not updated during operations
 - **Local Whisper**: `local-whisper` provider throws "not implemented"
@@ -63,25 +66,24 @@
 - **Platform filtering**: `supportedPlatforms` toggles defined but not enforced
 - **Proposal limits**: `maxProposalsPerNote` setting exists but is not enforced
 - **Append mode**: `output.appendToExisting` audio setting exists but is not used
+- **video.tempFolder setting**: Unused for audio extraction (replaced by `os.tmpdir()`)
 
 ## External Dependencies
 
 | Dependency | Required For | Status |
 |------------|-------------|--------|
-| yt-dlp | Video download | User must install separately |
-| ffmpeg | Audio extraction from video | User must install separately |
+| yt-dlp | Video download | User must install; PATH resolution covers common locations |
+| ffmpeg | Audio extraction from video | User must install; PATH resolution covers common locations |
 | OpenAI API key | Whisper transcription, GPT AI | User configures in settings |
 | Anthropic API key | Claude AI (elaboration) | User configures in settings |
 | Deepgram API key | Deepgram transcription (optional) | User configures if selected |
 
 ## Next Steps
 
-1. Implement core elaboration detection logic (scored heuristics)
-2. Implement proposal generation with AI integration
-3. Build proposal review sidebar UI
-4. Implement audio transcription pipeline end-to-end
-5. Implement video download and audio extraction pipeline
-6. Move `AudioEmbed` to `audio/types.ts`
-7. Make ribbon icons conditional on module enabled state
-8. Update status bar dynamically during operations
-9. Set up test framework
+1. Write tests for `shared/validation.ts` (pure functions, highest priority)
+2. Implement core elaboration detection logic (scored heuristics)
+3. Implement proposal generation with AI integration
+4. Build proposal review sidebar UI
+5. Implement audio transcription pipeline end-to-end
+6. Make ribbon icons conditional on module enabled state
+7. Update status bar dynamically during operations

@@ -27,7 +27,7 @@ export function notifyError(context: string, error: unknown): void {
 	const message = error instanceof Error ? error.message : String(error);
 	// Redact potential API keys/tokens from error messages shown to users
 	const redacted = message.replace(
-		/(?:sk-|key-|dg-|Bearer\s+|Token\s+)[A-Za-z0-9_-]{8,}/g,
+		/(?:sk-|key-|dg-|anthropic-|Bearer\s+|Token\s+)[A-Za-z0-9_-]{8,}/g,
 		'[REDACTED]'
 	);
 	new Notice(`Auto Notes: ${context} - ${redacted}`);

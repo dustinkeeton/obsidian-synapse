@@ -99,11 +99,14 @@ Downloads videos from YouTube or TikTok, extracts the audio, and transcribes it 
 **How it works**:
 1. Paste a video URL into the transcription modal
 2. The plugin detects the platform (YouTube or TikTok) and fetches metadata via yt-dlp
-3. yt-dlp downloads and extracts the audio track
+   - YouTube: standard watch URLs, short URLs (youtu.be), and Shorts URLs
+   - TikTok: full video URLs, share links (`/t/`), and short URLs (`vm.tiktok.com`, `vt.tiktok.com`)
+3. yt-dlp downloads and extracts the audio track to the OS temp directory
 4. The audio is handed off to the Audio module for transcription (same pipeline as above)
 5. The result is saved as a note in `Video Notes/` with frontmatter containing title, channel, duration, and source URL
+6. The temp audio file is cleaned up after transcription
 
-**Requires**: yt-dlp and ffmpeg installed on your system. Run `Auto Notes: Check dependencies` to verify.
+**Requires**: yt-dlp and ffmpeg installed on your system. Run `Auto Notes: Check dependencies` to verify. The plugin automatically searches common install locations (`/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin`) since Electron's default PATH is minimal.
 
 ---
 
@@ -354,15 +357,32 @@ src/
   main.ts              Plugin entry point and module orchestration
   settings.ts          Settings interfaces and defaults
   settings-tab.ts      Obsidian settings UI
+  __mocks__/
+    obsidian.ts        Centralized Obsidian mock (real TFile/TFolder classes, UI stubs)
+  __test-utils__/
+    setup.ts           Global test setup (vi.mock('obsidian'))
+    mock-factories.ts  mockFile(), createMockApp(), createMockPlugin(), makeSettings()
   elaboration/         Stub detection, proposal generation, review UI
+    types.ts           DetectionReason, Proposal, ProposalStatus interfaces
   audio/               Transcription pipeline, inline note transcription, post-processing
+    types.ts           TranscriptionResult, TimestampEntry, TranscribeOptions, AudioEmbed
     index.ts           AudioModule (orchestrator, commands, inline transcription logic)
-    note-audio-modal.ts  NoteAudioModal (embed selection UI), AudioEmbed interface
+    note-audio-modal.ts  NoteAudioModal (embed selection UI)
     transcription-modal.ts  File-picker modal for standalone transcription
     transcriber.ts     Provider-routed transcription (Whisper, Deepgram, local)
     post-processor.ts  AI-powered transcript cleanup
   video/               URL detection, yt-dlp/ffmpeg integration
-  shared/              AI client (with safeRequest wrapper), file utilities, validation, error handling
+    types.ts           Platform, UrlDetectionResult, VideoSource, ExtractionResult, VideoMetadata
+    url-detector.ts    Regex-based URL platform detection (YouTube + TikTok)
+    url-detector.test.ts  26 test cases covering all URL patterns
+    audio-extractor.ts AudioExtractor with PATH resolution and absolute temp paths
+  shared/
+    types.ts           ChatMessage (cross-module types)
+    ai-client.ts       Multi-provider AI client with safeRequest wrapper
+    file-utils.ts      Vault file operations (ensureFolder, writeNote)
+    api-utils.ts       Retry, sleep, notifyError with key redaction
+    validation.ts      URL, path, vault boundary, and AI output sanitization
+    index.ts           Barrel export for all shared utilities
 ```
 
 ### Key Patterns
@@ -371,3 +391,43 @@ src/
 - **`getSettings()` closure**: Modules call `getSettings()` to always get fresh settings — no event subscription needed.
 - **Zero runtime deps**: All API calls use `requestUrl` or `fetch`. External tools run as subprocesses. Don't add npm runtime dependencies.
 - **Conditional loading**: Modules are only loaded when their `enabled` setting is true. Disabled modules don't register commands or events.
+
+---
+
+## Test Infrastructure
+
+The project uses **Vitest 4.x** for testing, with a custom Obsidian mock layer that makes plugin code testable outside of the Electron environment.
+
+### How it works
+
+```
+vitest.config.ts              Config: globals on, node env, src/**/*.test.ts
+    |
+src/__test-utils__/setup.ts   Auto-mocks 'obsidian' module before each file
+    |
+src/__mocks__/obsidian.ts     Provides stubs for all Obsidian APIs
+    |
+src/__test-utils__/mock-factories.ts   Helpers for creating test fixtures
+```
+
+- **Obsidian mock**: Uses real class implementations for `TFile` and `TFolder` (so `instanceof` checks in production code work correctly in tests). UI classes (`Modal`, `Plugin`, `Setting`, `ItemView`, etc.) are stubs with spy functions.
+- **Mock factories**: `createMockApp()` provides a fresh `App` with spy vault/metadataCache/workspace. `createMockPlugin()` wraps it in a Plugin. `mockFile(path)` creates `TFile` instances. `makeSettings()` deep-merges overrides onto defaults.
+- **Co-located tests**: Test files live next to their source as `<name>.test.ts`. Currently `url-detector.test.ts` has 26 test cases covering YouTube and TikTok URL detection.
+
+### Running tests
+
+| Command | What it does |
+|---------|-------------|
+| `npm test` | Single run (CI mode) |
+| `npm run test:watch` | Watch mode (re-runs on file changes) |
+| `npm run test:coverage` | Single run with coverage report |
+
+### Test priority
+
+Tests are organized in three tiers, starting with what is easiest and most valuable to test:
+
+1. **Pure functions** (no mocking needed): URL detection, input validation, word count, settings shape
+2. **Units with injectable deps** (mock at boundary): detector, proposer, transcriber, AI client
+3. **Module orchestrators** (integration-level): elaboration pipeline, audio pipeline, video pipeline
+
+UI classes (modals, views, settings tab) and the plugin entry point (`main.ts`) are not unit tested. Testable logic should be extracted into pure functions.

@@ -4,6 +4,7 @@ description: Codebase architect. Maintains and communicates best practices for f
 skills:
   - codebase-architecture
   - obsidian-plugin-dev
+  - tdd
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 

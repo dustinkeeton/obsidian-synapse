@@ -1,14 +1,15 @@
 import { Notice, Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { notifyError, writeNote } from '../shared';
-import { AudioEmbed, NoteAudioModal } from './note-audio-modal';
+import { NoteAudioModal } from './note-audio-modal';
+import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
 import { Transcriber } from './transcriber';
 import { AudioTranscriptionModal } from './transcription-modal';
 import { TranscribeOptions, TranscriptionResult } from './types';
 
 export { AudioTranscriptionModal } from './transcription-modal';
-export type { TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
+export type { AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
 
 const AUDIO_EXTENSIONS = /\.(mp3|wav|m4a|ogg|flac|webm|aac)$/i;
 const AUDIO_EMBED_REGEX = /!\[\[([^\]]+\.(?:mp3|wav|m4a|ogg|flac|webm|aac))\]\]/gi;

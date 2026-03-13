@@ -55,11 +55,21 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 		if (this.plugin.settings.ai.provider === 'ollama') {
 			new Setting(containerEl)
 				.setName('Ollama Endpoint')
-				.setDesc('URL for local Ollama server')
+				.setDesc('URL for local Ollama server (HTTPS required for non-localhost)')
 				.addText((text) =>
 					text
 						.setValue(this.plugin.settings.ai.ollamaEndpoint)
 						.onChange(async (value) => {
+							// Validate endpoint URL before saving
+							try {
+								const parsed = new URL(value);
+								const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1' || parsed.hostname === '[::1]';
+								if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLocal)) {
+									return; // Silently reject; ai-client.ts will also enforce this at call time
+								}
+							} catch {
+								return; // Not a valid URL yet (user may still be typing)
+							}
 							this.plugin.settings.ai.ollamaEndpoint = value;
 							await this.plugin.saveSettings();
 						})

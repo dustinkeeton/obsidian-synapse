@@ -1,10 +1,5 @@
-import { App, Modal, Notice, Setting, TFile } from 'obsidian';
-
-export interface AudioEmbed {
-	fileName: string;
-	file: TFile;
-	line: number;
-}
+import { App, Modal, Notice, Setting } from 'obsidian';
+import { AudioEmbed } from './types';
 
 export class NoteAudioModal extends Modal {
 	private selected: Set<string>;

@@ -1,9 +1,13 @@
 import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
+import { ChatMessage } from './types';
 
-export interface ChatMessage {
-	role: 'system' | 'user' | 'assistant';
-	content: string;
+/** Redact API keys/tokens that may appear in API error response bodies. */
+function redactSecrets(text: string): string {
+	return text.replace(
+		/(?:sk-|key-|dg-|Bearer\s+|Token\s+|anthropic-)[A-Za-z0-9_-]{8,}/g,
+		'[REDACTED]'
+	);
 }
 
 async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse> {
@@ -17,7 +21,8 @@ async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse
 		} catch {
 			detail = response.text || `status ${response.status}`;
 		}
-		throw new Error(`API error (${response.status}): ${detail}`);
+		// Redact any API keys that the upstream API may echo back in error responses
+		throw new Error(`API error (${response.status}): ${redactSecrets(detail)}`);
 	}
 	return response;
 }
@@ -129,7 +134,7 @@ export class AIClient {
 		} catch {
 			throw new Error('Invalid Ollama endpoint URL');
 		}
-		const isLocalhost = endpointUrl.hostname === 'localhost' || endpointUrl.hostname === '127.0.0.1';
+		const isLocalhost = endpointUrl.hostname === 'localhost' || endpointUrl.hostname === '127.0.0.1' || endpointUrl.hostname === '::1' || endpointUrl.hostname === '[::1]';
 		if (endpointUrl.protocol !== 'https:' && !(endpointUrl.protocol === 'http:' && isLocalhost)) {
 			throw new Error('Ollama endpoint must use HTTPS (or HTTP for localhost only)');
 		}

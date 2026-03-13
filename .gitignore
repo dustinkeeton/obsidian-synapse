@@ -4,4 +4,9 @@ main.js
 dist/
 data.json
 .env
+.env.*
 .auto-notes/
+*.bak
+*.tmp
+.DS_Store
+coverage/
