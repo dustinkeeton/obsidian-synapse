@@ -40,15 +40,17 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('API Key')
 			.setDesc('API key for OpenAI or Anthropic')
-			.addText((text) =>
+			.addText((text) => {
 				text
 					.setPlaceholder('sk-...')
 					.setValue(this.plugin.settings.ai.apiKey)
 					.onChange(async (value) => {
 						this.plugin.settings.ai.apiKey = value;
 						await this.plugin.saveSettings();
-					})
-			);
+					});
+				text.inputEl.type = 'password';
+				text.inputEl.autocomplete = 'off';
+			});
 
 		if (this.plugin.settings.ai.provider === 'ollama') {
 			new Setting(containerEl)
@@ -203,34 +205,40 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 			this.plugin.settings.ai.provider !== 'openai'
 		) {
 			new Setting(containerEl)
-				.setName('OpenAI API Key (for Whisper)')
+				.setName('OpenAI API Key (Whisper)')
 				.setDesc(
-					'Your AI provider is not OpenAI, so a separate OpenAI key is needed for Whisper transcription'
+					'Whisper uses the OpenAI API. Provide your OpenAI key here since your AI provider is set to ' +
+					this.plugin.settings.ai.provider.charAt(0).toUpperCase() +
+					this.plugin.settings.ai.provider.slice(1) + '.'
 				)
-				.addText((text) =>
+				.addText((text) => {
 					text
 						.setPlaceholder('sk-...')
 						.setValue(this.plugin.settings.audio.whisperApiKey)
 						.onChange(async (value) => {
 							this.plugin.settings.audio.whisperApiKey = value;
 							await this.plugin.saveSettings();
-						})
-				);
+						});
+					text.inputEl.type = 'password';
+					text.inputEl.autocomplete = 'off';
+				});
 		}
 
 		if (this.plugin.settings.audio.transcriptionProvider === 'deepgram') {
 			new Setting(containerEl)
 				.setName('Deepgram API Key')
 				.setDesc('Required for Deepgram transcription provider')
-				.addText((text) =>
+				.addText((text) => {
 					text
 						.setPlaceholder('dg-...')
 						.setValue(this.plugin.settings.audio.deepgramApiKey)
 						.onChange(async (value) => {
 							this.plugin.settings.audio.deepgramApiKey = value;
 							await this.plugin.saveSettings();
-						})
-				);
+						});
+					text.inputEl.type = 'password';
+					text.inputEl.autocomplete = 'off';
+				});
 		}
 
 		new Setting(containerEl)

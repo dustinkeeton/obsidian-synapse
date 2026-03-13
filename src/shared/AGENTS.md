@@ -46,16 +46,33 @@ function sanitizeAIResponse(text: string): string
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `ai-client.ts` | `AIClient`, `ChatMessage` | Multi-provider AI completion (OpenAI, Anthropic, Ollama) |
+| `ai-client.ts` | `AIClient`, `ChatMessage`, `resolveModelId` (internal), `ANTHROPIC_MODEL_MAP` (internal) | Multi-provider AI completion with model ID resolution |
 | `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `wordCount` | Vault file operations with path normalization |
 | `api-utils.ts` | `withRetry`, `sleep`, `notifyError` | Retry with exponential backoff, error notification with key redaction |
 | `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse` | Input validation and output sanitization |
 | `index.ts` | re-exports all | Barrel file |
 
+## Model ID Resolution
+
+```ts
+// ai-client.ts (module-level)
+const ANTHROPIC_MODEL_MAP: Record<string, string> = {
+  opus: 'claude-opus-4-20250514',
+  sonnet: 'claude-sonnet-4-20250514',
+  haiku: 'claude-haiku-4-20250414',
+}
+
+function resolveModelId(provider: string, model: string): string
+// Returns ANTHROPIC_MODEL_MAP[model] for anthropic provider, otherwise pass-through.
+// Called in all three provider methods before sending API request.
+```
+
 ## AIClient Provider Routing
 
 ```
 AIClient.chat(messages)
+├── resolveModelId(provider, model) — maps simplified names to API IDs
+│
 ├── 'openai'    → POST https://api.openai.com/v1/chat/completions
 │                  Auth: Bearer {ai.apiKey}
 │                  Uses: requestUrl (Obsidian)

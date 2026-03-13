@@ -51,7 +51,7 @@ interface TranscribeOptions {
 | File | Class/Export | Purpose |
 |------|-------------|---------|
 | `types.ts` | `TranscriptionResult`, `TimestampEntry`, `TranscribeOptions` | Type definitions |
-| `transcriber.ts` | `Transcriber` | Provider-routed transcription (Whisper API, Deepgram, local) |
+| `transcriber.ts` | `Transcriber` | Provider-routed transcription (Whisper API, Deepgram, local); `getWhisperApiKey()` fallback logic |
 | `post-processor.ts` | `PostProcessor` | AI-powered transcript cleanup via `AIClient` |
 | `transcription-modal.ts` | `AudioTranscriptionModal` | File picker modal for vault audio files |
 | `index.ts` | `AudioModule` | Orchestrator, registers command |
@@ -65,8 +65,10 @@ interface TranscribeOptions {
    │
 3. Transcriber.transcribe(audioData, fileName)
    │  Routes by settings.audio.transcriptionProvider:
-   │  ├── 'whisper-api' → OpenAI /v1/audio/transcriptions (FormData + fetch)
-   │  ├── 'deepgram' → Deepgram /v1/listen (requestUrl)
+   │  ├── 'whisper-api' → OpenAI /v1/audio/transcriptions (FormData + fetch + AbortController 5min timeout)
+   │  │     Key resolution: getWhisperApiKey() → audio.whisperApiKey || ai.apiKey
+   │  ├── 'deepgram' → Deepgram /v1/listen (fetch + AbortController 5min timeout)
+   │  │     Guard: throws if deepgramApiKey is empty
    │  └── 'local-whisper' → not implemented (throws)
    │
 4. PostProcessor.process(rawTranscript)  [if postProcess !== false]
@@ -87,6 +89,7 @@ All under `settings.audio`:
 |-----|----------|
 | `enabled` | Module activation at startup |
 | `transcriptionProvider` | Which transcription backend to use |
+| `whisperApiKey` | Dedicated OpenAI key for Whisper (fallback: `ai.apiKey`) |
 | `deepgramApiKey` | API key for Deepgram provider |
 | `whisperModel` | Model name for Whisper API |
 | `localWhisperPath` | Path to local whisper binary (unused) |
@@ -103,8 +106,8 @@ All under `settings.audio`:
 ## Error Handling
 
 - `openTranscriptionModal` callback: catches errors, calls `notifyError()`
-- Whisper API uses `fetch` (not `requestUrl`) due to FormData requirement
-- Deepgram uses Obsidian `requestUrl`
+- Whisper API uses `fetch` (not `requestUrl`) due to FormData requirement, with AbortController timeout (5min)
+- Deepgram uses `fetch` with AbortController timeout (5min); throws if `deepgramApiKey` is empty
 - Local whisper throws `Error` with guidance to use other providers
 - Post-processed AI output sanitized via `sanitizeAIResponse()` (strips scripts, event handlers, dangerous URIs)
 

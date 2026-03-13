@@ -1,4 +1,3 @@
-import { requestUrl } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { TranscriptionResult } from './types';
 
@@ -101,6 +100,12 @@ export class Transcriber {
 		fileName: string
 	): Promise<TranscriptionResult> {
 		const settings = this.getSettings().audio;
+		if (!settings.deepgramApiKey) {
+			throw new Error(
+				'No Deepgram API key configured. ' +
+				'Set one in Audio Transcription settings.'
+			);
+		}
 		const params = new URLSearchParams({
 			punctuate: 'true',
 			paragraphs: 'true',
@@ -109,22 +114,37 @@ export class Transcriber {
 			params.set('language', settings.language);
 		}
 
-		const response = await requestUrl({
-			url: `https://api.deepgram.com/v1/listen?${params}`,
-			method: 'POST',
-			headers: {
-				Authorization: `Token ${settings.deepgramApiKey}`,
-				'Content-Type': 'audio/*',
-			},
-			body: audioData,
-		});
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 300_000);
 
-		const result = response.json.results.channels[0].alternatives[0];
-		return {
-			raw: result.transcript,
-			language: response.json.results.channels[0].detected_language,
-			sourceName: fileName,
-		};
+		try {
+			const response = await fetch(
+				`https://api.deepgram.com/v1/listen?${params}`,
+				{
+					method: 'POST',
+					headers: {
+						Authorization: `Token ${settings.deepgramApiKey}`,
+						'Content-Type': 'audio/*',
+					},
+					body: audioData,
+					signal: controller.signal,
+				}
+			);
+
+			if (!response.ok) {
+				throw new Error(`Deepgram API request failed (status ${response.status})`);
+			}
+
+			const data = await response.json();
+			const result = data.results.channels[0].alternatives[0];
+			return {
+				raw: result.transcript,
+				language: data.results.channels[0].detected_language,
+				sourceName: fileName,
+			};
+		} finally {
+			clearTimeout(timeoutId);
+		}
 	}
 
 	private async transcribeLocalWhisper(
