@@ -76,8 +76,11 @@ export class ProposalStore {
 	private proposalFileName(proposal: Proposal): string {
 		const baseName = proposal.sourceNotePath
 			.replace(/\.md$/, '')
-			.replace(/\//g, '-');
-		const shortId = proposal.id.slice(0, 8);
+			.replace(/\//g, '-')
+			// Strip null bytes and path traversal characters
+			.replace(/[\0]/g, '')
+			.replace(/\.\./g, '_');
+		const shortId = proposal.id.slice(0, 8).replace(/[^a-zA-Z0-9-]/g, '');
 		return `${baseName}-${shortId}.json`;
 	}
 

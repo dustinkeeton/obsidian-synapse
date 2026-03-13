@@ -17,3 +17,9 @@ export {
 	sanitizeAIResponse,
 	blockquoteOriginal,
 } from './validation';
+export {
+	parseFrontmatter,
+	serializeFrontmatter,
+	mergeTags,
+} from './frontmatter-utils';
+export type { ParsedNote } from './frontmatter-utils';
