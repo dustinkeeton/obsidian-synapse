@@ -2,7 +2,6 @@ import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { blockquoteOriginal, NotificationManager, sanitizeAIResponse } from '../shared';
 import { PlaceholderDetector } from './detector';
-import { ProposalDetailModal } from './proposal-modal';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator } from './proposer';
 import { DetectionResult, Proposal } from './types';
@@ -184,7 +183,11 @@ export class ElaborationModule {
 		}
 	}
 
-	async acceptProposal(id: string): Promise<void> {
+	/**
+	 * Accept a proposal, optionally with edited content from the review panel.
+	 * If editedContent is provided, it's used instead of the stored proposedAdditions.
+	 */
+	async acceptProposal(id: string, editedContent?: string): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
 
@@ -192,7 +195,8 @@ export class ElaborationModule {
 		if (!(file instanceof TFile)) return;
 
 		const content = await this.plugin.app.vault.read(file);
-		const sanitizedAdditions = sanitizeAIResponse(proposal.proposedAdditions);
+		const additions = editedContent ?? proposal.proposedAdditions;
+		const sanitizedAdditions = sanitizeAIResponse(additions);
 		const quotedContent = blockquoteOriginal(content);
 		const newContent = quotedContent + '\n\n' + sanitizedAdditions;
 		await this.plugin.app.vault.modify(file, newContent);
@@ -207,36 +211,6 @@ export class ElaborationModule {
 		await this.store.updateStatus(id, 'rejected');
 		this.notifications.info('Proposal rejected');
 		await this.refreshView();
-	}
-
-	async showProposalDetail(id: string): Promise<void> {
-		const proposal = await this.store.load(id);
-		if (!proposal) return;
-
-		const modal = new ProposalDetailModal(this.plugin.app, proposal, {
-			onAccept: async (editedContent) => {
-				const file = this.plugin.app.vault.getAbstractFileByPath(
-					proposal.sourceNotePath
-				);
-				if (!(file instanceof TFile)) return;
-
-				const content = await this.plugin.app.vault.read(file);
-				const sanitizedContent = sanitizeAIResponse(editedContent);
-				const quotedContent = blockquoteOriginal(content);
-				await this.plugin.app.vault.modify(
-					file,
-					quotedContent + '\n\n' + sanitizedContent
-				);
-				await this.store.updateStatus(id, 'accepted');
-				this.notifications.success('Proposal accepted');
-				await this.refreshView();
-				this.onProposalAccepted?.(proposal.sourceNotePath);
-			},
-			onReject: async () => {
-				await this.rejectProposal(id);
-			},
-		});
-		modal.open();
 	}
 
 	private async clearProposals(): Promise<void> {

@@ -40,12 +40,10 @@ export default class AutoNotesPlugin extends Plugin {
 		// Register the unified proposal view
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
 			return new UnifiedProposalView(leaf, {
-				onElaborationAccept: (id) => this.elaboration.acceptProposal(id),
+				onElaborationAccept: (id, content) => this.elaboration.acceptProposal(id, content),
 				onElaborationReject: (id) => this.elaboration.rejectProposal(id),
-				onElaborationDetail: (id) => this.elaboration.showProposalDetail(id),
-				onEnrichmentAcceptAll: (id) => this.enrichment.acceptAllFromView(id),
+				onEnrichmentAcceptSelected: (id, accepted) => this.enrichment.acceptSelectedFromView(id, accepted),
 				onEnrichmentReject: (id) => this.enrichment.rejectFromView(id),
-				onEnrichmentDetail: (id) => this.enrichment.showDetailFromView(id),
 			});
 		});
 
