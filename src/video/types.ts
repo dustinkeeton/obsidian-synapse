@@ -1,6 +1,14 @@
+export type Platform = 'youtube' | 'tiktok' | 'unknown';
+
+export interface UrlDetectionResult {
+	platform: Platform;
+	videoId: string;
+	url: string;
+}
+
 export interface VideoSource {
 	type: 'url' | 'file';
-	platform?: 'youtube' | 'tiktok' | 'unknown';
+	platform?: Platform;
 	url?: string;
 	filePath?: string;
 	title?: string;

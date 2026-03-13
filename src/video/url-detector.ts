@@ -1,15 +1,9 @@
+import { UrlDetectionResult } from './types';
+
 const YOUTUBE_REGEX =
 	/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]+)/;
 const TIKTOK_REGEX =
 	/tiktok\.com\/@[\w.-]+\/video\/(\d+)/;
-
-export type Platform = 'youtube' | 'tiktok' | 'unknown';
-
-export interface UrlDetectionResult {
-	platform: Platform;
-	videoId: string;
-	url: string;
-}
 
 export function detectPlatform(url: string): UrlDetectionResult | null {
 	const ytMatch = url.match(YOUTUBE_REGEX);

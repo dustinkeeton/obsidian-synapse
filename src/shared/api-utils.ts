@@ -25,6 +25,11 @@ export function sleep(ms: number): Promise<void> {
 
 export function notifyError(context: string, error: unknown): void {
 	const message = error instanceof Error ? error.message : String(error);
-	new Notice(`Auto Notes: ${context} - ${message}`);
-	console.error(`[Auto Notes] ${context}:`, error);
+	// Redact potential API keys/tokens from error messages shown to users
+	const redacted = message.replace(
+		/(?:sk-|key-|dg-|Bearer\s+|Token\s+)[A-Za-z0-9_-]{8,}/g,
+		'[REDACTED]'
+	);
+	new Notice(`Auto Notes: ${context} - ${redacted}`);
+	console.error(`[Auto Notes] ${context}:`, redacted);
 }

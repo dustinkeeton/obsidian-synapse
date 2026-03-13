@@ -1,11 +1,13 @@
 import { Notice, Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { notifyError } from '../shared/api-utils';
-import { writeNote } from '../shared/file-utils';
+import { notifyError, writeNote } from '../shared';
 import { PostProcessor } from './post-processor';
 import { Transcriber } from './transcriber';
 import { AudioTranscriptionModal } from './transcription-modal';
 import { TranscribeOptions, TranscriptionResult } from './types';
+
+export { AudioTranscriptionModal } from './transcription-modal';
+export type { TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
 
 export class AudioModule {
 	private transcriber: Transcriber;
@@ -61,7 +63,7 @@ export class AudioModule {
 		new Notice(`Auto Notes: Transcription saved to ${path}`);
 	}
 
-	private openTranscriptionModal(): void {
+	openTranscriptionModal(): void {
 		new AudioTranscriptionModal(
 			this.plugin.app,
 			this.getSettings,

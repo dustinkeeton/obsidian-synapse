@@ -1,5 +1,5 @@
 import { AutoNotesSettings } from '../settings';
-import { AIClient } from '../shared/ai-client';
+import { AIClient, sanitizeAIResponse } from '../shared';
 
 export class PostProcessor {
 	private aiClient: AIClient;
@@ -43,6 +43,7 @@ export class PostProcessor {
 			`Instructions:\n${instructions.map((i) => `- ${i}`).join('\n')}\n\n` +
 			`Raw transcript:\n${rawTranscript}`;
 
-		return this.aiClient.complete(prompt, systemPrompt);
+		const response = await this.aiClient.complete(prompt, systemPrompt);
+		return sanitizeAIResponse(response);
 	}
 }

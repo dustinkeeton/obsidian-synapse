@@ -1,4 +1,7 @@
 node_modules/
 main.js
+*.js.map
 dist/
 data.json
+.env
+.auto-notes/

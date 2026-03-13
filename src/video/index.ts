@@ -1,13 +1,21 @@
 import { Notice, Plugin } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { AudioModule } from '../audio';
-import { notifyError } from '../shared/api-utils';
-import { ensureFolder, writeNote } from '../shared/file-utils';
+import { AudioModule, TranscriptionResult } from '../audio';
+import { ensureFolder, notifyError, sanitizeUrl, writeNote } from '../shared';
 import { AudioExtractor } from './audio-extractor';
-import { TranscriptionResult } from '../audio/types';
 import { VideoMetadata, VideoProcessOptions } from './types';
 import { detectPlatform } from './url-detector';
 import { VideoTranscriptionModal } from './video-modal';
+
+export type {
+	ExtractionResult,
+	Platform,
+	UrlDetectionResult,
+	VideoMetadata,
+	VideoProcessOptions,
+	VideoSource,
+} from './types';
+export { detectPlatform, isSupportedUrl } from './url-detector';
 
 export class VideoModule {
 	private extractor: AudioExtractor;
@@ -54,11 +62,13 @@ export class VideoModule {
 		url: string,
 		options?: VideoProcessOptions
 	): Promise<TranscriptionResult> {
-		const detected = detectPlatform(url);
+		// Validate URL before processing
+		const validatedUrl = sanitizeUrl(url);
+		const detected = detectPlatform(validatedUrl);
 		const platform = detected?.platform || 'unknown';
 
 		new Notice(`Auto Notes: Downloading ${platform} video...`);
-		const extraction = await this.extractor.extractFromUrl(url);
+		const extraction = await this.extractor.extractFromUrl(validatedUrl);
 
 		new Notice('Auto Notes: Extracting audio...');
 		const fs = require('fs') as typeof import('fs');
