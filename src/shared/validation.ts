@@ -102,3 +102,41 @@ export function sanitizeAIResponse(text: string): string {
 
 	return sanitized;
 }
+
+/**
+ * Converts note body content into a blockquote with user-attribution.
+ * Preserves YAML frontmatter (if present) outside the blockquote.
+ */
+export function blockquoteOriginal(content: string): string {
+	let frontmatter = '';
+	let body = content;
+
+	// Separate frontmatter from body
+	if (content.startsWith('---')) {
+		const endIndex = content.indexOf('---', 3);
+		if (endIndex !== -1) {
+			const fmEnd = endIndex + 3;
+			frontmatter = content.slice(0, fmEnd);
+			body = content.slice(fmEnd);
+			// Trim leading newlines from body but keep frontmatter's trailing newline
+			body = body.replace(/^\n+/, '');
+		}
+	}
+
+	if (body.trim().length === 0) {
+		return content;
+	}
+
+	const quoted = body
+		.split('\n')
+		.map(line => `> ${line}`)
+		.join('\n');
+
+	const attribution = '> \n> — *Original note by author*';
+	const blockquote = quoted + '\n' + attribution;
+
+	if (frontmatter) {
+		return frontmatter + '\n\n' + blockquote;
+	}
+	return blockquote;
+}
