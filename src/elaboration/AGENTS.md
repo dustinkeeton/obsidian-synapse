@@ -53,38 +53,60 @@ interface Proposal {
 | File | Class/Export | Purpose |
 |------|-------------|---------|
 | `types.ts` | `DetectionReason`, `DetectionResult`, `Proposal` | Type definitions |
-| `detector.ts` | `PlaceholderDetector` | Scans notes for stub signals |
-| `proposer.ts` | `ProposalGenerator` | Generates elaboration content via AI |
+| `detector.ts` | `PlaceholderDetector` | Scans notes for stub signals (word count, TODO markers, empty sections, sparse links) |
+| `proposer.ts` | `ProposalGenerator` | Generates elaboration content via AIClient, gathers context from linked notes |
 | `proposal-store.ts` | `ProposalStore` | CRUD for proposal JSON files in vault |
-| `proposal-view.ts` | `ProposalReviewView`, `PROPOSAL_VIEW_TYPE` | Sidebar ItemView listing pending proposals |
+| `proposal-view.ts` | `ProposalReviewView`, `PROPOSAL_VIEW_TYPE` | Sidebar ItemView listing pending proposals grouped by source note |
 | `proposal-modal.ts` | `ProposalDetailModal` | Modal for viewing/editing a proposal before accept |
-| `index.ts` | `ElaborationModule` | Orchestrator, registers commands and view |
+| `index.ts` | `ElaborationModule` | Orchestrator, registers commands and view, manages scan intervals |
 
 ## Data Flow
 
 ```
 1. scanVault() / scanNote()
-   │
+   |
 2. PlaceholderDetector.detect(file)
-   │  Checks: word count, TODO markers, empty sections, sparse links
-   │  Respects: excludeFolders, excludeTags
-   │  Returns: DetectionResult | null
-   │
+   |  Checks: word count < minWordThreshold, TODO/TBD/FIXME/PLACEHOLDER markers,
+   |          headings with no content beneath, notes linked from many but sparse
+   |  Filters: excludeFolders (path prefix), excludeTags (frontmatter)
+   |  Strips frontmatter before analysis
+   |  Returns: DetectionResult | null
+   |
 3. ProposalGenerator.generate(detection)
-   │  Reads note content + context from linked notes (up to 5)
-   │  Calls AIClient.complete() with system prompt
-   │  Returns: Proposal (status: 'pending')
-   │
+   |  Reads note content via vault.adapter.read()
+   |  Gathers context from up to 5 linked notes (first 500 chars each)
+   |  Calls AIClient.complete() with system prompt
+   |  Sanitizes AI response via sanitizeAIResponse()
+   |  Returns: Proposal (status: 'pending', insertionPoint: 'append')
+   |
 4. ProposalStore.save(proposal)
-   │  Writes JSON to .auto-notes/proposals/{noteName}-{shortId}.json
-   │
-5. ProposalReviewView.setProposals() — refreshes sidebar
-   │
+   |  Writes JSON to {proposalFolderPath}/{noteName}-{shortId}.json
+   |
+5. ProposalReviewView.setProposals() -- refreshes sidebar
+   |
 6. User action:
-   ├── Accept → sanitizeAIResponse(proposedAdditions), appends to source note, status → 'accepted'
-   ├── View → ProposalDetailModal (editable textarea), sanitizeAIResponse on accept
-   └── Reject → status → 'rejected'
+   -- Accept -> sanitizeAIResponse(proposedAdditions), appends to source note, status -> 'accepted'
+   -- View -> ProposalDetailModal (editable textarea), sanitizeAIResponse on accept
+   -- Reject -> status -> 'rejected'
 ```
+
+## PlaceholderDetector Detection Rules
+
+| Rule | Setting | Logic |
+|------|---------|-------|
+| Short note | `detection.minWordThreshold` | `wordCount(body) < threshold` after stripping frontmatter |
+| TODO markers | `detection.detectTodoMarkers` | Regex match for `\bTODO\b`, `\bTBD\b`, `\bFIXME\b`, `\bPLACEHOLDER\b` (case-insensitive for PLACEHOLDER) |
+| Empty sections | `detection.detectEmptySections` | Heading followed by no content before next same-or-higher-level heading |
+| Sparse links | `detection.detectSparseLinks` | Inbound links from other notes AND word count below threshold |
+
+Exclusion checks run first: folder path prefix match, frontmatter tag match.
+
+## ProposalStore Storage
+
+- Location: `settings.elaboration.proposalFolderPath` (default: `.auto-notes/proposals`)
+- Format: JSON files named `{notePath-with-dashes}-{8-char-uuid}.json`
+- Operations: `save`, `load(id)`, `loadAll`, `loadPending`, `delete(id)`, `updateStatus(id, status)`
+- `init()` called on module load to ensure folder exists
 
 ## Settings Keys
 
@@ -102,8 +124,8 @@ All under `settings.elaboration`:
 | `detection.detectSparseLinks` | Flag notes linked from many but with sparse content |
 | `detection.excludeFolders` | Folder paths to skip |
 | `detection.excludeTags` | Frontmatter tags that suppress detection |
-| `proposal.maxProposalsPerNote` | Max proposals per note (not yet enforced) |
-| `proposal.preserveFrontmatter` | Preserve frontmatter when appending |
+| `proposal.maxProposalsPerNote` | Max proposals per note (not yet enforced in code) |
+| `proposal.preserveFrontmatter` | Preserve frontmatter when appending (not yet enforced in code) |
 | `proposal.includeSourceContext` | Gather linked note context for AI prompt |
 
 ## Error Handling
@@ -111,4 +133,4 @@ All under `settings.elaboration`:
 - `scanVault` / `scanNote`: catches all errors, calls `notifyError()` (Notice + console.error)
 - `ProposalStore.loadAll`: silently skips unparseable JSON files
 - `acceptProposal`: no-ops if proposal or source file not found
-- AI-generated content sanitized via `sanitizeAIResponse()` before writing to vault (strips scripts, event handlers, dangerous URIs)
+- AI-generated content sanitized via `sanitizeAIResponse()` before writing to vault

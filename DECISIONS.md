@@ -4,6 +4,125 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-12: TDD infrastructure with Vitest
+
+**Context**: The project had no test framework despite having testable pure functions (URL detection, input validation) and injectable dependencies (AIClient, Transcriber). The codebase was growing and needed automated regression coverage.
+
+**Decision**: Adopt Vitest 4.x as the test framework with the following infrastructure:
+- `vitest.config.ts` at project root with globals enabled, node environment, and `src/**/*.test.ts` include pattern
+- Centralized Obsidian mock at `src/__mocks__/obsidian.ts` with real class implementations for `TFile` and `TFolder` (so `instanceof` checks work in tests) and stubs for UI classes (`Modal`, `Plugin`, `Setting`, etc.)
+- Setup file at `src/__test-utils__/setup.ts` that calls `vi.mock('obsidian')` globally
+- Mock factories at `src/__test-utils__/mock-factories.ts` providing `mockFile()`, `createMockApp()`, `createMockPlugin()`, and `makeSettings()` helpers
+- Test files co-located with source as `<name>.test.ts`
+- Three npm scripts: `test` (single run), `test:watch`, `test:coverage`
+
+**Alternatives considered**:
+- Jest (heavier, slower startup, more configuration required for ESM/TypeScript)
+- No tests, rely on manual QA (unsustainable as features grow)
+- End-to-end tests with real Obsidian (fragile, slow, hard to automate)
+
+**Rationale**: Vitest is fast, has native TypeScript and ESM support, and integrates well with the esbuild-based build pipeline. The centralized Obsidian mock means every test file automatically gets stubs for all Obsidian APIs without per-file setup. Real `TFile`/`TFolder` class implementations (instead of plain objects) ensure `instanceof` checks in production code work correctly in tests. A three-tier test priority system focuses effort: pure functions first (no mocking), then units with injectable deps, then module orchestrators.
+
+**Impact**: Tests can be run with `npm test`. The first test suite covers URL detection (26 test cases). The mock infrastructure is ready for testing validation, AI client, transcriber, and detection modules. The TDD skill (`/tdd`) guides the Red-Green-Refactor workflow for new features.
+
+---
+
+## 2026-03-12: TikTok short URL support in URL detection
+
+**Context**: TikTok share links from the mobile app use shortened URL formats (`tiktok.com/t/...`, `vm.tiktok.com/...`, `vt.tiktok.com/...`) instead of the full `tiktok.com/@user/video/ID` format. Users pasting these URLs into the video transcription modal got "unsupported URL" errors.
+
+**Decision**: Add two regex patterns for TikTok URL detection: the existing `TIKTOK_VIDEO_REGEX` for full URLs (extracts numeric video ID), and a new `TIKTOK_SHORT_REGEX` for shortened/share URLs. Short URLs return `videoId: 'short-url'` as a sentinel value since the actual video ID is only available after yt-dlp resolves the redirect.
+
+**Alternatives considered**:
+- Resolve the short URL redirect before detection (adds latency, requires HTTP request during URL validation)
+- Only support full TikTok URLs (breaks the most common share format from TikTok mobile)
+- Use a single permissive regex (too broad, could match non-video TikTok pages)
+
+**Rationale**: yt-dlp handles redirect resolution internally, so the plugin does not need to know the real video ID at detection time. The sentinel value `'short-url'` makes it clear downstream that this is a redirect-based URL. Three short URL patterns cover: `/t/` path shares, `vm.tiktok.com` legacy shares, and `vt.tiktok.com` regional shares. All patterns are covered by tests in `url-detector.test.ts`.
+
+**Impact**: Users can paste any TikTok share link format. The URL detector now matches 5 TikTok URL patterns (full video + 3 short formats + username variants). Test coverage confirms all patterns.
+
+---
+
+## 2026-03-12: PATH resolution for Electron environment
+
+**Context**: Obsidian runs inside Electron, which launches with a minimal `PATH` that typically only includes `/usr/bin` and `/bin`. User-installed tools like yt-dlp and ffmpeg (commonly installed via Homebrew at `/opt/homebrew/bin` or `/usr/local/bin`) were not found when configured with bare command names (e.g., `yt-dlp` instead of `/opt/homebrew/bin/yt-dlp`).
+
+**Decision**: Add a `shellEnv()` function in `audio-extractor.ts` that prepends common tool installation directories (`/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin`) to the process `PATH` before executing subprocesses. Only directories not already in `PATH` are added.
+
+**Alternatives considered**:
+- Require users to always set absolute paths in settings (poor UX, most users expect bare command names to work)
+- Use `shell: true` in `execFile` to inherit the user's shell PATH (reintroduces shell injection risk)
+- Read the user's shell profile to get their PATH (complex, unreliable across shells)
+- Use a library like `shell-env` (adds a runtime dependency)
+
+**Rationale**: Prepending known directories is simple and covers the vast majority of installations. Homebrew paths are prepended (not appended) so that Homebrew-installed tools with proper Python dependencies take priority over system versions. The approach avoids shell invocation, preserving the security of `execFile`.
+
+**Impact**: yt-dlp and ffmpeg are found automatically on most macOS and Linux systems when installed via Homebrew, MacPorts, or pip (`~/.local/bin`). Users no longer need to configure absolute paths unless they have non-standard installations.
+
+---
+
+## 2026-03-12: Absolute temp paths for yt-dlp audio extraction
+
+**Context**: The `AudioExtractor` was using `settings.video.tempFolder` (defaulting to `.auto-notes/temp`, a vault-relative path) as the output directory for yt-dlp downloads. yt-dlp requires a real filesystem path, not a vault-relative one, and the vault-relative path would fail or place files in an unexpected location depending on the working directory of the Electron process.
+
+**Decision**: Use `os.tmpdir()` (the OS temporary directory) for all yt-dlp audio extraction output paths instead of the vault-relative temp folder. Output files are named `auto-notes-audio-{timestamp}.mp3` to avoid collisions.
+
+**Alternatives considered**:
+- Resolve the vault-relative path to an absolute path (requires knowing the vault's filesystem path, which varies)
+- Use the vault adapter's write methods (yt-dlp writes directly to disk, not through the vault API)
+- Create a temp directory inside the vault (clutters the vault with non-note files)
+
+**Rationale**: `os.tmpdir()` provides a guaranteed-writable, absolute filesystem path on every platform. The OS handles cleanup of old temp files. Using timestamps in filenames prevents collisions when multiple transcriptions run in parallel. The temp file is deleted after transcription completes (with error swallowing on cleanup failure).
+
+**Impact**: Video transcription works regardless of the Electron process working directory. The `video.tempFolder` setting is now effectively unused for audio extraction (it remains in settings for potential future use with frame extraction).
+
+---
+
+## 2026-03-12: Type relocations from architect audit
+
+**Context**: The architect audit identified type definitions that were defined inline in implementation files rather than in dedicated `types.ts` files, violating the project convention that each module has its own `types.ts` for interfaces and type aliases.
+
+**Decision**: Relocate types to their proper locations:
+- `AudioEmbed` interface: moved from `note-audio-modal.ts` to `audio/types.ts`
+- `ChatMessage` interface: placed in `shared/types.ts` (new file) and re-exported through `shared/index.ts`
+- Video types (`Platform`, `UrlDetectionResult`, `VideoSource`, `VideoProcessOptions`, `ExtractionResult`, `VideoMetadata`): consolidated in `video/types.ts`
+
+**Alternatives considered**:
+- Leave types where they are (inconsistent, harder to discover)
+- Put all types in a single root-level `types.ts` (breaks module encapsulation)
+
+**Rationale**: Consistent type locations make types discoverable and importable without reaching into implementation files. The `shared/types.ts` file establishes a pattern for cross-module types. Each feature module now has its own self-contained type definitions.
+
+**Impact**: Import paths changed for `AudioEmbed` (now from `./types` instead of inline in `note-audio-modal.ts`). `ChatMessage` is available through the shared barrel export. No runtime behavior changes.
+
+---
+
+## 2026-03-12: Security hardening from security audit
+
+**Context**: A security audit reviewed the plugin for input validation gaps, output sanitization, credential handling, and subprocess security. Several hardening measures were recommended and implemented.
+
+**Decision**: Implement a comprehensive security layer including:
+- `shared/validation.ts` with `sanitizeUrl()`, `sanitizePath()`, `ensureWithinVault()`, `sanitizeAIResponse()`
+- Switch from `exec` to `execFile` for all subprocess calls (no shell invocation)
+- `safeRequest()` wrapper for `requestUrl` with error body extraction and key redaction
+- Password masking on all API key input fields
+- Ollama endpoint protocol validation (HTTPS required, HTTP only for localhost)
+- `notifyError()` with API key redaction patterns
+- 5-minute timeouts on all external calls (fetch with AbortController, execFile timeout)
+- 10MB buffer limit on subprocess output
+
+**Alternatives considered**:
+- Minimal hardening (validate only user-visible inputs)
+- Third-party security libraries (adds runtime dependencies)
+- No output sanitization (assumes AI providers return safe content)
+
+**Rationale**: Defense-in-depth: multiple independent layers of protection ensure that a bypass in one layer does not compromise the system. `execFile` prevents shell injection by design. Input validation catches malicious URLs and paths before they reach external tools. Output sanitization prevents XSS from AI-generated content. Key redaction prevents accidental credential exposure in logs and error notifications.
+
+**Impact**: All external interactions are validated and sanitized. Security is centralized in `shared/validation.ts` and `shared/api-utils.ts` for easy auditing. No user-facing behavior changes except masked API key fields and more descriptive error messages.
+
+---
+
 ## 2026-03-12: Inline note audio transcription with in-place insertion
 
 **Context**: Users often embed audio recordings directly in their notes (e.g., `![[meeting-recording.mp3]]`). The existing audio transcription workflow required opening a file-picker modal, selecting a file, and saving the transcription as a separate note -- disconnected from the note where the audio was referenced.

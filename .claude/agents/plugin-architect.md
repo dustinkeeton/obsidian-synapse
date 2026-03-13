@@ -3,6 +3,7 @@ name: plugin-architect
 description: Obsidian plugin architecture specialist. Designs plugin structure, settings, commands, UI components, and build configuration.
 skills:
   - obsidian-plugin-dev
+  - tdd
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
 ---
 

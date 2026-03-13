@@ -2,7 +2,7 @@
 last-updated: 2026-03-12
 ---
 
-# Auto Notes — Agent Documentation
+# Auto Notes -- Agent Documentation
 
 Obsidian plugin providing AI-powered note elaboration, audio transcription, and video transcription.
 
@@ -14,9 +14,9 @@ Obsidian plugin providing AI-powered note elaboration, audio transcription, and 
 | `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | `src/settings-tab.ts` | Obsidian settings UI | `AutoNotesSettingTab` |
 | `src/elaboration/` | Stub note detection and proposal generation | `ElaborationModule`, `PROPOSAL_VIEW_TYPE`, types |
-| `src/audio/` | Audio transcription pipeline (file + inline note embeds) | `AudioModule`, `AudioTranscriptionModal`, `NoteAudioModal`, `AudioEmbed`, types |
-| `src/video/` | Video download, audio extraction, transcription | `VideoModule`, types, `detectPlatform`, `isSupportedUrl` |
-| `src/shared/` | AI client (with model ID resolution), file utils, API helpers, validation | `AIClient`, `writeNote`, `readNote`, `ensureFolder`, `withRetry`, `notifyError`, `wordCount`, `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse` |
+| `src/audio/` | Audio transcription pipeline (file + inline note embeds) | `AudioModule`, `AudioTranscriptionModal`, types |
+| `src/video/` | Video download, audio extraction, transcription | `VideoModule`, `detectPlatform`, `isSupportedUrl`, types |
+| `src/shared/` | AI client, file utils, API helpers, validation | `AIClient`, `writeNote`, `ensureFolder`, `sanitizeUrl`, `sanitizePath`, `sanitizeAIResponse`, `notifyError`, `withRetry`, `wordCount` |
 
 ## Dependency Graph
 
@@ -35,23 +35,18 @@ main.ts
 │   ├── shared/api-utils.ts (notifyError)
 │   └── shared/validation.ts (sanitizeAIResponse)
 └── video/
-    ├── audio/ (AudioModule — video delegates transcription to audio)
+    ├── audio/ (AudioModule -- video delegates transcription to audio)
     ├── shared/file-utils.ts (ensureFolder, writeNote)
     ├── shared/api-utils.ts (notifyError)
     └── shared/validation.ts (sanitizeUrl, sanitizePath)
 ```
 
-Key constraint: Video depends on Audio. Audio is initialized at `main.ts:L23`, Video at `main.ts:L24`.
+Key constraint: Video depends on Audio. Audio initialized at `main.ts:L23`, Video at `main.ts:L24`.
 
 ## Settings Schema
 
-```ts
+```typescript
 type AIProvider = 'openai' | 'anthropic' | 'ollama'
-
-const MODEL_OPTIONS: Record<AIProvider, Record<string, string>>
-// openai:    gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini
-// anthropic: opus (Claude Opus), sonnet (Claude Sonnet), haiku (Claude Haiku)
-// ollama:    llama3, mistral, codellama, gemma
 
 interface AutoNotesSettings {
   ai: AISettings;
@@ -73,6 +68,14 @@ interface AutoNotesSettings {
 | `temperature` | `number` | `0.7` |
 
 Note: `model` stores simplified names (e.g. `'opus'`). `AIClient` resolves these to full API IDs via `resolveModelId()` (e.g. `'opus'` -> `'claude-opus-4-6'`).
+
+Model options per provider:
+
+| Provider | Models |
+|----------|--------|
+| openai | gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini |
+| anthropic | opus (Claude Opus), sonnet (Claude Sonnet), haiku (Claude Haiku) |
+| ollama | llama3, mistral, codellama, gemma |
 
 ### elaboration
 
@@ -157,11 +160,47 @@ Note: `model` stores simplified names (e.g. `'opus'`). `AIClient` resolves these
 |-----------|-------|----------|
 | `auto-notes-proposal-review` | `ProposalReviewView` | Right sidebar leaf |
 
-## Build Commands
+## Build and Test
 
 ```sh
-npm run dev          # Development build (esbuild watch)
-npm run build        # Production build (tsc check + esbuild)
+npm run dev            # Development build (esbuild watch)
+npm run build          # Production build (tsc -noEmit -skipLibCheck + esbuild)
+npm test               # vitest run (single pass)
+npm run test:watch     # vitest (watch mode)
+npm run test:coverage  # vitest run --coverage
 ```
 
-No test framework configured.
+Output: `main.js` (single bundle, loaded by Obsidian)
+
+## Test Infrastructure
+
+| Component | Path |
+|-----------|------|
+| Config | `vitest.config.ts` |
+| Setup file | `src/__test-utils__/setup.ts` |
+| Obsidian mock | `src/__mocks__/obsidian.ts` |
+| Mock factories | `src/__test-utils__/mock-factories.ts` |
+| Test files | `src/**/*.test.ts` |
+| Existing tests | `src/video/url-detector.test.ts` |
+
+- Framework: Vitest 4.x, globals enabled, node environment
+- `vi.mock('obsidian')` auto-resolves to `src/__mocks__/obsidian.ts` via setup file
+- Mock factories: `mockFile(path)`, `createMockApp()`, `createMockPlugin()`, `makeSettings(defaults, overrides?)`
+- Obsidian mock provides real classes for `TFile`, `TFolder` (instanceof checks work), stubs for `Plugin`, `Modal`, `Setting`, `ItemView`, `Notice`, `PluginSettingTab`, `WorkspaceLeaf`
+
+## External Dependencies (Runtime)
+
+No npm runtime dependencies. Uses:
+- `obsidian` API (`requestUrl` for HTTP, vault API for files)
+- `child_process.execFile` for `yt-dlp` and `ffmpeg` (Electron environment)
+- `fetch` for Whisper API and Deepgram API calls (FormData requirement)
+
+## Security Notes
+
+- All URLs validated via `sanitizeUrl()` before passing to external tools
+- All file paths validated via `sanitizePath()` (rejects `..`, null bytes, shell metacharacters)
+- AI responses sanitized via `sanitizeAIResponse()` before writing to vault
+- API keys redacted from error messages via `redactSecrets()` in `ai-client.ts` and `notifyError()` in `api-utils.ts`
+- Ollama endpoint enforces HTTPS (HTTP allowed only for localhost)
+- External commands use `execFile` with argument arrays (not `exec`) to prevent shell injection
+- API key fields in settings UI use `type='password'` and `autocomplete='off'`

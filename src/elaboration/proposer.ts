@@ -1,6 +1,6 @@
 import { App } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { AIClient } from '../shared';
+import { AIClient, sanitizeAIResponse } from '../shared';
 import { DetectionResult, Proposal } from './types';
 
 export class ProposalGenerator {
@@ -25,7 +25,8 @@ export class ProposalGenerator {
 		const prompt = this.buildPrompt(content, detection, contextNotes);
 		const systemPrompt = `You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format.`;
 
-		const proposedAdditions = await this.aiClient.complete(prompt, systemPrompt);
+		const rawAdditions = await this.aiClient.complete(prompt, systemPrompt);
+		const proposedAdditions = sanitizeAIResponse(rawAdditions);
 
 		return {
 			id: this.generateId(),

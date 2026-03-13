@@ -3,6 +3,7 @@ name: transcription-engineer
 description: Media transcription pipeline engineer. Specializes in audio/video transcription, URL-based media fetching (YouTube, TikTok), and post-processing for readability.
 skills:
   - media-transcription
+  - tdd
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
 ---
 

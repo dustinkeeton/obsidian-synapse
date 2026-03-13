@@ -1,3 +1,5 @@
+import { TFile } from 'obsidian';
+
 export interface TranscriptionResult {
 	raw: string;
 	processed?: string;
@@ -17,4 +19,10 @@ export interface TranscribeOptions {
 	language?: string;
 	postProcess?: boolean;
 	sourceName?: string;
+}
+
+export interface AudioEmbed {
+	fileName: string;
+	file: TFile;
+	line: number;
 }
