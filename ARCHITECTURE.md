@@ -163,26 +163,153 @@ All settings have sensible defaults. The minimum setup is providing an API key f
 
 ---
 
-## Getting Started for Contributors
+## Development Setup
+
+A step-by-step guide to get Auto Notes running locally for development. No prior Obsidian plugin development experience required.
 
 ### Prerequisites
 
-- Node.js (for building)
-- An Obsidian vault for testing (recommend a dedicated dev vault)
-- yt-dlp and ffmpeg (for video features)
+Install these before starting:
 
-### Build and Run
+| Tool | Version | Why you need it |
+|------|---------|-----------------|
+| **Node.js** | 18+ | Builds the plugin (esbuild + TypeScript) |
+| **npm** | Comes with Node.js | Installs dependencies |
+| **Obsidian** | Desktop app, 0.15.0+ | The app the plugin runs inside |
+| **yt-dlp** | Latest | Only needed for video transcription features |
+| **ffmpeg** | Latest | Only needed for video transcription features |
+
+### Step 1: Create a Development Vault
+
+You want a separate vault for development so you don't risk your real notes.
+
+1. Open Obsidian
+2. Click "Create new vault"
+3. Name it something like `dev-vault` and pick any location (e.g., `~/dev-vault`)
+4. Once the vault opens, go to **Settings** (gear icon, bottom left) then **Community plugins**
+5. Click "Turn on community plugins" if prompted -- this is required for third-party plugins to load
+
+### Step 2: Clone the Repo into the Vault's Plugin Directory
+
+Obsidian loads plugins from a specific folder inside each vault. You need to put this project there.
 
 ```sh
-# Install dev dependencies
+# Navigate to your vault's plugin directory (create it if it doesn't exist)
+mkdir -p ~/dev-vault/.obsidian/plugins
+
+# Clone the repo with the correct folder name
+cd ~/dev-vault/.obsidian/plugins
+git clone <repo-url> auto-notes
+```
+
+The folder name `auto-notes` must match the `id` field in `manifest.json`.
+
+**Alternative -- symlink approach** (if you want the repo to live somewhere else):
+
+```sh
+# Keep the repo wherever you like
+cd ~/dev
+git clone <repo-url> obsidian-auto-notes
+
+# Symlink it into the vault's plugin directory
+mkdir -p ~/dev-vault/.obsidian/plugins
+ln -s ~/dev/obsidian-auto-notes ~/dev-vault/.obsidian/plugins/auto-notes
+```
+
+### Step 3: Install Dependencies
+
+```sh
+cd ~/dev-vault/.obsidian/plugins/auto-notes   # or wherever the repo lives
 npm install
+```
 
-# Development build with watch mode
+This installs dev-only dependencies (esbuild, TypeScript, Obsidian type definitions). There are no runtime npm dependencies -- this is intentional.
+
+### Step 4: Build the Plugin
+
+**Watch mode (recommended for development):**
+
+```sh
 npm run dev
+```
 
-# Production build (includes TypeScript type checking)
+This starts esbuild in watch mode. Every time you save a `.ts` file, it rebuilds `main.js` automatically. The terminal will stay open -- leave it running while you work.
+
+**Production build:**
+
+```sh
 npm run build
 ```
+
+This runs TypeScript type checking first (`tsc -noEmit`), then builds with esbuild. Use this before committing to catch type errors.
+
+Both commands produce `main.js` in the project root. Obsidian loads this file along with `manifest.json` when the plugin starts.
+
+### Step 5: Enable the Plugin in Obsidian
+
+1. Open your dev vault in Obsidian
+2. Go to **Settings** (gear icon) then **Community plugins**
+3. You should see "Auto Notes" in the list of installed plugins
+4. Toggle it **on**
+
+If you don't see it in the list, make sure you ran `npm run dev` (or `npm run build`) first -- Obsidian needs the `main.js` file to exist before it recognizes the plugin.
+
+### Step 6: Reload After Changes
+
+When esbuild rebuilds `main.js`, Obsidian does not pick up changes automatically. You need to reload.
+
+**Option A -- Reload the window:**
+
+- Press `Ctrl+R` (Windows/Linux) or `Cmd+R` (macOS) to reload the entire Obsidian window
+- This picks up the rebuilt `main.js` immediately
+
+**Option B -- Toggle the plugin:**
+
+- **Settings** then **Community plugins** then toggle Auto Notes off and back on
+- Useful if you only want to reload this plugin without refreshing the whole window
+
+### Step 7: View Console Logs and Debug
+
+Obsidian is built on Electron, so it has Chrome-style developer tools.
+
+- **Windows/Linux**: `Ctrl+Shift+I`
+- **macOS**: `Cmd+Opt+I`
+
+This opens the DevTools panel where you can:
+- See `console.log()` output in the **Console** tab
+- Set breakpoints in the **Sources** tab (look for your code under `main.js`)
+- Inspect network requests to AI APIs in the **Network** tab
+- View errors and stack traces
+
+Tip: Inline source maps are enabled in dev mode, so stack traces will reference your original `.ts` files rather than the bundled `main.js`.
+
+### Development Workflow Summary
+
+```
+1. Edit TypeScript files in src/
+           |
+           v
+2. esbuild rebuilds main.js automatically (watch mode)
+           |
+           v
+3. Reload Obsidian (Cmd+R / Ctrl+R)
+           |
+           v
+4. Test in Obsidian, check DevTools console for logs/errors
+           |
+           v
+5. Repeat
+```
+
+### Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Plugin not showing in Community plugins list | Make sure `main.js` and `manifest.json` both exist in the plugin folder. Run `npm run dev` first. |
+| Changes not reflected after save | Check that `npm run dev` is still running. Reload Obsidian with `Ctrl+R` / `Cmd+R` after esbuild rebuilds. |
+| TypeScript errors during `npm run build` | `npm run dev` skips type checking for speed. Run `npm run build` to see type errors. Fix them before committing. |
+| "yt-dlp not found" or "ffmpeg not found" | These are only needed for video features. Install them via your package manager (`brew install yt-dlp ffmpeg` on macOS, etc.). |
+| API key errors | Configure your AI provider API key in **Settings** then **Auto Notes**. Minimum setup is one API key for your chosen provider. |
 
 ### Project Structure
 
