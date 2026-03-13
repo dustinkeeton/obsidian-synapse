@@ -48,6 +48,7 @@ export class AIClient {
 				max_tokens: ai.maxTokens,
 				temperature: ai.temperature,
 			}),
+			throw: true,
 		});
 		return response.json.choices[0].message.content;
 	}
@@ -79,12 +80,26 @@ export class AIClient {
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify(body),
+			throw: true,
 		});
 		return response.json.content[0].text;
 	}
 
 	private async callOllama(messages: ChatMessage[]): Promise<string> {
 		const { ai } = this.getSettings();
+
+		// Validate Ollama endpoint — allow http for localhost, require https otherwise
+		let endpointUrl: URL;
+		try {
+			endpointUrl = new URL(ai.ollamaEndpoint);
+		} catch {
+			throw new Error('Invalid Ollama endpoint URL');
+		}
+		const isLocalhost = endpointUrl.hostname === 'localhost' || endpointUrl.hostname === '127.0.0.1';
+		if (endpointUrl.protocol !== 'https:' && !(endpointUrl.protocol === 'http:' && isLocalhost)) {
+			throw new Error('Ollama endpoint must use HTTPS (or HTTP for localhost only)');
+		}
+
 		const response = await requestUrl({
 			url: `${ai.ollamaEndpoint}/api/chat`,
 			method: 'POST',
@@ -94,6 +109,7 @@ export class AIClient {
 				messages,
 				stream: false,
 			}),
+			throw: true,
 		});
 		return response.json.message.content;
 	}

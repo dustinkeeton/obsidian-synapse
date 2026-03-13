@@ -1,11 +1,14 @@
 import { Notice, Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { notifyError } from '../shared/api-utils';
+import { notifyError, sanitizeAIResponse } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalDetailModal } from './proposal-modal';
 import { ProposalStore } from './proposal-store';
 import { PROPOSAL_VIEW_TYPE, ProposalReviewView } from './proposal-view';
 import { ProposalGenerator } from './proposer';
+
+export { PROPOSAL_VIEW_TYPE } from './proposal-view';
+export type { DetectionReason, DetectionResult, Proposal } from './types';
 
 export class ElaborationModule {
 	private detector: PlaceholderDetector;
@@ -129,7 +132,8 @@ export class ElaborationModule {
 		if (!(file instanceof TFile)) return;
 
 		const content = await this.plugin.app.vault.read(file);
-		const newContent = content + '\n\n' + proposal.proposedAdditions;
+		const sanitizedAdditions = sanitizeAIResponse(proposal.proposedAdditions);
+		const newContent = content + '\n\n' + sanitizedAdditions;
 		await this.plugin.app.vault.modify(file, newContent);
 
 		await this.store.updateStatus(id, 'accepted');
@@ -155,9 +159,10 @@ export class ElaborationModule {
 				if (!(file instanceof TFile)) return;
 
 				const content = await this.plugin.app.vault.read(file);
+				const sanitizedContent = sanitizeAIResponse(editedContent);
 				await this.plugin.app.vault.modify(
 					file,
-					content + '\n\n' + editedContent
+					content + '\n\n' + sanitizedContent
 				);
 				await this.store.updateStatus(id, 'accepted');
 				new Notice('Auto Notes: Proposal accepted');
@@ -178,7 +183,7 @@ export class ElaborationModule {
 		await this.refreshProposalView();
 	}
 
-	private async activateProposalView(): Promise<void> {
+	async activateProposalView(): Promise<void> {
 		const { workspace } = this.plugin.app;
 		let leaf = workspace.getLeavesOfType(PROPOSAL_VIEW_TYPE)[0];
 		if (!leaf) {

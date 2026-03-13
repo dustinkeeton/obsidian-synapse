@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { wordCount } from '../shared/file-utils';
+import { wordCount } from '../shared';
 import { DetectionReason, DetectionResult } from './types';
 
 export class PlaceholderDetector {

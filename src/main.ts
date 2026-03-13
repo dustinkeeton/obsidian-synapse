@@ -4,8 +4,6 @@ import { AutoNotesSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule } from './video';
-import { PROPOSAL_VIEW_TYPE } from './elaboration/proposal-view';
-import { AudioTranscriptionModal } from './audio/transcription-modal';
 
 export default class AutoNotesPlugin extends Plugin {
 	settings!: AutoNotesSettings;
@@ -36,21 +34,13 @@ export default class AutoNotesPlugin extends Plugin {
 			await this.video.onload();
 		}
 
-		// Ribbon icons
+		// Ribbon icons — delegate to module methods
 		this.addRibbonIcon('sparkles', 'Review elaboration proposals', () => {
-			this.activateProposalView();
+			this.elaboration.activateProposalView();
 		});
 
 		this.addRibbonIcon('mic', 'Transcribe audio', () => {
-			new AudioTranscriptionModal(
-				this.app,
-				getSettings,
-				async (file) => {
-					const data = await this.app.vault.readBinary(file);
-					const result = await this.audio.transcribe(data, file.name);
-					await this.audio.saveTranscription(result);
-				}
-			).open();
+			this.audio.openTranscriptionModal();
 		});
 
 		// Status bar
@@ -72,21 +62,6 @@ export default class AutoNotesPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
-	}
-
-	private async activateProposalView(): Promise<void> {
-		const { workspace } = this.app;
-		let leaf = workspace.getLeavesOfType(PROPOSAL_VIEW_TYPE)[0];
-		if (!leaf) {
-			const rightLeaf = workspace.getRightLeaf(false);
-			if (!rightLeaf) return;
-			leaf = rightLeaf;
-			await leaf.setViewState({
-				type: PROPOSAL_VIEW_TYPE,
-				active: true,
-			});
-		}
-		workspace.revealLeaf(leaf);
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any

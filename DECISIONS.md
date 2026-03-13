@@ -1,0 +1,272 @@
+# Decision Log
+
+Decisions listed in reverse chronological order.
+
+---
+
+## 2026-03-12: Centralized input validation layer (`shared/validation.ts`)
+
+**Context**: The architecture audit identified that URLs and file paths were being passed to shell commands (`execFile`) and external APIs without consistent validation. AI-generated text was being written to vault notes without sanitization, creating potential XSS vectors in Obsidian's markdown renderer.
+
+**Decision**: Create a dedicated `validation.ts` module in `src/shared/` exporting four functions: `sanitizeUrl()`, `sanitizePath()`, `ensureWithinVault()`, and `sanitizeAIResponse()`. All security-sensitive inputs pass through these before use.
+
+**Alternatives considered**:
+- Inline validation at each call site (inconsistent, easy to miss)
+- Third-party validation library (violates zero-runtime-deps policy)
+- Validation only at the settings layer (doesn't cover runtime inputs like pasted URLs)
+
+**Rationale**: Centralized validation ensures consistency and makes it easy to audit. Defense-in-depth: even though `execFile` avoids shell injection by design, we still reject shell metacharacters in inputs. A single module makes it straightforward to add new validation rules.
+
+**Impact**: All URL and path inputs are validated before reaching `execFile` or external APIs. AI responses are sanitized before being written to vault notes. The validation module is imported via the shared barrel export.
+
+---
+
+## 2026-03-12: `execFile` over `exec` for subprocess execution
+
+**Context**: The video module originally used `child_process.exec` to run yt-dlp and ffmpeg, which passes commands through the shell. This created a command injection risk if user-controlled data (URLs, file paths) contained shell metacharacters.
+
+**Decision**: Switch from `exec` to `execFile`, which bypasses the shell entirely by passing arguments as an array. Combined with input validation from `sanitizeUrl()`/`sanitizePath()`, this provides defense-in-depth against command injection.
+
+**Alternatives considered**:
+- Keep `exec` with aggressive escaping (error-prone, platform-dependent)
+- Use a shell-escape library (adds a dependency)
+- Only validate inputs without changing the exec method (single layer of defense)
+
+**Rationale**: `execFile` is the correct Node.js API for running commands with untrusted arguments — it never invokes a shell, so shell metacharacters are harmless. Combined with input validation, this gives two independent layers of protection.
+
+**Impact**: Subprocess calls in `audio-extractor.ts` use `execFile` with argument arrays. A 5-minute timeout and 10MB buffer limit are enforced on all subprocess calls.
+
+---
+
+## 2026-03-12: API key redaction in error messages
+
+**Context**: Error messages from failed API calls could contain API keys or tokens, which Obsidian's `Notice` UI and `console.error` would display to the user or persist in logs.
+
+**Decision**: The `notifyError()` utility redacts patterns matching common API key formats (prefixes like `sk-`, `key-`, `dg-`, `Bearer`, `Token` followed by 8+ alphanumeric characters) before displaying or logging.
+
+**Alternatives considered**:
+- Only log generic "API error" messages (loses debugging context)
+- Never log errors (bad for diagnostics)
+- Store errors in a separate log file (complexity overhead)
+
+**Rationale**: Redaction preserves useful error context while preventing accidental key exposure. The regex pattern covers OpenAI, Anthropic, Deepgram, and generic Bearer token formats.
+
+**Impact**: Users see descriptive error messages without risking key leakage. Developers debugging issues still get context about what failed.
+
+---
+
+## 2026-03-12: Ollama endpoint protocol validation
+
+**Context**: The Ollama AI provider allows users to configure a custom endpoint URL. Without validation, a user could misconfigure this to a non-HTTPS endpoint, sending AI prompts (which may contain vault content) over an unencrypted connection.
+
+**Decision**: Validate the Ollama endpoint URL: require HTTPS, except allow HTTP for `localhost`/`127.0.0.1` (since local traffic doesn't traverse the network).
+
+**Alternatives considered**:
+- Allow any protocol (user's choice, but risky default)
+- Require HTTPS always (breaks the primary Ollama use case — local server)
+- Validate at settings save time only (runtime bypass possible)
+
+**Rationale**: The localhost exception covers the standard Ollama setup (local server on port 11434) while protecting against accidental plaintext transmission to remote endpoints. Validation happens at request time, not just settings save.
+
+**Impact**: Users with standard local Ollama setups are unaffected. Users pointing to a remote Ollama instance must use HTTPS.
+
+---
+
+## 2026-03-12: Request timeouts on all external calls
+
+**Context**: API calls to external services (Whisper, Deepgram, yt-dlp) could hang indefinitely if the service is unresponsive, leaving the user waiting with no feedback.
+
+**Decision**: Enforce timeouts on all external calls: 5-minute `AbortController` timeout on Whisper API fetch calls, 5-minute timeout on `execFile` subprocess calls (yt-dlp, ffmpeg). Obsidian's `requestUrl` has its own built-in timeout.
+
+**Alternatives considered**:
+- No timeouts (risk of infinite hangs)
+- Short timeouts (would fail on large files — transcribing a 2-hour podcast takes time)
+- User-configurable timeouts (added complexity for edge case)
+
+**Rationale**: 5 minutes is generous enough for large audio files and long video downloads, while still protecting against unresponsive services. Subprocess timeout also prevents orphaned processes.
+
+**Impact**: Long-running operations will fail with a timeout error after 5 minutes rather than hanging. Users processing very large files may hit this limit.
+
+---
+
+## 2026-03-12: Shared barrel export (`shared/index.ts`)
+
+**Context**: The architecture audit found inconsistent import paths across modules — some imported from `../shared/ai-client`, others from `../shared/file-utils`, etc. This made it harder to discover available utilities and refactor internal file boundaries.
+
+**Decision**: Add a barrel file (`shared/index.ts`) that re-exports all public APIs from the shared module. All feature modules import from `../shared` (or `../shared/index`) instead of reaching into internal files.
+
+**Alternatives considered**:
+- Direct imports to internal files (status quo — works but inconsistent)
+- Separate packages per utility (over-engineered for this project size)
+
+**Rationale**: A barrel export creates a clear public API boundary for the shared module. It standardizes imports and makes it safe to reorganize internal files without updating consumers.
+
+**Impact**: All imports from shared now go through `../shared`. Internal file structure can change without breaking consumers.
+
+---
+
+## 2026-03-12: VideoModule delegates transcription to AudioModule
+
+**Context**: Video transcription requires downloading a video, extracting audio, and then transcribing it — the same transcription pipeline that AudioModule already provides.
+
+**Decision**: VideoModule accepts AudioModule as a constructor argument and calls `AudioModule.transcribe()` for the transcription step rather than implementing its own.
+
+**Alternatives considered**:
+- Duplicate transcription logic in VideoModule
+- Create a shared transcription service extracted from both modules
+
+**Rationale**: Keeps transcription logic in one place. The dependency is one-directional (Video -> Audio), which is easy to reason about. Audio must be initialized before Video in `main.ts`.
+
+**Impact**: Audio and Video modules are not fully independent. Audio must always be loaded if Video is enabled. Initialization order in `main.ts` matters.
+
+---
+
+## 2026-03-12: Hash-based conflict detection for proposal merging
+
+**Context**: Between proposal generation and user acceptance, the original note may have been edited. Blindly applying a proposal could overwrite changes.
+
+**Decision**: Store a SHA-256 hash of the note's content at proposal time (`sourceHash`). Before merging, recompute the hash and compare. If they differ, warn the user and offer options: merge anyway, regenerate, or cancel.
+
+**Alternatives considered**:
+- Diff-based merge (complex, error-prone with markdown)
+- Timestamp comparison (unreliable across devices)
+- No conflict detection (risk of silent data loss)
+
+**Rationale**: Hash comparison is simple, deterministic, and catches any change. It avoids the complexity of diff algorithms while still protecting user data.
+
+**Impact**: Proposals can go "stale" if the source note changes. Users see a clear conflict warning rather than silent overwrites.
+
+---
+
+## 2026-03-12: Non-destructive proposal storage in `.auto-notes/proposals/`
+
+**Context**: AI-generated elaborations should never modify a user's notes without explicit consent. Proposals need to survive plugin reloads and Obsidian restarts.
+
+**Decision**: Store proposals as JSON files in `.auto-notes/proposals/` within the vault. Each proposal is a separate file named `{noteName}-{shortId}.json` with metadata (source path, creation time, detection reasons, status) and the proposed content.
+
+**Alternatives considered**:
+- In-memory only (lost on reload)
+- Single database file (merge conflicts, corruption risk)
+- Frontmatter annotations on original notes (modifies user files)
+- SQLite/IndexedDB (not portable across Obsidian vaults)
+
+**Rationale**: JSON files are queryable, diffable, and human-inspectable. They survive reloads. Individual files avoid corruption cascading across proposals.
+
+**Impact**: Vault contains a `.auto-notes/` folder. Users can inspect, back up, or delete proposals manually. The folder should be excluded from Obsidian search/sync if desired.
+
+---
+
+## 2026-03-12: Scored heuristic system for placeholder detection
+
+**Context**: The elaboration feature needs to identify "stub" or "placeholder" notes that would benefit from AI elaboration. Binary detection (is/isn't a stub) is too coarse.
+
+**Decision**: Each note receives a placeholder score (0-100) computed from weighted heuristics: word count (30), empty sections (25), TODO/TBD markers (20), bullet-only content (10), incoming link ratio (10), and recency (5). Notes above a configurable threshold are candidates.
+
+**Alternatives considered**:
+- Binary detection rules (any single signal triggers)
+- AI-based classification (expensive, slow for vault scans)
+- Manual tagging only (no automation)
+
+**Rationale**: Weighted scoring lets multiple weak signals combine into a strong signal. It reduces false positives compared to binary rules. Users can tune the threshold. It's fast enough for vault-wide scans without API calls.
+
+**Impact**: Detection is nuanced but explainable — users see the score breakdown. The system can be tuned per-vault via settings.
+
+---
+
+## 2026-03-12: Claude API as primary elaboration AI provider
+
+**Context**: The elaboration feature needs an AI backend to generate note content. The plugin should support multiple providers.
+
+**Decision**: Use Anthropic Claude API as the default AI provider via the shared `AIClient`. Also support OpenAI and Ollama. All API calls go through Obsidian's `requestUrl` (except Whisper, which needs `fetch` for FormData).
+
+**Alternatives considered**:
+- OpenAI only
+- Local models only (Ollama)
+- No default, force user to choose
+
+**Rationale**: Multi-provider support via `AIClient` abstraction gives users flexibility. Claude is a strong default for note elaboration tasks. Ollama support enables fully offline usage.
+
+**Impact**: Users must provide an API key for cloud providers. The `AIClient` abstraction makes adding new providers straightforward.
+
+---
+
+## 2026-03-12: Whisper API as primary transcription provider
+
+**Context**: Audio transcription needs a reliable speech-to-text backend. Multiple options exist with different tradeoffs.
+
+**Decision**: Default to OpenAI Whisper API (`whisper-1`). Also support Deepgram and local Whisper (placeholder). Whisper API uses `fetch` instead of Obsidian's `requestUrl` due to FormData requirements.
+
+**Alternatives considered**:
+- Deepgram only (good quality, less widely known)
+- Local Whisper only (no API key needed, but requires binary installation)
+- Browser-based speech recognition (inconsistent quality)
+
+**Rationale**: Whisper API is widely available, high quality, and requires minimal setup — just an OpenAI API key. Deepgram is offered as an alternative. Local Whisper is stubbed for future implementation.
+
+**Impact**: Users need an OpenAI API key for the default provider. The `fetch` workaround for FormData is a known divergence from the Obsidian `requestUrl` pattern.
+
+---
+
+## 2026-03-12: yt-dlp for URL-based media fetching
+
+**Context**: The video transcription feature needs to download videos from YouTube and TikTok to extract audio for transcription.
+
+**Decision**: Use yt-dlp (external CLI tool) for video downloading and metadata extraction. Use ffmpeg for audio extraction from local files. Both are invoked via Node.js `child_process.execFile` (no shell).
+
+**Alternatives considered**:
+- Browser-based video download (blocked by CORS, unreliable)
+- Built-in download library (large bundle, maintenance burden)
+- API-based services (cost, privacy concerns)
+
+**Rationale**: yt-dlp is the standard tool for this purpose — actively maintained, supports hundreds of platforms, handles DRM and rate limiting. It's already installed by many technical users.
+
+**Impact**: Users must install yt-dlp and ffmpeg separately. The plugin includes a dependency check command (`auto-notes:check-dependencies`) to verify availability.
+
+---
+
+## 2026-03-12: `isDesktopOnly: true` in manifest
+
+**Context**: The plugin uses `child_process` for yt-dlp/ffmpeg execution and `fs` for temp file operations — both Node.js APIs unavailable on mobile.
+
+**Decision**: Mark the plugin as desktop-only in `manifest.json`.
+
+**Alternatives considered**:
+- Graceful degradation (disable video features on mobile, keep elaboration)
+- API-based video processing service (avoid child_process)
+
+**Rationale**: Core video functionality depends on local CLI tools. Attempting mobile support would either break video features or require a fundamentally different architecture. Elaboration and audio features could theoretically work on mobile, but the video dependency on `child_process` makes the plugin desktop-only overall.
+
+**Impact**: Plugin will not appear in Obsidian's mobile plugin browser. Desktop-only is clearly communicated.
+
+---
+
+## 2026-03-12: Zero runtime npm dependencies
+
+**Context**: Obsidian community plugins are reviewed for security and bundle size. Runtime dependencies increase both risk and review burden.
+
+**Decision**: Zero runtime npm dependencies. All external API calls use Obsidian's `requestUrl` or native `fetch`. External tools (yt-dlp, ffmpeg) are invoked as subprocesses rather than imported as libraries.
+
+**Alternatives considered**:
+- Use SDK packages for OpenAI, Anthropic, Deepgram
+- Bundle a minimal HTTP client library
+
+**Rationale**: Keeps the bundle small and avoids supply chain risk. Obsidian's `requestUrl` handles CORS and provides consistent behavior. API calls are simple enough to implement directly.
+
+**Impact**: API integration code is hand-rolled (more code to maintain) but the plugin has no transitive dependency risk. Bundle stays small.
+
+---
+
+## 2026-03-12: Modular architecture with FeatureModule contract
+
+**Context**: The plugin has three distinct features (elaboration, audio, video) that share some infrastructure but are otherwise independent.
+
+**Decision**: Each feature is a self-contained module following a common contract: `constructor(plugin, getSettings)`, `onload()`, `onunload()`. Modules are conditionally loaded based on settings. A shared utilities layer (`src/shared/`) provides cross-cutting concerns (AI client, file utils, error handling).
+
+**Alternatives considered**:
+- Monolithic single-file plugin
+- Separate plugins per feature
+- Event-bus architecture with loose coupling
+
+**Rationale**: The module pattern balances isolation with simplicity. Features can be independently enabled/disabled. The `getSettings()` closure ensures modules always read fresh settings without event wiring. Shared utilities prevent duplication without tight coupling.
+
+**Impact**: Adding a new feature means creating a new module directory and wiring it in `main.ts`. The pattern is easy to follow and test independently.

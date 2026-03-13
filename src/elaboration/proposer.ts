@@ -1,6 +1,6 @@
 import { App } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { AIClient } from '../shared/ai-client';
+import { AIClient } from '../shared';
 import { DetectionResult, Proposal } from './types';
 
 export class ProposalGenerator {

@@ -42,31 +42,44 @@ export class Transcriber {
 		}
 		formData.append('response_format', 'verbose_json');
 
-		const response = await fetch(
-			'https://api.openai.com/v1/audio/transcriptions',
-			{
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${settings.ai.apiKey}`,
-				},
-				body: formData,
-			}
-		);
+		// Use AbortController for request timeout (5 minutes for large audio files)
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 300_000);
 
-		const data = await response.json();
-		return {
-			raw: data.text,
-			language: data.language,
-			duration: data.duration,
-			sourceName: fileName,
-			timestamps: data.segments?.map(
-				(s: { start: number; end: number; text: string }) => ({
-					start: s.start,
-					end: s.end,
-					text: s.text,
-				})
-			),
-		};
+		try {
+			const response = await fetch(
+				'https://api.openai.com/v1/audio/transcriptions',
+				{
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${settings.ai.apiKey}`,
+					},
+					body: formData,
+					signal: controller.signal,
+				}
+			);
+
+			if (!response.ok) {
+				throw new Error(`Whisper API request failed (status ${response.status})`);
+			}
+
+			const data = await response.json();
+			return {
+				raw: data.text,
+				language: data.language,
+				duration: data.duration,
+				sourceName: fileName,
+				timestamps: data.segments?.map(
+					(s: { start: number; end: number; text: string }) => ({
+						start: s.start,
+						end: s.end,
+						text: s.text,
+					})
+				),
+			};
+		} finally {
+			clearTimeout(timeoutId);
+		}
 	}
 
 	private async transcribeDeepgram(
