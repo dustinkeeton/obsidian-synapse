@@ -1,5 +1,7 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type AutoNotesPlugin from './main';
+import { MODEL_OPTIONS } from './settings';
+import type { AIProvider } from './settings';
 
 export class AutoNotesSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: AutoNotesPlugin) {
@@ -25,8 +27,13 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 					.setValue(this.plugin.settings.ai.provider)
 					.onChange(async (value) => {
-						this.plugin.settings.ai.provider = value as 'openai' | 'anthropic' | 'ollama';
+						const provider = value as AIProvider;
+						this.plugin.settings.ai.provider = provider;
+						// Reset model to first option for new provider
+						const models = MODEL_OPTIONS[provider];
+						this.plugin.settings.ai.model = Object.keys(models)[0];
 						await this.plugin.saveSettings();
+						this.display(); // Re-render to update model dropdown and conditional fields
 					})
 			);
 
@@ -43,29 +50,38 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
-			.setName('Ollama Endpoint')
-			.setDesc('URL for local Ollama server')
-			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.ai.ollamaEndpoint)
-					.onChange(async (value) => {
-						this.plugin.settings.ai.ollamaEndpoint = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		if (this.plugin.settings.ai.provider === 'ollama') {
+			new Setting(containerEl)
+				.setName('Ollama Endpoint')
+				.setDesc('URL for local Ollama server')
+				.addText((text) =>
+					text
+						.setValue(this.plugin.settings.ai.ollamaEndpoint)
+						.onChange(async (value) => {
+							this.plugin.settings.ai.ollamaEndpoint = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
+		const currentProvider = this.plugin.settings.ai.provider;
+		const models = MODEL_OPTIONS[currentProvider];
 
 		new Setting(containerEl)
 			.setName('Model')
-			.setDesc('Model name (e.g., gpt-4o, claude-sonnet-4-20250514, llama3)')
-			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.ai.model)
-					.onChange(async (value) => {
-						this.plugin.settings.ai.model = value;
-						await this.plugin.saveSettings();
-					})
-			);
+			.setDesc('Model to use for AI operations')
+			.addDropdown((dd) => {
+				dd.addOptions(models);
+				// If current model isn't in the list, default to first
+				if (!(this.plugin.settings.ai.model in models)) {
+					this.plugin.settings.ai.model = Object.keys(models)[0];
+				}
+				dd.setValue(this.plugin.settings.ai.model);
+				dd.onChange(async (value) => {
+					this.plugin.settings.ai.model = value;
+					await this.plugin.saveSettings();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName('Temperature')
@@ -176,21 +192,46 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 						this.plugin.settings.audio.transcriptionProvider =
 							value as 'whisper-api' | 'deepgram' | 'local-whisper';
 						await this.plugin.saveSettings();
+						this.display(); // Re-render to show/hide provider-specific fields
 					})
 			);
 
-		new Setting(containerEl)
-			.setName('Deepgram API Key')
-			.setDesc('Required if using Deepgram provider')
-			.addText((text) =>
-				text
-					.setPlaceholder('dg-...')
-					.setValue(this.plugin.settings.audio.deepgramApiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.audio.deepgramApiKey = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		// Show Whisper API key field when provider is whisper-api and AI provider isn't OpenAI
+		// (if AI provider is OpenAI, the shared API key is already an OpenAI key)
+		if (
+			this.plugin.settings.audio.transcriptionProvider === 'whisper-api' &&
+			this.plugin.settings.ai.provider !== 'openai'
+		) {
+			new Setting(containerEl)
+				.setName('OpenAI API Key (for Whisper)')
+				.setDesc(
+					'Your AI provider is not OpenAI, so a separate OpenAI key is needed for Whisper transcription'
+				)
+				.addText((text) =>
+					text
+						.setPlaceholder('sk-...')
+						.setValue(this.plugin.settings.audio.whisperApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.audio.whisperApiKey = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
+		if (this.plugin.settings.audio.transcriptionProvider === 'deepgram') {
+			new Setting(containerEl)
+				.setName('Deepgram API Key')
+				.setDesc('Required for Deepgram transcription provider')
+				.addText((text) =>
+					text
+						.setPlaceholder('dg-...')
+						.setValue(this.plugin.settings.audio.deepgramApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.audio.deepgramApiKey = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
 
 		new Setting(containerEl)
 			.setName('Post-processing')

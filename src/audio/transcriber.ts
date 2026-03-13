@@ -25,11 +25,25 @@ export class Transcriber {
 		}
 	}
 
+	/** Resolve the API key for Whisper: use dedicated whisperApiKey if set, otherwise fall back to shared AI key */
+	private getWhisperApiKey(): string {
+		const settings = this.getSettings();
+		return settings.audio.whisperApiKey || settings.ai.apiKey;
+	}
+
 	private async transcribeWhisperAPI(
 		audioData: ArrayBuffer,
 		fileName: string
 	): Promise<TranscriptionResult> {
 		const settings = this.getSettings();
+		const apiKey = this.getWhisperApiKey();
+		if (!apiKey) {
+			throw new Error(
+				'No OpenAI API key configured for Whisper. ' +
+				'Set one in Audio Transcription settings or use OpenAI as your AI provider.'
+			);
+		}
+
 		const formData = new FormData();
 		formData.append(
 			'file',
@@ -52,7 +66,7 @@ export class Transcriber {
 				{
 					method: 'POST',
 					headers: {
-						Authorization: `Bearer ${settings.ai.apiKey}`,
+						Authorization: `Bearer ${apiKey}`,
 					},
 					body: formData,
 					signal: controller.signal,
