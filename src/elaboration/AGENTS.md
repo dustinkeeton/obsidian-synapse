@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-12
+last-updated: 2026-03-13
 ---
 
 # Elaboration Module
@@ -12,17 +12,17 @@ Exported from `index.ts`:
 
 ```ts
 class ElaborationModule {
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings)
+  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
   scanVault(): Promise<number>
   scanNote(file: TFile): Promise<void>
-  acceptProposal(id: string): Promise<void>
+  acceptProposal(id: string, editedContent?: string): Promise<void>
   rejectProposal(id: string): Promise<void>
-  activateProposalView(): Promise<void>
+  getPendingProposals(): Promise<Proposal[]>
+  onProposalAccepted: ((filePath: string) => void) | null
+  onViewRefreshNeeded: (() => Promise<void>) | null
 }
-
-const PROPOSAL_VIEW_TYPE = 'auto-notes-proposal-review'
 
 type DetectionReason =
   | { type: 'short-note'; wordCount: number }
@@ -48,17 +48,17 @@ interface Proposal {
 }
 ```
 
-## Internal Files
+## File Inventory
 
 | File | Class/Export | Purpose |
 |------|-------------|---------|
 | `types.ts` | `DetectionReason`, `DetectionResult`, `Proposal` | Type definitions |
-| `detector.ts` | `PlaceholderDetector` | Scans notes for stub signals (word count, TODO markers, empty sections, sparse links) |
-| `proposer.ts` | `ProposalGenerator` | Generates elaboration content via AIClient, gathers context from linked notes |
-| `proposal-store.ts` | `ProposalStore` | CRUD for proposal JSON files in vault |
-| `proposal-view.ts` | `ProposalReviewView`, `PROPOSAL_VIEW_TYPE` | Sidebar ItemView listing pending proposals grouped by source note |
-| `proposal-modal.ts` | `ProposalDetailModal` | Modal for viewing/editing a proposal before accept |
-| `index.ts` | `ElaborationModule` | Orchestrator, registers commands and view, manages scan intervals |
+| `detector.ts` | `PlaceholderDetector` | Scans notes for stub signals |
+| `proposer.ts` | `ProposalGenerator` | AI proposal generation with context gathering |
+| `proposal-store.ts` | `ProposalStore` | CRUD for proposal JSON files |
+| `proposal-view.ts` | `ProposalReviewView`, `PROPOSAL_VIEW_TYPE` | Legacy sidebar view (not registered by main.ts) |
+| `proposal-modal.ts` | `ProposalDetailModal` | Legacy modal for editing proposals |
+| `index.ts` | `ElaborationModule` | Orchestrator, commands, scan intervals |
 
 ## Data Flow
 
@@ -66,71 +66,46 @@ interface Proposal {
 1. scanVault() / scanNote()
    |
 2. PlaceholderDetector.detect(file)
-   |  Checks: word count < minWordThreshold, TODO/TBD/FIXME/PLACEHOLDER markers,
-   |          headings with no content beneath, notes linked from many but sparse
-   |  Filters: excludeFolders (path prefix), excludeTags (frontmatter)
-   |  Strips frontmatter before analysis
+   |  Checks: word count, TODO markers, empty sections, sparse links
+   |  Filters: excludeFolders, excludeTags
    |  Returns: DetectionResult | null
    |
-3. ProposalGenerator.generate(detection)
-   |  Reads note content via vault.adapter.read()
-   |  Gathers context from up to 5 linked notes (first 500 chars each)
-   |  Calls AIClient.complete() with system prompt
-   |  Sanitizes AI response via sanitizeAIResponse()
-   |  Returns: Proposal (status: 'pending', insertionPoint: 'append')
+3. Two-phase confirmation (vault scan only):
+   |  Phase 1: lightweight detection (no API calls)
+   |  Phase 2: NotificationManager.confirm() snackbar
+   |  Phase 3: cancellable proposal generation
    |
-4. ProposalStore.save(proposal)
-   |  Writes JSON to {proposalFolderPath}/{noteName}-{shortId}.json
+4. ProposalGenerator.generate(detection)
+   |  Gathers context from up to 5 linked notes (500 chars each)
+   |  AIClient.complete() with system prompt
+   |  sanitizeAIResponse() on output
+   |  Returns: Proposal (status: 'pending')
    |
-5. ProposalReviewView.setProposals() -- refreshes sidebar
+5. ProposalStore.save(proposal)
    |
-6. User action:
-   -- Accept -> sanitizeAIResponse(proposedAdditions), appends to source note, status -> 'accepted'
-   -- View -> ProposalDetailModal (editable textarea), sanitizeAIResponse on accept
-   -- Reject -> status -> 'rejected'
+6. onViewRefreshNeeded() --> main.refreshUnifiedView()
+   |
+7. User action via UnifiedProposalView:
+   Accept --> blockquoteOriginal(content), sanitizeAIResponse(additions), append
+   Reject --> status = 'rejected'
 ```
 
-## PlaceholderDetector Detection Rules
+## Detection Rules
 
 | Rule | Setting | Logic |
 |------|---------|-------|
-| Short note | `detection.minWordThreshold` | `wordCount(body) < threshold` after stripping frontmatter |
-| TODO markers | `detection.detectTodoMarkers` | Regex match for `\bTODO\b`, `\bTBD\b`, `\bFIXME\b`, `\bPLACEHOLDER\b` (case-insensitive for PLACEHOLDER) |
-| Empty sections | `detection.detectEmptySections` | Heading followed by no content before next same-or-higher-level heading |
-| Sparse links | `detection.detectSparseLinks` | Inbound links from other notes AND word count below threshold |
+| Short note | `detection.minWordThreshold` | `wordCount(body) < threshold` |
+| TODO markers | `detection.detectTodoMarkers` | Regex: `\bTODO\b`, `\bTBD\b`, `\bFIXME\b`, `\bPLACEHOLDER\b` |
+| Empty sections | `detection.detectEmptySections` | Heading with no content before next same-or-higher heading |
+| Sparse links | `detection.detectSparseLinks` | Inbound links AND word count below threshold |
 
-Exclusion checks run first: folder path prefix match, frontmatter tag match.
+## Accept Behavior
 
-## ProposalStore Storage
-
-- Location: `settings.elaboration.proposalFolderPath` (default: `.auto-notes/proposals`)
-- Format: JSON files named `{notePath-with-dashes}-{8-char-uuid}.json`
-- Operations: `save`, `load(id)`, `loadAll`, `loadPending`, `delete(id)`, `updateStatus(id, status)`
-- `init()` called on module load to ensure folder exists
-
-## Settings Keys
-
-All under `settings.elaboration`:
-
-| Key | Controls |
-|-----|----------|
-| `enabled` | Module activation at startup |
-| `proposalFolderPath` | Storage location for proposal JSON files |
-| `scanOnStartup` | Auto-scan vault 5s after plugin load |
-| `autoScanInterval` | Recurring scan interval in minutes (0=disabled) |
-| `detection.minWordThreshold` | Word count below which a note is flagged |
-| `detection.detectTodoMarkers` | Scan for TODO/TBD/FIXME/PLACEHOLDER |
-| `detection.detectEmptySections` | Flag headings with no content beneath |
-| `detection.detectSparseLinks` | Flag notes linked from many but with sparse content |
-| `detection.excludeFolders` | Folder paths to skip |
-| `detection.excludeTags` | Frontmatter tags that suppress detection |
-| `proposal.maxProposalsPerNote` | Max proposals per note (not yet enforced in code) |
-| `proposal.preserveFrontmatter` | Preserve frontmatter when appending (not yet enforced in code) |
-| `proposal.includeSourceContext` | Gather linked note context for AI prompt |
+On accept, the original note content is wrapped in a blockquote with attribution (`blockquoteOriginal()`), then sanitized AI additions are appended. This preserves the original while adding new content.
 
 ## Error Handling
 
-- `scanVault` / `scanNote`: catches all errors, calls `notifyError()` (Notice + console.error)
-- `ProposalStore.loadAll`: silently skips unparseable JSON files
+- `scanVault`: two-phase with cancellation; auto-rejects created proposals on error/cancel
+- `scanNote`: catches errors, reports via `NotificationManager.startOperation()`
+- `ProposalStore.loadAll`: silently skips unparseable JSON
 - `acceptProposal`: no-ops if proposal or source file not found
-- AI-generated content sanitized via `sanitizeAIResponse()` before writing to vault

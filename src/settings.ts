@@ -63,12 +63,6 @@ export interface PostProcessingSettings {
 	customPrompt: string;
 }
 
-export interface AudioOutputSettings {
-	folder: string;
-	fileNameTemplate: string;
-	appendToExisting: boolean;
-}
-
 export interface AudioSettings {
 	enabled: boolean;
 	transcriptionProvider: 'whisper-api' | 'deepgram' | 'local-whisper';
@@ -78,7 +72,6 @@ export interface AudioSettings {
 	localWhisperPath: string;
 	language: string;
 	postProcessing: PostProcessingSettings;
-	output: AudioOutputSettings;
 }
 
 export interface FrameExtractionSettings {
@@ -88,23 +81,18 @@ export interface FrameExtractionSettings {
 	maxFrames: number;
 }
 
-export interface VideoOutputSettings {
-	folder: string;
-	fileNameTemplate: string;
-	includeVideoMetadata: boolean;
-}
-
 export interface VideoSettings {
 	enabled: boolean;
 	ytDlpPath: string;
 	ffmpegPath: string;
 	tempFolder: string;
+	downloadFolder: string;
+	embedInNote: boolean;
 	supportedPlatforms: {
 		youtube: boolean;
 		tiktok: boolean;
 	};
 	frameExtraction: FrameExtractionSettings;
-	output: VideoOutputSettings;
 }
 
 export interface EnrichmentWeightSettings {
@@ -131,12 +119,18 @@ export interface EnrichmentSettings {
 	referencesHeading: string;
 }
 
+export interface TidySettings {
+	enabled: boolean;
+	snapshotFolderPath: string;
+}
+
 export interface AutoNotesSettings {
 	ai: AISettings;
 	elaboration: ElaborationSettings;
 	audio: AudioSettings;
 	video: VideoSettings;
 	enrichment: EnrichmentSettings;
+	tidy: TidySettings;
 }
 
 export const DEFAULT_SETTINGS: AutoNotesSettings = {
@@ -182,17 +176,14 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 			extractKeyPoints: false,
 			customPrompt: '',
 		},
-		output: {
-			folder: 'Transcriptions',
-			fileNameTemplate: '{{date}}-{{source}}',
-			appendToExisting: false,
-		},
 	},
 	video: {
 		enabled: true,
 		ytDlpPath: 'yt-dlp',
 		ffmpegPath: 'ffmpeg',
 		tempFolder: '.auto-notes/temp',
+		downloadFolder: 'Media',
+		embedInNote: true,
 		supportedPlatforms: {
 			youtube: true,
 			tiktok: true,
@@ -202,11 +193,6 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 			intervalSeconds: 30,
 			visionModel: 'gpt-4o',
 			maxFrames: 20,
-		},
-		output: {
-			folder: 'Video Notes',
-			fileNameTemplate: '{{date}}-{{title}}',
-			includeVideoMetadata: true,
 		},
 	},
 	enrichment: {
@@ -229,5 +215,9 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		excludeTags: ['no-enrich'],
 		relatedNotesHeading: 'Related Notes',
 		referencesHeading: 'References',
+	},
+	tidy: {
+		enabled: true,
+		snapshotFolderPath: '.auto-notes/tidy-snapshots',
 	},
 };

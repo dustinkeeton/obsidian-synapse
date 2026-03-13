@@ -73,6 +73,24 @@ export class AudioExtractor {
 		};
 	}
 
+	/**
+	 * Download the actual video file to a temp path.
+	 * Returns the temp file path. Caller is responsible for cleanup.
+	 */
+	async downloadVideo(url: string): Promise<string> {
+		const sanitizedUrl = sanitizeUrl(url);
+		const settings = this.getSettings().video;
+		const outputPath = path.join(os.tmpdir(), `auto-notes-video-${Date.now()}.mp4`);
+
+		await this.runCommand(sanitizePath(settings.ytDlpPath), [
+			'-f', 'mp4/best',
+			'-o', outputPath,
+			sanitizedUrl,
+		]);
+
+		return outputPath;
+	}
+
 	async checkDependencies(): Promise<{
 		ytDlp: boolean;
 		ffmpeg: boolean;

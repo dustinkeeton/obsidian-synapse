@@ -1,433 +1,283 @@
 # Architecture Overview
 
-Auto Notes is an Obsidian plugin that provides three AI-powered features: note elaboration, audio transcription, and video transcription. It runs on desktop only (requires Node.js APIs for video processing).
+Auto Notes is an Obsidian plugin that provides five AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, and note tidying. Desktop only (requires Node.js APIs for video processing).
 
 ---
 
 ## System Diagram
 
-```
-+------------------------------------------------------------------+
-|                        Obsidian Desktop                          |
-|                                                                  |
-|  +---------------------------+                                   |
-|  |       main.ts             |                                   |
-|  |   AutoNotesPlugin         |                                   |
-|  |   - loads settings        |                                   |
-|  |   - initializes modules   |                                   |
-|  |   - registers ribbons     |                                   |
-|  +-----+------+------+------+                                   |
-|        |      |      |                                           |
-|        v      v      v                                           |
-|  +-------+ +------+ +-------+                                   |
-|  |Elab.  | |Audio | |Video  |                                   |
-|  |Module | |Module| |Module |                                   |
-|  +---+---+ +--+---+ +---+---+                                   |
-|      |        |          |                                       |
-|      |        |    +-----+------+                                |
-|      |        |    | yt-dlp     |  (external CLI)                |
-|      |        |    | ffmpeg     |  (external CLI)                |
-|      |        |    +-----+------+                                |
-|      |        |          |                                       |
-|      |        |<---------+  (delegates transcription)            |
-|      |        |                                                  |
-|      v        v                                                  |
-|  +------------------+                                            |
-|  |  Shared Layer    |                                            |
-|  |  - AIClient      |-----> OpenAI / Anthropic / Ollama APIs    |
-|  |  - Validation    |  (URL, path, vault boundary, AI output)   |
-|  |  - File utils    |                                            |
-|  |  - Error handling |  (key redaction, retry, notifications)    |
-|  +------------------+                                            |
-|                                                                  |
-|  +------------------+    +----------------------------+          |
-|  | .auto-notes/     |    | Vault                      |          |
-|  |   proposals/     |    |   Transcriptions/           |          |
-|  |   temp/          |    |   Video Notes/              |          |
-|  +------------------+    +----------------------------+          |
-+------------------------------------------------------------------+
+```mermaid
+graph TD
+    subgraph Obsidian Desktop
+        Main[main.ts<br>AutoNotesPlugin]
+        Settings[Settings + Settings Tab]
+        UV[Unified Proposal View<br>src/views/]
+
+        Elab[Elaboration Module]
+        Audio[Audio Module]
+        Video[Video Module]
+        Enrich[Enrichment Module]
+        Tidy[Tidy Module]
+
+        Shared[Shared Layer<br>AIClient, Validation,<br>Notifications, File Utils]
+    end
+
+    subgraph External
+        OpenAI[OpenAI API<br>GPT + Whisper]
+        Anthropic[Anthropic API<br>Claude]
+        Ollama[Ollama<br>Local models]
+        YtDlp[yt-dlp CLI]
+        FFmpeg[ffmpeg CLI]
+        Deepgram[Deepgram API]
+    end
+
+    subgraph Vault Storage
+        Proposals[.auto-notes/proposals/]
+        Enrichments[.auto-notes/enrichments/]
+        Snapshots[.auto-notes/tidy-snapshots/]
+        Media[Media/]
+    end
+
+    Main --> Settings
+    Main --> UV
+    Main --> Elab
+    Main --> Audio
+    Main --> Video
+    Main --> Enrich
+    Main --> Tidy
+
+    Elab --> Shared
+    Audio --> Shared
+    Video --> Shared
+    Enrich --> Shared
+    Tidy --> Shared
+
+    Video -->|delegates transcription| Audio
+
+    Shared --> OpenAI
+    Shared --> Anthropic
+    Shared --> Ollama
+    Audio --> Deepgram
+
+    Video --> YtDlp
+    Video --> FFmpeg
+
+    Elab -->|proposals| Proposals
+    Enrich -->|proposals| Enrichments
+    Tidy -->|snapshots| Snapshots
+    Video -->|video files| Media
+
+    Elab -.->|onProposalAccepted| Enrich
+    Audio -.->|onTranscriptionComplete| Enrich
+    Video -.->|onTranscriptionComplete| Enrich
+    Elab -.->|onViewRefreshNeeded| UV
+    Enrich -.->|onViewRefreshNeeded| UV
 ```
 
 ---
 
-## Features
+## Module Responsibilities
 
-### Note Elaboration
-
-Scans your vault for "stub" notes — short notes, notes with TODO markers, empty sections, or placeholder content — and generates AI-powered proposals to flesh them out.
-
-**How it works**:
-1. The detector scores each note on multiple heuristics (word count, TODO markers, empty headings, etc.) producing a 0-100 score
-2. Notes above the threshold are flagged as candidates
-3. The AI generates proposed additions using context from linked notes
-4. Proposals are stored as JSON files in `.auto-notes/proposals/` — your original notes are never modified without your consent
-5. You review proposals in a sidebar view and accept, edit, or reject each one
-
-**Key principle**: Non-destructive. Proposals live in separate files and are only merged when you explicitly accept them. If the original note changed since the proposal was generated, you'll see a conflict warning.
-
-### Audio Transcription
-
-Transcribes audio files using cloud speech-to-text APIs, with optional AI post-processing. Supports two workflows: standalone file transcription and inline note transcription.
-
-**Standalone transcription** (command: "Transcribe audio file"):
-1. Select an audio file from your vault via the transcription modal (or mic ribbon icon)
-2. The file is sent to your configured transcription provider (Whisper API by default, Deepgram as alternative)
-3. Optionally, the raw transcript is post-processed by AI to remove filler words, add structure, and extract key points
-4. The result is saved as a new note in your `Transcriptions/` folder
-
-**Inline note transcription** (command: "Transcribe audio from current note"):
-1. Open a note that contains audio embeds (e.g., `![[meeting-recording.mp3]]`)
-2. Run the command -- it scans the note for audio embed syntax
-3. A selection modal shows all found audio files; pick which ones to transcribe
-4. Transcriptions are inserted as blockquote blocks directly below each embed in the same note
-5. Already-transcribed embeds (detected by the presence of a transcription block below) are automatically skipped
-6. Multiple embeds are processed in reverse line order so insertions do not shift line numbers
-
-**Output format for inline transcription**:
-```markdown
-![[meeting-recording.mp3]]
-
-> **Transcription of meeting-recording.mp3**
->
-> ...transcribed text...
-```
-
-### Video Transcription
-
-Downloads videos from YouTube or TikTok, extracts the audio, and transcribes it — producing a structured note with video metadata.
-
-**How it works**:
-1. Paste a video URL into the transcription modal
-2. The plugin detects the platform (YouTube or TikTok) and fetches metadata via yt-dlp
-   - YouTube: standard watch URLs, short URLs (youtu.be), and Shorts URLs
-   - TikTok: full video URLs, share links (`/t/`), and short URLs (`vm.tiktok.com`, `vt.tiktok.com`)
-3. yt-dlp downloads and extracts the audio track to the OS temp directory
-4. The audio is handed off to the Audio module for transcription (same pipeline as above)
-5. The result is saved as a note in `Video Notes/` with frontmatter containing title, channel, duration, and source URL
-6. The temp audio file is cleaned up after transcription
-
-**Requires**: yt-dlp and ffmpeg installed on your system. Run `Auto Notes: Check dependencies` to verify. The plugin automatically searches common install locations (`/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin`) since Electron's default PATH is minimal.
+| Module | What It Does | Key Files |
+|--------|-------------|-----------|
+| **main.ts** | Plugin entry point. Loads settings, initializes modules, registers views/commands/ribbons, wires cross-module callbacks | `src/main.ts` |
+| **Elaboration** | Detects stub/placeholder notes, generates AI-powered content proposals, manages proposal lifecycle | `src/elaboration/` |
+| **Audio** | Transcribes audio files via Whisper/Deepgram APIs, with optional AI post-processing | `src/audio/` |
+| **Video** | Downloads video from YouTube/TikTok via yt-dlp, extracts audio, delegates to Audio for transcription | `src/video/` |
+| **Enrichment** | Suggests tags, internal links, external references, and frontmatter based on vault analysis + AI | `src/enrichment/` |
+| **Tidy** | Fixes spelling and formats markdown via AI. No content changes — cosmetic only | `src/tidy/` |
+| **Views** | Unified sidebar combining elaboration + enrichment proposals in one pane | `src/views/` |
+| **Shared** | AI client (3 providers), validation/sanitization, notifications, file utilities, frontmatter parsing | `src/shared/` |
+| **Settings** | Type definitions, defaults, model options for all modules | `src/settings.ts`, `src/settings-tab.ts` |
 
 ---
 
-## How Features Interact
+## Data Flow
+
+### Elaboration: Detect → Propose → Review → Apply
 
 ```
-Elaboration -----> Shared (AIClient, file utils)
-Audio -----------> Shared (AIClient for post-processing, file utils for output)
-Video --+-------> Audio (delegates transcription step)
-        +-------> Shared (file utils for output)
+Vault scan or single note scan
+    ↓
+PlaceholderDetector checks: word count, TODO markers, empty sections, sparse links
+    ↓
+Candidates confirmed via NotificationManager (two-phase for vault scans)
+    ↓
+ProposalGenerator gathers linked note context → AIClient.complete()
+    ↓
+sanitizeAIResponse() on AI output
+    ↓
+Proposal saved as JSON in .auto-notes/proposals/
+    ↓
+User reviews in Unified Proposal View (editable textarea)
+    ↓
+Accept: blockquote original content, append sanitized AI additions
+Reject: mark status as rejected
+    ↓
+If accepted + autoEnrich enabled → enrichment.enrich(filePath)
 ```
 
-- **Video depends on Audio**: This is the only cross-feature dependency. Video downloads and extracts audio, then calls `AudioModule.transcribe()` for the actual speech-to-text work. This means Audio must be initialized before Video.
-- **All features use Shared**: The shared layer provides the AI client (multi-provider), file utilities (reading/writing vault notes), input validation (URL/path sanitization), output sanitization (AI response cleaning), and error handling (user notifications with API key redaction).
-- **Features are independently toggleable**: Each can be enabled/disabled in settings. Disabled features don't register commands or consume resources. Note: ribbon icons currently register unconditionally (see Known Issues in STATUS.md).
+### Audio Transcription: Record → Transcribe → Post-Process → Insert
+
+```
+User selects audio file (modal) or triggers inline transcription
+    ↓
+Audio data sent to Whisper API / Deepgram (via fetch with AbortController timeout)
+    ↓
+Optional: PostProcessor cleans transcript via AIClient
+    ↓
+Result inserted as blockquote below audio embed (inline) or as new note (standalone)
+    ↓
+If autoEnrich enabled → enrichment.enrich(filePath)
+```
+
+### Video Transcription: URL → Download → Extract → Transcribe
+
+```
+User pastes URL → sanitizeUrl() → detectPlatform()
+    ↓
+AudioExtractor: yt-dlp --dump-json (metadata), yt-dlp -x (audio download)
+    ↓
+Optional: download video file to vault (downloadFolder setting)
+    ↓
+AudioModule.transcribe(audioBuffer) — same pipeline as audio
+    ↓
+Insert blockquote + optional video embed in note
+    ↓
+Cleanup temp audio file from os.tmpdir()
+    ↓
+If autoEnrich enabled → enrichment.enrich(filePath)
+```
+
+### Enrichment: Analyze → Score → Propose → Apply
+
+```
+Triggered by callback (auto-enrich) or manual command
+    ↓
+VaultAnalyzer builds tag index + link graph from MetadataCache
+    ↓
+Parallel scoring:
+  TagScorer: AI candidates × vault frequency × proximity weight
+  LinkResolver: graph hops + shared tags + folder proximity
+  PromptBuilder: AI-suggested external links + frontmatter
+    ↓
+Proposal saved as JSON in .auto-notes/enrichments/
+    ↓
+User reviews in Unified Proposal View (per-item checkboxes)
+    ↓
+Accept Selected: EnrichmentApplier merges tags, adds sections with markers
+Reject: mark status as rejected
+```
+
+### Tidy: Snapshot → AI Fix → Apply (immediate)
+
+```
+User triggers tidy command on current note
+    ↓
+TidyStore saves snapshot of original content (for undo)
+    ↓
+parseFrontmatter() separates frontmatter from body
+    ↓
+AIClient.complete() with constrained prompt (spelling + formatting only)
+    ↓
+sanitizeAIResponse() + stripCodeFences()
+    ↓
+serializeFrontmatter(original_frontmatter, tidied_body) → vault.modify()
+    ↓
+Undo: TidyStore.load() → vault.modify(original) → TidyStore.remove()
+```
 
 ---
 
-## Security Architecture
+## Cross-Module Communication
 
-The plugin handles user-controlled inputs (URLs, file paths) and AI-generated outputs, both of which need careful treatment.
-
-### Input Validation (defense-in-depth)
+All inter-module communication flows through `main.ts` via simple callback assignments:
 
 ```
-User Input (URL, path)
-    │
-    ▼
-sanitizeUrl() / sanitizePath()
-    ├── Reject null bytes
-    ├── Validate URL scheme (http/https only)
-    ├── Reject path traversal (..)
-    └── Reject shell metacharacters (; | & ` $ etc.)
-    │
-    ▼
-execFile(cmd, [args...])         ← No shell invocation
-    ├── 5-minute timeout
-    └── 10MB buffer limit
+┌─────────────┐     onProposalAccepted(path)     ┌─────────────┐
+│ Elaboration │ ─────────────────────────────────→│ Enrichment  │
+└─────────────┘                                   └─────────────┘
+                                                        ↑
+┌─────────────┐     onTranscriptionComplete(path)       │
+│   Audio     │ ────────────────────────────────────────┘
+└─────────────┘                                         ↑
+                                                        │
+┌─────────────┐     onTranscriptionComplete(path)       │
+│   Video     │ ────────────────────────────────────────┘
+└─────────────┘
+
+┌─────────────┐     onViewRefreshNeeded()         ┌─────────────┐
+│ Elaboration │ ─────────────────────────────────→│  Unified    │
+│ Enrichment  │ ─────────────────────────────────→│  View       │
+└─────────────┘                                   └─────────────┘
 ```
 
-- **URLs**: Validated via `sanitizeUrl()` before passing to yt-dlp. Only HTTP/HTTPS schemes accepted.
-- **Paths**: Validated via `sanitizePath()` before passing to ffmpeg. No path traversal allowed.
-- **Vault boundary**: `ensureWithinVault()` verifies resolved paths don't escape the vault directory.
-- **Subprocess execution**: Uses `execFile` (not `exec`) — arguments are passed as an array, never interpolated into a shell string.
-
-### Output Sanitization
-
-AI-generated text is sanitized via `sanitizeAIResponse()` before being written to vault notes:
-- Strips `<script>` tags and their content
-- Strips HTML event handlers (`onclick`, `onerror`, etc.)
-- Strips dangerous URI schemes in markdown links (`javascript:`, `data:`, `vbscript:`)
-- Strips `<iframe>`, `<embed>`, and `<object>` tags
-
-### API Key Protection
-
-- Keys are stored in Obsidian's plugin data (not in files within the vault)
-- Error messages are redacted via `notifyError()` — patterns matching API key formats are replaced with `[REDACTED]`
-- Ollama endpoint validation: HTTPS required for remote endpoints (HTTP allowed for localhost only)
+Callbacks are only wired when `enrichment.enabled && enrichment.autoEnrich` is true. Modules declare nullable callback properties; `main.ts` assigns them during initialization. No event bus or pub-sub needed.
 
 ---
 
-## Configuration Overview
+## Settings Hierarchy
 
-Settings are organized into four groups accessible from the plugin's settings tab:
+Settings are organized into six groups, each mapping to a module:
 
-| Group | What it controls |
-|-------|-----------------|
-| **AI** | Provider (OpenAI, Anthropic, Ollama), API key (password-masked), model (provider-specific dropdown), temperature |
-| **Elaboration** | Detection thresholds, excluded folders/tags, scan behavior, proposal storage |
-| **Audio** | Transcription provider, Whisper API key (shown only when needed), Deepgram API key, post-processing options, output folder |
-| **Video** | yt-dlp/ffmpeg paths, temp folder, platform toggles, output folder |
+```
+AutoNotesSettings
+├── ai          → Provider, API key, model, temperature
+├── elaboration → Detection thresholds, scan behavior, proposal storage
+│   ├── detection → Word threshold, TODO markers, empty sections, excludes
+│   └── proposal  → Max per note, preserve frontmatter, include context
+├── audio       → Transcription provider, API keys, post-processing
+│   └── postProcessing → Filler removal, structure, key points, custom prompt
+├── video       → yt-dlp/ffmpeg paths, download folder, embed setting
+│   └── frameExtraction → (Not implemented) interval, vision model, max frames
+├── enrichment  → Auto-enrich, max tags/links, proximity weights, excludes
+│   └── weights → Same/sibling/cousin/distant folder weights, decay, minimum
+└── tidy        → Snapshot folder path
+```
 
-All settings have sensible defaults. The minimum setup is providing an API key for your chosen AI/transcription provider.
-
-### Model Selection
-
-Models are selected via provider-specific dropdowns — not free text. Each provider has a curated list:
-
-| Provider | Available Models |
-|----------|-----------------|
-| OpenAI | GPT-4o, GPT-4o Mini, o3, o3 Mini, o4 Mini |
-| Anthropic | Claude Opus, Claude Sonnet, Claude Haiku |
-| Ollama | Llama 3, Mistral, Code Llama, Gemma |
-
-Anthropic models use simplified names in settings (e.g., `opus`) which are mapped to full API model IDs (e.g., `claude-opus-4-6`) at request time by `resolveModelId()` in `ai-client.ts`.
-
-### API Key Handling
-
-- All API key fields use password masking (`type="password"`) and disable autocomplete
-- The **Whisper API key** field appears conditionally: only when the transcription provider is Whisper AND the AI provider is not OpenAI (since OpenAI users already have a valid key via the shared AI key)
-- The transcriber uses fallback logic: `whisperApiKey || ai.apiKey`
-- Deepgram key is validated as non-empty before making the API request
+Modules access settings via a `getSettings()` closure injected at construction time, ensuring they always read the latest values without event subscriptions.
 
 ---
 
-## Development Setup
+## Proposal Lifecycle
 
-A step-by-step guide to get Auto Notes running locally for development. No prior Obsidian plugin development experience required.
-
-### Prerequisites
-
-Install these before starting:
-
-| Tool | Version | Why you need it |
-|------|---------|-----------------|
-| **Node.js** | 18+ | Builds the plugin (esbuild + TypeScript) |
-| **npm** | Comes with Node.js | Installs dependencies |
-| **Obsidian** | Desktop app, 0.15.0+ | The app the plugin runs inside |
-| **yt-dlp** | Latest | Only needed for video transcription features |
-| **ffmpeg** | Latest | Only needed for video transcription features |
-
-### Step 1: Create a Development Vault
-
-You want a separate vault for development so you don't risk your real notes.
-
-1. Open Obsidian
-2. Click "Create new vault"
-3. Name it something like `dev-vault` and pick any location (e.g., `~/dev-vault`)
-4. Once the vault opens, go to **Settings** (gear icon, bottom left) then **Community plugins**
-5. Click "Turn on community plugins" if prompted -- this is required for third-party plugins to load
-
-### Step 2: Clone the Repo into the Vault's Plugin Directory
-
-Obsidian loads plugins from a specific folder inside each vault. You need to put this project there.
-
-```sh
-# Navigate to your vault's plugin directory (create it if it doesn't exist)
-mkdir -p ~/dev-vault/.obsidian/plugins
-
-# Clone the repo with the correct folder name
-cd ~/dev-vault/.obsidian/plugins
-git clone <repo-url> auto-notes
-```
-
-The folder name `auto-notes` must match the `id` field in `manifest.json`.
-
-**Alternative -- symlink approach** (if you want the repo to live somewhere else):
-
-```sh
-# Keep the repo wherever you like
-cd ~/dev
-git clone <repo-url> obsidian-auto-notes
-
-# Symlink it into the vault's plugin directory
-mkdir -p ~/dev-vault/.obsidian/plugins
-ln -s ~/dev/obsidian-auto-notes ~/dev-vault/.obsidian/plugins/auto-notes
-```
-
-### Step 3: Install Dependencies
-
-```sh
-cd ~/dev-vault/.obsidian/plugins/auto-notes   # or wherever the repo lives
-npm install
-```
-
-This installs dev-only dependencies (esbuild, TypeScript, Obsidian type definitions). There are no runtime npm dependencies -- this is intentional.
-
-### Step 4: Build the Plugin
-
-**Watch mode (recommended for development):**
-
-```sh
-npm run dev
-```
-
-This starts esbuild in watch mode. Every time you save a `.ts` file, it rebuilds `main.js` automatically. The terminal will stay open -- leave it running while you work.
-
-**Production build:**
-
-```sh
-npm run build
-```
-
-This runs TypeScript type checking first (`tsc -noEmit`), then builds with esbuild. Use this before committing to catch type errors.
-
-Both commands produce `main.js` in the project root. Obsidian loads this file along with `manifest.json` when the plugin starts.
-
-### Step 5: Enable the Plugin in Obsidian
-
-1. Open your dev vault in Obsidian
-2. Go to **Settings** (gear icon) then **Community plugins**
-3. You should see "Auto Notes" in the list of installed plugins
-4. Toggle it **on**
-
-If you don't see it in the list, make sure you ran `npm run dev` (or `npm run build`) first -- Obsidian needs the `main.js` file to exist before it recognizes the plugin.
-
-### Step 6: Reload After Changes
-
-When esbuild rebuilds `main.js`, Obsidian does not pick up changes automatically. You need to reload.
-
-**Option A -- Reload the window:**
-
-- Press `Ctrl+R` (Windows/Linux) or `Cmd+R` (macOS) to reload the entire Obsidian window
-- This picks up the rebuilt `main.js` immediately
-
-**Option B -- Toggle the plugin:**
-
-- **Settings** then **Community plugins** then toggle Auto Notes off and back on
-- Useful if you only want to reload this plugin without refreshing the whole window
-
-### Step 7: View Console Logs and Debug
-
-Obsidian is built on Electron, so it has Chrome-style developer tools.
-
-- **Windows/Linux**: `Ctrl+Shift+I`
-- **macOS**: `Cmd+Opt+I`
-
-This opens the DevTools panel where you can:
-- See `console.log()` output in the **Console** tab
-- Set breakpoints in the **Sources** tab (look for your code under `main.js`)
-- Inspect network requests to AI APIs in the **Network** tab
-- View errors and stack traces
-
-Tip: Inline source maps are enabled in dev mode, so stack traces will reference your original `.ts` files rather than the bundled `main.js`.
-
-### Development Workflow Summary
+Elaboration and enrichment both use a proposal-based workflow. Tidy does not.
 
 ```
-1. Edit TypeScript files in src/
-           |
-           v
-2. esbuild rebuilds main.js automatically (watch mode)
-           |
-           v
-3. Reload Obsidian (Cmd+R / Ctrl+R)
-           |
-           v
-4. Test in Obsidian, check DevTools console for logs/errors
-           |
-           v
-5. Repeat
+                    ┌──────────┐
+                    │ Generated│
+                    └────┬─────┘
+                         │
+                    ┌────▼─────┐
+                    │ Pending  │ ← stored as JSON in .auto-notes/
+                    └────┬─────┘
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+        ┌─────▼─────┐        ┌─────▼─────┐
+        │ Accepted  │        │ Rejected  │
+        └─────┬─────┘        └───────────┘
+              │
+              │ (enrichment only)
+        ┌─────▼──────────┐
+        │ Partially      │
+        │ Accepted       │
+        └────────────────┘
 ```
 
-### Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Plugin not showing in Community plugins list | Make sure `main.js` and `manifest.json` both exist in the plugin folder. Run `npm run dev` first. |
-| Changes not reflected after save | Check that `npm run dev` is still running. Reload Obsidian with `Ctrl+R` / `Cmd+R` after esbuild rebuilds. |
-| TypeScript errors during `npm run build` | `npm run dev` skips type checking for speed. Run `npm run build` to see type errors. Fix them before committing. |
-| "yt-dlp not found" or "ffmpeg not found" | These are only needed for video features. Install them via your package manager (`brew install yt-dlp ffmpeg` on macOS, etc.). |
-| API key errors | Configure your AI provider API key in **Settings** then **Auto Notes**. Minimum setup is one API key for your chosen provider. |
-
-### Project Structure
-
-```
-src/
-  main.ts              Plugin entry point and module orchestration
-  settings.ts          Settings interfaces and defaults
-  settings-tab.ts      Obsidian settings UI
-  __mocks__/
-    obsidian.ts        Centralized Obsidian mock (real TFile/TFolder classes, UI stubs)
-  __test-utils__/
-    setup.ts           Global test setup (vi.mock('obsidian'))
-    mock-factories.ts  mockFile(), createMockApp(), createMockPlugin(), makeSettings()
-  elaboration/         Stub detection, proposal generation, review UI
-    types.ts           DetectionReason, Proposal, ProposalStatus interfaces
-  audio/               Transcription pipeline, inline note transcription, post-processing
-    types.ts           TranscriptionResult, TimestampEntry, TranscribeOptions, AudioEmbed
-    index.ts           AudioModule (orchestrator, commands, inline transcription logic)
-    note-audio-modal.ts  NoteAudioModal (embed selection UI)
-    transcription-modal.ts  File-picker modal for standalone transcription
-    transcriber.ts     Provider-routed transcription (Whisper, Deepgram, local)
-    post-processor.ts  AI-powered transcript cleanup
-  video/               URL detection, yt-dlp/ffmpeg integration
-    types.ts           Platform, UrlDetectionResult, VideoSource, ExtractionResult, VideoMetadata
-    url-detector.ts    Regex-based URL platform detection (YouTube + TikTok)
-    url-detector.test.ts  26 test cases covering all URL patterns
-    audio-extractor.ts AudioExtractor with PATH resolution and absolute temp paths
-  shared/
-    types.ts           ChatMessage (cross-module types)
-    ai-client.ts       Multi-provider AI client with safeRequest wrapper
-    file-utils.ts      Vault file operations (ensureFolder, writeNote)
-    api-utils.ts       Retry, sleep, notifyError with key redaction
-    validation.ts      URL, path, vault boundary, and AI output sanitization
-    index.ts           Barrel export for all shared utilities
-```
-
-### Key Patterns
-
-- **FeatureModule contract**: Each module has `constructor(plugin, getSettings)`, `onload()`, `onunload()`. Follow this pattern when adding features.
-- **`getSettings()` closure**: Modules call `getSettings()` to always get fresh settings — no event subscription needed.
-- **Zero runtime deps**: All API calls use `requestUrl` or `fetch`. External tools run as subprocesses. Don't add npm runtime dependencies.
-- **Conditional loading**: Modules are only loaded when their `enabled` setting is true. Disabled modules don't register commands or events.
+- **Elaboration proposals**: Accept applies full content (user can edit in textarea first). Original note content is blockquoted for preservation.
+- **Enrichment proposals**: Accept Selected allows cherry-picking individual tags, links, refs, and frontmatter items. Sections are wrapped in `%% auto-notes-enrichment-start/end %%` markers for idempotent updates.
+- **Tidy**: Immediate apply, undo via stored snapshot. No proposal UI.
 
 ---
 
-## Test Infrastructure
+## Getting Started for Contributors
 
-The project uses **Vitest 4.x** for testing, with a custom Obsidian mock layer that makes plugin code testable outside of the Electron environment.
-
-### How it works
-
-```
-vitest.config.ts              Config: globals on, node env, src/**/*.test.ts
-    |
-src/__test-utils__/setup.ts   Auto-mocks 'obsidian' module before each file
-    |
-src/__mocks__/obsidian.ts     Provides stubs for all Obsidian APIs
-    |
-src/__test-utils__/mock-factories.ts   Helpers for creating test fixtures
-```
-
-- **Obsidian mock**: Uses real class implementations for `TFile` and `TFolder` (so `instanceof` checks in production code work correctly in tests). UI classes (`Modal`, `Plugin`, `Setting`, `ItemView`, etc.) are stubs with spy functions.
-- **Mock factories**: `createMockApp()` provides a fresh `App` with spy vault/metadataCache/workspace. `createMockPlugin()` wraps it in a Plugin. `mockFile(path)` creates `TFile` instances. `makeSettings()` deep-merges overrides onto defaults.
-- **Co-located tests**: Test files live next to their source as `<name>.test.ts`. Currently `url-detector.test.ts` has 26 test cases covering YouTube and TikTok URL detection.
-
-### Running tests
-
-| Command | What it does |
-|---------|-------------|
-| `npm test` | Single run (CI mode) |
-| `npm run test:watch` | Watch mode (re-runs on file changes) |
-| `npm run test:coverage` | Single run with coverage report |
-
-### Test priority
-
-Tests are organized in three tiers, starting with what is easiest and most valuable to test:
-
-1. **Pure functions** (no mocking needed): URL detection, input validation, word count, settings shape
-2. **Units with injectable deps** (mock at boundary): detector, proposer, transcriber, AI client
-3. **Module orchestrators** (integration-level): elaboration pipeline, audio pipeline, video pipeline
-
-UI classes (modals, views, settings tab) and the plugin entry point (`main.ts`) are not unit tested. Testable logic should be extracted into pure functions.
+1. Clone into Obsidian vault's plugin directory (see Development Setup in existing docs)
+2. `npm install` → `npm run dev` (watch mode)
+3. Module pattern: each feature in `src/<module>/` with `index.ts` exporting the module class
+4. Follow the FeatureModule contract: `constructor(plugin, getSettings, notifications)`, `onload()`, `onunload()`
+5. Types go in `<module>/types.ts`, tests co-located as `<name>.test.ts`
+6. All shared utilities imported from `../shared` (barrel export)
+7. Build check: `npm run build` (type-checks + bundles)
+8. Tests: `npm test`

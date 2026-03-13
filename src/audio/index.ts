@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { NotificationManager, writeNote } from '../shared';
+import { NotificationManager } from '../shared';
 import { NoteAudioModal } from './note-audio-modal';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
@@ -68,26 +68,17 @@ export class AudioModule {
 		return result;
 	}
 
-	async saveTranscription(
-		result: TranscriptionResult,
-		targetPath?: string
-	): Promise<void> {
-		const settings = this.getSettings().audio.output;
-		const content = this.formatTranscription(result);
-
-		const path =
-			targetPath || this.buildOutputPath(result.sourceName, settings);
-
-		await writeNote(this.plugin.app, path, content);
-		this.notifications.info(`Transcription saved to ${path}`);
-		this.onTranscriptionComplete?.(path);
-	}
-
 	openTranscriptionModal(): void {
 		new AudioTranscriptionModal(
 			this.plugin.app,
 			this.getSettings,
 			async (file) => {
+				const activeFile = this.plugin.app.workspace.getActiveFile();
+				if (!activeFile) {
+					this.notifications.info('Open a note first to insert the transcription');
+					return;
+				}
+
 				const op = this.notifications.startOperation(
 					`Transcribing ${file.name}...`,
 					`audio-${file.path}`
@@ -95,8 +86,20 @@ export class AudioModule {
 				try {
 					const data = await this.plugin.app.vault.readBinary(file);
 					const result = await this.transcribe(data, file.name);
-					await this.saveTranscription(result);
-					op.finish(`Transcription of ${file.name} saved`);
+					const text = result.processed || result.raw;
+
+					const transcriptionBlock = [
+						'',
+						`> **Transcription of ${file.name}**`,
+						'>',
+						...text.split('\n').map(line => `> ${line}`),
+						'',
+					].join('\n');
+
+					const content = await this.plugin.app.vault.read(activeFile);
+					await this.plugin.app.vault.modify(activeFile, content + transcriptionBlock);
+					this.onTranscriptionComplete?.(activeFile.path);
+					op.finish(`Transcription of ${file.name} added to note`);
 				} catch (error) {
 					const msg = error instanceof Error ? error.message : String(error);
 					op.error(`Transcription failed — ${msg}`);
@@ -223,34 +226,4 @@ export class AudioModule {
 		}
 	}
 
-	private formatTranscription(result: TranscriptionResult): string {
-		const parts: string[] = [];
-
-		parts.push(`---`);
-		parts.push(`source: ${result.sourceName}`);
-		parts.push(`date: ${new Date().toISOString().split('T')[0]}`);
-		if (result.language) parts.push(`language: ${result.language}`);
-		if (result.duration) {
-			parts.push(`duration: ${Math.round(result.duration)}s`);
-		}
-		parts.push(`---`);
-		parts.push('');
-
-		const text = result.processed || result.raw;
-		parts.push(text);
-
-		return parts.join('\n');
-	}
-
-	private buildOutputPath(
-		sourceName: string,
-		settings: { folder: string; fileNameTemplate: string }
-	): string {
-		const date = new Date().toISOString().split('T')[0];
-		const source = sourceName.replace(/\.[^.]+$/, '');
-		const fileName = settings.fileNameTemplate
-			.replace('{{date}}', date)
-			.replace('{{source}}', source);
-		return `${settings.folder}/${fileName}.md`;
-	}
 }

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-12
+last-updated: 2026-03-13
 ---
 
 # Audio Module
@@ -12,17 +12,15 @@ Exported from `index.ts`:
 
 ```ts
 class AudioModule {
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings)
+  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
-  saveTranscription(result: TranscriptionResult, targetPath?: string): Promise<void>
   openTranscriptionModal(): void
+  onTranscriptionComplete: ((filePath: string) => void) | null
 }
 
-class AudioTranscriptionModal extends Modal {
-  constructor(app: App, getSettings: () => AutoNotesSettings, onTranscribe: (file: TFile) => Promise<void>)
-}
+class AudioTranscriptionModal extends Modal { ... }
 
 interface TranscriptionResult {
   raw: string
@@ -33,83 +31,54 @@ interface TranscriptionResult {
   timestamps?: TimestampEntry[]
 }
 
-interface TimestampEntry {
-  start: number
-  end: number
-  text: string
-}
-
-interface TranscribeOptions {
-  language?: string
-  postProcess?: boolean
-  sourceName?: string
-}
-
-interface AudioEmbed {
-  fileName: string
-  file: TFile
-  line: number
-}
+interface TimestampEntry { start: number; end: number; text: string }
+interface TranscribeOptions { language?: string; postProcess?: boolean; sourceName?: string }
+interface AudioEmbed { fileName: string; file: TFile; line: number }
 ```
 
-## Internal Files
+## File Inventory
 
 | File | Class/Export | Purpose |
 |------|-------------|---------|
-| `types.ts` | `TranscriptionResult`, `TimestampEntry`, `TranscribeOptions`, `AudioEmbed` | Type definitions |
-| `transcriber.ts` | `Transcriber` | Provider-routed transcription (Whisper API, Deepgram, local); `getWhisperApiKey()` fallback logic |
-| `post-processor.ts` | `PostProcessor` | AI-powered transcript cleanup via `AIClient` |
-| `transcription-modal.ts` | `AudioTranscriptionModal` | File picker modal for vault audio files |
-| `note-audio-modal.ts` | `NoteAudioModal` | Selection modal for audio embeds found in a note |
-| `index.ts` | `AudioModule` | Orchestrator, registers commands |
+| `types.ts` | `TranscriptionResult`, `TimestampEntry`, `TranscribeOptions`, `AudioEmbed` | Types |
+| `transcriber.ts` | `Transcriber` | Provider-routed transcription (Whisper, Deepgram, local) |
+| `post-processor.ts` | `PostProcessor` | AI transcript cleanup via `AIClient` |
+| `transcription-modal.ts` | `AudioTranscriptionModal` | File picker modal |
+| `note-audio-modal.ts` | `NoteAudioModal` | Selection modal for note embeds |
+| `index.ts` | `AudioModule` | Orchestrator, commands, embed detection |
 
 ## Data Flow
 
 ```
 1. User triggers command or VideoModule calls transcribe()
    |
-2. AudioModule.transcribe(audioData, fileName, options?)
+2. Transcriber.transcribe(audioData, fileName)
+   |  Routes by transcriptionProvider:
+   |  'whisper-api' --> OpenAI /v1/audio/transcriptions (fetch + FormData, 5min timeout)
+   |       Key: audio.whisperApiKey || ai.apiKey
+   |  'deepgram' --> Deepgram /v1/listen (fetch, 5min timeout)
+   |  'local-whisper' --> throws (not implemented)
    |
-3. Transcriber.transcribe(audioData, fileName)
-   |  Routes by settings.audio.transcriptionProvider:
-   |  -- 'whisper-api' -> OpenAI /v1/audio/transcriptions (FormData + fetch + AbortController 5min timeout)
-   |       Key resolution: getWhisperApiKey() -> audio.whisperApiKey || ai.apiKey
-   |  -- 'deepgram' -> Deepgram /v1/listen (fetch + AbortController 5min timeout)
-   |       Guard: throws if deepgramApiKey is empty
-   |  -- 'local-whisper' -> not implemented (throws)
+3. PostProcessor.process(rawTranscript)  [if postProcess !== false]
+   |  Builds instructions from settings flags, calls AIClient.complete()
+   |  sanitizeAIResponse() on output
    |
-4. PostProcessor.process(rawTranscript)  [if postProcess !== false]
-   |  Builds instruction list from settings flags
-   |  Calls AIClient.complete() to clean transcript
-   |  Sanitizes AI response via sanitizeAIResponse()
-   |
-5. AudioModule.saveTranscription(result)
-   |  Formats frontmatter (source, date, language, duration)
-   |  Writes to output.folder/{{date}}-{{source}}.md via writeNote()
+4. Result inserted as blockquote in active note:
+   > **Transcription of filename.mp3**
+   > ...transcribed text...
 ```
 
-## Inline Note Transcription Flow
+## Inline Note Transcription
 
 ```
-1. User triggers command auto-notes:transcribe-note-audio (editorCallback)
+1. transcribeFromNote(noteFile)
+   |  findAudioEmbeds(): regex ![[*.mp3|wav|m4a|ogg|flac|webm|aac]]
+   |  Skips embeds with existing transcription block below
    |
-2. AudioModule.transcribeFromNote(noteFile)
-   |  Reads note content, calls findAudioEmbeds()
+2. NoteAudioModal -- user selects embeds
    |
-3. findAudioEmbeds(content, sourcePath)
-   |  Regex: /!\[\[(.+\.(?:mp3|wav|m4a|ogg|flac|webm|aac))\]\]/gi
-   |  Resolves each embed to TFile via metadataCache.getFirstLinkpathDest()
-   |  Skips embeds that already have a transcription block below (hasTranscriptionBelow)
-   |
-4. NoteAudioModal -- user selects which embeds to transcribe
-   |
-5. transcribeAndInsert(noteFile, selectedEmbeds)
-   |  Processes in reverse line order (so insertions don't shift line numbers)
-   |  2s delay between API requests (rate limit avoidance)
-   |  Inserts blockquote transcription block after each embed line:
-   |    > **Transcription of filename.mp3**
-   |    > ...transcribed text...
-   |  Writes modified content via vault.modify()
+3. transcribeAndInsert() -- reverse line order, 2s delay between API calls
+   |  Cancellable via NotificationManager operation handle
 ```
 
 ## Settings Keys
@@ -118,30 +87,13 @@ All under `settings.audio`:
 
 | Key | Controls |
 |-----|----------|
-| `enabled` | Module activation at startup |
-| `transcriptionProvider` | Which transcription backend to use |
-| `whisperApiKey` | Dedicated OpenAI key for Whisper (fallback: `ai.apiKey`) |
-| `deepgramApiKey` | API key for Deepgram provider |
-| `whisperModel` | Model name for Whisper API |
-| `localWhisperPath` | Path to local whisper binary (unused) |
-| `language` | Language hint for transcription |
-| `postProcessing.enabled` | Enable AI post-processing |
-| `postProcessing.removeFiller` | Strip filler words |
-| `postProcessing.addStructure` | Add punctuation and headings |
-| `postProcessing.extractKeyPoints` | Add bullet summary at top |
-| `postProcessing.customPrompt` | Additional post-processing instruction |
-| `output.folder` | Output folder for transcription notes |
-| `output.fileNameTemplate` | Template with `{{date}}` and `{{source}}` |
-| `output.appendToExisting` | Append to existing file (not yet used in code) |
-
-## Error Handling
-
-- `openTranscriptionModal` callback: catches errors, calls `notifyError()`
-- Whisper API uses `fetch` (not `requestUrl`) due to FormData requirement, with AbortController timeout (5min)
-- Deepgram uses `fetch` with AbortController timeout (5min); throws if `deepgramApiKey` is empty
-- Local whisper throws `Error` with guidance to use other providers
-- Post-processed AI output sanitized via `sanitizeAIResponse()` (strips scripts, event handlers, dangerous URIs)
+| `transcriptionProvider` | Backend selection |
+| `whisperApiKey` | Dedicated OpenAI key (fallback: `ai.apiKey`) |
+| `deepgramApiKey` | Deepgram API key |
+| `whisperModel` | Whisper model name |
+| `language` | Language hint |
+| `postProcessing.*` | AI cleanup flags |
 
 ## Video Module Integration
 
-`AudioModule.transcribe()` is called by `VideoModule.processUrl()` at `video/index.ts:L78`. The video module passes extracted audio as `ArrayBuffer` with `sourceName` set to the video title.
+`AudioModule.transcribe()` is called by `VideoModule.processUrl()` at `video/index.ts:L105`. Video passes extracted audio as `ArrayBuffer` with `sourceName` set to video title.

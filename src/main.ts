@@ -5,12 +5,13 @@ import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule } from './video';
 import { EnrichmentModule } from './enrichment';
+import { TidyModule } from './tidy';
 import { NotificationManager } from './shared';
 import {
 	UNIFIED_VIEW_TYPE,
 	UnifiedProposalView,
 	UnifiedItem,
-} from './shared/unified-proposal-view';
+} from './views/unified-proposal-view';
 
 export default class AutoNotesPlugin extends Plugin {
 	settings!: AutoNotesSettings;
@@ -20,6 +21,7 @@ export default class AutoNotesPlugin extends Plugin {
 	private audio!: AudioModule;
 	private video!: VideoModule;
 	private enrichment!: EnrichmentModule;
+	private tidy!: TidyModule;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -36,6 +38,7 @@ export default class AutoNotesPlugin extends Plugin {
 		this.audio = new AudioModule(this, getSettings, this.notifications);
 		this.video = new VideoModule(this, getSettings, this.audio, this.notifications);
 		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications);
+		this.tidy = new TidyModule(this, getSettings, this.notifications);
 
 		// Register the unified proposal view
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
@@ -64,6 +67,9 @@ export default class AutoNotesPlugin extends Plugin {
 		}
 		if (this.settings.enrichment.enabled) {
 			await this.enrichment.onload();
+		}
+		if (this.settings.tidy.enabled) {
+			await this.tidy.onload();
 		}
 
 		// Wire enrichment callbacks — triggers after other processes complete
@@ -100,6 +106,7 @@ export default class AutoNotesPlugin extends Plugin {
 		this.audio?.onunload();
 		this.video?.onunload();
 		this.enrichment?.onunload();
+		this.tidy?.onunload();
 	}
 
 	async loadSettings(): Promise<void> {

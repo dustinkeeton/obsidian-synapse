@@ -1,7 +1,7 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { AudioModule, TranscriptionResult } from '../audio';
-import { ensureFolder, NotificationManager, sanitizeUrl, writeNote } from '../shared';
+import { ensureFolder, NotificationManager, sanitizeUrl } from '../shared';
 import { AudioExtractor } from './audio-extractor';
 import { NoteVideoModal } from './note-video-modal';
 import { findVideoUrls } from './note-scanner';
@@ -78,16 +78,24 @@ export class VideoModule {
 		url: string,
 		options?: VideoProcessOptions,
 		parentOp?: { update: (msg: string) => void }
-	): Promise<TranscriptionResult> {
+	): Promise<TranscriptionResult & { videoVaultPath?: string }> {
 		// Validate URL before processing
 		const validatedUrl = sanitizeUrl(url);
 		const detected = detectPlatform(validatedUrl);
 		const platform = detected?.platform || 'unknown';
 
-		const update = parentOp?.update ?? ((msg: string) => { /* no-op */ });
+		const update = parentOp?.update ?? (() => { /* no-op */ });
 
 		update(`Downloading ${platform} video...`);
 		const extraction = await this.extractor.extractFromUrl(validatedUrl);
+
+		// Download the actual video file into the vault
+		let videoVaultPath: string | undefined;
+		const settings = this.getSettings().video;
+		if (settings.downloadFolder) {
+			update('Saving video to vault...');
+			videoVaultPath = await this.downloadVideoToVault(validatedUrl, extraction.metadata);
+		}
 
 		update('Extracting audio...');
 		const fs = require('fs') as typeof import('fs');
@@ -100,23 +108,45 @@ export class VideoModule {
 			{ sourceName: extraction.metadata.title }
 		);
 
-		// Clean up temp file
+		// Clean up temp audio file
 		try {
 			fs.unlinkSync(extraction.audioPath);
 		} catch {
 			// Ignore cleanup errors
 		}
 
-		// In insert mode, caller handles placement — skip file creation
-		if (!options?.insertMode) {
-			const outputPath = options?.outputPath || this.buildOutputPath(extraction.metadata);
-			const content = this.formatVideoTranscription(result, extraction.metadata);
-			await writeNote(this.plugin.app, outputPath, content);
-			this.notifications.info(`Transcription saved to ${outputPath}`);
-			this.onTranscriptionComplete?.(outputPath);
-		}
+		return { ...result, videoVaultPath };
+	}
 
-		return result;
+	/**
+	 * Download the video file into the vault's download folder.
+	 * Returns the vault-relative path to the saved file.
+	 */
+	private async downloadVideoToVault(url: string, metadata: VideoMetadata): Promise<string> {
+		const settings = this.getSettings().video;
+		const fs = require('fs') as typeof import('fs');
+
+		await ensureFolder(this.plugin.app, settings.downloadFolder);
+
+		const title = (metadata.title || 'video')
+			.replace(/[^a-zA-Z0-9-_ ]/g, '')
+			.trim()
+			.slice(0, 60);
+		const date = new Date().toISOString().split('T')[0];
+		const fileName = `${date}-${title}.mp4`;
+
+		// Download via extractor (uses correct PATH and ytDlpPath setting)
+		const tempPath = await this.extractor.downloadVideo(url);
+
+		// Read the downloaded file and write it into the vault
+		const videoData = fs.readFileSync(tempPath);
+		const vaultPath = `${settings.downloadFolder}/${fileName}`;
+		await this.plugin.app.vault.adapter.writeBinary(vaultPath, videoData.buffer as ArrayBuffer);
+
+		// Clean up temp video file
+		try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+
+		return vaultPath;
 	}
 
 	private async transcribeFromNote(noteFile: TFile): Promise<void> {
@@ -166,15 +196,23 @@ export class VideoModule {
 				const text = result.processed || result.raw;
 
 				const lines = content.split('\n');
-				const transcriptionBlock = [
-					'',
+				const blockLines: string[] = [''];
+
+				// Embed the downloaded video if setting is on
+				if (this.getSettings().video.embedInNote && result.videoVaultPath) {
+					const fileName = result.videoVaultPath.split('/').pop()!;
+					blockLines.push(`![[${fileName}]]`);
+					blockLines.push('');
+				}
+
+				blockLines.push(
 					`> **Transcription of ${embed.url}**`,
 					'>',
 					...text.split('\n').map(line => `> ${line}`),
-					'',
-				].join('\n');
+					''
+				);
 
-				lines.splice(embed.line + 1, 0, transcriptionBlock);
+				lines.splice(embed.line + 1, 0, blockLines.join('\n'));
 				content = lines.join('\n');
 
 				completed++;
@@ -194,13 +232,39 @@ export class VideoModule {
 
 	private openUrlModal(): void {
 		new VideoTranscriptionModal(this.plugin.app, async (url) => {
+			const activeFile = this.plugin.app.workspace.getActiveFile();
+			if (!activeFile) {
+				this.notifications.info('Open a note first to insert the transcription');
+				return;
+			}
+
 			const op = this.notifications.startOperation(
 				'Processing video URL...',
 				`video-url-${Date.now()}`
 			);
 			try {
-				await this.processUrl(url, undefined, op);
-				op.finish('Video transcription saved');
+				const result = await this.processUrl(url, { insertMode: true }, op);
+				const text = result.processed || result.raw;
+
+				const blockLines: string[] = [''];
+
+				if (this.getSettings().video.embedInNote && result.videoVaultPath) {
+					const fileName = result.videoVaultPath.split('/').pop()!;
+					blockLines.push(`![[${fileName}]]`);
+					blockLines.push('');
+				}
+
+				blockLines.push(
+					`> **Transcription of ${url}**`,
+					'>',
+					...text.split('\n').map(line => `> ${line}`),
+					''
+				);
+
+				const content = await this.plugin.app.vault.read(activeFile);
+				await this.plugin.app.vault.modify(activeFile, content + blockLines.join('\n'));
+				this.onTranscriptionComplete?.(activeFile.path);
+				op.finish('Video transcription added to note');
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);
 				op.error(`Video transcription failed — ${msg}`);
@@ -225,40 +289,4 @@ export class VideoModule {
 		this.notifications.info(lines.join('\n'), duration);
 	}
 
-	private formatVideoTranscription(
-		result: TranscriptionResult,
-		metadata: VideoMetadata
-	): string {
-		const settings = this.getSettings().video.output;
-		const parts: string[] = [];
-
-		parts.push('---');
-		parts.push(`source: ${metadata.title}`);
-		parts.push(`date: ${new Date().toISOString().split('T')[0]}`);
-		if (settings.includeVideoMetadata) {
-			if (metadata.platform) parts.push(`platform: ${metadata.platform}`);
-			if (metadata.channel) parts.push(`channel: ${metadata.channel}`);
-			if (metadata.duration) parts.push(`duration: ${Math.round(metadata.duration)}s`);
-			if (metadata.url) parts.push(`url: "${metadata.url}"`);
-		}
-		parts.push('---');
-		parts.push('');
-
-		const text = result.processed || result.raw;
-		parts.push(text);
-
-		return parts.join('\n');
-	}
-
-	private buildOutputPath(metadata: VideoMetadata): string {
-		const settings = this.getSettings().video.output;
-		const date = new Date().toISOString().split('T')[0];
-		const title = (metadata.title || 'video')
-			.replace(/[^a-zA-Z0-9-_ ]/g, '')
-			.slice(0, 60);
-		const fileName = settings.fileNameTemplate
-			.replace('{{date}}', date)
-			.replace('{{title}}', title);
-		return `${settings.folder}/${fileName}.md`;
-	}
 }

@@ -274,18 +274,6 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
-			.setName('Output folder')
-			.setDesc('Where to save transcription notes')
-			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.audio.output.folder)
-					.onChange(async (value) => {
-						this.plugin.settings.audio.output.folder = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
 		// ── Video Transcription ──
 		containerEl.createEl('h2', { text: 'Video Transcription' });
 
@@ -325,25 +313,25 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('Video output folder')
-			.setDesc('Where to save video transcription notes')
+			.setName('Video download folder')
+			.setDesc('Where to save downloaded video files in the vault')
 			.addText((text) =>
 				text
-					.setValue(this.plugin.settings.video.output.folder)
+					.setValue(this.plugin.settings.video.downloadFolder)
 					.onChange(async (value) => {
-						this.plugin.settings.video.output.folder = value;
+						this.plugin.settings.video.downloadFolder = value;
 						await this.plugin.saveSettings();
 					})
 			);
 
 		new Setting(containerEl)
-			.setName('Include video metadata')
-			.setDesc('Add title, channel, duration to transcription notes')
+			.setName('Embed video in note')
+			.setDesc('Add an embed link to the downloaded video file in the note')
 			.addToggle((toggle) =>
 				toggle
-					.setValue(this.plugin.settings.video.output.includeVideoMetadata)
+					.setValue(this.plugin.settings.video.embedInNote)
 					.onChange(async (value) => {
-						this.plugin.settings.video.output.includeVideoMetadata = value;
+						this.plugin.settings.video.embedInNote = value;
 						await this.plugin.saveSettings();
 					})
 			);
@@ -486,6 +474,21 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.enrichment.excludeTags =
 							value.split(',').map((s) => s.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// ── Note Tidy ──
+		containerEl.createEl('h2', { text: 'Note Tidy' });
+
+		new Setting(containerEl)
+			.setName('Enable tidy')
+			.setDesc('Spelling correction and markdown formatting (no content changes)')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.tidy.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.tidy.enabled = value;
 						await this.plugin.saveSettings();
 					})
 			);
