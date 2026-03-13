@@ -57,3 +57,6 @@ The algorithm for choosing what kind of tags should be weighted towards relevanc
 You should be liberal with internal links, but stingy with external ones.
 
 This is a complex feature. Plan this out first. Spawn who you need from the team to discuss. After a plan is made, document it and then implement.
+
+### Next
+The next feature we will be working on is called Tidy. This command aims to change *nothing* about  the content of the note. First, it does spelling correction (*not* grammar correction). Then it formats the note into logical markdown elements (bullet points, numbered lists, block quotes, headers, etc). There is now proposal process for Tidying, the effects are immediate, but they can be undone.
