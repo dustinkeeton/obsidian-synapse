@@ -1,206 +1,229 @@
 ---
-last-updated: 2026-03-12
+last-updated: 2026-03-13
 ---
 
-# Auto Notes -- Agent Documentation
+# Auto Notes -- Agent Entry Point
 
-Obsidian plugin providing AI-powered note elaboration, audio transcription, and video transcription.
+AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, note enrichment (tags, links, references), and note tidying (spelling/formatting).
+
+## Build and Test
+
+```sh
+npm run build          # tsc -noEmit -skipLibCheck && node esbuild.config.mjs production
+npm run dev            # esbuild watch
+npm test               # vitest run
+npm run test:watch     # vitest watch
+npm run test:coverage  # vitest run --coverage
+```
+
+Output: `main.js` (single bundle, Obsidian loads this)
 
 ## Module Registry
 
-| Path | Purpose | Public API |
-|------|---------|------------|
-| `src/main.ts` | Plugin entry point, module orchestration | `AutoNotesPlugin` (default export) |
-| `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
-| `src/settings-tab.ts` | Obsidian settings UI | `AutoNotesSettingTab` |
-| `src/elaboration/` | Stub note detection and proposal generation | `ElaborationModule`, `PROPOSAL_VIEW_TYPE`, types |
-| `src/audio/` | Audio transcription pipeline (file + inline note embeds) | `AudioModule`, `AudioTranscriptionModal`, types |
-| `src/video/` | Video download, audio extraction, transcription | `VideoModule`, `detectPlatform`, `isSupportedUrl`, types |
-| `src/shared/` | AI client, file utils, API helpers, validation | `AIClient`, `writeNote`, `ensureFolder`, `sanitizeUrl`, `sanitizePath`, `sanitizeAIResponse`, `notifyError`, `withRetry`, `wordCount` |
+| Module | Path | Purpose | Public API |
+|--------|------|---------|------------|
+| main | `src/main.ts` | Plugin entry, module orchestration, view registration | `AutoNotesPlugin` (default) |
+| settings | `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
+| settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `AutoNotesSettingTab` |
+| elaboration | `src/elaboration/` | Stub note detection, AI proposal generation | `ElaborationModule`, types |
+| audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `AudioTranscriptionModal`, types |
+| video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `detectPlatform`, `isSupportedUrl`, types |
+| enrichment | `src/enrichment/` | Tag scoring, link resolution, external refs, frontmatter | `EnrichmentModule`, types |
+| tidy | `src/tidy/` | Spelling correction and markdown formatting via AI | `TidyModule`, `TidySnapshot` |
+| shared | `src/shared/` | AI client, file utils, validation, notifications, frontmatter | `AIClient`, `NotificationManager`, file/validation utils |
+| views | `src/views/` | Unified sidebar for elaboration + enrichment proposals | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem` |
 
 ## Dependency Graph
 
 ```
 main.ts
-├── settings.ts (AutoNotesSettings, DEFAULT_SETTINGS)
-├── settings-tab.ts (AutoNotesSettingTab)
-├── elaboration/
-│   ├── shared/ai-client.ts (AIClient)
-│   ├── shared/file-utils.ts (ensureFolder)
-│   ├── shared/api-utils.ts (notifyError)
-│   └── shared/validation.ts (sanitizeAIResponse)
-├── audio/
-│   ├── shared/ai-client.ts (AIClient)
-│   ├── shared/file-utils.ts (writeNote)
-│   ├── shared/api-utils.ts (notifyError)
-│   └── shared/validation.ts (sanitizeAIResponse)
-└── video/
-    ├── audio/ (AudioModule -- video delegates transcription to audio)
-    ├── shared/file-utils.ts (ensureFolder, writeNote)
-    ├── shared/api-utils.ts (notifyError)
-    └── shared/validation.ts (sanitizeUrl, sanitizePath)
+  |-- settings.ts
+  |-- settings-tab.ts
+  |-- shared/
+  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types
+  |-- elaboration/ --> shared/
+  |-- audio/ --> shared/
+  |-- video/ --> shared/, audio/
+  |-- enrichment/ --> shared/
+  +-- tidy/ --> shared/
 ```
 
-Key constraint: Video depends on Audio. Audio initialized at `main.ts:L23`, Video at `main.ts:L24`.
-
-## Settings Schema
-
-```typescript
-type AIProvider = 'openai' | 'anthropic' | 'ollama'
-
-interface AutoNotesSettings {
-  ai: AISettings;
-  elaboration: ElaborationSettings;
-  audio: AudioSettings;
-  video: VideoSettings;
-}
-```
-
-### ai
-
-| Key | Type | Default |
-|-----|------|---------|
-| `provider` | `AIProvider` | `'openai'` |
-| `apiKey` | `string` | `''` |
-| `ollamaEndpoint` | `string` | `'http://localhost:11434'` |
-| `model` | `string` | `'gpt-4o'` |
-| `maxTokens` | `number` | `2048` |
-| `temperature` | `number` | `0.7` |
-
-Note: `model` stores simplified names (e.g. `'opus'`). `AIClient` resolves these to full API IDs via `resolveModelId()` (e.g. `'opus'` -> `'claude-opus-4-6'`).
-
-Model options per provider:
-
-| Provider | Models |
-|----------|--------|
-| openai | gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini |
-| anthropic | opus (Claude Opus), sonnet (Claude Sonnet), haiku (Claude Haiku) |
-| ollama | llama3, mistral, codellama, gemma |
-
-### elaboration
-
-| Key | Type | Default |
-|-----|------|---------|
-| `enabled` | `boolean` | `true` |
-| `proposalFolderPath` | `string` | `'.auto-notes/proposals'` |
-| `scanOnStartup` | `boolean` | `false` |
-| `autoScanInterval` | `number` (minutes, 0=off) | `0` |
-| `detection.minWordThreshold` | `number` | `50` |
-| `detection.detectTodoMarkers` | `boolean` | `true` |
-| `detection.detectEmptySections` | `boolean` | `true` |
-| `detection.detectSparseLinks` | `boolean` | `true` |
-| `detection.excludeFolders` | `string[]` | `['templates', '.auto-notes']` |
-| `detection.excludeTags` | `string[]` | `['no-elaborate']` |
-| `proposal.maxProposalsPerNote` | `number` | `3` |
-| `proposal.preserveFrontmatter` | `boolean` | `true` |
-| `proposal.includeSourceContext` | `boolean` | `true` |
-
-### audio
-
-| Key | Type | Default |
-|-----|------|---------|
-| `enabled` | `boolean` | `true` |
-| `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'local-whisper'` | `'whisper-api'` |
-| `whisperApiKey` | `string` | `''` |
-| `deepgramApiKey` | `string` | `''` |
-| `whisperModel` | `string` | `'whisper-1'` |
-| `localWhisperPath` | `string` | `''` |
-| `language` | `string` | `''` |
-| `postProcessing.enabled` | `boolean` | `true` |
-| `postProcessing.removeFiller` | `boolean` | `true` |
-| `postProcessing.addStructure` | `boolean` | `true` |
-| `postProcessing.extractKeyPoints` | `boolean` | `false` |
-| `postProcessing.customPrompt` | `string` | `''` |
-| `output.folder` | `string` | `'Transcriptions'` |
-| `output.fileNameTemplate` | `string` | `'{{date}}-{{source}}'` |
-| `output.appendToExisting` | `boolean` | `false` |
-
-### video
-
-| Key | Type | Default |
-|-----|------|---------|
-| `enabled` | `boolean` | `true` |
-| `ytDlpPath` | `string` | `'yt-dlp'` |
-| `ffmpegPath` | `string` | `'ffmpeg'` |
-| `tempFolder` | `string` | `'.auto-notes/temp'` |
-| `supportedPlatforms.youtube` | `boolean` | `true` |
-| `supportedPlatforms.tiktok` | `boolean` | `true` |
-| `frameExtraction.enabled` | `boolean` | `false` |
-| `frameExtraction.intervalSeconds` | `number` | `30` |
-| `frameExtraction.visionModel` | `string` | `'gpt-4o'` |
-| `frameExtraction.maxFrames` | `number` | `20` |
-| `output.folder` | `string` | `'Video Notes'` |
-| `output.fileNameTemplate` | `string` | `'{{date}}-{{title}}'` |
-| `output.includeVideoMetadata` | `boolean` | `true` |
+Key: `video` depends on `audio` (reuses transcription pipeline). All feature modules depend on `shared`. No circular dependencies.
 
 ## Command Registry
 
-| ID | Description | Type |
-|----|-------------|------|
-| `auto-notes:scan-vault` | Scan vault for stub notes | `callback` |
-| `auto-notes:scan-current-note` | Scan current note for elaboration | `editorCallback` |
-| `auto-notes:review-proposals` | Open proposal review sidebar | `callback` |
-| `auto-notes:clear-proposals` | Clear all pending proposals | `callback` |
-| `auto-notes:transcribe-audio` | Transcribe audio file | `callback` |
-| `auto-notes:transcribe-note-audio` | Transcribe audio embeds from current note | `editorCallback` |
-| `auto-notes:transcribe-video-url` | Transcribe video from URL | `callback` |
-| `auto-notes:transcribe-video-file` | Transcribe local video file (stub) | `callback` |
-| `auto-notes:check-dependencies` | Check external tool availability | `callback` |
+| ID | Name | Type |
+|----|------|------|
+| `auto-notes:review-proposals` | Open proposal review sidebar | callback |
+| `auto-notes:scan-vault` | Scan vault for stub notes | callback |
+| `auto-notes:scan-current-note` | Scan current note for elaboration | editorCallback |
+| `auto-notes:clear-proposals` | Clear all pending proposals | callback |
+| `auto-notes:transcribe-audio` | Transcribe audio file | callback |
+| `auto-notes:transcribe-note-audio` | Transcribe audio from current note | editorCallback |
+| `auto-notes:transcribe-video-url` | Transcribe video from URL | callback |
+| `auto-notes:transcribe-note-video` | Transcribe video URLs from current note | editorCallback |
+| `auto-notes:transcribe-video-file` | Transcribe local video file | callback (stub) |
+| `auto-notes:check-dependencies` | Check external tool availability | callback |
+| `auto-notes:enrich-current-note` | Enrich current note | editorCallback |
+| `auto-notes:undo-enrichment` | Undo last enrichment on current note | editorCallback |
+| `auto-notes:tidy-current-note` | Tidy current note | editorCallback |
+| `auto-notes:undo-tidy` | Undo last tidy on current note | editorCallback |
 
 ## Ribbon Icons
 
-| Icon | Tooltip | Action |
-|------|---------|--------|
-| `sparkles` | Review elaboration proposals | `ElaborationModule.activateProposalView()` |
-| `mic` | Transcribe audio | `AudioModule.openTranscriptionModal()` |
+| Icon | Label | Action |
+|------|-------|--------|
+| `sparkles` | Review proposals | Opens unified proposal sidebar |
+| `mic` | Transcribe audio | Opens audio transcription modal |
 
-## Custom View
+## View Types
 
-| View Type | Class | Location |
-|-----------|-------|----------|
-| `auto-notes-proposal-review` | `ProposalReviewView` | Right sidebar leaf |
+| View Type ID | Class | Location | Status |
+|--------------|-------|----------|--------|
+| `auto-notes-proposals` | `UnifiedProposalView` | `src/views/unified-proposal-view.ts` | Active (registered by main.ts) |
+| `auto-notes-proposal-review` | `ProposalReviewView` | `src/elaboration/proposal-view.ts` | Legacy (not registered) |
+| `auto-notes-enrichment-review` | `EnrichmentReviewView` | `src/enrichment/enrichment-view.ts` | Legacy (not registered) |
 
-## Build and Test
+## Settings Schema
 
-```sh
-npm run dev            # Development build (esbuild watch)
-npm run build          # Production build (tsc -noEmit -skipLibCheck + esbuild)
-npm test               # vitest run (single pass)
-npm run test:watch     # vitest (watch mode)
-npm run test:coverage  # vitest run --coverage
+```ts
+AutoNotesSettings {
+  ai: AISettings {
+    provider: 'openai' | 'anthropic' | 'ollama'   // default: 'openai'
+    apiKey: string                                  // default: ''
+    ollamaEndpoint: string                          // default: 'http://localhost:11434'
+    model: string                                   // default: 'gpt-4o'
+    maxTokens: number                               // default: 2048
+    temperature: number                             // default: 0.7
+  }
+  elaboration: ElaborationSettings {
+    enabled: boolean                                // default: true
+    proposalFolderPath: string                      // default: '.auto-notes/proposals'
+    scanOnStartup: boolean                          // default: false
+    autoScanInterval: number                        // default: 0 (disabled, minutes)
+    detection: DetectionSettings {
+      minWordThreshold: number                      // default: 50
+      detectTodoMarkers: boolean                    // default: true
+      detectEmptySections: boolean                  // default: true
+      detectSparseLinks: boolean                    // default: true
+      excludeFolders: string[]                      // default: ['templates', '.auto-notes']
+      excludeTags: string[]                         // default: ['no-elaborate']
+    }
+    proposal: ProposalSettings {
+      maxProposalsPerNote: number                   // default: 3
+      preserveFrontmatter: boolean                  // default: true
+      includeSourceContext: boolean                 // default: true
+    }
+  }
+  audio: AudioSettings {
+    enabled: boolean                                // default: true
+    transcriptionProvider: 'whisper-api' | 'deepgram' | 'local-whisper'
+    whisperApiKey: string                           // default: '' (fallback: ai.apiKey)
+    deepgramApiKey: string                          // default: ''
+    whisperModel: string                            // default: 'whisper-1'
+    localWhisperPath: string                        // default: ''
+    language: string                                // default: ''
+    postProcessing: PostProcessingSettings {
+      enabled: boolean                              // default: true
+      removeFiller: boolean                         // default: true
+      addStructure: boolean                         // default: true
+      extractKeyPoints: boolean                     // default: false
+      customPrompt: string                          // default: ''
+    }
+  }
+  video: VideoSettings {
+    enabled: boolean                                // default: true
+    ytDlpPath: string                               // default: 'yt-dlp'
+    ffmpegPath: string                              // default: 'ffmpeg'
+    tempFolder: string                              // default: '.auto-notes/temp'
+    downloadFolder: string                          // default: 'Media'
+    embedInNote: boolean                            // default: true
+    supportedPlatforms: { youtube: boolean, tiktok: boolean }
+    frameExtraction: FrameExtractionSettings {
+      enabled: boolean                              // default: false
+      intervalSeconds: number                       // default: 30
+      visionModel: string                           // default: 'gpt-4o'
+      maxFrames: number                             // default: 20
+    }
+  }
+  enrichment: EnrichmentSettings {
+    enabled: boolean                                // default: true
+    autoEnrich: boolean                             // default: true
+    maxTags: number                                 // default: 10
+    maxInternalLinks: number                        // default: 15
+    maxExternalLinks: number                        // default: 3
+    internalLinkThreshold: number                   // default: 0.3
+    weights: EnrichmentWeightSettings {
+      sameFolder: number                            // default: 1.0
+      siblingFolder: number                         // default: 0.8
+      cousinFolder: number                          // default: 0.5
+      distantFolder: number                         // default: 0.2
+      decayPerLevel: number                         // default: 0.15
+      minWeight: number                             // default: 0.1
+    }
+    enrichmentFolderPath: string                    // default: '.auto-notes/enrichments'
+    excludeFolders: string[]                        // default: ['templates', '.auto-notes']
+    excludeTags: string[]                           // default: ['no-enrich']
+    relatedNotesHeading: string                     // default: 'Related Notes'
+    referencesHeading: string                       // default: 'References'
+  }
+  tidy: TidySettings {
+    enabled: boolean                                // default: true
+    snapshotFolderPath: string                      // default: '.auto-notes/tidy-snapshots'
+  }
+}
 ```
 
-Output: `main.js` (single bundle, loaded by Obsidian)
+## Data Storage
+
+| Purpose | Path | Format |
+|---------|------|--------|
+| Elaboration proposals | `.auto-notes/proposals/*.json` | `Proposal` JSON |
+| Enrichment proposals | `.auto-notes/enrichments/*.json` | `EnrichmentProposal` JSON |
+| Tidy snapshots | `.auto-notes/tidy-snapshots/*.json` | `TidySnapshot` JSON |
+| Temp video/audio | `.auto-notes/temp/` | Binary (auto-cleaned) |
+| Downloaded videos | `Media/` (configurable) | Video files |
+
+## Cross-Module Callbacks (wired in main.ts)
+
+```
+elaboration.onProposalAccepted(filePath) --> enrichment.enrich(filePath, 'elaboration')
+audio.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transcription')
+video.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transcription')
+elaboration.onViewRefreshNeeded()        --> main.refreshUnifiedView()
+enrichment.onViewRefreshNeeded()         --> main.refreshUnifiedView()
+```
+
+Callbacks only wired when `enrichment.enabled && enrichment.autoEnrich`.
+
+## External Dependencies (Runtime)
+
+| Tool | Required By | Detection |
+|------|-------------|-----------|
+| yt-dlp | video module | `auto-notes:check-dependencies` command |
+| ffmpeg | video module | `auto-notes:check-dependencies` command |
+
+No npm runtime dependencies. Uses Obsidian `requestUrl`, `child_process.execFile`, and browser `fetch`.
 
 ## Test Infrastructure
 
 | Component | Path |
 |-----------|------|
 | Config | `vitest.config.ts` |
-| Setup file | `src/__test-utils__/setup.ts` |
+| Setup | `src/__test-utils__/setup.ts` |
 | Obsidian mock | `src/__mocks__/obsidian.ts` |
 | Mock factories | `src/__test-utils__/mock-factories.ts` |
 | Test files | `src/**/*.test.ts` |
-| Existing tests | `src/video/url-detector.test.ts` |
 
-- Framework: Vitest 4.x, globals enabled, node environment
-- `vi.mock('obsidian')` auto-resolves to `src/__mocks__/obsidian.ts` via setup file
-- Mock factories: `mockFile(path)`, `createMockApp()`, `createMockPlugin()`, `makeSettings(defaults, overrides?)`
-- Obsidian mock provides real classes for `TFile`, `TFolder` (instanceof checks work), stubs for `Plugin`, `Modal`, `Setting`, `ItemView`, `Notice`, `PluginSettingTab`, `WorkspaceLeaf`
-
-## External Dependencies (Runtime)
-
-No npm runtime dependencies. Uses:
-- `obsidian` API (`requestUrl` for HTTP, vault API for files)
-- `child_process.execFile` for `yt-dlp` and `ffmpeg` (Electron environment)
-- `fetch` for Whisper API and Deepgram API calls (FormData requirement)
+Framework: Vitest 4.x, globals enabled, node environment.
 
 ## Security Notes
 
-- All URLs validated via `sanitizeUrl()` before passing to external tools
-- All file paths validated via `sanitizePath()` (rejects `..`, null bytes, shell metacharacters)
-- AI responses sanitized via `sanitizeAIResponse()` before writing to vault
-- API keys redacted from error messages via `redactSecrets()` in `ai-client.ts` and `notifyError()` in `api-utils.ts`
-- Ollama endpoint enforces HTTPS (HTTP allowed only for localhost)
-- External commands use `execFile` with argument arrays (not `exec`) to prevent shell injection
-- API key fields in settings UI use `type='password'` and `autocomplete='off'`
+- URLs validated via `sanitizeUrl()` before external tool invocation
+- Paths validated via `sanitizePath()` (rejects `..`, null bytes, shell metacharacters)
+- AI output sanitized via `sanitizeAIResponse()` before vault writes
+- API keys redacted from all error messages
+- Ollama endpoint: HTTPS required (HTTP for localhost only)
+- External commands use `execFile` with argument arrays (no shell interpolation)
+- Frontmatter keys validated against allowlist pattern + forbidden keys blocklist
+- Enrichment sections use `%% auto-notes-enrichment-start/end %%` markers for idempotent updates

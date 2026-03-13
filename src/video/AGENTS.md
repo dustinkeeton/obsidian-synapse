@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-12
+last-updated: 2026-03-13
 ---
 
 # Video Module
 
-Downloads videos from YouTube/TikTok via yt-dlp, extracts audio, and delegates transcription to the Audio module.
+Downloads videos from YouTube/TikTok via yt-dlp, extracts audio, delegates transcription to Audio module, optionally saves video to vault.
 
 ## Public API
 
@@ -12,158 +12,91 @@ Exported from `index.ts`:
 
 ```ts
 class VideoModule {
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, audioModule: AudioModule)
+  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, audioModule: AudioModule, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
-  processUrl(url: string, options?: VideoProcessOptions): Promise<TranscriptionResult>
+  processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>
+  onTranscriptionComplete: ((filePath: string) => void) | null
 }
 
 function detectPlatform(url: string): UrlDetectionResult | null
 function isSupportedUrl(url: string): boolean
 
 type Platform = 'youtube' | 'tiktok' | 'unknown'
-
-interface UrlDetectionResult {
-  platform: Platform
-  videoId: string
-  url: string
-}
-
-interface VideoSource {
-  type: 'url' | 'file'
-  platform?: Platform
-  url?: string
-  filePath?: string
-  title?: string
-  channel?: string
-  duration?: number
-}
-
-interface VideoProcessOptions {
-  postProcess?: boolean
-  extractFrames?: boolean
-  outputPath?: string
-}
-
-interface ExtractionResult {
-  audioPath: string
-  metadata: VideoMetadata
-}
-
-interface VideoMetadata {
-  title: string
-  channel?: string
-  duration?: number
-  uploadDate?: string
-  description?: string
-  platform?: string
-  url?: string
-}
+interface UrlDetectionResult { platform: Platform; videoId: string; url: string }
+interface VideoSource { type: 'url' | 'file'; platform?: Platform; url?: string; filePath?: string; title?: string; channel?: string; duration?: number }
+interface VideoProcessOptions { postProcess?: boolean; extractFrames?: boolean; outputPath?: string; insertMode?: boolean }
+interface ExtractionResult { audioPath: string; metadata: VideoMetadata }
+interface VideoMetadata { title: string; channel?: string; duration?: number; uploadDate?: string; description?: string; platform?: string; url?: string }
+interface VideoUrlEmbed { url: string; platform: Platform; line: number }
 ```
 
-## Internal Files
+## File Inventory
 
 | File | Class/Export | Purpose |
 |------|-------------|---------|
-| `types.ts` | `Platform`, `UrlDetectionResult`, `VideoSource`, `VideoProcessOptions`, `ExtractionResult`, `VideoMetadata` | Type definitions |
-| `url-detector.ts` | `detectPlatform`, `isSupportedUrl` | Regex-based URL platform detection |
-| `url-detector.test.ts` | Tests | Vitest tests for URL detection (YouTube, TikTok, unsupported) |
-| `audio-extractor.ts` | `AudioExtractor` | Runs yt-dlp and ffmpeg via `child_process.execFile` (no shell) |
-| `video-modal.ts` | `VideoTranscriptionModal` | URL input modal with platform badge |
-| `frame-extractor.ts` | `FrameExtractor` | Placeholder for future vision-based frame analysis |
-| `index.ts` | `VideoModule` | Orchestrator, registers commands |
+| `types.ts` | All type interfaces | Type definitions |
+| `url-detector.ts` | `detectPlatform`, `isSupportedUrl` | Regex URL platform detection |
+| `url-detector.test.ts` | Tests | URL detection tests |
+| `note-scanner.ts` | `findVideoUrls`, `hasTranscriptionBelow` | Scan note content for video URLs |
+| `note-scanner.test.ts` | Tests | Note scanner tests |
+| `audio-extractor.ts` | `AudioExtractor` | yt-dlp/ffmpeg via `execFile` (no shell) |
+| `video-modal.ts` | `VideoTranscriptionModal` | URL input modal |
+| `note-video-modal.ts` | `NoteVideoModal` | Selection modal for note URLs |
+| `frame-extractor.ts` | `FrameExtractor` | Placeholder (not implemented) |
+| `index.ts` | `VideoModule` | Orchestrator, commands |
 
 ## Data Flow
 
 ```
-1. User enters URL in VideoTranscriptionModal
+1. User enters URL or triggers note scan
    |
-2. VideoModule.processUrl(url)
-   |  Validates URL via sanitizeUrl() -- rejects non-HTTP, shell metacharacters
+2. sanitizeUrl(url) -- validates HTTP(S), rejects shell chars
    |
-3. detectPlatform(url)  -- url-detector.ts
-   |  YouTube regex: youtube.com/watch, youtu.be, youtube.com/shorts
-   |  TikTok regex: tiktok.com/@user/video/id, tiktok.com/t/..., vm.tiktok.com, vt.tiktok.com
+3. detectPlatform(url)
+   |  YouTube: youtube.com/watch, youtu.be, youtube.com/shorts
+   |  TikTok: tiktok.com/@user/video/id, tiktok.com/t/..., vm/vt.tiktok.com
    |
 4. AudioExtractor.extractFromUrl(url)
-   |  a. sanitizeUrl() defense-in-depth check
-   |  b. getMetadata(url) -- runs yt-dlp --dump-json --no-download via execFile
-   |  c. Download + extract -- runs yt-dlp -x --audio-format mp3 via execFile
-   |  d. Tool paths validated via sanitizePath()
-   |  e. shellEnv() appends /usr/local/bin, /opt/homebrew/bin, ~/.local/bin to PATH
-   |  Returns: { audioPath, metadata }
+   |  getMetadata() --> yt-dlp --dump-json --no-download
+   |  Download audio --> yt-dlp -x --audio-format mp3
+   |  Tool paths via sanitizePath(), env via shellEnv()
    |
-5. Read audio file from disk (Node fs.readFileSync)
+5. downloadVideoToVault() [if downloadFolder configured]
+   |  yt-dlp -f mp4/best, writes to vault via adapter.writeBinary
    |
-6. AudioModule.transcribe(audioData, fileName, { sourceName })  -- video/index.ts:L78
-   |  (See audio/AGENTS.md for transcription pipeline)
+6. AudioModule.transcribe(audioData, fileName)
    |
-7. Clean up temp audio file (fs.unlinkSync)
-   |
-8. Format output with video metadata frontmatter
-   |  Writes to output.folder/{{date}}-{{title}}.md via writeNote()
+7. Insert blockquote + optional video embed in note
+   |  Cancellable via NotificationManager operation handle
 ```
+
+## Note Scanning
+
+`findVideoUrls(content)` in `note-scanner.ts`:
+- Regex: `https?://[^\s)\]>]+`
+- Skips blockquote lines (transcription output)
+- Skips URLs with existing transcription below
+- Returns `VideoUrlEmbed[]` with line numbers
 
 ## External Dependencies
 
-| Tool | Setting Key | Default | Purpose |
-|------|-------------|---------|---------|
+| Tool | Setting | Default | Purpose |
+|------|---------|---------|---------|
 | yt-dlp | `video.ytDlpPath` | `'yt-dlp'` | Video download and metadata |
 | ffmpeg | `video.ffmpegPath` | `'ffmpeg'` | Audio extraction from local files |
 
-Check availability via command `auto-notes:check-dependencies`.
-
-## Tests
-
-File: `url-detector.test.ts` (26 test cases)
-
-| Suite | Coverage |
-|-------|----------|
-| YouTube URLs | standard watch, short (youtu.be), Shorts, extra query params, hyphens/underscores |
-| TikTok URLs | full video URL, username with dots/hyphens, /t/ short URL, vm.tiktok.com, vt.tiktok.com |
-| Unsupported URLs | vimeo, generic, empty, non-URL, YouTube channel (no video) |
-| isSupportedUrl | true for YouTube/TikTok, false for unsupported/empty |
-
-Run: `npm test` or `npx vitest run src/video/url-detector.test.ts`
-
-## Settings Keys
-
-All under `settings.video`:
-
-| Key | Controls |
-|-----|----------|
-| `enabled` | Module activation at startup |
-| `ytDlpPath` | Path to yt-dlp binary |
-| `ffmpegPath` | Path to ffmpeg binary |
-| `tempFolder` | Temp directory for downloaded audio |
-| `supportedPlatforms.youtube` | YouTube support flag (not yet enforced in code) |
-| `supportedPlatforms.tiktok` | TikTok support flag (not yet enforced in code) |
-| `frameExtraction.enabled` | Enable frame extraction (not implemented) |
-| `frameExtraction.intervalSeconds` | Frame capture interval |
-| `frameExtraction.visionModel` | Vision model for frame analysis |
-| `frameExtraction.maxFrames` | Max frames to extract |
-| `output.folder` | Output folder for video notes |
-| `output.fileNameTemplate` | Template with `{{date}}` and `{{title}}` |
-| `output.includeVideoMetadata` | Add platform/channel/duration to frontmatter |
+`shellEnv()` appends `/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin` to PATH.
 
 ## Security
 
-- URLs validated via `sanitizeUrl()` before passing to external tools
-- Tool paths validated via `sanitizePath()` -- rejects path traversal and shell metacharacters
-- External commands run via `execFile` (argument array, no shell interpolation)
-- Command timeout: 300s (5 min) for long downloads
-- Max output buffer: 10MB
+- URLs validated via `sanitizeUrl()` (double-validated: in VideoModule and AudioExtractor)
+- Tool paths validated via `sanitizePath()`
+- Commands run via `execFile` with argument arrays (no shell)
+- Command timeout: 300s, max buffer: 10MB
 
-## Error Handling
+## Unimplemented
 
-- `processUrl`: errors propagated to modal callback, which calls `notifyError()`
-- `AudioExtractor.getMetadata`: catches errors, returns minimal `{ title: 'Untitled', url }`
-- `AudioExtractor.runCommand`: wraps `execFile` errors with exit code; ENOENT gives install guidance
-- Temp file cleanup: ignores `unlinkSync` errors
-- `FrameExtractor.extractFrames`: throws "not yet implemented"
-
-## Unimplemented Features
-
-- `auto-notes:transcribe-video-file` command: shows "coming soon" Notice
-- `FrameExtractor`: placeholder class, throws on use
-- `supportedPlatforms` settings: defined but not enforced in URL detection
+- `auto-notes:transcribe-video-file`: shows "coming soon" notice
+- `FrameExtractor`: placeholder, throws on use
+- `supportedPlatforms` settings: defined but not enforced

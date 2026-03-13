@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-12
+last-updated: 2026-03-13
 ---
 
 # Shared Module
 
-Cross-cutting utilities used by all feature modules: AI client, file operations, API helpers, and input/output validation.
+Cross-cutting utilities used by all feature modules: AI client, file operations, notifications, validation, and frontmatter parsing.
 
 ## Public API
 
@@ -19,9 +19,24 @@ class AIClient {
 }
 
 // types.ts
-interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
+interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
+
+// notifications.ts
+class NotificationManager {
+  setStatusBarEl(el: HTMLElement): void
+  startOperation(label: string, id?: string): OperationHandle
+  confirm(message: string, options?: { proceedLabel?: string; cancelLabel?: string; level?: NoticeLevel }): Promise<boolean>
+  cancelOperation(id: string): void
+  info(message: string, duration?: number): void
+  success(message: string, duration?: number): void
+  notifyError(context: string, error: unknown): void
+}
+interface OperationHandle {
+  update(message: string): void
+  progress(current: number, total: number, label?: string): void
+  finish(message?: string): void
+  error(message: string): void
+  readonly cancelled: boolean
 }
 
 // file-utils.ts
@@ -41,108 +56,82 @@ function sanitizeUrl(url: string): string
 function sanitizePath(filePath: string): string
 function ensureWithinVault(filePath: string, vaultBasePath: string): string
 function sanitizeAIResponse(text: string): string
+function blockquoteOriginal(content: string): string
+
+// frontmatter-utils.ts
+interface ParsedNote { frontmatter: Record<string, unknown>; body: string; hasFrontmatter: boolean }
+function parseFrontmatter(content: string): ParsedNote
+function serializeFrontmatter(frontmatter: Record<string, unknown>, body: string): string
+function mergeTags(frontmatter: Record<string, unknown>, newTags: string[]): void
 ```
 
-## Internal Files
+## File Inventory
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `ai-client.ts` | `AIClient` | Multi-provider AI completion with model ID resolution; `safeRequest` wrapper; `redactSecrets` |
-| `types.ts` | `ChatMessage` | Shared type definitions |
-| `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `wordCount` | Vault file operations with path normalization |
-| `api-utils.ts` | `withRetry`, `sleep`, `notifyError` | Retry with exponential backoff, error notification with key redaction |
-| `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse` | Input validation and output sanitization |
-| `index.ts` | re-exports all public symbols | Barrel file |
+| `ai-client.ts` | `AIClient` | Multi-provider AI completion; `safeRequest`, `redactSecrets`, `resolveModelId` (internal) |
+| `types.ts` | `ChatMessage` | Shared type |
+| `notifications.ts` | `NotificationManager`, `OperationHandle`, `NoticeLevel` | Centralized notifications with cancellation, progress, confirmation snackbars |
+| `notifications.test.ts` | Tests | NotificationManager tests |
+| `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `wordCount` | Vault file operations |
+| `api-utils.ts` | `withRetry`, `sleep`, `notifyError` | Retry with exponential backoff, error display |
+| `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse`, `blockquoteOriginal` | Input validation and output sanitization |
+| `validation.test.ts` | Tests | Validation tests |
+| `frontmatter-utils.ts` | `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `ParsedNote` | YAML frontmatter parsing and serialization |
+| `frontmatter-utils.test.ts` | Tests | Frontmatter tests |
+| `index.ts` | re-exports | Barrel file |
 
 ## AIClient Provider Routing
 
 ```
 AIClient.chat(messages)
-|-- resolveModelId(provider, model) -- maps simplified names to API IDs
+|-- resolveModelId(provider, model)
+|     Anthropic: opus->claude-opus-4-6, sonnet->claude-sonnet-4-6, haiku->claude-haiku-4-5-20251001
+|     Others: pass-through
 |
-|-- 'openai'    -> POST https://api.openai.com/v1/chat/completions
+|-- 'openai'    --> POST api.openai.com/v1/chat/completions
 |                   Auth: Bearer {ai.apiKey}
-|                   Body: { model, messages, max_tokens, temperature }
-|                   Uses: requestUrl (Obsidian) via safeRequest()
-|-- 'anthropic' -> POST https://api.anthropic.com/v1/messages
-|                   Auth: x-api-key header, anthropic-version: 2023-06-01
-|                   Extracts system message into top-level 'system' field
-|                   Uses: requestUrl (Obsidian) via safeRequest()
-|-- 'ollama'    -> POST {ai.ollamaEndpoint}/api/chat
-|                   No auth, stream: false
-|                   Validates endpoint: HTTPS required (HTTP for localhost only)
-|                   Uses: requestUrl (Obsidian) via safeRequest()
+|-- 'anthropic' --> POST api.anthropic.com/v1/messages
+|                   Auth: x-api-key, system message extracted to top-level field
+|-- 'ollama'    --> POST {ollamaEndpoint}/api/chat
+|                   HTTPS required (HTTP for localhost only)
+|
+All use Obsidian requestUrl via safeRequest() (handles errors, redacts secrets)
 ```
 
-## Model ID Resolution
+## NotificationManager Features
 
-```ts
-// ai-client.ts (module-level, not exported)
-const ANTHROPIC_MODEL_MAP: Record<string, string> = {
-  opus: 'claude-opus-4-6',
-  sonnet: 'claude-sonnet-4-6',
-  haiku: 'claude-haiku-4-5-20251001',
-}
+- Tracked operations with animated ellipsis, progress counters, cancel buttons
+- Non-dismissible notices for running operations
+- Confirmation snackbars (Proceed/Cancel) returning `Promise<boolean>`
+- Status bar integration (shows active operation count)
+- CSS injection for styled notices
+- API key redaction in error messages
 
-function resolveModelId(provider: string, model: string): string
-// Returns ANTHROPIC_MODEL_MAP[model] for anthropic provider, otherwise pass-through.
-```
+## Validation Rules
 
-## safeRequest Wrapper
-
-```ts
-// ai-client.ts (module-level, not exported)
-async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse>
-// Wraps Obsidian requestUrl with throw: false
-// On status >= 400: extracts error message, redacts API keys via redactSecrets(), throws Error
-```
-
-## Validation Utilities
-
-```
-sanitizeUrl(url)
-|-- Rejects null bytes
-|-- Parses URL (must be http or https)
-|-- Rejects shell metacharacters: ; | & ` $ ( ) { } ! \n \r
-
-sanitizePath(filePath)
-|-- Rejects empty, null bytes
-|-- Rejects path traversal (..)
-|-- Rejects shell metacharacters
-
-ensureWithinVault(filePath, vaultBasePath)
-|-- Resolves path via path.resolve()
-|-- Verifies resolved path starts with vault base directory
-
-sanitizeAIResponse(text)
-|-- Strips <script> tags and content
-|-- Strips HTML event handlers (onclick, onerror, etc.)
-|-- Strips javascript:/data:/vbscript: URIs in markdown links
-|-- Strips <iframe>/<embed>/<object> tags
-```
+| Function | Rejects |
+|----------|---------|
+| `sanitizeUrl` | null bytes, non-HTTP(S), shell metacharacters |
+| `sanitizePath` | empty, null bytes, `..` traversal, shell metacharacters |
+| `ensureWithinVault` | paths resolving outside vault base |
+| `sanitizeAIResponse` | script tags, event handlers, javascript/data/vbscript URIs, iframe/embed/object |
+| `blockquoteOriginal` | (transforms) wraps body in blockquote, preserves frontmatter |
 
 ## Consumers
 
 | Utility | Used By |
 |---------|---------|
-| `AIClient` | `elaboration/proposer.ts`, `audio/post-processor.ts` |
-| `writeNote` | `audio/index.ts`, `video/index.ts` |
-| `ensureFolder` | `elaboration/proposal-store.ts`, `video/index.ts` |
-| `readNote` | (exported, not currently used) |
-| `getMarkdownFiles` | (exported, not currently used) |
-| `wordCount` | `elaboration/detector.ts` |
-| `notifyError` | `elaboration/index.ts`, `audio/index.ts`, `video/index.ts` |
-| `withRetry` | (exported, not currently used) |
-| `sanitizeUrl` | `video/index.ts`, `video/audio-extractor.ts` |
-| `sanitizePath` | `video/audio-extractor.ts` |
-| `ensureWithinVault` | (exported, not currently used) |
-| `sanitizeAIResponse` | `elaboration/index.ts` (acceptProposal, showProposalDetail), `elaboration/proposer.ts`, `audio/post-processor.ts` |
-
-## Key Behaviors
-
-- `writeNote`: creates parent folders via `ensureFolder`, updates existing file if path exists, returns `TFile`
-- `ensureFolder`: no-op if folder already exists; catches "Folder already exists" error for vault cache race
-- `wordCount`: splits on `\s+`, filters empty strings
-- `withRetry`: exponential backoff (`delay * 2^attempt`), default 3 retries / 1000ms base
-- `notifyError`: shows Obsidian `Notice` and logs to `console.error` with `[Auto Notes]` prefix; redacts API keys/tokens matching `sk-`, `key-`, `dg-`, `anthropic-`, `Bearer`, `Token` patterns
-- `redactSecrets` (in ai-client.ts): same redaction patterns, applied to API error response bodies before throwing
+| `AIClient` | elaboration/proposer, audio/post-processor, enrichment/tag-scorer, enrichment/prompt-builder, tidy/index |
+| `NotificationManager` | all feature modules (injected via constructor) |
+| `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index |
+| `wordCount` | elaboration/detector |
+| `sanitizeUrl` | video/index, video/audio-extractor |
+| `sanitizePath` | video/audio-extractor |
+| `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, enrichment/tag-scorer, enrichment/prompt-builder, tidy/index |
+| `parseFrontmatter` | enrichment/index, enrichment/enrichment-applier, tidy/index |
+| `serializeFrontmatter` | enrichment/enrichment-applier, tidy/index |
+| `mergeTags` | enrichment/enrichment-applier |
+| `blockquoteOriginal` | elaboration/index |
+| `withRetry` | tidy/index |
+| `notifyError` | (legacy, replaced by NotificationManager in most modules) |

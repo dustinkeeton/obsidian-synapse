@@ -4,6 +4,188 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-13: Tidy module uses immediate apply, no proposals
+
+**Context**: The tidy feature (spelling/formatting correction) was being designed. Other modules (elaboration, enrichment) use a proposal-review workflow where changes are stored as JSON proposals and presented in a sidebar for user approval.
+
+**Decision**: Tidy applies changes immediately to the note without a proposal step. A snapshot of the original content is saved to `.auto-notes/tidy-snapshots/` for undo capability.
+
+**Alternatives considered**:
+- Proposal workflow like elaboration/enrichment (adds friction for low-risk changes)
+- Diff view showing before/after (complex UI for minimal benefit)
+- No undo capability (risky if AI makes unwanted formatting changes)
+
+**Rationale**: Tidy changes are cosmetic — spelling fixes and markdown formatting only, no content addition or removal. The risk of unwanted changes is low, and the undo command provides a safety net. A full proposal workflow would slow down a feature that should feel instant. One snapshot per file (overwriting previous) keeps storage bounded.
+
+**Impact**: Users run `Tidy current note` and see changes immediately. If unsatisfied, `Undo last tidy` restores the original content. No sidebar review needed.
+
+---
+
+## 2026-03-13: Unified proposal view replaces per-module sidebars
+
+**Context**: Elaboration and enrichment each had their own sidebar view classes (`ProposalReviewView`, `EnrichmentReviewView`) and their own modals. Users had to navigate between separate UI surfaces to review different types of proposals.
+
+**Decision**: Create a single `UnifiedProposalView` in `src/views/` that displays both elaboration and enrichment proposals in one sidebar. The view has three rendering modes: list (all proposals grouped by note), elaboration review (editable textarea), and enrichment review (per-item checkboxes). Legacy view classes remain in the codebase but are not registered by `main.ts`.
+
+**Alternatives considered**:
+- Keep separate views (fragmented UX, multiple ribbon icons needed)
+- Tabbed view with one tab per module (added complexity for two categories)
+- Modal-only workflow without sidebar (less persistent, harder to browse)
+
+**Rationale**: A single sidebar reduces cognitive overhead — users have one place to check for pending proposals. The `UnifiedItem` discriminated union (`kind: 'elaboration' | 'enrichment'`) keeps the data model clean. Color-coded cards (blue for elaboration, green for enrichment) provide visual distinction without separate views.
+
+**Impact**: One ribbon icon (sparkles) opens all proposals. Legacy views are dead code but preserved for reference. The view is refreshed via callbacks from both modules through `main.refreshUnifiedView()`.
+
+---
+
+## 2026-03-13: Replace modals with inline review panes and clickable note links
+
+**Context**: The initial proposal review flow used Obsidian `Modal` dialogs for viewing proposal details. Modals blocked interaction with the rest of the app and couldn't link back to source notes.
+
+**Decision**: Replace modals with inline review panes within the unified sidebar view. Proposal headings are clickable links that open the source note in the main editor pane.
+
+**Alternatives considered**:
+- Keep modals (blocking, can't reference source note simultaneously)
+- Open proposals in a new pane (too many panes)
+
+**Rationale**: Inline review lets users see the proposal and the source note side by side. Clickable note links provide immediate navigation context. The sidebar persists while users navigate between notes.
+
+**Impact**: Review workflow is non-blocking. Users can read the source note while deciding on a proposal.
+
+---
+
+## 2026-03-13: Centralized notification system with cancellation and two-phase vault scan
+
+**Context**: Feature modules used ad-hoc `new Notice()` calls for progress reporting. Long-running operations (vault scans, batch transcriptions) had no cancellation mechanism, and there was no way to show progress or prevent duplicate operations.
+
+**Decision**: Create `NotificationManager` in `src/shared/` providing:
+- Tracked operations with animated status, progress counters, and cancel buttons
+- Non-dismissible notices for running operations
+- Confirmation snackbars (Proceed/Cancel) returning `Promise<boolean>`
+- Status bar integration showing active operation count
+- CSS injection for styled notices
+
+Vault scanning uses a two-phase approach: Phase 1 scans without API calls, Phase 2 asks for confirmation before generating proposals (which costs API credits).
+
+**Alternatives considered**:
+- Per-module notification logic (duplicated, inconsistent)
+- Obsidian's built-in `Notice` only (no cancellation, no progress, auto-dismisses)
+- Custom status bar only without notices (not attention-getting enough)
+
+**Rationale**: Centralized notifications ensure consistent UX across all modules. Cancellation is critical for operations that make paid API calls. The two-phase vault scan prevents accidental credit consumption when a scan finds many stub notes. All modules receive `NotificationManager` via constructor injection.
+
+**Impact**: All modules use `NotificationManager` for user communication. Operations are cancellable via `handle.cancelled`. The confirmation snackbar gates expensive operations.
+
+---
+
+## 2026-03-13: Enrichment module with proximity-weighted tag scoring
+
+**Context**: After notes are elaborated or transcribed, they lack connections to the rest of the vault — no tags, no links to related notes, no external references.
+
+**Decision**: Add an enrichment module that analyzes vault structure to suggest tags, internal links, external references, and frontmatter attributes. Tag scoring uses a proximity-weighted algorithm: candidate tags are scored by how often they appear in nearby notes (same folder > sibling > cousin > distant), combined with vault-wide frequency. Internal links are resolved from graph hops, shared tags, and folder proximity.
+
+**Alternatives considered**:
+- AI-only suggestions without vault context (ignores existing vault structure)
+- Simple frequency-based tagging (doesn't account for note relationships)
+- Manual tagging reminders (no automation)
+
+**Rationale**: Proximity weighting produces tags that are contextually relevant to where the note lives in the vault hierarchy, not just globally popular tags. The pure function `computeProximityWeight()` is testable and configurable via six weight parameters. Combining AI suggestions with vault analysis produces better results than either alone.
+
+**Impact**: Notes gain contextual tags and connections automatically. The enrichment runs after elaboration acceptance or transcription completion (when `autoEnrich` is enabled), or manually via command.
+
+---
+
+## 2026-03-13: Cross-module callbacks wired in main.ts
+
+**Context**: When an elaboration proposal is accepted or a transcription completes, the resulting note should be enriched automatically. Modules need to communicate completion events without direct dependencies on each other.
+
+**Decision**: Wire callbacks in `main.ts` using simple function assignments:
+- `elaboration.onProposalAccepted(filePath)` → `enrichment.enrich(filePath, 'elaboration')`
+- `audio.onTranscriptionComplete(filePath)` → `enrichment.enrich(filePath, 'transcription')`
+- `video.onTranscriptionComplete(filePath)` → `enrichment.enrich(filePath, 'transcription')`
+- `elaboration.onViewRefreshNeeded()` → `main.refreshUnifiedView()`
+- `enrichment.onViewRefreshNeeded()` → `main.refreshUnifiedView()`
+
+Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
+
+**Alternatives considered**:
+- Event bus / pub-sub pattern (over-engineered for 5 connections)
+- Direct module imports (creates circular dependencies)
+- Obsidian events on the workspace (global, hard to type-check)
+
+**Rationale**: Simple callback assignment in the orchestrator (`main.ts`) is explicit and easy to trace. Each module declares nullable callback properties; `main.ts` assigns them. No event system overhead, no subscription management, no circular dependencies.
+
+**Impact**: Enrichment runs automatically after elaboration and transcription. View refresh is centralized. Adding new cross-module connections requires editing `main.ts`.
+
+---
+
+## 2026-03-13: Removed output folder settings from audio and video
+
+**Context**: Audio and video modules originally had `outputFolder` settings specifying where transcription notes would be saved. These were redundant — transcriptions are inserted inline into the current note (audio) or saved alongside video metadata (video).
+
+**Decision**: Remove `audio.outputFolder` and `video.outputFolder` settings. Video retains `downloadFolder` (for saving video files to vault) and `embedInNote` (for embedding video file links in notes).
+
+**Alternatives considered**:
+- Keep output folders as optional settings (unused code, confusing settings)
+- Add output folder support later if needed (YAGNI)
+
+**Rationale**: Both modules insert content inline into existing notes rather than creating new files in an output folder. Keeping unused settings confuses users and adds maintenance burden.
+
+**Impact**: Settings schema is simpler. Video `downloadFolder` and `embedInNote` remain for the video file download feature.
+
+---
+
+## 2026-03-13: AI response sanitization strategy
+
+**Context**: AI providers (OpenAI, Anthropic, Ollama) return text that gets written directly into vault notes. Obsidian renders markdown, which means certain HTML constructs and URI schemes could execute code if injected.
+
+**Decision**: `sanitizeAIResponse()` strips: `<script>` tags with content, HTML event handlers (`onclick`, `onerror`, etc.), dangerous URI schemes (`javascript:`, `data:`, `vbscript:`), and embedding tags (`<iframe>`, `<embed>`, `<object>`). Applied to all AI output before vault writes. The tidy module additionally strips code fences that AI sometimes wraps responses in.
+
+**Alternatives considered**:
+- Full HTML sanitizer library (adds runtime dependency, over-engineered for markdown context)
+- No sanitization, trust AI providers (risky — prompt injection is a real threat)
+- Escape all HTML (breaks legitimate markdown rendering)
+
+**Rationale**: Targeted stripping removes known dangerous patterns while preserving legitimate markdown and inline HTML that Obsidian renders safely. Defense-in-depth: even if AI output contains injected content, sanitization prevents execution. The pattern is applied consistently via a single shared function.
+
+**Impact**: All AI-generated content is safe to render in Obsidian. Legitimate markdown formatting is preserved.
+
+---
+
+## 2026-03-13: Enrichment uses marker comments for idempotent updates
+
+**Context**: Enrichment adds "Related Notes" and "References" sections to notes. If enrichment runs again on the same note (e.g., after re-elaboration), it needs to update these sections rather than duplicating them.
+
+**Decision**: Wrap enrichment-added sections with HTML comment markers: `%% auto-notes-enrichment-start %%` and `%% auto-notes-enrichment-end %%`. On subsequent enrichments, content between markers is replaced. Undo removes everything between markers.
+
+**Alternatives considered**:
+- Heading-based detection only (fragile — user might have a heading with the same name)
+- Frontmatter flags (doesn't help with body content sections)
+- Append-only without updates (causes duplication)
+
+**Rationale**: Obsidian comment syntax (`%% ... %%`) is invisible in reading view but preserved in source. Markers provide reliable boundaries for idempotent section updates without depending on heading text matching.
+
+**Impact**: Enrichment can safely re-run on the same note. Users don't see the markers in reading view. Undo cleanly removes only enrichment-added content.
+
+---
+
+## 2026-03-13: Frontmatter key validation with allowlist pattern and forbidden keys
+
+**Context**: Enrichment suggests frontmatter attributes via AI. Without validation, AI could suggest keys that cause prototype pollution (`__proto__`, `constructor`) or overwrite Obsidian-reserved keys.
+
+**Decision**: Validate frontmatter keys against pattern `^[a-z][a-z0-9_-]{0,49}$` and block a forbidden keys list (`__proto__`, `constructor`, `prototype`, etc.). Never overwrite existing frontmatter keys — only add new ones.
+
+**Alternatives considered**:
+- No validation (prototype pollution risk)
+- Strict allowlist of specific keys (too restrictive, can't adapt to vault conventions)
+- Overwrite existing keys if AI suggests better values (data loss risk)
+
+**Rationale**: The regex pattern is permissive enough for any reasonable frontmatter key while blocking injection vectors. The forbidden keys list catches the most dangerous prototype pollution keys. Never overwriting existing keys preserves user data.
+
+**Impact**: AI-suggested frontmatter is safe to apply. Users keep their existing frontmatter values intact.
+
+---
+
 ## 2026-03-12: TDD infrastructure with Vitest
 
 **Context**: The project had no test framework despite having testable pure functions (URL detection, input validation) and injectable dependencies (AIClient, Transcriber). The codebase was growing and needed automated regression coverage.
@@ -21,506 +203,84 @@ Decisions listed in reverse chronological order.
 - No tests, rely on manual QA (unsustainable as features grow)
 - End-to-end tests with real Obsidian (fragile, slow, hard to automate)
 
-**Rationale**: Vitest is fast, has native TypeScript and ESM support, and integrates well with the esbuild-based build pipeline. The centralized Obsidian mock means every test file automatically gets stubs for all Obsidian APIs without per-file setup. Real `TFile`/`TFolder` class implementations (instead of plain objects) ensure `instanceof` checks in production code work correctly in tests. A three-tier test priority system focuses effort: pure functions first (no mocking), then units with injectable deps, then module orchestrators.
+**Rationale**: Vitest is fast, has native TypeScript and ESM support, and integrates well with the esbuild-based build pipeline. The centralized Obsidian mock means every test file automatically gets stubs for all Obsidian APIs without per-file setup. Real `TFile`/`TFolder` class implementations (instead of plain objects) ensure `instanceof` checks in production code work correctly in tests.
 
-**Impact**: Tests can be run with `npm test`. The first test suite covers URL detection (26 test cases). The mock infrastructure is ready for testing validation, AI client, transcriber, and detection modules. The TDD skill (`/tdd`) guides the Red-Green-Refactor workflow for new features.
-
----
-
-## 2026-03-12: TikTok short URL support in URL detection
-
-**Context**: TikTok share links from the mobile app use shortened URL formats (`tiktok.com/t/...`, `vm.tiktok.com/...`, `vt.tiktok.com/...`) instead of the full `tiktok.com/@user/video/ID` format. Users pasting these URLs into the video transcription modal got "unsupported URL" errors.
-
-**Decision**: Add two regex patterns for TikTok URL detection: the existing `TIKTOK_VIDEO_REGEX` for full URLs (extracts numeric video ID), and a new `TIKTOK_SHORT_REGEX` for shortened/share URLs. Short URLs return `videoId: 'short-url'` as a sentinel value since the actual video ID is only available after yt-dlp resolves the redirect.
-
-**Alternatives considered**:
-- Resolve the short URL redirect before detection (adds latency, requires HTTP request during URL validation)
-- Only support full TikTok URLs (breaks the most common share format from TikTok mobile)
-- Use a single permissive regex (too broad, could match non-video TikTok pages)
-
-**Rationale**: yt-dlp handles redirect resolution internally, so the plugin does not need to know the real video ID at detection time. The sentinel value `'short-url'` makes it clear downstream that this is a redirect-based URL. Three short URL patterns cover: `/t/` path shares, `vm.tiktok.com` legacy shares, and `vt.tiktok.com` regional shares. All patterns are covered by tests in `url-detector.test.ts`.
-
-**Impact**: Users can paste any TikTok share link format. The URL detector now matches 5 TikTok URL patterns (full video + 3 short formats + username variants). Test coverage confirms all patterns.
+**Impact**: Tests can be run with `npm test`. Test suites cover URL detection, weight calculation, validation, frontmatter parsing, enrichment store, tidy store, and notifications. The TDD skill (`/tdd`) guides the Red-Green-Refactor workflow for new features.
 
 ---
 
-## 2026-03-12: PATH resolution for Electron environment
+## 2026-03-12: Security hardening — defense-in-depth approach
 
-**Context**: Obsidian runs inside Electron, which launches with a minimal `PATH` that typically only includes `/usr/bin` and `/bin`. User-installed tools like yt-dlp and ffmpeg (commonly installed via Homebrew at `/opt/homebrew/bin` or `/usr/local/bin`) were not found when configured with bare command names (e.g., `yt-dlp` instead of `/opt/homebrew/bin/yt-dlp`).
+**Context**: A security audit reviewed the plugin for input validation gaps, output sanitization, credential handling, and subprocess security.
 
-**Decision**: Add a `shellEnv()` function in `audio-extractor.ts` that prepends common tool installation directories (`/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin`) to the process `PATH` before executing subprocesses. Only directories not already in `PATH` are added.
-
-**Alternatives considered**:
-- Require users to always set absolute paths in settings (poor UX, most users expect bare command names to work)
-- Use `shell: true` in `execFile` to inherit the user's shell PATH (reintroduces shell injection risk)
-- Read the user's shell profile to get their PATH (complex, unreliable across shells)
-- Use a library like `shell-env` (adds a runtime dependency)
-
-**Rationale**: Prepending known directories is simple and covers the vast majority of installations. Homebrew paths are prepended (not appended) so that Homebrew-installed tools with proper Python dependencies take priority over system versions. The approach avoids shell invocation, preserving the security of `execFile`.
-
-**Impact**: yt-dlp and ffmpeg are found automatically on most macOS and Linux systems when installed via Homebrew, MacPorts, or pip (`~/.local/bin`). Users no longer need to configure absolute paths unless they have non-standard installations.
-
----
-
-## 2026-03-12: Absolute temp paths for yt-dlp audio extraction
-
-**Context**: The `AudioExtractor` was using `settings.video.tempFolder` (defaulting to `.auto-notes/temp`, a vault-relative path) as the output directory for yt-dlp downloads. yt-dlp requires a real filesystem path, not a vault-relative one, and the vault-relative path would fail or place files in an unexpected location depending on the working directory of the Electron process.
-
-**Decision**: Use `os.tmpdir()` (the OS temporary directory) for all yt-dlp audio extraction output paths instead of the vault-relative temp folder. Output files are named `auto-notes-audio-{timestamp}.mp3` to avoid collisions.
-
-**Alternatives considered**:
-- Resolve the vault-relative path to an absolute path (requires knowing the vault's filesystem path, which varies)
-- Use the vault adapter's write methods (yt-dlp writes directly to disk, not through the vault API)
-- Create a temp directory inside the vault (clutters the vault with non-note files)
-
-**Rationale**: `os.tmpdir()` provides a guaranteed-writable, absolute filesystem path on every platform. The OS handles cleanup of old temp files. Using timestamps in filenames prevents collisions when multiple transcriptions run in parallel. The temp file is deleted after transcription completes (with error swallowing on cleanup failure).
-
-**Impact**: Video transcription works regardless of the Electron process working directory. The `video.tempFolder` setting is now effectively unused for audio extraction (it remains in settings for potential future use with frame extraction).
-
----
-
-## 2026-03-12: Type relocations from architect audit
-
-**Context**: The architect audit identified type definitions that were defined inline in implementation files rather than in dedicated `types.ts` files, violating the project convention that each module has its own `types.ts` for interfaces and type aliases.
-
-**Decision**: Relocate types to their proper locations:
-- `AudioEmbed` interface: moved from `note-audio-modal.ts` to `audio/types.ts`
-- `ChatMessage` interface: placed in `shared/types.ts` (new file) and re-exported through `shared/index.ts`
-- Video types (`Platform`, `UrlDetectionResult`, `VideoSource`, `VideoProcessOptions`, `ExtractionResult`, `VideoMetadata`): consolidated in `video/types.ts`
-
-**Alternatives considered**:
-- Leave types where they are (inconsistent, harder to discover)
-- Put all types in a single root-level `types.ts` (breaks module encapsulation)
-
-**Rationale**: Consistent type locations make types discoverable and importable without reaching into implementation files. The `shared/types.ts` file establishes a pattern for cross-module types. Each feature module now has its own self-contained type definitions.
-
-**Impact**: Import paths changed for `AudioEmbed` (now from `./types` instead of inline in `note-audio-modal.ts`). `ChatMessage` is available through the shared barrel export. No runtime behavior changes.
-
----
-
-## 2026-03-12: Security hardening from security audit
-
-**Context**: A security audit reviewed the plugin for input validation gaps, output sanitization, credential handling, and subprocess security. Several hardening measures were recommended and implemented.
-
-**Decision**: Implement a comprehensive security layer including:
+**Decision**: Implement a comprehensive security layer:
 - `shared/validation.ts` with `sanitizeUrl()`, `sanitizePath()`, `ensureWithinVault()`, `sanitizeAIResponse()`
-- Switch from `exec` to `execFile` for all subprocess calls (no shell invocation)
+- `execFile` over `exec` for all subprocess calls (no shell invocation)
 - `safeRequest()` wrapper for `requestUrl` with error body extraction and key redaction
 - Password masking on all API key input fields
 - Ollama endpoint protocol validation (HTTPS required, HTTP only for localhost)
-- `notifyError()` with API key redaction patterns
-- 5-minute timeouts on all external calls (fetch with AbortController, execFile timeout)
-- 10MB buffer limit on subprocess output
+- API key redaction in error messages
+- 5-minute timeouts and 10MB buffer limits on all external calls
+- Frontmatter key validation against allowlist + forbidden keys
 
 **Alternatives considered**:
 - Minimal hardening (validate only user-visible inputs)
-- Third-party security libraries (adds runtime dependencies)
+- Third-party security libraries (adds runtime dependencies, violates zero-deps policy)
 - No output sanitization (assumes AI providers return safe content)
 
-**Rationale**: Defense-in-depth: multiple independent layers of protection ensure that a bypass in one layer does not compromise the system. `execFile` prevents shell injection by design. Input validation catches malicious URLs and paths before they reach external tools. Output sanitization prevents XSS from AI-generated content. Key redaction prevents accidental credential exposure in logs and error notifications.
+**Rationale**: Defense-in-depth: multiple independent layers ensure a bypass in one layer does not compromise the system. Centralized in `shared/validation.ts` for easy auditing.
 
-**Impact**: All external interactions are validated and sanitized. Security is centralized in `shared/validation.ts` and `shared/api-utils.ts` for easy auditing. No user-facing behavior changes except masked API key fields and more descriptive error messages.
-
----
-
-## 2026-03-12: Inline note audio transcription with in-place insertion
-
-**Context**: Users often embed audio recordings directly in their notes (e.g., `![[meeting-recording.mp3]]`). The existing audio transcription workflow required opening a file-picker modal, selecting a file, and saving the transcription as a separate note -- disconnected from the note where the audio was referenced.
-
-**Decision**: Add a new command "Transcribe audio from current note" (`auto-notes:transcribe-note-audio`) as an `editorCallback`. It scans the active note for audio embed syntax (`![[file.mp3]]`), presents a selection modal (`NoteAudioModal`), and inserts transcriptions as blockquote blocks directly below each embed in the same note.
-
-**Alternatives considered**:
-- Transcribe to separate files and link them back (breaks context -- user has to navigate away)
-- Automatically transcribe all embeds without prompting (expensive, no user control)
-- Use a sidebar panel instead of inline insertion (harder to read in context)
-
-**Rationale**: Inline insertion keeps the transcription visually tied to the audio it came from. The blockquote format (`> **Transcription of file.mp3**`) is visually distinct and collapsible in many themes. Processing embeds in reverse line order prevents line-number shifts from invalidating subsequent insertions. A 2-second delay between API calls avoids rate limiting. Already-transcribed embeds are detected and skipped automatically.
-
-**Impact**: Users can transcribe audio directly from the note they are reading. The note is modified in-place via `vault.modify()`. The `AudioEmbed` interface and `NoteAudioModal` class are currently in `note-audio-modal.ts` rather than `types.ts` -- a known deviation from the project's types-in-types.ts convention, flagged for future cleanup.
-
----
-
-## 2026-03-12: Anthropic model IDs updated to current API versions
-
-**Context**: Anthropic released new model versions. The `ANTHROPIC_MODEL_MAP` in `ai-client.ts` mapped simplified names (opus, sonnet, haiku) to specific dated API IDs that needed updating.
-
-**Decision**: Update model IDs to: `opus` -> `claude-opus-4-6`, `sonnet` -> `claude-sonnet-4-6`, `haiku` -> `claude-haiku-4-5-20251001`. These reflect the current Anthropic API model identifiers.
-
-**Alternatives considered**:
-- Use undated model aliases if Anthropic supported them (they require specific IDs)
-- Let users type model IDs directly (reverts the dropdown decision -- error-prone)
-
-**Rationale**: Keeping model IDs current ensures API calls succeed. The `resolveModelId()` pattern means only one line per model needs updating when Anthropic releases new versions.
-
-**Impact**: Users selecting Anthropic models get the latest model versions automatically. No settings migration needed -- simplified names (`opus`, `sonnet`, `haiku`) are unchanged.
-
----
-
-## 2026-03-12: safeRequest wrapper for Obsidian requestUrl error handling
-
-**Context**: Obsidian's `requestUrl` in `throw` mode strips the response body on HTTP errors, making it impossible to read error details from API providers (e.g., "invalid API key" messages from OpenAI or Anthropic).
-
-**Decision**: Create a `safeRequest()` wrapper function in `ai-client.ts` that calls `requestUrl` with `throw: false`, then manually checks `response.status >= 400` and extracts the error message from the JSON response body before throwing a descriptive `Error`.
-
-**Alternatives considered**:
-- Use `requestUrl` in throw mode and lose error details (poor debugging experience)
-- Switch all AI calls to native `fetch` (inconsistent -- Whisper/Deepgram use `fetch` for FormData, but `requestUrl` is preferred for simple JSON calls in Obsidian plugins)
-- Wrap in try/catch at each call site (duplicated logic)
-
-**Rationale**: A single wrapper gives all `requestUrl`-based API calls descriptive error messages. The pattern `body?.error?.message ?? JSON.stringify(body)` covers both OpenAI and Anthropic error response formats.
-
-**Impact**: API errors now show the provider's actual error message (e.g., "Invalid API key") instead of a generic HTTP status code. Affects all AIClient methods (OpenAI, Anthropic, Ollama).
-
----
-
-## 2026-03-12: Vault cache miss handling in ensureFolder and ProposalStore
-
-**Context**: During plugin reload or when folders exist on disk but have not yet been indexed by Obsidian's vault cache, `vault.getAbstractFileByPath()` returns `null` and `vault.createFolder()` throws "Folder already exists". Similarly, `ProposalStore.listProposalFiles()` could fail if the proposal folder was not yet in the cache.
-
-**Decision**: Add a try/catch in `ensureFolder()` that swallows the "Folder already exists" error specifically. In `ProposalStore`, use `vault.adapter.exists()` and `vault.adapter.list()` (which bypass the vault cache and hit the filesystem directly) instead of cache-dependent methods.
-
-**Alternatives considered**:
-- Wait for vault cache to be ready before operating (unreliable timing, no clear API)
-- Use `vault.adapter` everywhere (bypasses useful Obsidian abstractions)
-- Wrap all vault operations in retry loops (masks the root cause)
-
-**Rationale**: The vault cache is eventually consistent. Defensive error handling in `ensureFolder()` covers the race condition cleanly. Using `vault.adapter` in `ProposalStore` is appropriate because proposal files are JSON (not markdown notes), so they benefit less from vault-level abstractions.
-
-**Impact**: Plugin reload no longer causes spurious "Folder already exists" errors. Proposal listing works immediately after plugin load even if the vault cache is still warming up.
-
----
-
-## 2026-03-12: Ribbon icons register unconditionally
-
-**Context**: The two ribbon icons (sparkles for elaboration proposals, mic for audio transcription) are registered in `main.ts` outside the `if (settings.*.enabled)` conditional blocks.
-
-**Decision**: Keep ribbon icons registered regardless of whether their corresponding module is enabled. This is a known architectural deviation, documented for future improvement.
-
-**Alternatives considered**:
-- Move ribbon registration inside the enabled check (would require re-registration when settings change, which Obsidian does not natively support without a full reload)
-- Remove ribbon icons entirely and rely on the command palette (less discoverable)
-
-**Rationale**: Obsidian's `addRibbonIcon` is a one-time registration during `onload()`. There is no `removeRibbonIcon` API. Moving registration inside the enabled check would mean users who enable a module after plugin load would not see the ribbon icon until they restart Obsidian. The current behavior is simpler, though it means clicking a ribbon icon for a disabled module will fail gracefully (the module's methods handle the disabled state).
-
-**Impact**: Ribbon icons are always visible. Clicking one when its module is disabled may show an error or do nothing. Documented as a known issue for future improvement.
-
----
-
-## 2026-03-12: Provider-specific model dropdowns instead of free-text input
-
-**Context**: The original model setting was a free-text input where users typed model identifiers (e.g., `claude-sonnet-4-20250514`). This was error-prone — a typo meant a silent API failure, and users had to look up exact model IDs.
-
-**Decision**: Replace the free-text model input with a dropdown populated from `MODEL_OPTIONS`, a provider-keyed map. Each AI provider (OpenAI, Anthropic, Ollama) has its own curated list of models with human-friendly display names. When the user switches providers, the model resets to the first option for that provider.
-
-**Alternatives considered**:
-- Free-text input with validation (still requires users to know model IDs)
-- A single combined dropdown with all models (confusing — shows irrelevant models)
-- Fetching available models from the API at runtime (requires valid API key before configuration is complete)
-
-**Rationale**: Provider-specific dropdowns eliminate typo risk and show only relevant models. Simplified names (e.g., `opus` instead of `claude-opus-4-20250514`) are friendlier; the internal `resolveModelId()` function maps them to full API IDs at request time via `ANTHROPIC_MODEL_MAP`.
-
-**Impact**: Users pick from a curated list. Adding a new model requires updating `MODEL_OPTIONS` in `settings.ts` (and `ANTHROPIC_MODEL_MAP` in `ai-client.ts` for Anthropic models). The settings tab re-renders when the provider changes to show the correct model list.
-
----
-
-## 2026-03-12: Separate Whisper API key for non-OpenAI providers
-
-**Context**: Whisper transcription requires an OpenAI API key, but users may choose Anthropic or Ollama as their AI provider — meaning their shared `ai.apiKey` is not an OpenAI key.
-
-**Decision**: Add a dedicated `audio.whisperApiKey` field. The transcriber resolves the key with fallback logic: use `whisperApiKey` if set, otherwise fall back to the shared `ai.apiKey`. The settings UI only shows the Whisper API key field when the transcription provider is Whisper AND the AI provider is not OpenAI (since OpenAI users already have a valid key).
-
-**Alternatives considered**:
-- Always require a separate Whisper key (redundant for OpenAI users)
-- Auto-detect and show a warning at transcription time (poor UX — fails only when the user tries to transcribe)
-- Require OpenAI as AI provider to use Whisper (unnecessarily restrictive)
-
-**Rationale**: The fallback pattern (`whisperApiKey || ai.apiKey`) means zero extra configuration for OpenAI users, while Anthropic/Ollama users get a clear, contextual prompt to enter their OpenAI key for Whisper specifically. The conditional UI keeps settings clean.
-
-**Impact**: Anthropic/Ollama users who want Whisper transcription see an additional "OpenAI API Key (Whisper)" field. The field explains why it's needed. OpenAI users see no change.
-
----
-
-## 2026-03-12: Password masking for all API key inputs
-
-**Context**: API keys were displayed as plain text in the settings tab, making them visible to anyone looking at the screen or in screenshots.
-
-**Decision**: Set `inputEl.type = 'password'` and `inputEl.autocomplete = 'off'` on all API key input fields (AI key, Whisper key, Deepgram key).
-
-**Alternatives considered**:
-- No masking (status quo — keys visible in settings)
-- Show/hide toggle (added complexity for minimal benefit)
-
-**Rationale**: Password masking is a standard UX pattern for sensitive fields. Combined with `autocomplete = 'off'`, it prevents both visual exposure and browser autofill of credentials.
-
-**Impact**: All API key fields show dots instead of the key text. Users can still paste and edit keys normally.
-
----
-
-## 2026-03-12: Anthropic has no developer-facing transcription API
-
-**Context**: While evaluating whether to add Anthropic as a transcription provider (alongside Whisper and Deepgram), we researched the Anthropic API surface.
-
-**Decision**: Do not add Anthropic as a transcription provider. Anthropic does not offer a speech-to-text or audio transcription API for developers as of March 2026.
-
-**Alternatives considered**:
-- Wait for Anthropic to launch a transcription API (unknown timeline)
-- Use Claude's multimodal capabilities to process audio (not designed for transcription at scale)
-
-**Rationale**: There is no API endpoint to integrate with. Whisper and Deepgram cover the transcription use case well. If Anthropic launches a transcription API in the future, it can be added as a new provider.
-
-**Impact**: None — no code changes needed. Documents the finding so the question doesn't need to be re-researched.
-
----
-
-## 2026-03-12: Deepgram converted from `requestUrl` to `fetch` with AbortController
-
-**Context**: The Deepgram transcription call originally used Obsidian's `requestUrl`. This was inconsistent with how Whisper already used `fetch` (required for FormData), and `requestUrl` does not support `AbortController` for timeout management.
-
-**Decision**: Convert Deepgram to use native `fetch` with an `AbortController` timeout (5 minutes), matching the Whisper implementation pattern. Also validate that the Deepgram API key is non-empty before making the request.
-
-**Alternatives considered**:
-- Keep `requestUrl` and use a separate timeout mechanism (inconsistent with Whisper pattern)
-- Use `requestUrl` with its built-in timeout (less control, no abort signal)
-
-**Rationale**: Consistency between Whisper and Deepgram request patterns simplifies the code. `AbortController` gives explicit timeout control and properly cancels the underlying request. Empty-key validation fails fast with a clear error message instead of a cryptic 401.
-
-**Impact**: Deepgram requests now have a 5-minute timeout and will abort cleanly on timeout. Empty API key is caught before the request is made.
-
----
-
-## 2026-03-12: Centralized input validation layer (`shared/validation.ts`)
-
-**Context**: The architecture audit identified that URLs and file paths were being passed to shell commands (`execFile`) and external APIs without consistent validation. AI-generated text was being written to vault notes without sanitization, creating potential XSS vectors in Obsidian's markdown renderer.
-
-**Decision**: Create a dedicated `validation.ts` module in `src/shared/` exporting four functions: `sanitizeUrl()`, `sanitizePath()`, `ensureWithinVault()`, and `sanitizeAIResponse()`. All security-sensitive inputs pass through these before use.
-
-**Alternatives considered**:
-- Inline validation at each call site (inconsistent, easy to miss)
-- Third-party validation library (violates zero-runtime-deps policy)
-- Validation only at the settings layer (doesn't cover runtime inputs like pasted URLs)
-
-**Rationale**: Centralized validation ensures consistency and makes it easy to audit. Defense-in-depth: even though `execFile` avoids shell injection by design, we still reject shell metacharacters in inputs. A single module makes it straightforward to add new validation rules.
-
-**Impact**: All URL and path inputs are validated before reaching `execFile` or external APIs. AI responses are sanitized before being written to vault notes. The validation module is imported via the shared barrel export.
-
----
-
-## 2026-03-12: `execFile` over `exec` for subprocess execution
-
-**Context**: The video module originally used `child_process.exec` to run yt-dlp and ffmpeg, which passes commands through the shell. This created a command injection risk if user-controlled data (URLs, file paths) contained shell metacharacters.
-
-**Decision**: Switch from `exec` to `execFile`, which bypasses the shell entirely by passing arguments as an array. Combined with input validation from `sanitizeUrl()`/`sanitizePath()`, this provides defense-in-depth against command injection.
-
-**Alternatives considered**:
-- Keep `exec` with aggressive escaping (error-prone, platform-dependent)
-- Use a shell-escape library (adds a dependency)
-- Only validate inputs without changing the exec method (single layer of defense)
-
-**Rationale**: `execFile` is the correct Node.js API for running commands with untrusted arguments — it never invokes a shell, so shell metacharacters are harmless. Combined with input validation, this gives two independent layers of protection.
-
-**Impact**: Subprocess calls in `audio-extractor.ts` use `execFile` with argument arrays. A 5-minute timeout and 10MB buffer limit are enforced on all subprocess calls.
-
----
-
-## 2026-03-12: API key redaction in error messages
-
-**Context**: Error messages from failed API calls could contain API keys or tokens, which Obsidian's `Notice` UI and `console.error` would display to the user or persist in logs.
-
-**Decision**: The `notifyError()` utility redacts patterns matching common API key formats (prefixes like `sk-`, `key-`, `dg-`, `Bearer`, `Token` followed by 8+ alphanumeric characters) before displaying or logging.
-
-**Alternatives considered**:
-- Only log generic "API error" messages (loses debugging context)
-- Never log errors (bad for diagnostics)
-- Store errors in a separate log file (complexity overhead)
-
-**Rationale**: Redaction preserves useful error context while preventing accidental key exposure. The regex pattern covers OpenAI, Anthropic, Deepgram, and generic Bearer token formats.
-
-**Impact**: Users see descriptive error messages without risking key leakage. Developers debugging issues still get context about what failed.
-
----
-
-## 2026-03-12: Ollama endpoint protocol validation
-
-**Context**: The Ollama AI provider allows users to configure a custom endpoint URL. Without validation, a user could misconfigure this to a non-HTTPS endpoint, sending AI prompts (which may contain vault content) over an unencrypted connection.
-
-**Decision**: Validate the Ollama endpoint URL: require HTTPS, except allow HTTP for `localhost`/`127.0.0.1` (since local traffic doesn't traverse the network).
-
-**Alternatives considered**:
-- Allow any protocol (user's choice, but risky default)
-- Require HTTPS always (breaks the primary Ollama use case — local server)
-- Validate at settings save time only (runtime bypass possible)
-
-**Rationale**: The localhost exception covers the standard Ollama setup (local server on port 11434) while protecting against accidental plaintext transmission to remote endpoints. Validation happens at request time, not just settings save.
-
-**Impact**: Users with standard local Ollama setups are unaffected. Users pointing to a remote Ollama instance must use HTTPS.
-
----
-
-## 2026-03-12: Request timeouts on all external calls
-
-**Context**: API calls to external services (Whisper, Deepgram, yt-dlp) could hang indefinitely if the service is unresponsive, leaving the user waiting with no feedback.
-
-**Decision**: Enforce timeouts on all external calls: 5-minute `AbortController` timeout on Whisper API fetch calls, 5-minute timeout on `execFile` subprocess calls (yt-dlp, ffmpeg). Obsidian's `requestUrl` has its own built-in timeout.
-
-**Alternatives considered**:
-- No timeouts (risk of infinite hangs)
-- Short timeouts (would fail on large files — transcribing a 2-hour podcast takes time)
-- User-configurable timeouts (added complexity for edge case)
-
-**Rationale**: 5 minutes is generous enough for large audio files and long video downloads, while still protecting against unresponsive services. Subprocess timeout also prevents orphaned processes.
-
-**Impact**: Long-running operations will fail with a timeout error after 5 minutes rather than hanging. Users processing very large files may hit this limit.
-
----
-
-## 2026-03-12: Shared barrel export (`shared/index.ts`)
-
-**Context**: The architecture audit found inconsistent import paths across modules — some imported from `../shared/ai-client`, others from `../shared/file-utils`, etc. This made it harder to discover available utilities and refactor internal file boundaries.
-
-**Decision**: Add a barrel file (`shared/index.ts`) that re-exports all public APIs from the shared module. All feature modules import from `../shared` (or `../shared/index`) instead of reaching into internal files.
-
-**Alternatives considered**:
-- Direct imports to internal files (status quo — works but inconsistent)
-- Separate packages per utility (over-engineered for this project size)
-
-**Rationale**: A barrel export creates a clear public API boundary for the shared module. It standardizes imports and makes it safe to reorganize internal files without updating consumers.
-
-**Impact**: All imports from shared now go through `../shared`. Internal file structure can change without breaking consumers.
+**Impact**: All external interactions are validated and sanitized. No user-facing behavior changes except masked API key fields and more descriptive error messages.
 
 ---
 
 ## 2026-03-12: VideoModule delegates transcription to AudioModule
 
-**Context**: Video transcription requires downloading a video, extracting audio, and then transcribing it — the same transcription pipeline that AudioModule already provides.
+**Context**: Video transcription requires downloading a video, extracting audio, and then transcribing it — the same pipeline AudioModule already provides.
 
-**Decision**: VideoModule accepts AudioModule as a constructor argument and calls `AudioModule.transcribe()` for the transcription step rather than implementing its own.
+**Decision**: VideoModule accepts AudioModule as a constructor argument and calls `AudioModule.transcribe()` for the transcription step.
 
 **Alternatives considered**:
 - Duplicate transcription logic in VideoModule
 - Create a shared transcription service extracted from both modules
 
-**Rationale**: Keeps transcription logic in one place. The dependency is one-directional (Video -> Audio), which is easy to reason about. Audio must be initialized before Video in `main.ts`.
+**Rationale**: Keeps transcription logic in one place. The dependency is one-directional (Video → Audio). Audio must be initialized before Video in `main.ts`.
 
-**Impact**: Audio and Video modules are not fully independent. Audio must always be loaded if Video is enabled. Initialization order in `main.ts` matters.
-
----
-
-## 2026-03-12: Hash-based conflict detection for proposal merging
-
-**Context**: Between proposal generation and user acceptance, the original note may have been edited. Blindly applying a proposal could overwrite changes.
-
-**Decision**: Store a SHA-256 hash of the note's content at proposal time (`sourceHash`). Before merging, recompute the hash and compare. If they differ, warn the user and offer options: merge anyway, regenerate, or cancel.
-
-**Alternatives considered**:
-- Diff-based merge (complex, error-prone with markdown)
-- Timestamp comparison (unreliable across devices)
-- No conflict detection (risk of silent data loss)
-
-**Rationale**: Hash comparison is simple, deterministic, and catches any change. It avoids the complexity of diff algorithms while still protecting user data.
-
-**Impact**: Proposals can go "stale" if the source note changes. Users see a clear conflict warning rather than silent overwrites.
+**Impact**: Audio and Video modules are not fully independent. Audio must always be loaded if Video is enabled.
 
 ---
 
-## 2026-03-12: Non-destructive proposal storage in `.auto-notes/proposals/`
+## 2026-03-12: Non-destructive proposal storage in `.auto-notes/`
 
-**Context**: AI-generated elaborations should never modify a user's notes without explicit consent. Proposals need to survive plugin reloads and Obsidian restarts.
+**Context**: AI-generated elaborations and enrichments should never modify a user's notes without explicit consent. Proposals need to survive plugin reloads and Obsidian restarts.
 
-**Decision**: Store proposals as JSON files in `.auto-notes/proposals/` within the vault. Each proposal is a separate file named `{noteName}-{shortId}.json` with metadata (source path, creation time, detection reasons, status) and the proposed content.
+**Decision**: Store proposals as JSON files in `.auto-notes/proposals/` (elaboration) and `.auto-notes/enrichments/` (enrichment). Each proposal is a separate file with metadata and proposed content. Tidy snapshots are stored in `.auto-notes/tidy-snapshots/`.
 
 **Alternatives considered**:
 - In-memory only (lost on reload)
 - Single database file (merge conflicts, corruption risk)
 - Frontmatter annotations on original notes (modifies user files)
-- SQLite/IndexedDB (not portable across Obsidian vaults)
 
-**Rationale**: JSON files are queryable, diffable, and human-inspectable. They survive reloads. Individual files avoid corruption cascading across proposals.
+**Rationale**: JSON files are human-inspectable, diffable, and survive reloads. Individual files avoid corruption cascading across proposals. The `.auto-notes/` folder is excluded from elaboration/enrichment scanning by default.
 
-**Impact**: Vault contains a `.auto-notes/` folder. Users can inspect, back up, or delete proposals manually. The folder should be excluded from Obsidian search/sync if desired.
-
----
-
-## 2026-03-12: Scored heuristic system for placeholder detection
-
-**Context**: The elaboration feature needs to identify "stub" or "placeholder" notes that would benefit from AI elaboration. Binary detection (is/isn't a stub) is too coarse.
-
-**Decision**: Each note receives a placeholder score (0-100) computed from weighted heuristics: word count (30), empty sections (25), TODO/TBD markers (20), bullet-only content (10), incoming link ratio (10), and recency (5). Notes above a configurable threshold are candidates.
-
-**Alternatives considered**:
-- Binary detection rules (any single signal triggers)
-- AI-based classification (expensive, slow for vault scans)
-- Manual tagging only (no automation)
-
-**Rationale**: Weighted scoring lets multiple weak signals combine into a strong signal. It reduces false positives compared to binary rules. Users can tune the threshold. It's fast enough for vault-wide scans without API calls.
-
-**Impact**: Detection is nuanced but explainable — users see the score breakdown. The system can be tuned per-vault via settings.
+**Impact**: Vault contains a `.auto-notes/` folder with three subdirectories. Users can inspect, back up, or delete proposal/snapshot files manually.
 
 ---
 
-## 2026-03-12: Claude API as primary elaboration AI provider
+## 2026-03-12: Modular architecture with FeatureModule contract
 
-**Context**: The elaboration feature needs an AI backend to generate note content. The plugin should support multiple providers.
+**Context**: The plugin has five distinct features that share infrastructure but are otherwise independent.
 
-**Decision**: Use Anthropic Claude API as the default AI provider via the shared `AIClient`. Also support OpenAI and Ollama. All API calls go through Obsidian's `requestUrl` (except Whisper, which needs `fetch` for FormData).
-
-**Alternatives considered**:
-- OpenAI only
-- Local models only (Ollama)
-- No default, force user to choose
-
-**Rationale**: Multi-provider support via `AIClient` abstraction gives users flexibility. Claude is a strong default for note elaboration tasks. Ollama support enables fully offline usage.
-
-**Impact**: Users must provide an API key for cloud providers. The `AIClient` abstraction makes adding new providers straightforward.
-
----
-
-## 2026-03-12: Whisper API as primary transcription provider
-
-**Context**: Audio transcription needs a reliable speech-to-text backend. Multiple options exist with different tradeoffs.
-
-**Decision**: Default to OpenAI Whisper API (`whisper-1`). Also support Deepgram and local Whisper (placeholder). Whisper API uses `fetch` instead of Obsidian's `requestUrl` due to FormData requirements.
+**Decision**: Each feature is a self-contained module following a common contract: `constructor(plugin, getSettings, notifications)`, `onload()`, `onunload()`. Modules are conditionally loaded based on settings. A shared utilities layer (`src/shared/`) provides cross-cutting concerns.
 
 **Alternatives considered**:
-- Deepgram only (good quality, less widely known)
-- Local Whisper only (no API key needed, but requires binary installation)
-- Browser-based speech recognition (inconsistent quality)
+- Monolithic single-file plugin
+- Separate plugins per feature
+- Event-bus architecture with loose coupling
 
-**Rationale**: Whisper API is widely available, high quality, and requires minimal setup — just an OpenAI API key. Deepgram is offered as an alternative. Local Whisper is stubbed for future implementation.
+**Rationale**: The module pattern balances isolation with simplicity. Features can be independently enabled/disabled. The `getSettings()` closure ensures modules always read fresh settings without event wiring.
 
-**Impact**: Users need an OpenAI API key for the default provider. The `fetch` workaround for FormData is a known divergence from the Obsidian `requestUrl` pattern.
-
----
-
-## 2026-03-12: yt-dlp for URL-based media fetching
-
-**Context**: The video transcription feature needs to download videos from YouTube and TikTok to extract audio for transcription.
-
-**Decision**: Use yt-dlp (external CLI tool) for video downloading and metadata extraction. Use ffmpeg for audio extraction from local files. Both are invoked via Node.js `child_process.execFile` (no shell).
-
-**Alternatives considered**:
-- Browser-based video download (blocked by CORS, unreliable)
-- Built-in download library (large bundle, maintenance burden)
-- API-based services (cost, privacy concerns)
-
-**Rationale**: yt-dlp is the standard tool for this purpose — actively maintained, supports hundreds of platforms, handles DRM and rate limiting. It's already installed by many technical users.
-
-**Impact**: Users must install yt-dlp and ffmpeg separately. The plugin includes a dependency check command (`auto-notes:check-dependencies`) to verify availability.
-
----
-
-## 2026-03-12: `isDesktopOnly: true` in manifest
-
-**Context**: The plugin uses `child_process` for yt-dlp/ffmpeg execution and `fs` for temp file operations — both Node.js APIs unavailable on mobile.
-
-**Decision**: Mark the plugin as desktop-only in `manifest.json`.
-
-**Alternatives considered**:
-- Graceful degradation (disable video features on mobile, keep elaboration)
-- API-based video processing service (avoid child_process)
-
-**Rationale**: Core video functionality depends on local CLI tools. Attempting mobile support would either break video features or require a fundamentally different architecture. Elaboration and audio features could theoretically work on mobile, but the video dependency on `child_process` makes the plugin desktop-only overall.
-
-**Impact**: Plugin will not appear in Obsidian's mobile plugin browser. Desktop-only is clearly communicated.
+**Impact**: Adding a new feature means creating a new module directory and wiring it in `main.ts`. Five modules currently follow this pattern: elaboration, audio, video, enrichment, tidy.
 
 ---
 
@@ -528,29 +288,76 @@ Decisions listed in reverse chronological order.
 
 **Context**: Obsidian community plugins are reviewed for security and bundle size. Runtime dependencies increase both risk and review burden.
 
-**Decision**: Zero runtime npm dependencies. All external API calls use Obsidian's `requestUrl` or native `fetch`. External tools (yt-dlp, ffmpeg) are invoked as subprocesses rather than imported as libraries.
+**Decision**: Zero runtime npm dependencies. All external API calls use Obsidian's `requestUrl` or native `fetch`. External tools (yt-dlp, ffmpeg) are invoked as subprocesses.
 
 **Alternatives considered**:
 - Use SDK packages for OpenAI, Anthropic, Deepgram
 - Bundle a minimal HTTP client library
 
-**Rationale**: Keeps the bundle small and avoids supply chain risk. Obsidian's `requestUrl` handles CORS and provides consistent behavior. API calls are simple enough to implement directly.
+**Rationale**: Keeps the bundle small and avoids supply chain risk. API calls are simple enough to implement directly.
 
-**Impact**: API integration code is hand-rolled (more code to maintain) but the plugin has no transitive dependency risk. Bundle stays small.
+**Impact**: API integration code is hand-rolled but the plugin has no transitive dependency risk.
 
 ---
 
-## 2026-03-12: Modular architecture with FeatureModule contract
+## 2026-03-12: Provider-specific model dropdowns
 
-**Context**: The plugin has three distinct features (elaboration, audio, video) that share some infrastructure but are otherwise independent.
+**Context**: The original model setting was a free-text input where users typed model identifiers. Typos caused silent API failures.
 
-**Decision**: Each feature is a self-contained module following a common contract: `constructor(plugin, getSettings)`, `onload()`, `onunload()`. Modules are conditionally loaded based on settings. A shared utilities layer (`src/shared/`) provides cross-cutting concerns (AI client, file utils, error handling).
+**Decision**: Replace free-text with dropdowns populated from `MODEL_OPTIONS`, keyed by provider. Anthropic uses simplified names mapped to full API IDs by `resolveModelId()`.
 
 **Alternatives considered**:
-- Monolithic single-file plugin
-- Separate plugins per feature
-- Event-bus architecture with loose coupling
+- Free-text with validation (still requires users to know model IDs)
+- Fetching available models from API at runtime (requires valid API key first)
 
-**Rationale**: The module pattern balances isolation with simplicity. Features can be independently enabled/disabled. The `getSettings()` closure ensures modules always read fresh settings without event wiring. Shared utilities prevent duplication without tight coupling.
+**Rationale**: Eliminates typo risk and shows only relevant models per provider.
 
-**Impact**: Adding a new feature means creating a new module directory and wiring it in `main.ts`. The pattern is easy to follow and test independently.
+**Impact**: Users pick from curated lists. Adding a model requires updating `MODEL_OPTIONS` in `settings.ts`.
+
+---
+
+## 2026-03-12: `isDesktopOnly: true` in manifest
+
+**Context**: The plugin uses `child_process` for yt-dlp/ffmpeg execution — Node.js APIs unavailable on mobile.
+
+**Decision**: Mark the plugin as desktop-only in `manifest.json`.
+
+**Alternatives considered**:
+- Graceful degradation (disable video features on mobile)
+- API-based video processing service
+
+**Rationale**: Core video functionality depends on local CLI tools. Desktop-only is clearly communicated.
+
+**Impact**: Plugin will not appear in Obsidian's mobile plugin browser.
+
+---
+
+## 2026-03-12: Whisper API as default transcription provider with key fallback
+
+**Context**: Audio transcription needs a reliable backend. Users may use Anthropic or Ollama as their AI provider, meaning their shared API key isn't an OpenAI key.
+
+**Decision**: Default to OpenAI Whisper API. Add dedicated `audio.whisperApiKey` with fallback: `whisperApiKey || ai.apiKey`. The settings UI conditionally shows the Whisper key field only when needed.
+
+**Alternatives considered**:
+- Always require a separate Whisper key (redundant for OpenAI users)
+- Require OpenAI as AI provider to use Whisper (unnecessarily restrictive)
+
+**Rationale**: Zero extra configuration for OpenAI users; clear prompt for others. Conditional UI keeps settings clean.
+
+**Impact**: Anthropic/Ollama users who want Whisper see an additional key field. OpenAI users see no change.
+
+---
+
+## 2026-03-12: yt-dlp for URL-based media fetching with PATH resolution
+
+**Context**: Video transcription needs to download from YouTube/TikTok. Obsidian runs in Electron with a minimal PATH.
+
+**Decision**: Use yt-dlp (external CLI) via `execFile`. A `shellEnv()` function prepends `/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin` to PATH for subprocess calls. Use `os.tmpdir()` for temp files instead of vault-relative paths.
+
+**Alternatives considered**:
+- Require absolute paths in settings (poor UX)
+- Use `shell: true` for PATH inheritance (reintroduces injection risk)
+
+**Rationale**: Covers most installations automatically while preserving `execFile` security.
+
+**Impact**: yt-dlp/ffmpeg found automatically on most systems. Users can verify via the dependency check command.

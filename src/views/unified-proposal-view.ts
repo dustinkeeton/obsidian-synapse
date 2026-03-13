@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
-import type { Proposal } from '../elaboration/types';
-import type { AcceptedItems, EnrichmentProposal } from '../enrichment/types';
+import type { Proposal } from '../elaboration';
+import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 
 export const UNIFIED_VIEW_TYPE = 'auto-notes-proposals';
 

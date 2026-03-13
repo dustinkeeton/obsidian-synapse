@@ -1,89 +1,97 @@
 # Project Status
 
-**Last updated**: 2026-03-12
-**Phase**: TDD infrastructure added, video transcription fixes deployed, security hardened
+**Last updated**: 2026-03-13
+**Phase**: All five feature modules implemented; enrichment, tidy, and unified view are new since last status update
 
 ---
 
 ## Feature Completion Matrix
 
-| Feature | Scaffolded | Core Logic | Security | Tests | Status |
+| Feature | Core Logic | UI | Security | Tests | Status |
 |---------|:---:|:---:|:---:|:---:|--------|
-| Plugin shell (main.ts, settings) | Yes | Yes | Yes | No | Working |
-| Settings tab (model dropdowns, password masking) | Yes | Yes | Yes | No | Working |
-| Elaboration -- detection | Yes | Stub | Yes | No | Needs implementation |
-| Elaboration -- proposal generation | Yes | Stub | Yes | No | Needs implementation |
-| Elaboration -- proposal storage | Yes | Scaffold | -- | No | Needs implementation |
-| Elaboration -- review UI | Yes | Stub | -- | No | Needs implementation |
-| Audio -- file transcription (Whisper) | Yes | Scaffold | Yes | No | Needs implementation |
-| Audio -- file transcription (Deepgram) | Yes | Scaffold | Yes | No | Needs implementation |
-| Audio -- inline note transcription | Yes | Yes | Yes | No | **Done** |
-| Audio -- transcription (local) | Yes | -- | -- | No | Not started |
-| Audio -- post-processing | Yes | Scaffold | Yes | No | Needs implementation |
-| Video -- URL detection | Yes | Yes | Yes | Yes | **Done** |
-| Video -- yt-dlp integration | Yes | Yes | Yes | No | **Done** |
-| Video -- transcription modal | Yes | Stub | -- | No | Needs implementation |
-| Video -- local file transcription | Yes | -- | -- | No | Not started |
-| Video -- frame extraction | Yes | -- | -- | No | Not started (stretch) |
-| Shared -- AIClient (with model resolution) | Yes | Scaffold | Yes | No | Needs implementation |
-| Shared -- validation | Yes | Yes | Yes | No | **Done** |
-| Shared -- file utils (ensureFolder, writeNote) | Yes | Yes | -- | No | **Done** |
-| Shared -- barrel export (index.ts) | Yes | Yes | -- | No | **Done** |
-| Shared -- types (ChatMessage) | Yes | Yes | -- | No | **Done** |
-| Test infrastructure (Vitest, mocks, factories) | Yes | Yes | -- | -- | **Done** |
+| Elaboration — detection & proposals | Yes | Yes | Yes | No | **Working** |
+| Elaboration — review (unified sidebar) | Yes | Yes | — | No | **Working** |
+| Audio — Whisper API transcription | Yes | Yes | Yes | No | **Working** |
+| Audio — Deepgram transcription | Yes | Yes | Yes | No | **Working** |
+| Audio — inline note transcription | Yes | Yes | Yes | No | **Working** |
+| Audio — local Whisper | — | — | — | No | Not started (throws) |
+| Audio — post-processing | Yes | — | Yes | No | **Working** |
+| Video — URL detection (YT + TikTok) | Yes | — | Yes | Yes | **Working** |
+| Video — yt-dlp download + transcribe | Yes | Yes | Yes | No | **Working** |
+| Video — download + embed in note | Yes | — | Yes | No | **Working** |
+| Video — local file transcription | — | — | — | No | Not started (stub) |
+| Video — frame extraction | — | — | — | No | Not started (placeholder) |
+| Enrichment — tag scoring | Yes | Yes | Yes | No | **Working** |
+| Enrichment — internal link resolution | Yes | Yes | Yes | No | **Working** |
+| Enrichment — external refs + frontmatter | Yes | Yes | Yes | No | **Working** |
+| Enrichment — undo | Yes | — | — | Yes | **Working** |
+| Tidy — spelling/formatting | Yes | — | Yes | Yes | **Working** |
+| Tidy — undo | Yes | — | — | Yes | **Working** |
+| Unified proposal sidebar | Yes | Yes | — | No | **Working** |
+| Shared — AIClient (3 providers) | Yes | — | Yes | No | **Working** |
+| Shared — NotificationManager | Yes | — | — | Yes | **Working** |
+| Shared — validation & sanitization | Yes | — | Yes | Yes | **Working** |
+| Shared — frontmatter utils | Yes | — | — | Yes | **Working** |
+| Test infrastructure (Vitest + mocks) | Yes | — | — | — | **Working** |
 
 ---
 
 ## What's Working
 
-- Plugin loads in Obsidian with settings tab
-- Module initialization and lifecycle (load/unload)
-- Conditional feature loading based on settings
-- Ribbon icons and commands registered
-- Settings schema with deep merge on load
-- **Inline note transcription**: Scans current note for `![[audio.mp3]]` embeds, presents selection modal, inserts blockquote transcriptions below each embed
-- **Video URL detection**: YouTube (watch, short, Shorts) and TikTok (full, /t/ share, vm.tiktok.com, vt.tiktok.com) with 26 test cases
-- **Video audio extraction**: yt-dlp integration with PATH resolution for Electron, absolute temp paths via `os.tmpdir()`
-- **Model selection**: Provider-specific dropdowns; Anthropic uses simplified names mapped to current API IDs
-- **safeRequest wrapper**: API errors now include provider error messages instead of generic HTTP codes
-- **Vault cache miss handling**: `ensureFolder()` handles "already exists" race condition; `ProposalStore` uses adapter methods to bypass cache
-- **Whisper API key separation**: Dedicated `whisperApiKey` field with fallback to shared `ai.apiKey`
-- **Password masking**: All API key inputs use `type="password"` with `autocomplete="off"`
-- **Input validation layer**: URL sanitization, path sanitization, vault boundary checks
-- **AI response sanitization**: Script tags, event handlers, dangerous URIs stripped
-- **Subprocess security**: `execFile` with argument arrays (no shell), 5-min timeout, 10MB buffer limit
-- **API key redaction** in error messages
-- **Request timeouts** on all external calls (5 minutes)
-- **Test infrastructure**: Vitest 4.x with Obsidian mocks, mock factories, co-located test files
+- **Full plugin lifecycle**: load, settings, conditional module init, unload
+- **Five feature modules**: elaboration, audio, video, enrichment, tidy — all functional
+- **Unified sidebar**: Single view for elaboration + enrichment proposals with inline review
+- **Cross-module automation**: Elaboration accept → auto-enrich; transcription complete → auto-enrich
+- **Centralized notifications**: Progress tracking, cancellation, confirmation dialogs
+- **Security layer**: Input validation, output sanitization, subprocess hardening, key redaction
+- **Three AI providers**: OpenAI, Anthropic, Ollama with model dropdowns
+- **Three transcription providers**: Whisper API, Deepgram (local Whisper stubbed)
+- **Video support**: YouTube + TikTok (all URL formats), download + embed option
 
-## Known Issues / Architectural Notes
+## What's Not Implemented
 
-- **Ribbon icons always visible**: Register unconditionally regardless of module enabled state; no `removeRibbonIcon` API
-- **Status bar is static**: Shows "Auto Notes: idle" permanently; not updated during operations
-- **Local Whisper**: `local-whisper` provider throws "not implemented"
-- **Local video file**: `transcribe-video-file` command shows "coming soon" notice
-- **Frame extraction**: `FrameExtractor` is a placeholder class
-- **Platform filtering**: `supportedPlatforms` toggles defined but not enforced
-- **Proposal limits**: `maxProposalsPerNote` setting exists but is not enforced
-- **Append mode**: `output.appendToExisting` audio setting exists but is not used
-- **video.tempFolder setting**: Unused for audio extraction (replaced by `os.tmpdir()`)
+- **Local Whisper transcription**: Provider defined but throws "not implemented"
+- **Local video file transcription**: Command shows "coming soon" notice
+- **Frame extraction**: `FrameExtractor` class is a placeholder
+- **Platform filtering**: `supportedPlatforms` toggles exist in settings but are not enforced
+
+## Known Issues
+
+- **Ribbon icons always visible**: Registered unconditionally; Obsidian has no `removeRibbonIcon` API
+- **`video.tempFolder` unused**: Audio extraction uses `os.tmpdir()` instead; setting remains for future frame extraction
+
+## Test Coverage
+
+| Module | Test Files | Coverage Area |
+|--------|-----------|---------------|
+| video/url-detector | `url-detector.test.ts` | YouTube + TikTok URL patterns (26 cases) |
+| video/note-scanner | `note-scanner.test.ts` | Note video URL scanning |
+| shared/validation | `validation.test.ts` | URL, path, AI response sanitization |
+| shared/notifications | `notifications.test.ts` | NotificationManager operations |
+| shared/frontmatter | `frontmatter-utils.test.ts` | Frontmatter parse/serialize/merge |
+| enrichment/weight-calc | `weight-calculator.test.ts` | Proximity weight algorithm |
+| enrichment/vault-analyzer | `vault-analyzer.test.ts` | Tag index and link graph |
+| enrichment/store | `enrichment-store.test.ts` | Proposal CRUD |
+| tidy/store | `tidy-store.test.ts` | Snapshot CRUD |
+| tidy/module | `tidy-module.test.ts` | Tidy pipeline |
+
+## Recent Changes (since last update)
+
+- Added enrichment module with proximity-weighted tag scoring, link resolution, and AI suggestions
+- Added tidy module with immediate-apply workflow and undo via snapshots
+- Unified elaboration + enrichment proposals into single sidebar view
+- Replaced modals with inline review panes and clickable note links
+- Added centralized `NotificationManager` with cancellation and two-phase vault scan
+- Wired cross-module callbacks (elaboration/transcription → auto-enrich)
+- Added video download-to-vault and embed-in-note settings
+- Removed unused output folder settings from audio and video
 
 ## External Dependencies
 
 | Dependency | Required For | Status |
 |------------|-------------|--------|
-| yt-dlp | Video download | User must install; PATH resolution covers common locations |
-| ffmpeg | Audio extraction from video | User must install; PATH resolution covers common locations |
-| OpenAI API key | Whisper transcription, GPT AI | User configures in settings |
-| Anthropic API key | Claude AI (elaboration) | User configures in settings |
-| Deepgram API key | Deepgram transcription (optional) | User configures if selected |
-
-## Next Steps
-
-1. Write tests for `shared/validation.ts` (pure functions, highest priority)
-2. Implement core elaboration detection logic (scored heuristics)
-3. Implement proposal generation with AI integration
-4. Build proposal review sidebar UI
-5. Implement audio transcription pipeline end-to-end
-6. Make ribbon icons conditional on module enabled state
-7. Update status bar dynamically during operations
+| yt-dlp | Video download | User-installed; PATH auto-resolved |
+| ffmpeg | Audio extraction from video | User-installed; PATH auto-resolved |
+| OpenAI API key | Whisper transcription, GPT models | User-configured |
+| Anthropic API key | Claude models | User-configured |
+| Deepgram API key | Deepgram transcription (optional) | User-configured |
