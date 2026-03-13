@@ -38,3 +38,9 @@ Some notes:
 - model selection should be reduced to the latest version of the model in question. So `/sonnet.*/` should just become `/sonnet/`. Same obviously goes for other models such as `opus`. for openai models, these should be delineated by number (e.g. `gpt 5.4`) or what have you. they should exist in a dropdown instead of letting the user get the input wrong. Obviously this should be a field that can update itself.
 - Similar concerns exist for the Transcription provider field. It's rightfully a dropdown, but there is no field to provide a key for OpenAI Whisper the user chose a different AI provider/key from the start. Piggybacking off of this thought - determine if there's an option to use anthropic's new /voice feature as the Transcription provider here.
 - The Hot Reload functionality is a good callout. If that currently does not exist please document for future improvement to this dx.
+
+### Next
+We just got some really good work done. nice job. 
+A few refinements should be made the the transcribing video url feature set.
+- The transcription should be posted in the note that you are in, if there is one.
+- The UI flow for transcribing video should be the same as audio. You select the video files in the md file that you're in and the transcription is placed below the url.

@@ -1,10 +1,12 @@
-import { Notice, Plugin } from 'obsidian';
+import { Notice, Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { AudioModule, TranscriptionResult } from '../audio';
 import { ensureFolder, notifyError, sanitizeUrl, writeNote } from '../shared';
 import { AudioExtractor } from './audio-extractor';
-import { VideoMetadata, VideoProcessOptions } from './types';
-import { detectPlatform } from './url-detector';
+import { NoteVideoModal } from './note-video-modal';
+import { findVideoUrls } from './note-scanner';
+import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
+import { detectPlatform, isSupportedUrl } from './url-detector';
 import { VideoTranscriptionModal } from './video-modal';
 
 export type {
@@ -14,6 +16,7 @@ export type {
 	VideoMetadata,
 	VideoProcessOptions,
 	VideoSource,
+	VideoUrlEmbed,
 } from './types';
 export { detectPlatform, isSupportedUrl } from './url-detector';
 
@@ -38,6 +41,16 @@ export class VideoModule {
 			id: 'auto-notes:transcribe-video-url',
 			name: 'Transcribe video from URL',
 			callback: () => this.openUrlModal(),
+		});
+
+		this.plugin.addCommand({
+			id: 'auto-notes:transcribe-note-video',
+			name: 'Transcribe video URLs from current note',
+			editorCallback: async (_editor, ctx) => {
+				if (ctx.file) {
+					await this.transcribeFromNote(ctx.file);
+				}
+			},
 		});
 
 		this.plugin.addCommand({
@@ -88,13 +101,79 @@ export class VideoModule {
 			// Ignore cleanup errors
 		}
 
-		// Save with metadata
-		const outputPath = options?.outputPath || this.buildOutputPath(extraction.metadata);
-		const content = this.formatVideoTranscription(result, extraction.metadata);
-		await writeNote(this.plugin.app, outputPath, content);
+		// In insert mode, caller handles placement — skip file creation
+		if (!options?.insertMode) {
+			const outputPath = options?.outputPath || this.buildOutputPath(extraction.metadata);
+			const content = this.formatVideoTranscription(result, extraction.metadata);
+			await writeNote(this.plugin.app, outputPath, content);
+			new Notice(`Auto Notes: Transcription saved to ${outputPath}`);
+		}
 
-		new Notice(`Auto Notes: Transcription saved to ${outputPath}`);
 		return result;
+	}
+
+	private async transcribeFromNote(noteFile: TFile): Promise<void> {
+		const content = await this.plugin.app.vault.read(noteFile);
+		const embeds = findVideoUrls(content);
+
+		if (embeds.length === 0) {
+			new Notice('Auto Notes: No video URLs found in this note');
+			return;
+		}
+
+		new NoteVideoModal(
+			this.plugin.app,
+			embeds,
+			async (selected) => {
+				await this.transcribeAndInsert(noteFile, selected);
+			}
+		).open();
+	}
+
+	private async transcribeAndInsert(
+		noteFile: TFile,
+		embeds: VideoUrlEmbed[]
+	): Promise<void> {
+		const total = embeds.length;
+		let completed = 0;
+
+		new Notice(`Auto Notes: Transcribing ${total} video(s)...`);
+
+		// Process in reverse line order so insertions don't shift line numbers
+		const sorted = [...embeds].sort((a, b) => b.line - a.line);
+
+		let content = await this.plugin.app.vault.read(noteFile);
+
+		for (let i = 0; i < sorted.length; i++) {
+			const embed = sorted[i];
+			if (i > 0) {
+				await new Promise(resolve => setTimeout(resolve, 2000));
+			}
+			try {
+				const result = await this.processUrl(embed.url, { insertMode: true });
+				const text = result.processed || result.raw;
+
+				const lines = content.split('\n');
+				const transcriptionBlock = [
+					'',
+					`> **Transcription of ${embed.url}**`,
+					'>',
+					...text.split('\n').map(line => `> ${line}`),
+					'',
+				].join('\n');
+
+				lines.splice(embed.line + 1, 0, transcriptionBlock);
+				content = lines.join('\n');
+
+				completed++;
+				new Notice(`Auto Notes: Transcribed ${completed}/${total}`);
+			} catch (error) {
+				notifyError(`Video transcription failed for ${embed.url}`, error);
+			}
+		}
+
+		await this.plugin.app.vault.modify(noteFile, content);
+		new Notice(`Auto Notes: Done — ${completed}/${total} video transcriptions added`);
 	}
 
 	private openUrlModal(): void {
