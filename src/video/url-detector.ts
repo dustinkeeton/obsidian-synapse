@@ -2,8 +2,12 @@ import { UrlDetectionResult } from './types';
 
 const YOUTUBE_REGEX =
 	/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]+)/;
-const TIKTOK_REGEX =
+// Full TikTok URL: tiktok.com/@user/video/123
+const TIKTOK_VIDEO_REGEX =
 	/tiktok\.com\/@[\w.-]+\/video\/(\d+)/;
+// Short/share TikTok URLs: tiktok.com/t/..., vm.tiktok.com/..., vt.tiktok.com/...
+const TIKTOK_SHORT_REGEX =
+	/(?:vm\.|vt\.)?tiktok\.com\/(?:t\/)?[\w.-]+/;
 
 export function detectPlatform(url: string): UrlDetectionResult | null {
 	const ytMatch = url.match(YOUTUBE_REGEX);
@@ -11,9 +15,15 @@ export function detectPlatform(url: string): UrlDetectionResult | null {
 		return { platform: 'youtube', videoId: ytMatch[1], url };
 	}
 
-	const ttMatch = url.match(TIKTOK_REGEX);
-	if (ttMatch) {
-		return { platform: 'tiktok', videoId: ttMatch[1], url };
+	const ttVideoMatch = url.match(TIKTOK_VIDEO_REGEX);
+	if (ttVideoMatch) {
+		return { platform: 'tiktok', videoId: ttVideoMatch[1], url };
+	}
+
+	// Short URLs don't contain a video ID — yt-dlp resolves the redirect
+	const ttShortMatch = url.match(TIKTOK_SHORT_REGEX);
+	if (ttShortMatch) {
+		return { platform: 'tiktok', videoId: 'short-url', url };
 	}
 
 	return null;
