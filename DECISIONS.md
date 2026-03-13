@@ -4,6 +4,89 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-12: Inline note audio transcription with in-place insertion
+
+**Context**: Users often embed audio recordings directly in their notes (e.g., `![[meeting-recording.mp3]]`). The existing audio transcription workflow required opening a file-picker modal, selecting a file, and saving the transcription as a separate note -- disconnected from the note where the audio was referenced.
+
+**Decision**: Add a new command "Transcribe audio from current note" (`auto-notes:transcribe-note-audio`) as an `editorCallback`. It scans the active note for audio embed syntax (`![[file.mp3]]`), presents a selection modal (`NoteAudioModal`), and inserts transcriptions as blockquote blocks directly below each embed in the same note.
+
+**Alternatives considered**:
+- Transcribe to separate files and link them back (breaks context -- user has to navigate away)
+- Automatically transcribe all embeds without prompting (expensive, no user control)
+- Use a sidebar panel instead of inline insertion (harder to read in context)
+
+**Rationale**: Inline insertion keeps the transcription visually tied to the audio it came from. The blockquote format (`> **Transcription of file.mp3**`) is visually distinct and collapsible in many themes. Processing embeds in reverse line order prevents line-number shifts from invalidating subsequent insertions. A 2-second delay between API calls avoids rate limiting. Already-transcribed embeds are detected and skipped automatically.
+
+**Impact**: Users can transcribe audio directly from the note they are reading. The note is modified in-place via `vault.modify()`. The `AudioEmbed` interface and `NoteAudioModal` class are currently in `note-audio-modal.ts` rather than `types.ts` -- a known deviation from the project's types-in-types.ts convention, flagged for future cleanup.
+
+---
+
+## 2026-03-12: Anthropic model IDs updated to current API versions
+
+**Context**: Anthropic released new model versions. The `ANTHROPIC_MODEL_MAP` in `ai-client.ts` mapped simplified names (opus, sonnet, haiku) to specific dated API IDs that needed updating.
+
+**Decision**: Update model IDs to: `opus` -> `claude-opus-4-6`, `sonnet` -> `claude-sonnet-4-6`, `haiku` -> `claude-haiku-4-5-20251001`. These reflect the current Anthropic API model identifiers.
+
+**Alternatives considered**:
+- Use undated model aliases if Anthropic supported them (they require specific IDs)
+- Let users type model IDs directly (reverts the dropdown decision -- error-prone)
+
+**Rationale**: Keeping model IDs current ensures API calls succeed. The `resolveModelId()` pattern means only one line per model needs updating when Anthropic releases new versions.
+
+**Impact**: Users selecting Anthropic models get the latest model versions automatically. No settings migration needed -- simplified names (`opus`, `sonnet`, `haiku`) are unchanged.
+
+---
+
+## 2026-03-12: safeRequest wrapper for Obsidian requestUrl error handling
+
+**Context**: Obsidian's `requestUrl` in `throw` mode strips the response body on HTTP errors, making it impossible to read error details from API providers (e.g., "invalid API key" messages from OpenAI or Anthropic).
+
+**Decision**: Create a `safeRequest()` wrapper function in `ai-client.ts` that calls `requestUrl` with `throw: false`, then manually checks `response.status >= 400` and extracts the error message from the JSON response body before throwing a descriptive `Error`.
+
+**Alternatives considered**:
+- Use `requestUrl` in throw mode and lose error details (poor debugging experience)
+- Switch all AI calls to native `fetch` (inconsistent -- Whisper/Deepgram use `fetch` for FormData, but `requestUrl` is preferred for simple JSON calls in Obsidian plugins)
+- Wrap in try/catch at each call site (duplicated logic)
+
+**Rationale**: A single wrapper gives all `requestUrl`-based API calls descriptive error messages. The pattern `body?.error?.message ?? JSON.stringify(body)` covers both OpenAI and Anthropic error response formats.
+
+**Impact**: API errors now show the provider's actual error message (e.g., "Invalid API key") instead of a generic HTTP status code. Affects all AIClient methods (OpenAI, Anthropic, Ollama).
+
+---
+
+## 2026-03-12: Vault cache miss handling in ensureFolder and ProposalStore
+
+**Context**: During plugin reload or when folders exist on disk but have not yet been indexed by Obsidian's vault cache, `vault.getAbstractFileByPath()` returns `null` and `vault.createFolder()` throws "Folder already exists". Similarly, `ProposalStore.listProposalFiles()` could fail if the proposal folder was not yet in the cache.
+
+**Decision**: Add a try/catch in `ensureFolder()` that swallows the "Folder already exists" error specifically. In `ProposalStore`, use `vault.adapter.exists()` and `vault.adapter.list()` (which bypass the vault cache and hit the filesystem directly) instead of cache-dependent methods.
+
+**Alternatives considered**:
+- Wait for vault cache to be ready before operating (unreliable timing, no clear API)
+- Use `vault.adapter` everywhere (bypasses useful Obsidian abstractions)
+- Wrap all vault operations in retry loops (masks the root cause)
+
+**Rationale**: The vault cache is eventually consistent. Defensive error handling in `ensureFolder()` covers the race condition cleanly. Using `vault.adapter` in `ProposalStore` is appropriate because proposal files are JSON (not markdown notes), so they benefit less from vault-level abstractions.
+
+**Impact**: Plugin reload no longer causes spurious "Folder already exists" errors. Proposal listing works immediately after plugin load even if the vault cache is still warming up.
+
+---
+
+## 2026-03-12: Ribbon icons register unconditionally
+
+**Context**: The two ribbon icons (sparkles for elaboration proposals, mic for audio transcription) are registered in `main.ts` outside the `if (settings.*.enabled)` conditional blocks.
+
+**Decision**: Keep ribbon icons registered regardless of whether their corresponding module is enabled. This is a known architectural deviation, documented for future improvement.
+
+**Alternatives considered**:
+- Move ribbon registration inside the enabled check (would require re-registration when settings change, which Obsidian does not natively support without a full reload)
+- Remove ribbon icons entirely and rely on the command palette (less discoverable)
+
+**Rationale**: Obsidian's `addRibbonIcon` is a one-time registration during `onload()`. There is no `removeRibbonIcon` API. Moving registration inside the enabled check would mean users who enable a module after plugin load would not see the ribbon icon until they restart Obsidian. The current behavior is simpler, though it means clicking a ribbon icon for a disabled module will fail gracefully (the module's methods handle the disabled state).
+
+**Impact**: Ribbon icons are always visible. Clicking one when its module is disabled may show an error or do nothing. Documented as a known issue for future improvement.
+
+---
+
 ## 2026-03-12: Provider-specific model dropdowns instead of free-text input
 
 **Context**: The original model setting was a free-text input where users typed model identifiers (e.g., `claude-sonnet-4-20250514`). This was error-prone — a typo meant a silent API failure, and users had to look up exact model IDs.
