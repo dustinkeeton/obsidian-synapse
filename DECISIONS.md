@@ -4,6 +4,148 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-13: On-demand folder creation in stores
+
+**Context**: Store classes (ProposalStore, EnrichmentStore, TidyStore) relied on an `init()` call during plugin startup to create their storage folders. If the folder was deleted while the plugin was running, subsequent saves would fail.
+
+**Decision**: Add `await ensureFolder(this.app, this.folderPath)` at the top of every `save()` method, in addition to the existing `init()` call. The `ensureFolder` function in `shared/file-utils.ts` handles the race condition where a folder exists on disk but not in the vault cache.
+
+**Alternatives considered**:
+- Rely solely on `init()` (fails if folder deleted mid-session)
+- Create folder lazily on first save only, remove `init()` (startup validation is still useful)
+
+**Rationale**: Belt-and-suspenders approach. The `init()` call catches configuration errors early (bad path, permissions); the `save()` call handles runtime deletion. `ensureFolder` is idempotent and cheap.
+
+**Impact**: Stores are resilient to folder deletion during plugin runtime. No behavior change for normal usage.
+
+---
+
+## 2026-03-13: Git workflow -- protected main, feature branches, bot identity
+
+**Context**: The project was growing beyond solo development. Multiple agents (human and AI) needed to contribute without stepping on each other's work or breaking main.
+
+**Decision**: Establish a formal git workflow:
+- **Protected main**: never push directly; all changes via pull requests
+- **Feature branches**: `feat/`, `fix/`, `refactor/`, `chore/` prefixes
+- **Bot identity**: all git operations use `bot@wafflenet.io` / `bot` (never personal identities)
+- **Co-authored commits**: `Co-Authored-By: Claude <bot@wafflenet.io>` trailer
+- **Pre-flight checklist**: type-check, test, build before pushing
+- **Worktrees**: for parallel work on conflicting files
+
+**Alternatives considered**:
+- Trunk-based development (risky without CI/CD gate)
+- Personal identity for commits (confuses authorship tracking)
+- No formal workflow (works solo, breaks with multiple contributors)
+
+**Rationale**: Protected main prevents accidental breakage. Feature branches isolate work-in-progress. The bot identity creates a clear audit trail distinguishing automated from manual commits. Worktrees enable parallel agent work without branch switching.
+
+**Impact**: All contributors follow the same workflow. PRs are the only path to main. The git-workflow skill (`/.claude/skills/git-workflow/SKILL.md`) documents the full protocol.
+
+---
+
+## 2026-03-13: Teams infrastructure for multi-agent coordination
+
+**Context**: The project uses multiple specialized AI agents (architect, security, docs, elaboration-designer, transcription-engineer). These agents need clear role boundaries, shared skills, and coordination mechanisms.
+
+**Decision**: Create a teams infrastructure under `.claude/agents/` with dedicated agent definition files. Each agent has:
+- A name and description
+- A list of skills they can use
+- A list of allowed tools
+- Clear responsibility boundaries
+
+**Alternatives considered**:
+- Single monolithic agent (loses specialization benefits)
+- Ad-hoc agent instructions (inconsistent, hard to maintain)
+- External coordination tool (adds complexity, another dependency)
+
+**Rationale**: Explicit agent definitions prevent role confusion and scope creep. Skills are shared (any agent can use `git-workflow`), but responsibilities are distinct (only `security` audits for vulnerabilities). The file-based approach is version-controlled and easy to extend.
+
+**Impact**: Seven agents defined: architect, security, docs-agent, docs-human, elaboration-designer, plugin-architect, transcription-engineer. Adding a new agent means creating a new `.md` file in `.claude/agents/`.
+
+---
+
+## 2026-03-13: Enrichment redesign -- tags as metadata classifiers, topics as links
+
+**Context**: The original enrichment module used a `TagScorer` that treated tags as topic labels (e.g., `#machine-learning`, `#python`). This conflicted with Obsidian best practices: tags work best as metadata classifiers (status, type, source), while topics belong as `[[internal links]]` in the knowledge graph.
+
+**Decision**: Replace `TagScorer` with two new components:
+- **MetadataClassifier** (`metadata-classifier.ts`): classifies notes using a user-defined tag vocabulary. Tags are rare, purposeful metadata (e.g., `#draft`, `#reference`, `#meeting-notes`). AI classifications are validated against the vocabulary -- hallucinated tags are rejected.
+- **TopicExtractor** (`topic-extractor.ts`): extracts key concepts from note content and converts them to `[[internal link]]` candidates. Matched topics (existing vault notes) become link suggestions immediately. Unmatched topics are accumulated for cross-note resolution.
+
+**Alternatives considered**:
+- Keep TagScorer with frequency + proximity weighting (treats tags as topics, against Obsidian conventions)
+- Tags only, no topic extraction (misses link graph opportunities)
+- AI-only link suggestions without vault matching (ignores existing knowledge graph)
+
+**Rationale**: This aligns with the Obsidian community consensus: tags are for classification/filtering, links are for building a knowledge graph. A user who searches `#draft` expects to find incomplete notes, not every note mentioning "drafts." Topic extraction surfaces the concepts that should be linked, not tagged.
+
+**Impact**: The `TagVocabularyEntry` setting defines allowed tag categories. Users control exactly which tags the system can suggest. Topics become link candidates, enriching the knowledge graph. The old `TagScorer` class no longer exists.
+
+---
+
+## 2026-03-13: New-note suggestions require 2+ independent references
+
+**Context**: During vault-wide enrichment scans, the `TopicExtractor` identifies topics that do not match any existing vault note. These could be suggested as "create this new note" candidates. However, a single AI mention of a topic is weak evidence -- it might be noise.
+
+**Decision**: Only promote an unmatched topic to a new-note suggestion when 2 or more notes independently reference the same topic. The `TopicExtractor` accumulates unmatched topics in a `pendingNewTopics` map during the scan, then `resolveNewNoteCandidates()` filters for multi-reference topics in Phase 4.
+
+**Alternatives considered**:
+- Suggest new notes for any unmatched topic (too noisy, creates clutter)
+- Require 3+ references (too conservative, misses genuine connections)
+- Never suggest new notes (misses knowledge graph growth opportunities)
+- Human threshold setting (adds settings complexity for marginal benefit)
+
+**Rationale**: Two independent notes surfacing the same concept is strong evidence of a genuine hub topic worth creating. Single mentions are often contextual noise or AI hallucination. The 2-note threshold balances signal quality against discovery.
+
+**Impact**: Vault scans produce fewer but higher-quality new-note suggestions. Single-note enrichment never suggests new notes (no cross-note evidence available).
+
+---
+
+## 2026-03-13: Proximity scoring weights lowered -- topical relevance dominates
+
+**Context**: The original link scoring gave equal weight to folder proximity and topical relevance. This produced link suggestions biased toward nearby files even when topically unrelated.
+
+**Decision**: Reduce proximity scoring multipliers in `LinkResolver`:
+- Graph hop candidates: `proximity * 0.25` (was higher)
+- Shared tag candidates: `proximity * sharedCount * 0.15` (was higher)
+- Folder proximity candidates: `proximity * 0.15` (was higher)
+
+In `mergeTopicCandidates()`, topic relevance dominates: graph proximity adds only `existing.score * 0.2` as a bonus when a candidate appears in both sources. Topic base score is 0.7; proximity contributes at most 0.2 * proximity.
+
+**Alternatives considered**:
+- Keep equal weighting (proximity bias overwhelms topical relevance)
+- Remove proximity entirely (loses useful same-folder signal)
+- User-configurable balance slider (adds UI complexity for a tuning parameter)
+
+**Rationale**: Topic relevance is the primary signal -- a note about "React Hooks" should link to other React notes regardless of folder. Proximity is a tiebreaker, not a driver. The lowered weights ensure topically relevant notes in distant folders still surface.
+
+**Impact**: Link suggestions are more topically relevant and less biased by folder structure. The `weights` settings still control proximity tiers, but their influence on final scores is reduced.
+
+---
+
+## 2026-03-13: Vault-wide enrichment scan with 4-phase flow
+
+**Context**: Single-note enrichment worked well, but users needed a way to enrich their entire vault at once. A naive "loop over all files" approach would be expensive (many AI calls) and couldn't leverage cross-note evidence for new-note suggestions.
+
+**Decision**: Implement a 4-phase vault scan in `EnrichmentModule.scanVault()`:
+1. **Scan**: collect eligible files (respecting exclude rules), warm VaultAnalyzer caches
+2. **Confirm**: user confirmation via NotificationManager (gates expensive AI calls)
+3. **Generate**: per-file enrichment with progress tracking and cancellation. TopicExtractor accumulates unmatched topics across all files
+4. **Resolve**: `TopicExtractor.resolveNewNoteCandidates()` -- topics referenced by 2+ notes become new-note link suggestions, injected into existing proposals via `LinkResolver.mergeTopicCandidates()`
+
+On error or cancellation in Phase 3, all created proposals are rejected and pending topics are cleared.
+
+**Alternatives considered**:
+- Simple loop with per-note confirmation (too many dialogs)
+- Background processing without confirmation (expensive surprise API bills)
+- Batch AI calls for multiple notes at once (token limits, harder to cancel per-note)
+
+**Rationale**: The 4-phase design separates cheap operations (scan) from expensive ones (AI calls), giving the user a gate before costs are incurred. Phase 4 is the key innovation: cross-note topic resolution can only happen after all notes have been processed, so it must be a separate post-processing step.
+
+**Impact**: Users can enrich their entire vault with one command. The confirmation step prevents accidental API charges. Cross-note topic resolution produces new-note suggestions that single-note enrichment cannot.
+
+---
+
 ## 2026-03-13: Tidy module uses immediate apply, no proposals
 
 **Context**: The tidy feature (spelling/formatting correction) was being designed. Other modules (elaboration, enrichment) use a proposal-review workflow where changes are stored as JSON proposals and presented in a sidebar for user approval.

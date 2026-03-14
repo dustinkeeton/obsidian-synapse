@@ -122,13 +122,13 @@ All use Obsidian requestUrl via safeRequest() (handles errors, redacts secrets)
 
 | Utility | Used By |
 |---------|---------|
-| `AIClient` | elaboration/proposer, audio/post-processor, enrichment/tag-scorer, enrichment/prompt-builder, tidy/index |
+| `AIClient` | elaboration/proposer, audio/post-processor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `NotificationManager` | all feature modules (injected via constructor) |
 | `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index |
 | `wordCount` | elaboration/detector |
 | `sanitizeUrl` | video/index, video/audio-extractor |
 | `sanitizePath` | video/audio-extractor |
-| `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, enrichment/tag-scorer, enrichment/prompt-builder, tidy/index |
+| `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `parseFrontmatter` | enrichment/index, enrichment/enrichment-applier, tidy/index |
 | `serializeFrontmatter` | enrichment/enrichment-applier, tidy/index |
 | `mergeTags` | enrichment/enrichment-applier |

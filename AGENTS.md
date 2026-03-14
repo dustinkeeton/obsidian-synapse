@@ -23,12 +23,12 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | Module | Path | Purpose | Public API |
 |--------|------|---------|------------|
 | main | `src/main.ts` | Plugin entry, module orchestration, view registration | `AutoNotesPlugin` (default) |
-| settings | `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
+| settings | `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS`, `TagVocabularyEntry` |
 | settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `AutoNotesSettingTab` |
 | elaboration | `src/elaboration/` | Stub note detection, AI proposal generation | `ElaborationModule`, types |
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `AudioTranscriptionModal`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `detectPlatform`, `isSupportedUrl`, types |
-| enrichment | `src/enrichment/` | Tag scoring, link resolution, external refs, frontmatter | `EnrichmentModule`, types |
+| enrichment | `src/enrichment/` | Metadata classification, topic extraction, link resolution, external refs, frontmatter | `EnrichmentModule`, `TagVocabularyEntry`, types |
 | tidy | `src/tidy/` | Spelling correction and markdown formatting via AI | `TidyModule`, `TidySnapshot` |
 | shared | `src/shared/` | AI client, file utils, validation, notifications, frontmatter | `AIClient`, `NotificationManager`, file/validation utils |
 | views | `src/views/` | Unified sidebar for elaboration + enrichment proposals | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem` |
@@ -65,6 +65,7 @@ Key: `video` depends on `audio` (reuses transcription pipeline). All feature mod
 | `auto-notes:transcribe-video-file` | Transcribe local video file | callback (stub) |
 | `auto-notes:check-dependencies` | Check external tool availability | callback |
 | `auto-notes:enrich-current-note` | Enrich current note | editorCallback |
+| `auto-notes:scan-vault-enrichment` | Scan vault for enrichment | callback |
 | `auto-notes:undo-enrichment` | Undo last enrichment on current note | editorCallback |
 | `auto-notes:tidy-current-note` | Tidy current note | editorCallback |
 | `auto-notes:undo-tidy` | Undo last tidy on current note | editorCallback |
@@ -149,9 +150,12 @@ AutoNotesSettings {
   enrichment: EnrichmentSettings {
     enabled: boolean                                // default: true
     autoEnrich: boolean                             // default: true
-    maxTags: number                                 // default: 10
+    maxTags: number                                 // default: 5
     maxInternalLinks: number                        // default: 15
     maxExternalLinks: number                        // default: 3
+    maxTopicLinks: number                           // default: 10
+    suggestNewNotes: boolean                        // default: true
+    tagVocabulary: TagVocabularyEntry[]              // default: 3 entries (Status, Type, Source)
     internalLinkThreshold: number                   // default: 0.3
     weights: EnrichmentWeightSettings {
       sameFolder: number                            // default: 1.0
