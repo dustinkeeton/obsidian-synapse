@@ -4,6 +4,7 @@ description: Agent-optimized documentation writer. Creates structured, machine-r
 skills:
   - docs-agent
   - codebase-architecture
+  - git-workflow
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
