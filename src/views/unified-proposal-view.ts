@@ -202,12 +202,19 @@ export class UnifiedProposalView extends ItemView {
 		});
 
 		if (result.tags.length > 0) {
-			const tagPreview = result.tags
-				.slice(0, 5)
-				.map(t => t.tag)
-				.join(', ');
+			// Group tags by category for preview
+			const byCategory = new Map<string, string[]>();
+			for (const t of result.tags.slice(0, 5)) {
+				const cat = t.category || 'Other';
+				const existing = byCategory.get(cat) || [];
+				existing.push(t.tag.replace(/^#/, ''));
+				byCategory.set(cat, existing);
+			}
+			const tagPreview = [...byCategory.entries()]
+				.map(([cat, tags]) => `${cat}: ${tags.join(', ')}`)
+				.join('; ');
 			card.createEl('p', {
-				text: `Tags: ${tagPreview}${result.tags.length > 5 ? '...' : ''}`,
+				text: tagPreview + (result.tags.length > 5 ? '...' : ''),
 				cls: 'auto-notes-preview',
 			});
 		}
@@ -326,9 +333,9 @@ export class UnifiedProposalView extends ItemView {
 		const { result } = proposal;
 
 		if (result.tags.length > 0) {
-			this.renderChecklistSection(checklist, 'Tags', result.tags, {
+			this.renderChecklistSection(checklist, 'Metadata Tags', result.tags, {
 				getId: t => t.tag,
-				getLabel: t => `${t.tag}  (score: ${t.weightedScore.toFixed(2)}, ${t.sources.length} files)`,
+				getLabel: t => `${t.tag} (${t.category})`,
 				selectedSet: this.selectedTags,
 			});
 		}

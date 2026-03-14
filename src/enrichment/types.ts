@@ -16,12 +16,22 @@ export interface WeightConfig {
 
 export interface TagCandidate {
 	tag: string;
+	/** Vocabulary category (e.g., "Status", "Type", "Source") */
+	category: string;
+	/** Classification confidence from AI (0-1) */
+	confidence: number;
 	/** Unweighted global frequency across the vault */
 	rawScore: number;
 	/** After proximity weighting */
 	weightedScore: number;
 	/** File paths that contributed this tag */
 	sources: string[];
+}
+
+export interface TagVocabularyEntry {
+	category: string;
+	tags: string[];
+	description: string;
 }
 
 export interface InternalLinkCandidate {

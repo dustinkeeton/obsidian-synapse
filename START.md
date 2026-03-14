@@ -60,3 +60,6 @@ This is a complex feature. Plan this out first. Spawn who you need from the team
 
 ### Next
 The next feature we will be working on is called Tidy. This command aims to change *nothing* about  the content of the note. First, it does spelling correction (*not* grammar correction). Then it formats the note into logical markdown elements (bullet points, numbered lists, block quotes, headers, etc). There is now proposal process for Tidying, the effects are immediate, but they can be undone.
+
+### Next
+I want to explore the utility of tags vs internal links. Enriching a document should serve a specific purpose and not just add noise. Please refer to *<redacted>* conversation. In planning mode, spawn the team and come up with a consensus on how to best achieve this vision.

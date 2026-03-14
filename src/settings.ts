@@ -104,12 +104,21 @@ export interface EnrichmentWeightSettings {
 	minWeight: number;
 }
 
+export interface TagVocabularyEntry {
+	category: string;
+	tags: string[];
+	description: string;
+}
+
 export interface EnrichmentSettings {
 	enabled: boolean;
 	autoEnrich: boolean;
 	maxTags: number;
 	maxInternalLinks: number;
 	maxExternalLinks: number;
+	maxTopicLinks: number;
+	suggestNewNotes: boolean;
+	tagVocabulary: TagVocabularyEntry[];
 	internalLinkThreshold: number;
 	weights: EnrichmentWeightSettings;
 	enrichmentFolderPath: string;
@@ -198,9 +207,16 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 	enrichment: {
 		enabled: true,
 		autoEnrich: true,
-		maxTags: 10,
+		maxTags: 5,
 		maxInternalLinks: 15,
 		maxExternalLinks: 3,
+		maxTopicLinks: 10,
+		suggestNewNotes: true,
+		tagVocabulary: [
+			{ category: 'Status', tags: ['draft', 'todo', 'reference', 'unfinished', 'needs-review', 'archived'], description: 'Workflow state of the note' },
+			{ category: 'Type', tags: ['meeting', 'idea', 'project', 'log', 'guide', 'brainstorm'], description: 'What kind of note this is' },
+			{ category: 'Source', tags: ['source/video', 'source/audio', 'source/transcript', 'source/article', 'source/book'], description: 'Where the content originated' },
+		],
 		internalLinkThreshold: 0.3,
 		weights: {
 			sameFolder: 1.0,
