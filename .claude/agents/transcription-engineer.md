@@ -4,6 +4,7 @@ description: Media transcription pipeline engineer. Specializes in audio/video t
 skills:
   - media-transcription
   - tdd
+  - git-workflow
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
 ---
 

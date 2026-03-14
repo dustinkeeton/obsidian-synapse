@@ -4,6 +4,7 @@ description: Note elaboration system designer. Specializes in placeholder detect
 skills:
   - note-elaboration
   - tdd
+  - git-workflow
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
 ---
 

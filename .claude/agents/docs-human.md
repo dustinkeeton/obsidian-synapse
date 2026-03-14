@@ -4,6 +4,7 @@ description: Human-readable documentation writer. Creates decision logs, status 
 skills:
   - docs-human
   - codebase-architecture
+  - git-workflow
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
