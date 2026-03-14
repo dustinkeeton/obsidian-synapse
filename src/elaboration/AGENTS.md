@@ -56,6 +56,7 @@ interface Proposal {
 | `detector.ts` | `PlaceholderDetector` | Scans notes for stub signals |
 | `proposer.ts` | `ProposalGenerator` | AI proposal generation with context gathering |
 | `proposal-store.ts` | `ProposalStore` | CRUD for proposal JSON files |
+| `proposal-store.test.ts` | Tests | ProposalStore tests |
 | `proposal-view.ts` | `ProposalReviewView`, `PROPOSAL_VIEW_TYPE` | Legacy sidebar view (not registered by main.ts) |
 | `proposal-modal.ts` | `ProposalDetailModal` | Legacy modal for editing proposals |
 | `index.ts` | `ElaborationModule` | Orchestrator, commands, scan intervals |
