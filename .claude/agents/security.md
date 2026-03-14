@@ -3,6 +3,7 @@ name: security
 description: Security auditor. Reviews code for secrets, command injection, input validation, API key handling, and .gitignore enforcement. Implements security guardrails.
 skills:
   - security-audit
+  - git-workflow
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 

@@ -5,6 +5,7 @@ skills:
   - codebase-architecture
   - obsidian-plugin-dev
   - tdd
+  - git-workflow
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 

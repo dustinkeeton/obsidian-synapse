@@ -4,6 +4,7 @@ description: Obsidian plugin architecture specialist. Designs plugin structure, 
 skills:
   - obsidian-plugin-dev
   - tdd
+  - git-workflow
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
 ---
 
