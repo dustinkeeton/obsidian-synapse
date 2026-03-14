@@ -22,6 +22,7 @@ export class EnrichmentStore {
 	}
 
 	async save(proposal: EnrichmentProposal): Promise<void> {
+		await ensureFolder(this.app, this.folderPath);
 		const fileName = this.proposalFileName(proposal);
 		const path = normalizePath(`${this.folderPath}/${fileName}`);
 		const content = JSON.stringify(proposal, null, 2);

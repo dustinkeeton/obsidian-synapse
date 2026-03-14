@@ -364,8 +364,8 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('Max tags per note')
-			.setDesc('Maximum number of tags to suggest')
+			.setName('Max metadata tags')
+			.setDesc('Maximum number of metadata tags (status, type, source) to suggest per note')
 			.addText((text) =>
 				text
 					.setValue(String(this.plugin.settings.enrichment.maxTags))
@@ -375,6 +375,33 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 							this.plugin.settings.enrichment.maxTags = num;
 							await this.plugin.saveSettings();
 						}
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Max topic links')
+			.setDesc('Maximum number of AI-extracted topic links to suggest')
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.enrichment.maxTopicLinks))
+					.onChange(async (value) => {
+						const num = parseInt(value);
+						if (!isNaN(num) && num > 0) {
+							this.plugin.settings.enrichment.maxTopicLinks = num;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Suggest new notes')
+			.setDesc('Suggest links to notes that don\'t exist yet (Obsidian grayed-out links)')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enrichment.suggestNewNotes)
+					.onChange(async (value) => {
+						this.plugin.settings.enrichment.suggestNewNotes = value;
+						await this.plugin.saveSettings();
 					})
 			);
 
@@ -447,6 +474,31 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 						.setDynamicTooltip()
 						.onChange(async (value) => {
 							this.plugin.settings.enrichment.weights[key] = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
+		// Tag Vocabulary
+		containerEl.createEl('h3', { text: 'Tag Vocabulary' });
+		containerEl.createEl('p', {
+			text: 'Define metadata tag categories. Tags classify notes (status, type, source) — topics become [[links]] instead.',
+			cls: 'setting-item-description',
+		});
+
+		for (let i = 0; i < this.plugin.settings.enrichment.tagVocabulary.length; i++) {
+			const entry = this.plugin.settings.enrichment.tagVocabulary[i];
+
+			new Setting(containerEl)
+				.setName(entry.category)
+				.setDesc(entry.description)
+				.addText((text) =>
+					text
+						.setValue(entry.tags.join(', '))
+						.setPlaceholder('tag1, tag2, tag3')
+						.onChange(async (value) => {
+							this.plugin.settings.enrichment.tagVocabulary[i].tags =
+								value.split(',').map(s => s.trim()).filter(Boolean);
 							await this.plugin.saveSettings();
 						})
 				);

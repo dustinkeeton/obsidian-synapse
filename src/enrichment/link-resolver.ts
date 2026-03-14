@@ -89,13 +89,13 @@ export class LinkResolver {
 				const proximity = computeProximityWeight(filePath, hopPath, weights);
 				const entry = candidates.get(hopPath);
 				if (entry) {
-					entry.score = Math.max(entry.score, proximity * 0.6);
+					entry.score = Math.max(entry.score, proximity * 0.25);
 					if (!entry.reasons.includes('2-hop link neighbor')) {
 						entry.reasons.push('2-hop link neighbor');
 					}
 				} else {
 					candidates.set(hopPath, {
-						score: proximity * 0.6,
+						score: proximity * 0.25,
 						reasons: ['2-hop link neighbor'],
 					});
 				}
@@ -130,7 +130,7 @@ export class LinkResolver {
 			if (sharedCount < 2) continue;
 
 			const proximity = computeProximityWeight(file.path, targetPath, weights);
-			const tagScore = proximity * (sharedCount * 0.3);
+			const tagScore = proximity * (sharedCount * 0.15);
 
 			const entry = candidates.get(targetPath);
 			const reason = `shares ${sharedCount} tags`;
@@ -144,6 +144,43 @@ export class LinkResolver {
 				});
 			}
 		}
+	}
+
+	/**
+	 * Merge AI-extracted topic candidates with graph-based candidates.
+	 *
+	 * Topic relevance is king. Graph/proximity scores act as a small bonus
+	 * when a candidate appears in both sources, not as an equal signal.
+	 */
+	mergeTopicCandidates(
+		topicCandidates: InternalLinkCandidate[],
+		graphCandidates: InternalLinkCandidate[]
+	): InternalLinkCandidate[] {
+		const merged = new Map<string, InternalLinkCandidate>();
+
+		// Start with graph candidates (low-weight proximity scores)
+		for (const c of graphCandidates) {
+			merged.set(c.targetPath, { ...c });
+		}
+
+		// Topic candidates dominate — graph proximity is a small bonus
+		for (const topic of topicCandidates) {
+			const existing = merged.get(topic.targetPath);
+			if (existing) {
+				// Topical + graph support: topic score + small proximity bonus
+				existing.relevanceScore =
+					topic.relevanceScore + existing.relevanceScore * 0.2;
+				if (!existing.reason.includes(topic.reason)) {
+					existing.reason = `${topic.reason}; ${existing.reason}`;
+				}
+			} else {
+				merged.set(topic.targetPath, { ...topic });
+			}
+		}
+
+		const results = [...merged.values()];
+		results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+		return results;
 	}
 
 	private addProximityCandidates(
@@ -174,13 +211,13 @@ export class LinkResolver {
 
 			const entry = candidates.get(other.path);
 			if (entry) {
-				entry.score = Math.max(entry.score, proximity * 0.4);
+				entry.score = Math.max(entry.score, proximity * 0.15);
 				if (!entry.reasons.some(r => r.includes('folder'))) {
 					entry.reasons.push('nearby folder');
 				}
 			} else {
 				candidates.set(other.path, {
-					score: proximity * 0.4,
+					score: proximity * 0.15,
 					reasons: ['nearby folder'],
 				});
 			}

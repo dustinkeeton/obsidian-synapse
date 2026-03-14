@@ -4,8 +4,9 @@ import { NotificationManager, parseFrontmatter } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentStore } from './enrichment-store';
 import { LinkResolver } from './link-resolver';
+import { MetadataClassifier } from './metadata-classifier';
 import { PromptBuilder } from './prompt-builder';
-import { TagScorer } from './tag-scorer';
+import { TopicExtractor } from './topic-extractor';
 import { AcceptedItems, EnrichmentProposal, EnrichmentResult, EnrichmentTrigger } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
 
@@ -15,6 +16,7 @@ export type {
 	EnrichmentResult,
 	EnrichmentTrigger,
 	TagCandidate,
+	TagVocabularyEntry,
 	InternalLinkCandidate,
 	ExternalLinkCandidate,
 	WeightConfig,
@@ -22,7 +24,8 @@ export type {
 
 export class EnrichmentModule {
 	private analyzer: VaultAnalyzer;
-	private tagScorer: TagScorer;
+	private classifier: MetadataClassifier;
+	private topicExtractor: TopicExtractor;
 	private linkResolver: LinkResolver;
 	private promptBuilder: PromptBuilder;
 	private applier: EnrichmentApplier;
@@ -37,7 +40,8 @@ export class EnrichmentModule {
 		private notifications: NotificationManager
 	) {
 		this.analyzer = new VaultAnalyzer(plugin.app);
-		this.tagScorer = new TagScorer(this.analyzer, getSettings);
+		this.classifier = new MetadataClassifier(getSettings);
+		this.topicExtractor = new TopicExtractor(plugin.app, this.analyzer, getSettings);
 		this.linkResolver = new LinkResolver(plugin.app, this.analyzer, getSettings);
 		this.promptBuilder = new PromptBuilder(getSettings);
 		this.applier = new EnrichmentApplier(plugin.app, getSettings);
@@ -65,6 +69,12 @@ export class EnrichmentModule {
 		});
 
 		this.plugin.addCommand({
+			id: 'auto-notes:scan-vault-enrichment',
+			name: 'Scan vault for enrichment',
+			callback: () => this.scanVault(),
+		});
+
+		this.plugin.addCommand({
 			id: 'auto-notes:undo-enrichment',
 			name: 'Undo last enrichment on current note',
 			editorCallback: async (_editor, ctx) => {
@@ -80,6 +90,133 @@ export class EnrichmentModule {
 	/** Get all pending proposals (called by main.ts for the unified view). */
 	async getPendingProposals(): Promise<EnrichmentProposal[]> {
 		return this.store.loadPending();
+	}
+
+	/**
+	 * Scan every note in the vault for enrichment opportunities.
+	 *
+	 * Four-phase flow:
+	 * 1. Lightweight scan — collect eligible files, warm analyzer caches
+	 * 2. User confirmation
+	 * 3. Heavy AI enrichment per file (cancellable, with rollback)
+	 * 4. Resolve cross-note new-note candidates — only topics referenced
+	 *    by 2+ notes become new-note link suggestions
+	 */
+	async scanVault(): Promise<number> {
+		// ── Phase 1: Collect eligible files & warm caches ──
+		const scanOp = this.notifications.startOperation(
+			'Scanning vault for enrichment',
+			'enrichment-vault-scan'
+		);
+
+		const allFiles = this.plugin.app.vault.getMarkdownFiles();
+		const eligible: TFile[] = [];
+
+		try {
+			for (let i = 0; i < allFiles.length; i++) {
+				scanOp.progress(i + 1, allFiles.length, 'Scanning vault');
+				if (!this.isExcluded(allFiles[i])) {
+					eligible.push(allFiles[i]);
+				}
+			}
+
+			// Warm the vault-wide caches so every note benefits from
+			// the full tag index and link graph during enrichment
+			this.analyzer.buildTagIndex();
+			this.analyzer.buildLinkGraph();
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			scanOp.error(`Vault scan failed — ${msg}`);
+			return 0;
+		}
+
+		scanOp.finish(`Found ${eligible.length} notes`);
+
+		if (eligible.length === 0) {
+			return 0;
+		}
+
+		// ── Phase 2: User confirmation ──
+		const proceed = await this.notifications.confirm(
+			`Found ${eligible.length} note${eligible.length === 1 ? '' : 's'} to enrich. Generate proposals?`,
+			{ proceedLabel: 'Generate', cancelLabel: 'Skip' }
+		);
+
+		if (!proceed) {
+			this.notifications.info('Enrichment scan skipped');
+			return 0;
+		}
+
+		// ── Phase 3: Generate proposals (heavy, cancellable) ──
+		// Clear any stale pending topics before starting
+		this.topicExtractor.clearPending();
+
+		const genOp = this.notifications.startOperation(
+			'Generating enrichment proposals',
+			'enrichment-vault-generate'
+		);
+		// Track proposal IDs mapped to note paths for Phase 4 injection
+		const createdProposals: Array<{ id: string; notePath: string }> = [];
+		let proposalCount = 0;
+
+		try {
+			for (let i = 0; i < eligible.length; i++) {
+				if (genOp.cancelled) break;
+
+				genOp.progress(
+					i + 1,
+					eligible.length,
+					'Generating enrichment proposals'
+				);
+				const id = await this.enrichFile(eligible[i], 'manual');
+				if (id) {
+					createdProposals.push({ id, notePath: eligible[i].path });
+					proposalCount++;
+				}
+			}
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			genOp.error(`Enrichment generation failed — ${msg}`);
+			this.topicExtractor.clearPending();
+			await this.rejectProposalBatch(createdProposals.map(p => p.id));
+			await this.refreshView();
+			return 0;
+		}
+
+		if (genOp.cancelled) {
+			this.topicExtractor.clearPending();
+			await this.rejectProposalBatch(createdProposals.map(p => p.id));
+			await this.refreshView();
+			return 0;
+		}
+
+		// ── Phase 4: Resolve cross-note new-note candidates ──
+		// Only topics referenced by 2+ notes become new-note suggestions
+		const newNoteCandidates = this.topicExtractor.resolveNewNoteCandidates();
+
+		if (newNoteCandidates.size > 0) {
+			for (const { id, notePath } of createdProposals) {
+				const extras = newNoteCandidates.get(notePath);
+				if (!extras || extras.length === 0) continue;
+
+				const proposal = await this.store.load(id);
+				if (!proposal) continue;
+
+				// Merge new-note candidates into existing internal links
+				proposal.result.internalLinks =
+					this.linkResolver.mergeTopicCandidates(
+						extras,
+						proposal.result.internalLinks
+					);
+				await this.store.save(proposal);
+			}
+		}
+
+		genOp.finish(
+			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`
+		);
+		await this.refreshView();
+		return proposalCount;
 	}
 
 	/**
@@ -100,74 +237,91 @@ export class EnrichmentModule {
 		);
 
 		try {
-			const content = await this.plugin.app.vault.read(file);
-			const parsed = parseFrontmatter(content);
-			const existingTags = this.analyzer.getFileTags(file);
-
-			// Get existing link paths
-			const existingLinkPaths = [
-				...this.analyzer.getOutgoingLinks(file.path),
-			];
-
-			// Get existing external URLs from content
-			const existingExternalLinks = this.extractExternalUrls(content);
-
-			// Run scorers in parallel
-			op.update('Analyzing tags');
-			const [tags, internalLinks, externalLinks, frontmatter] =
-				await Promise.all([
-					this.tagScorer.scoreTags(parsed.body, file.path, existingTags),
-					Promise.resolve(
-						this.linkResolver.findInternalLinks(file, existingLinkPaths)
-					),
-					this.promptBuilder.suggestExternalLinks(
-						parsed.body,
-						existingExternalLinks
-					),
-					this.promptBuilder.suggestFrontmatter(
-						parsed.body,
-						parsed.frontmatter
-					),
-				]);
-
-			const result: EnrichmentResult = {
-				tags,
-				internalLinks,
-				externalLinks,
-				frontmatter,
-			};
-
-			// Only create a proposal if there's something to propose
-			const totalItems =
-				result.tags.length +
-				result.internalLinks.length +
-				result.externalLinks.length +
-				result.frontmatter.length;
-
-			if (totalItems === 0) {
+			const id = await this.enrichFile(file, trigger);
+			// Single-note enrichment has no cross-note evidence for new notes,
+			// so discard any accumulated unmatched topics
+			this.topicExtractor.clearPending();
+			if (id) {
+				op.finish('Enrichment proposal created');
+			} else {
 				op.finish('No enrichments needed');
-				return;
 			}
-
-			// Create and save proposal
-			const proposal: EnrichmentProposal = {
-				id: this.generateId(),
-				sourceNotePath: file.path,
-				createdAt: new Date().toISOString(),
-				triggerSource: trigger,
-				result,
-				status: 'pending',
-			};
-
-			await this.store.save(proposal);
-			op.finish(
-				`Enrichment proposal: ${result.tags.length} tags, ${result.internalLinks.length} links, ${result.externalLinks.length} refs`
-			);
 			await this.refreshView();
 		} catch (error) {
+			this.topicExtractor.clearPending();
 			const msg = error instanceof Error ? error.message : String(error);
 			op.error(`Enrichment failed — ${msg}`);
 		}
+	}
+
+	/**
+	 * Core enrichment logic for a single file.
+	 * Returns the proposal ID if one was created, null otherwise.
+	 */
+	private async enrichFile(
+		file: TFile,
+		trigger: EnrichmentTrigger
+	): Promise<string | null> {
+		const content = await this.plugin.app.vault.read(file);
+		const parsed = parseFrontmatter(content);
+		const existingTags = this.analyzer.getFileTags(file);
+		const existingLinkPaths = [...this.analyzer.getOutgoingLinks(file.path)];
+		const existingExternalLinks = this.extractExternalUrls(content);
+
+		// Run classifiers in parallel
+		const [tags, graphLinks, topicLinks, externalLinks, frontmatter] =
+			await Promise.all([
+				this.classifier.classify(parsed.body, existingTags),
+				Promise.resolve(
+					this.linkResolver.findInternalLinks(file, existingLinkPaths)
+				),
+				this.topicExtractor.extractTopics(
+					parsed.body,
+					file.path,
+					existingLinkPaths
+				),
+				this.promptBuilder.suggestExternalLinks(
+					parsed.body,
+					existingExternalLinks
+				),
+				this.promptBuilder.suggestFrontmatter(
+					parsed.body,
+					parsed.frontmatter
+				),
+			]);
+
+		// Merge topic-extracted links with graph-based links
+		const internalLinks = this.linkResolver.mergeTopicCandidates(
+			topicLinks,
+			graphLinks
+		);
+
+		const result: EnrichmentResult = {
+			tags,
+			internalLinks,
+			externalLinks,
+			frontmatter,
+		};
+
+		const totalItems =
+			result.tags.length +
+			result.internalLinks.length +
+			result.externalLinks.length +
+			result.frontmatter.length;
+
+		if (totalItems === 0) return null;
+
+		const proposal: EnrichmentProposal = {
+			id: this.generateId(),
+			sourceNotePath: file.path,
+			createdAt: new Date().toISOString(),
+			triggerSource: trigger,
+			result,
+			status: 'pending',
+		};
+
+		await this.store.save(proposal);
+		return proposal.id;
 	}
 
 	/** Accept selected items in a proposal. Called from unified view. */
@@ -219,6 +373,12 @@ export class EnrichmentModule {
 		await this.store.updateStatus(id, status, accepted);
 		this.notifications.success(`Enrichment ${status}`);
 		await this.refreshView();
+	}
+
+	private async rejectProposalBatch(ids: string[]): Promise<void> {
+		for (const id of ids) {
+			await this.store.updateStatus(id, 'rejected');
+		}
 	}
 
 	private async undoLastEnrichment(filePath: string): Promise<void> {
