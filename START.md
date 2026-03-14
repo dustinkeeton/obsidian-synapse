@@ -63,3 +63,12 @@ The next feature we will be working on is called Tidy. This command aims to chan
 
 ### Next
 I want to explore the utility of tags vs internal links. Enriching a document should serve a specific purpose and not just add noise. Please refer to *<redacted>* conversation. In planning mode, spawn the team and come up with a consensus on how to best achieve this vision.
+
+### Next
+We don't have a /teams folder (claude team ability). Please add this and begin to use when necessary. All teammates should just be a reference to our agents.
+Secondly, we've been neglecting proper git patterns up until now. Now that the codebase has become more complicated we should impose some methodology. Please gather the team and plan a useful git strategy. Turn your conclusions into a skill and enable it for the relevant agents. Things to consider:
+- Main should never be pushed directly to.
+- All work should be done on a new branch. Worktrees may be used if working in parellel but consider "locking" files if the team suspects there will be cumbersome collisions.
+- Do *not* attribute https://anthropic.com/claude-code to contributions.
+- You should perform git actions as the GitHub user bot@wafflenet.io. I have the appropriate keys if you need them.
+- Once ready work should be pushed to branch and pr should be made without a human in the loop.
