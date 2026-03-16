@@ -126,4 +126,49 @@ describe('FolderPickerModal', () => {
 
 		expect(el.createEl).toHaveBeenCalledWith('div', { text: 'projects' });
 	});
+
+	it('getSuggestions ranks exact path match above root when query matches a folder', () => {
+		const { root } = buildFolderTree();
+		const app = createMockApp(root);
+		const modal = new FolderPickerModal(app, vi.fn());
+
+		const results = modal.getSuggestions('notes/daily');
+		const paths = results.map(f => f.path);
+
+		expect(paths[0]).toBe('notes/daily');
+		expect(paths).toContain('/');
+	});
+
+	it('getSuggestions keeps root first when query is empty', () => {
+		const { root } = buildFolderTree();
+		const app = createMockApp(root);
+		const modal = new FolderPickerModal(app, vi.fn());
+
+		const results = modal.getSuggestions('');
+
+		expect(results[0].isRoot()).toBe(true);
+	});
+
+	it('getSuggestions keeps root first when query has no exact match', () => {
+		const { root } = buildFolderTree();
+		const app = createMockApp(root);
+		const modal = new FolderPickerModal(app, vi.fn());
+
+		const results = modal.getSuggestions('not');
+		const paths = results.map(f => f.path);
+
+		expect(paths[0]).toBe('/');
+		expect(paths).toContain('notes');
+		expect(paths).toContain('notes/daily');
+	});
+
+	it('getSuggestions exact match is case-insensitive', () => {
+		const { root } = buildFolderTree();
+		const app = createMockApp(root);
+		const modal = new FolderPickerModal(app, vi.fn());
+
+		const results = modal.getSuggestions('PROJECTS');
+
+		expect(results[0].path).toBe('projects');
+	});
 });
