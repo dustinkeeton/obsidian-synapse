@@ -10,9 +10,20 @@ function redactSecrets(text: string): string {
 	);
 }
 
+/** Default timeout for AI API requests (2 minutes). */
+const AI_REQUEST_TIMEOUT_MS = 120_000;
+
 async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse> {
+	// Race the request against a timeout to prevent indefinite hangs
+	const timeout = new Promise<never>((_, reject) =>
+		setTimeout(() => reject(new Error('AI request timed out')), AI_REQUEST_TIMEOUT_MS)
+	);
+
 	// Don't use throw mode — Obsidian strips the response body on error
-	const response = await requestUrl({ ...options, throw: false });
+	const response = await Promise.race([
+		requestUrl({ ...options, throw: false }),
+		timeout,
+	]);
 	if (response.status >= 400) {
 		let detail: string;
 		try {

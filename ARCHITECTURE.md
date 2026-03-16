@@ -1,347 +1,420 @@
 # Architecture Overview
 
-Auto Notes is an Obsidian plugin that provides five AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, and note tidying. Desktop only (requires Node.js APIs for video processing).
+Auto Notes is an Obsidian plugin that provides eight AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, summarization, note tidying, semantic organization, and recursive deep-dive note generation. Desktop only (requires Node.js APIs for video processing).
 
 ---
 
 ## System Diagram
 
-```mermaid
-graph TD
-    subgraph Obsidian Desktop
-        Main[main.ts<br>AutoNotesPlugin]
-        Settings[Settings + Settings Tab]
-        UV[Unified Proposal View<br>src/views/]
-
-        Elab[Elaboration Module]
-        Audio[Audio Module]
-        Video[Video Module]
-        Enrich[Enrichment Module]
-        Tidy[Tidy Module]
-
-        Shared[Shared Layer<br>AIClient, Validation,<br>Notifications, File Utils]
-    end
-
-    subgraph External
-        OpenAI[OpenAI API<br>GPT + Whisper]
-        Anthropic[Anthropic API<br>Claude]
-        Ollama[Ollama<br>Local models]
-        YtDlp[yt-dlp CLI]
-        FFmpeg[ffmpeg CLI]
-        Deepgram[Deepgram API]
-    end
-
-    subgraph Vault Storage
-        Proposals[.auto-notes/proposals/]
-        Enrichments[.auto-notes/enrichments/]
-        Snapshots[.auto-notes/tidy-snapshots/]
-        Media[Media/]
-    end
-
-    Main --> Settings
-    Main --> UV
-    Main --> Elab
-    Main --> Audio
-    Main --> Video
-    Main --> Enrich
-    Main --> Tidy
-
-    Elab --> Shared
-    Audio --> Shared
-    Video --> Shared
-    Enrich --> Shared
-    Tidy --> Shared
-
-    Video -->|delegates transcription| Audio
-
-    Shared --> OpenAI
-    Shared --> Anthropic
-    Shared --> Ollama
-    Audio --> Deepgram
-
-    Video --> YtDlp
-    Video --> FFmpeg
-
-    Elab -->|proposals| Proposals
-    Enrich -->|proposals| Enrichments
-    Tidy -->|snapshots| Snapshots
-    Video -->|video files| Media
-
-    Elab -.->|onProposalAccepted| Enrich
-    Audio -.->|onTranscriptionComplete| Enrich
-    Video -.->|onTranscriptionComplete| Enrich
-    Elab -.->|onViewRefreshNeeded| UV
-    Enrich -.->|onViewRefreshNeeded| UV
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Obsidian Desktop                             │
+│                                                                     │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────────────────────┐   │
+│  │ Settings │◄───│   main.ts    │───►│   Unified Proposal View  │   │
+│  │ + Tab    │    │ AutoNotes    │    │   (sidebar)              │   │
+│  └──────────┘    │ Plugin       │    │                          │   │
+│                  └──────┬───────┘    │  ┌────┐ ┌────┐ ┌────┐   │   │
+│                         │            │  │Elab│ │Enr │ │Org │   │   │
+│           ┌─────────────┼──────┐     │  │blue│ │grn │ │org │   │   │
+│           │             │      │     │  └────┘ └────┘ └────┘   │   │
+│           ▼             ▼      ▼     │  ┌─────────┐            │   │
+│  ┌────────────┐  ┌──────────┐  ...   │  │Deep Dive│            │   │
+│  │Elaboration │  │  Audio   │        │  │ purple  │            │   │
+│  │            │  │          │        │  └─────────┘            │   │
+│  │ Detector   │  │Transcrib.│        └──────────────────────────┘   │
+│  │ Proposer   │  │Post-Proc │                                       │
+│  │ Store      │  │ Modal    │                                       │
+│  └─────┬──────┘  └────┬─────┘                                      │
+│        │               │                                             │
+│        │   ┌───────────┼──────────────────────────────┐             │
+│        │   │           │                              │             │
+│        ▼   ▼           ▼                              ▼             │
+│  ┌──────────────────────────────────────────────────────────┐       │
+│  │                    Shared Layer                           │       │
+│  │  AIClient · NotificationManager · Validation · File Utils│       │
+│  │  Frontmatter · API Utils                                 │       │
+│  └────────┬──────────────────────┬──────────────────────────┘       │
+│           │                      │                                   │
+└───────────┼──────────────────────┼───────────────────────────────────┘
+            │                      │
+            ▼                      ▼
+  ┌──────────────────┐   ┌──────────────────┐
+  │  AI Providers    │   │  External Tools  │
+  │  · OpenAI API    │   │  · yt-dlp        │
+  │  · Anthropic API │   │  · ffmpeg        │
+  │  · Ollama (local)│   └──────────────────┘
+  │  · Deepgram API  │
+  └──────────────────┘
 ```
 
 ---
 
-## Module Responsibilities
+## Module Map
 
-| Module | What It Does | Key Files |
-|--------|-------------|-----------|
-| **main.ts** | Plugin entry point. Loads settings, initializes modules, registers views/commands/ribbons, wires cross-module callbacks | `src/main.ts` |
-| **Elaboration** | Detects stub/placeholder notes, generates AI-powered content proposals, manages proposal lifecycle | `src/elaboration/` |
-| **Audio** | Transcribes audio files via Whisper/Deepgram APIs, with optional AI post-processing | `src/audio/` |
-| **Video** | Downloads video from YouTube/TikTok via yt-dlp, extracts audio, delegates to Audio for transcription | `src/video/` |
-| **Enrichment** | Classifies notes with vocabulary-based tags, extracts topics as internal links, suggests external references and frontmatter | `src/enrichment/` |
-| **Tidy** | Fixes spelling and formats markdown via AI. No content changes -- cosmetic only | `src/tidy/` |
-| **Views** | Unified sidebar combining elaboration + enrichment proposals in one pane | `src/views/` |
-| **Shared** | AI client (3 providers), validation/sanitization, notifications, file utilities, frontmatter parsing | `src/shared/` |
-| **Settings** | Type definitions, defaults, model options for all modules | `src/settings.ts`, `src/settings-tab.ts` |
+```
+src/
+├── main.ts                 # Plugin entry, module orchestration, callback wiring
+├── settings.ts             # Type definitions, defaults, model options
+├── settings-tab.ts         # Obsidian settings UI
+│
+├── elaboration/            # Stub note detection + AI content proposals
+│   ├── detector.ts         #   PlaceholderDetector (short notes, TODOs, empty sections)
+│   ├── proposer.ts         #   ProposalGenerator (context gathering + AI generation)
+│   ├── proposal-store.ts   #   JSON file persistence
+│   └── index.ts            #   ElaborationModule orchestrator
+│
+├── audio/                  # Audio transcription
+│   ├── transcriber.ts      #   Whisper API / Deepgram / local routing
+│   ├── post-processor.ts   #   AI transcript cleanup
+│   └── index.ts            #   AudioModule orchestrator
+│
+├── video/                  # Video download + transcription
+│   ├── url-detector.ts     #   YouTube/TikTok URL parsing
+│   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile
+│   ├── note-scanner.ts     #   Find video URLs in note content
+│   └── index.ts            #   VideoModule orchestrator (delegates to Audio)
+│
+├── enrichment/             # Tags, links, refs, frontmatter
+│   ├── metadata-classifier.ts  # AI tag classification against vocabulary
+│   ├── topic-extractor.ts      # AI topic extraction -> link candidates
+│   ├── link-resolver.ts        # Graph-based link resolution + merge
+│   ├── vault-analyzer.ts       # Cached vault tag index + link graph
+│   ├── weight-calculator.ts    # Proximity weight scoring (pure function)
+│   ├── prompt-builder.ts       # External links + frontmatter suggestions
+│   ├── enrichment-applier.ts   # Apply/undo enrichments with markers
+│   ├── enrichment-store.ts     # JSON file persistence
+│   └── index.ts                # EnrichmentModule orchestrator
+│
+├── summarize/              # URL + transcription summarization
+│   ├── summarizer.ts       #   AI summarization (bullets/paragraph/key-points)
+│   ├── content-fetcher.ts  #   HTTP fetch + HTML-to-text extraction
+│   ├── note-scanner.ts     #   Find summarizable targets in notes
+│   └── index.ts            #   SummarizeModule orchestrator
+│
+├── tidy/                   # Spelling + formatting correction
+│   ├── tidy-store.ts       #   Snapshot storage for undo
+│   └── index.ts            #   TidyModule orchestrator
+│
+├── organize/               # AI-powered directory structuring
+│   ├── content-analyzer.ts #   AI topic extraction for organization
+│   ├── directory-matcher.ts#   Match topics to directories
+│   ├── organize-store.ts   #   Proposal + snapshot persistence
+│   └── index.ts            #   OrganizeModule orchestrator
+│
+├── deep-dive/              # Recursive topic exploration
+│   ├── topic-analyzer.ts   #   AI topic extraction from note content
+│   ├── note-generator.ts   #   AI content generation for topics
+│   ├── quality-scorer.ts   #   Local heuristic quality scoring
+│   ├── deep-dive-store.ts  #   Proposal + run persistence
+│   └── index.ts            #   DeepDiveModule orchestrator
+│
+├── shared/                 # Cross-cutting utilities
+│   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Ollama)
+│   ├── notifications.ts    #   Centralized notification system
+│   ├── validation.ts       #   URL, path, AI response sanitization
+│   ├── file-utils.ts       #   Vault file operations
+│   ├── frontmatter-utils.ts#   YAML frontmatter parsing/serialization
+│   ├── api-utils.ts        #   Retry logic, error handling
+│   └── index.ts            #   Barrel export
+│
+└── views/                  # UI components
+    └── unified-proposal-view.ts  # Single sidebar for all proposal types
+```
 
 ---
 
-## Enrichment Architecture (Redesigned)
-
-The enrichment module was redesigned to align with Obsidian conventions. The key insight: **tags are metadata classifiers, topics are links**.
-
-### Before (TagScorer)
-
-Tags were treated as topic labels (`#machine-learning`, `#python`). Scored by vault frequency and folder proximity.
-
-### After (MetadataClassifier + TopicExtractor)
+## Plugin Lifecycle
 
 ```
-Note content
-    |
-    +---> MetadataClassifier.classify()
-    |         Uses user-defined tagVocabulary
-    |         Validates against vocabulary (rejects hallucinations)
-    |         Output: tags like #draft, #reference, #meeting-notes
-    |
-    +---> TopicExtractor.extractTopics()
-    |         AI identifies 5-15 key concepts
-    |         Matched to existing vault notes by title
-    |         Output: [[internal link]] candidates
-    |
-    +---> LinkResolver.findInternalLinks()
-    |         Graph hops (1-2 hops in link graph)
-    |         Shared tags (2+ tags in common)
-    |         Folder proximity (same/sibling folders)
-    |         Output: proximity-based link candidates
-    |
-    +---> LinkResolver.mergeTopicCandidates()
-              Topic relevance dominates (base: 0.7)
-              Graph proximity adds small bonus (* 0.2)
-              Output: final ranked link suggestions
-```
+onload()
+  │
+  ├── loadSettings()          # Deep-merge saved data with defaults
+  ├── addSettingTab()          # Register settings UI
+  ├── NotificationManager()   # Create shared notification system
+  │
+  ├── Initialize 8 modules    # Audio before Video (Video depends on Audio)
+  │   ElaborationModule, AudioModule, VideoModule, EnrichmentModule,
+  │   SummarizeModule, TidyModule, OrganizeModule, DeepDiveModule
+  │
+  ├── registerView()          # UnifiedProposalView (sidebar)
+  ├── Wire refresh callbacks   # All 4 proposal modules -> refreshUnifiedView()
+  │
+  ├── Conditional module.onload()  # Only if module.enabled in settings
+  │
+  ├── Wire enrichment callbacks    # Only if enrichment.enabled && autoEnrich
+  │   elaboration -> enrichment (on accept)
+  │   audio -> enrichment (on transcription)
+  │   video -> enrichment (on transcription)
+  │   summarize -> enrichment (on summary)
+  │   deep-dive -> enrichment (on accept, if autoEnrichOnAccept)
+  │
+  ├── Wire organize callback       # Only if deepDive.autoOrganizeOnAccept
+  │   deep-dive -> organize (on accept)
+  │
+  ├── addRibbonIcon()          # sparkles (proposals), mic (audio)
+  └── addCommand()             # review-proposals
 
-### Vault-Wide Scan (4-Phase Flow)
-
-```
-Phase 1: Scan     -- collect eligible files, warm VaultAnalyzer caches
-Phase 2: Confirm  -- user confirms before expensive AI calls
-Phase 3: Generate -- per-file enrichment (cancellable, with rollback)
-                     TopicExtractor accumulates unmatched topics
-Phase 4: Resolve  -- topics referenced by 2+ notes become new-note suggestions
-                     injected into existing proposals
-```
-
-Single-note enrichment skips Phase 4 (no cross-note evidence available).
-
----
-
-## Data Flow
-
-### Elaboration: Detect, Propose, Review, Apply
-
-```
-Vault scan or single note scan
-    |
-PlaceholderDetector checks: word count, TODO markers, empty sections, sparse links
-    |
-Candidates confirmed via NotificationManager (two-phase for vault scans)
-    |
-ProposalGenerator gathers linked note context --> AIClient.complete()
-    |
-sanitizeAIResponse() on AI output
-    |
-Proposal saved as JSON in .auto-notes/proposals/
-    |
-User reviews in Unified Proposal View (editable textarea)
-    |
-Accept: blockquote original content, append sanitized AI additions
-Reject: mark status as rejected
-    |
-If accepted + autoEnrich enabled --> enrichment.enrich(filePath)
-```
-
-### Audio Transcription: Record, Transcribe, Post-Process, Insert
-
-```
-User selects audio file (modal) or triggers inline transcription
-    |
-Audio data sent to Whisper API / Deepgram (via fetch with AbortController timeout)
-    |
-Optional: PostProcessor cleans transcript via AIClient
-    |
-Result inserted as blockquote below audio embed
-    |
-If autoEnrich enabled --> enrichment.enrich(filePath)
-```
-
-### Video Transcription: URL, Download, Extract, Transcribe
-
-```
-User pastes URL --> sanitizeUrl() --> detectPlatform()
-    |
-AudioExtractor: yt-dlp --dump-json (metadata), yt-dlp -x (audio download)
-    |
-Optional: download video file to vault (downloadFolder setting)
-    |
-AudioModule.transcribe(audioBuffer) -- same pipeline as audio
-    |
-Insert blockquote + optional video embed in note
-    |
-Cleanup temp audio file from os.tmpdir()
-    |
-If autoEnrich enabled --> enrichment.enrich(filePath)
-```
-
-### Enrichment: Analyze, Score, Propose, Apply
-
-```
-Triggered by callback (auto-enrich) or manual command
-    |
-Parallel enrichment:
-  MetadataClassifier.classify()  -- vocabulary-based tag classification
-  TopicExtractor.extractTopics() -- AI topics --> internal link candidates
-  LinkResolver.findInternalLinks() -- graph hops + shared tags + folder proximity
-  PromptBuilder.suggestExternalLinks() -- AI with conservative prompt
-  PromptBuilder.suggestFrontmatter() -- AI with allowlisted keys
-    |
-LinkResolver.mergeTopicCandidates(topicLinks, graphLinks) -- merge and deduplicate
-    |
-Proposal saved as JSON in .auto-notes/enrichments/
-    |
-User reviews in Unified Proposal View (per-item checkboxes)
-    |
-Accept Selected: EnrichmentApplier merges tags, adds sections with markers
-Reject: mark status as rejected
-```
-
-### Tidy: Snapshot, AI Fix, Apply (immediate)
-
-```
-User triggers tidy command on current note
-    |
-TidyStore saves snapshot of original content (for undo)
-    |
-parseFrontmatter() separates frontmatter from body
-    |
-AIClient.complete() with constrained prompt (spelling + formatting only)
-    |
-sanitizeAIResponse() + stripCodeFences()
-    |
-serializeFrontmatter(original_frontmatter, tidied_body) --> vault.modify()
-    |
-Undo: TidyStore.load() --> vault.modify(original) --> TidyStore.remove()
+onunload()
+  └── module.onunload() for all 8 modules
 ```
 
 ---
 
 ## Cross-Module Communication
 
-All inter-module communication flows through `main.ts` via simple callback assignments:
+All inter-module communication flows through `main.ts` via nullable callback assignments. No event bus, no pub-sub.
 
 ```
-+--------------+     onProposalAccepted(path)     +--------------+
-| Elaboration  | -------------------------------->| Enrichment   |
-+--------------+                                  +--------------+
-                                                        ^
-+--------------+     onTranscriptionComplete(path)      |
-|   Audio      | ---------------------------------------+
-+--------------+                                        ^
-                                                        |
-+--------------+     onTranscriptionComplete(path)      |
-|   Video      | ---------------------------------------+
-+--------------+
+Enrichment triggers (when autoEnrich enabled):
 
-+--------------+     onViewRefreshNeeded()         +--------------+
-| Elaboration  | --------------------------------->|  Unified     |
-| Enrichment   | --------------------------------->|  View        |
-+--------------+                                   +--------------+
+  Elaboration ──onProposalAccepted(path)──────► Enrichment.enrich(path, 'elaboration')
+  Audio ────────onTranscriptionComplete(path)──► Enrichment.enrich(path, 'transcription')
+  Video ────────onTranscriptionComplete(path)──► Enrichment.enrich(path, 'transcription')
+  Summarize ────onSummaryComplete(path)────────► Enrichment.enrich(path, 'summarization')
+  Deep Dive ────onNoteAccepted(path)───────────► Enrichment.enrich(path, 'deep-dive')
+
+Organize triggers (when autoOrganizeOnAccept enabled):
+
+  Deep Dive ────onOrganizeRequested(file)──────► Organize.organizeNote(file)
+
+View refresh (always wired):
+
+  Elaboration ──┐
+  Enrichment  ──┤── onViewRefreshNeeded() ─────► main.refreshUnifiedView()
+  Organize    ──┤
+  Deep Dive   ──┘
 ```
 
-Callbacks are only wired when `enrichment.enabled && enrichment.autoEnrich` is true. Modules declare nullable callback properties; `main.ts` assigns them during initialization. No event bus or pub-sub needed.
+---
+
+## Proposal System Architecture
+
+Four modules generate proposals that appear in the unified sidebar. Each has a different review workflow:
+
+| Module | Proposal Type | Review UX | Accept Behavior |
+|--------|--------------|-----------|-----------------|
+| Elaboration | Content additions | Editable textarea | Blockquote original, append additions |
+| Enrichment | Tags, links, refs, frontmatter | Per-item checkboxes | Cherry-pick items, apply with markers |
+| Organize | New directory suggestion | Directory path + AI reasoning | Create directory, move file |
+| Deep Dive | Generated child note | Read-only content preview | Create note at proposed path |
+
+### Proposal States
+
+```
+ Generated ──► Pending ──┬──► Accepted
+                         ├──► Rejected
+                         └──► Partially Accepted (enrichment only)
+```
+
+Tidy and Summarize do NOT use proposals -- they apply changes immediately (tidy has undo via snapshots).
+
+### Deep Dive: Cascade Rejection
+
+Deep-dive proposals form a tree. Rejecting a parent cascades to all children:
+
+```
+Root Note
+  ├── Topic A (rejected)
+  │   ├── Subtopic A1 (auto-rejected)
+  │   └── Subtopic A2 (auto-rejected)
+  └── Topic B (pending)
+      └── Subtopic B1 (pending)
+```
+
+---
+
+## Deep Dive: Recursive Generation
+
+The deep-dive module generates a tree of child notes from a root note using BFS:
+
+```
+Phase 1: Extract Topics
+  TopicAnalyzer.extractTopics(rootContent) → [Topic A, Topic B, ...]
+  Filter: skip topics that already exist in vault
+
+Phase 2: User Confirmation
+  "Found N new topics. Generate deep dive?"
+
+Phase 3: BFS Generation Loop
+  Queue: [(rootContent, rootTopics, depth=0)]
+
+  While queue not empty and under maxNotesPerRun:
+    Pop item from queue
+    For each new topic:
+      ├── NoteGenerator.generateContent(topic, parentTitle, parentContent)
+      ├── TopicAnalyzer.extractTopics(generatedContent)  [if depth+1 < maxDepth]
+      ├── scoreQuality({title, childTopics, wordCount, depth, ancestors})
+      ├── DeepDiveStore.saveProposal()
+      └── If score >= threshold AND depth+1 < maxDepth:
+            Queue children for next iteration
+
+Phase 4: Present Results
+  All proposals appear in unified sidebar for review
+```
+
+### Quality Scoring (Local, No AI)
+
+```
+Score = topicCount × 0.3    min(1.0, childTopics / 3)
+      + wordCount  × 0.2    min(1.0, words / 200)
+      + generic    × 0.2    penalty for "Introduction", "Overview", etc.
+      + overlap    × 0.2    penalty for child topics matching ancestors
+      + depthDecay × 0.1    linear decay toward max depth
+
+Below qualityThreshold (default 0.4) → stop recursion for this branch
+```
+
+---
+
+## Enrichment Architecture
+
+The enrichment module combines AI analysis with vault graph analysis:
+
+```
+Note content
+    │
+    ├──► MetadataClassifier.classify()
+    │      AI classifies against user-defined tagVocabulary
+    │      Validates: rejects hallucinated tags
+    │      Output: tags like #draft, #reference, #meeting-notes
+    │
+    ├──► TopicExtractor.extractTopics()
+    │      AI identifies 5-15 key concepts
+    │      Matched topics → [[internal link]] candidates (score: 0.7 + proximity)
+    │      Unmatched topics → accumulated for cross-note resolution
+    │
+    ├──► LinkResolver.findInternalLinks()
+    │      Graph hops (1-2 hops in link graph)
+    │      Shared tags (2+ tags in common)
+    │      Folder proximity (same/sibling folders)
+    │      All scored by computeProximityWeight()
+    │
+    ├──► PromptBuilder.suggestExternalLinks()
+    │      AI suggests relevant external URLs
+    │
+    └──► PromptBuilder.suggestFrontmatter()
+           AI suggests metadata with validated keys
+
+    ↓
+LinkResolver.mergeTopicCandidates()
+    Topic relevance dominates; graph adds small bonus
+    Deduplicates, sorts by score
+    ↓
+EnrichmentProposal → Unified Sidebar → User Review
+```
+
+### Vault-Wide Scan (4-Phase)
+
+```
+Phase 1: Scan      ─── Collect eligible files, warm caches (cheap)
+Phase 2: Confirm   ─── User approval before AI calls (gates cost)
+Phase 3: Generate  ─── Per-file enrichment, accumulate unmatched topics
+Phase 4: Resolve   ─── Topics with 2+ references → new-note suggestions
+```
+
+---
+
+## Storage Layer
+
+All module data is stored as individual JSON files under `.auto-notes/`:
+
+```
+.auto-notes/
+├── proposals/                    # Elaboration
+│   └── {id}.json                 #   Proposal with detection reasons + AI content
+├── enrichments/                  # Enrichment
+│   └── {id}.json                 #   Tags, links, refs, frontmatter suggestions
+├── tidy-snapshots/               # Tidy
+│   └── {path-as-filename}.json   #   Original content for undo (one per file)
+├── organize/
+│   ├── proposals/{id}.json       # New-directory proposals
+│   └── snapshots/{id}.json       # Move snapshots for undo
+├── deep-dive/
+│   ├── {id}.json                 # Individual note proposals
+│   └── runs/{id}.json            # Run metadata (stats, depth breakdown)
+└── temp/                         # Temporary video/audio (auto-cleaned)
+```
+
+Design principles:
+- One file per proposal/snapshot (no corruption cascade)
+- Human-inspectable JSON (debuggable)
+- Survives plugin reloads and Obsidian restarts
+- `.auto-notes/` excluded from all module scans by default
+
+---
+
+## AI Integration Pattern
+
+```
+┌────────────┐
+│  AIClient  │  ← shared/ai-client.ts
+└─────┬──────┘
+      │
+      ├── complete(prompt, systemPrompt?)  ← convenience wrapper
+      └── chat(messages[])                  ← core method
+           │
+           ├── 'openai'    → POST api.openai.com/v1/chat/completions
+           │                  Auth: Bearer {ai.apiKey}
+           │
+           ├── 'anthropic' → POST api.anthropic.com/v1/messages
+           │                  Auth: x-api-key {ai.apiKey}
+           │                  System message extracted to top-level field
+           │                  Model IDs: opus→claude-opus-4-6, sonnet→claude-sonnet-4-6
+           │
+           └── 'ollama'    → POST {ollamaEndpoint}/api/chat
+                              HTTPS required (HTTP for localhost only)
+
+All requests go through safeRequest():
+  - Obsidian requestUrl (not fetch)
+  - 2-minute timeout
+  - Error body extraction
+  - API key redaction in error messages
+```
+
+Audio transcription uses separate APIs (not AIClient):
+- Whisper: OpenAI `/v1/audio/transcriptions` via native `fetch` + `FormData`
+- Deepgram: `/v1/listen` via native `fetch`
 
 ---
 
 ## Settings Hierarchy
 
-Settings are organized into six groups, each mapping to a module:
-
 ```
 AutoNotesSettings
-+-- ai          --> Provider, API key, model, temperature
-+-- elaboration --> Detection thresholds, scan behavior, proposal storage
-|   +-- detection --> Word threshold, TODO markers, empty sections, excludes
-|   +-- proposal  --> Max per note, preserve frontmatter, include context
-+-- audio       --> Transcription provider, API keys, post-processing
-|   +-- postProcessing --> Filler removal, structure, key points, custom prompt
-+-- video       --> yt-dlp/ffmpeg paths, download folder, embed setting
-|   +-- frameExtraction --> (Not implemented) interval, vision model, max frames
-+-- enrichment  --> Auto-enrich, max tags/links, tag vocabulary, proximity weights
-|   +-- tagVocabulary  --> TagVocabularyEntry[] (category, tags, description)
-|   +-- weights        --> Same/sibling/cousin/distant folder weights, decay, minimum
-+-- tidy        --> Snapshot folder path
+├── ai              → Provider, API key, model, temperature, max tokens
+├── elaboration     → Detection thresholds, scan behavior, proposal storage
+│   ├── detection   → Word threshold, TODO markers, empty sections, excludes
+│   └── proposal    → Max per note, preserve frontmatter, include context
+├── audio           → Transcription provider, API keys, post-processing
+│   └── postProcessing → Filler removal, structure, key points, custom prompt
+├── video           → yt-dlp/ffmpeg paths, download folder, embed setting
+│   └── frameExtraction → (Not implemented) interval, vision model, max frames
+├── enrichment      → Auto-enrich, max tags/links, vocabulary, proximity weights
+│   ├── tagVocabulary   → TagVocabularyEntry[] (category, tags, description)
+│   └── weights         → Same/sibling/cousin/distant folder, decay, minimum
+├── summarize       → Style (bullets/paragraph/key-points), max length, excludes
+├── tidy            → Snapshot folder path
+├── organize        → Proposal/snapshot folder paths, excludes
+└── deepDive        → Max depth, quality threshold, max notes, output folder,
+                      auto-enrich on accept, auto-organize on accept, excludes
 ```
 
-Modules access settings via a `getSettings()` closure injected at construction time, ensuring they always read the latest values without event subscriptions.
+Modules access settings via `getSettings()` closure -- always reads latest values, no event subscriptions needed.
 
 ---
 
-## Proposal Lifecycle
+## Security Layers
 
-Elaboration and enrichment both use a proposal-based workflow. Tidy does not.
-
-```
-                    +----------+
-                    | Generated|
-                    +----+-----+
-                         |
-                    +----v-----+
-                    | Pending  | <-- stored as JSON in .auto-notes/
-                    +----+-----+
-                         |
-              +----------+----------+
-              |                     |
-        +-----v-----+        +-----v-----+
-        | Accepted  |        | Rejected  |
-        +-----+-----+        +-----------+
-              |
-              | (enrichment only)
-        +-----v----------+
-        | Partially      |
-        | Accepted       |
-        +----------------+
-```
-
-- **Elaboration proposals**: Accept applies full content (user can edit in textarea first). Original note content is blockquoted for preservation.
-- **Enrichment proposals**: Accept Selected allows cherry-picking individual tags, links, refs, and frontmatter items. Sections are wrapped in `%% auto-notes-enrichment-start/end %%` markers for idempotent updates.
-- **Tidy**: Immediate apply, undo via stored snapshot. No proposal UI.
-
----
-
-## Multi-Agent Infrastructure
-
-The project uses specialized AI agents for different concerns, defined in `.claude/agents/`:
-
-| Agent | Role | Key Skills |
-|-------|------|------------|
-| architect | Enforces module patterns, dependency rules, naming | codebase-architecture, git-workflow |
-| security | Audits for vulnerabilities, validates sanitization | security-audit |
-| docs-agent | Maintains AGENTS.md files (machine-readable) | docs-agent |
-| docs-human | Maintains DECISIONS/STATUS/ARCHITECTURE.md | docs-human |
-| elaboration-designer | Designs stub detection and proposal generation | note-elaboration |
-| plugin-architect | Obsidian API patterns and plugin lifecycle | obsidian-plugin-dev |
-| transcription-engineer | Audio/video pipeline design | media-transcription |
-
-Agents coordinate via:
-- **Git workflow**: feature branches, PRs to protected main, bot identity
-- **Skills**: shared knowledge files in `.claude/skills/` (git-workflow, tdd, etc.)
-- **Worktrees**: parallel work on conflicting files without branch switching
+| Layer | Protection | Location |
+|-------|-----------|----------|
+| Input validation | `sanitizeUrl()`, `sanitizePath()`, `ensureWithinVault()` | `shared/validation.ts` |
+| Output sanitization | `sanitizeAIResponse()` strips scripts, event handlers, dangerous URIs | `shared/validation.ts` |
+| Subprocess security | `execFile` with argument arrays (no shell) | `video/audio-extractor.ts` |
+| API key protection | `redactSecrets()` in error messages, password-masked inputs | `shared/ai-client.ts` |
+| Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
+| Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
+| Idempotent updates | `%% auto-notes-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
 
 ---
 

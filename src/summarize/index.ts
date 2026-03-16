@@ -1,7 +1,7 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { FolderPickerModal, getMarkdownFiles, NotificationManager } from '../shared';
-import { OperationHandle } from '../shared/notifications';
+import { OperationHandle } from '../shared';
 import { fetchPageContent } from './content-fetcher';
 import { findSummarizeTargets } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
