@@ -1,1 +1,13 @@
 /* Auto Notes plugin styles */
+
+/*
+ * Cap the height of embedded videos so portrait-oriented content
+ * (TikTok, Instagram Reels, phone recordings) does not dominate the note.
+ * Landscape videos are unaffected because they hit width constraints first.
+ */
+.markdown-preview-view video,
+.markdown-reading-view video,
+.markdown-source-view video {
+  max-height: 50vh;
+  width: auto;
+}
