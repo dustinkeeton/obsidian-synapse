@@ -149,6 +149,8 @@ export interface OrganizeSettings {
 	snapshotFolderPath: string;
 	excludeFolders: string[];
 	excludeTags: string[];
+	/** Minimum topic confidence required to propose a new directory (0-1). */
+	organizeConfidenceThreshold: number;
 }
 
 export interface DeepDiveSettings {
@@ -285,6 +287,7 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		snapshotFolderPath: '.auto-notes/organize/snapshots',
 		excludeFolders: ['templates', '.auto-notes'],
 		excludeTags: ['no-organize'],
+		organizeConfidenceThreshold: 0.9,
 	},
 	deepDive: {
 		enabled: true,

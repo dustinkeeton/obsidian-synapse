@@ -659,6 +659,20 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName('New folder confidence threshold')
+			.setDesc('Minimum topic confidence to propose a new folder (0.5-1.0). Higher = fewer new folders.')
+			.addSlider((slider) =>
+				slider
+					.setLimits(0.5, 1.0, 0.05)
+					.setValue(this.plugin.settings.organize.organizeConfidenceThreshold)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.organize.organizeConfidenceThreshold = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName('Excluded folders')
 			.setDesc('Comma-separated list of folders to skip for organization')
 			.addText((text) =>
