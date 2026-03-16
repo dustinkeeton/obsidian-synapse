@@ -44,7 +44,10 @@ export default class AutoNotesPlugin extends Plugin {
 		this.audio = new AudioModule(this, getSettings, this.notifications);
 		this.video = new VideoModule(this, getSettings, this.audio, this.notifications);
 		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications);
-		this.summarize = new SummarizeModule(this, getSettings, this.notifications);
+		this.summarize = new SummarizeModule(
+			this, getSettings, this.notifications,
+			(url, parentOp) => this.video.transcribeUrl(url, parentOp)
+		);
 		this.tidy = new TidyModule(this, getSettings, this.notifications);
 		this.organize = new OrganizeModule(this, getSettings, this.notifications);
 		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications);
