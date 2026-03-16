@@ -18,6 +18,8 @@ export type {
 } from './types';
 
 export class OrganizeModule {
+	onViewRefreshNeeded: (() => Promise<void>) | null = null;
+
 	private analyzer: ContentAnalyzer;
 	private matcher: DirectoryMatcher;
 	private store: OrganizeStore;
@@ -201,6 +203,10 @@ export class OrganizeModule {
 		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
 		genOp.finish(parts.length > 0 ? parts.join(', ') : 'No changes needed');
 
+		if (proposalCount > 0) {
+			await this.onViewRefreshNeeded?.();
+		}
+
 		return movedCount + proposalCount;
 	}
 
@@ -244,6 +250,7 @@ export class OrganizeModule {
 
 			await this.store.updateProposalStatus(id, 'accepted');
 			this.notifications.success(`Moved to ${proposal.proposedDirectory}`);
+			await this.onViewRefreshNeeded?.();
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			this.notifications.notifyError('Failed to accept proposal', error);
@@ -257,6 +264,7 @@ export class OrganizeModule {
 	async rejectProposal(id: string): Promise<void> {
 		await this.store.updateProposalStatus(id, 'rejected');
 		this.notifications.info('Proposal rejected');
+		await this.onViewRefreshNeeded?.();
 	}
 
 	/**
