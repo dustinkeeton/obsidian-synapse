@@ -3,8 +3,8 @@ import { AutoNotesSettings } from '../settings';
 import { mergeTags, parseFrontmatter, serializeFrontmatter } from '../shared';
 import { EnrichmentProposal, AcceptedItems } from './types';
 
-const ENRICHMENT_START = '%% auto-notes-enrichment-start %%';
-const ENRICHMENT_END = '%% auto-notes-enrichment-end %%';
+export const ENRICHMENT_START = '%% auto-notes-enrichment-start %%';
+export const ENRICHMENT_END = '%% auto-notes-enrichment-end %%';
 
 /**
  * Applies accepted enrichments to a note non-destructively.
