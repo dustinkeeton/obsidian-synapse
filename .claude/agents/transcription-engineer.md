@@ -5,6 +5,7 @@ skills:
   - media-transcription
   - tdd
   - git-workflow
+  - issue
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
 ---
 

@@ -5,6 +5,7 @@ skills:
   - docs-agent
   - codebase-architecture
   - git-workflow
+  - issue
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
