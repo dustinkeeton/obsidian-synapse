@@ -6,6 +6,7 @@ skills:
   - obsidian-plugin-dev
   - tdd
   - git-workflow
+  - issue
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
