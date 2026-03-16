@@ -318,7 +318,8 @@ export class OrganizeModule {
 			return null;
 		}
 
-		const action = this.matcher.determineAction(analysis);
+		const confidenceThreshold = this.getSettings().organize.organizeConfidenceThreshold;
+		const action = this.matcher.determineAction(analysis, undefined, confidenceThreshold);
 		const currentDir = this.getParentPath(file.path);
 
 		if (action.type === 'move') {
