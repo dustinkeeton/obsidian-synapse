@@ -630,5 +630,46 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		// ── Note Organize ──
+		containerEl.createEl('h2', { text: 'Note Organize' });
+
+		new Setting(containerEl)
+			.setName('Enable organize')
+			.setDesc('AI-powered semantic directory structuring for notes')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.organize.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.organize.enabled = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Excluded folders')
+			.setDesc('Comma-separated list of folders to skip for organization')
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.organize.excludeFolders.join(', '))
+					.onChange(async (value) => {
+						this.plugin.settings.organize.excludeFolders =
+							value.split(',').map((s) => s.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Excluded tags')
+			.setDesc('Notes with these tags will skip organization')
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.organize.excludeTags.join(', '))
+					.onChange(async (value) => {
+						this.plugin.settings.organize.excludeTags =
+							value.split(',').map((s) => s.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 }
