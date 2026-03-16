@@ -8,6 +8,7 @@ import { EnrichmentModule } from './enrichment';
 import { SummarizeModule } from './summarize';
 import { TidyModule } from './tidy';
 import { OrganizeModule } from './organize';
+import { DeepDiveModule } from './deep-dive';
 import { NotificationManager } from './shared';
 import {
 	UNIFIED_VIEW_TYPE,
@@ -26,6 +27,7 @@ export default class AutoNotesPlugin extends Plugin {
 	private summarize!: SummarizeModule;
 	private tidy!: TidyModule;
 	private organize!: OrganizeModule;
+	private deepDive!: DeepDiveModule;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -48,6 +50,7 @@ export default class AutoNotesPlugin extends Plugin {
 		);
 		this.tidy = new TidyModule(this, getSettings, this.notifications);
 		this.organize = new OrganizeModule(this, getSettings, this.notifications);
+		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications);
 
 		// Register the unified proposal view
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
@@ -58,6 +61,8 @@ export default class AutoNotesPlugin extends Plugin {
 				onEnrichmentReject: (id) => this.enrichment.rejectFromView(id),
 				onOrganizeAccept: (id) => this.organize.acceptProposal(id),
 				onOrganizeReject: (id) => this.organize.rejectProposal(id),
+				onDeepDiveAccept: (id) => this.deepDive.acceptProposal(id),
+				onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
 			});
 		});
 
@@ -66,6 +71,7 @@ export default class AutoNotesPlugin extends Plugin {
 		this.elaboration.onViewRefreshNeeded = refreshView;
 		this.enrichment.onViewRefreshNeeded = refreshView;
 		this.organize.onViewRefreshNeeded = refreshView;
+		this.deepDive.onViewRefreshNeeded = refreshView;
 
 		// Load enabled modules
 		if (this.settings.elaboration.enabled) {
@@ -89,6 +95,9 @@ export default class AutoNotesPlugin extends Plugin {
 		if (this.settings.organize.enabled) {
 			await this.organize.onload();
 		}
+		if (this.settings.deepDive.enabled) {
+			await this.deepDive.onload();
+		}
 
 		// Wire enrichment callbacks — triggers after other processes complete
 		if (this.settings.enrichment.enabled && this.settings.enrichment.autoEnrich) {
@@ -103,6 +112,18 @@ export default class AutoNotesPlugin extends Plugin {
 			};
 			this.summarize.onSummaryComplete = (filePath: string) => {
 				this.enrichment.enrich(filePath, 'summarization');
+			};
+			if (this.settings.deepDive.autoEnrichOnAccept) {
+				this.deepDive.onNoteAccepted = (filePath: string) => {
+					this.enrichment.enrich(filePath, 'deep-dive');
+				};
+			}
+		}
+
+		// Wire deep-dive auto-organize callback
+		if (this.settings.deepDive.autoOrganizeOnAccept && this.settings.organize.enabled) {
+			this.deepDive.onOrganizeRequested = (file) => {
+				this.organize.organizeNote(file);
 			};
 		}
 
@@ -130,6 +151,7 @@ export default class AutoNotesPlugin extends Plugin {
 		this.summarize?.onunload();
 		this.tidy?.onunload();
 		this.organize?.onunload();
+		this.deepDive?.onunload();
 	}
 
 	async loadSettings(): Promise<void> {
@@ -176,6 +198,11 @@ export default class AutoNotesPlugin extends Plugin {
 		const organizeProposals = await this.organize.getPendingProposals();
 		for (const p of organizeProposals) {
 			items.push({ kind: 'organize', data: p });
+		}
+
+		const deepDiveProposals = await this.deepDive.getPendingProposals();
+		for (const p of deepDiveProposals) {
+			items.push({ kind: 'deep-dive', data: p });
 		}
 
 		for (const leaf of leaves) {

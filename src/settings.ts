@@ -150,6 +150,19 @@ export interface OrganizeSettings {
 	excludeTags: string[];
 }
 
+export interface DeepDiveSettings {
+	enabled: boolean;
+	proposalFolderPath: string;
+	maxDepth: number;
+	qualityThreshold: number;
+	maxNotesPerRun: number;
+	noteOutputFolder: string;
+	excludeFolders: string[];
+	excludeTags: string[];
+	autoEnrichOnAccept: boolean;
+	autoOrganizeOnAccept: boolean;
+}
+
 export interface AutoNotesSettings {
 	ai: AISettings;
 	elaboration: ElaborationSettings;
@@ -159,6 +172,7 @@ export interface AutoNotesSettings {
 	summarize: SummarizeSettings;
 	tidy: TidySettings;
 	organize: OrganizeSettings;
+	deepDive: DeepDiveSettings;
 }
 
 export const DEFAULT_SETTINGS: AutoNotesSettings = {
@@ -269,5 +283,17 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		snapshotFolderPath: '.auto-notes/organize/snapshots',
 		excludeFolders: ['templates', '.auto-notes'],
 		excludeTags: ['no-organize'],
+	},
+	deepDive: {
+		enabled: true,
+		proposalFolderPath: '.auto-notes/deep-dive',
+		maxDepth: 3,
+		qualityThreshold: 0.4,
+		maxNotesPerRun: 50,
+		noteOutputFolder: '',
+		excludeFolders: ['templates', '.auto-notes'],
+		excludeTags: ['no-deep-dive'],
+		autoEnrichOnAccept: true,
+		autoOrganizeOnAccept: false,
 	},
 };

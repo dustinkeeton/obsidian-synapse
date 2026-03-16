@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-13
+last-updated: 2026-03-16
 ---
 
 # Shared Module
@@ -124,8 +124,10 @@ All use Obsidian requestUrl via safeRequest() (handles errors, redacts secrets)
 |---------|---------|
 | `AIClient` | elaboration/proposer, audio/post-processor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `NotificationManager` | all feature modules (injected via constructor) |
-| `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index |
-| `wordCount` | elaboration/detector |
+| `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index, organize/index, deep-dive/index |
+| `wordCount` | elaboration/detector, deep-dive/index |
+| `readNote` | deep-dive/index |
+| `writeNote` | deep-dive/index |
 | `sanitizeUrl` | video/index, video/audio-extractor |
 | `sanitizePath` | video/audio-extractor |
 | `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
