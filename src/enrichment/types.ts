@@ -28,12 +28,6 @@ export interface TagCandidate {
 	sources: string[];
 }
 
-export interface TagVocabularyEntry {
-	category: string;
-	tags: string[];
-	description: string;
-}
-
 export interface InternalLinkCandidate {
 	targetPath: string;
 	displayText: string;
@@ -61,7 +55,7 @@ export interface EnrichmentResult {
 	frontmatter: FrontmatterEnrichment[];
 }
 
-export type EnrichmentTrigger = 'elaboration' | 'transcription' | 'summarization' | 'manual';
+export type EnrichmentTrigger = 'elaboration' | 'transcription' | 'summarization' | 'deep-dive' | 'manual';
 
 export type EnrichmentStatus =
 	| 'pending'

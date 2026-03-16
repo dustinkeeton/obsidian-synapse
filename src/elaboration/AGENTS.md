@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-13
+last-updated: 2026-03-16
 ---
 
 # Elaboration Module
@@ -15,7 +15,7 @@ class ElaborationModule {
   constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
-  scanVault(): Promise<number>
+  scanVault(folderPath?: string): Promise<number>
   scanNote(file: TFile): Promise<void>
   acceptProposal(id: string, editedContent?: string): Promise<void>
   rejectProposal(id: string): Promise<void>

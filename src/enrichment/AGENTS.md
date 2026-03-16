@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-13
+last-updated: 2026-03-16
 ---
 
 # Enrichment Module
@@ -16,14 +16,14 @@ class EnrichmentModule {
   onload(): Promise<void>
   onunload(): void
   enrich(filePath: string, trigger: EnrichmentTrigger): Promise<void>
-  scanVault(): Promise<number>
+  scanVault(folderPath?: string): Promise<number>
   getPendingProposals(): Promise<EnrichmentProposal[]>
   acceptSelectedFromView(id: string, accepted: AcceptedItems): Promise<void>
   rejectFromView(id: string): Promise<void>
   onViewRefreshNeeded: (() => Promise<void>) | null
 }
 
-type EnrichmentTrigger = 'elaboration' | 'transcription' | 'manual'
+type EnrichmentTrigger = 'elaboration' | 'transcription' | 'summarization' | 'deep-dive' | 'manual'
 type EnrichmentStatus = 'pending' | 'accepted' | 'partially-accepted' | 'rejected'
 
 interface EnrichmentProposal {

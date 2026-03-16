@@ -4,6 +4,145 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-16: Deep-dive generate-all-upfront model
+
+**Context**: When a user triggers a deep dive, the system needs to decide whether to generate child notes one at a time (with user approval between each) or generate the entire tree upfront and let the user accept/reject afterward.
+
+**Decision**: Generate the entire proposal tree upfront in a single BFS traversal, store all proposals, and present them in the unified sidebar for batch review. The user confirms once before generation starts, then reviews all proposals afterward.
+
+**Alternatives considered**:
+- Interactive step-by-step generation (user approves each level before proceeding -- more control but slow and tedious for large trees)
+- Background generation with streaming UI updates (complex, hard to cancel cleanly)
+- Generate only depth 0, let user trigger deeper dives manually (safe but loses the recursive discovery value)
+
+**Rationale**: Upfront generation minimizes user friction. A deep dive into a note with 5 topics at depth 3 could produce 15-50 proposals -- asking for approval at each step would be exhausting. The BFS queue processes topics breadth-first, so proposals at depth 0 are ready for review while deeper levels are still generating. The single confirmation gate before generation prevents accidental API costs.
+
+**Impact**: Users get a complete proposal tree to browse. They can accept individual notes or reject branches (cascade rejection removes children too). Progress tracking and cancellation are available during generation.
+
+---
+
+## 2026-03-16: Local heuristic quality scorer (no AI)
+
+**Context**: The deep-dive module needs to decide when to stop recursing. A topic at depth 2 that produces thin, generic content shouldn't spawn more children.
+
+**Decision**: Use a local heuristic scorer (`quality-scorer.ts`) with five weighted factors -- no AI call for scoring:
+- Topic count (0.3): `min(1.0, childTopics / 3)`
+- Word count (0.2): `min(1.0, wordCount / 200)`
+- Generic penalty (0.2): penalizes 1-word titles or common words ("introduction", "overview", etc.)
+- Overlap penalty (0.2): fraction of child topics already in ancestor list
+- Depth decay (0.1): `1.0 - (depth / maxDepth * 0.5)`
+
+Score below `qualityThreshold` (default 0.4) stops recursion for that branch.
+
+**Alternatives considered**:
+- AI-based quality assessment (adds an API call per proposal; doubles cost for marginal benefit)
+- Fixed depth limit only (doesn't account for content quality; wastes API calls on thin branches)
+- User-defined per-topic stop/continue (too interactive for upfront generation model)
+
+**Rationale**: Local heuristics are free, fast, and surprisingly effective. The overlap penalty catches circular topics. The generic penalty avoids wasting API calls on "Introduction to X" or "Overview" notes that won't have rich subtopics. Word count correlates with generation quality. The configurable threshold lets users tune aggressiveness.
+
+**Impact**: Deep dives terminate branches early when quality drops, saving API costs. The `earlyTerminations` stat in run metadata shows how many branches were pruned.
+
+---
+
+## 2026-03-16: Cascade rejection for deep-dive proposals
+
+**Context**: Deep-dive proposals form a tree. When a user rejects a depth-0 proposal, its children (depth 1, 2, ...) become orphaned -- they reference a parent note that will never exist.
+
+**Decision**: Rejecting a proposal automatically rejects all its descendants. The `DeepDiveStore.cascadeReject(id)` method walks the `childProposalIds` tree and marks all as rejected. The UI shows a count: "Rejected 5 proposals (including children)."
+
+**Alternatives considered**:
+- Reject only the selected proposal, leave children pending (orphaned proposals confuse users)
+- Delete children entirely (loses the record for run statistics)
+- Ask user per child whether to keep or reject (too much friction)
+
+**Rationale**: An orphaned child proposal makes no sense -- it would create a note about a subtopic of a note that doesn't exist. Cascade rejection is the only consistent behavior. Keeping rejected proposals (rather than deleting) preserves run statistics for debugging quality thresholds.
+
+**Impact**: Users can prune entire subtrees with a single reject. The run's proposal count and depth stats remain accurate.
+
+---
+
+## 2026-03-16: Deep-dive auto-enrich and auto-organize on accept
+
+**Context**: When a user accepts a deep-dive proposal, the new note is created bare -- no tags, no links, no enrichment. Users would need to manually trigger enrichment and organize on each accepted note.
+
+**Decision**: Add two opt-in callbacks:
+- `autoEnrichOnAccept` (default: true): triggers `enrichment.enrich(filePath, 'deep-dive')` after note creation
+- `autoOrganizeOnAccept` (default: false): triggers `organize.organizeNote(file)` after note creation
+
+Both are wired in `main.ts` only when the corresponding modules are enabled.
+
+**Alternatives considered**:
+- Always enrich and organize (opinionated, hard to disable)
+- Never auto-trigger (requires manual commands on every accepted note)
+- Batch enrich/organize all accepted notes at once (complex, timing issues)
+
+**Rationale**: Enrichment is low-risk and high-value -- newly generated notes benefit from tags and links immediately. Organize is off by default because moving a just-created note before the user has reviewed it can be surprising. Both are configurable per user preference.
+
+**Impact**: Accepted deep-dive notes are automatically connected to the vault graph. Organize can be enabled for users who want fully automated file management.
+
+---
+
+## 2026-03-16: Organize module uses dual action model (move vs propose)
+
+**Context**: The organize module analyzes note content and determines the best directory. Sometimes the best directory already exists; sometimes a new directory needs to be created.
+
+**Decision**: Two action types:
+- **move**: if the AI recommends an existing directory, move the note immediately with a snapshot for undo
+- **propose-new-directory**: if a new directory is needed, create a proposal for user review in the sidebar
+
+**Alternatives considered**:
+- Always propose (too much friction for obvious moves to existing directories)
+- Always move, create directories automatically (risky -- bad AI suggestions create folder clutter)
+- Only move to existing directories, never suggest new ones (limits organization growth)
+
+**Rationale**: Existing directories are user-validated locations. Moving to them is safe and reversible (via snapshot/undo). New directories deserve user confirmation because they change vault structure permanently. This split gives users speed where it's safe and control where it matters.
+
+**Impact**: Most organizes are instant moves. Only novel directory suggestions require sidebar review.
+
+---
+
+## 2026-03-16: Summarize module creates standalone notes for enrichment-section links
+
+**Context**: The summarize module handles two contexts: inline URLs/transcriptions in the note body, and external reference links added by enrichment (in the `## References` section). Inline summaries are simple blockquotes. But enrichment-section links are references to external resources -- summarizing them inline would clutter the references section.
+
+**Decision**: When summarizing a URL in the enrichment section:
+1. Fetch and summarize the content with a comprehensive prompt
+2. Create a standalone summary note (new file in vault)
+3. Replace the external `[title](url)` link with an internal `[[Summary - title]]` link in the source note
+
+When summarizing outside the enrichment section, insert a blockquote summary inline after the URL.
+
+**Alternatives considered**:
+- Always inline (clutters enrichment sections)
+- Always create standalone notes (overkill for simple URL summaries in note body)
+- Never summarize enrichment links (misses opportunity to bring external knowledge into the graph)
+
+**Rationale**: Enrichment-section links represent curated references. Converting them to internal notes with full summaries strengthens the knowledge graph. The external URL is preserved in the summary note, so no information is lost. Inline summaries are more appropriate for casual URL mentions in the note body.
+
+**Impact**: Users can "internalize" their external references into vault notes. The original reference link is replaced with an internal link, keeping the references section clean.
+
+---
+
+## 2026-03-16: Unified view expanded to 4 proposal types with color coding
+
+**Context**: The unified proposal view originally supported elaboration and enrichment. The organize and deep-dive modules added two new proposal types that needed review UI.
+
+**Decision**: Extend `UnifiedItem` to a 4-way discriminated union: `elaboration | enrichment | organize | deep-dive`. Each type gets a distinct color (blue, green, orange, purple) and a specialized review pane:
+- Organize: shows proposed directory, AI reasoning, accept/reject
+- Deep-dive: shows topic title, depth badge, quality score, content preview, child count warning, accept/reject
+
+**Alternatives considered**:
+- Separate views per module (fragmented UX, already rejected this once)
+- Tabs within the sidebar (adds navigation overhead)
+- Only show deep-dive in a modal (inconsistent with other proposal types)
+
+**Rationale**: Consistency -- all proposal types use the same browse-and-review workflow. Color coding provides instant visual differentiation. The deep-dive review pane is read-only (unlike elaboration's editable textarea) because generated notes are complete and shouldn't be hand-edited before acceptance.
+
+**Impact**: One sidebar, four proposal types, four colors. Users have a single place to manage all pending proposals.
+
+---
+
 ## 2026-03-13: On-demand folder creation in stores
 
 **Context**: Store classes (ProposalStore, EnrichmentStore, TidyStore) relied on an `init()` call during plugin startup to create their storage folders. If the folder was deleted while the plugin was running, subsequent saves would fail.
@@ -157,7 +296,7 @@ On error or cancellation in Phase 3, all created proposals are rejected and pend
 - Diff view showing before/after (complex UI for minimal benefit)
 - No undo capability (risky if AI makes unwanted formatting changes)
 
-**Rationale**: Tidy changes are cosmetic — spelling fixes and markdown formatting only, no content addition or removal. The risk of unwanted changes is low, and the undo command provides a safety net. A full proposal workflow would slow down a feature that should feel instant. One snapshot per file (overwriting previous) keeps storage bounded.
+**Rationale**: Tidy changes are cosmetic -- spelling fixes and markdown formatting only, no content addition or removal. The risk of unwanted changes is low, and the undo command provides a safety net. A full proposal workflow would slow down a feature that should feel instant. One snapshot per file (overwriting previous) keeps storage bounded.
 
 **Impact**: Users run `Tidy current note` and see changes immediately. If unsatisfied, `Undo last tidy` restores the original content. No sidebar review needed.
 
@@ -167,16 +306,16 @@ On error or cancellation in Phase 3, all created proposals are rejected and pend
 
 **Context**: Elaboration and enrichment each had their own sidebar view classes (`ProposalReviewView`, `EnrichmentReviewView`) and their own modals. Users had to navigate between separate UI surfaces to review different types of proposals.
 
-**Decision**: Create a single `UnifiedProposalView` in `src/views/` that displays both elaboration and enrichment proposals in one sidebar. The view has three rendering modes: list (all proposals grouped by note), elaboration review (editable textarea), and enrichment review (per-item checkboxes). Legacy view classes remain in the codebase but are not registered by `main.ts`.
+**Decision**: Create a single `UnifiedProposalView` in `src/views/` that displays all proposal types in one sidebar. The view has multiple rendering modes: list (all proposals grouped by note), elaboration review (editable textarea), enrichment review (per-item checkboxes), organize review (directory + reasoning), and deep-dive review (topic + quality score + content preview). Legacy view classes remain in the codebase but are not registered by `main.ts`.
 
 **Alternatives considered**:
 - Keep separate views (fragmented UX, multiple ribbon icons needed)
-- Tabbed view with one tab per module (added complexity for two categories)
+- Tabbed view with one tab per module (added complexity)
 - Modal-only workflow without sidebar (less persistent, harder to browse)
 
-**Rationale**: A single sidebar reduces cognitive overhead — users have one place to check for pending proposals. The `UnifiedItem` discriminated union (`kind: 'elaboration' | 'enrichment'`) keeps the data model clean. Color-coded cards (blue for elaboration, green for enrichment) provide visual distinction without separate views.
+**Rationale**: A single sidebar reduces cognitive overhead -- users have one place to check for pending proposals. The `UnifiedItem` discriminated union keeps the data model clean. Color-coded cards (blue for elaboration, green for enrichment, orange for organize, purple for deep-dive) provide visual distinction without separate views.
 
-**Impact**: One ribbon icon (sparkles) opens all proposals. Legacy views are dead code but preserved for reference. The view is refreshed via callbacks from both modules through `main.refreshUnifiedView()`.
+**Impact**: One ribbon icon (sparkles) opens all proposals. Legacy views are dead code but preserved for reference. The view is refreshed via callbacks from all four proposal-generating modules through `main.refreshUnifiedView()`.
 
 ---
 
@@ -222,7 +361,7 @@ Vault scanning uses a two-phase approach: Phase 1 scans without API calls, Phase
 
 ## 2026-03-13: Enrichment module with proximity-weighted tag scoring
 
-**Context**: After notes are elaborated or transcribed, they lack connections to the rest of the vault — no tags, no links to related notes, no external references.
+**Context**: After notes are elaborated or transcribed, they lack connections to the rest of the vault -- no tags, no links to related notes, no external references.
 
 **Decision**: Add an enrichment module that analyzes vault structure to suggest tags, internal links, external references, and frontmatter attributes. Tag scoring uses a proximity-weighted algorithm: candidate tags are scored by how often they appear in nearby notes (same folder > sibling > cousin > distant), combined with vault-wide frequency. Internal links are resolved from graph hops, shared tags, and folder proximity.
 
@@ -242,28 +381,30 @@ Vault scanning uses a two-phase approach: Phase 1 scans without API calls, Phase
 **Context**: When an elaboration proposal is accepted or a transcription completes, the resulting note should be enriched automatically. Modules need to communicate completion events without direct dependencies on each other.
 
 **Decision**: Wire callbacks in `main.ts` using simple function assignments:
-- `elaboration.onProposalAccepted(filePath)` → `enrichment.enrich(filePath, 'elaboration')`
-- `audio.onTranscriptionComplete(filePath)` → `enrichment.enrich(filePath, 'transcription')`
-- `video.onTranscriptionComplete(filePath)` → `enrichment.enrich(filePath, 'transcription')`
-- `elaboration.onViewRefreshNeeded()` → `main.refreshUnifiedView()`
-- `enrichment.onViewRefreshNeeded()` → `main.refreshUnifiedView()`
+- `elaboration.onProposalAccepted(filePath)` -> `enrichment.enrich(filePath, 'elaboration')`
+- `audio.onTranscriptionComplete(filePath)` -> `enrichment.enrich(filePath, 'transcription')`
+- `video.onTranscriptionComplete(filePath)` -> `enrichment.enrich(filePath, 'transcription')`
+- `summarize.onSummaryComplete(filePath)` -> `enrichment.enrich(filePath, 'summarization')`
+- `deepDive.onNoteAccepted(filePath)` -> `enrichment.enrich(filePath, 'deep-dive')`
+- `deepDive.onOrganizeRequested(file)` -> `organize.organizeNote(file)`
+- `*.onViewRefreshNeeded()` -> `main.refreshUnifiedView()`
 
-Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
+Callbacks are only wired when the relevant modules and settings are enabled.
 
 **Alternatives considered**:
-- Event bus / pub-sub pattern (over-engineered for 5 connections)
+- Event bus / pub-sub pattern (over-engineered for <10 connections)
 - Direct module imports (creates circular dependencies)
 - Obsidian events on the workspace (global, hard to type-check)
 
 **Rationale**: Simple callback assignment in the orchestrator (`main.ts`) is explicit and easy to trace. Each module declares nullable callback properties; `main.ts` assigns them. No event system overhead, no subscription management, no circular dependencies.
 
-**Impact**: Enrichment runs automatically after elaboration and transcription. View refresh is centralized. Adding new cross-module connections requires editing `main.ts`.
+**Impact**: Enrichment runs automatically after elaboration, transcription, summarization, and deep-dive acceptance. Organize runs after deep-dive acceptance when enabled. View refresh is centralized. Adding new cross-module connections requires editing `main.ts`.
 
 ---
 
 ## 2026-03-13: Removed output folder settings from audio and video
 
-**Context**: Audio and video modules originally had `outputFolder` settings specifying where transcription notes would be saved. These were redundant — transcriptions are inserted inline into the current note (audio) or saved alongside video metadata (video).
+**Context**: Audio and video modules originally had `outputFolder` settings specifying where transcription notes would be saved. These were redundant -- transcriptions are inserted inline into the current note (audio) or saved alongside video metadata (video).
 
 **Decision**: Remove `audio.outputFolder` and `video.outputFolder` settings. Video retains `downloadFolder` (for saving video files to vault) and `embedInNote` (for embedding video file links in notes).
 
@@ -285,7 +426,7 @@ Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
 
 **Alternatives considered**:
 - Full HTML sanitizer library (adds runtime dependency, over-engineered for markdown context)
-- No sanitization, trust AI providers (risky — prompt injection is a real threat)
+- No sanitization, trust AI providers (risky -- prompt injection is a real threat)
 - Escape all HTML (breaks legitimate markdown rendering)
 
 **Rationale**: Targeted stripping removes known dangerous patterns while preserving legitimate markdown and inline HTML that Obsidian renders safely. Defense-in-depth: even if AI output contains injected content, sanitization prevents execution. The pattern is applied consistently via a single shared function.
@@ -301,7 +442,7 @@ Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
 **Decision**: Wrap enrichment-added sections with HTML comment markers: `%% auto-notes-enrichment-start %%` and `%% auto-notes-enrichment-end %%`. On subsequent enrichments, content between markers is replaced. Undo removes everything between markers.
 
 **Alternatives considered**:
-- Heading-based detection only (fragile — user might have a heading with the same name)
+- Heading-based detection only (fragile -- user might have a heading with the same name)
 - Frontmatter flags (doesn't help with body content sections)
 - Append-only without updates (causes duplication)
 
@@ -315,7 +456,7 @@ Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
 
 **Context**: Enrichment suggests frontmatter attributes via AI. Without validation, AI could suggest keys that cause prototype pollution (`__proto__`, `constructor`) or overwrite Obsidian-reserved keys.
 
-**Decision**: Validate frontmatter keys against pattern `^[a-z][a-z0-9_-]{0,49}$` and block a forbidden keys list (`__proto__`, `constructor`, `prototype`, etc.). Never overwrite existing frontmatter keys — only add new ones.
+**Decision**: Validate frontmatter keys against pattern `^[a-z][a-z0-9_-]{0,49}$` and block a forbidden keys list (`__proto__`, `constructor`, `prototype`, etc.). Never overwrite existing frontmatter keys -- only add new ones.
 
 **Alternatives considered**:
 - No validation (prototype pollution risk)
@@ -347,11 +488,11 @@ Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
 
 **Rationale**: Vitest is fast, has native TypeScript and ESM support, and integrates well with the esbuild-based build pipeline. The centralized Obsidian mock means every test file automatically gets stubs for all Obsidian APIs without per-file setup. Real `TFile`/`TFolder` class implementations (instead of plain objects) ensure `instanceof` checks in production code work correctly in tests.
 
-**Impact**: Tests can be run with `npm test`. Test suites cover URL detection, weight calculation, validation, frontmatter parsing, enrichment store, tidy store, and notifications. The TDD skill (`/tdd`) guides the Red-Green-Refactor workflow for new features.
+**Impact**: Tests can be run with `npm test`. The TDD skill (`/tdd`) guides the Red-Green-Refactor workflow for new features.
 
 ---
 
-## 2026-03-12: Security hardening — defense-in-depth approach
+## 2026-03-12: Security hardening -- defense-in-depth approach
 
 **Context**: A security audit reviewed the plugin for input validation gaps, output sanitization, credential handling, and subprocess security.
 
@@ -378,7 +519,7 @@ Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
 
 ## 2026-03-12: VideoModule delegates transcription to AudioModule
 
-**Context**: Video transcription requires downloading a video, extracting audio, and then transcribing it — the same pipeline AudioModule already provides.
+**Context**: Video transcription requires downloading a video, extracting audio, and then transcribing it -- the same pipeline AudioModule already provides.
 
 **Decision**: VideoModule accepts AudioModule as a constructor argument and calls `AudioModule.transcribe()` for the transcription step.
 
@@ -386,7 +527,7 @@ Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
 - Duplicate transcription logic in VideoModule
 - Create a shared transcription service extracted from both modules
 
-**Rationale**: Keeps transcription logic in one place. The dependency is one-directional (Video → Audio). Audio must be initialized before Video in `main.ts`.
+**Rationale**: Keeps transcription logic in one place. The dependency is one-directional (Video -> Audio). Audio must be initialized before Video in `main.ts`.
 
 **Impact**: Audio and Video modules are not fully independent. Audio must always be loaded if Video is enabled.
 
@@ -396,22 +537,29 @@ Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
 
 **Context**: AI-generated elaborations and enrichments should never modify a user's notes without explicit consent. Proposals need to survive plugin reloads and Obsidian restarts.
 
-**Decision**: Store proposals as JSON files in `.auto-notes/proposals/` (elaboration) and `.auto-notes/enrichments/` (enrichment). Each proposal is a separate file with metadata and proposed content. Tidy snapshots are stored in `.auto-notes/tidy-snapshots/`.
+**Decision**: Store proposals as JSON files in `.auto-notes/` with subdirectories per module:
+- `.auto-notes/proposals/` -- elaboration proposals
+- `.auto-notes/enrichments/` -- enrichment proposals
+- `.auto-notes/tidy-snapshots/` -- tidy undo snapshots
+- `.auto-notes/organize/proposals/` and `.auto-notes/organize/snapshots/` -- organize data
+- `.auto-notes/deep-dive/` -- deep-dive proposals and `runs/` subdirectory
+
+Each proposal is a separate file with metadata and proposed content.
 
 **Alternatives considered**:
 - In-memory only (lost on reload)
 - Single database file (merge conflicts, corruption risk)
 - Frontmatter annotations on original notes (modifies user files)
 
-**Rationale**: JSON files are human-inspectable, diffable, and survive reloads. Individual files avoid corruption cascading across proposals. The `.auto-notes/` folder is excluded from elaboration/enrichment scanning by default.
+**Rationale**: JSON files are human-inspectable, diffable, and survive reloads. Individual files avoid corruption cascading across proposals. The `.auto-notes/` folder is excluded from all module scans by default.
 
-**Impact**: Vault contains a `.auto-notes/` folder with three subdirectories. Users can inspect, back up, or delete proposal/snapshot files manually.
+**Impact**: Vault contains a `.auto-notes/` folder with module-specific subdirectories. Users can inspect, back up, or delete proposal/snapshot files manually.
 
 ---
 
 ## 2026-03-12: Modular architecture with FeatureModule contract
 
-**Context**: The plugin has five distinct features that share infrastructure but are otherwise independent.
+**Context**: The plugin has multiple distinct features that share infrastructure but are otherwise independent.
 
 **Decision**: Each feature is a self-contained module following a common contract: `constructor(plugin, getSettings, notifications)`, `onload()`, `onunload()`. Modules are conditionally loaded based on settings. A shared utilities layer (`src/shared/`) provides cross-cutting concerns.
 
@@ -422,7 +570,7 @@ Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
 
 **Rationale**: The module pattern balances isolation with simplicity. Features can be independently enabled/disabled. The `getSettings()` closure ensures modules always read fresh settings without event wiring.
 
-**Impact**: Adding a new feature means creating a new module directory and wiring it in `main.ts`. Five modules currently follow this pattern: elaboration, audio, video, enrichment, tidy.
+**Impact**: Adding a new feature means creating a new module directory and wiring it in `main.ts`. Eight modules currently follow this pattern: elaboration, audio, video, enrichment, summarize, tidy, organize, deep-dive.
 
 ---
 
@@ -460,7 +608,7 @@ Callbacks are only wired when enrichment is enabled and `autoEnrich` is true.
 
 ## 2026-03-12: `isDesktopOnly: true` in manifest
 
-**Context**: The plugin uses `child_process` for yt-dlp/ffmpeg execution — Node.js APIs unavailable on mobile.
+**Context**: The plugin uses `child_process` for yt-dlp/ffmpeg execution -- Node.js APIs unavailable on mobile.
 
 **Decision**: Mark the plugin as desktop-only in `manifest.json`.
 
