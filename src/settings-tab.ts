@@ -530,6 +530,92 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
+		// ── Summarize ──
+		containerEl.createEl('h2', { text: 'Summarize' });
+
+		new Setting(containerEl)
+			.setName('Enable summarize')
+			.setDesc('Summarize URLs and transcriptions in notes')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.summarize.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.summarize.enabled = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Summary style')
+			.setDesc('Format for generated summaries')
+			.addDropdown((dd) =>
+				dd
+					.addOptions({
+						bullets: 'Bullet Points',
+						paragraph: 'Paragraph',
+						'key-points': 'Key Points',
+					})
+					.setValue(this.plugin.settings.summarize.summaryStyle)
+					.onChange(async (value) => {
+						this.plugin.settings.summarize.summaryStyle =
+							value as 'bullets' | 'paragraph' | 'key-points';
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Max content length')
+			.setDesc('Maximum characters of content to send to AI for summarization')
+			.addSlider((slider) =>
+				slider
+					.setLimits(1000, 10000, 500)
+					.setValue(this.plugin.settings.summarize.maxContentLength)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.summarize.maxContentLength = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Custom prompt')
+			.setDesc('Override the default summarization prompt (leave empty for default)')
+			.addTextArea((text) =>
+				text
+					.setPlaceholder('Custom summarization instructions...')
+					.setValue(this.plugin.settings.summarize.customPrompt)
+					.onChange(async (value) => {
+						this.plugin.settings.summarize.customPrompt = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Excluded folders')
+			.setDesc('Comma-separated list of folders to skip for summarization')
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.summarize.excludeFolders.join(', '))
+					.onChange(async (value) => {
+						this.plugin.settings.summarize.excludeFolders =
+							value.split(',').map((s) => s.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Excluded tags')
+			.setDesc('Notes with these tags will skip summarization')
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.summarize.excludeTags.join(', '))
+					.onChange(async (value) => {
+						this.plugin.settings.summarize.excludeTags =
+							value.split(',').map((s) => s.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					})
+			);
+
 		// ── Note Tidy ──
 		containerEl.createEl('h2', { text: 'Note Tidy' });
 
