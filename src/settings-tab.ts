@@ -671,5 +671,125 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		// ── Deep Dive ──
+		containerEl.createEl('h2', { text: 'Deep Dive' });
+
+		new Setting(containerEl)
+			.setName('Enable deep dive')
+			.setDesc('Recursively explore a note into a tree of interlinked child notes')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.deepDive.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.enabled = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Max depth')
+			.setDesc('Maximum levels of recursion (1-5)')
+			.addSlider((slider) =>
+				slider
+					.setLimits(1, 5, 1)
+					.setValue(this.plugin.settings.deepDive.maxDepth)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.maxDepth = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Quality threshold')
+			.setDesc('Minimum quality score to continue recursing (0.1-0.9)')
+			.addSlider((slider) =>
+				slider
+					.setLimits(0.1, 0.9, 0.05)
+					.setValue(this.plugin.settings.deepDive.qualityThreshold)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.qualityThreshold = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Max notes per run')
+			.setDesc('Maximum number of notes to generate in a single deep dive (10-100)')
+			.addSlider((slider) =>
+				slider
+					.setLimits(10, 100, 5)
+					.setValue(this.plugin.settings.deepDive.maxNotesPerRun)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.maxNotesPerRun = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Note output folder')
+			.setDesc('Where to create new notes (empty = same folder as source)')
+			.addText((text) =>
+				text
+					.setPlaceholder('Leave empty for source folder')
+					.setValue(this.plugin.settings.deepDive.noteOutputFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.noteOutputFolder = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Auto-enrich on accept')
+			.setDesc('Automatically trigger enrichment when a deep dive note is accepted')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.deepDive.autoEnrichOnAccept)
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.autoEnrichOnAccept = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Auto-organize on accept')
+			.setDesc('Automatically trigger organize when a deep dive note is accepted')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.deepDive.autoOrganizeOnAccept)
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.autoOrganizeOnAccept = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Excluded folders')
+			.setDesc('Comma-separated list of folders to skip for deep dive')
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.deepDive.excludeFolders.join(', '))
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.excludeFolders =
+							value.split(',').map((s) => s.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Excluded tags')
+			.setDesc('Notes with these tags will skip deep dive')
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.deepDive.excludeTags.join(', '))
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.excludeTags =
+							value.split(',').map((s) => s.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 }

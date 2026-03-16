@@ -2,14 +2,16 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type { Proposal } from '../elaboration';
 import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
+import type { DeepDiveProposal } from '../deep-dive';
 
 export const UNIFIED_VIEW_TYPE = 'auto-notes-proposals';
 
-/** Wrapper to unify elaboration, enrichment, and organize proposals in one list. */
+/** Wrapper to unify elaboration, enrichment, organize, and deep-dive proposals in one list. */
 export type UnifiedItem =
 	| { kind: 'elaboration'; data: Proposal }
 	| { kind: 'enrichment'; data: EnrichmentProposal }
-	| { kind: 'organize'; data: OrganizeProposal };
+	| { kind: 'organize'; data: OrganizeProposal }
+	| { kind: 'deep-dive'; data: DeepDiveProposal };
 
 export interface UnifiedViewCallbacks {
 	// Elaboration
@@ -21,6 +23,9 @@ export interface UnifiedViewCallbacks {
 	// Organize
 	onOrganizeAccept: (id: string) => Promise<void>;
 	onOrganizeReject: (id: string) => Promise<void>;
+	// Deep Dive
+	onDeepDiveAccept: (id: string) => Promise<void>;
+	onDeepDiveReject: (id: string) => Promise<void>;
 }
 
 /**
@@ -37,6 +42,7 @@ export class UnifiedProposalView extends ItemView {
 	private reviewingElaboration: Proposal | null = null;
 	private reviewingEnrichment: EnrichmentProposal | null = null;
 	private reviewingOrganize: OrganizeProposal | null = null;
+	private reviewingDeepDive: DeepDiveProposal | null = null;
 
 	// Enrichment review selection state
 	private selectedTags = new Set<string>();
@@ -91,6 +97,12 @@ export class UnifiedProposalView extends ItemView {
 			);
 			if (!exists) this.reviewingOrganize = null;
 		}
+		if (this.reviewingDeepDive) {
+			const exists = items.some(
+				i => i.kind === 'deep-dive' && i.data.id === this.reviewingDeepDive!.id
+			);
+			if (!exists) this.reviewingDeepDive = null;
+		}
 		this.render();
 	}
 
@@ -101,6 +113,8 @@ export class UnifiedProposalView extends ItemView {
 			this.renderEnrichmentReview(this.reviewingEnrichment);
 		} else if (this.reviewingOrganize) {
 			this.renderOrganizeReview(this.reviewingOrganize);
+		} else if (this.reviewingDeepDive) {
+			this.renderDeepDiveReview(this.reviewingDeepDive);
 		} else {
 			this.renderList();
 		}
@@ -119,6 +133,7 @@ export class UnifiedProposalView extends ItemView {
 		this.reviewingElaboration = null;
 		this.reviewingEnrichment = null;
 		this.reviewingOrganize = null;
+		this.reviewingDeepDive = null;
 		this.render();
 	}
 
@@ -161,8 +176,10 @@ export class UnifiedProposalView extends ItemView {
 					this.renderElaborationCard(section, item.data);
 				} else if (item.kind === 'enrichment') {
 					this.renderEnrichmentCard(section, item.data);
-				} else {
+				} else if (item.kind === 'organize') {
 					this.renderOrganizeCard(section, item.data);
+				} else {
+					this.renderDeepDiveCard(section, item.data);
 				}
 			}
 		}
@@ -514,6 +531,131 @@ export class UnifiedProposalView extends ItemView {
 		});
 	}
 
+	// ── Deep Dive Card ────────────────────────────────────────
+
+	private renderDeepDiveCard(container: HTMLElement, proposal: DeepDiveProposal): void {
+		const card = container.createDiv({ cls: 'auto-notes-proposal-card auto-notes-card--deep-dive' });
+
+		const badgeRow = card.createDiv({ cls: 'auto-notes-badge-row' });
+		badgeRow.createEl('span', { text: 'Deep Dive', cls: 'auto-notes-badge auto-notes-badge--deep-dive' });
+		badgeRow.createEl('span', {
+			text: `D${proposal.depth}`,
+			cls: 'auto-notes-depth-badge',
+		});
+		badgeRow.createEl('span', {
+			text: `Q: ${proposal.qualityScore.score.toFixed(2)}`,
+			cls: 'auto-notes-quality-badge',
+		});
+
+		card.createEl('strong', { text: proposal.topic.title });
+
+		card.createEl('small', {
+			text: proposal.topic.description,
+			cls: 'auto-notes-reasons',
+		});
+
+		const preview = proposal.proposedContent.slice(0, 200);
+		card.createEl('p', {
+			text: preview + (proposal.proposedContent.length > 200 ? '...' : ''),
+			cls: 'auto-notes-preview',
+		});
+
+		const actions = card.createDiv({ cls: 'auto-notes-actions' });
+
+		const viewBtn = actions.createEl('button', { text: 'Review' });
+		viewBtn.addEventListener('click', () => {
+			this.reviewingDeepDive = proposal;
+			this.render();
+		});
+
+		const acceptBtn = actions.createEl('button', { text: 'Accept' });
+		acceptBtn.addEventListener('click', () =>
+			this.callbacks.onDeepDiveAccept(proposal.id)
+		);
+
+		const rejectBtn = actions.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () =>
+			this.callbacks.onDeepDiveReject(proposal.id)
+		);
+	}
+
+	// ── Deep Dive Review ──────────────────────────────────────
+
+	private renderDeepDiveReview(proposal: DeepDiveProposal): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('auto-notes-view-root');
+
+		const header = contentEl.createDiv({ cls: 'auto-notes-review-header' });
+		const backBtn = header.createEl('button', { text: 'Back', cls: 'auto-notes-review-back' });
+		backBtn.addEventListener('click', () => this.exitReview());
+
+		header.createEl('span', {
+			text: proposal.topic.title,
+			cls: 'auto-notes-review-title',
+		});
+
+		// Metadata row
+		const meta = contentEl.createDiv({ cls: 'auto-notes-deep-dive-meta' });
+		meta.createEl('span', { text: `Depth: ${proposal.depth}`, cls: 'auto-notes-depth-badge' });
+		meta.createEl('span', {
+			text: `Quality: ${proposal.qualityScore.score.toFixed(2)}`,
+			cls: 'auto-notes-quality-badge',
+		});
+
+		contentEl.createEl('small', {
+			text: `From: ${proposal.sourceNotePath}`,
+			cls: 'auto-notes-review-reasons',
+		});
+
+		contentEl.createEl('small', {
+			text: proposal.qualityScore.reasoning,
+			cls: 'auto-notes-review-reasons',
+		});
+
+		// Proposed path
+		const pathPane = contentEl.createDiv({ cls: 'auto-notes-organize-detail' });
+		pathPane.createEl('div', {
+			text: 'Proposed Path',
+			cls: 'auto-notes-review-pane-label auto-notes-review-pane-label--deep-dive',
+		});
+		pathPane.createEl('p', {
+			text: proposal.proposedPath,
+			cls: 'auto-notes-organize-directory',
+		});
+
+		// Content preview
+		const editorPane = contentEl.createDiv({ cls: 'auto-notes-review-pane' });
+		editorPane.createEl('div', {
+			text: 'Proposed Content',
+			cls: 'auto-notes-review-pane-label auto-notes-review-pane-label--deep-dive',
+		});
+		const textarea = editorPane.createEl('textarea', { cls: 'auto-notes-review-editor auto-notes-review-editor--deep-dive' });
+		textarea.value = proposal.proposedContent;
+		textarea.readOnly = true;
+
+		// Child count
+		if (proposal.childProposalIds.length > 0) {
+			contentEl.createEl('small', {
+				text: `${proposal.childProposalIds.length} child proposal${proposal.childProposalIds.length === 1 ? '' : 's'} — rejecting will cascade`,
+				cls: 'auto-notes-review-reasons',
+			});
+		}
+
+		// Action bar
+		const actionBar = contentEl.createDiv({ cls: 'auto-notes-review-actions' });
+		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
+		acceptBtn.addEventListener('click', () => {
+			this.reviewingDeepDive = null;
+			this.callbacks.onDeepDiveAccept(proposal.id);
+		});
+		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () => {
+			this.reviewingDeepDive = null;
+			this.callbacks.onDeepDiveReject(proposal.id);
+		});
+	}
+
 	// ── Checklist Helper ──────────────────────────────────────
 
 	private renderChecklistSection<T>(
@@ -814,6 +956,48 @@ export class UnifiedProposalView extends ItemView {
 			.auto-notes-checklist-row span {
 				color: var(--text-normal);
 				word-break: break-word;
+			}
+
+			/* ── Deep Dive ── */
+			.auto-notes-card--deep-dive {
+				border-left-color: var(--color-purple);
+			}
+			.auto-notes-badge--deep-dive {
+				background: var(--color-purple);
+				color: var(--text-on-accent);
+			}
+			.auto-notes-badge-row {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				margin-bottom: 4px;
+			}
+			.auto-notes-depth-badge {
+				font-size: 10px;
+				font-weight: 600;
+				padding: 1px 6px;
+				border-radius: 3px;
+				background: var(--background-modifier-border);
+				color: var(--text-muted);
+			}
+			.auto-notes-quality-badge {
+				font-size: 10px;
+				padding: 1px 6px;
+				border-radius: 3px;
+				background: var(--background-modifier-border);
+				color: var(--text-muted);
+			}
+			.auto-notes-deep-dive-meta {
+				display: flex;
+				gap: 8px;
+				margin-bottom: 6px;
+			}
+			.auto-notes-review-pane-label--deep-dive {
+				background: var(--color-purple);
+				color: var(--text-on-accent);
+			}
+			.auto-notes-review-editor--deep-dive {
+				border-color: var(--color-purple);
 			}
 
 			/* ── Organize Review ── */
