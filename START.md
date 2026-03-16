@@ -72,3 +72,6 @@ Secondly, we've been neglecting proper git patterns up until now. Now that the c
 - Do *not* attribute https://anthropic.com/claude-code to contributions.
 - You should perform git actions as the GitHub user bot@wafflenet.io. I have the appropriate keys if you need them.
 - Once ready work should be pushed to branch and pr should be made without a human in the loop.
+
+### Next
+There's a big gap in our feature set. Both Transcriptions and even *generic URL's* should have the ability to summarize. This would come in the form of "note taking" on the reference. It should be its own command for now, with the same 2 workflows that other commands have available: scan vault, and current note. Please *plan* this out with the team and return to me with your consensus.

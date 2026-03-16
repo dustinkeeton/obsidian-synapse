@@ -128,6 +128,15 @@ export interface EnrichmentSettings {
 	referencesHeading: string;
 }
 
+export interface SummarizeSettings {
+	enabled: boolean;
+	maxContentLength: number;
+	summaryStyle: 'bullets' | 'paragraph' | 'key-points';
+	customPrompt: string;
+	excludeFolders: string[];
+	excludeTags: string[];
+}
+
 export interface TidySettings {
 	enabled: boolean;
 	snapshotFolderPath: string;
@@ -139,6 +148,7 @@ export interface AutoNotesSettings {
 	audio: AudioSettings;
 	video: VideoSettings;
 	enrichment: EnrichmentSettings;
+	summarize: SummarizeSettings;
 	tidy: TidySettings;
 }
 
@@ -231,6 +241,14 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		excludeTags: ['no-enrich'],
 		relatedNotesHeading: 'Related Notes',
 		referencesHeading: 'References',
+	},
+	summarize: {
+		enabled: true,
+		maxContentLength: 4000,
+		summaryStyle: 'bullets',
+		customPrompt: '',
+		excludeFolders: ['templates', '.auto-notes'],
+		excludeTags: ['no-summarize'],
 	},
 	tidy: {
 		enabled: true,
