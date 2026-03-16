@@ -167,32 +167,33 @@ export class SummarizeModule {
 				if (target.inEnrichmentSection && target.linkTitle) {
 					// ── Enrichment target: create standalone note ──
 					const title = target.linkTitle;
-					op.update(`Fetching ${title}`);
-
-					const pageContent = await fetchPageContent(
-						target.source,
-						settings.maxContentLength
-					);
-
-					if (!pageContent.trim()) {
-						this.notifications.notifyError(
-							`No content extracted from ${target.source}`,
-							new Error('Empty content')
-						);
-						continue;
-					}
-
-					op.update(`Summarizing ${title}`);
-					const summary = await this.summarizer.summarize(
-						pageContent,
-						target.source,
-						settings.summaryStyle,
-						COMPREHENSIVE_SUMMARY_PROMPT
-					);
-
-					// Prepare the note for deferred creation (after source is saved)
 					const notePath = this.buildNotePath(title, sourceFolder);
+
+					// If the note already exists, just replace the link — skip fetch/summarize
 					if (!this.plugin.app.vault.getAbstractFileByPath(notePath)) {
+						op.update(`Fetching ${title}`);
+
+						const pageContent = await fetchPageContent(
+							target.source,
+							settings.maxContentLength
+						);
+
+						if (!pageContent.trim()) {
+							this.notifications.notifyError(
+								`No content extracted from ${target.source}`,
+								new Error('Empty content')
+							);
+							continue;
+						}
+
+						op.update(`Summarizing ${title}`);
+						const summary = await this.summarizer.summarize(
+							pageContent,
+							target.source,
+							settings.summaryStyle,
+							COMPREHENSIVE_SUMMARY_PROMPT
+						);
+
 						pendingNotes.push({
 							path: notePath,
 							content: [
@@ -202,8 +203,8 @@ export class SummarizeModule {
 								'',
 							].join('\n'),
 						});
+						newNotePaths.push(notePath);
 					}
-					newNotePaths.push(notePath);
 
 					// Replace external link with internal link in source note
 					lines[target.line] = lines[target.line].replace(
