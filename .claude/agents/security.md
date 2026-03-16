@@ -4,6 +4,7 @@ description: Security auditor. Reviews code for secrets, command injection, inpu
 skills:
   - security-audit
   - git-workflow
+  - issue
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
