@@ -1,13 +1,15 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type { Proposal } from '../elaboration';
 import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
+import type { OrganizeProposal } from '../organize';
 
 export const UNIFIED_VIEW_TYPE = 'auto-notes-proposals';
 
-/** Wrapper to unify elaboration and enrichment proposals in one list. */
+/** Wrapper to unify elaboration, enrichment, and organize proposals in one list. */
 export type UnifiedItem =
 	| { kind: 'elaboration'; data: Proposal }
-	| { kind: 'enrichment'; data: EnrichmentProposal };
+	| { kind: 'enrichment'; data: EnrichmentProposal }
+	| { kind: 'organize'; data: OrganizeProposal };
 
 export interface UnifiedViewCallbacks {
 	// Elaboration
@@ -16,6 +18,9 @@ export interface UnifiedViewCallbacks {
 	// Enrichment
 	onEnrichmentAcceptSelected: (id: string, accepted: AcceptedItems) => Promise<void>;
 	onEnrichmentReject: (id: string) => Promise<void>;
+	// Organize
+	onOrganizeAccept: (id: string) => Promise<void>;
+	onOrganizeReject: (id: string) => Promise<void>;
 }
 
 /**
@@ -31,6 +36,7 @@ export class UnifiedProposalView extends ItemView {
 
 	private reviewingElaboration: Proposal | null = null;
 	private reviewingEnrichment: EnrichmentProposal | null = null;
+	private reviewingOrganize: OrganizeProposal | null = null;
 
 	// Enrichment review selection state
 	private selectedTags = new Set<string>();
@@ -79,6 +85,12 @@ export class UnifiedProposalView extends ItemView {
 			);
 			if (!exists) this.reviewingEnrichment = null;
 		}
+		if (this.reviewingOrganize) {
+			const exists = items.some(
+				i => i.kind === 'organize' && i.data.id === this.reviewingOrganize!.id
+			);
+			if (!exists) this.reviewingOrganize = null;
+		}
 		this.render();
 	}
 
@@ -87,6 +99,8 @@ export class UnifiedProposalView extends ItemView {
 			this.renderElaborationReview(this.reviewingElaboration);
 		} else if (this.reviewingEnrichment) {
 			this.renderEnrichmentReview(this.reviewingEnrichment);
+		} else if (this.reviewingOrganize) {
+			this.renderOrganizeReview(this.reviewingOrganize);
 		} else {
 			this.renderList();
 		}
@@ -104,6 +118,7 @@ export class UnifiedProposalView extends ItemView {
 	private exitReview(): void {
 		this.reviewingElaboration = null;
 		this.reviewingEnrichment = null;
+		this.reviewingOrganize = null;
 		this.render();
 	}
 
@@ -144,8 +159,10 @@ export class UnifiedProposalView extends ItemView {
 			for (const item of noteItems) {
 				if (item.kind === 'elaboration') {
 					this.renderElaborationCard(section, item.data);
-				} else {
+				} else if (item.kind === 'enrichment') {
 					this.renderEnrichmentCard(section, item.data);
+				} else {
+					this.renderOrganizeCard(section, item.data);
 				}
 			}
 		}
@@ -240,6 +257,41 @@ export class UnifiedProposalView extends ItemView {
 		const rejectBtn = actions.createEl('button', { text: 'Reject' });
 		rejectBtn.addEventListener('click', () =>
 			this.callbacks.onEnrichmentReject(proposal.id)
+		);
+	}
+
+	private renderOrganizeCard(container: HTMLElement, proposal: OrganizeProposal): void {
+		const card = container.createDiv({ cls: 'auto-notes-proposal-card auto-notes-card--organize' });
+
+		card.createEl('span', { text: 'Organize', cls: 'auto-notes-badge auto-notes-badge--organize' });
+
+		card.createEl('small', {
+			text: `Move to ${proposal.proposedDirectory}`,
+			cls: 'auto-notes-reasons',
+		});
+
+		const preview = proposal.reasoning.slice(0, 200);
+		card.createEl('p', {
+			text: preview + (proposal.reasoning.length > 200 ? '...' : ''),
+			cls: 'auto-notes-preview',
+		});
+
+		const actions = card.createDiv({ cls: 'auto-notes-actions' });
+
+		const viewBtn = actions.createEl('button', { text: 'Review' });
+		viewBtn.addEventListener('click', () => {
+			this.reviewingOrganize = proposal;
+			this.render();
+		});
+
+		const acceptBtn = actions.createEl('button', { text: 'Accept' });
+		acceptBtn.addEventListener('click', () =>
+			this.callbacks.onOrganizeAccept(proposal.id)
+		);
+
+		const rejectBtn = actions.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () =>
+			this.callbacks.onOrganizeReject(proposal.id)
 		);
 	}
 
@@ -404,6 +456,66 @@ export class UnifiedProposalView extends ItemView {
 		});
 	}
 
+	// ── Organize Review ───────────────────────────────────────
+
+	private renderOrganizeReview(proposal: OrganizeProposal): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('auto-notes-view-root');
+
+		const header = contentEl.createDiv({ cls: 'auto-notes-review-header' });
+		const backBtn = header.createEl('button', { text: 'Back', cls: 'auto-notes-review-back' });
+		backBtn.addEventListener('click', () => this.exitReview());
+
+		const titleLink = header.createEl('span', {
+			text: proposal.sourceNotePath,
+			cls: 'auto-notes-review-title auto-notes-note-link',
+		});
+		titleLink.addEventListener('click', () => this.openNote(proposal.sourceNotePath));
+
+		contentEl.createEl('small', {
+			text: `Proposed ${proposal.createdAt.split('T')[0]}`,
+			cls: 'auto-notes-review-reasons',
+		});
+
+		// Proposed directory
+		const dirPane = contentEl.createDiv({ cls: 'auto-notes-organize-detail' });
+		dirPane.createEl('div', {
+			text: 'Proposed Directory',
+			cls: 'auto-notes-review-pane-label auto-notes-review-pane-label--organize',
+		});
+		dirPane.createEl('p', {
+			text: proposal.proposedDirectory,
+			cls: 'auto-notes-organize-directory',
+		});
+
+		// Reasoning
+		const reasonPane = contentEl.createDiv({ cls: 'auto-notes-organize-detail' });
+		reasonPane.createEl('div', {
+			text: 'Reasoning',
+			cls: 'auto-notes-review-pane-label auto-notes-review-pane-label--organize',
+		});
+		reasonPane.createEl('p', {
+			text: proposal.reasoning,
+			cls: 'auto-notes-organize-reasoning',
+		});
+
+		// Action bar
+		const actionBar = contentEl.createDiv({ cls: 'auto-notes-review-actions' });
+		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
+		acceptBtn.addEventListener('click', () => {
+			this.reviewingOrganize = null;
+			this.callbacks.onOrganizeAccept(proposal.id);
+		});
+		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () => {
+			this.reviewingOrganize = null;
+			this.callbacks.onOrganizeReject(proposal.id);
+		});
+	}
+
+	// ── Checklist Helper ──────────────────────────────────────
+
 	private renderChecklistSection<T>(
 		container: HTMLElement,
 		title: string,
@@ -488,6 +600,9 @@ export class UnifiedProposalView extends ItemView {
 			.auto-notes-card--enrichment {
 				border-left-color: var(--color-green);
 			}
+			.auto-notes-card--organize {
+				border-left-color: var(--color-orange);
+			}
 			.auto-notes-badge {
 				display: inline-block;
 				font-size: 10px;
@@ -505,6 +620,10 @@ export class UnifiedProposalView extends ItemView {
 			}
 			.auto-notes-badge--enrichment {
 				background: var(--color-green);
+				color: var(--text-on-accent);
+			}
+			.auto-notes-badge--organize {
+				background: var(--color-orange);
 				color: var(--text-on-accent);
 			}
 			.auto-notes-reasons {
@@ -695,6 +814,38 @@ export class UnifiedProposalView extends ItemView {
 			.auto-notes-checklist-row span {
 				color: var(--text-normal);
 				word-break: break-word;
+			}
+
+			/* ── Organize Review ── */
+			.auto-notes-review-pane-label--organize {
+				background: var(--color-orange);
+				color: var(--text-on-accent);
+			}
+			.auto-notes-organize-detail {
+				margin-bottom: 12px;
+			}
+			.auto-notes-organize-directory {
+				font-size: 14px;
+				font-weight: 600;
+				font-family: var(--font-monospace);
+				color: var(--text-normal);
+				padding: 8px;
+				background: var(--background-primary);
+				border: 1px solid var(--color-orange);
+				border-top: none;
+				border-radius: 0 0 4px 4px;
+				margin: 0;
+			}
+			.auto-notes-organize-reasoning {
+				font-size: 13px;
+				line-height: 1.5;
+				color: var(--text-normal);
+				padding: 8px;
+				background: var(--background-primary);
+				border: 1px solid var(--color-orange);
+				border-top: none;
+				border-radius: 0 0 4px 4px;
+				margin: 0;
 			}
 		`;
 		document.head.appendChild(style);

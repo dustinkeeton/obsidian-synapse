@@ -53,6 +53,8 @@ export default class AutoNotesPlugin extends Plugin {
 				onElaborationReject: (id) => this.elaboration.rejectProposal(id),
 				onEnrichmentAcceptSelected: (id, accepted) => this.enrichment.acceptSelectedFromView(id, accepted),
 				onEnrichmentReject: (id) => this.enrichment.rejectFromView(id),
+				onOrganizeAccept: (id) => this.organize.acceptProposal(id),
+				onOrganizeReject: (id) => this.organize.rejectProposal(id),
 			});
 		});
 
@@ -60,6 +62,7 @@ export default class AutoNotesPlugin extends Plugin {
 		const refreshView = () => this.refreshUnifiedView();
 		this.elaboration.onViewRefreshNeeded = refreshView;
 		this.enrichment.onViewRefreshNeeded = refreshView;
+		this.organize.onViewRefreshNeeded = refreshView;
 
 		// Load enabled modules
 		if (this.settings.elaboration.enabled) {
@@ -165,6 +168,11 @@ export default class AutoNotesPlugin extends Plugin {
 		const enrichmentProposals = await this.enrichment.getPendingProposals();
 		for (const p of enrichmentProposals) {
 			items.push({ kind: 'enrichment', data: p });
+		}
+
+		const organizeProposals = await this.organize.getPendingProposals();
+		for (const p of organizeProposals) {
+			items.push({ kind: 'organize', data: p });
 		}
 
 		for (const leaf of leaves) {
