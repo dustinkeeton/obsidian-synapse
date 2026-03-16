@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { NotificationManager, parseFrontmatter } from '../shared';
+import { FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentStore } from './enrichment-store';
 import { LinkResolver } from './link-resolver';
@@ -71,7 +71,14 @@ export class EnrichmentModule {
 		this.plugin.addCommand({
 			id: 'auto-notes:scan-vault-enrichment',
 			name: 'Scan vault for enrichment',
-			callback: () => this.scanVault(),
+			callback: () => {
+				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
+				new FolderPickerModal(
+					this.plugin.app,
+					(folder) => this.scanVault(folder.isRoot() ? undefined : folder.path),
+					defaultPath
+				).open();
+			},
 		});
 
 		this.plugin.addCommand({
@@ -102,19 +109,20 @@ export class EnrichmentModule {
 	 * 4. Resolve cross-note new-note candidates — only topics referenced
 	 *    by 2+ notes become new-note link suggestions
 	 */
-	async scanVault(): Promise<number> {
+	async scanVault(folderPath?: string): Promise<number> {
 		// ── Phase 1: Collect eligible files & warm caches ──
+		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
-			'Scanning vault for enrichment',
+			`${scopeLabel} for enrichment`,
 			'enrichment-vault-scan'
 		);
 
-		const allFiles = this.plugin.app.vault.getMarkdownFiles();
+		const allFiles = getMarkdownFiles(this.plugin.app, folderPath);
 		const eligible: TFile[] = [];
 
 		try {
 			for (let i = 0; i < allFiles.length; i++) {
-				scanOp.progress(i + 1, allFiles.length, 'Scanning vault');
+				scanOp.progress(i + 1, allFiles.length, scopeLabel);
 				if (!this.isExcluded(allFiles[i])) {
 					eligible.push(allFiles[i]);
 				}
