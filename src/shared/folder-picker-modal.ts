@@ -21,9 +21,22 @@ export class FolderPickerModal extends SuggestModal<TFolder> {
 	getSuggestions(query: string): TFolder[] {
 		const folders = this.collectFolders(this.app.vault.getRoot());
 		const lower = query.toLowerCase();
-		return folders.filter(
+		const filtered = folders.filter(
 			f => f.isRoot() || f.path.toLowerCase().includes(lower)
 		);
+		return filtered.sort((a, b) => {
+			const aPath = a.path.toLowerCase();
+			const bPath = b.path.toLowerCase();
+			const aExact = aPath === lower;
+			const bExact = bPath === lower;
+			// Exact match always comes first
+			if (aExact && !bExact) return -1;
+			if (bExact && !aExact) return 1;
+			// When no exact match is involved, root comes before non-root
+			if (a.isRoot() && !b.isRoot()) return -1;
+			if (b.isRoot() && !a.isRoot()) return 1;
+			return 0;
+		});
 	}
 
 	renderSuggestion(folder: TFolder, el: HTMLElement): void {
