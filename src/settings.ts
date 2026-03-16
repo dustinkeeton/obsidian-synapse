@@ -142,6 +142,14 @@ export interface TidySettings {
 	snapshotFolderPath: string;
 }
 
+export interface OrganizeSettings {
+	enabled: boolean;
+	proposalFolderPath: string;
+	snapshotFolderPath: string;
+	excludeFolders: string[];
+	excludeTags: string[];
+}
+
 export interface AutoNotesSettings {
 	ai: AISettings;
 	elaboration: ElaborationSettings;
@@ -150,6 +158,7 @@ export interface AutoNotesSettings {
 	enrichment: EnrichmentSettings;
 	summarize: SummarizeSettings;
 	tidy: TidySettings;
+	organize: OrganizeSettings;
 }
 
 export const DEFAULT_SETTINGS: AutoNotesSettings = {
@@ -253,5 +262,12 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 	tidy: {
 		enabled: true,
 		snapshotFolderPath: '.auto-notes/tidy-snapshots',
+	},
+	organize: {
+		enabled: true,
+		proposalFolderPath: '.auto-notes/organize/proposals',
+		snapshotFolderPath: '.auto-notes/organize/snapshots',
+		excludeFolders: ['templates', '.auto-notes'],
+		excludeTags: ['no-organize'],
 	},
 };
