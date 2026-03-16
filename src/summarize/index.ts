@@ -24,8 +24,10 @@ interface PendingNote {
 interface ProcessResult {
 	/** Number of inline summary blockquotes inserted */
 	inlineCompleted: number;
-	/** Number of enrichment-ref notes created */
+	/** Number of enrichment-ref notes created (new notes) */
 	enrichmentCompleted: number;
+	/** Number of links updated to internal links (note already existed, no fetch/summarize) */
+	linksUpdated: number;
 	/** Vault paths of newly created summary notes */
 	newNotePaths: string[];
 }
@@ -107,7 +109,7 @@ export class SummarizeModule {
 		const result = await this.processFileTargets(file, targets, op, content);
 
 		if (!op.cancelled) {
-			const totalDone = result.inlineCompleted + result.enrichmentCompleted;
+			const totalDone = result.inlineCompleted + result.enrichmentCompleted + result.linksUpdated;
 			const parts: string[] = [];
 			if (result.inlineCompleted > 0) {
 				parts.push(`${result.inlineCompleted} inline`);
@@ -115,7 +117,10 @@ export class SummarizeModule {
 			if (result.enrichmentCompleted > 0) {
 				parts.push(`${result.enrichmentCompleted} note(s) created`);
 			}
-			op.finish(`Done — ${parts.join(', ') || `${totalDone}/${total} processed`}`);
+			if (result.linksUpdated > 0) {
+				parts.push(`${result.linksUpdated} link(s) updated`);
+			}
+			op.finish(`Done \u2014 ${parts.join(', ') || `${totalDone}/${total} processed`}`);
 		}
 
 		this.fireEnrichmentCallbacks(file.path, result);
@@ -124,7 +129,7 @@ export class SummarizeModule {
 	/**
 	 * Fire enrichment callbacks for processed results.
 	 * Only triggers on the source note when no enrichment sections were
-	 * modified — otherwise the applier would strip and rebuild them.
+	 * modified \u2014 otherwise the applier would strip and rebuild them.
 	 */
 	private fireEnrichmentCallbacks(sourceFilePath: string, result: ProcessResult): void {
 		if (result.inlineCompleted > 0 && result.enrichmentCompleted === 0) {
@@ -160,6 +165,7 @@ export class SummarizeModule {
 		let lines = rawContent.split('\n');
 		let inlineCompleted = 0;
 		let enrichmentCompleted = 0;
+		let linksUpdated = 0;
 		const newNotePaths: string[] = [];
 		const pendingNotes: PendingNote[] = [];
 		let processed = 0;
@@ -172,12 +178,14 @@ export class SummarizeModule {
 				op.progress(processed, total, 'Summarizing');
 
 				if (target.inEnrichmentSection && target.linkTitle) {
-					// ── Enrichment target: create standalone note ──
+					// \u2500\u2500 Enrichment target: create standalone note \u2500\u2500
 					const title = target.linkTitle;
 					const notePath = this.buildNotePath(title, sourceFolder);
 
-					// If the note already exists, just replace the link — skip fetch/summarize
-					if (!this.plugin.app.vault.getAbstractFileByPath(notePath)) {
+					// If the note already exists, just replace the link \u2014 skip fetch/summarize
+					const noteAlreadyExists = !!this.plugin.app.vault.getAbstractFileByPath(notePath);
+
+					if (!noteAlreadyExists) {
 						op.update(`Fetching ${title}`);
 
 						const pageContent = await fetchPageContent(
@@ -219,9 +227,13 @@ export class SummarizeModule {
 						() => `[[${title}]]`
 					);
 
-					enrichmentCompleted++;
+					if (noteAlreadyExists) {
+						linksUpdated++;
+					} else {
+						enrichmentCompleted++;
+					}
 				} else {
-					// ── Inline target: insert summary blockquote ──
+					// \u2500\u2500 Inline target: insert summary blockquote \u2500\u2500
 					let textToSummarize: string;
 
 					if (target.type === 'transcription' && target.content) {
@@ -270,11 +282,11 @@ export class SummarizeModule {
 			}
 		}
 
-		// Write source note FIRST — before creating new notes.
+		// Write source note FIRST \u2014 before creating new notes.
 		// vault.create() triggers Obsidian metadata resolution which can
 		// cause the editor to flush its pre-modification buffer to disk,
 		// overwriting our changes.
-		if (inlineCompleted > 0 || enrichmentCompleted > 0) {
+		if (inlineCompleted > 0 || enrichmentCompleted > 0 || linksUpdated > 0) {
 			await this.plugin.app.vault.modify(file, lines.join('\n'));
 		}
 
@@ -283,7 +295,7 @@ export class SummarizeModule {
 			await this.plugin.app.vault.create(pending.path, pending.content);
 		}
 
-		return { inlineCompleted, enrichmentCompleted, newNotePaths };
+		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths };
 	}
 
 	/**
@@ -328,7 +340,7 @@ export class SummarizeModule {
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			scanOp.error(`Vault scan failed — ${msg}`);
+			scanOp.error(`Vault scan failed \u2014 ${msg}`);
 			return;
 		}
 
@@ -359,6 +371,7 @@ export class SummarizeModule {
 		);
 		let totalInline = 0;
 		let totalEnrichment = 0;
+		let totalLinksUpdated = 0;
 
 		for (let i = 0; i < filesWithTargets.length; i++) {
 			if (genOp.cancelled) break;
@@ -371,6 +384,7 @@ export class SummarizeModule {
 			const result = await this.processFileTargets(file, targets, genOp, content);
 			totalInline += result.inlineCompleted;
 			totalEnrichment += result.enrichmentCompleted;
+			totalLinksUpdated += result.linksUpdated;
 
 			this.fireEnrichmentCallbacks(file.path, result);
 		}
@@ -379,7 +393,8 @@ export class SummarizeModule {
 			const parts: string[] = [];
 			if (totalInline > 0) parts.push(`${totalInline} inline summaries`);
 			if (totalEnrichment > 0) parts.push(`${totalEnrichment} notes created`);
-			genOp.finish(`Done — ${parts.join(', ')}`);
+			if (totalLinksUpdated > 0) parts.push(`${totalLinksUpdated} links updated`);
+			genOp.finish(`Done \u2014 ${parts.join(', ')}`);
 		}
 	}
 
