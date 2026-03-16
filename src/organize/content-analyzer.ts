@@ -148,7 +148,7 @@ export class ContentAnalyzer {
 					.replace(/\//g, ' ')
 					.toLowerCase()
 					.trim(),
-				confidence: 0.5,
+				confidence: 0.3,
 			}))
 			.filter(t => t.label.length > 0);
 	}

@@ -92,12 +92,12 @@ describe('ContentAnalyzer', () => {
 	});
 
 	describe('topicsFromTags', () => {
-		it('converts tags to topics with 0.5 confidence', () => {
+		it('converts tags to topics with 0.3 confidence', () => {
 			const analyzer = makeAnalyzer();
 			const result = analyzer.topicsFromTags(['#machine-learning', '#research']);
 			expect(result).toHaveLength(2);
 			expect(result[0].label).toBe('machine-learning');
-			expect(result[0].confidence).toBe(0.5);
+			expect(result[0].confidence).toBe(0.3);
 		});
 
 		it('removes hash prefix and converts slashes to spaces', () => {

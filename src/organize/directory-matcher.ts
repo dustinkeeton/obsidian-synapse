@@ -39,10 +39,15 @@ export class DirectoryMatcher {
 	 *
 	 * @param minScoreThreshold - Minimum score for a directory to be considered
 	 *   a valid match (0-1). Below this, a new directory will be proposed.
+	 *   Default 0.6 — requires a strong topical match.
+	 * @param confidenceThreshold - Minimum confidence of the top topic required
+	 *   to propose a new directory (0-1). Default 0.9 — only highly confident
+	 *   topics justify new folder creation.
 	 */
 	determineAction(
 		analysis: ContentAnalysis,
-		minScoreThreshold = 0.3
+		minScoreThreshold = 0.6,
+		confidenceThreshold = 0.9
 	): OrganizeAction {
 		const scores = this.scoreDirectories(analysis);
 		const noteDir = this.getParentPath(analysis.notePath);
@@ -57,9 +62,10 @@ export class DirectoryMatcher {
 			};
 		}
 
-		// Propose a new directory based on the top topic
+		// Propose a new directory based on the top topic, but only when
+		// the AI is highly confident about the note's primary topic.
 		const topTopic = analysis.topics[0];
-		if (topTopic) {
+		if (topTopic && topTopic.confidence >= confidenceThreshold) {
 			const newDir = this.buildDirectoryPath(topTopic.label);
 			return {
 				type: 'propose-new-directory',
@@ -68,7 +74,7 @@ export class DirectoryMatcher {
 			};
 		}
 
-		// No topics extracted; keep in place
+		// No topics or confidence too low; keep in place
 		return {
 			type: 'move',
 			targetDirectory: noteDir,
