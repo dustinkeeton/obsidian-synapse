@@ -142,10 +142,14 @@ describe('DirectoryMatcher', () => {
 	});
 
 	describe('determineAction', () => {
-		it('returns move action when existing directory scores above threshold', () => {
+		it('returns move action when existing directory scores above threshold (0.6)', () => {
 			const app = makeMockApp(['machine learning', 'other']);
 			const matcher = new DirectoryMatcher(app);
-			const analysis = makeAnalysis({ notePath: 'inbox/test.md' });
+			// confidence=1.0 produces exact match score of 0.6 * 1.0 = 0.6 (meets threshold)
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'machine learning', confidence: 1.0 }],
+			});
 
 			const action = matcher.determineAction(analysis);
 			expect(action.type).toBe('move');
@@ -154,10 +158,30 @@ describe('DirectoryMatcher', () => {
 			}
 		});
 
-		it('returns propose-new-directory when no directory scores above threshold', () => {
+		it('does not move when directory score is below threshold (0.6)', () => {
+			const app = makeMockApp(['machine learning', 'other']);
+			const matcher = new DirectoryMatcher(app);
+			// confidence=0.5 produces exact match score of 0.6 * 0.5 = 0.3 (below 0.6)
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'machine learning', confidence: 0.5 }],
+			});
+
+			const action = matcher.determineAction(analysis);
+			// Score 0.3 < 0.6 threshold, so no move; but confidence 0.5 < 0.9, so no proposal either
+			expect(action.type).toBe('move');
+			if (action.type === 'move') {
+				expect(action.targetDirectory).toBe('inbox');
+			}
+		});
+
+		it('returns propose-new-directory when no directory scores above threshold and confidence >= 0.9', () => {
 			const app = makeMockApp(['cooking', 'travel']);
 			const matcher = new DirectoryMatcher(app);
-			const analysis = makeAnalysis({ notePath: 'inbox/test.md' });
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'machine learning', confidence: 0.95 }],
+			});
 
 			const action = matcher.determineAction(analysis);
 			expect(action.type).toBe('propose-new-directory');
@@ -165,6 +189,51 @@ describe('DirectoryMatcher', () => {
 				expect(action.targetDirectory).toBeTruthy();
 				expect(action.reasoning).toContain('machine learning');
 			}
+		});
+
+		it('does not propose new directory when topic confidence is below threshold', () => {
+			const app = makeMockApp(['cooking', 'travel']);
+			const matcher = new DirectoryMatcher(app);
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'machine learning', confidence: 0.7 }],
+			});
+
+			const action = matcher.determineAction(analysis);
+			// 0.7 confidence < 0.9 threshold, so note stays put
+			expect(action.type).toBe('move');
+			if (action.type === 'move') {
+				expect(action.targetDirectory).toBe('inbox');
+			}
+		});
+
+		it('does not propose new directory when tag-derived topics have low confidence', () => {
+			const app = makeMockApp(['cooking', 'travel']);
+			const matcher = new DirectoryMatcher(app);
+			// Tag-derived topics have 0.3 confidence (after the fix), well below 0.9
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'programming', confidence: 0.3 }],
+			});
+
+			const action = matcher.determineAction(analysis);
+			expect(action.type).toBe('move');
+			if (action.type === 'move') {
+				expect(action.targetDirectory).toBe('inbox');
+			}
+		});
+
+		it('respects custom confidence threshold parameter', () => {
+			const app = makeMockApp(['cooking', 'travel']);
+			const matcher = new DirectoryMatcher(app);
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'machine learning', confidence: 0.6 }],
+			});
+
+			// With a lowered confidence threshold of 0.5, should propose new directory
+			const action = matcher.determineAction(analysis, 0.6, 0.5);
+			expect(action.type).toBe('propose-new-directory');
 		});
 
 		it('filters out the current directory from candidates', () => {
@@ -175,7 +244,7 @@ describe('DirectoryMatcher', () => {
 				topics: [{ label: 'notes', confidence: 0.9 }],
 			});
 
-			const action = matcher.determineAction(analysis, 0.01);
+			const action = matcher.determineAction(analysis, 0.01, 0.01);
 			// Should not suggest moving to the same directory
 			if (action.type === 'move') {
 				expect(action.targetDirectory).not.toBe('notes');
