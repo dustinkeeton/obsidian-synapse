@@ -1,5 +1,51 @@
-import { describe, it, expect } from 'vitest';
-import { extractReadableText } from './content-fetcher';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { extractReadableText, fetchPageContent } from './content-fetcher';
+import { isSupportedUrl } from '../video/url-detector';
+
+/**
+ * Tests for the content fetcher and video URL detection integration.
+ * The fetchContentForUrl logic in SummarizeModule delegates to either
+ * the video transcription pipeline or fetchPageContent based on
+ * isSupportedUrl(). These tests verify that isSupportedUrl correctly
+ * identifies video URLs, and that fetchPageContent + extractReadableText
+ * work as expected for non-video URLs.
+ */
+
+describe('isSupportedUrl integration with summarize', () => {
+	it('identifies YouTube watch URLs as video', () => {
+		expect(isSupportedUrl('https://youtube.com/watch?v=dQw4w9WgXcQ')).toBe(true);
+		expect(isSupportedUrl('https://www.youtube.com/watch?v=abc123')).toBe(true);
+	});
+
+	it('identifies YouTube short URLs as video', () => {
+		expect(isSupportedUrl('https://youtu.be/dQw4w9WgXcQ')).toBe(true);
+	});
+
+	it('identifies YouTube Shorts as video', () => {
+		expect(isSupportedUrl('https://youtube.com/shorts/dQw4w9WgXcQ')).toBe(true);
+	});
+
+	it('identifies TikTok URLs as video', () => {
+		expect(isSupportedUrl('https://www.tiktok.com/@user/video/1234567890')).toBe(true);
+		expect(isSupportedUrl('https://www.tiktok.com/t/ZThw1txpF/')).toBe(true);
+		expect(isSupportedUrl('https://vm.tiktok.com/ZMxxxxxxx/')).toBe(true);
+	});
+
+	it('does not flag regular article URLs as video', () => {
+		expect(isSupportedUrl('https://example.com/article')).toBe(false);
+		expect(isSupportedUrl('https://en.wikipedia.org/wiki/Topic')).toBe(false);
+		expect(isSupportedUrl('https://blog.example.com/post-123')).toBe(false);
+	});
+
+	it('does not flag YouTube channel URLs as video', () => {
+		expect(isSupportedUrl('https://youtube.com/channel/UCxxxx')).toBe(false);
+		expect(isSupportedUrl('https://youtube.com/@username')).toBe(false);
+	});
+
+	it('does not flag empty strings', () => {
+		expect(isSupportedUrl('')).toBe(false);
+	});
+});
 
 describe('extractReadableText', () => {
 	it('strips HTML tags', () => {
