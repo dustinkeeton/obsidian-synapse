@@ -135,6 +135,7 @@ export interface SummarizeSettings {
 	customPrompt: string;
 	excludeFolders: string[];
 	excludeTags: string[];
+	autoOrganizeOnSummarize: boolean;
 }
 
 export interface TidySettings {
@@ -272,6 +273,7 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		customPrompt: '',
 		excludeFolders: ['templates', '.auto-notes'],
 		excludeTags: ['no-summarize'],
+		autoOrganizeOnSummarize: false,
 	},
 	tidy: {
 		enabled: true,

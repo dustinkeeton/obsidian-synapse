@@ -49,6 +49,9 @@ export class SummarizeModule {
 	/** Optional callback invoked after summarization completes. Wired by main.ts for enrichment. */
 	onSummaryComplete: ((filePath: string) => void) | null = null;
 
+	/** Optional callback invoked after single-note summarize to organize the note. Wired by main.ts. */
+	onOrganizeRequested: ((file: TFile) => void) | null = null;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
@@ -137,6 +140,11 @@ export class SummarizeModule {
 		}
 
 		this.fireEnrichmentCallbacks(file.path, result);
+
+		// Trigger single-note organize (never vault-wide scan)
+		if (this.getSettings().summarize.autoOrganizeOnSummarize) {
+			this.onOrganizeRequested?.(file);
+		}
 	}
 
 	/**
