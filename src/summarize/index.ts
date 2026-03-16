@@ -293,7 +293,7 @@ export class SummarizeModule {
 						'',
 					];
 
-					lines.splice(target.endLine + 1, 0, blockLines.join('\n'));
+					lines.splice(target.endLine + 1, 0, ...blockLines);
 
 					inlineCompleted++;
 				}
@@ -424,11 +424,16 @@ export class SummarizeModule {
 		for (let i = 0; i < filesWithTargets.length; i++) {
 			if (genOp.cancelled) break;
 
-			const { file, targets } = filesWithTargets[i];
+			const { file } = filesWithTargets[i];
 			genOp.progress(i + 1, filesWithTargets.length, 'Processing files');
 
-			// Re-read content at processing time (may have changed since scan)
+			// Re-read content AND re-scan targets at processing time so
+			// line numbers match the current file state (content may have
+			// changed since the initial scan, e.g. a previous file's
+			// enrichment callback modifying this file).
 			const content = await this.plugin.app.vault.read(file);
+			const targets = findSummarizeTargets(content);
+			if (targets.length === 0) continue;
 			const result = await this.processFileTargets(file, targets, genOp, content);
 			totalInline += result.inlineCompleted;
 			totalEnrichment += result.enrichmentCompleted;
