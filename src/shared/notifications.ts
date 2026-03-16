@@ -20,9 +20,12 @@ interface TrackedOperation {
 	label: string;
 	message: string;
 	notice: Notice;
-	/** The text span inside the notice — we update this instead of setMessage
-	 *  so the cancel button isn't wiped out */
+	/** Wrapper span — contains labelEl and dotsEl */
 	textEl: HTMLElement;
+	/** Span holding the static message text (e.g. "Auto Notes: Scanning") */
+	labelEl: HTMLElement;
+	/** Fixed-width span that holds the animated dots, preventing layout reflow */
+	dotsEl: HTMLElement;
 	state: 'running' | 'done' | 'error' | 'cancelled';
 	ellipsisInterval: ReturnType<typeof setInterval> | null;
 }
@@ -60,6 +63,11 @@ function injectStyles(): void {
 		}
 		.${CLS}-op-text {
 			flex: 1;
+		}
+		.${CLS}-op-dots {
+			display: inline-block;
+			min-width: 1.5ch;
+			text-align: left;
 		}
 		.${CLS}-op-cancel {
 			flex-shrink: 0;
@@ -147,15 +155,16 @@ function stripTrailingDots(msg: string): string {
 }
 
 /**
- * Start an animated ellipsis on a text element.
+ * Start an animated ellipsis on a dedicated dots element.
+ * The dots element should be a fixed-width inline-block span
+ * so that changing dot count does not cause the parent to reflow.
  * Returns an interval handle for cleanup.
  */
-function startEllipsisOnEl(textEl: HTMLElement, baseMessage: string): ReturnType<typeof setInterval> {
+function startEllipsisOnEl(dotsEl: HTMLElement): ReturnType<typeof setInterval> {
 	let dotCount = 1;
 	return globalThis.setInterval(() => {
 		dotCount = (dotCount % 3) + 1;
-		const dots = '.'.repeat(dotCount);
-		textEl.textContent = `Auto Notes: ${baseMessage}${dots}`;
+		dotsEl.textContent = '.'.repeat(dotCount);
 	}, 400);
 }
 
@@ -208,11 +217,17 @@ export class NotificationManager {
 		const el = getNoticeEl(notice);
 		el.empty();
 
-		// Build: [text message] [Cancel]
+		// Build: [label][dots] [Cancel]
+		// The dots span has a fixed min-width so dot-count changes
+		// do not cause the toast to reflow horizontally.
 		const row = el.createDiv({ cls: `${CLS}-op` });
-		const textEl = row.createEl('span', {
-			cls: `${CLS}-op-text`,
-			text: `Auto Notes: ${baseLabel}.`,
+		const textEl = row.createEl('span', { cls: `${CLS}-op-text` });
+		const labelEl = textEl.createEl('span', {
+			text: `Auto Notes: ${baseLabel}`,
+		});
+		const dotsEl = textEl.createEl('span', {
+			cls: `${CLS}-op-dots`,
+			text: '.',
 		});
 		const cancelBtn = row.createEl('button', {
 			cls: `${CLS}-op-cancel`,
@@ -223,7 +238,7 @@ export class NotificationManager {
 			this.cancelOperation(opId);
 		});
 
-		const ellipsisInterval = startEllipsisOnEl(textEl, baseLabel);
+		const ellipsisInterval = startEllipsisOnEl(dotsEl);
 
 		const op: TrackedOperation = {
 			id: opId,
@@ -231,6 +246,8 @@ export class NotificationManager {
 			message: baseLabel,
 			notice,
 			textEl,
+			labelEl,
+			dotsEl,
 			state: 'running',
 			ellipsisInterval,
 		};
@@ -246,8 +263,10 @@ export class NotificationManager {
 				if (op.state !== 'running') return;
 				const base = stripTrailingDots(message);
 				op.message = base;
+				op.labelEl.textContent = `Auto Notes: ${base}`;
+				op.dotsEl.textContent = '.';
 				stopEllipsis(op.ellipsisInterval);
-				op.ellipsisInterval = startEllipsisOnEl(op.textEl, base);
+				op.ellipsisInterval = startEllipsisOnEl(op.dotsEl);
 				this.updateStatusBar();
 			},
 
@@ -260,7 +279,8 @@ export class NotificationManager {
 				// Progress counters don't need animated dots
 				stopEllipsis(op.ellipsisInterval);
 				op.ellipsisInterval = null;
-				op.textEl.textContent = `Auto Notes: ${base}`;
+				op.labelEl.textContent = `Auto Notes: ${base}`;
+				op.dotsEl.textContent = '';
 				styleNotice(op.notice, 'progress');
 				this.updateStatusBar();
 			},
