@@ -395,3 +395,201 @@ describe('extractTranscriptionContent', () => {
 		expect(result.text).toBe('');
 	});
 });
+
+describe('multi-URL inline insertion (integration)', () => {
+	/**
+	 * Simulates the processFileTargets insertion logic in
+	 * src/summarize/index.ts to verify that all inline summaries
+	 * are correctly placed in the output. Uses the same algorithm:
+	 * scan targets, sort reverse by line, splice blockLines.
+	 */
+	function simulateInsertion(
+		content: string,
+		summaries: Map<string, string>
+	): string {
+		const targets = findSummarizeTargets(content);
+		const sorted = [...targets].sort((a, b) => b.line - a.line);
+		const lines = content.split('\n');
+
+		for (const target of sorted) {
+			const summary = summaries.get(target.source);
+			if (!summary) continue;
+
+			const blockLines = [
+				'',
+				`> **Summary of ${target.source}**`,
+				'>',
+				...summary.split('\n').map(line => `> ${line}`),
+				'',
+			];
+
+			lines.splice(target.endLine + 1, 0, ...blockLines);
+		}
+
+		return lines.join('\n');
+	}
+
+	it('inserts summaries for 2 video URLs on separate lines', () => {
+		const content = [
+			'# My Note',
+			'',
+			'https://youtube.com/watch?v=abc',
+			'',
+			'https://youtube.com/watch?v=xyz',
+		].join('\n');
+
+		const summaries = new Map([
+			['https://youtube.com/watch?v=abc', 'Summary of first video.'],
+			['https://youtube.com/watch?v=xyz', 'Summary of second video.'],
+		]);
+
+		const result = simulateInsertion(content, summaries);
+
+		expect(result).toContain('> **Summary of https://youtube.com/watch?v=abc**');
+		expect(result).toContain('> Summary of first video.');
+		expect(result).toContain('> **Summary of https://youtube.com/watch?v=xyz**');
+		expect(result).toContain('> Summary of second video.');
+	});
+
+	it('inserts summaries for 3 video URLs on consecutive lines', () => {
+		const content = [
+			'# My Note',
+			'',
+			'https://youtube.com/watch?v=first',
+			'https://youtube.com/watch?v=second',
+			'https://youtube.com/watch?v=third',
+		].join('\n');
+
+		const summaries = new Map([
+			['https://youtube.com/watch?v=first', 'First summary.'],
+			['https://youtube.com/watch?v=second', 'Second summary.'],
+			['https://youtube.com/watch?v=third', 'Third summary.'],
+		]);
+
+		const result = simulateInsertion(content, summaries);
+
+		expect(result).toContain('> **Summary of https://youtube.com/watch?v=first**');
+		expect(result).toContain('> First summary.');
+		expect(result).toContain('> **Summary of https://youtube.com/watch?v=second**');
+		expect(result).toContain('> Second summary.');
+		expect(result).toContain('> **Summary of https://youtube.com/watch?v=third**');
+		expect(result).toContain('> Third summary.');
+	});
+
+	it('preserves original note content around inserted summaries', () => {
+		const content = [
+			'# My Note',
+			'',
+			'First paragraph.',
+			'',
+			'https://example.com/page1',
+			'',
+			'Middle paragraph.',
+			'',
+			'https://example.com/page2',
+			'',
+			'Final paragraph.',
+		].join('\n');
+
+		const summaries = new Map([
+			['https://example.com/page1', 'Page 1 summary.'],
+			['https://example.com/page2', 'Page 2 summary.'],
+		]);
+
+		const result = simulateInsertion(content, summaries);
+
+		expect(result).toContain('# My Note');
+		expect(result).toContain('First paragraph.');
+		expect(result).toContain('Middle paragraph.');
+		expect(result).toContain('Final paragraph.');
+		expect(result).toContain('> Page 1 summary.');
+		expect(result).toContain('> Page 2 summary.');
+	});
+
+	it('inserts summaries with multi-line summary content', () => {
+		const content = [
+			'# My Note',
+			'',
+			'https://example.com/page1',
+			'',
+			'https://example.com/page2',
+		].join('\n');
+
+		const multiLineSummary1 = [
+			'## Key Points',
+			'',
+			'- Point 1 from page 1',
+			'- Point 2 from page 1',
+		].join('\n');
+
+		const multiLineSummary2 = [
+			'## Key Points',
+			'',
+			'- Point 1 from page 2',
+			'- Point 2 from page 2',
+		].join('\n');
+
+		const summaries = new Map([
+			['https://example.com/page1', multiLineSummary1],
+			['https://example.com/page2', multiLineSummary2],
+		]);
+
+		const result = simulateInsertion(content, summaries);
+
+		expect(result).toContain('> - Point 1 from page 1');
+		expect(result).toContain('> - Point 2 from page 1');
+		expect(result).toContain('> - Point 1 from page 2');
+		expect(result).toContain('> - Point 2 from page 2');
+	});
+
+	it('places each summary directly after its respective URL', () => {
+		const content = [
+			'# My Note',
+			'',
+			'https://example.com/first',
+			'',
+			'https://example.com/second',
+		].join('\n');
+
+		const summaries = new Map([
+			['https://example.com/first', 'First summary.'],
+			['https://example.com/second', 'Second summary.'],
+		]);
+
+		const result = simulateInsertion(content, summaries);
+		const lines = result.split('\n');
+
+		// Find the URL lines
+		const firstUrlIdx = lines.indexOf('https://example.com/first');
+		const secondUrlIdx = lines.indexOf('https://example.com/second');
+
+		// Find the summary header lines
+		const firstSummaryIdx = lines.indexOf('> **Summary of https://example.com/first**');
+		const secondSummaryIdx = lines.indexOf('> **Summary of https://example.com/second**');
+
+		// Each summary should come after its URL and before the next URL
+		expect(firstSummaryIdx).toBeGreaterThan(firstUrlIdx);
+		expect(firstSummaryIdx).toBeLessThan(secondUrlIdx);
+		expect(secondSummaryIdx).toBeGreaterThan(secondUrlIdx);
+	});
+
+	it('inserts summaries for URLs on the same line', () => {
+		const content = [
+			'# My Note',
+			'',
+			'Check https://example.com/a and https://example.com/b',
+		].join('\n');
+
+		const summaries = new Map([
+			['https://example.com/a', 'Summary A.'],
+			['https://example.com/b', 'Summary B.'],
+		]);
+
+		const result = simulateInsertion(content, summaries);
+
+		expect(result).toContain('> **Summary of https://example.com/a**');
+		expect(result).toContain('> Summary A.');
+		expect(result).toContain('> **Summary of https://example.com/b**');
+		expect(result).toContain('> Summary B.');
+	});
+});
