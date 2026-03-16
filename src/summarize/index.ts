@@ -2,6 +2,7 @@ import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { FolderPickerModal, getMarkdownFiles, NotificationManager } from '../shared';
 import { OperationHandle } from '../shared/notifications';
+import { isSupportedUrl } from '../video/url-detector';
 import { fetchPageContent } from './content-fetcher';
 import { findSummarizeTargets } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
@@ -10,6 +11,15 @@ import { SummarizeTarget } from './types';
 
 export type { SummarizeTarget } from './types';
 export type { SummarizeSettings } from '../settings';
+
+/**
+ * Function that transcribes a video URL and returns the transcript text.
+ * Injected by main.ts from the VideoModule.
+ */
+export type TranscribeUrlFn = (
+	url: string,
+	parentOp?: { update: (msg: string) => void }
+) => Promise<string>;
 
 const COMPREHENSIVE_SUMMARY_PROMPT =
 	'Provide a comprehensive summary of the following content. This summary will be a standalone reference note. ' +
@@ -34,6 +44,7 @@ interface ProcessResult {
 
 export class SummarizeModule {
 	private summarizer: Summarizer;
+	private transcribeUrl: TranscribeUrlFn | null;
 
 	/** Optional callback invoked after summarization completes. Wired by main.ts for enrichment. */
 	onSummaryComplete: ((filePath: string) => void) | null = null;
@@ -41,9 +52,11 @@ export class SummarizeModule {
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		transcribeUrl?: TranscribeUrlFn
 	) {
 		this.summarizer = new Summarizer(getSettings);
+		this.transcribeUrl = transcribeUrl ?? null;
 	}
 
 	async onload(): Promise<void> {
@@ -188,9 +201,10 @@ export class SummarizeModule {
 					if (!noteAlreadyExists) {
 						op.update(`Fetching ${title}`);
 
-						const pageContent = await fetchPageContent(
+						const pageContent = await this.fetchContentForUrl(
 							target.source,
-							settings.maxContentLength
+							settings.maxContentLength,
+							op
 						);
 
 						if (!pageContent.trim()) {
@@ -240,9 +254,10 @@ export class SummarizeModule {
 						textToSummarize = target.content;
 					} else {
 						op.update(`Fetching ${target.source}`);
-						textToSummarize = await fetchPageContent(
+						textToSummarize = await this.fetchContentForUrl(
 							target.source,
-							settings.maxContentLength
+							settings.maxContentLength,
+							op
 						);
 					}
 
@@ -296,6 +311,31 @@ export class SummarizeModule {
 		}
 
 		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths };
+	}
+
+	/**
+	 * Fetch content for a URL. If the URL is a recognized video platform
+	 * and a transcription function is available, transcribe the video
+	 * instead of fetching the page HTML (which yields little useful text
+	 * from JS-rendered video pages).
+	 */
+	private async fetchContentForUrl(
+		url: string,
+		maxLength: number,
+		op: OperationHandle
+	): Promise<string> {
+		if (this.transcribeUrl && isSupportedUrl(url)) {
+			try {
+				op.update(`Transcribing video ${url}`);
+				const transcript = await this.transcribeUrl(url, op);
+				return transcript.slice(0, maxLength);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				throw new Error(`Video transcription failed for ${url}: ${msg}`);
+			}
+		}
+
+		return fetchPageContent(url, maxLength);
 	}
 
 	/**

@@ -74,6 +74,19 @@ export class VideoModule {
 
 	onunload(): void {}
 
+	/**
+	 * Transcribe a video URL and return the transcript text without creating
+	 * a note. Used by the summarize module to auto-transcribe video URLs
+	 * before summarizing.
+	 */
+	async transcribeUrl(
+		url: string,
+		parentOp?: { update: (msg: string) => void }
+	): Promise<string> {
+		const result = await this.processUrl(url, { insertMode: false }, parentOp);
+		return result.processed || result.raw;
+	}
+
 	async processUrl(
 		url: string,
 		options?: VideoProcessOptions,
