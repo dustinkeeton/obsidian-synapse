@@ -5,6 +5,7 @@ import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule } from './video';
 import { EnrichmentModule } from './enrichment';
+import { SummarizeModule } from './summarize';
 import { TidyModule } from './tidy';
 import { NotificationManager } from './shared';
 import {
@@ -21,6 +22,7 @@ export default class AutoNotesPlugin extends Plugin {
 	private audio!: AudioModule;
 	private video!: VideoModule;
 	private enrichment!: EnrichmentModule;
+	private summarize!: SummarizeModule;
 	private tidy!: TidyModule;
 
 	async onload(): Promise<void> {
@@ -38,6 +40,7 @@ export default class AutoNotesPlugin extends Plugin {
 		this.audio = new AudioModule(this, getSettings, this.notifications);
 		this.video = new VideoModule(this, getSettings, this.audio, this.notifications);
 		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications);
+		this.summarize = new SummarizeModule(this, getSettings, this.notifications);
 		this.tidy = new TidyModule(this, getSettings, this.notifications);
 
 		// Register the unified proposal view
@@ -68,6 +71,9 @@ export default class AutoNotesPlugin extends Plugin {
 		if (this.settings.enrichment.enabled) {
 			await this.enrichment.onload();
 		}
+		if (this.settings.summarize.enabled) {
+			await this.summarize.onload();
+		}
 		if (this.settings.tidy.enabled) {
 			await this.tidy.onload();
 		}
@@ -82,6 +88,9 @@ export default class AutoNotesPlugin extends Plugin {
 			};
 			this.video.onTranscriptionComplete = (filePath: string) => {
 				this.enrichment.enrich(filePath, 'transcription');
+			};
+			this.summarize.onSummaryComplete = (filePath: string) => {
+				this.enrichment.enrich(filePath, 'summarization');
 			};
 		}
 
@@ -106,6 +115,7 @@ export default class AutoNotesPlugin extends Plugin {
 		this.audio?.onunload();
 		this.video?.onunload();
 		this.enrichment?.onunload();
+		this.summarize?.onunload();
 		this.tidy?.onunload();
 	}
 

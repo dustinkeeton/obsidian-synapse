@@ -1,0 +1,399 @@
+import { Plugin, TFile } from 'obsidian';
+import { AutoNotesSettings } from '../settings';
+import { NotificationManager } from '../shared';
+import { OperationHandle } from '../shared/notifications';
+import { fetchPageContent } from './content-fetcher';
+import { findSummarizeTargets } from './note-scanner';
+import { SummarizeSelectionModal } from './summarize-modal';
+import { Summarizer } from './summarizer';
+import { SummarizeTarget } from './types';
+
+export type { SummarizeTarget } from './types';
+export type { SummarizeSettings } from '../settings';
+
+const COMPREHENSIVE_SUMMARY_PROMPT =
+	'Provide a comprehensive summary of the following content. This summary will be a standalone reference note. ' +
+	'Cover all major points, key arguments, and important details. ' +
+	'Use clear markdown structure with headings (##) where appropriate. Be thorough but concise.';
+
+interface PendingNote {
+	path: string;
+	content: string;
+}
+
+interface ProcessResult {
+	/** Number of inline summary blockquotes inserted */
+	inlineCompleted: number;
+	/** Number of enrichment-ref notes created */
+	enrichmentCompleted: number;
+	/** Vault paths of newly created summary notes */
+	newNotePaths: string[];
+}
+
+export class SummarizeModule {
+	private summarizer: Summarizer;
+
+	/** Optional callback invoked after summarization completes. Wired by main.ts for enrichment. */
+	onSummaryComplete: ((filePath: string) => void) | null = null;
+
+	constructor(
+		private plugin: Plugin,
+		private getSettings: () => AutoNotesSettings,
+		private notifications: NotificationManager
+	) {
+		this.summarizer = new Summarizer(getSettings);
+	}
+
+	async onload(): Promise<void> {
+		this.plugin.addCommand({
+			id: 'auto-notes:summarize-current-note',
+			name: 'Summarize current note',
+			editorCallback: async (_editor, ctx) => {
+				if (ctx.file) {
+					await this.summarizeNote(ctx.file);
+				}
+			},
+		});
+
+		this.plugin.addCommand({
+			id: 'auto-notes:scan-vault-summarize',
+			name: 'Scan vault for notes to summarize',
+			callback: () => this.scanVault(),
+		});
+	}
+
+	onunload(): void {}
+
+	private async summarizeNote(file: TFile): Promise<void> {
+		const content = await this.plugin.app.vault.read(file);
+		const targets = findSummarizeTargets(content);
+
+		if (targets.length === 0) {
+			this.notifications.info('No URLs or transcriptions to summarize in this note');
+			return;
+		}
+
+		if (targets.length === 1) {
+			await this.processTargets(file, targets, content);
+		} else {
+			new SummarizeSelectionModal(
+				this.plugin.app,
+				targets,
+				async (selected) => {
+					await this.processTargets(file, selected, content);
+				}
+			).open();
+		}
+	}
+
+	private async processTargets(
+		file: TFile,
+		targets: SummarizeTarget[],
+		content: string
+	): Promise<void> {
+		const total = targets.length;
+		const op = this.notifications.startOperation(
+			`Summarizing ${total} item(s)`,
+			`summarize-${file.path}`
+		);
+
+		const result = await this.processFileTargets(file, targets, op, content);
+
+		if (!op.cancelled) {
+			const totalDone = result.inlineCompleted + result.enrichmentCompleted;
+			const parts: string[] = [];
+			if (result.inlineCompleted > 0) {
+				parts.push(`${result.inlineCompleted} inline`);
+			}
+			if (result.enrichmentCompleted > 0) {
+				parts.push(`${result.enrichmentCompleted} note(s) created`);
+			}
+			op.finish(`Done — ${parts.join(', ') || `${totalDone}/${total} processed`}`);
+		}
+
+		this.fireEnrichmentCallbacks(file.path, result);
+	}
+
+	/**
+	 * Fire enrichment callbacks for processed results.
+	 * Only triggers on the source note when no enrichment sections were
+	 * modified — otherwise the applier would strip and rebuild them.
+	 */
+	private fireEnrichmentCallbacks(sourceFilePath: string, result: ProcessResult): void {
+		if (result.inlineCompleted > 0 && result.enrichmentCompleted === 0) {
+			this.onSummaryComplete?.(sourceFilePath);
+		}
+		for (const notePath of result.newNotePaths) {
+			this.onSummaryComplete?.(notePath);
+		}
+	}
+
+	/**
+	 * Core per-file processing shared by single-note and vault-scan flows.
+	 * Handles both inline summaries and enrichment-ref note creation.
+	 *
+	 * IMPORTANT: new notes are created AFTER vault.modify() on the source
+	 * file to avoid Obsidian metadata-resolution events flushing the
+	 * editor's stale buffer back to disk over our changes.
+	 */
+	private async processFileTargets(
+		file: TFile,
+		targets: SummarizeTarget[],
+		op: OperationHandle,
+		initialContent?: string
+	): Promise<ProcessResult> {
+		const settings = this.getSettings().summarize;
+		const total = targets.length;
+		const sourceFolder = file.parent?.path || '';
+
+		// Process in reverse line order so insertions/replacements don't shift line numbers
+		const sorted = [...targets].sort((a, b) => b.line - a.line);
+
+		const rawContent = initialContent ?? await this.plugin.app.vault.read(file);
+		let lines = rawContent.split('\n');
+		let inlineCompleted = 0;
+		let enrichmentCompleted = 0;
+		const newNotePaths: string[] = [];
+		const pendingNotes: PendingNote[] = [];
+		let processed = 0;
+
+		for (const target of sorted) {
+			if (op.cancelled) break;
+
+			try {
+				processed++;
+				op.progress(processed, total, 'Summarizing');
+
+				if (target.inEnrichmentSection && target.linkTitle) {
+					// ── Enrichment target: create standalone note ──
+					const title = target.linkTitle;
+					op.update(`Fetching ${title}`);
+
+					const pageContent = await fetchPageContent(
+						target.source,
+						settings.maxContentLength
+					);
+
+					if (!pageContent.trim()) {
+						this.notifications.notifyError(
+							`No content extracted from ${target.source}`,
+							new Error('Empty content')
+						);
+						continue;
+					}
+
+					op.update(`Summarizing ${title}`);
+					const summary = await this.summarizer.summarize(
+						pageContent,
+						target.source,
+						settings.summaryStyle,
+						COMPREHENSIVE_SUMMARY_PROMPT
+					);
+
+					// Prepare the note for deferred creation (after source is saved)
+					const notePath = this.buildNotePath(title, sourceFolder);
+					if (!this.plugin.app.vault.getAbstractFileByPath(notePath)) {
+						pendingNotes.push({
+							path: notePath,
+							content: [
+								`[Original source](${target.source})`,
+								'',
+								summary,
+								'',
+							].join('\n'),
+						});
+					}
+					newNotePaths.push(notePath);
+
+					// Replace external link with internal link in source note
+					lines[target.line] = lines[target.line].replace(
+						/\[([^\]]+)\]\(https?:\/\/[^\s)]+\)/,
+						() => `[[${title}]]`
+					);
+
+					enrichmentCompleted++;
+				} else {
+					// ── Inline target: insert summary blockquote ──
+					let textToSummarize: string;
+
+					if (target.type === 'transcription' && target.content) {
+						textToSummarize = target.content;
+					} else {
+						op.update(`Fetching ${target.source}`);
+						textToSummarize = await fetchPageContent(
+							target.source,
+							settings.maxContentLength
+						);
+					}
+
+					if (!textToSummarize.trim()) {
+						this.notifications.notifyError(
+							`No content extracted from ${target.source}`,
+							new Error('Empty content')
+						);
+						continue;
+					}
+
+					op.update(`Summarizing ${target.source}`);
+					const summary = await this.summarizer.summarize(
+						textToSummarize,
+						target.source,
+						settings.summaryStyle,
+						settings.customPrompt || undefined
+					);
+
+					const blockLines = [
+						'',
+						`> **Summary of ${target.source}**`,
+						'>',
+						...summary.split('\n').map(line => `> ${line}`),
+						'',
+					];
+
+					lines.splice(target.endLine + 1, 0, blockLines.join('\n'));
+
+					inlineCompleted++;
+				}
+			} catch (error) {
+				this.notifications.notifyError(
+					`Summarization failed for ${target.source}`,
+					error
+				);
+			}
+		}
+
+		// Write source note FIRST — before creating new notes.
+		// vault.create() triggers Obsidian metadata resolution which can
+		// cause the editor to flush its pre-modification buffer to disk,
+		// overwriting our changes.
+		if (inlineCompleted > 0 || enrichmentCompleted > 0) {
+			await this.plugin.app.vault.modify(file, lines.join('\n'));
+		}
+
+		// NOW create the new summary notes
+		for (const pending of pendingNotes) {
+			await this.plugin.app.vault.create(pending.path, pending.content);
+		}
+
+		return { inlineCompleted, enrichmentCompleted, newNotePaths };
+	}
+
+	/**
+	 * Build the vault path for a summary note without creating it.
+	 */
+	private buildNotePath(title: string, sourceFolder: string): string {
+		const safeName = title
+			.replace(/[\\/:*?"<>|#^[\]]/g, '-')
+			.replace(/\s+/g, ' ')
+			.trim()
+			.slice(0, 100);
+		const folderPrefix = sourceFolder ? sourceFolder + '/' : '';
+		return `${folderPrefix}${safeName}.md`;
+	}
+
+	private async scanVault(): Promise<void> {
+		const settings = this.getSettings().summarize;
+
+		// Phase 1: Scan for files with targets
+		const scanOp = this.notifications.startOperation(
+			'Scanning vault for summarizable content',
+			'summarize-vault-scan'
+		);
+
+		const allFiles = this.plugin.app.vault.getMarkdownFiles();
+		const filesWithTargets: Array<{ file: TFile; targets: SummarizeTarget[] }> = [];
+
+		try {
+			for (let i = 0; i < allFiles.length; i++) {
+				if (scanOp.cancelled) break;
+				scanOp.progress(i + 1, allFiles.length, 'Scanning vault');
+
+				const file = allFiles[i];
+				if (this.isExcluded(file)) continue;
+
+				const content = await this.plugin.app.vault.read(file);
+				const targets = findSummarizeTargets(content);
+				if (targets.length > 0) {
+					filesWithTargets.push({ file, targets });
+				}
+			}
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			scanOp.error(`Vault scan failed — ${msg}`);
+			return;
+		}
+
+		const totalTargets = filesWithTargets.reduce((sum, f) => sum + f.targets.length, 0);
+		scanOp.finish(
+			`Found ${totalTargets} item(s) across ${filesWithTargets.length} note(s)`
+		);
+
+		if (filesWithTargets.length === 0) {
+			return;
+		}
+
+		// Phase 2: Confirm with user
+		const proceed = await this.notifications.confirm(
+			`Found ${totalTargets} item(s) to summarize across ${filesWithTargets.length} note(s). Proceed?`,
+			{ proceedLabel: 'Summarize', cancelLabel: 'Cancel' }
+		);
+
+		if (!proceed) {
+			this.notifications.info('Vault summarization cancelled');
+			return;
+		}
+
+		// Phase 3: Process files
+		const genOp = this.notifications.startOperation(
+			'Generating summaries',
+			'summarize-vault-generate'
+		);
+		let totalInline = 0;
+		let totalEnrichment = 0;
+
+		for (let i = 0; i < filesWithTargets.length; i++) {
+			if (genOp.cancelled) break;
+
+			const { file, targets } = filesWithTargets[i];
+			genOp.progress(i + 1, filesWithTargets.length, 'Processing files');
+
+			// Re-read content at processing time (may have changed since scan)
+			const content = await this.plugin.app.vault.read(file);
+			const result = await this.processFileTargets(file, targets, genOp, content);
+			totalInline += result.inlineCompleted;
+			totalEnrichment += result.enrichmentCompleted;
+
+			this.fireEnrichmentCallbacks(file.path, result);
+		}
+
+		if (!genOp.cancelled) {
+			const parts: string[] = [];
+			if (totalInline > 0) parts.push(`${totalInline} inline summaries`);
+			if (totalEnrichment > 0) parts.push(`${totalEnrichment} notes created`);
+			genOp.finish(`Done — ${parts.join(', ')}`);
+		}
+	}
+
+	private isExcluded(file: TFile): boolean {
+		const settings = this.getSettings().summarize;
+
+		for (const folder of settings.excludeFolders) {
+			if (file.path.startsWith(folder + '/')) return true;
+		}
+
+		const cache = this.plugin.app.metadataCache.getFileCache(file);
+		if (cache?.frontmatter?.tags) {
+			const fileTags: string[] = Array.isArray(cache.frontmatter.tags)
+				? cache.frontmatter.tags
+				: [cache.frontmatter.tags];
+			for (const excludeTag of settings.excludeTags) {
+				const normalized = excludeTag.startsWith('#')
+					? excludeTag.slice(1)
+					: excludeTag;
+				if (fileTags.includes(normalized)) return true;
+			}
+		}
+
+		return false;
+	}
+}

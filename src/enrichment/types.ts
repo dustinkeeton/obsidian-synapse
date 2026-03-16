@@ -61,7 +61,7 @@ export interface EnrichmentResult {
 	frontmatter: FrontmatterEnrichment[];
 }
 
-export type EnrichmentTrigger = 'elaboration' | 'transcription' | 'manual';
+export type EnrichmentTrigger = 'elaboration' | 'transcription' | 'summarization' | 'manual';
 
 export type EnrichmentStatus =
 	| 'pending'
