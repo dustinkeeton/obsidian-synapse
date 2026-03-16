@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { blockquoteOriginal, NotificationManager, sanitizeAIResponse } from '../shared';
+import { blockquoteOriginal, FolderPickerModal, getMarkdownFiles, NotificationManager, sanitizeAIResponse } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator } from './proposer';
@@ -36,7 +36,14 @@ export class ElaborationModule {
 		this.plugin.addCommand({
 			id: 'auto-notes:scan-vault',
 			name: 'Scan vault for stub notes',
-			callback: () => this.scanVault(),
+			callback: () => {
+				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
+				new FolderPickerModal(
+					this.plugin.app,
+					(folder) => this.scanVault(folder.isRoot() ? undefined : folder.path),
+					defaultPath
+				).open();
+			},
 		});
 
 		this.plugin.addCommand({
@@ -85,15 +92,16 @@ export class ElaborationModule {
 	 * 2. Confirmation snackbar — user decides whether to generate proposals
 	 * 3. Heavy proposal generation with cancellation support
 	 */
-	async scanVault(): Promise<number> {
+	async scanVault(folderPath?: string): Promise<number> {
 		// --- Phase 1: Detection (lightweight, local-only) ---
-		const scanOp = this.notifications.startOperation('Scanning vault', 'vault-scan');
-		const files = this.plugin.app.vault.getMarkdownFiles();
+		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
+		const scanOp = this.notifications.startOperation(scopeLabel, 'vault-scan');
+		const files = getMarkdownFiles(this.plugin.app, folderPath);
 		const detected: DetectionResult[] = [];
 
 		try {
 			for (let i = 0; i < files.length; i++) {
-				scanOp.progress(i + 1, files.length, 'Scanning vault');
+				scanOp.progress(i + 1, files.length, scopeLabel);
 				const result = await this.detector.detect(files[i]);
 				if (result) {
 					detected.push(result);

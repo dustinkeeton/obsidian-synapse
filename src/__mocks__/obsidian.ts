@@ -131,6 +131,23 @@ export class ItemView {
 	}
 }
 
+export class SuggestModal<T = unknown> {
+	app: unknown;
+	inputEl: any = { value: '', focus: vi.fn() };
+	constructor(app: unknown) {
+		this.app = app;
+	}
+	getSuggestions(_query: string): T[] {
+		return [];
+	}
+	renderSuggestion(_item: T, _el: unknown): void {}
+	onChooseSuggestion(_item: T, _evt: MouseEvent | KeyboardEvent): void {}
+	open = vi.fn();
+	close = vi.fn();
+	onOpen(): void {}
+	onClose(): void {}
+}
+
 export class Setting {
 	constructor(_containerEl: unknown) {}
 	setName = vi.fn().mockReturnThis();

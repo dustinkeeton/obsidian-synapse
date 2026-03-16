@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { NotificationManager } from '../shared';
+import { FolderPickerModal, getMarkdownFiles, NotificationManager } from '../shared';
 import { OperationHandle } from '../shared/notifications';
 import { fetchPageContent } from './content-fetcher';
 import { findSummarizeTargets } from './note-scanner';
@@ -58,7 +58,14 @@ export class SummarizeModule {
 		this.plugin.addCommand({
 			id: 'auto-notes:scan-vault-summarize',
 			name: 'Scan vault for notes to summarize',
-			callback: () => this.scanVault(),
+			callback: () => {
+				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
+				new FolderPickerModal(
+					this.plugin.app,
+					(folder) => this.scanVault(folder.isRoot() ? undefined : folder.path),
+					defaultPath
+				).open();
+			},
 		});
 	}
 
@@ -292,22 +299,23 @@ export class SummarizeModule {
 		return `${folderPrefix}${safeName}.md`;
 	}
 
-	private async scanVault(): Promise<void> {
+	private async scanVault(folderPath?: string): Promise<void> {
 		const settings = this.getSettings().summarize;
 
 		// Phase 1: Scan for files with targets
+		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
-			'Scanning vault for summarizable content',
+			`${scopeLabel} for summarizable content`,
 			'summarize-vault-scan'
 		);
 
-		const allFiles = this.plugin.app.vault.getMarkdownFiles();
+		const allFiles = getMarkdownFiles(this.plugin.app, folderPath);
 		const filesWithTargets: Array<{ file: TFile; targets: SummarizeTarget[] }> = [];
 
 		try {
 			for (let i = 0; i < allFiles.length; i++) {
 				if (scanOp.cancelled) break;
-				scanOp.progress(i + 1, allFiles.length, 'Scanning vault');
+				scanOp.progress(i + 1, allFiles.length, scopeLabel);
 
 				const file = allFiles[i];
 				if (this.isExcluded(file)) continue;
