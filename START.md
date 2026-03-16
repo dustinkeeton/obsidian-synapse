@@ -75,3 +75,6 @@ Secondly, we've been neglecting proper git patterns up until now. Now that the c
 
 ### Next
 There's a big gap in our feature set. Both Transcriptions and even *generic URL's* should have the ability to summarize. This would come in the form of "note taking" on the reference. It should be its own command for now, with the same 2 workflows that other commands have available: scan vault, and current note. Please *plan* this out with the team and return to me with your consensus.
+
+### Next
+Scan functionality should be a bit more sophisticated. When choosing a scan command, the user should be presented with a UI that allows them to select the directory they wish to scan, starting with the parent directory they are in. They can choose to scan the vault root, or any subdirectory therein. The scan operation, and subsequent operations after that, should only apply to the chosen (sub)directory. Please plan how to implement this feature.

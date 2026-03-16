@@ -10,6 +10,7 @@ export {
 } from './file-utils';
 export { NotificationManager } from './notifications';
 export type { OperationHandle } from './notifications';
+export { FolderPickerModal } from './folder-picker-modal';
 export {
 	sanitizeUrl,
 	sanitizePath,
