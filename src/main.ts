@@ -127,6 +127,13 @@ export default class AutoNotesPlugin extends Plugin {
 			};
 		}
 
+		// Wire summarize auto-organize callback (single-note only, never vault-wide)
+		if (this.settings.summarize.autoOrganizeOnSummarize && this.settings.organize.enabled) {
+			this.summarize.onOrganizeRequested = (file) => {
+				this.organize.organizeNote(file);
+			};
+		}
+
 		// Single ribbon icon + command for the unified view
 		this.addRibbonIcon('sparkles', 'Review proposals', () => {
 			this.activateUnifiedView();

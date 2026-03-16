@@ -616,6 +616,18 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
+		new Setting(containerEl)
+			.setName('Auto-organize after summarize')
+			.setDesc('Automatically organize the current note after summarization completes (single-note only, not vault-wide)')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.summarize.autoOrganizeOnSummarize)
+					.onChange(async (value) => {
+						this.plugin.settings.summarize.autoOrganizeOnSummarize = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
 		// ── Note Tidy ──
 		containerEl.createEl('h2', { text: 'Note Tidy' });
 
