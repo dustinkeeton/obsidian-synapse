@@ -172,23 +172,24 @@ export class OrganizeModule {
 
 		let movedCount = 0;
 		let proposalCount = 0;
+		let errorCount = 0;
 
-		try {
-			for (let i = 0; i < eligible.length; i++) {
-				if (genOp.cancelled) break;
+		for (let i = 0; i < eligible.length; i++) {
+			if (genOp.cancelled) break;
 
-				genOp.progress(i + 1, eligible.length, 'Organizing notes');
+			genOp.progress(i + 1, eligible.length, 'Organizing notes');
+			try {
 				const result = await this.organizeFile(eligible[i]);
 
 				if (result) {
 					if (result.movedDirectly) movedCount++;
 					if (result.proposalCreated) proposalCount++;
 				}
+			} catch (error) {
+				errorCount++;
+				const msg = error instanceof Error ? error.message : String(error);
+				console.warn(`[Auto Notes] Failed to organize ${eligible[i].path}: ${msg}`);
 			}
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Organization failed — ${msg}`);
-			return movedCount + proposalCount;
 		}
 
 		if (genOp.cancelled) {
@@ -199,6 +200,7 @@ export class OrganizeModule {
 		const parts: string[] = [];
 		if (movedCount > 0) parts.push(`${movedCount} moved`);
 		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		if (errorCount > 0) parts.push(`${errorCount} failed`);
 		genOp.finish(parts.length > 0 ? parts.join(', ') : 'No changes needed');
 
 		return movedCount + proposalCount;
@@ -226,9 +228,18 @@ export class OrganizeModule {
 				return;
 			}
 
-			const newPath = normalizePath(
+			const candidatePath = normalizePath(
 				`${proposal.proposedDirectory}/${file.name}`
 			);
+
+			// Skip if a file already exists at the destination
+			const newPath = this.findAvailablePath(candidatePath);
+			if (!newPath) {
+				this.notifications.info(
+					`Cannot move — a file already exists at ${candidatePath}`
+				);
+				return;
+			}
 
 			// Save snapshot for undo
 			const snapshot: OrganizeSnapshot = {
@@ -309,9 +320,15 @@ export class OrganizeModule {
 			}
 
 			// Direct move to existing directory
-			const newPath = normalizePath(
+			const candidatePath = normalizePath(
 				`${action.targetDirectory}/${file.name}`
 			);
+
+			// Skip if a file already exists at the destination
+			const newPath = this.findAvailablePath(candidatePath);
+			if (!newPath) {
+				return null;
+			}
 
 			// Save snapshot for undo
 			const snapshot: OrganizeSnapshot = {
@@ -379,6 +396,21 @@ export class OrganizeModule {
 	private getParentPath(filePath: string): string {
 		const lastSlash = filePath.lastIndexOf('/');
 		return lastSlash === -1 ? '' : filePath.slice(0, lastSlash);
+	}
+
+	/**
+	 * Check whether a file already exists at the given path.
+	 * Returns the path unchanged if no conflict exists, or null if occupied.
+	 */
+	private findAvailablePath(candidatePath: string): string | null {
+		const existing = this.plugin.app.vault.getAbstractFileByPath(candidatePath);
+		if (existing) {
+			console.warn(
+				`[Auto Notes] Skipping move — file already exists at ${candidatePath}`
+			);
+			return null;
+		}
+		return candidatePath;
 	}
 
 	private generateId(): string {
