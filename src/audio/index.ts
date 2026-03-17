@@ -1,6 +1,10 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse } from '../shared';
+import {
+	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
+	CheckpointManager,
+} from '../shared';
+import type { CheckpointWorkItem } from '../shared';
 import { findAudioEmbeds } from './note-scanner';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
@@ -13,6 +17,7 @@ export type { AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry
 export class AudioModule {
 	private transcriber: Transcriber;
 	private postProcessor: PostProcessor;
+	private checkpointManager: CheckpointManager;
 
 	/** Optional callback invoked after transcription completes. Wired by main.ts for enrichment. */
 	onTranscriptionComplete: ((filePath: string) => void) | null = null;
@@ -24,6 +29,7 @@ export class AudioModule {
 	) {
 		this.transcriber = new Transcriber(getSettings);
 		this.postProcessor = new PostProcessor(getSettings);
+		this.checkpointManager = new CheckpointManager(plugin.app);
 	}
 
 	async onload(): Promise<void> {
@@ -97,6 +103,18 @@ export class AudioModule {
 			`audio-batch-${noteFile.path}`
 		);
 
+		// Create checkpoint for batch transcription
+		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({
+			id: `audio-${i}-${e.fileName}`,
+			label: e.fileName,
+			payload: { fileName: e.fileName, line: e.line } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'audio',
+			operationLabel: `Audio transcription: ${noteFile.basename} (${total} files)`,
+			items: checkpointItems,
+		});
+
 		// Process in reverse line order so insertions don't shift line numbers
 		const sorted = [...embeds].sort((a, b) => b.line - a.line);
 
@@ -128,6 +146,14 @@ export class AudioModule {
 				content = lines.join('\n');
 
 				completed++;
+
+				// Save checkpoint progress
+				const cpItemId = checkpointItems.find(
+					(ci) => ci.payload.fileName === embed.fileName
+				)?.id;
+				if (cpItemId) {
+					await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
+				}
 			} catch (error) {
 				this.notifications.notifyError(`Transcription failed for ${embed.fileName}`, error);
 			}
@@ -139,6 +165,7 @@ export class AudioModule {
 			this.onTranscriptionComplete?.(noteFile.path);
 		}
 		if (!op.cancelled) {
+			await this.checkpointManager.complete(checkpoint.id);
 			op.finish(`Done — ${completed}/${total} transcriptions added`);
 		}
 	}

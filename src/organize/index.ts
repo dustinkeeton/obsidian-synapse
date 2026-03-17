@@ -1,6 +1,10 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary } from '../shared';
+import {
+	FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder,
+	writeNote, generateOrganizeSummary, CheckpointManager,
+} from '../shared';
+import type { CheckpointWorkItem } from '../shared';
 import { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
@@ -26,6 +30,7 @@ export class OrganizeModule {
 	private analyzer: ContentAnalyzer;
 	private matcher: DirectoryMatcher;
 	private store: OrganizeStore;
+	private checkpointManager: CheckpointManager;
 
 	constructor(
 		private plugin: Plugin,
@@ -35,6 +40,7 @@ export class OrganizeModule {
 		this.analyzer = new ContentAnalyzer(plugin.app, getSettings);
 		this.matcher = new DirectoryMatcher(plugin.app);
 		this.store = new OrganizeStore(plugin.app, getSettings);
+		this.checkpointManager = new CheckpointManager(plugin.app);
 	}
 
 	async onload(): Promise<void> {
@@ -169,7 +175,7 @@ export class OrganizeModule {
 			return 0;
 		}
 
-		// Phase 3: Analyze and organize
+		// Phase 3: Analyze and organize (checkpointed)
 		const genOp = this.notifications.startOperation(
 			'Organizing notes',
 			'organize-generate'
@@ -179,6 +185,18 @@ export class OrganizeModule {
 		let proposalCount = 0;
 		let errorCount = 0;
 		const moveRecords: MoveRecord[] = [];
+
+		// Create checkpoint for resumability
+		const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
+			id: `org-${i}-${f.path}`,
+			label: f.path,
+			payload: { filePath: f.path } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'organize',
+			operationLabel: `Organize: directory scan${folderPath ? ` (${folderPath})` : ''}`,
+			items: checkpointItems,
+		});
 
 		for (let i = 0; i < eligible.length; i++) {
 			if (genOp.cancelled) break;
@@ -203,12 +221,21 @@ export class OrganizeModule {
 				const msg = error instanceof Error ? error.message : String(error);
 				console.warn(`[Auto Notes] Failed to organize ${eligible[i].path}: ${msg}`);
 			}
+
+			// Save checkpoint progress
+			await this.checkpointManager.completeItem(
+				checkpoint.id,
+				checkpointItems[i].id
+			);
 		}
 
 		if (genOp.cancelled) {
 			this.notifications.info('Organization cancelled');
 			return movedCount + proposalCount;
 		}
+
+		// Mark checkpoint completed
+		await this.checkpointManager.complete(checkpoint.id);
 
 		const parts: string[] = [];
 		if (movedCount > 0) parts.push(`${movedCount} moved`);

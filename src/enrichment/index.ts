@@ -1,6 +1,10 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter } from '../shared';
+import {
+	FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter,
+	CheckpointManager,
+} from '../shared';
+import type { CheckpointWorkItem } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentStore } from './enrichment-store';
 import { LinkResolver } from './link-resolver';
@@ -30,6 +34,7 @@ export class EnrichmentModule {
 	private promptBuilder: PromptBuilder;
 	private applier: EnrichmentApplier;
 	private store: EnrichmentStore;
+	private checkpointManager: CheckpointManager;
 
 	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
@@ -46,6 +51,7 @@ export class EnrichmentModule {
 		this.promptBuilder = new PromptBuilder(getSettings);
 		this.applier = new EnrichmentApplier(plugin.app, getSettings);
 		this.store = new EnrichmentStore(plugin.app, getSettings);
+		this.checkpointManager = new CheckpointManager(plugin.app);
 	}
 
 	async onload(): Promise<void> {
@@ -155,7 +161,7 @@ export class EnrichmentModule {
 			return 0;
 		}
 
-		// ── Phase 3: Generate proposals (heavy, cancellable) ──
+		// ── Phase 3: Generate proposals (heavy, cancellable, checkpointed) ──
 		// Clear any stale pending topics before starting
 		this.topicExtractor.clearPending();
 
@@ -166,6 +172,18 @@ export class EnrichmentModule {
 		// Track proposal IDs mapped to note paths for Phase 4 injection
 		const createdProposals: Array<{ id: string; notePath: string }> = [];
 		let proposalCount = 0;
+
+		// Create checkpoint for resumability
+		const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
+			id: `enrich-${i}-${f.path}`,
+			label: f.path,
+			payload: { filePath: f.path } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'enrichment',
+			operationLabel: `Enrichment: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			items: checkpointItems,
+		});
 
 		try {
 			for (let i = 0; i < eligible.length; i++) {
@@ -181,6 +199,12 @@ export class EnrichmentModule {
 					createdProposals.push({ id, notePath: eligible[i].path });
 					proposalCount++;
 				}
+
+				// Save checkpoint progress
+				await this.checkpointManager.completeItem(
+					checkpoint.id,
+					checkpointItems[i].id
+				);
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
@@ -220,6 +244,8 @@ export class EnrichmentModule {
 			}
 		}
 
+		// Mark checkpoint completed
+		await this.checkpointManager.complete(checkpoint.id);
 		genOp.finish(
 			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`
 		);
