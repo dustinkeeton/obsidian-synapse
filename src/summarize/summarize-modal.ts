@@ -66,7 +66,9 @@ export class SummarizeSelectionModal extends Modal {
 
 			let label: string;
 			let desc: string | undefined;
-			if (target.type === 'transcription') {
+			if (target.type === 'audio') {
+				label = `Audio: ${target.source}`;
+			} else if (target.type === 'transcription') {
 				label = `Transcription: ${target.source}`;
 			} else if (target.inEnrichmentSection && target.linkTitle) {
 				label = `Reference: ${target.linkTitle}`;

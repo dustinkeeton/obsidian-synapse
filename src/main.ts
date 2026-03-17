@@ -49,7 +49,12 @@ export default class AutoNotesPlugin extends Plugin {
 		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications);
 		this.summarize = new SummarizeModule(
 			this, getSettings, this.notifications,
-			(url, parentOp) => this.video.transcribeUrl(url, parentOp)
+			(url, parentOp) => this.video.transcribeUrl(url, parentOp),
+			async (audioFile) => {
+				const data = await this.app.vault.readBinary(audioFile);
+				const result = await this.audio.transcribe(data, audioFile.name);
+				return result.processed || result.raw;
+			}
 		);
 		this.tidy = new TidyModule(this, getSettings, this.notifications);
 		this.organize = new OrganizeModule(this, getSettings, this.notifications);
