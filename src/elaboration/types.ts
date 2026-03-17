@@ -2,7 +2,8 @@ export type DetectionReason =
 	| { type: 'short-note'; wordCount: number }
 	| { type: 'todo-marker'; markers: string[] }
 	| { type: 'empty-section'; heading: string }
-	| { type: 'sparse-link'; linkedFrom: string[] };
+	| { type: 'sparse-link'; linkedFrom: string[] }
+	| { type: 'user-requested' };
 
 export interface DetectionResult {
 	notePath: string;
