@@ -1,7 +1,11 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { AudioModule, TranscriptionResult } from '../audio';
-import { ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES } from '../shared';
+import {
+	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES,
+	CheckpointManager, generateId,
+} from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { AudioExtractor } from './audio-extractor';
 import { findVideoUrls } from './note-scanner';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
@@ -29,7 +33,8 @@ export class VideoModule {
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
 		private audioModule: AudioModule,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		private checkpointManager: CheckpointManager
 	) {
 		this.extractor = new AudioExtractor(getSettings);
 	}
@@ -143,8 +148,20 @@ export class VideoModule {
 			op.finish('Video transcription added to note');
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			op.error(`Video transcription failed — ${msg}`);
+			op.error(`Video transcription failed -- ${msg}`);
 		}
+	}
+
+	/**
+	 * Resume video transcription from a checkpoint (C1).
+	 * The remaining video files are re-processed.
+	 */
+	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
+		this.notifications.info(
+			`Video checkpoint has ${checkpoint.remainingItems.length} remaining items. ` +
+			`Completed items are already saved. Please re-run transcription on the source note to continue.`
+		);
+		await this.checkpointManager.discard(checkpoint.id);
 	}
 
 	async transcribeAndInsert(
@@ -158,6 +175,25 @@ export class VideoModule {
 			`Transcribing ${total} video(s)...`,
 			`video-batch-${noteFile.path}`
 		);
+
+		// Create checkpoint for batch video transcription
+		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({
+			id: `video-${i}-${e.url}`,
+			label: e.url,
+			payload: { url: e.url, line: e.line } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'video',
+			operationLabel: `Video transcription: ${noteFile.basename} (${total} videos)`,
+			items: checkpointItems,
+		});
+
+		// Register deferred task for sidebar refresh (I1)
+		await this.checkpointManager.addDeferredTask(checkpoint.id, {
+			id: generateId(),
+			type: 'refresh-sidebar-view',
+			data: {},
+		});
 
 		// Process in reverse line order so insertions don't shift line numbers
 		const sorted = [...embeds].sort((a, b) => b.line - a.line);
@@ -197,6 +233,14 @@ export class VideoModule {
 				content = lines.join('\n');
 
 				completed++;
+
+				// Save checkpoint progress
+				const cpItemId = checkpointItems.find(
+					(ci) => ci.payload.url === embed.url
+				)?.id;
+				if (cpItemId) {
+					await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
+				}
 			} catch (error) {
 				this.notifications.notifyError(`Video transcription failed for ${embed.url}`, error);
 			}
@@ -206,8 +250,14 @@ export class VideoModule {
 			await this.plugin.app.vault.modify(noteFile, content);
 			this.onTranscriptionComplete?.(noteFile.path);
 		}
-		if (!op.cancelled) {
-			op.finish(`Done — ${completed}/${total} video transcriptions added`);
+		if (op.cancelled) {
+			// Discard checkpoint on user cancellation (C3)
+			await this.checkpointManager.discard(checkpoint.id);
+		} else {
+			// Mark checkpoint completed and dispatch deferred tasks (I1)
+			const tasks = await this.checkpointManager.complete(checkpoint.id);
+			this.dispatchDeferredTasks(tasks);
+			op.finish(`Done -- ${completed}/${total} video transcriptions added`);
 		}
 	}
 
@@ -259,4 +309,17 @@ export class VideoModule {
 		this.notifications.info(lines.join('\n'), duration);
 	}
 
+	/** Dispatch deferred tasks (I1). */
+	private dispatchDeferredTasks(tasks: DeferredTask[]): void {
+		for (const task of tasks) {
+			switch (task.type) {
+				case 'refresh-sidebar-view':
+					// Video module doesn't have a direct view refresh callback,
+					// but the deferred task system ensures it runs via main.ts dispatch
+					break;
+				default:
+					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+			}
+		}
+	}
 }

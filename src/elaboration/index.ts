@@ -1,6 +1,10 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles, NotificationManager, sanitizeAIResponse } from '../shared';
+import {
+	buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles,
+	NotificationManager, sanitizeAIResponse, CheckpointManager, generateId,
+} from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator } from './proposer';
@@ -23,7 +27,8 @@ export class ElaborationModule {
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		private checkpointManager: CheckpointManager
 	) {
 		this.detector = new PlaceholderDetector(plugin.app, getSettings);
 		this.proposer = new ProposalGenerator(plugin.app, getSettings);
@@ -87,9 +92,64 @@ export class ElaborationModule {
 	}
 
 	/**
+	 * Resume elaboration from a checkpoint (C1).
+	 * Re-generates proposals for the remaining detected files.
+	 */
+	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
+		const genOp = this.notifications.startOperation(
+			'Resuming elaboration',
+			'vault-generate-resume'
+		);
+		const createdProposalIds: string[] = [];
+		let proposalCount = 0;
+
+		try {
+			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
+				if (genOp.cancelled) break;
+
+				const item = checkpoint.remainingItems[i];
+				const notePath = item.payload.notePath as string;
+
+				genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming elaboration');
+
+				const file = this.plugin.app.vault.getAbstractFileByPath(notePath);
+				if (!(file instanceof TFile)) continue;
+
+				const result = await this.detector.detect(file);
+				if (!result) continue;
+
+				const proposal = await this.proposer.generate(result);
+				await this.store.save(proposal);
+				createdProposalIds.push(proposal.id);
+				proposalCount++;
+
+				await this.checkpointManager.completeItem(checkpoint.id, item.id);
+			}
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			genOp.error(`Resume failed -- ${msg}`);
+			await this.rejectProposalBatch(createdProposalIds);
+			await this.refreshView();
+			return;
+		}
+
+		if (genOp.cancelled) {
+			await this.checkpointManager.discard(checkpoint.id);
+			await this.rejectProposalBatch(createdProposalIds);
+			await this.refreshView();
+			return;
+		}
+
+		const tasks = await this.checkpointManager.complete(checkpoint.id);
+		this.dispatchDeferredTasks(tasks);
+		genOp.finish(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		await this.refreshView();
+	}
+
+	/**
 	 * Two-phase vault scan:
-	 * 1. Lightweight detection pass — identifies stub notes (no API calls)
-	 * 2. Confirmation snackbar — user decides whether to generate proposals
+	 * 1. Lightweight detection pass -- identifies stub notes (no API calls)
+	 * 2. Confirmation snackbar -- user decides whether to generate proposals
 	 * 3. Heavy proposal generation with cancellation support
 	 */
 	async scanVault(folderPath?: string): Promise<number> {
@@ -109,7 +169,7 @@ export class ElaborationModule {
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			scanOp.error(`Vault scan failed — ${msg}`);
+			scanOp.error(`Vault scan failed -- ${msg}`);
 			return 0;
 		}
 
@@ -130,13 +190,32 @@ export class ElaborationModule {
 			return 0;
 		}
 
-		// --- Phase 3: Proposal generation (heavy, cancellable) ---
+		// --- Phase 3: Proposal generation (heavy, cancellable, checkpointed) ---
 		const genOp = this.notifications.startOperation(
 			'Generating proposals',
 			'vault-generate'
 		);
 		const createdProposalIds: string[] = [];
 		let proposalCount = 0;
+
+		// Create checkpoint for resumability
+		const checkpointItems: CheckpointWorkItem[] = detected.map((d, i) => ({
+			id: `elab-${i}-${d.notePath}`,
+			label: d.notePath,
+			payload: { notePath: d.notePath } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'elaboration',
+			operationLabel: `Elaboration: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			items: checkpointItems,
+		});
+
+		// Register deferred task for sidebar refresh (I1)
+		await this.checkpointManager.addDeferredTask(checkpoint.id, {
+			id: generateId(),
+			type: 'refresh-sidebar-view',
+			data: {},
+		});
 
 		try {
 			for (let i = 0; i < detected.length; i++) {
@@ -147,10 +226,16 @@ export class ElaborationModule {
 				await this.store.save(proposal);
 				createdProposalIds.push(proposal.id);
 				proposalCount++;
+
+				// Save checkpoint progress
+				await this.checkpointManager.completeItem(
+					checkpoint.id,
+					checkpointItems[i].id
+				);
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Proposal generation failed — ${msg}`);
+			genOp.error(`Proposal generation failed -- ${msg}`);
 			// Auto-reject proposals created before the error
 			await this.rejectProposalBatch(createdProposalIds);
 			await this.refreshView();
@@ -158,12 +243,17 @@ export class ElaborationModule {
 		}
 
 		if (genOp.cancelled) {
+			// Discard checkpoint on user cancellation (C3)
+			await this.checkpointManager.discard(checkpoint.id);
 			// Auto-reject all proposals created during this cancelled run
 			await this.rejectProposalBatch(createdProposalIds);
 			await this.refreshView();
 			return 0;
 		}
 
+		// Mark checkpoint completed and dispatch deferred tasks (I1)
+		const tasks = await this.checkpointManager.complete(checkpoint.id);
+		this.dispatchDeferredTasks(tasks);
 		genOp.finish(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
 		await this.refreshView();
 		return proposalCount;
@@ -196,7 +286,7 @@ export class ElaborationModule {
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			op.error(`Note scan failed — ${msg}`);
+			op.error(`Note scan failed -- ${msg}`);
 		}
 	}
 
@@ -255,5 +345,18 @@ export class ElaborationModule {
 
 	private async refreshView(): Promise<void> {
 		await this.onViewRefreshNeeded?.();
+	}
+
+	/** Dispatch deferred tasks (I1). */
+	private dispatchDeferredTasks(tasks: DeferredTask[]): void {
+		for (const task of tasks) {
+			switch (task.type) {
+				case 'refresh-sidebar-view':
+					this.onViewRefreshNeeded?.();
+					break;
+				default:
+					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+			}
+		}
 	}
 }

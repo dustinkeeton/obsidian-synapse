@@ -1,6 +1,10 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout, CALLOUT_TYPES } from '../shared';
+import {
+	FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout,
+	CALLOUT_TYPES, CheckpointManager, generateId,
+} from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { OperationHandle } from '../shared';
 import { isSupportedUrl } from '../video';
 import { findAudioEmbeds } from '../audio';
@@ -67,6 +71,7 @@ export class SummarizeModule {
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
 		private notifications: NotificationManager,
+		private checkpointManager: CheckpointManager,
 		transcribeUrl?: TranscribeUrlFn,
 		transcribeAudio?: TranscribeAudioFn
 	) {
@@ -101,6 +106,65 @@ export class SummarizeModule {
 	}
 
 	onunload(): void {}
+
+	/**
+	 * Resume summarization from a checkpoint (C1).
+	 * Re-processes the remaining files from the checkpoint.
+	 */
+	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
+		const genOp = this.notifications.startOperation(
+			'Resuming summarization',
+			'summarize-vault-resume'
+		);
+		let totalInline = 0;
+		let totalEnrichment = 0;
+		let totalLinksUpdated = 0;
+
+		try {
+			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
+				if (genOp.cancelled) break;
+
+				const item = checkpoint.remainingItems[i];
+				const filePath = item.payload.filePath as string;
+
+				genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming summarization');
+
+				const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+				if (!(file instanceof TFile)) continue;
+				if (this.isExcluded(file)) continue;
+
+				const content = await this.plugin.app.vault.read(file);
+				const targets = this.collectTargets(content, file.path);
+				if (targets.length === 0) continue;
+
+				const result = await this.processFileTargets(file, targets, genOp, content);
+				totalInline += result.inlineCompleted;
+				totalEnrichment += result.enrichmentCompleted;
+				totalLinksUpdated += result.linksUpdated;
+
+				this.fireEnrichmentCallbacks(file.path, result);
+				await this.checkpointManager.completeItem(checkpoint.id, item.id);
+			}
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			genOp.error(`Resume failed -- ${msg}`);
+			return;
+		}
+
+		if (genOp.cancelled) {
+			await this.checkpointManager.discard(checkpoint.id);
+			return;
+		}
+
+		const tasks = await this.checkpointManager.complete(checkpoint.id);
+		this.dispatchDeferredTasks(tasks);
+
+		const parts: string[] = [];
+		if (totalInline > 0) parts.push(`${totalInline} inline summaries`);
+		if (totalEnrichment > 0) parts.push(`${totalEnrichment} notes created`);
+		if (totalLinksUpdated > 0) parts.push(`${totalLinksUpdated} links updated`);
+		genOp.finish(`Resumed -- ${parts.join(', ') || 'no changes'}`);
+	}
 
 	private async summarizeNote(file: TFile): Promise<void> {
 		const content = await this.plugin.app.vault.read(file);
@@ -184,7 +248,7 @@ export class SummarizeModule {
 			if (result.linksUpdated > 0) {
 				parts.push(`${result.linksUpdated} link(s) updated`);
 			}
-			op.finish(`Done \u2014 ${parts.join(', ') || `${totalDone}/${total} processed`}`);
+			op.finish(`Done -- ${parts.join(', ') || `${totalDone}/${total} processed`}`);
 		}
 
 		this.fireEnrichmentCallbacks(file.path, result);
@@ -198,7 +262,7 @@ export class SummarizeModule {
 	/**
 	 * Fire enrichment callbacks for processed results.
 	 * Only triggers on the source note when no enrichment sections were
-	 * modified \u2014 otherwise the applier would strip and rebuild them.
+	 * modified -- otherwise the applier would strip and rebuild them.
 	 */
 	private fireEnrichmentCallbacks(sourceFilePath: string, result: ProcessResult): void {
 		if (result.inlineCompleted > 0 && result.enrichmentCompleted === 0) {
@@ -247,11 +311,11 @@ export class SummarizeModule {
 				op.progress(processed, total, 'Summarizing');
 
 				if (target.inEnrichmentSection && target.linkTitle) {
-					// \u2500\u2500 Enrichment target: create standalone note \u2500\u2500
+					// -- Enrichment target: create standalone note --
 					const title = target.linkTitle;
 					const notePath = this.buildNotePath(title, sourceFolder);
 
-					// If the note already exists, just replace the link \u2014 skip fetch/summarize
+					// If the note already exists, just replace the link -- skip fetch/summarize
 					const noteAlreadyExists = !!this.plugin.app.vault.getAbstractFileByPath(notePath);
 
 					if (!noteAlreadyExists) {
@@ -303,7 +367,7 @@ export class SummarizeModule {
 						enrichmentCompleted++;
 					}
 				} else {
-					// \u2500\u2500 Inline target: insert summary blockquote \u2500\u2500
+					// -- Inline target: insert summary blockquote --
 					let textToSummarize: string;
 
 					if (target.type === 'audio' && this.transcribeAudio) {
@@ -358,7 +422,7 @@ export class SummarizeModule {
 			}
 		}
 
-		// Write source note FIRST \u2014 before creating new notes.
+		// Write source note FIRST -- before creating new notes.
 		// vault.create() triggers Obsidian metadata resolution which can
 		// cause the editor to flush its pre-modification buffer to disk,
 		// overwriting our changes.
@@ -463,7 +527,7 @@ export class SummarizeModule {
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			scanOp.error(`Vault scan failed \u2014 ${msg}`);
+			scanOp.error(`Vault scan failed -- ${msg}`);
 			return;
 		}
 
@@ -487,7 +551,7 @@ export class SummarizeModule {
 			return;
 		}
 
-		// Phase 3: Process files
+		// Phase 3: Process files (checkpointed)
 		const genOp = this.notifications.startOperation(
 			'Generating summaries',
 			'summarize-vault-generate'
@@ -495,6 +559,25 @@ export class SummarizeModule {
 		let totalInline = 0;
 		let totalEnrichment = 0;
 		let totalLinksUpdated = 0;
+
+		// Create checkpoint for resumability
+		const checkpointItems: CheckpointWorkItem[] = filesWithTargets.map((ft, i) => ({
+			id: `sum-${i}-${ft.file.path}`,
+			label: ft.file.path,
+			payload: { filePath: ft.file.path } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'summarize',
+			operationLabel: `Summarize: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			items: checkpointItems,
+		});
+
+		// Register deferred task for sidebar refresh (I1)
+		await this.checkpointManager.addDeferredTask(checkpoint.id, {
+			id: generateId(),
+			type: 'refresh-sidebar-view',
+			data: {},
+		});
 
 		for (let i = 0; i < filesWithTargets.length; i++) {
 			if (genOp.cancelled) break;
@@ -515,14 +598,26 @@ export class SummarizeModule {
 			totalLinksUpdated += result.linksUpdated;
 
 			this.fireEnrichmentCallbacks(file.path, result);
+
+			// Save checkpoint progress
+			await this.checkpointManager.completeItem(
+				checkpoint.id,
+				checkpointItems[i].id
+			);
 		}
 
-		if (!genOp.cancelled) {
+		if (genOp.cancelled) {
+			// Discard checkpoint on user cancellation (C3)
+			await this.checkpointManager.discard(checkpoint.id);
+		} else {
+			// Mark checkpoint completed and dispatch deferred tasks (I1)
+			const tasks = await this.checkpointManager.complete(checkpoint.id);
+			this.dispatchDeferredTasks(tasks);
 			const parts: string[] = [];
 			if (totalInline > 0) parts.push(`${totalInline} inline summaries`);
 			if (totalEnrichment > 0) parts.push(`${totalEnrichment} notes created`);
 			if (totalLinksUpdated > 0) parts.push(`${totalLinksUpdated} links updated`);
-			genOp.finish(`Done \u2014 ${parts.join(', ')}`);
+			genOp.finish(`Done -- ${parts.join(', ')}`);
 		}
 	}
 
@@ -547,5 +642,18 @@ export class SummarizeModule {
 		}
 
 		return false;
+	}
+
+	/** Dispatch deferred tasks (I1). */
+	private dispatchDeferredTasks(tasks: DeferredTask[]): void {
+		for (const task of tasks) {
+			switch (task.type) {
+				case 'refresh-sidebar-view':
+					// Summarize module doesn't have a direct view refresh callback
+					break;
+				default:
+					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+			}
+		}
 	}
 }

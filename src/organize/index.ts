@@ -1,6 +1,10 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary } from '../shared';
+import {
+	FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder,
+	writeNote, generateOrganizeSummary, CheckpointManager, generateId,
+} from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
@@ -30,7 +34,8 @@ export class OrganizeModule {
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		private checkpointManager: CheckpointManager
 	) {
 		this.analyzer = new ContentAnalyzer(plugin.app, getSettings);
 		this.matcher = new DirectoryMatcher(plugin.app);
@@ -82,6 +87,88 @@ export class OrganizeModule {
 	}
 
 	/**
+	 * Resume organize from a checkpoint (C1).
+	 * Re-organizes the remaining files from the checkpoint.
+	 */
+	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
+		const genOp = this.notifications.startOperation(
+			'Resuming organization',
+			'organize-resume'
+		);
+
+		let movedCount = 0;
+		let proposalCount = 0;
+		let errorCount = 0;
+		const moveRecords: MoveRecord[] = [];
+
+		try {
+			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
+				if (genOp.cancelled) break;
+
+				const item = checkpoint.remainingItems[i];
+				const filePath = item.payload.filePath as string;
+
+				genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming organization');
+
+				const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+				if (!(file instanceof TFile)) continue;
+				if (this.isExcluded(file)) continue;
+
+				try {
+					const originalPath = file.path;
+					const result = await this.organizeFile(file);
+
+					if (result) {
+						if (result.movedDirectly && result.action.type === 'move') {
+							movedCount++;
+							const newPath = normalizePath(
+								`${result.action.targetDirectory}/${file.name}`
+							);
+							moveRecords.push({ originalPath, newPath });
+						}
+						if (result.proposalCreated) proposalCount++;
+					}
+				} catch (error) {
+					errorCount++;
+					const msg = error instanceof Error ? error.message : String(error);
+					console.warn(`[Auto Notes] Failed to organize ${file.path}: ${msg}`);
+				}
+
+				await this.checkpointManager.completeItem(checkpoint.id, item.id);
+			}
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			genOp.error(`Resume failed -- ${msg}`);
+			return;
+		}
+
+		if (genOp.cancelled) {
+			await this.checkpointManager.discard(checkpoint.id);
+			return;
+		}
+
+		const tasks = await this.checkpointManager.complete(checkpoint.id);
+		this.dispatchDeferredTasks(tasks);
+
+		const parts: string[] = [];
+		if (movedCount > 0) parts.push(`${movedCount} moved`);
+		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		if (errorCount > 0) parts.push(`${errorCount} failed`);
+		genOp.finish(`Resumed -- ${parts.length > 0 ? parts.join(', ') : 'no changes needed'}`);
+
+		if (moveRecords.length > 0) {
+			const summaryPath = await this.writeOrganizeSummary(moveRecords);
+			if (summaryPath) {
+				this.notifications.info(`Organize summary saved to ${summaryPath}`);
+			}
+		}
+
+		if (proposalCount > 0) {
+			await this.onViewRefreshNeeded?.();
+		}
+	}
+
+	/**
 	 * Organize a single note. Analyzes content, determines best directory,
 	 * and either moves directly or creates a proposal for new directories.
 	 */
@@ -115,7 +202,7 @@ export class OrganizeModule {
 			return result;
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			op.error(`Organization failed — ${msg}`);
+			op.error(`Organization failed -- ${msg}`);
 			return null;
 		}
 	}
@@ -148,7 +235,7 @@ export class OrganizeModule {
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			scanOp.error(`Scan failed — ${msg}`);
+			scanOp.error(`Scan failed -- ${msg}`);
 			return 0;
 		}
 
@@ -169,7 +256,7 @@ export class OrganizeModule {
 			return 0;
 		}
 
-		// Phase 3: Analyze and organize
+		// Phase 3: Analyze and organize (checkpointed)
 		const genOp = this.notifications.startOperation(
 			'Organizing notes',
 			'organize-generate'
@@ -179,6 +266,25 @@ export class OrganizeModule {
 		let proposalCount = 0;
 		let errorCount = 0;
 		const moveRecords: MoveRecord[] = [];
+
+		// Create checkpoint for resumability
+		const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
+			id: `org-${i}-${f.path}`,
+			label: f.path,
+			payload: { filePath: f.path } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'organize',
+			operationLabel: `Organize: directory scan${folderPath ? ` (${folderPath})` : ''}`,
+			items: checkpointItems,
+		});
+
+		// Register deferred task for sidebar refresh (I1)
+		await this.checkpointManager.addDeferredTask(checkpoint.id, {
+			id: generateId(),
+			type: 'refresh-sidebar-view',
+			data: {},
+		});
 
 		for (let i = 0; i < eligible.length; i++) {
 			if (genOp.cancelled) break;
@@ -203,12 +309,24 @@ export class OrganizeModule {
 				const msg = error instanceof Error ? error.message : String(error);
 				console.warn(`[Auto Notes] Failed to organize ${eligible[i].path}: ${msg}`);
 			}
+
+			// Save checkpoint progress
+			await this.checkpointManager.completeItem(
+				checkpoint.id,
+				checkpointItems[i].id
+			);
 		}
 
 		if (genOp.cancelled) {
+			// Discard checkpoint on user cancellation (C3)
+			await this.checkpointManager.discard(checkpoint.id);
 			this.notifications.info('Organization cancelled');
 			return movedCount + proposalCount;
 		}
+
+		// Mark checkpoint completed and dispatch deferred tasks (I1)
+		const tasks = await this.checkpointManager.complete(checkpoint.id);
+		this.dispatchDeferredTasks(tasks);
 
 		const parts: string[] = [];
 		if (movedCount > 0) parts.push(`${movedCount} moved`);
@@ -263,14 +381,14 @@ export class OrganizeModule {
 			const newPath = this.findAvailablePath(candidatePath);
 			if (!newPath) {
 				this.notifications.info(
-					`Cannot move — a file already exists at ${candidatePath}`
+					`Cannot move -- a file already exists at ${candidatePath}`
 				);
 				return;
 			}
 
 			// Save snapshot for undo
 			const snapshot: OrganizeSnapshot = {
-				id: this.generateId(),
+				id: generateId(),
 				currentPath: newPath,
 				originalPath: file.path,
 				movedAt: new Date().toISOString(),
@@ -334,7 +452,7 @@ export class OrganizeModule {
 
 			await this.plugin.app.vault.rename(file, snapshot.originalPath);
 			await this.store.removeSnapshot(file.path);
-			this.notifications.success('Organize undone — note moved back');
+			this.notifications.success('Organize undone -- note moved back');
 		} catch (error) {
 			this.notifications.notifyError('Failed to undo organize', error);
 		}
@@ -374,7 +492,7 @@ export class OrganizeModule {
 
 			// Save snapshot for undo
 			const snapshot: OrganizeSnapshot = {
-				id: this.generateId(),
+				id: generateId(),
 				currentPath: newPath,
 				originalPath: file.path,
 				movedAt: new Date().toISOString(),
@@ -392,9 +510,9 @@ export class OrganizeModule {
 			};
 		}
 
-		// New directory needed — create a proposal
+		// New directory needed -- create a proposal
 		const proposal: OrganizeProposal = {
-			id: this.generateId(),
+			id: generateId(),
 			sourceNotePath: file.path,
 			proposedDirectory: action.targetDirectory,
 			reasoning: action.reasoning,
@@ -448,7 +566,7 @@ export class OrganizeModule {
 		const existing = this.plugin.app.vault.getAbstractFileByPath(candidatePath);
 		if (existing) {
 			console.warn(
-				`[Auto Notes] Skipping move — file already exists at ${candidatePath}`
+				`[Auto Notes] Skipping move -- file already exists at ${candidatePath}`
 			);
 			return null;
 		}
@@ -474,11 +592,17 @@ export class OrganizeModule {
 		}
 	}
 
-	private generateId(): string {
-		return (
-			Date.now().toString(36) +
-			Math.random().toString(36).slice(2, 10)
-		);
+	/** Dispatch deferred tasks (I1). */
+	private dispatchDeferredTasks(tasks: DeferredTask[]): void {
+		for (const task of tasks) {
+			switch (task.type) {
+				case 'refresh-sidebar-view':
+					this.onViewRefreshNeeded?.();
+					break;
+				default:
+					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+			}
+		}
 	}
 }
 

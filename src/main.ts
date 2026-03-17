@@ -9,7 +9,8 @@ import { SummarizeModule } from './summarize';
 import { TidyModule } from './tidy';
 import { OrganizeModule } from './organize';
 import { DeepDiveModule } from './deep-dive';
-import { NotificationManager } from './shared';
+import { NotificationManager, CheckpointManager } from './shared';
+import type { DeferredTask, Checkpoint } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
 import { findVideoUrls } from './video';
@@ -22,6 +23,7 @@ import {
 export default class AutoNotesPlugin extends Plugin {
 	settings!: AutoNotesSettings;
 	notifications!: NotificationManager;
+	private checkpointManager!: CheckpointManager;
 
 	private elaboration!: ElaborationModule;
 	private audio!: AudioModule;
@@ -40,15 +42,19 @@ export default class AutoNotesPlugin extends Plugin {
 		this.notifications = new NotificationManager();
 		this.notifications.setStatusBarEl(this.addStatusBarItem());
 
+		// Single shared checkpoint manager for all modules (I5)
+		this.checkpointManager = new CheckpointManager(this.app);
+
 		const getSettings = () => this.settings;
 
 		// Initialize modules (Audio before Video since Video depends on Audio)
-		this.elaboration = new ElaborationModule(this, getSettings, this.notifications);
-		this.audio = new AudioModule(this, getSettings, this.notifications);
-		this.video = new VideoModule(this, getSettings, this.audio, this.notifications);
-		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications);
+		// Pass checkpointManager to each module instead of letting them create their own
+		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager);
+		this.audio = new AudioModule(this, getSettings, this.notifications, this.checkpointManager);
+		this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager);
+		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager);
 		this.summarize = new SummarizeModule(
-			this, getSettings, this.notifications,
+			this, getSettings, this.notifications, this.checkpointManager,
 			(url, parentOp) => this.video.transcribeUrl(url, parentOp),
 			async (audioFile) => {
 				const data = await this.app.vault.readBinary(audioFile);
@@ -57,8 +63,8 @@ export default class AutoNotesPlugin extends Plugin {
 			}
 		);
 		this.tidy = new TidyModule(this, getSettings, this.notifications);
-		this.organize = new OrganizeModule(this, getSettings, this.notifications);
-		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications);
+		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager);
+		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager);
 
 		// Register the unified proposal view
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
@@ -71,10 +77,12 @@ export default class AutoNotesPlugin extends Plugin {
 				onOrganizeReject: (id) => this.organize.rejectProposal(id),
 				onDeepDiveAccept: (id) => this.deepDive.acceptProposal(id),
 				onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
+				onCheckpointDiscard: (id) => this.discardCheckpoint(id),
+				onCheckpointResume: (id) => this.resumeCheckpoint(id),
 			});
 		});
 
-		// Wire refresh callback — both modules call this to update the shared view
+		// Wire refresh callback -- both modules call this to update the shared view
 		const refreshView = () => this.refreshUnifiedView();
 		this.elaboration.onViewRefreshNeeded = refreshView;
 		this.enrichment.onViewRefreshNeeded = refreshView;
@@ -107,7 +115,7 @@ export default class AutoNotesPlugin extends Plugin {
 			await this.deepDive.onload();
 		}
 
-		// Wire enrichment callbacks — triggers after other processes complete
+		// Wire enrichment callbacks -- triggers after other processes complete
 		if (this.settings.enrichment.enabled && this.settings.enrichment.autoEnrich) {
 			this.elaboration.onProposalAccepted = (filePath: string) => {
 				this.enrichment.enrich(filePath, 'elaboration');
@@ -157,6 +165,15 @@ export default class AutoNotesPlugin extends Plugin {
 			name: 'Open proposal review sidebar',
 			callback: () => this.activateUnifiedView(),
 		});
+
+		this.addCommand({
+			id: 'auto-notes:manage-checkpoints',
+			name: 'Manage interrupted operations',
+			callback: () => this.manageCheckpoints(),
+		});
+
+		// Startup check for incomplete checkpoints (delayed to avoid blocking load)
+		setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
 
 		// Unified transcription commands (if either audio or video enabled)
 		if (this.settings.audio.enabled || this.settings.video.enabled) {
@@ -254,6 +271,59 @@ export default class AutoNotesPlugin extends Plugin {
 		await this.refreshUnifiedView();
 	}
 
+	private async discardCheckpoint(id: string): Promise<void> {
+		// Confirmation before discarding (M5)
+		const proceed = await this.notifications.confirm(
+			'Are you sure you want to discard this interrupted operation? Completed items are kept, but remaining items will be abandoned.',
+			{ proceedLabel: 'Discard', cancelLabel: 'Cancel', level: 'warning' }
+		);
+		if (!proceed) return;
+
+		await this.checkpointManager.discard(id);
+		this.notifications.info('Interrupted operation discarded');
+		await this.refreshUnifiedView();
+	}
+
+	/**
+	 * Resume a checkpoint by dispatching to the appropriate module (C1).
+	 */
+	private async resumeCheckpoint(id: string): Promise<void> {
+		const checkpoint = await this.checkpointManager.resume(id);
+		if (!checkpoint) {
+			this.notifications.info('Checkpoint not found or already completed');
+			return;
+		}
+
+		// Dispatch to the owning module's resume flow
+		switch (checkpoint.module) {
+			case 'elaboration':
+				await this.elaboration.resumeFromCheckpoint(checkpoint);
+				break;
+			case 'enrichment':
+				await this.enrichment.resumeFromCheckpoint(checkpoint);
+				break;
+			case 'audio':
+				await this.audio.resumeFromCheckpoint(checkpoint);
+				break;
+			case 'video':
+				await this.video.resumeFromCheckpoint(checkpoint);
+				break;
+			case 'summarize':
+				await this.summarize.resumeFromCheckpoint(checkpoint);
+				break;
+			case 'organize':
+				await this.organize.resumeFromCheckpoint(checkpoint);
+				break;
+			case 'deep-dive':
+				await this.deepDive.resumeFromCheckpoint(checkpoint);
+				break;
+			default:
+				this.notifications.info(`Unknown module: ${checkpoint.module}`);
+		}
+
+		await this.refreshUnifiedView();
+	}
+
 	private async refreshUnifiedView(): Promise<void> {
 		const leaves = this.app.workspace.getLeavesOfType(UNIFIED_VIEW_TYPE);
 		if (leaves.length === 0) return;
@@ -281,9 +351,100 @@ export default class AutoNotesPlugin extends Plugin {
 			items.push({ kind: 'deep-dive', data: p });
 		}
 
+		// Gather incomplete checkpoints for the sidebar banner
+		const incompleteCheckpoints = await this.checkpointManager.listIncomplete();
+
 		for (const leaf of leaves) {
 			const view = leaf.view as UnifiedProposalView;
 			view.setItems(items);
+			view.setCheckpoints(incompleteCheckpoints);
+		}
+	}
+
+	/**
+	 * Check for incomplete checkpoints on startup and notify the user.
+	 * Offers Resume, Review, or Dismiss options (C1).
+	 */
+	private async checkForIncompleteCheckpoints(): Promise<void> {
+		try {
+			const incomplete = await this.checkpointManager.listIncomplete();
+			if (incomplete.length === 0) return;
+
+			const labels = incomplete
+				.map(cp => `${cp.operationLabel} (${cp.completedItems.length}/${cp.completedItems.length + cp.remainingItems.length} done)`)
+				.join(', ');
+
+			const proceed = await this.notifications.confirm(
+				`${incomplete.length} interrupted operation${incomplete.length === 1 ? '' : 's'} found: ${labels}. Open manager?`,
+				{ proceedLabel: 'Review', cancelLabel: 'Dismiss', level: 'warning' }
+			);
+
+			if (proceed) {
+				await this.manageCheckpoints();
+			}
+
+			// Clean up old completed/discarded checkpoints
+			await this.checkpointManager.cleanup();
+		} catch (error) {
+			console.warn('[Auto Notes] Failed to check for incomplete checkpoints:', error);
+		}
+	}
+
+	/**
+	 * Show checkpoint management dialog: list incomplete operations
+	 * with options to resume, discard, or keep each one (C1).
+	 */
+	private async manageCheckpoints(): Promise<void> {
+		const incomplete = await this.checkpointManager.listIncomplete();
+
+		if (incomplete.length === 0) {
+			this.notifications.info('No interrupted operations found');
+			return;
+		}
+
+		for (const cp of incomplete) {
+			const total = cp.completedItems.length + cp.remainingItems.length;
+			const done = cp.completedItems.length;
+			const remaining = cp.remainingItems.length;
+
+			// First ask if they want to resume
+			const wantResume = await this.notifications.confirm(
+				`${cp.operationLabel}: ${done}/${total} completed, ${remaining} remaining. Resume?`,
+				{ proceedLabel: 'Resume', cancelLabel: 'More options', level: 'warning' }
+			);
+
+			if (wantResume) {
+				await this.resumeCheckpoint(cp.id);
+				continue;
+			}
+
+			// If they chose "More options", offer Discard or Keep
+			const wantDiscard = await this.notifications.confirm(
+				`${cp.operationLabel}: Discard remaining items? (Completed items are already saved)`,
+				{ proceedLabel: 'Discard', cancelLabel: 'Keep', level: 'warning' }
+			);
+
+			if (wantDiscard) {
+				await this.checkpointManager.discard(cp.id);
+				this.notifications.info(`Discarded: ${cp.operationLabel}`);
+			}
+		}
+	}
+
+	/**
+	 * Dispatch deferred tasks returned by checkpoint completion (I1).
+	 * Modules call this after completing a checkpoint to execute
+	 * any registered deferred tasks.
+	 */
+	dispatchDeferredTasks(tasks: DeferredTask[]): void {
+		for (const task of tasks) {
+			switch (task.type) {
+				case 'refresh-sidebar-view':
+					this.refreshUnifiedView();
+					break;
+				default:
+					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+			}
 		}
 	}
 

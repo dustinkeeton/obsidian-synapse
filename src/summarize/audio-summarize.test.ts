@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SummarizeModule, TranscribeAudioFn } from './index';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
+import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
 // Mock the content fetcher to avoid real network calls
 vi.mock('./content-fetcher', () => ({
@@ -45,6 +46,13 @@ vi.mock('../shared', () => ({
 	buildCallout: vi.fn((_type: string, title: string, content: string) =>
 		`\n> [!auto-notes-summary] ${title}\n> ${content}\n`
 	),
+	CheckpointManager: class MockCheckpointManager {
+		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
+		completeItem = vi.fn().mockResolvedValue(null);
+		complete = vi.fn().mockResolvedValue([]);
+		discard = vi.fn().mockResolvedValue(undefined);
+		listIncomplete = vi.fn().mockResolvedValue([]);
+	},
 }));
 
 function createMockNotifications() {
@@ -111,6 +119,7 @@ describe('SummarizeModule audio target detection', () => {
 			mockPlugin as any,
 			() => settings,
 			mockNotifications as any,
+			createMockCheckpointManager() as any,
 			undefined,
 			transcribeAudioFn
 		);
@@ -216,6 +225,7 @@ describe('SummarizeModule audio target detection', () => {
 			mockPlugin as any,
 			() => settings,
 			mockNotifications as any,
+			createMockCheckpointManager() as any,
 			undefined,
 			undefined
 		);

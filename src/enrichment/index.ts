@@ -1,6 +1,10 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter } from '../shared';
+import {
+	FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter,
+	CheckpointManager, generateId,
+} from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentStore } from './enrichment-store';
 import { LinkResolver } from './link-resolver';
@@ -37,7 +41,8 @@ export class EnrichmentModule {
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		private checkpointManager: CheckpointManager
 	) {
 		this.analyzer = new VaultAnalyzer(plugin.app);
 		this.classifier = new MetadataClassifier(getSettings);
@@ -100,17 +105,75 @@ export class EnrichmentModule {
 	}
 
 	/**
+	 * Resume enrichment from a checkpoint (C1).
+	 * Re-enriches the remaining files from the checkpoint.
+	 */
+	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
+		this.topicExtractor.clearPending();
+
+		const genOp = this.notifications.startOperation(
+			'Resuming enrichment',
+			'enrichment-vault-resume'
+		);
+		const createdProposals: Array<{ id: string; notePath: string }> = [];
+		let proposalCount = 0;
+
+		try {
+			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
+				if (genOp.cancelled) break;
+
+				const item = checkpoint.remainingItems[i];
+				const filePath = item.payload.filePath as string;
+
+				genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming enrichment');
+
+				const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+				if (!(file instanceof TFile)) continue;
+				if (this.isExcluded(file)) continue;
+
+				const id = await this.enrichFile(file, 'manual');
+				if (id) {
+					createdProposals.push({ id, notePath: file.path });
+					proposalCount++;
+				}
+
+				await this.checkpointManager.completeItem(checkpoint.id, item.id);
+			}
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			genOp.error(`Resume failed -- ${msg}`);
+			this.topicExtractor.clearPending();
+			await this.rejectProposalBatch(createdProposals.map(p => p.id));
+			await this.refreshView();
+			return;
+		}
+
+		if (genOp.cancelled) {
+			await this.checkpointManager.discard(checkpoint.id);
+			this.topicExtractor.clearPending();
+			await this.rejectProposalBatch(createdProposals.map(p => p.id));
+			await this.refreshView();
+			return;
+		}
+
+		const tasks = await this.checkpointManager.complete(checkpoint.id);
+		this.dispatchDeferredTasks(tasks);
+		genOp.finish(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		await this.refreshView();
+	}
+
+	/**
 	 * Scan every note in the vault for enrichment opportunities.
 	 *
 	 * Four-phase flow:
-	 * 1. Lightweight scan — collect eligible files, warm analyzer caches
+	 * 1. Lightweight scan -- collect eligible files, warm analyzer caches
 	 * 2. User confirmation
 	 * 3. Heavy AI enrichment per file (cancellable, with rollback)
-	 * 4. Resolve cross-note new-note candidates — only topics referenced
+	 * 4. Resolve cross-note new-note candidates -- only topics referenced
 	 *    by 2+ notes become new-note link suggestions
 	 */
 	async scanVault(folderPath?: string): Promise<number> {
-		// ── Phase 1: Collect eligible files & warm caches ──
+		// -- Phase 1: Collect eligible files & warm caches --
 		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for enrichment`,
@@ -134,7 +197,7 @@ export class EnrichmentModule {
 			this.analyzer.buildLinkGraph();
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			scanOp.error(`Vault scan failed — ${msg}`);
+			scanOp.error(`Vault scan failed -- ${msg}`);
 			return 0;
 		}
 
@@ -144,7 +207,7 @@ export class EnrichmentModule {
 			return 0;
 		}
 
-		// ── Phase 2: User confirmation ──
+		// -- Phase 2: User confirmation --
 		const proceed = await this.notifications.confirm(
 			`Found ${eligible.length} note${eligible.length === 1 ? '' : 's'} to enrich. Generate proposals?`,
 			{ proceedLabel: 'Generate', cancelLabel: 'Skip' }
@@ -155,7 +218,7 @@ export class EnrichmentModule {
 			return 0;
 		}
 
-		// ── Phase 3: Generate proposals (heavy, cancellable) ──
+		// -- Phase 3: Generate proposals (heavy, cancellable, checkpointed) --
 		// Clear any stale pending topics before starting
 		this.topicExtractor.clearPending();
 
@@ -166,6 +229,25 @@ export class EnrichmentModule {
 		// Track proposal IDs mapped to note paths for Phase 4 injection
 		const createdProposals: Array<{ id: string; notePath: string }> = [];
 		let proposalCount = 0;
+
+		// Create checkpoint for resumability
+		const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
+			id: `enrich-${i}-${f.path}`,
+			label: f.path,
+			payload: { filePath: f.path } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'enrichment',
+			operationLabel: `Enrichment: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			items: checkpointItems,
+		});
+
+		// Register deferred task for sidebar refresh (I1)
+		await this.checkpointManager.addDeferredTask(checkpoint.id, {
+			id: generateId(),
+			type: 'refresh-sidebar-view',
+			data: {},
+		});
 
 		try {
 			for (let i = 0; i < eligible.length; i++) {
@@ -181,10 +263,16 @@ export class EnrichmentModule {
 					createdProposals.push({ id, notePath: eligible[i].path });
 					proposalCount++;
 				}
+
+				// Save checkpoint progress
+				await this.checkpointManager.completeItem(
+					checkpoint.id,
+					checkpointItems[i].id
+				);
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Enrichment generation failed — ${msg}`);
+			genOp.error(`Enrichment generation failed -- ${msg}`);
 			this.topicExtractor.clearPending();
 			await this.rejectProposalBatch(createdProposals.map(p => p.id));
 			await this.refreshView();
@@ -192,13 +280,15 @@ export class EnrichmentModule {
 		}
 
 		if (genOp.cancelled) {
+			// Discard checkpoint on user cancellation (C3)
+			await this.checkpointManager.discard(checkpoint.id);
 			this.topicExtractor.clearPending();
 			await this.rejectProposalBatch(createdProposals.map(p => p.id));
 			await this.refreshView();
 			return 0;
 		}
 
-		// ── Phase 4: Resolve cross-note new-note candidates ──
+		// -- Phase 4: Resolve cross-note new-note candidates --
 		// Only topics referenced by 2+ notes become new-note suggestions
 		const newNoteCandidates = this.topicExtractor.resolveNewNoteCandidates();
 
@@ -220,6 +310,9 @@ export class EnrichmentModule {
 			}
 		}
 
+		// Mark checkpoint completed and dispatch deferred tasks (I1)
+		const tasks = await this.checkpointManager.complete(checkpoint.id);
+		this.dispatchDeferredTasks(tasks);
 		genOp.finish(
 			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`
 		);
@@ -258,7 +351,7 @@ export class EnrichmentModule {
 		} catch (error) {
 			this.topicExtractor.clearPending();
 			const msg = error instanceof Error ? error.message : String(error);
-			op.error(`Enrichment failed — ${msg}`);
+			op.error(`Enrichment failed -- ${msg}`);
 		}
 	}
 
@@ -320,7 +413,7 @@ export class EnrichmentModule {
 		if (totalItems === 0) return null;
 
 		const proposal: EnrichmentProposal = {
-			id: this.generateId(),
+			id: generateId(),
 			sourceNotePath: file.path,
 			createdAt: new Date().toISOString(),
 			triggerSource: trigger,
@@ -438,10 +531,16 @@ export class EnrichmentModule {
 		return [...content.matchAll(urlRegex)].map(m => m[0]);
 	}
 
-	private generateId(): string {
-		return (
-			Date.now().toString(36) +
-			Math.random().toString(36).slice(2, 10)
-		);
+	/** Dispatch deferred tasks (I1). */
+	private dispatchDeferredTasks(tasks: DeferredTask[]): void {
+		for (const task of tasks) {
+			switch (task.type) {
+				case 'refresh-sidebar-view':
+					this.onViewRefreshNeeded?.();
+					break;
+				default:
+					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+			}
+		}
 	}
 }
