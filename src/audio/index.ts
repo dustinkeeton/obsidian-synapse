@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { NotificationManager } from '../shared';
+import { NotificationManager, buildCallout, CALLOUT_TYPES } from '../shared';
 import { NoteAudioModal } from './note-audio-modal';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
@@ -88,13 +88,12 @@ export class AudioModule {
 					const result = await this.transcribe(data, file.name);
 					const text = result.processed || result.raw;
 
-					const transcriptionBlock = [
-						'',
-						`> **Transcription of ${file.name}**`,
-						'>',
-						...text.split('\n').map(line => `> ${line}`),
-						'',
-					].join('\n');
+					const transcriptionBlock = buildCallout(
+						CALLOUT_TYPES.transcription,
+						`Transcription of ${file.name}`,
+						text,
+						true
+					);
 
 					const content = await this.plugin.app.vault.read(activeFile);
 					await this.plugin.app.vault.modify(activeFile, content + transcriptionBlock);
@@ -156,7 +155,12 @@ export class AudioModule {
 	private hasTranscriptionBelow(lines: string[], embedLine: number, fileName: string): boolean {
 		// Look at the lines following the embed for a transcription block
 		for (let j = embedLine + 1; j < lines.length && j <= embedLine + 3; j++) {
+			// Legacy format
 			if (lines[j].includes(`**Transcription of ${fileName}**`)) {
+				return true;
+			}
+			// Callout format
+			if (lines[j].includes(`[!${CALLOUT_TYPES.transcription}]`) && lines[j].includes(`Transcription of ${fileName}`)) {
 				return true;
 			}
 			// Stop looking if we hit another embed or non-empty non-blank line that isn't a blockquote
@@ -198,13 +202,12 @@ export class AudioModule {
 				const text = result.processed || result.raw;
 
 				const lines = content.split('\n');
-				const transcriptionBlock = [
-					'',
-					`> **Transcription of ${embed.fileName}**`,
-					'>',
-					...text.split('\n').map(line => `> ${line}`),
-					'',
-				].join('\n');
+				const transcriptionBlock = buildCallout(
+					CALLOUT_TYPES.transcription,
+					`Transcription of ${embed.fileName}`,
+					text,
+					true
+				);
 
 				// Insert after the embed line
 				lines.splice(embed.line + 1, 0, transcriptionBlock);
