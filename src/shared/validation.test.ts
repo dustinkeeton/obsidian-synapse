@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blockquoteOriginal } from './validation';
+import { blockquoteOriginal, ensureWithinVault } from './validation';
 
 describe('blockquoteOriginal', () => {
 	it('converts plain text to a blockquote with attribution', () => {
@@ -56,5 +56,55 @@ describe('blockquoteOriginal', () => {
 		// No valid frontmatter, so the whole thing gets blockquoted
 		expect(result).toContain('> ---');
 		expect(result).toContain('> Not actually frontmatter');
+	});
+});
+
+describe('ensureWithinVault', () => {
+	it('allows a simple relative path within the vault', () => {
+		const result = ensureWithinVault('notes/hello.md', '/vault');
+		expect(result).toBe('/vault/notes/hello.md');
+	});
+
+	it('resolves dot segments', () => {
+		const result = ensureWithinVault('notes/../notes/hello.md', '/vault');
+		expect(result).toBe('/vault/notes/hello.md');
+	});
+
+	it('resolves current-dir segments', () => {
+		const result = ensureWithinVault('./notes/hello.md', '/vault');
+		expect(result).toBe('/vault/notes/hello.md');
+	});
+
+	it('throws on path traversal that escapes the vault', () => {
+		expect(() => ensureWithinVault('../../etc/passwd', '/vault')).toThrow(
+			'Path escapes vault boundary'
+		);
+	});
+
+	it('throws on deeply nested traversal', () => {
+		expect(() =>
+			ensureWithinVault('notes/../../../etc/passwd', '/vault')
+		).toThrow('Path escapes vault boundary');
+	});
+
+	it('allows the vault root itself', () => {
+		const result = ensureWithinVault('.', '/vault');
+		expect(result).toBe('/vault');
+	});
+
+	it('normalizes backslashes to forward slashes', () => {
+		const result = ensureWithinVault('notes\\hello.md', '/vault');
+		expect(result).toBe('/vault/notes/hello.md');
+	});
+
+	it('handles absolute path inside vault', () => {
+		const result = ensureWithinVault('/vault/notes/hello.md', '/vault');
+		expect(result).toBe('/vault/notes/hello.md');
+	});
+
+	it('throws for absolute path outside vault', () => {
+		expect(() => ensureWithinVault('/other/path', '/vault')).toThrow(
+			'Path escapes vault boundary'
+		);
 	});
 });
