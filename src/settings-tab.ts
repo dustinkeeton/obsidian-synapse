@@ -448,6 +448,7 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 				max: 1,
 				step: 0.05,
 				value: this.plugin.settings.enrichment.internalLinkThreshold,
+				showTicks: true,
 				onChange: async (value) => {
 					this.plugin.settings.enrichment.internalLinkThreshold = value;
 					await this.plugin.saveSettings();
@@ -479,6 +480,7 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					max: 1,
 					step: 0.05,
 					value: this.plugin.settings.enrichment.weights[key],
+					showTicks: true,
 					onChange: async (value) => {
 						this.plugin.settings.enrichment.weights[key] = value;
 						await this.plugin.saveSettings();
@@ -753,6 +755,7 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 				max: 0.9,
 				step: 0.05,
 				value: this.plugin.settings.deepDive.qualityThreshold,
+				showTicks: true,
 				onChange: async (value) => {
 					this.plugin.settings.deepDive.qualityThreshold = value;
 					await this.plugin.saveSettings();
