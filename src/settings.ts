@@ -295,7 +295,7 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		maxDepth: 3,
 		qualityThreshold: 0.4,
 		maxNotesPerRun: 50,
-		noteOutputFolder: '',
+		noteOutputFolder: 'Deep Dives',
 		excludeFolders: ['templates', '.auto-notes'],
 		excludeTags: ['no-deep-dive'],
 		autoEnrichOnAccept: true,
