@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-16
+last-updated: 2026-03-17
 ---
 
 # Video Module
 
-Downloads videos from YouTube/TikTok via yt-dlp, extracts audio, delegates transcription to Audio module, optionally saves video to vault.
+Downloads videos from YouTube/TikTok via yt-dlp, extracts audio, delegates transcription to Audio module, optionally saves video to vault. Exposes public methods for unified transcription UI.
 
 ## Public API
 
@@ -15,16 +15,19 @@ class VideoModule {
   constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, audioModule: AudioModule, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
+  transcribeUrl(url: string, parentOp?: { update: (msg: string) => void }): Promise<string>
   processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>
+  transcribeUrlToActiveNote(url: string): Promise<void>
+  transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>
   onTranscriptionComplete: ((filePath: string) => void) | null
 }
 
 function detectPlatform(url: string): UrlDetectionResult | null
 function isSupportedUrl(url: string): boolean
+function findVideoUrls(content: string): VideoUrlEmbed[]
 
 type Platform = 'youtube' | 'tiktok' | 'unknown'
 interface UrlDetectionResult { platform: Platform; videoId: string; url: string }
-interface VideoSource { type: 'url' | 'file'; platform?: Platform; url?: string; filePath?: string; title?: string; channel?: string; duration?: number }
 interface VideoProcessOptions { postProcess?: boolean; extractFrames?: boolean; outputPath?: string; insertMode?: boolean }
 interface ExtractionResult { audioPath: string; metadata: VideoMetadata }
 interface VideoMetadata { title: string; channel?: string; duration?: number; uploadDate?: string; description?: string; platform?: string; url?: string }
@@ -41,34 +44,41 @@ interface VideoUrlEmbed { url: string; platform: Platform; line: number }
 | `note-scanner.ts` | `findVideoUrls`, `hasTranscriptionBelow` | Scan note content for video URLs |
 | `note-scanner.test.ts` | Tests | Note scanner tests |
 | `audio-extractor.ts` | `AudioExtractor` | yt-dlp/ffmpeg via `execFile` (no shell) |
-| `video-modal.ts` | `VideoTranscriptionModal` | URL input modal |
-| `note-video-modal.ts` | `NoteVideoModal` | Selection modal for note URLs |
 | `frame-extractor.ts` | `FrameExtractor` | Placeholder (not implemented) |
-| `index.ts` | `VideoModule` | Orchestrator, commands |
+| `index.ts` | `VideoModule` | Orchestrator, public transcription methods |
 
 ## Data Flow
 
 ```
-1. User enters URL or triggers note scan
+1. User triggers via UnifiedTranscriptionModal or NoteMediaModal (in transcription/)
    |
-2. sanitizeUrl(url) -- validates HTTP(S), rejects shell chars
+2a. transcribeUrlToActiveNote(url) -- single URL to active note
+   |  Calls processUrl(), builds callout + optional video embed, appends to active note
    |
-3. detectPlatform(url)
+2b. transcribeAndInsert(noteFile, embeds) -- batch from note scan
+   |  Processes embeds in reverse line order, 2s delay between API calls
+   |  Cancellable via NotificationManager operation handle
+   |
+2c. transcribeUrl(url, parentOp) -- returns transcript text only
+   |  Used by SummarizeModule to auto-transcribe video URLs before summarizing
+   |
+3. sanitizeUrl(url) -- validates HTTP(S), rejects shell chars
+   |
+4. detectPlatform(url)
    |  YouTube: youtube.com/watch, youtu.be, youtube.com/shorts
    |  TikTok: tiktok.com/@user/video/id, tiktok.com/t/..., vm/vt.tiktok.com
    |
-4. AudioExtractor.extractFromUrl(url)
+5. AudioExtractor.extractFromUrl(url)
    |  getMetadata() --> yt-dlp --dump-json --no-download
    |  Download audio --> yt-dlp -x --audio-format mp3
    |  Tool paths via sanitizePath(), env via shellEnv()
    |
-5. downloadVideoToVault() [if downloadFolder configured]
+6. downloadVideoToVault() [if downloadFolder configured]
    |  yt-dlp -f mp4/best, writes to vault via adapter.writeBinary
    |
-6. AudioModule.transcribe(audioData, fileName)
+7. AudioModule.transcribe(audioData, fileName)
    |
-7. Insert blockquote + optional video embed in note
-   |  Cancellable via NotificationManager operation handle
+8. Result wrapped in callout block + optional video embed
 ```
 
 ## Note Scanning
@@ -76,8 +86,17 @@ interface VideoUrlEmbed { url: string; platform: Platform; line: number }
 `findVideoUrls(content)` in `note-scanner.ts`:
 - Regex: `https?://[^\s)\]>]+`
 - Skips blockquote lines (transcription output)
-- Skips URLs with existing transcription below
+- Skips URLs with existing transcription callout below
 - Returns `VideoUrlEmbed[]` with line numbers
+
+## Commands
+
+Only one command registered directly:
+- `auto-notes:check-dependencies` -- checks yt-dlp and ffmpeg availability
+
+Transcription commands registered in `main.ts` (unified):
+- `auto-notes:transcribe-media` -> `VideoModule.transcribeUrlToActiveNote(url)`
+- `auto-notes:transcribe-note-media` -> `VideoModule.transcribeAndInsert(file, embeds)`
 
 ## External Dependencies
 
@@ -97,6 +116,5 @@ interface VideoUrlEmbed { url: string; platform: Platform; line: number }
 
 ## Unimplemented
 
-- `auto-notes:transcribe-video-file`: shows "coming soon" notice
 - `FrameExtractor`: placeholder, throws on use
 - `supportedPlatforms` settings: defined but not enforced

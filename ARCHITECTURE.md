@@ -6,46 +6,49 @@ Auto Notes is an Obsidian plugin that provides eight AI-powered features: note e
 
 ## System Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Obsidian Desktop                             │
-│                                                                     │
-│  ┌──────────┐    ┌──────────────┐    ┌──────────────────────────┐   │
-│  │ Settings │◄───│   main.ts    │───►│   Unified Proposal View  │   │
-│  │ + Tab    │    │ AutoNotes    │    │   (sidebar)              │   │
-│  └──────────┘    │ Plugin       │    │                          │   │
-│                  └──────┬───────┘    │  ┌────┐ ┌────┐ ┌────┐   │   │
-│                         │            │  │Elab│ │Enr │ │Org │   │   │
-│           ┌─────────────┼──────┐     │  │blue│ │grn │ │org │   │   │
-│           │             │      │     │  └────┘ └────┘ └────┘   │   │
-│           ▼             ▼      ▼     │  ┌─────────┐            │   │
-│  ┌────────────┐  ┌──────────┐  ...   │  │Deep Dive│            │   │
-│  │Elaboration │  │  Audio   │        │  │ purple  │            │   │
-│  │            │  │          │        │  └─────────┘            │   │
-│  │ Detector   │  │Transcrib.│        └──────────────────────────┘   │
-│  │ Proposer   │  │Post-Proc │                                       │
-│  │ Store      │  │ Modal    │                                       │
-│  └─────┬──────┘  └────┬─────┘                                      │
-│        │               │                                             │
-│        │   ┌───────────┼──────────────────────────────┐             │
-│        │   │           │                              │             │
-│        ▼   ▼           ▼                              ▼             │
-│  ┌──────────────────────────────────────────────────────────┐       │
-│  │                    Shared Layer                           │       │
-│  │  AIClient · NotificationManager · Validation · File Utils│       │
-│  │  Frontmatter · API Utils                                 │       │
-│  └────────┬──────────────────────┬──────────────────────────┘       │
-│           │                      │                                   │
-└───────────┼──────────────────────┼───────────────────────────────────┘
-            │                      │
-            ▼                      ▼
-  ┌──────────────────┐   ┌──────────────────┐
-  │  AI Providers    │   │  External Tools  │
-  │  · OpenAI API    │   │  · yt-dlp        │
-  │  · Anthropic API │   │  · ffmpeg        │
-  │  · Ollama (local)│   └──────────────────┘
-  │  · Deepgram API  │
-  └──────────────────┘
+```mermaid
+graph TB
+    subgraph Obsidian["Obsidian Desktop"]
+        Main["main.ts<br/>AutoNotesPlugin"]
+        Settings["Settings + Tab"]
+        Sidebar["Unified Proposal View<br/>(sidebar)"]
+
+        subgraph Features["Feature Modules"]
+            Elab["Elaboration"]
+            Audio["Audio"]
+            Video["Video"]
+            Trans["Transcription<br/>(UI only)"]
+            Enrich["Enrichment"]
+            Summ["Summarize"]
+            Tidy["Tidy"]
+            Org["Organize"]
+            DD["Deep Dive"]
+        end
+
+        Shared["Shared Layer<br/>AIClient · Notifications · Validation<br/>File Utils · Frontmatter · Callouts"]
+    end
+
+    subgraph External["External Services"]
+        AI["AI Providers<br/>OpenAI · Anthropic · Ollama"]
+        TransAPI["Transcription APIs<br/>Whisper · Deepgram"]
+        Tools["CLI Tools<br/>yt-dlp · ffmpeg"]
+    end
+
+    Main --> Settings
+    Main --> Sidebar
+    Main --> Features
+    Features --> Shared
+    Shared --> AI
+    Audio --> TransAPI
+    Video --> Tools
+    Video --> Audio
+    Trans --> Audio
+    Trans --> Video
+    Summ -.->|transcribeUrl injection| Video
+    DD -.->|auto-organize| Org
+
+    style Trans fill:#f9f,stroke:#333
+    style Sidebar fill:#bbf,stroke:#333
 ```
 
 ---
@@ -67,6 +70,7 @@ src/
 ├── audio/                  # Audio transcription
 │   ├── transcriber.ts      #   Whisper API / Deepgram / local routing
 │   ├── post-processor.ts   #   AI transcript cleanup
+│   ├── note-scanner.ts     #   Find audio embeds in note content
 │   └── index.ts            #   AudioModule orchestrator
 │
 ├── video/                  # Video download + transcription
@@ -74,6 +78,11 @@ src/
 │   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile
 │   ├── note-scanner.ts     #   Find video URLs in note content
 │   └── index.ts            #   VideoModule orchestrator (delegates to Audio)
+│
+├── transcription/          # Unified transcription UI (issue #20)
+│   ├── unified-modal.ts    #   File picker + URL input in a single modal
+│   ├── note-media-modal.ts #   Selection modal for media in current note
+│   └── index.ts            #   Barrel export
 │
 ├── enrichment/             # Tags, links, refs, frontmatter
 │   ├── metadata-classifier.ts  # AI tag classification against vocabulary
@@ -106,6 +115,7 @@ src/
 │   ├── topic-analyzer.ts   #   AI topic extraction from note content
 │   ├── note-generator.ts   #   AI content generation for topics
 │   ├── quality-scorer.ts   #   Local heuristic quality scoring
+│   ├── syllabus-navigator.ts # Traversal ordering, syllabus index, navigation
 │   ├── deep-dive-store.ts  #   Proposal + run persistence
 │   └── index.ts            #   DeepDiveModule orchestrator
 │
@@ -115,6 +125,10 @@ src/
 │   ├── validation.ts       #   URL, path, AI response sanitization
 │   ├── file-utils.ts       #   Vault file operations
 │   ├── frontmatter-utils.ts#   YAML frontmatter parsing/serialization
+│   ├── callouts.ts         #   Callout type registry + builder
+│   ├── diagram-generator.ts#   Mermaid diagram generation
+│   ├── slider-helper.ts    #   Settings UI helper for range sliders
+│   ├── folder-picker-modal.ts # Modal for folder selection
 │   ├── api-utils.ts        #   Retry logic, error handling
 │   └── index.ts            #   Barrel export
 │
@@ -124,40 +138,118 @@ src/
 
 ---
 
+## Dependency Graph
+
+```mermaid
+graph LR
+    Main["main.ts"] --> Settings["settings.ts"]
+    Main --> SettingsTab["settings-tab.ts"]
+    Main --> Shared["shared/"]
+    Main --> Views["views/"]
+    Main --> Elab["elaboration/"]
+    Main --> Audio["audio/"]
+    Main --> Video["video/"]
+    Main --> Trans["transcription/"]
+    Main --> Enrich["enrichment/"]
+    Main --> Summ["summarize/"]
+    Main --> Tidy["tidy/"]
+    Main --> Org["organize/"]
+    Main --> DD["deep-dive/"]
+
+    Elab --> Shared
+    Audio --> Shared
+    Video --> Shared
+    Video --> Audio
+    Trans --> Audio
+    Trans --> Video
+    Enrich --> Shared
+    Summ --> Shared
+    Summ -.-> Video
+    Tidy --> Shared
+    Org --> Shared
+    DD --> Shared
+    DD --> Org
+    Views --> Elab
+    Views --> Enrich
+    Views --> Org
+    Views --> DD
+
+    style Trans fill:#f9f,stroke:#333
+```
+
+Key constraints:
+- **Video depends on Audio** — reuses transcription pipeline
+- **Transcription is UI-only** — delegates all work to Audio and Video via callbacks
+- **Summarize receives `video.transcribeUrl`** via constructor injection (dotted line)
+- **Deep Dive reuses Organize** for `auto-organize` nesting mode
+- **All feature modules depend on Shared** — no circular dependencies
+- **Views imports types only** from feature modules
+
+---
+
 ## Plugin Lifecycle
 
-```
-onload()
-  │
-  ├── loadSettings()          # Deep-merge saved data with defaults
-  ├── addSettingTab()          # Register settings UI
-  ├── NotificationManager()   # Create shared notification system
-  │
-  ├── Initialize 8 modules    # Audio before Video (Video depends on Audio)
-  │   ElaborationModule, AudioModule, VideoModule, EnrichmentModule,
-  │   SummarizeModule, TidyModule, OrganizeModule, DeepDiveModule
-  │
-  ├── registerView()          # UnifiedProposalView (sidebar)
-  ├── Wire refresh callbacks   # All 4 proposal modules -> refreshUnifiedView()
-  │
-  ├── Conditional module.onload()  # Only if module.enabled in settings
-  │
-  ├── Wire enrichment callbacks    # Only if enrichment.enabled && autoEnrich
-  │   elaboration -> enrichment (on accept)
-  │   audio -> enrichment (on transcription)
-  │   video -> enrichment (on transcription)
-  │   summarize -> enrichment (on summary)
-  │   deep-dive -> enrichment (on accept, if autoEnrichOnAccept)
-  │
-  ├── Wire organize callback       # Only if deepDive.autoOrganizeOnAccept
-  │   deep-dive -> organize (on accept)
-  │
-  ├── addRibbonIcon()          # sparkles (proposals), mic (audio)
-  └── addCommand()             # review-proposals
+```mermaid
+sequenceDiagram
+    participant O as Obsidian
+    participant M as main.ts
+    participant Mod as Modules (×8)
+    participant CB as Callbacks
 
-onunload()
-  └── module.onunload() for all 8 modules
+    O->>M: onload()
+    M->>M: loadSettings() (deep-merge)
+    M->>M: addSettingTab()
+    M->>M: NotificationManager()
+    M->>Mod: Initialize 8 modules<br/>(Audio before Video)
+    M->>M: registerView(UnifiedProposalView)
+    M->>CB: Wire refresh callbacks
+    M->>Mod: Conditional module.onload()<br/>(if enabled in settings)
+    M->>CB: Wire enrichment callbacks<br/>(if autoEnrich)
+    M->>CB: Wire organize callbacks<br/>(if autoOrganizeOnAccept)
+    M->>M: addRibbonIcon (sparkles, mic)
+    M->>M: addCommand (review, transcribe)
 ```
+
+---
+
+## Transcription Architecture (Issue #20)
+
+The transcription system uses a **UI layer + backend modules** pattern:
+
+```mermaid
+graph TB
+    subgraph UI["Transcription UI (src/transcription/)"]
+        UM["UnifiedTranscriptionModal<br/>File picker + URL input"]
+        NM["NoteMediaModal<br/>Scan note → select media"]
+    end
+
+    subgraph Backend["Backend Modules"]
+        Audio["AudioModule<br/>transcribeFileToActiveNote()<br/>transcribeAndInsert()"]
+        Video["VideoModule<br/>transcribeUrlToActiveNote()<br/>transcribeAndInsert()"]
+    end
+
+    subgraph Providers["Transcription Providers"]
+        Whisper["Whisper API"]
+        Deepgram["Deepgram"]
+        YtDlp["yt-dlp + ffmpeg"]
+    end
+
+    Ribbon["🎤 Ribbon Icon"] --> UM
+    Cmd1["transcribe-media command"] --> UM
+    Cmd2["transcribe-note-media command"] --> NM
+
+    UM -->|onTranscribeFile| Audio
+    UM -->|onTranscribeUrl| Video
+    NM -->|onTranscribeAudio| Audio
+    NM -->|onTranscribeVideo| Video
+
+    Audio --> Whisper
+    Audio --> Deepgram
+    Video --> YtDlp
+    Video -->|delegates| Audio
+```
+
+The transcription module replaced 4 modal files across audio/ and video/ with 2 unified modals. All callbacks are wired in `main.ts`.
 
 ---
 
@@ -165,25 +257,28 @@ onunload()
 
 All inter-module communication flows through `main.ts` via nullable callback assignments. No event bus, no pub-sub.
 
-```
-Enrichment triggers (when autoEnrich enabled):
+```mermaid
+graph LR
+    subgraph Triggers["Enrichment Triggers (when autoEnrich)"]
+        Elab["Elaboration<br/>onProposalAccepted"]
+        Audio["Audio<br/>onTranscriptionComplete"]
+        Video["Video<br/>onTranscriptionComplete"]
+        Summ["Summarize<br/>onSummaryComplete"]
+        DD["Deep Dive<br/>onNoteAccepted"]
+    end
 
-  Elaboration ──onProposalAccepted(path)──────► Enrichment.enrich(path, 'elaboration')
-  Audio ────────onTranscriptionComplete(path)──► Enrichment.enrich(path, 'transcription')
-  Video ────────onTranscriptionComplete(path)──► Enrichment.enrich(path, 'transcription')
-  Summarize ────onSummaryComplete(path)────────► Enrichment.enrich(path, 'summarization')
-  Deep Dive ────onNoteAccepted(path)───────────► Enrichment.enrich(path, 'deep-dive')
+    Enrich["Enrichment.enrich()"]
 
-Organize triggers (when autoOrganizeOnAccept enabled):
+    Elab -->|"'elaboration'"| Enrich
+    Audio -->|"'transcription'"| Enrich
+    Video -->|"'transcription'"| Enrich
+    Summ -->|"'summarization'"| Enrich
+    DD -->|"'deep-dive'"| Enrich
 
-  Deep Dive ────onOrganizeRequested(file)──────► Organize.organizeNote(file)
+    DD2["Deep Dive<br/>onOrganizeRequested"] -->|"when autoOrganize"| Org["Organize.organizeNote()"]
+    Summ2["Summarize<br/>onOrganizeRequested"] -->|"when autoOrganize"| Org
 
-View refresh (always wired):
-
-  Elaboration ──┐
-  Enrichment  ──┤── onViewRefreshNeeded() ─────► main.refreshUnifiedView()
-  Organize    ──┤
-  Deep Dive   ──┘
+    ElabR["Elaboration"] & EnrichR["Enrichment"] & OrgR["Organize"] & DDR["Deep Dive"] -->|onViewRefreshNeeded| Refresh["main.refreshUnifiedView()"]
 ```
 
 ---
@@ -194,7 +289,7 @@ Four modules generate proposals that appear in the unified sidebar. Each has a d
 
 | Module | Proposal Type | Review UX | Accept Behavior |
 |--------|--------------|-----------|-----------------|
-| Elaboration | Content additions | Editable textarea | Blockquote original, append additions |
+| Elaboration | Content additions | Editable textarea | Blockquote original, append additions in callout |
 | Enrichment | Tags, links, refs, frontmatter | Per-item checkboxes | Cherry-pick items, apply with markers |
 | Organize | New directory suggestion | Directory path + AI reasoning | Create directory, move file |
 | Deep Dive | Generated child note | Read-only content preview | Create note at proposed path |
@@ -202,16 +297,16 @@ Four modules generate proposals that appear in the unified sidebar. Each has a d
 ### Proposal States
 
 ```
- Generated ──► Pending ──┬──► Accepted
-                         ├──► Rejected
-                         └──► Partially Accepted (enrichment only)
+Generated ──► Pending ──┬──► Accepted
+                        ├──► Rejected
+                        └──► Partially Accepted (enrichment only)
 ```
 
-Tidy and Summarize do NOT use proposals -- they apply changes immediately (tidy has undo via snapshots).
+Tidy and Summarize do NOT use proposals — they apply changes immediately (tidy has undo via snapshots).
 
 ### Deep Dive: Cascade Rejection
 
-Deep-dive proposals form a tree. Rejecting a parent cascades to all children:
+Rejecting a parent automatically rejects all descendants:
 
 ```
 Root Note
@@ -226,31 +321,22 @@ Root Note
 
 ## Deep Dive: Recursive Generation
 
-The deep-dive module generates a tree of child notes from a root note using BFS:
+```mermaid
+graph TB
+    Start["User triggers deep dive"] --> Phase1["Phase 1: Extract Topics<br/>TopicAnalyzer.extractTopics()"]
+    Phase1 --> Filter["Filter: skip existing vault notes"]
+    Filter --> Phase2["Phase 2: User Confirmation<br/>'Found N new topics. Generate?'"]
+    Phase2 --> BFS["Phase 3: BFS Generation Loop"]
 
-```
-Phase 1: Extract Topics
-  TopicAnalyzer.extractTopics(rootContent) → [Topic A, Topic B, ...]
-  Filter: skip topics that already exist in vault
+    BFS --> Gen["NoteGenerator.generateContent()"]
+    Gen --> Extract["TopicAnalyzer.extractTopics()<br/>(if depth+1 < maxDepth)"]
+    Extract --> Score["scoreQuality()<br/>(local heuristic, no AI)"]
+    Score --> Decision{Score ≥ threshold<br/>AND depth < max?}
+    Decision -->|Yes| Queue["Queue children"]
+    Queue --> BFS
+    Decision -->|No| Stop["Stop branch"]
 
-Phase 2: User Confirmation
-  "Found N new topics. Generate deep dive?"
-
-Phase 3: BFS Generation Loop
-  Queue: [(rootContent, rootTopics, depth=0)]
-
-  While queue not empty and under maxNotesPerRun:
-    Pop item from queue
-    For each new topic:
-      ├── NoteGenerator.generateContent(topic, parentTitle, parentContent)
-      ├── TopicAnalyzer.extractTopics(generatedContent)  [if depth+1 < maxDepth]
-      ├── scoreQuality({title, childTopics, wordCount, depth, ancestors})
-      ├── DeepDiveStore.saveProposal()
-      └── If score >= threshold AND depth+1 < maxDepth:
-            Queue children for next iteration
-
-Phase 4: Present Results
-  All proposals appear in unified sidebar for review
+    BFS --> Phase4["Phase 4: Present in Sidebar"]
 ```
 
 ### Quality Scoring (Local, No AI)
@@ -269,49 +355,31 @@ Below qualityThreshold (default 0.4) → stop recursion for this branch
 
 ## Enrichment Architecture
 
-The enrichment module combines AI analysis with vault graph analysis:
+```mermaid
+graph TB
+    Note["Note Content"] --> MC["MetadataClassifier.classify()<br/>AI → vocabulary-validated tags"]
+    Note --> TE["TopicExtractor.extractTopics()<br/>AI → 5-15 key concepts"]
+    Note --> LR["LinkResolver.findInternalLinks()<br/>Graph hops + shared tags + proximity"]
+    Note --> PB1["PromptBuilder.suggestExternalLinks()<br/>AI → relevant URLs"]
+    Note --> PB2["PromptBuilder.suggestFrontmatter()<br/>AI → validated metadata keys"]
 
-```
-Note content
-    │
-    ├──► MetadataClassifier.classify()
-    │      AI classifies against user-defined tagVocabulary
-    │      Validates: rejects hallucinated tags
-    │      Output: tags like #draft, #reference, #meeting-notes
-    │
-    ├──► TopicExtractor.extractTopics()
-    │      AI identifies 5-15 key concepts
-    │      Matched topics → [[internal link]] candidates (score: 0.7 + proximity)
-    │      Unmatched topics → accumulated for cross-note resolution
-    │
-    ├──► LinkResolver.findInternalLinks()
-    │      Graph hops (1-2 hops in link graph)
-    │      Shared tags (2+ tags in common)
-    │      Folder proximity (same/sibling folders)
-    │      All scored by computeProximityWeight()
-    │
-    ├──► PromptBuilder.suggestExternalLinks()
-    │      AI suggests relevant external URLs
-    │
-    └──► PromptBuilder.suggestFrontmatter()
-           AI suggests metadata with validated keys
+    TE --> Matched["Matched topics<br/>→ [[internal link]] candidates"]
+    TE --> Unmatched["Unmatched topics<br/>→ accumulated for cross-note resolution"]
 
-    ↓
-LinkResolver.mergeTopicCandidates()
-    Topic relevance dominates; graph adds small bonus
-    Deduplicates, sorts by score
-    ↓
-EnrichmentProposal → Unified Sidebar → User Review
+    LR --> Merge["LinkResolver.mergeTopicCandidates()<br/>Topic relevance dominates"]
+    Matched --> Merge
+
+    MC & Merge & PB1 & PB2 --> Proposal["EnrichmentProposal<br/>→ Unified Sidebar → User Review"]
 ```
 
 ### Vault-Wide Scan (4-Phase)
 
-```
-Phase 1: Scan      ─── Collect eligible files, warm caches (cheap)
-Phase 2: Confirm   ─── User approval before AI calls (gates cost)
-Phase 3: Generate  ─── Per-file enrichment, accumulate unmatched topics
-Phase 4: Resolve   ─── Topics with 2+ references → new-note suggestions
-```
+| Phase | Action | Cost |
+|-------|--------|------|
+| 1. Scan | Collect eligible files, warm caches | Cheap |
+| 2. Confirm | User approval before AI calls | Free (gates cost) |
+| 3. Generate | Per-file enrichment, accumulate topics | Expensive (AI calls) |
+| 4. Resolve | Topics with 2+ references → new-note suggestions | Cheap |
 
 ---
 
@@ -329,7 +397,8 @@ All module data is stored as individual JSON files under `.auto-notes/`:
 │   └── {path-as-filename}.json   #   Original content for undo (one per file)
 ├── organize/
 │   ├── proposals/{id}.json       # New-directory proposals
-│   └── snapshots/{id}.json       # Move snapshots for undo
+│   ├── snapshots/{id}.json       # Move snapshots for undo
+│   └── summaries/{name}.md       # Mermaid move diagrams
 ├── deep-dive/
 │   ├── {id}.json                 # Individual note proposals
 │   └── runs/{id}.json            # Run metadata (stats, depth breakdown)
@@ -346,35 +415,35 @@ Design principles:
 
 ## AI Integration Pattern
 
-```
-┌────────────┐
-│  AIClient  │  ← shared/ai-client.ts
-└─────┬──────┘
-      │
-      ├── complete(prompt, systemPrompt?)  ← convenience wrapper
-      └── chat(messages[])                  ← core method
-           │
-           ├── 'openai'    → POST api.openai.com/v1/chat/completions
-           │                  Auth: Bearer {ai.apiKey}
-           │
-           ├── 'anthropic' → POST api.anthropic.com/v1/messages
-           │                  Auth: x-api-key {ai.apiKey}
-           │                  System message extracted to top-level field
-           │                  Model IDs: opus→claude-opus-4-6, sonnet→claude-sonnet-4-6
-           │
-           └── 'ollama'    → POST {ollamaEndpoint}/api/chat
-                              HTTPS required (HTTP for localhost only)
+```mermaid
+graph TB
+    AIC["AIClient<br/>(shared/ai-client.ts)"]
 
-All requests go through safeRequest():
-  - Obsidian requestUrl (not fetch)
-  - 2-minute timeout
-  - Error body extraction
-  - API key redaction in error messages
+    AIC -->|"'openai'"| OAI["POST api.openai.com/v1/chat/completions<br/>Auth: Bearer {ai.apiKey}"]
+    AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>Models: opus→claude-opus-4-6, etc."]
+    AIC -->|"'ollama'"| OLL["POST {ollamaEndpoint}/api/chat<br/>HTTPS required (HTTP localhost only)"]
+
+    AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout<br/>Error extraction · Key redaction"]
 ```
 
 Audio transcription uses separate APIs (not AIClient):
-- Whisper: OpenAI `/v1/audio/transcriptions` via native `fetch` + `FormData`
-- Deepgram: `/v1/listen` via native `fetch`
+- **Whisper**: OpenAI `/v1/audio/transcriptions` via native `fetch` + `FormData`
+- **Deepgram**: `/v1/listen` via native `fetch`
+
+---
+
+## Callout Types
+
+All AI-generated content uses Obsidian callouts from a shared registry:
+
+| Key | Type String | Usage |
+|-----|-------------|-------|
+| summary | `auto-notes-summary` | Inline URL/transcription summaries |
+| transcription | `auto-notes-transcription` | Audio/video transcriptions |
+| enrichment | `auto-notes-enrichment` | Enrichment sections |
+| elaboration | `auto-notes-elaboration` | Elaboration proposals |
+| deepDive | `auto-notes-deep-dive` | Deep dive content |
+| nav | `auto-notes-nav` | Deep dive navigation blocks |
 
 ---
 
@@ -395,12 +464,12 @@ AutoNotesSettings
 │   └── weights         → Same/sibling/cousin/distant folder, decay, minimum
 ├── summarize       → Style (bullets/paragraph/key-points), max length, excludes
 ├── tidy            → Snapshot folder path
-├── organize        → Proposal/snapshot folder paths, excludes
+├── organize        → Proposal/snapshot folder paths, confidence threshold, excludes
 └── deepDive        → Max depth, quality threshold, max notes, output folder,
-                      auto-enrich on accept, auto-organize on accept, excludes
+                      nesting mode, auto-enrich/organize on accept, excludes
 ```
 
-Modules access settings via `getSettings()` closure -- always reads latest values, no event subscriptions needed.
+Modules access settings via `getSettings()` closure — always reads latest values, no event subscriptions needed.
 
 ---
 

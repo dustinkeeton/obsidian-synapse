@@ -1,5 +1,5 @@
 import { DeepDiveProposal, DeepDiveRun } from './types';
-import { generateTreeDiagram, TreeNode } from '../shared/diagram-generator';
+import { generateTreeDiagram, TreeNode } from '../shared';
 
 /**
  * A node in the depth-first traversal of accepted proposals.

@@ -1,8 +1,8 @@
 ---
-last-updated: 2026-03-16
+last-updated: 2026-03-17
 ---
 
-# Auto Notes -- Agent Entry Point
+# Auto Notes — Agent Reference
 
 AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, note enrichment (tags, links, references), summarization, note tidying, semantic organization, and recursive deep dive note generation.
 
@@ -23,18 +23,19 @@ Output: `main.js` (single bundle, Obsidian loads this)
 
 | Module | Path | Purpose | Public API |
 |--------|------|---------|------------|
-| main | `src/main.ts` | Plugin entry, module orchestration, view registration | `AutoNotesPlugin` (default) |
-| settings | `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS`, `TagVocabularyEntry` |
+| main | `src/main.ts` | Plugin entry, module orchestration, command/view registration | `AutoNotesPlugin` (default) |
+| settings | `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `AutoNotesSettingTab` |
 | elaboration | `src/elaboration/` | Stub note detection, AI proposal generation | `ElaborationModule`, types |
-| audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `AudioTranscriptionModal`, types |
-| video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `detectPlatform`, `isSupportedUrl`, types |
+| audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, types |
+| video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, types |
+| transcription | `src/transcription/` | Unified transcription UI modals | `UnifiedTranscriptionModal`, `NoteMediaModal` |
 | enrichment | `src/enrichment/` | Metadata classification, topic extraction, link resolution, external refs, frontmatter | `EnrichmentModule`, types |
 | summarize | `src/summarize/` | URL and transcription summarization, standalone summary notes | `SummarizeModule`, types |
 | tidy | `src/tidy/` | Spelling correction and markdown formatting via AI | `TidyModule`, `TidySnapshot` |
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes | `OrganizeModule`, types |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
-| shared | `src/shared/` | AI client, file utils, validation, notifications, frontmatter | `AIClient`, `NotificationManager`, file/validation utils |
+| shared | `src/shared/` | AI client, file utils, validation, notifications, callouts, frontmatter | `AIClient`, `NotificationManager`, file/validation utils, callout registry |
 | views | `src/views/` | Unified sidebar for all proposal types | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem` |
 
 ## Dependency Graph
@@ -47,18 +48,21 @@ main.ts
   |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types
   |-- elaboration/ --> shared/
   |-- audio/ --> shared/
-  |-- video/ --> shared/, audio/
+  |-- video/ --> shared/, audio/ (reuses transcription pipeline)
+  |-- transcription/ --> audio/ (types), video/ (detectPlatform)
   |-- enrichment/ --> shared/
-  |-- summarize/ --> shared/
+  |-- summarize/ --> shared/, video/ (transcribeUrl injection)
   |-- tidy/ --> shared/
   |-- organize/ --> shared/
-  +-- deep-dive/ --> shared/
+  +-- deep-dive/ --> shared/, organize/ (ContentAnalyzer, DirectoryMatcher)
 ```
 
 Key constraints:
 - `video` depends on `audio` (reuses transcription pipeline)
-- All feature modules depend on `shared`
-- No circular dependencies
+- `transcription` is UI-only; delegates work to `audio` and `video` modules
+- `summarize` receives `video.transcribeUrl` via constructor injection
+- `deep-dive` reuses `organize` for auto-organize nesting mode
+- All feature modules depend on `shared`; no circular dependencies
 - `views` imports types only from feature modules
 
 ## Command Registry
@@ -66,14 +70,11 @@ Key constraints:
 | ID | Name | Type | Module |
 |----|------|------|--------|
 | `auto-notes:review-proposals` | Open proposal review sidebar | callback | main |
+| `auto-notes:transcribe-media` | Transcribe media | callback | main |
+| `auto-notes:transcribe-note-media` | Transcribe media from current note | editorCallback | main |
 | `auto-notes:scan-vault` | Scan vault for stub notes | callback | elaboration |
 | `auto-notes:scan-current-note` | Scan current note for elaboration | editorCallback | elaboration |
 | `auto-notes:clear-proposals` | Clear all pending proposals | callback | elaboration |
-| `auto-notes:transcribe-audio` | Transcribe audio file | callback | audio |
-| `auto-notes:transcribe-note-audio` | Transcribe audio from current note | editorCallback | audio |
-| `auto-notes:transcribe-video-url` | Transcribe video from URL | callback | video |
-| `auto-notes:transcribe-note-video` | Transcribe video URLs from current note | editorCallback | video |
-| `auto-notes:transcribe-video-file` | Transcribe local video file | callback (stub) | video |
 | `auto-notes:check-dependencies` | Check external tool availability | callback | video |
 | `auto-notes:enrich-current-note` | Enrich current note | editorCallback | enrichment |
 | `auto-notes:scan-vault-enrichment` | Scan vault for enrichment | callback | enrichment |
@@ -93,15 +94,28 @@ Key constraints:
 | Icon | Label | Action |
 |------|-------|--------|
 | `sparkles` | Review proposals | Opens unified proposal sidebar |
-| `mic` | Transcribe audio | Opens audio transcription modal |
+| `mic` | Transcribe media | Opens unified transcription modal |
 
 ## View Types
 
-| View Type ID | Class | Location | Status |
-|--------------|-------|----------|--------|
-| `auto-notes-proposals` | `UnifiedProposalView` | `src/views/unified-proposal-view.ts` | Active (registered by main.ts) |
-| `auto-notes-proposal-review` | `ProposalReviewView` | `src/elaboration/proposal-view.ts` | Legacy (not registered) |
-| `auto-notes-enrichment-review` | `EnrichmentReviewView` | `src/enrichment/enrichment-view.ts` | Legacy (not registered) |
+| View Type ID | Class | Location |
+|--------------|-------|----------|
+| `auto-notes-proposals` | `UnifiedProposalView` | `src/views/unified-proposal-view.ts` |
+
+Legacy views (`ProposalReviewView`, `EnrichmentReviewView`) exist in source but are not registered.
+
+## Callout Types
+
+All AI-generated content uses Obsidian callouts. Registry in `src/shared/callouts.ts`:
+
+| Key | Type string | Usage |
+|-----|-------------|-------|
+| summary | `auto-notes-summary` | Inline URL/transcription summaries |
+| transcription | `auto-notes-transcription` | Audio/video transcriptions |
+| enrichment | `auto-notes-enrichment` | Enrichment sections |
+| elaboration | `auto-notes-elaboration` | Elaboration proposals |
+| deepDive | `auto-notes-deep-dive` | Deep dive content |
+| nav | `auto-notes-nav` | Deep dive navigation blocks |
 
 ## Settings Schema
 
@@ -175,14 +189,7 @@ AutoNotesSettings {
     suggestNewNotes: boolean                        // default: true
     tagVocabulary: TagVocabularyEntry[]              // default: 3 entries (Status, Type, Source)
     internalLinkThreshold: number                   // default: 0.3
-    weights: EnrichmentWeightSettings {
-      sameFolder: number                            // default: 1.0
-      siblingFolder: number                         // default: 0.8
-      cousinFolder: number                          // default: 0.5
-      distantFolder: number                         // default: 0.2
-      decayPerLevel: number                         // default: 0.15
-      minWeight: number                             // default: 0.1
-    }
+    weights: EnrichmentWeightSettings               // sameFolder, siblingFolder, cousinFolder, distantFolder, decayPerLevel, minWeight
     enrichmentFolderPath: string                    // default: '.auto-notes/enrichments'
     excludeFolders: string[]                        // default: ['templates', '.auto-notes']
     excludeTags: string[]                           // default: ['no-enrich']
@@ -196,6 +203,7 @@ AutoNotesSettings {
     customPrompt: string                            // default: ''
     excludeFolders: string[]                        // default: ['templates', '.auto-notes']
     excludeTags: string[]                           // default: ['no-summarize']
+    autoOrganizeOnSummarize: boolean                // default: false
   }
   tidy: TidySettings {
     enabled: boolean                                // default: true
@@ -207,6 +215,7 @@ AutoNotesSettings {
     snapshotFolderPath: string                      // default: '.auto-notes/organize/snapshots'
     excludeFolders: string[]                        // default: ['templates', '.auto-notes']
     excludeTags: string[]                           // default: ['no-organize']
+    organizeConfidenceThreshold: number             // default: 0.9
   }
   deepDive: DeepDiveSettings {
     enabled: boolean                                // default: true
@@ -214,7 +223,8 @@ AutoNotesSettings {
     maxDepth: number                                // default: 3
     qualityThreshold: number                        // default: 0.4
     maxNotesPerRun: number                          // default: 50
-    noteOutputFolder: string                        // default: '' (same as source)
+    noteOutputFolder: string                        // default: 'Deep Dives'
+    nestingMode: 'nested' | 'flat' | 'auto-organize'  // default: 'nested'
     excludeFolders: string[]                        // default: ['templates', '.auto-notes']
     excludeTags: string[]                           // default: ['no-deep-dive']
     autoEnrichOnAccept: boolean                     // default: true
@@ -232,6 +242,7 @@ AutoNotesSettings {
 | Tidy snapshots | `.auto-notes/tidy-snapshots/*.json` | `TidySnapshot` JSON |
 | Organize proposals | `.auto-notes/organize/proposals/*.json` | `OrganizeProposal` JSON |
 | Organize snapshots | `.auto-notes/organize/snapshots/*.json` | `OrganizeSnapshot` JSON |
+| Organize summaries | `.auto-notes/organize/summaries/*.md` | Mermaid move diagrams |
 | Deep dive proposals | `.auto-notes/deep-dive/*.json` | `DeepDiveProposal` JSON |
 | Deep dive runs | `.auto-notes/deep-dive/runs/*.json` | `DeepDiveRun` JSON |
 | Temp video/audio | `.auto-notes/temp/` | Binary (auto-cleaned) |
@@ -246,6 +257,7 @@ video.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transc
 summarize.onSummaryComplete(filePath)    --> enrichment.enrich(filePath, 'summarization')
 deepDive.onNoteAccepted(filePath)        --> enrichment.enrich(filePath, 'deep-dive')
 deepDive.onOrganizeRequested(file)       --> organize.organizeNote(file)
+summarize.onOrganizeRequested(file)      --> organize.organizeNote(file)
 
 elaboration.onViewRefreshNeeded()        --> main.refreshUnifiedView()
 enrichment.onViewRefreshNeeded()         --> main.refreshUnifiedView()
@@ -254,8 +266,9 @@ deepDive.onViewRefreshNeeded()           --> main.refreshUnifiedView()
 ```
 
 Enrichment callbacks wired when `enrichment.enabled && enrichment.autoEnrich`.
-Deep-dive enrichment callback wired when `deepDive.autoEnrichOnAccept`.
-Deep-dive organize callback wired when `deepDive.autoOrganizeOnAccept && organize.enabled`.
+Deep-dive enrichment wired when `deepDive.autoEnrichOnAccept`.
+Deep-dive organize wired when `deepDive.autoOrganizeOnAccept && organize.enabled`.
+Summarize organize wired when `summarize.autoOrganizeOnSummarize && organize.enabled`.
 
 ## External Dependencies (Runtime)
 
@@ -276,7 +289,7 @@ No npm runtime dependencies. Uses Obsidian `requestUrl`, `execFile` (argument ar
 | Mock factories | `src/__test-utils__/mock-factories.ts` |
 | Test files | `src/**/*.test.ts` |
 
-Framework: Vitest 4.x, globals enabled, node environment.
+Framework: Vitest, globals enabled, node environment.
 
 ## Security Notes
 

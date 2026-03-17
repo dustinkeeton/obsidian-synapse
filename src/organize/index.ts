@@ -1,7 +1,7 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary } from '../shared';
-import { MoveRecord } from '../shared/diagram-generator';
+import { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
 import { OrganizeStore } from './organize-store';
@@ -17,6 +17,8 @@ export type {
 	OrganizeAction,
 	OrganizeProposalStatus,
 } from './types';
+export { ContentAnalyzer } from './content-analyzer';
+export { DirectoryMatcher } from './directory-matcher';
 
 export class OrganizeModule {
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
