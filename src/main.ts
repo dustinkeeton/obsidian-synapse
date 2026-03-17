@@ -1,4 +1,4 @@
-import { Plugin } from 'obsidian';
+import { Platform, Plugin } from 'obsidian';
 import { AutoNotesSettings, DEFAULT_SETTINGS } from './settings';
 import { AutoNotesSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
@@ -27,7 +27,7 @@ export default class AutoNotesPlugin extends Plugin {
 
 	private elaboration!: ElaborationModule;
 	private audio!: AudioModule;
-	private video!: VideoModule;
+	private video: VideoModule | null = null;
 	private enrichment!: EnrichmentModule;
 	private summarize!: SummarizeModule;
 	private tidy!: TidyModule;
@@ -40,7 +40,9 @@ export default class AutoNotesPlugin extends Plugin {
 
 		// Centralized notification manager
 		this.notifications = new NotificationManager();
-		this.notifications.setStatusBarEl(this.addStatusBarItem());
+		if (Platform.isDesktop) {
+			this.notifications.setStatusBarEl(this.addStatusBarItem());
+		}
 
 		// Single shared checkpoint manager for all modules (I5)
 		this.checkpointManager = new CheckpointManager(this.app);
@@ -51,11 +53,15 @@ export default class AutoNotesPlugin extends Plugin {
 		// Pass checkpointManager to each module instead of letting them create their own
 		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager);
 		this.audio = new AudioModule(this, getSettings, this.notifications, this.checkpointManager);
-		this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager);
+		if (Platform.isDesktop) {
+			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager);
+		}
 		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager);
 		this.summarize = new SummarizeModule(
 			this, getSettings, this.notifications, this.checkpointManager,
-			(url, parentOp) => this.video.transcribeUrl(url, parentOp),
+			this.video
+				? (url, parentOp) => this.video!.transcribeUrl(url, parentOp)
+				: async () => { throw new Error('Video transcription is not available on mobile'); },
 			async (audioFile) => {
 				const data = await this.app.vault.readBinary(audioFile);
 				const result = await this.audio.transcribe(data, audioFile.name);
@@ -96,7 +102,7 @@ export default class AutoNotesPlugin extends Plugin {
 		if (this.settings.audio.enabled) {
 			await this.audio.onload();
 		}
-		if (this.settings.video.enabled) {
+		if (this.settings.video.enabled && this.video) {
 			await this.video.onload();
 		}
 		if (this.settings.enrichment.enabled) {
@@ -123,9 +129,11 @@ export default class AutoNotesPlugin extends Plugin {
 			this.audio.onTranscriptionComplete = (filePath: string) => {
 				this.enrichment.enrich(filePath, 'transcription');
 			};
-			this.video.onTranscriptionComplete = (filePath: string) => {
-				this.enrichment.enrich(filePath, 'transcription');
-			};
+			if (this.video) {
+				this.video.onTranscriptionComplete = (filePath: string) => {
+					this.enrichment.enrich(filePath, 'transcription');
+				};
+			}
 			this.summarize.onSummaryComplete = (filePath: string) => {
 				this.enrichment.enrich(filePath, 'summarization');
 			};
@@ -223,11 +231,13 @@ export default class AutoNotesPlugin extends Plugin {
 			() => this.settings,
 			{
 				audio: this.settings.audio.enabled,
-				video: this.settings.video.enabled,
+				video: this.settings.video.enabled && this.video !== null,
 			},
 			{
 				onTranscribeFile: (file) => this.audio.transcribeFileToActiveNote(file),
-				onTranscribeUrl: (url) => this.video.transcribeUrlToActiveNote(url),
+				onTranscribeUrl: this.video
+					? (url) => this.video!.transcribeUrlToActiveNote(url)
+					: async () => { /* unreachable: video hidden on mobile */ },
 			}
 		).open();
 	}
@@ -238,7 +248,7 @@ export default class AutoNotesPlugin extends Plugin {
 		const audioEmbeds = this.settings.audio.enabled
 			? findAudioEmbeds(content, file.path, this.app.metadataCache)
 			: [];
-		const videoEmbeds = this.settings.video.enabled
+		const videoEmbeds = this.settings.video.enabled && this.video
 			? findVideoUrls(content)
 			: [];
 
@@ -253,7 +263,9 @@ export default class AutoNotesPlugin extends Plugin {
 			videoEmbeds,
 			{
 				onTranscribeAudio: (selected) => this.audio.transcribeAndInsert(file, selected),
-				onTranscribeVideo: (selected) => this.video.transcribeAndInsert(file, selected),
+				onTranscribeVideo: this.video
+					? (selected) => this.video!.transcribeAndInsert(file, selected)
+					: async () => { /* unreachable: video hidden on mobile */ },
 			}
 		).open();
 	}
@@ -306,7 +318,11 @@ export default class AutoNotesPlugin extends Plugin {
 				await this.audio.resumeFromCheckpoint(checkpoint);
 				break;
 			case 'video':
-				await this.video.resumeFromCheckpoint(checkpoint);
+				if (this.video) {
+					await this.video.resumeFromCheckpoint(checkpoint);
+				} else {
+					this.notifications.info('Video transcription is not available on mobile');
+				}
 				break;
 			case 'summarize':
 				await this.summarize.resumeFromCheckpoint(checkpoint);
