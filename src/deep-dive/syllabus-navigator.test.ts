@@ -9,6 +9,7 @@ import {
 	syllabusPath,
 	renderSyllabusContent,
 	injectNavigationBlock,
+	buildTreeFromNodes,
 	TraversalNode,
 } from './syllabus-navigator';
 import { DeepDiveProposal, DeepDiveRun } from './types';
@@ -402,7 +403,7 @@ describe('syllabusPath', () => {
 });
 
 describe('renderSyllabusContent', () => {
-	it('renders a complete syllabus with numbered outline', () => {
+	it('renders a complete syllabus with numbered outline and topic map', () => {
 		const { proposals, run } = buildTestTree();
 		const nodes = computeTraversalOrder(proposals, run);
 		const content = renderSyllabusContent(nodes, run);
@@ -415,6 +416,11 @@ describe('renderSyllabusContent', () => {
 		expect(content).toContain('2. [[Gradient Descent]]');
 		expect(content).toContain('   1. [[Learning Rate Schedules]]');
 		expect(content).toContain('3. [[Regularization Techniques]]');
+		expect(content).toContain('## Topic Map');
+		expect(content).toContain('```mermaid');
+		expect(content).toContain('graph TD');
+		expect(content).toContain('["Machine Learning"]');
+		expect(content).toContain('["Neural Networks"]');
 		expect(content).toContain('*Generated from [[Machine Learning]] -- 6 notes across 2 depths*');
 	});
 
@@ -431,8 +437,9 @@ describe('renderSyllabusContent', () => {
 		expect(content).toContain('1. [[Neural Networks]]');
 		expect(content).toContain('   1. [[Activation Functions]]');
 		expect(content).toContain('2. [[Regularization Techniques]]');
-		expect(content).not.toContain('Backpropagation');
-		expect(content).not.toContain('Gradient Descent');
+		// Rejected topics should not appear in the Topics outline
+		expect(content).not.toContain('[[Backpropagation]]');
+		expect(content).not.toContain('[[Gradient Descent]]');
 		expect(content).toContain('-- 3 notes across 2 depths');
 	});
 
@@ -451,7 +458,59 @@ describe('renderSyllabusContent', () => {
 		const content = renderSyllabusContent(nodes, run);
 
 		expect(content).toContain('1. [[Topic A]]');
+		expect(content).toContain('## Topic Map');
 		expect(content).toContain('-- 1 note across 1 depth');
+	});
+
+	it('omits topic map section when there are no nodes', () => {
+		const { proposals, run } = buildTestTree();
+		for (const p of proposals) p.status = 'rejected';
+		const nodes = computeTraversalOrder(proposals, run);
+		const content = renderSyllabusContent(nodes, run);
+
+		expect(content).not.toContain('## Topic Map');
+		expect(content).not.toContain('```mermaid');
+	});
+});
+
+describe('buildTreeFromNodes', () => {
+	it('builds a tree with root and top-level children', () => {
+		const { proposals, run } = buildTestTree();
+		const nodes = computeTraversalOrder(proposals, run);
+		const tree = buildTreeFromNodes(nodes, 'Machine Learning');
+
+		expect(tree.label).toBe('Machine Learning');
+		expect(tree.children.length).toBe(3); // NN, GD, Reg
+		expect(tree.children[0].label).toBe('Neural Networks');
+		expect(tree.children[1].label).toBe('Gradient Descent');
+		expect(tree.children[2].label).toBe('Regularization Techniques');
+	});
+
+	it('builds nested children correctly', () => {
+		const { proposals, run } = buildTestTree();
+		const nodes = computeTraversalOrder(proposals, run);
+		const tree = buildTreeFromNodes(nodes, 'Machine Learning');
+
+		// Neural Networks should have Backpropagation and Activation Functions
+		const nn = tree.children[0];
+		expect(nn.children.length).toBe(2);
+		expect(nn.children[0].label).toBe('Backpropagation');
+		expect(nn.children[1].label).toBe('Activation Functions');
+
+		// Gradient Descent should have Learning Rate Schedules
+		const gd = tree.children[1];
+		expect(gd.children.length).toBe(1);
+		expect(gd.children[0].label).toBe('Learning Rate Schedules');
+
+		// Regularization Techniques should have no children
+		expect(tree.children[2].children.length).toBe(0);
+	});
+
+	it('handles empty node list', () => {
+		const tree = buildTreeFromNodes([], 'Root');
+
+		expect(tree.label).toBe('Root');
+		expect(tree.children.length).toBe(0);
 	});
 });
 
