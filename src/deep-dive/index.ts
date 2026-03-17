@@ -6,6 +6,14 @@ import { DirectoryMatcher } from '../organize/directory-matcher';
 import { DeepDiveStore } from './deep-dive-store';
 import { NoteGenerator } from './note-generator';
 import { scoreQuality } from './quality-scorer';
+import {
+	computeTraversalOrder,
+	buildNavigationContext,
+	renderNavigationBlock,
+	renderSyllabusContent,
+	syllabusPath,
+	injectNavigationBlock,
+} from './syllabus-navigator';
 import { TopicAnalyzer } from './topic-analyzer';
 import {
 	DeepDiveProposal,
@@ -21,6 +29,17 @@ export type {
 	DeepDiveProposalStatus,
 	DeepDiveRunStatus,
 } from './types';
+
+export type { TraversalNode, NavigationContext } from './syllabus-navigator';
+export {
+	computeTraversalOrder,
+	buildNavigationContext,
+	renderNavigationBlock,
+	renderSyllabusContent,
+	syllabusTitle,
+	syllabusPath,
+	injectNavigationBlock,
+} from './syllabus-navigator';
 
 export class DeepDiveModule {
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
@@ -74,7 +93,9 @@ export class DeepDiveModule {
 	}
 
 	/**
-	 * Accept a proposal: create the new note in the vault.
+	 * Accept a proposal: create the new note in the vault with navigation,
+	 * generate/update the syllabus index, and update navigation in all
+	 * previously accepted notes in the same run.
 	 */
 	async acceptProposal(id: string): Promise<void> {
 		const proposal = await this.store.loadProposal(id);
@@ -84,8 +105,11 @@ export class DeepDiveModule {
 		}
 
 		try {
-			await writeNote(this.plugin.app, proposal.proposedPath, proposal.proposedContent);
 			await this.store.updateProposalStatus(id, 'accepted');
+
+			// Build navigation for all accepted proposals in this run
+			await this.updateRunNavigation(proposal.runId, proposal.proposedPath, proposal.proposedContent);
+
 			this.notifications.success(`Created ${proposal.proposedPath}`);
 
 			// Trigger enrichment on the new note
@@ -111,13 +135,21 @@ export class DeepDiveModule {
 
 	/**
 	 * Reject a proposal and cascade-reject all its children.
+	 * Updates navigation in remaining accepted notes.
 	 */
 	async rejectProposal(id: string): Promise<void> {
+		const proposal = await this.store.loadProposal(id);
 		const rejected = await this.store.cascadeReject(id);
 		const count = rejected.length;
 		this.notifications.info(
 			count > 1 ? `Rejected ${count} proposals (including children)` : 'Proposal rejected'
 		);
+
+		// Update navigation for remaining accepted notes in the run
+		if (proposal) {
+			await this.updateRunNavigation(proposal.runId);
+		}
+
 		await this.onViewRefreshNeeded?.();
 	}
 
@@ -347,6 +379,63 @@ export class DeepDiveModule {
 			await this.store.saveRun(run);
 			const msg = error instanceof Error ? error.message : String(error);
 			genOp.error(`Deep dive failed — ${msg}`);
+		}
+	}
+
+	/**
+	 * Recompute and update navigation for all accepted proposals in a run.
+	 *
+	 * When newNotePath and newNoteContent are provided (accept flow), the new
+	 * note is written with navigation injected. All previously accepted notes
+	 * in the run are also updated with refreshed prev/next links. The syllabus
+	 * index note is generated or updated.
+	 */
+	private async updateRunNavigation(
+		runId: string,
+		newNotePath?: string,
+		newNoteContent?: string
+	): Promise<void> {
+		const run = await this.store.loadRun(runId);
+		if (!run) return;
+
+		const proposals = await this.store.loadProposalsByRunId(runId);
+		const nodes = computeTraversalOrder(proposals, run);
+
+		if (nodes.length === 0) {
+			// All proposals rejected — remove syllabus if it exists
+			const sPath = syllabusPath(run.rootNotePath, this.getSettings().deepDive.noteOutputFolder);
+			const existingSyllabus = this.plugin.app.vault.getAbstractFileByPath(normalizePath(sPath));
+			if (existingSyllabus instanceof TFile) {
+				await this.plugin.app.vault.delete(existingSyllabus);
+			}
+			return;
+		}
+
+		const sPath = syllabusPath(run.rootNotePath, this.getSettings().deepDive.noteOutputFolder);
+
+		// Write or update the syllabus index note
+		const syllabusContent = renderSyllabusContent(nodes, run);
+		await writeNote(this.plugin.app, sPath, syllabusContent);
+
+		// Update navigation in each accepted note
+		for (const node of nodes) {
+			const ctx = buildNavigationContext(node.proposalId, nodes, run, sPath);
+			if (!ctx) continue;
+
+			const navBlock = renderNavigationBlock(ctx);
+
+			if (newNotePath && node.proposedPath === newNotePath && newNoteContent) {
+				// This is the newly accepted note — inject nav into its content and write
+				const contentWithNav = injectNavigationBlock(newNoteContent, navBlock);
+				await writeNote(this.plugin.app, node.proposedPath, contentWithNav);
+			} else {
+				// Previously accepted note — read current content, update nav, write back
+				const existing = await readNote(this.plugin.app, node.proposedPath);
+				if (existing) {
+					const updated = injectNavigationBlock(existing, navBlock);
+					await writeNote(this.plugin.app, node.proposedPath, updated);
+				}
+			}
 		}
 	}
 
