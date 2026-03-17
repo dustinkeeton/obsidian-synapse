@@ -2,36 +2,27 @@
 
 AI-powered note elaboration, audio transcription, video transcription, and more for [Obsidian](https://obsidian.md).
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
-![Obsidian](https://img.shields.io/badge/Obsidian-0.15.0%2B-7c3aed)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Desktop Only](https://img.shields.io/badge/platform-desktop%20only-orange)
-
----
-
 ## Overview
 
-Auto Notes adds AI assistance to your Obsidian vault. It detects incomplete notes and generates content proposals, transcribes audio and video files, enriches notes with tags and links, summarizes content, corrects formatting, organizes your vault directory structure, and recursively explores topics into interlinked knowledge trees.
+Auto Notes is an Obsidian plugin that uses AI to help you build, maintain, and connect your knowledge base. It detects incomplete or stub notes and proposes content expansions, transcribes audio and video media into searchable text, enriches notes with tags, internal links, and references, summarizes content, corrects formatting, organizes your vault directory structure, and recursively explores topics into interlinked knowledge trees.
 
-All AI-generated content is presented as proposals that you review and accept -- nothing is changed without your approval (except Tidy, which offers one-click undo).
+Every AI-generated change goes through a proposal review system. You see what the plugin wants to do, accept or reject each suggestion, and undo any change with built-in checkpoint support. Nothing is written to your vault without your approval.
 
 **Supported AI providers**: OpenAI, Anthropic, and Ollama (local).
-
----
 
 ## Features
 
 ### Elaboration
-Detects stub notes (short content, TODO markers, empty sections) and generates content proposals using AI. Proposals appear in a sidebar where you can edit and accept them.
+Scans your vault for stub notes (short content, TODO markers, empty sections) and generates AI-powered content proposals. Proposals appear in a sidebar where you can edit and accept them.
 
 ### Audio Transcription
-Transcribes audio files using OpenAI Whisper API, Deepgram, or a local Whisper installation. Includes AI post-processing to remove filler words, add structure, and extract key points.
+Transcribes audio files embedded in your notes using OpenAI Whisper API, Deepgram, or a local Whisper installation. Includes AI post-processing to remove filler words, add structure, and extract key points.
 
-### Video Transcription
-Downloads and transcribes YouTube and TikTok videos using yt-dlp and ffmpeg. Extracts the audio track and feeds it through the audio transcription pipeline.
+### Video Transcription (desktop only)
+Downloads and transcribes YouTube and TikTok videos using yt-dlp and ffmpeg. Extracts the audio track and feeds it through the audio transcription pipeline. Not available on mobile.
 
 ### Enrichment
-Analyzes note content to suggest metadata tags (from a configurable vocabulary), internal links to related notes, external references, and frontmatter fields. Uses graph-based proximity weighting to prioritize nearby vault content.
+Analyzes note content to suggest metadata tags (from a configurable vocabulary), internal links to related notes, topic links, and external references. Uses proximity-weighted scoring to find the most relevant connections in your vault. Runs automatically after elaboration, transcription, or summarization when configured.
 
 ### Summarize
 Summarizes URLs, transcriptions, and audio embeds found in notes. Supports bullet points, paragraph, and key-points styles. Can also create standalone summary notes from enrichment links.
@@ -40,35 +31,40 @@ Summarizes URLs, transcriptions, and audio embeds found in notes. Supports bulle
 Corrects spelling and formatting errors via AI without changing content meaning. Creates a snapshot before each change so you can undo instantly.
 
 ### Organize
-Analyzes note content and suggests where each note should live in your vault directory structure. Proposes new directories when existing ones do not fit, with configurable confidence thresholds.
+AI-powered semantic directory structuring. Analyzes note content and suggests where each note should live in your vault. Proposes new directories when existing ones do not fit, with configurable confidence thresholds.
 
 ### Deep Dive
-Recursively explores a note's topics into a tree of interlinked child notes. Uses breadth-first generation with local quality scoring to decide when to stop branching. Generated notes appear in the sidebar for review.
+Recursively explores a note's topics into a tree of interlinked child notes. Uses breadth-first generation with local quality scoring to decide when to stop branching. Configurable depth, quality threshold, and output folder structure (nested, flat, or AI-organized).
 
----
+### Shared Infrastructure
+
+- **Unified Proposal View** -- a sidebar panel where you review and accept/reject proposals from all modules in one place.
+- **Checkpoint/Undo System** -- every vault-wide operation creates checkpoints so you can resume interrupted operations or roll back changes.
+- **Notification Manager** -- centralized notifications with status bar integration on desktop.
 
 ## Installation
 
 Auto Notes is not yet published to the Obsidian Community Plugin directory. To install manually:
 
-1. Navigate to your vault's plugin directory:
-   ```
-   <your-vault>/.obsidian/plugins/
-   ```
-
-2. Clone the repository:
-   ```bash
-   git clone https://github.com/dustinkeeton/obsidian-auto-notes.git auto-notes
+1. Clone the repository:
+   ```sh
+   git clone https://github.com/dustinkeeton/obsidian-auto-notes.git
+   cd obsidian-auto-notes
    ```
 
-3. Install dependencies and build:
-   ```bash
-   cd auto-notes
+2. Install dependencies and build:
+   ```sh
    npm install
    npm run build
    ```
 
-4. Restart Obsidian, then go to **Settings > Community Plugins** and enable **Auto Notes**.
+3. Copy the built plugin into your vault:
+   ```sh
+   mkdir -p /path/to/your/vault/.obsidian/plugins/auto-notes
+   cp main.js manifest.json styles.css /path/to/your/vault/.obsidian/plugins/auto-notes/
+   ```
+
+4. Open Obsidian, go to **Settings > Community plugins**, and enable **Auto Notes**.
 
 ### External tools (optional)
 
@@ -78,8 +74,6 @@ For video transcription, you need these tools installed and available on your PA
 - [ffmpeg](https://ffmpeg.org/) -- extracts audio from video files
 
 Use the command **Auto Notes: Check dependencies** to verify these are available.
-
----
 
 ## Configuration
 
@@ -110,11 +104,11 @@ Open **Settings > Auto Notes** to configure the plugin. All features can be indi
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Enable audio | Toggle audio transcription | On |
-| Transcription provider | Whisper API, Deepgram, or Local Whisper | Whisper API |
+| Transcription provider | Whisper API, Deepgram, or Local Whisper (desktop only) | Whisper API |
 | Post-processing | Clean up transcriptions with AI | On |
-| Remove filler words | Strip "um", "uh", etc. from transcripts | On |
+| Remove filler words | Strip filler words from transcripts | On |
 
-### Video Transcription
+### Video Transcription (desktop only)
 
 | Setting | Description | Default |
 |---------|-------------|---------|
@@ -174,13 +168,15 @@ Open **Settings > Auto Notes** to configure the plugin. All features can be indi
 | Auto-enrich on accept | Trigger enrichment when a note is accepted | On |
 | Auto-organize on accept | Trigger organize when a note is accepted | Off |
 
----
-
 ## Development
+
+### Prerequisites
+- Node.js
+- npm
 
 ### Setup
 
-```bash
+```sh
 git clone https://github.com/dustinkeeton/obsidian-auto-notes.git
 cd obsidian-auto-notes
 npm install
@@ -196,40 +192,41 @@ npm install
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run test:coverage` | Run tests with coverage report |
 
-### Project structure
+### Project Structure
 
-The plugin is organized into 8 feature modules plus a shared utilities layer. Each module follows a consistent contract with `onload()` and `onunload()` lifecycle methods. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full module map, dependency graph, and system diagrams.
+The plugin is organized into 8 feature modules plus a shared utilities layer. Each module follows a consistent contract with `onload()` and `onunload()` lifecycle methods.
 
 ```
 src/
-  main.ts              Plugin entry point
-  settings.ts          Settings types and defaults
-  elaboration/         Stub detection and proposals
+  main.ts              Plugin entry point and module orchestration
+  settings.ts          Settings interfaces and defaults
+  settings-tab.ts      Settings UI
+  elaboration/         Stub note detection and proposal generation
   audio/               Audio transcription
-  video/               Video download and transcription
-  transcription/       Unified transcription UI
+  video/               Video download and transcription (desktop only)
+  transcription/       Unified transcription UI modals
+  summarize/           Note summarization
   enrichment/          Tags, links, and references
-  summarize/           Content summarization
-  tidy/                Spelling and formatting
-  organize/            Directory structuring
   deep-dive/           Recursive topic exploration
-  shared/              AI client, utilities, validation
-  views/               Unified proposal sidebar
+  organize/            Semantic directory structuring
+  tidy/                Spelling and formatting cleanup
+  shared/              AI client, file utils, notifications, checkpoints
+  views/               Unified proposal review sidebar
 ```
 
-### Testing
+Build output is a single `main.js` bundle produced by esbuild.
+
+### Testing in Obsidian
 
 For development, symlink or copy the built plugin into your vault:
 
-```bash
+```sh
 # From your vault's plugin directory:
 ln -s /path/to/obsidian-auto-notes .obsidian/plugins/auto-notes
 ```
 
 Then run `npm run dev` to rebuild automatically on changes. Reload Obsidian (Cmd+R / Ctrl+R) to pick up changes.
 
----
-
 ## License
 
-[MIT](LICENSE) -- see the LICENSE file for details.
+[AGPL-3.0](LICENSE)
