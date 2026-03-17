@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting, TFile } from 'obsidian';
+import { App, Modal, Notice, Platform, Setting, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { AUDIO_EXTENSIONS } from '../audio';
 import { detectPlatform } from '../video';
@@ -56,8 +56,8 @@ export class UnifiedTranscriptionModal extends Modal {
 				.setDesc(ppStatus);
 		}
 
-		// URL section
-		if (this.enabledModules.video) {
+		// URL section (desktop only — video transcription requires yt-dlp + ffmpeg)
+		if (this.enabledModules.video && Platform.isDesktop) {
 			const platformBadge = contentEl.createDiv({
 				cls: 'auto-notes-platform-badge',
 			});
