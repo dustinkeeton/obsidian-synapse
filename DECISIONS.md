@@ -4,6 +4,39 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-17: Unified transcription — 6 commands to 2 + 1 utility (Issue #20)
+
+**Context**: Audio and video modules each had their own modal classes for transcription: `TranscriptionModal` and `NoteAudioModal` in `src/audio/`, `VideoModal` and `NoteVideoModal` in `src/video/`. This meant 6 separate transcription commands, 4 modal classes, and duplicated UI patterns across two modules.
+
+**Decision**: Consolidate into a new `src/transcription/` module with two modal classes:
+- **UnifiedTranscriptionModal** — combines audio file picker and video URL input in a single modal (replaces `TranscriptionModal` + `VideoModal`)
+- **NoteMediaModal** — scans the current note for both audio embeds and video URLs, presents a unified selection UI (replaces `NoteAudioModal` + `NoteVideoModal`)
+
+Reduce to 2 unified commands + 1 utility:
+- `auto-notes:transcribe-media` — opens UnifiedTranscriptionModal
+- `auto-notes:transcribe-note-media` — opens NoteMediaModal for the current note
+- `auto-notes:check-dependencies` — checks yt-dlp/ffmpeg availability (retained from video module)
+
+The transcription module is UI-only; it delegates all work to AudioModule and VideoModule via callbacks wired in `main.ts`. AudioModule and VideoModule expose new public methods (`transcribeFileToActiveNote`, `transcribeUrlToActiveNote`, `transcribeAndInsert`) for the unified orchestration.
+
+Settings tab reorganized with a "Media Transcription" parent heading grouping both audio and video settings.
+
+**Alternatives considered**:
+- Keep separate commands with a "smart" command that auto-detects media type (still requires two modal implementations)
+- Merge Audio and Video modules entirely (too much coupling; they have independent provider configurations and different external dependencies)
+- Add transcription UI to each module's own modal but share via inheritance (fragile, tight coupling between UI classes)
+
+**Rationale**: Users think in terms of "transcribe this media" — not "is this audio or video?" The unified modal handles both media types with a single entry point. Keeping AudioModule and VideoModule as separate backend modules preserves clean separation of concerns (different providers, different external tools). The transcription module acts as a thin UI layer that delegates to the right backend.
+
+**Impact**:
+- 4 modal files deleted (`audio/transcription-modal.ts`, `audio/note-audio-modal.ts`, `video/video-modal.ts`, `video/note-video-modal.ts`)
+- 3 new files in `src/transcription/` (unified-modal.ts, note-media-modal.ts, index.ts)
+- Command count reduced from ~25 to 21
+- Single ribbon icon (`mic`) for all transcription
+- Audio and video modules no longer register their own commands (except `check-dependencies`)
+
+---
+
 ## 2026-03-16: Deep-dive generate-all-upfront model
 
 **Context**: When a user triggers a deep dive, the system needs to decide whether to generate child notes one at a time (with user approval between each) or generate the entire tree upfront and let the user accept/reject afterward.

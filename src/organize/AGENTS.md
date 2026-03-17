@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-16
+last-updated: 2026-03-17
 ---
 
 # organize module
@@ -22,6 +22,8 @@ class OrganizeModule {
   rejectProposal(id: string): Promise<void>
 }
 ```
+
+Exported: `ContentAnalyzer`, `DirectoryMatcher`, `buildSummaryPath(timestamp: string): string`
 
 Exported types: `OrganizeProposal`, `OrganizeSnapshot`, `OrganizeResult`, `ContentAnalysis`, `DirectoryScore`, `NoteTopic`, `OrganizeAction`, `OrganizeProposalStatus`
 

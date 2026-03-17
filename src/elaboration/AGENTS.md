@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-16
+last-updated: 2026-03-17
 ---
 
 # Elaboration Module
@@ -102,7 +102,7 @@ interface Proposal {
 
 ## Accept Behavior
 
-On accept, the original note content is wrapped in a blockquote with attribution (`blockquoteOriginal()`), then sanitized AI additions are appended. This preserves the original while adding new content.
+On accept, sanitized AI additions are wrapped in an `auto-notes-elaboration` callout and appended to the note via `buildCallout(CALLOUT_TYPES.elaboration, 'Elaboration', additions)`.
 
 ## Error Handling
 

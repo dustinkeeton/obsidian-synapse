@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-16
+last-updated: 2026-03-17
 ---
 
 # Audio Module
 
-Transcribes audio files from the vault (standalone or inline note embeds) using configurable providers, with optional AI post-processing.
+Transcribes audio files from the vault using configurable providers, with optional AI post-processing. Exposes public methods for unified transcription UI.
 
 ## Public API
 
@@ -16,11 +16,15 @@ class AudioModule {
   onload(): Promise<void>
   onunload(): void
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
-  openTranscriptionModal(): void
+  transcribeFileToActiveNote(file: TFile): Promise<void>
+  transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>
   onTranscriptionComplete: ((filePath: string) => void) | null
 }
 
-class AudioTranscriptionModal extends Modal { ... }
+function findAudioEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): AudioEmbed[]
+
+const AUDIO_EXTENSIONS: RegExp   // /\.(mp3|wav|m4a|ogg|flac|webm|aac)$/i
+const AUDIO_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:mp3|wav|m4a|ogg|flac|webm|aac))\]\]/gi
 
 interface TranscriptionResult {
   raw: string
@@ -43,43 +47,45 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 | `types.ts` | `TranscriptionResult`, `TimestampEntry`, `TranscribeOptions`, `AudioEmbed` | Types |
 | `transcriber.ts` | `Transcriber` | Provider-routed transcription (Whisper, Deepgram, local) |
 | `post-processor.ts` | `PostProcessor` | AI transcript cleanup via `AIClient` |
-| `transcription-modal.ts` | `AudioTranscriptionModal` | File picker modal |
-| `note-audio-modal.ts` | `NoteAudioModal` | Selection modal for note embeds |
-| `index.ts` | `AudioModule` | Orchestrator, commands, embed detection |
+| `note-scanner.ts` | `findAudioEmbeds`, `hasTranscriptionBelow`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` | Scan note content for audio embeds |
+| `note-scanner.test.ts` | Tests | Note scanner tests |
+| `index.ts` | `AudioModule` | Orchestrator, public transcription methods |
 
 ## Data Flow
 
 ```
-1. User triggers command or VideoModule calls transcribe()
+1. User triggers via UnifiedTranscriptionModal or NoteMediaModal (in transcription/)
    |
-2. Transcriber.transcribe(audioData, fileName)
+2a. transcribeFileToActiveNote(file) -- single file to active note
+   |  Reads binary, calls transcribe(), builds callout, appends to active note
+   |
+2b. transcribeAndInsert(noteFile, embeds) -- batch from note scan
+   |  Processes embeds in reverse line order, 2s delay between API calls
+   |  Cancellable via NotificationManager operation handle
+   |
+3. Transcriber.transcribe(audioData, fileName)
    |  Routes by transcriptionProvider:
    |  'whisper-api' --> OpenAI /v1/audio/transcriptions (fetch + FormData, 5min timeout)
    |       Key: audio.whisperApiKey || ai.apiKey
    |  'deepgram' --> Deepgram /v1/listen (fetch, 5min timeout)
    |  'local-whisper' --> throws (not implemented)
    |
-3. PostProcessor.process(rawTranscript)  [if postProcess !== false]
+4. PostProcessor.process(rawTranscript)  [if postProcess !== false]
    |  Builds instructions from settings flags, calls AIClient.complete()
    |  sanitizeAIResponse() on output
    |
-4. Result inserted as blockquote in active note:
-   > **Transcription of filename.mp3**
+5. Result wrapped in callout block:
+   > [!auto-notes-transcription]- Transcription of filename.mp3
    > ...transcribed text...
 ```
 
-## Inline Note Transcription
+## Note Scanning
 
-```
-1. transcribeFromNote(noteFile)
-   |  findAudioEmbeds(): regex ![[*.mp3|wav|m4a|ogg|flac|webm|aac]]
-   |  Skips embeds with existing transcription block below
-   |
-2. NoteAudioModal -- user selects embeds
-   |
-3. transcribeAndInsert() -- reverse line order, 2s delay between API calls
-   |  Cancellable via NotificationManager operation handle
-```
+`findAudioEmbeds(content, sourcePath, metadataCache)` in `note-scanner.ts`:
+- Regex: `![[*.mp3|wav|m4a|ogg|flac|webm|aac]]`
+- Resolves files via `metadataCache.getFirstLinkpathDest()`
+- Skips embeds with existing transcription callout below (checks 3 lines)
+- Returns `AudioEmbed[]` with file references and line numbers
 
 ## Settings Keys
 
@@ -96,4 +102,10 @@ All under `settings.audio`:
 
 ## Video Module Integration
 
-`AudioModule.transcribe()` is called by `VideoModule.processUrl()` at `video/index.ts:L105`. Video passes extracted audio as `ArrayBuffer` with `sourceName` set to video title.
+`AudioModule.transcribe()` is called by `VideoModule.processUrl()` at `video/index.ts:L93`. Video passes extracted audio as `ArrayBuffer` with `sourceName` set to video title.
+
+## Commands
+
+No commands registered directly. Commands are registered in `main.ts` (unified transcription):
+- `auto-notes:transcribe-media` -> `AudioModule.transcribeFileToActiveNote(file)`
+- `auto-notes:transcribe-note-media` -> `AudioModule.transcribeAndInsert(file, embeds)`

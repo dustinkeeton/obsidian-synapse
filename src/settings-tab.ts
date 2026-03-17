@@ -2,7 +2,7 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import type AutoNotesPlugin from './main';
 import { MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
-import { addEnhancedSlider } from './shared/slider-helper';
+import { addEnhancedSlider } from './shared';
 
 export class AutoNotesSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: AutoNotesPlugin) {
@@ -180,8 +180,11 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
+		// ── Media Transcription ──
+		containerEl.createEl('h2', { text: 'Media Transcription' });
+
 		// ── Audio Transcription ──
-		containerEl.createEl('h2', { text: 'Audio Transcription' });
+		containerEl.createEl('h3', { text: 'Audio Transcription' });
 
 		new Setting(containerEl)
 			.setName('Enable audio transcription')
@@ -279,7 +282,7 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 			);
 
 		// ── Video Transcription ──
-		containerEl.createEl('h2', { text: 'Video Transcription' });
+		containerEl.createEl('h3', { text: 'Video Transcription' });
 
 		new Setting(containerEl)
 			.setName('Enable video transcription')
