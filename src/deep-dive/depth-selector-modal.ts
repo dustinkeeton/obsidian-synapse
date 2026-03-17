@@ -1,31 +1,93 @@
-import { App, SuggestModal } from 'obsidian';
+import { App, Modal, Setting } from 'obsidian';
 
-const DEPTH_OPTIONS = [1, 2, 3, 4, 5, 6];
+export const MIN_DEPTH = 1;
+export const MAX_DEPTH = 6;
 
-export class DepthSelectorModal extends SuggestModal<number> {
-	private onChooseDepth: (depth: number) => void;
+export class DepthSelectorModal extends Modal {
+	private selectedDepth: number;
 	private defaultDepth: number;
+	private resolved = false;
+	private resolve: (depth: number | null) => void = () => {};
 
-	constructor(app: App, defaultDepth: number, onChoose: (depth: number) => void) {
+	constructor(app: App, defaultDepth: number) {
 		super(app);
 		this.defaultDepth = defaultDepth;
-		this.onChooseDepth = onChoose;
-		this.setPlaceholder('Select recursion depth');
+		this.selectedDepth = defaultDepth;
 	}
 
-	getSuggestions(): number[] {
-		return DEPTH_OPTIONS;
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('auto-notes-depth-selector');
+
+		contentEl.createEl('h3', { text: 'Select recursion depth' });
+
+		// Slider with tick labels
+		const sliderContainer = contentEl.createDiv({ cls: 'auto-notes-depth-slider' });
+
+		const valueDisplay = sliderContainer.createEl('span', {
+			cls: 'auto-notes-depth-value',
+			text: this.formatLabel(this.selectedDepth),
+		});
+
+		new Setting(sliderContainer)
+			.setName('')
+			.addSlider((slider) => {
+				slider
+					.setLimits(MIN_DEPTH, MAX_DEPTH, 1)
+					.setValue(this.selectedDepth)
+					.setDynamicTooltip()
+					.onChange((value) => {
+						this.selectedDepth = value;
+						valueDisplay.textContent = this.formatLabel(value);
+					});
+			});
+
+		// Tick labels row
+		const tickRow = sliderContainer.createDiv({ cls: 'auto-notes-depth-ticks' });
+		for (let i = MIN_DEPTH; i <= MAX_DEPTH; i++) {
+			tickRow.createEl('span', {
+				text: String(i),
+				cls: 'auto-notes-depth-tick',
+			});
+		}
+
+		// Confirm / Cancel buttons
+		new Setting(contentEl)
+			.addButton((btn) => {
+				btn.setButtonText('Cancel').onClick(() => {
+					this.resolved = true;
+					this.resolve(null);
+					this.close();
+				});
+			})
+			.addButton((btn) => {
+				btn.setButtonText('Confirm')
+					.setCta()
+					.onClick(() => {
+						this.resolved = true;
+						this.resolve(this.selectedDepth);
+						this.close();
+					});
+			});
 	}
 
-	renderSuggestion(depth: number, el: HTMLElement): void {
-		const label = depth === this.defaultDepth
+	onClose(): void {
+		this.contentEl?.empty();
+		if (!this.resolved) {
+			this.resolve(null);
+		}
+	}
+
+	/** Attach the promise resolver before opening. */
+	setResolver(resolve: (depth: number | null) => void): void {
+		this.resolve = resolve;
+	}
+
+	private formatLabel(depth: number): string {
+		return depth === this.defaultDepth
 			? `Depth ${depth} (default)`
 			: `Depth ${depth}`;
-		el.createEl('div', { text: label });
-	}
-
-	onChooseSuggestion(depth: number): void {
-		this.onChooseDepth(depth);
 	}
 }
 
@@ -35,25 +97,8 @@ export class DepthSelectorModal extends SuggestModal<number> {
  */
 export function selectDepth(app: App, defaultDepth: number): Promise<number | null> {
 	return new Promise((resolve) => {
-		const modal = new DepthSelectorModal(app, defaultDepth, (depth) => {
-			resolve(depth);
-		});
-
-		// Handle dismissal (Escape / clicking outside)
-		const origOnClose = modal.onClose.bind(modal);
-		let chosen = false;
-		const origOnChoose = modal.onChooseSuggestion.bind(modal);
-		modal.onChooseSuggestion = (depth: number) => {
-			chosen = true;
-			origOnChoose(depth);
-		};
-		modal.onClose = () => {
-			origOnClose();
-			if (!chosen) {
-				resolve(null);
-			}
-		};
-
+		const modal = new DepthSelectorModal(app, defaultDepth);
+		modal.setResolver(resolve);
 		modal.open();
 	});
 }

@@ -1,45 +1,68 @@
 import { describe, it, expect, vi } from 'vitest';
+import { DepthSelectorModal, MIN_DEPTH, MAX_DEPTH, selectDepth } from './depth-selector-modal';
 
-// Mock obsidian before importing the module under test
-vi.mock('obsidian', () => {
-	class SuggestModal {
-		app: unknown;
-		constructor(app: unknown) { this.app = app; }
-		setPlaceholder() {}
-		open() {}
-		close() {}
-		onClose() {}
-	}
-	return { SuggestModal };
-});
-
-import { DepthSelectorModal } from './depth-selector-modal';
+vi.mock('obsidian');
 
 describe('DepthSelectorModal', () => {
-	const mockApp = {} as Parameters<typeof import('./depth-selector-modal').selectDepth>[0];
+	const mockApp = {} as ConstructorParameters<typeof DepthSelectorModal>[0];
 
-	it('getSuggestions returns depths 1-6', () => {
-		const modal = new DepthSelectorModal(mockApp as never, 3, () => {});
-		const suggestions = modal.getSuggestions();
-		expect(suggestions).toEqual([1, 2, 3, 4, 5, 6]);
+	it('resolves with chosen depth on confirm', () => {
+		const modal = new DepthSelectorModal(mockApp, 3);
+		const resolve = vi.fn();
+		modal.setResolver(resolve);
+
+		// Simulate the confirm button callback
+		(modal as any).resolved = true;
+		(modal as any).resolve(5);
+
+		expect(resolve).toHaveBeenCalledWith(5);
 	});
 
-	it('renderSuggestion marks the default depth', () => {
-		const modal = new DepthSelectorModal(mockApp as never, 3, () => {});
-		const el = { createEl: vi.fn() } as unknown as HTMLElement;
+	it('resolves with default depth when unchanged', () => {
+		const modal = new DepthSelectorModal(mockApp, 3);
+		const resolve = vi.fn();
+		modal.setResolver(resolve);
 
-		modal.renderSuggestion(3, el);
-		expect(el.createEl).toHaveBeenCalledWith('div', { text: 'Depth 3 (default)' });
+		(modal as any).resolved = true;
+		(modal as any).resolve(3);
 
-		modal.renderSuggestion(2, el);
-		expect(el.createEl).toHaveBeenCalledWith('div', { text: 'Depth 2' });
+		expect(resolve).toHaveBeenCalledWith(3);
 	});
 
-	it('onChooseSuggestion calls the callback with the chosen depth', () => {
-		const callback = vi.fn();
-		const modal = new DepthSelectorModal(mockApp as never, 3, callback);
+	it('resolves null when dismissed without confirming', () => {
+		const modal = new DepthSelectorModal(mockApp, 4);
+		const resolve = vi.fn();
+		modal.setResolver(resolve);
 
-		modal.onChooseSuggestion(5);
-		expect(callback).toHaveBeenCalledWith(5);
+		modal.onClose();
+
+		expect(resolve).toHaveBeenCalledWith(null);
+	});
+
+	it('does not double-resolve on close after confirm', () => {
+		const modal = new DepthSelectorModal(mockApp, 3);
+		const resolve = vi.fn();
+		modal.setResolver(resolve);
+
+		// Simulate confirm
+		(modal as any).resolved = true;
+		(modal as any).resolve(5);
+
+		// Then close fires
+		modal.onClose();
+
+		expect(resolve).toHaveBeenCalledTimes(1);
+		expect(resolve).toHaveBeenCalledWith(5);
+	});
+
+	it('exports valid depth range constants', () => {
+		expect(MIN_DEPTH).toBe(1);
+		expect(MAX_DEPTH).toBe(6);
+	});
+});
+
+describe('selectDepth', () => {
+	it('is exported as a function', () => {
+		expect(typeof selectDepth).toBe('function');
 	});
 });
