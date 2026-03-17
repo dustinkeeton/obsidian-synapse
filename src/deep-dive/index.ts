@@ -344,20 +344,7 @@ export class DeepDiveModule {
 	}
 
 	private buildProposedPath(topicTitle: string, rootFile: TFile): string {
-		const settings = this.getSettings().deepDive;
-		const safeName = topicTitle.replace(/[\\/:*?"<>|]/g, '-').trim();
-
-		let folder: string;
-		if (settings.noteOutputFolder) {
-			folder = settings.noteOutputFolder;
-		} else {
-			// Same folder as the source note
-			const parent = rootFile.parent?.path;
-			folder = parent || '';
-		}
-
-		const path = folder ? `${folder}/${safeName}.md` : `${safeName}.md`;
-		return normalizePath(path);
+		return buildDeepDivePath(topicTitle, rootFile, this.getSettings().deepDive);
 	}
 
 	private isExcluded(file: TFile): boolean {
@@ -389,4 +376,26 @@ export class DeepDiveModule {
 			Math.random().toString(36).slice(2, 10)
 		);
 	}
+}
+
+/** Exported for testing. Builds the proposed vault path for a deep-dive note. */
+export function buildDeepDivePath(
+	topicTitle: string,
+	rootFile: TFile,
+	settings: { noteOutputFolder: string },
+): string {
+	const safeName = topicTitle.replace(/[\\/:*?"<>|]/g, '-').trim();
+
+	let folder: string;
+	if (settings.noteOutputFolder) {
+		// Per-root subfolder: Deep Dives/Machine Learning/
+		folder = `${settings.noteOutputFolder}/${rootFile.basename}`;
+	} else {
+		// Same folder as source note (user explicitly cleared the setting)
+		const parent = rootFile.parent?.path;
+		folder = parent || '';
+	}
+
+	const path = folder ? `${folder}/${safeName}.md` : `${safeName}.md`;
+	return normalizePath(path);
 }
