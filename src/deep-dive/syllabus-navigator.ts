@@ -1,4 +1,5 @@
 import { DeepDiveProposal, DeepDiveRun } from './types';
+import { generateTreeDiagram, TreeNode } from '../shared/diagram-generator';
 
 /**
  * A node in the depth-first traversal of accepted proposals.
@@ -254,6 +255,46 @@ export function syllabusPath(rootNotePath: string, noteOutputFolder: string): st
 }
 
 /**
+ * Convert traversal nodes into a TreeNode structure rooted at the run's
+ * root note. Used to generate a Mermaid tree diagram.
+ */
+export function buildTreeFromNodes(
+	nodes: TraversalNode[],
+	rootTitle: string
+): TreeNode {
+	const nodeMap = new Map<string, TreeNode>();
+
+	// Create TreeNode for each traversal node
+	for (const n of nodes) {
+		nodeMap.set(n.proposalId, {
+			id: n.proposalId,
+			label: n.title,
+			children: [],
+		});
+	}
+
+	// Build the root node
+	const root: TreeNode = {
+		id: 'root',
+		label: rootTitle,
+		children: [],
+	};
+
+	// Wire up parent-child relationships
+	for (const n of nodes) {
+		const treeNode = nodeMap.get(n.proposalId)!;
+		if (n.parentId && nodeMap.has(n.parentId)) {
+			nodeMap.get(n.parentId)!.children.push(treeNode);
+		} else {
+			// Top-level node — attach to root
+			root.children.push(treeNode);
+		}
+	}
+
+	return root;
+}
+
+/**
  * Render the full syllabus index note content.
  *
  * Output:
@@ -267,6 +308,13 @@ export function syllabusPath(rootNotePath: string, noteOutputFolder: string): st
  * 2. [[Gradient Descent]]
  *    1. [[Learning Rate Schedules]]
  * 3. [[Regularization Techniques]]
+ *
+ * ## Topic Map
+ *
+ * ```mermaid
+ * graph TD
+ *     ...
+ * ```
  *
  * ---
  * *Generated from [[Machine Learning]] -- 6 notes across 2 depths*
@@ -295,6 +343,17 @@ export function renderSyllabusContent(
 		const indent = '   '.repeat(node.depth);
 		const link = wikiLink(node.proposedPath);
 		lines.push(`${indent}${count}. ${link}`);
+	}
+
+	// Add Mermaid tree diagram
+	if (nodes.length > 0) {
+		const tree = buildTreeFromNodes(nodes, rootTitle);
+		const diagram = generateTreeDiagram(tree);
+
+		lines.push('');
+		lines.push('## Topic Map');
+		lines.push('');
+		lines.push(diagram);
 	}
 
 	// Compute stats

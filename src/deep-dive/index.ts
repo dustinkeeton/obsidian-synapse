@@ -36,6 +36,7 @@ export {
 	buildNavigationContext,
 	renderNavigationBlock,
 	renderSyllabusContent,
+	buildTreeFromNodes,
 	syllabusTitle,
 	syllabusPath,
 	injectNavigationBlock,

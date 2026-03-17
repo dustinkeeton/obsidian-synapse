@@ -24,3 +24,9 @@ export {
 	mergeTags,
 } from './frontmatter-utils';
 export type { ParsedNote } from './frontmatter-utils';
+export {
+	generateTreeDiagram,
+	generateMoveDiagram,
+	generateOrganizeSummary,
+} from './diagram-generator';
+export type { TreeNode, MoveRecord } from './diagram-generator';
