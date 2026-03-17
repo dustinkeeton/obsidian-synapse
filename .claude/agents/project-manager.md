@@ -4,6 +4,7 @@ description: Project coordinator that reads the GitHub backlog, assigns issues t
 skills:
   - delegate
   - git-workflow
+  - github-project-management
   - issue
 allowed-tools: Read, Glob, Grep, Bash, Agent
 ---
@@ -59,4 +60,4 @@ Follow the `delegate` skill for the full 5-phase workflow: Fetch, Classify, Plan
 
 When you discover gaps in the backlog (missing tests, undocumented features, tech debt), use the `issue` skill to create tracking issues before or after delegation runs.
 
-You have access to the `delegate`, `git-workflow`, and `issue` skills for reference.
+You have access to the `delegate`, `git-workflow`, `github-project-management`, and `issue` skills for reference.
