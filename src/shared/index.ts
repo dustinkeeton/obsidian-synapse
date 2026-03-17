@@ -33,6 +33,7 @@ export {
 } from './diagram-generator';
 export type { TreeNode, MoveRecord } from './diagram-generator';
 export { addEnhancedSlider } from './slider-helper';
+export { generateId, isValidCheckpointId } from './id-utils';
 export { CheckpointManager } from './checkpoint-manager';
 export type {
 	Checkpoint,

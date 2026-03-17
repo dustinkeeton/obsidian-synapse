@@ -7,6 +7,7 @@ import {
 	CheckpointWorkItem,
 	DeferredTask,
 } from './checkpoint-types';
+import { generateId, isValidCheckpointId } from './id-utils';
 
 const CHECKPOINT_FOLDER = '.auto-notes/checkpoints';
 
@@ -19,9 +20,13 @@ const CHECKPOINT_FOLDER = '.auto-notes/checkpoints';
  * 3. `addDeferredTask()` to register cleanup/finalization
  * 4. `complete()` when all items are done (fires deferred tasks via callback)
  * 5. On plugin reload, `listIncomplete()` to find operations to resume
- * 6. `discard()` to abandon a checkpoint (deferred tasks are NOT fired)
+ * 6. `resume()` to load a checkpoint and return remaining work items
+ * 7. `discard()` to abandon a checkpoint (deferred tasks are NOT fired)
  */
 export class CheckpointManager {
+	/** Per-checkpoint write mutex to prevent concurrent read-modify-write. */
+	private writeLocks = new Map<string, Promise<void>>();
+
 	constructor(private app: App) {}
 
 	/**
@@ -35,7 +40,7 @@ export class CheckpointManager {
 	}): Promise<Checkpoint> {
 		const now = new Date().toISOString();
 		const checkpoint: Checkpoint = {
-			id: this.generateId(),
+			id: generateId(),
 			module: params.module,
 			operationLabel: params.operationLabel,
 			status: 'active',
@@ -52,6 +57,18 @@ export class CheckpointManager {
 	}
 
 	/**
+	 * Resume an incomplete checkpoint. Returns the checkpoint with its
+	 * remaining work items, or null if the checkpoint does not exist or
+	 * is not active.
+	 */
+	async resume(checkpointId: string): Promise<Checkpoint | null> {
+		this.validateId(checkpointId);
+		const checkpoint = await this.load(checkpointId);
+		if (!checkpoint || checkpoint.status !== 'active') return null;
+		return checkpoint;
+	}
+
+	/**
 	 * Mark a work item as completed and move it from remaining to completed.
 	 * Returns the updated checkpoint.
 	 */
@@ -59,20 +76,23 @@ export class CheckpointManager {
 		checkpointId: string,
 		itemId: string
 	): Promise<Checkpoint | null> {
-		const checkpoint = await this.load(checkpointId);
-		if (!checkpoint || checkpoint.status !== 'active') return null;
+		this.validateId(checkpointId);
+		return this.withLock(checkpointId, async () => {
+			const checkpoint = await this.load(checkpointId);
+			if (!checkpoint || checkpoint.status !== 'active') return null;
 
-		const itemIndex = checkpoint.remainingItems.findIndex(
-			(item) => item.id === itemId
-		);
-		if (itemIndex === -1) return checkpoint;
+			const itemIndex = checkpoint.remainingItems.findIndex(
+				(item) => item.id === itemId
+			);
+			if (itemIndex === -1) return checkpoint;
 
-		const [completed] = checkpoint.remainingItems.splice(itemIndex, 1);
-		checkpoint.completedItems.push(completed);
-		checkpoint.updatedAt = new Date().toISOString();
+			const [completed] = checkpoint.remainingItems.splice(itemIndex, 1);
+			checkpoint.completedItems.push(completed);
+			checkpoint.updatedAt = new Date().toISOString();
 
-		await this.save(checkpoint);
-		return checkpoint;
+			await this.save(checkpoint);
+			return checkpoint;
+		});
 	}
 
 	/**
@@ -82,14 +102,17 @@ export class CheckpointManager {
 		checkpointId: string,
 		task: DeferredTask
 	): Promise<Checkpoint | null> {
-		const checkpoint = await this.load(checkpointId);
-		if (!checkpoint || checkpoint.status !== 'active') return null;
+		this.validateId(checkpointId);
+		return this.withLock(checkpointId, async () => {
+			const checkpoint = await this.load(checkpointId);
+			if (!checkpoint || checkpoint.status !== 'active') return null;
 
-		checkpoint.deferredTasks.push(task);
-		checkpoint.updatedAt = new Date().toISOString();
+			checkpoint.deferredTasks.push(task);
+			checkpoint.updatedAt = new Date().toISOString();
 
-		await this.save(checkpoint);
-		return checkpoint;
+			await this.save(checkpoint);
+			return checkpoint;
+		});
 	}
 
 	/**
@@ -98,15 +121,18 @@ export class CheckpointManager {
 	 * Returns the deferred tasks that should be executed.
 	 */
 	async complete(checkpointId: string): Promise<DeferredTask[]> {
-		const checkpoint = await this.load(checkpointId);
-		if (!checkpoint || checkpoint.status !== 'active') return [];
+		this.validateId(checkpointId);
+		return this.withLock(checkpointId, async () => {
+			const checkpoint = await this.load(checkpointId);
+			if (!checkpoint || checkpoint.status !== 'active') return [];
 
-		const tasks = [...checkpoint.deferredTasks];
-		checkpoint.status = 'completed';
-		checkpoint.updatedAt = new Date().toISOString();
+			const tasks = [...checkpoint.deferredTasks];
+			checkpoint.status = 'completed';
+			checkpoint.updatedAt = new Date().toISOString();
 
-		await this.save(checkpoint);
-		return tasks;
+			await this.save(checkpoint);
+			return tasks;
+		});
 	}
 
 	/**
@@ -114,18 +140,22 @@ export class CheckpointManager {
 	 * but deferred tasks are NOT executed.
 	 */
 	async discard(checkpointId: string): Promise<void> {
-		const checkpoint = await this.load(checkpointId);
-		if (!checkpoint) return;
+		this.validateId(checkpointId);
+		await this.withLock(checkpointId, async () => {
+			const checkpoint = await this.load(checkpointId);
+			if (!checkpoint) return;
 
-		checkpoint.status = 'discarded';
-		checkpoint.updatedAt = new Date().toISOString();
-		await this.save(checkpoint);
+			checkpoint.status = 'discarded';
+			checkpoint.updatedAt = new Date().toISOString();
+			await this.save(checkpoint);
+		});
 	}
 
 	/**
 	 * Delete a checkpoint file permanently.
 	 */
 	async remove(checkpointId: string): Promise<void> {
+		this.validateId(checkpointId);
 		const path = this.filePath(checkpointId);
 		try {
 			const exists = await this.app.vault.adapter.exists(path);
@@ -141,6 +171,7 @@ export class CheckpointManager {
 	 * Load a checkpoint by ID.
 	 */
 	async load(checkpointId: string): Promise<Checkpoint | null> {
+		this.validateId(checkpointId);
 		const path = this.filePath(checkpointId);
 		try {
 			const exists = await this.app.vault.adapter.exists(path);
@@ -216,7 +247,7 @@ export class CheckpointManager {
 		return removed;
 	}
 
-	// ── Private helpers ──
+	// -- Private helpers --
 
 	private async save(checkpoint: Checkpoint): Promise<void> {
 		await ensureFolder(this.app, CHECKPOINT_FOLDER);
@@ -231,10 +262,35 @@ export class CheckpointManager {
 		return normalizePath(`${CHECKPOINT_FOLDER}/${checkpointId}.json`);
 	}
 
-	private generateId(): string {
-		return (
-			Date.now().toString(36) +
-			Math.random().toString(36).slice(2, 10)
-		);
+	/**
+	 * Validate that a checkpoint ID is safe. Throws if the ID contains
+	 * path traversal characters or anything outside base-36.
+	 */
+	private validateId(checkpointId: string): void {
+		if (!isValidCheckpointId(checkpointId)) {
+			throw new Error(`Invalid checkpoint ID: ${checkpointId}`);
+		}
+	}
+
+	/**
+	 * Serialize write operations per checkpoint ID to prevent
+	 * concurrent read-modify-write races.
+	 */
+	private async withLock<T>(checkpointId: string, fn: () => Promise<T>): Promise<T> {
+		const prev = this.writeLocks.get(checkpointId) ?? Promise.resolve();
+		let resolve: () => void;
+		const next = new Promise<void>((r) => { resolve = r; });
+		this.writeLocks.set(checkpointId, next);
+
+		try {
+			await prev;
+			return await fn();
+		} finally {
+			resolve!();
+			// Clean up if this is still the latest lock
+			if (this.writeLocks.get(checkpointId) === next) {
+				this.writeLocks.delete(checkpointId);
+			}
+		}
 	}
 }

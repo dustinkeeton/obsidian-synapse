@@ -2,7 +2,7 @@ import { Plugin, TFile, normalizePath } from 'obsidian';
 import { AutoNotesSettings, DeepDiveNestingMode } from '../settings';
 import {
 	NotificationManager, ensureFolder, readNote, writeNote, wordCount,
-	CheckpointManager,
+	CheckpointManager, generateId,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { ContentAnalyzer, DirectoryMatcher } from '../organize';
@@ -55,19 +55,18 @@ export class DeepDiveModule {
 	private store: DeepDiveStore;
 	private contentAnalyzer: ContentAnalyzer;
 	private directoryMatcher: DirectoryMatcher;
-	private checkpointManager: CheckpointManager;
 
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		private checkpointManager: CheckpointManager
 	) {
 		this.analyzer = new TopicAnalyzer(plugin.app, getSettings);
 		this.generator = new NoteGenerator(getSettings);
 		this.store = new DeepDiveStore(plugin.app, getSettings);
 		this.contentAnalyzer = new ContentAnalyzer(plugin.app, getSettings);
 		this.directoryMatcher = new DirectoryMatcher(plugin.app);
-		this.checkpointManager = new CheckpointManager(plugin.app);
 	}
 
 	async onload(): Promise<void> {
@@ -96,6 +95,20 @@ export class DeepDiveModule {
 
 	async getPendingProposals(): Promise<DeepDiveProposal[]> {
 		return this.store.loadPendingProposals();
+	}
+
+	/**
+	 * Resume a deep-dive from a checkpoint (C1).
+	 * The remaining items cannot be directly resumed because deep-dive
+	 * uses a recursive topic-extraction queue. Instead, we discard the
+	 * checkpoint and notify the user to re-run the deep dive.
+	 */
+	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
+		this.notifications.info(
+			`Deep dive checkpoint has ${checkpoint.remainingItems.length} remaining items. ` +
+			`Completed items are already saved. Please re-run deep dive on the source note to continue.`
+		);
+		await this.checkpointManager.discard(checkpoint.id);
 	}
 
 	/**
@@ -189,7 +202,7 @@ export class DeepDiveModule {
 			rootTopics = await this.analyzer.extractTopics(content, file.basename, []);
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			scanOp.error(`Topic extraction failed — ${msg}`);
+			scanOp.error(`Topic extraction failed -- ${msg}`);
 			return;
 		}
 
@@ -205,7 +218,7 @@ export class DeepDiveModule {
 		);
 
 		if (newTopics.length === 0) {
-			this.notifications.info('All topics already exist in vault — nothing to generate');
+			this.notifications.info('All topics already exist in vault -- nothing to generate');
 			return;
 		}
 
@@ -222,7 +235,7 @@ export class DeepDiveModule {
 
 		// Phase 3: Recursive generation
 		const run: DeepDiveRun = {
-			id: this.generateId(),
+			id: generateId(),
 			rootNotePath: file.path,
 			maxDepth: settings.maxDepth,
 			qualityThreshold: settings.qualityThreshold,
@@ -238,10 +251,11 @@ export class DeepDiveModule {
 		);
 
 		// Create checkpoint for resumability
+		// Use topic title as the stable ID (C2) -- titles are unique within a run
 		const workItems: CheckpointWorkItem[] = rootTopics
 			.filter(t => !t.existsInVault)
-			.map((topic, i) => ({
-				id: `topic-${i}-${topic.title}`,
+			.map((topic) => ({
+				id: `topic-${topic.title}`,
 				label: topic.title,
 				payload: {
 					content,
@@ -258,6 +272,13 @@ export class DeepDiveModule {
 			operationLabel: `Deep dive: ${file.basename}`,
 			items: workItems,
 			metadata: { runId: run.id, rootNotePath: file.path },
+		});
+
+		// Register deferred task for sidebar refresh (I1)
+		await this.checkpointManager.addDeferredTask(checkpoint.id, {
+			id: generateId(),
+			type: 'refresh-sidebar-view',
+			data: {},
 		});
 
 		try {
@@ -339,7 +360,7 @@ export class DeepDiveModule {
 
 					// Create proposal
 					const proposal: DeepDiveProposal = {
-						id: this.generateId(),
+						id: generateId(),
 						runId: run.id,
 						sourceNotePath: item.path,
 						topic,
@@ -366,8 +387,8 @@ export class DeepDiveModule {
 						}
 					}
 
-					// Save checkpoint progress after each proposal
-					const itemId = `topic-${processedCount - 1}-${topic.title}`;
+					// Save checkpoint progress using stable topic-title ID (C2)
+					const itemId = `topic-${topic.title}`;
 					await this.checkpointManager.completeItem(checkpoint.id, itemId);
 
 					// Queue children if quality is above threshold and depth allows
@@ -396,10 +417,13 @@ export class DeepDiveModule {
 			await this.store.saveRun(run);
 
 			if (genOp.cancelled) {
+				// Discard checkpoint on user cancellation (C3)
+				await this.checkpointManager.discard(checkpoint.id);
 				this.notifications.info('Deep dive cancelled');
 			} else {
-				// Mark checkpoint completed and fire deferred tasks
-				await this.checkpointManager.complete(checkpoint.id);
+				// Mark checkpoint completed and dispatch deferred tasks (I1)
+				const tasks = await this.checkpointManager.complete(checkpoint.id);
+				this.dispatchDeferredTasks(tasks);
 				const depthSummary = Object.entries(run.stats.byDepth)
 					.map(([d, c]) => `depth ${d}: ${c}`)
 					.join(', ');
@@ -412,8 +436,10 @@ export class DeepDiveModule {
 		} catch (error) {
 			run.status = 'cancelled';
 			await this.store.saveRun(run);
+			// Discard checkpoint on error (M7)
+			await this.checkpointManager.discard(checkpoint.id);
 			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Deep dive failed — ${msg}`);
+			genOp.error(`Deep dive failed -- ${msg}`);
 		}
 	}
 
@@ -437,7 +463,7 @@ export class DeepDiveModule {
 		const nodes = computeTraversalOrder(proposals, run);
 
 		if (nodes.length === 0) {
-			// All proposals rejected — remove syllabus if it exists
+			// All proposals rejected -- remove syllabus if it exists
 			const sPath = syllabusPath(run.rootNotePath, this.getSettings().deepDive.noteOutputFolder);
 			const existingSyllabus = this.plugin.app.vault.getAbstractFileByPath(normalizePath(sPath));
 			if (existingSyllabus instanceof TFile) {
@@ -460,11 +486,11 @@ export class DeepDiveModule {
 			const navBlock = renderNavigationBlock(ctx);
 
 			if (newNotePath && node.proposedPath === newNotePath && newNoteContent) {
-				// This is the newly accepted note — inject nav into its content and write
+				// This is the newly accepted note -- inject nav into its content and write
 				const contentWithNav = injectNavigationBlock(newNoteContent, navBlock);
 				await writeNote(this.plugin.app, node.proposedPath, contentWithNav);
 			} else {
-				// Previously accepted note — read current content, update nav, write back
+				// Previously accepted note -- read current content, update nav, write back
 				const existing = await readNote(this.plugin.app, node.proposedPath);
 				if (existing) {
 					const updated = injectNavigationBlock(existing, navBlock);
@@ -559,11 +585,17 @@ export class DeepDiveModule {
 		return false;
 	}
 
-	private generateId(): string {
-		return (
-			Date.now().toString(36) +
-			Math.random().toString(36).slice(2, 10)
-		);
+	/** Dispatch deferred tasks (I1). */
+	private dispatchDeferredTasks(tasks: DeferredTask[]): void {
+		for (const task of tasks) {
+			switch (task.type) {
+				case 'refresh-sidebar-view':
+					this.onViewRefreshNeeded?.();
+					break;
+				default:
+					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+			}
+		}
 	}
 }
 
