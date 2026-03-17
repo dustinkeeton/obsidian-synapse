@@ -96,7 +96,7 @@ EOF
 - Always target `main` as the base branch.
 - Push and PR without waiting for human approval — the user reviews in GitHub.
 
-## Parallel Work (Worktrees)
+## Parallel Work (Worktrees + Teams)
 
 When multiple agents work in parallel on files that might conflict:
 
@@ -105,12 +105,16 @@ When multiple agents work in parallel on files that might conflict:
    git worktree add ../auto-notes-feat-x feat/feature-x
    ```
 
-2. **Lock files** — if two agents suspect they'll edit the same file, one should finish first. Communicate via the team task list which files are being modified.
+2. **Lock files** — if two agents suspect they'll edit the same file, one should finish first. Use `TaskList(team_name: ...)` to check which files other agents are modifying.
 
-3. **Clean up** worktrees after merging:
+3. **Conflict alerting** — if you detect a potential conflict with another agent's work, notify them immediately: `SendMessage(to: "<agent-name>", content: "Conflict: I'm editing <file>")`.
+
+4. **Clean up** worktrees after merging:
    ```bash
    git worktree remove ../auto-notes-feat-x
    ```
+
+Teams and worktrees are orthogonal — teams provide coordination (task tracking, messaging), worktrees provide isolation (separate working directories). Use both together for parallel agent work.
 
 ## Pre-flight Checklist
 

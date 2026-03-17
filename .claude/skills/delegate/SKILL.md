@@ -137,6 +137,34 @@ See the `github-project-management` skill for the full GraphQL query catalog.
 
 ## Phase 4: Execute
 
+### Team Setup (multi-issue only)
+
+When delegating **2 or more issues**, create a team for coordination. Skip this for single-issue delegation.
+
+```
+TeamCreate(team_name: "delegate-{timestamp}")
+```
+
+Create a task per issue so agents can report progress:
+
+```
+# For each issue:
+task_N = TaskCreate(
+  description: "Issue #{number}: {title}",
+  team_name: "delegate-{timestamp}"
+)
+```
+
+For serial dependencies (e.g., shared/ bottleneck), chain tasks:
+
+```
+task_B = TaskCreate(
+  description: "Issue #{number}: {title}",
+  team_name: "delegate-{timestamp}",
+  addBlockedBy: [task_A.id]
+)
+```
+
 ### Branch naming
 
 Each agent gets a branch named per git-workflow conventions:
@@ -193,7 +221,22 @@ Errors in any step → log a warning and continue. Board updates must never bloc
 
 ### Spawning agents
 
-**Parallel groups** — spawn all agents in the group simultaneously using `isolation: "worktree"` on the Agent tool:
+**Parallel groups** — spawn all agents in the group simultaneously using `isolation: "worktree"`. When a team exists (multi-issue), include `team_name` and `name` for coordination:
+
+```
+Agent(
+  subagent_type: "plugin-architect",
+  isolation: "worktree",
+  team_name: "delegate-{timestamp}",
+  name: "issue-3-plugin-architect",
+  prompt: <agent prompt>,
+  description: "Issue #3: Fix UI hang"
+)
+```
+
+The `isolation: "worktree"` parameter automatically creates and cleans up a git worktree for the agent. No manual worktree management needed.
+
+**Single-issue fast path** — skip team creation entirely. Spawn a single agent without `team_name` or `name`:
 
 ```
 Agent(
@@ -203,8 +246,6 @@ Agent(
   description: "Issue #3: Fix UI hang"
 )
 ```
-
-The `isolation: "worktree"` parameter automatically creates and cleans up a git worktree for the agent. No manual worktree management needed.
 
 **Serial groups** — spawn agents one at a time in the main working directory. Wait for each to complete before spawning the next.
 
@@ -232,7 +273,8 @@ You are assigned to GitHub issue #{number}: {title}
    - npm test
    - node esbuild.config.mjs production
 5. Create a PR: gh pr create --title "{type}: {short description}" --body "..." targeting main
-6. Report back with a summary of changes made and the PR URL
+6. Mark your task as completed: TaskUpdate(id: <task_id>, status: "completed")
+7. Report back to the team lead: SendMessage(to: "team-lead", content: <summary with PR URL>)
 
 Branch name: {branch-name}
 ```
@@ -286,6 +328,17 @@ gh api graphql -f query='
 **Failed agents** leave the issue as "In Progress" — this is intentional, as stalled "In Progress" items are visible on the board as work that needs attention.
 
 Include any failures or skipped issues with reasons.
+
+### Team Cleanup (multi-issue only)
+
+After reporting, shut down the team:
+
+```
+# For each agent:
+SendMessage(type: "shutdown_request", to: "issue-{N}-{agent-type}")
+
+TeamDelete(team_name: "delegate-{timestamp}")
+```
 
 ## Error Handling
 
