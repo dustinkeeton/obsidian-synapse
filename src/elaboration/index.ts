@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { blockquoteOriginal, FolderPickerModal, getMarkdownFiles, NotificationManager, sanitizeAIResponse } from '../shared';
+import { buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles, NotificationManager, sanitizeAIResponse } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator } from './proposer';
@@ -205,8 +205,12 @@ export class ElaborationModule {
 		const content = await this.plugin.app.vault.read(file);
 		const additions = editedContent ?? proposal.proposedAdditions;
 		const sanitizedAdditions = sanitizeAIResponse(additions);
-		const quotedContent = blockquoteOriginal(content);
-		const newContent = quotedContent + '\n\n' + sanitizedAdditions;
+		const callout = buildCallout(
+			CALLOUT_TYPES.elaboration,
+			'Elaboration',
+			sanitizedAdditions
+		);
+		const newContent = content.trimEnd() + '\n' + callout;
 		await this.plugin.app.vault.modify(file, newContent);
 
 		await this.store.updateStatus(id, 'accepted');

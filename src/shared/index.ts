@@ -18,6 +18,8 @@ export {
 	sanitizeAIResponse,
 	blockquoteOriginal,
 } from './validation';
+export { CALLOUT_TYPES, buildCallout } from './callouts';
+export type { CalloutType } from './callouts';
 export {
 	parseFrontmatter,
 	serializeFrontmatter,

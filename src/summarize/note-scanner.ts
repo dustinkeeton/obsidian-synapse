@@ -1,8 +1,15 @@
 import { ENRICHMENT_START, ENRICHMENT_END } from '../enrichment/enrichment-applier';
+import { CALLOUT_TYPES } from '../shared';
 import { SummarizeTarget } from './types';
 
 const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
 const TRANSCRIPTION_HEADER = /^>\s*\*\*Transcription of (.+?)\*\*$/;
+const CALLOUT_TRANSCRIPTION_HEADER = new RegExp(
+	`^>\\s*\\[!${CALLOUT_TYPES.transcription}\\][-+]?\\s+Transcription of (.+)$`
+);
+const CALLOUT_SUMMARY_PREFIX = `[!${CALLOUT_TYPES.summary}]`;
+const CALLOUT_TRANSCRIPTION_PREFIX = `[!${CALLOUT_TYPES.transcription}]`;
+const CALLOUT_ENRICHMENT_PREFIX = `[!${CALLOUT_TYPES.enrichment}]`;
 
 /**
  * Scan note content for URLs and transcription blocks that need summaries.
@@ -13,24 +20,39 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
 	const lines = content.split('\n');
 	const targets: SummarizeTarget[] = [];
 	let inEnrichmentSection = false;
+	let enrichmentIsCallout = false;
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 
-		// Track enrichment marker sections — content inside is managed
-		// by the enrichment module and must not be modified
+		// Track enrichment marker sections (legacy comment markers)
 		if (line.trim() === ENRICHMENT_START) {
 			inEnrichmentSection = true;
+			enrichmentIsCallout = false;
 			continue;
 		}
 		if (line.trim() === ENRICHMENT_END) {
 			inEnrichmentSection = false;
 			continue;
 		}
+
+		// Track callout-format enrichment sections
+		if (!inEnrichmentSection && line.includes(CALLOUT_ENRICHMENT_PREFIX)) {
+			inEnrichmentSection = true;
+			enrichmentIsCallout = true;
+		}
+		// Exit callout-format enrichment when we hit a non-blockquote, non-empty line
+		if (inEnrichmentSection && enrichmentIsCallout && !line.startsWith('>') && line.trim() !== '' && !line.includes(CALLOUT_ENRICHMENT_PREFIX)) {
+			inEnrichmentSection = false;
+			enrichmentIsCallout = false;
+		}
+
 		if (inEnrichmentSection) {
 			// Detect markdown links in enrichment reference lists
-			// e.g. "- [AI Overview](https://example.com) — reason"
-			const mdLinkMatch = line.match(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/);
+			// Legacy: "- [AI Overview](https://example.com) — reason"
+			// Callout: "> - [AI Overview](https://example.com) — reason"
+			const strippedLine = enrichmentIsCallout ? line.replace(/^>\s?/, '') : line;
+			const mdLinkMatch = strippedLine.match(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/);
 			if (mdLinkMatch) {
 				targets.push({
 					type: 'url',
@@ -44,7 +66,7 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
 			continue;
 		}
 
-		// Check for transcription block headers
+		// Check for transcription block headers (legacy blockquote format)
 		const transcriptionMatch = line.match(TRANSCRIPTION_HEADER);
 		if (transcriptionMatch) {
 			const source = transcriptionMatch[1];
@@ -59,7 +81,25 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
 					content: text,
 				});
 			}
-			// Skip past the transcription block
+			i = endLine;
+			continue;
+		}
+
+		// Check for transcription block headers (callout format)
+		const calloutTranscriptionMatch = line.match(CALLOUT_TRANSCRIPTION_HEADER);
+		if (calloutTranscriptionMatch) {
+			const source = calloutTranscriptionMatch[1];
+			const { endLine, text } = extractTranscriptionContent(lines, i);
+
+			if (!hasSummaryBelow(lines, endLine, source)) {
+				targets.push({
+					type: 'transcription',
+					source,
+					line: i,
+					endLine,
+					content: text,
+				});
+			}
 			i = endLine;
 			continue;
 		}
@@ -97,7 +137,12 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
  */
 export function hasSummaryBelow(lines: string[], startLine: number, source: string): boolean {
 	for (let j = startLine + 1; j < lines.length && j <= startLine + 3; j++) {
+		// Legacy format: > **Summary of <source>**
 		if (lines[j].includes(`**Summary of ${source}**`)) {
+			return true;
+		}
+		// Callout format: > [!auto-notes-summary] Summary of <source>
+		if (lines[j].includes(CALLOUT_SUMMARY_PREFIX) && lines[j].includes(`Summary of ${source}`)) {
 			return true;
 		}
 		// Stop at non-empty, non-blockquote content
@@ -113,7 +158,12 @@ export function hasSummaryBelow(lines: string[], startLine: number, source: stri
  */
 function hasTranscriptionBelow(lines: string[], urlLine: number, url: string): boolean {
 	for (let j = urlLine + 1; j < lines.length && j <= urlLine + 5; j++) {
+		// Legacy format: > **Transcription of <url>**
 		if (lines[j].includes(`**Transcription of ${url}**`)) {
+			return true;
+		}
+		// Callout format: > [!auto-notes-transcription] Transcription of <url>
+		if (lines[j].includes(CALLOUT_TRANSCRIPTION_PREFIX) && lines[j].includes(`Transcription of ${url}`)) {
 			return true;
 		}
 		// Stop at non-empty, non-blockquote content

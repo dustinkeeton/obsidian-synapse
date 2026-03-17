@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { buildCallout, CALLOUT_TYPES } from '../shared/callouts';
 import { findSummarizeTargets, hasSummaryBelow, extractTranscriptionContent } from './note-scanner';
 
 describe('findSummarizeTargets', () => {
@@ -55,6 +56,17 @@ describe('findSummarizeTargets', () => {
 		expect(targets).toHaveLength(0);
 	});
 
+	it('skips URLs that already have a callout summary below', () => {
+		const content = [
+			'https://example.com/article',
+			'',
+			'> [!auto-notes-summary] Summary of https://example.com/article',
+			'> Some summary text',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets).toHaveLength(0);
+	});
+
 	it('skips transcriptions that already have a summary below', () => {
 		const content = [
 			'> **Transcription of https://youtube.com/watch?v=abc**',
@@ -67,6 +79,85 @@ describe('findSummarizeTargets', () => {
 		].join('\n');
 		const targets = findSummarizeTargets(content);
 		expect(targets).toHaveLength(0);
+	});
+
+	it('finds a callout-format transcription block', () => {
+		const content = [
+			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=abc',
+			'> Hello world this is a test',
+			'> Second line of transcription',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets).toHaveLength(1);
+		expect(targets[0]).toMatchObject({
+			type: 'transcription',
+			source: 'https://youtube.com/watch?v=abc',
+			line: 0,
+		});
+		expect(targets[0].content).toContain('Hello world');
+	});
+
+	it('skips callout transcription with callout summary below', () => {
+		const content = [
+			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=abc',
+			'> Transcribed text',
+			'',
+			'> [!auto-notes-summary] Summary of https://youtube.com/watch?v=abc',
+			'> Summary text',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets).toHaveLength(0);
+	});
+
+	it('finds enrichment URLs in callout-format enrichment sections', () => {
+		const content = [
+			'https://example.com/user-url',
+			'',
+			'> [!auto-notes-enrichment] References',
+			'> - [Some Article](https://example.com/enrichment-ref) — background',
+			'> - [Another](https://other.com/resource) — related',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets).toHaveLength(3);
+
+		expect(targets[0]).toMatchObject({
+			type: 'url',
+			source: 'https://example.com/user-url',
+		});
+		expect(targets[0].inEnrichmentSection).toBeFalsy();
+
+		expect(targets[1]).toMatchObject({
+			type: 'url',
+			source: 'https://example.com/enrichment-ref',
+			inEnrichmentSection: true,
+			linkTitle: 'Some Article',
+		});
+		expect(targets[2]).toMatchObject({
+			type: 'url',
+			source: 'https://other.com/resource',
+			inEnrichmentSection: true,
+			linkTitle: 'Another',
+		});
+	});
+
+	it('exits callout enrichment section at non-blockquote line', () => {
+		const content = [
+			'> [!auto-notes-enrichment] References',
+			'> - [Inside](https://inside.com/ref) — reason',
+			'',
+			'https://example.com/after-enrichment',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets).toHaveLength(2);
+		expect(targets[0]).toMatchObject({
+			source: 'https://inside.com/ref',
+			inEnrichmentSection: true,
+			linkTitle: 'Inside',
+		});
+		expect(targets[1]).toMatchObject({
+			source: 'https://example.com/after-enrichment',
+		});
+		expect(targets[1].inEnrichmentSection).toBeFalsy();
 	});
 
 	it('skips URLs inside blockquotes', () => {
@@ -356,6 +447,24 @@ describe('hasSummaryBelow', () => {
 		const lines = ['https://example.com/article'];
 		expect(hasSummaryBelow(lines, 0, 'https://example.com/article')).toBe(false);
 	});
+
+	it('returns true for callout-format summary below', () => {
+		const lines = [
+			'https://example.com/article',
+			'',
+			'> [!auto-notes-summary] Summary of https://example.com/article',
+			'> Summary text',
+		];
+		expect(hasSummaryBelow(lines, 0, 'https://example.com/article')).toBe(true);
+	});
+
+	it('returns false for callout summary of different source', () => {
+		const lines = [
+			'https://example.com/article',
+			'> [!auto-notes-summary] Summary of https://example.com/other',
+		];
+		expect(hasSummaryBelow(lines, 0, 'https://example.com/article')).toBe(false);
+	});
 });
 
 describe('extractTranscriptionContent', () => {
@@ -401,7 +510,7 @@ describe('multi-URL inline insertion (integration)', () => {
 	 * Simulates the processFileTargets insertion logic in
 	 * src/summarize/index.ts to verify that all inline summaries
 	 * are correctly placed in the output. Uses the same algorithm:
-	 * scan targets, sort reverse by line, splice blockLines.
+	 * scan targets, sort reverse by line, splice callout lines.
 	 */
 	function simulateInsertion(
 		content: string,
@@ -415,15 +524,13 @@ describe('multi-URL inline insertion (integration)', () => {
 			const summary = summaries.get(target.source);
 			if (!summary) continue;
 
-			const blockLines = [
-				'',
-				`> **Summary of ${target.source}**`,
-				'>',
-				...summary.split('\n').map(line => `> ${line}`),
-				'',
-			];
+			const callout = buildCallout(
+				CALLOUT_TYPES.summary,
+				`Summary of ${target.source}`,
+				summary
+			);
 
-			lines.splice(target.endLine + 1, 0, ...blockLines);
+			lines.splice(target.endLine + 1, 0, ...callout.split('\n'));
 		}
 
 		return lines.join('\n');
@@ -445,9 +552,9 @@ describe('multi-URL inline insertion (integration)', () => {
 
 		const result = simulateInsertion(content, summaries);
 
-		expect(result).toContain('> **Summary of https://youtube.com/watch?v=abc**');
+		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=abc');
 		expect(result).toContain('> Summary of first video.');
-		expect(result).toContain('> **Summary of https://youtube.com/watch?v=xyz**');
+		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=xyz');
 		expect(result).toContain('> Summary of second video.');
 	});
 
@@ -468,11 +575,11 @@ describe('multi-URL inline insertion (integration)', () => {
 
 		const result = simulateInsertion(content, summaries);
 
-		expect(result).toContain('> **Summary of https://youtube.com/watch?v=first**');
+		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=first');
 		expect(result).toContain('> First summary.');
-		expect(result).toContain('> **Summary of https://youtube.com/watch?v=second**');
+		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=second');
 		expect(result).toContain('> Second summary.');
-		expect(result).toContain('> **Summary of https://youtube.com/watch?v=third**');
+		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=third');
 		expect(result).toContain('> Third summary.');
 	});
 
@@ -564,8 +671,8 @@ describe('multi-URL inline insertion (integration)', () => {
 		const secondUrlIdx = lines.indexOf('https://example.com/second');
 
 		// Find the summary header lines
-		const firstSummaryIdx = lines.indexOf('> **Summary of https://example.com/first**');
-		const secondSummaryIdx = lines.indexOf('> **Summary of https://example.com/second**');
+		const firstSummaryIdx = lines.indexOf('> [!auto-notes-summary] Summary of https://example.com/first');
+		const secondSummaryIdx = lines.indexOf('> [!auto-notes-summary] Summary of https://example.com/second');
 
 		// Each summary should come after its URL and before the next URL
 		expect(firstSummaryIdx).toBeGreaterThan(firstUrlIdx);
@@ -587,9 +694,9 @@ describe('multi-URL inline insertion (integration)', () => {
 
 		const result = simulateInsertion(content, summaries);
 
-		expect(result).toContain('> **Summary of https://example.com/a**');
+		expect(result).toContain('> [!auto-notes-summary] Summary of https://example.com/a');
 		expect(result).toContain('> Summary A.');
-		expect(result).toContain('> **Summary of https://example.com/b**');
+		expect(result).toContain('> [!auto-notes-summary] Summary of https://example.com/b');
 		expect(result).toContain('> Summary B.');
 	});
 });

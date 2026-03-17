@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { FolderPickerModal, getMarkdownFiles, NotificationManager } from '../shared';
+import { FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout, CALLOUT_TYPES } from '../shared';
 import { OperationHandle } from '../shared';
 import { isSupportedUrl } from '../video/url-detector';
 import { fetchPageContent } from './content-fetcher';
@@ -285,15 +285,13 @@ export class SummarizeModule {
 						settings.customPrompt || undefined
 					);
 
-					const blockLines = [
-						'',
-						`> **Summary of ${target.source}**`,
-						'>',
-						...summary.split('\n').map(line => `> ${line}`),
-						'',
-					];
+					const callout = buildCallout(
+						CALLOUT_TYPES.summary,
+						`Summary of ${target.source}`,
+						summary
+					);
 
-					lines.splice(target.endLine + 1, 0, ...blockLines);
+					lines.splice(target.endLine + 1, 0, ...callout.split('\n'));
 
 					inlineCompleted++;
 				}
