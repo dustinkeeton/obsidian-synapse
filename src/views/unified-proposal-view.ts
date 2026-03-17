@@ -755,6 +755,7 @@ export class UnifiedProposalView extends ItemView {
 				border-radius: 3px;
 				margin-bottom: 4px;
 				width: min-content;
+				white-space: nowrap;
 			}
 			.auto-notes-badge--elaboration {
 				background: var(--interactive-accent);
