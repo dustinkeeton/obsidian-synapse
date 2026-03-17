@@ -55,10 +55,20 @@ export class ProposalGenerator {
 					return `Empty section: "${r.heading}"`;
 				case 'sparse-link':
 					return `Linked from ${r.linkedFrom.length} notes but has sparse content`;
+				case 'user-requested':
+					return 'User explicitly requested elaboration on this note';
 			}
 		});
 
-		let prompt = `The following note appears to be a placeholder or stub:\n\n---\n${content}\n---\n\nReasons it was flagged:\n${reasonDescriptions.map(r => `- ${r}`).join('\n')}\n\nPlease propose additions that would flesh out this note.`;
+		const isUserRequested = detection.reasons.length === 1
+			&& detection.reasons[0].type === 'user-requested';
+
+		let prompt: string;
+		if (isUserRequested) {
+			prompt = `The user has requested elaboration suggestions for the following note:\n\n---\n${content}\n---\n\nPlease review the entire note and propose additions, expansions, or improvements that would make it more comprehensive and useful. Consider adding detail to existing sections, suggesting new sections, or expanding on key ideas.`;
+		} else {
+			prompt = `The following note appears to be a placeholder or stub:\n\n---\n${content}\n---\n\nReasons it was flagged:\n${reasonDescriptions.map(r => `- ${r}`).join('\n')}\n\nPlease propose additions that would flesh out this note.`;
+		}
 
 		if (contextNotes) {
 			prompt += `\n\nContext from related notes:\n${contextNotes}`;
