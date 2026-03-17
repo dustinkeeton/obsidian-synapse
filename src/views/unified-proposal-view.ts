@@ -3,6 +3,7 @@ import type { Proposal } from '../elaboration';
 import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
+import type { Checkpoint } from '../shared';
 
 export const UNIFIED_VIEW_TYPE = 'auto-notes-proposals';
 
@@ -26,6 +27,8 @@ export interface UnifiedViewCallbacks {
 	// Deep Dive
 	onDeepDiveAccept: (id: string) => Promise<void>;
 	onDeepDiveReject: (id: string) => Promise<void>;
+	// Checkpoints
+	onCheckpointDiscard: (id: string) => Promise<void>;
 }
 
 /**
@@ -37,6 +40,7 @@ export interface UnifiedViewCallbacks {
  */
 export class UnifiedProposalView extends ItemView {
 	private items: UnifiedItem[] = [];
+	private incompleteCheckpoints: Checkpoint[] = [];
 	private callbacks: UnifiedViewCallbacks;
 
 	private reviewingElaboration: Proposal | null = null;
@@ -76,6 +80,11 @@ export class UnifiedProposalView extends ItemView {
 
 	async onClose(): Promise<void> {
 		this.contentEl.empty();
+	}
+
+	setCheckpoints(checkpoints: Checkpoint[]): void {
+		this.incompleteCheckpoints = checkpoints;
+		this.render();
 	}
 
 	setItems(items: UnifiedItem[]): void {
@@ -254,11 +263,20 @@ export class UnifiedProposalView extends ItemView {
 		contentEl.addClass('auto-notes-view-root');
 		contentEl.createEl('h3', { text: 'Pending Proposals' });
 
-		if (this.items.length === 0) {
+		// Render incomplete checkpoints banner
+		if (this.incompleteCheckpoints.length > 0) {
+			this.renderCheckpointBanner(contentEl);
+		}
+
+		if (this.items.length === 0 && this.incompleteCheckpoints.length === 0) {
 			contentEl.createEl('p', {
 				text: 'No pending proposals. Scan your vault or enrich a note to get started.',
 				cls: 'auto-notes-empty',
 			});
+			return;
+		}
+
+		if (this.items.length === 0) {
 			return;
 		}
 
@@ -778,6 +796,42 @@ export class UnifiedProposalView extends ItemView {
 		});
 	}
 
+	// ── Checkpoint Banner ─────────────────────────────────────
+
+	private renderCheckpointBanner(container: HTMLElement): void {
+		const section = container.createDiv({ cls: 'auto-notes-checkpoint-banner' });
+		section.createEl('div', {
+			text: 'Interrupted Operations',
+			cls: 'auto-notes-checkpoint-heading',
+		});
+
+		for (const cp of this.incompleteCheckpoints) {
+			const total = cp.completedItems.length + cp.remainingItems.length;
+			const done = cp.completedItems.length;
+
+			const card = section.createDiv({ cls: 'auto-notes-checkpoint-card' });
+
+			const info = card.createDiv({ cls: 'auto-notes-checkpoint-info' });
+			info.createEl('strong', { text: cp.operationLabel });
+			info.createEl('small', {
+				text: `${done}/${total} completed -- ${cp.remainingItems.length} remaining`,
+				cls: 'auto-notes-reasons',
+			});
+
+			// Progress bar
+			const track = card.createDiv({ cls: 'auto-notes-checkpoint-track' });
+			const fill = track.createDiv({ cls: 'auto-notes-checkpoint-fill' });
+			fill.style.width = `${total > 0 ? Math.round((done / total) * 100) : 0}%`;
+
+			const actions = card.createDiv({ cls: 'auto-notes-actions' });
+
+			const discardBtn = actions.createEl('button', { text: 'Discard' });
+			discardBtn.addEventListener('click', () => {
+				this.callbacks.onCheckpointDiscard(cp.id);
+			});
+		}
+	}
+
 	// ── Checklist Helper ──────────────────────────────────────
 
 	private renderChecklistSection<T>(
@@ -1153,6 +1207,53 @@ export class UnifiedProposalView extends ItemView {
 				border-top: none;
 				border-radius: 0 0 4px 4px;
 				margin: 0;
+			}
+
+			/* ── Checkpoint Banner ── */
+			.auto-notes-checkpoint-banner {
+				margin-bottom: 12px;
+				padding: 8px;
+				background: var(--background-secondary);
+				border-radius: 6px;
+				border-left: 3px solid var(--color-yellow);
+			}
+			.auto-notes-checkpoint-heading {
+				font-size: 11px;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+				color: var(--color-yellow);
+				margin-bottom: 6px;
+			}
+			.auto-notes-checkpoint-card {
+				padding: 6px 0;
+				border-bottom: 1px solid var(--background-modifier-border);
+			}
+			.auto-notes-checkpoint-card:last-child {
+				border-bottom: none;
+			}
+			.auto-notes-checkpoint-info {
+				display: flex;
+				flex-direction: column;
+				gap: 2px;
+				margin-bottom: 4px;
+			}
+			.auto-notes-checkpoint-info strong {
+				font-size: 13px;
+			}
+			.auto-notes-checkpoint-track {
+				width: 100%;
+				height: 4px;
+				border-radius: 2px;
+				background: var(--background-modifier-border);
+				overflow: hidden;
+				margin-bottom: 6px;
+			}
+			.auto-notes-checkpoint-fill {
+				height: 100%;
+				border-radius: 2px;
+				background: var(--color-yellow);
+				transition: width 0.2s ease;
 			}
 
 			/* ── Accept All ── */

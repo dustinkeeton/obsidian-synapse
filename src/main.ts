@@ -9,7 +9,7 @@ import { SummarizeModule } from './summarize';
 import { TidyModule } from './tidy';
 import { OrganizeModule } from './organize';
 import { DeepDiveModule } from './deep-dive';
-import { NotificationManager } from './shared';
+import { NotificationManager, CheckpointManager } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
 import { findVideoUrls } from './video';
@@ -22,6 +22,7 @@ import {
 export default class AutoNotesPlugin extends Plugin {
 	settings!: AutoNotesSettings;
 	notifications!: NotificationManager;
+	private checkpointManager!: CheckpointManager;
 
 	private elaboration!: ElaborationModule;
 	private audio!: AudioModule;
@@ -39,6 +40,9 @@ export default class AutoNotesPlugin extends Plugin {
 		// Centralized notification manager
 		this.notifications = new NotificationManager();
 		this.notifications.setStatusBarEl(this.addStatusBarItem());
+
+		// Checkpoint manager for long-running operation persistence
+		this.checkpointManager = new CheckpointManager(this.app);
 
 		const getSettings = () => this.settings;
 
@@ -71,6 +75,7 @@ export default class AutoNotesPlugin extends Plugin {
 				onOrganizeReject: (id) => this.organize.rejectProposal(id),
 				onDeepDiveAccept: (id) => this.deepDive.acceptProposal(id),
 				onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
+				onCheckpointDiscard: (id) => this.discardCheckpoint(id),
 			});
 		});
 
@@ -157,6 +162,15 @@ export default class AutoNotesPlugin extends Plugin {
 			name: 'Open proposal review sidebar',
 			callback: () => this.activateUnifiedView(),
 		});
+
+		this.addCommand({
+			id: 'auto-notes:manage-checkpoints',
+			name: 'Manage interrupted operations',
+			callback: () => this.manageCheckpoints(),
+		});
+
+		// Startup check for incomplete checkpoints (delayed to avoid blocking load)
+		setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
 
 		// Unified transcription commands (if either audio or video enabled)
 		if (this.settings.audio.enabled || this.settings.video.enabled) {
@@ -254,6 +268,12 @@ export default class AutoNotesPlugin extends Plugin {
 		await this.refreshUnifiedView();
 	}
 
+	private async discardCheckpoint(id: string): Promise<void> {
+		await this.checkpointManager.discard(id);
+		this.notifications.info('Interrupted operation discarded');
+		await this.refreshUnifiedView();
+	}
+
 	private async refreshUnifiedView(): Promise<void> {
 		const leaves = this.app.workspace.getLeavesOfType(UNIFIED_VIEW_TYPE);
 		if (leaves.length === 0) return;
@@ -281,9 +301,70 @@ export default class AutoNotesPlugin extends Plugin {
 			items.push({ kind: 'deep-dive', data: p });
 		}
 
+		// Gather incomplete checkpoints for the sidebar banner
+		const incompleteCheckpoints = await this.checkpointManager.listIncomplete();
+
 		for (const leaf of leaves) {
 			const view = leaf.view as UnifiedProposalView;
 			view.setItems(items);
+			view.setCheckpoints(incompleteCheckpoints);
+		}
+	}
+
+	/**
+	 * Check for incomplete checkpoints on startup and notify the user.
+	 */
+	private async checkForIncompleteCheckpoints(): Promise<void> {
+		try {
+			const incomplete = await this.checkpointManager.listIncomplete();
+			if (incomplete.length === 0) return;
+
+			const labels = incomplete
+				.map(cp => `${cp.operationLabel} (${cp.completedItems.length}/${cp.completedItems.length + cp.remainingItems.length} done)`)
+				.join(', ');
+
+			const proceed = await this.notifications.confirm(
+				`${incomplete.length} interrupted operation${incomplete.length === 1 ? '' : 's'} found: ${labels}. Open manager?`,
+				{ proceedLabel: 'Review', cancelLabel: 'Dismiss', level: 'warning' }
+			);
+
+			if (proceed) {
+				await this.manageCheckpoints();
+			}
+
+			// Clean up old completed/discarded checkpoints
+			await this.checkpointManager.cleanup();
+		} catch (error) {
+			console.warn('[Auto Notes] Failed to check for incomplete checkpoints:', error);
+		}
+	}
+
+	/**
+	 * Show checkpoint management dialog: list incomplete operations
+	 * with options to discard each one.
+	 */
+	private async manageCheckpoints(): Promise<void> {
+		const incomplete = await this.checkpointManager.listIncomplete();
+
+		if (incomplete.length === 0) {
+			this.notifications.info('No interrupted operations found');
+			return;
+		}
+
+		for (const cp of incomplete) {
+			const total = cp.completedItems.length + cp.remainingItems.length;
+			const done = cp.completedItems.length;
+			const remaining = cp.remainingItems.length;
+
+			const action = await this.notifications.confirm(
+				`${cp.operationLabel}: ${done}/${total} completed, ${remaining} remaining. Discard remaining items? (Completed items are already saved)`,
+				{ proceedLabel: 'Discard', cancelLabel: 'Keep', level: 'warning' }
+			);
+
+			if (action) {
+				await this.checkpointManager.discard(cp.id);
+				this.notifications.info(`Discarded: ${cp.operationLabel}`);
+			}
 		}
 	}
 
