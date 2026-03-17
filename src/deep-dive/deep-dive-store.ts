@@ -73,6 +73,11 @@ export class DeepDiveStore {
 		return all.filter(p => p.status === 'pending');
 	}
 
+	async loadProposalsByRunId(runId: string): Promise<DeepDiveProposal[]> {
+		const all = await this.loadAllProposals();
+		return all.filter(p => p.runId === runId);
+	}
+
 	async updateProposalStatus(id: string, status: DeepDiveProposalStatus): Promise<void> {
 		const proposal = await this.loadProposal(id);
 		if (!proposal) return;
