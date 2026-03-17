@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { mergeTags, parseFrontmatter, serializeFrontmatter } from '../shared';
+import { mergeTags, parseFrontmatter, serializeFrontmatter, buildCallout, CALLOUT_TYPES } from '../shared';
 import { EnrichmentProposal, AcceptedItems } from './types';
 
 export const ENRICHMENT_START = '%% auto-notes-enrichment-start %%';
@@ -143,30 +143,25 @@ export class EnrichmentApplier {
 		links: { targetPath: string; displayText: string; reason: string }[],
 		heading: string
 	): string {
-		const lines: string[] = [
-			ENRICHMENT_START,
-			`## ${heading}`,
-			'',
-		];
+		const bodyLines: string[] = [];
 		for (const link of links) {
 			// Sanitize display text and reason to prevent wikilink/markdown injection
 			const safeDisplay = link.displayText.replace(/[[\]|]/g, '');
 			const safeReason = link.reason.replace(/[[\]()]/g, '');
-			lines.push(`- [[${safeDisplay}]] — ${safeReason}`);
+			bodyLines.push(`- [[${safeDisplay}]] — ${safeReason}`);
 		}
-		lines.push('', ENRICHMENT_END);
-		return lines.join('\n');
+		return buildCallout(
+			CALLOUT_TYPES.enrichment,
+			heading,
+			bodyLines.join('\n')
+		).trim();
 	}
 
 	private buildRefsSection(
 		refs: { url: string; title: string; reason: string }[],
 		heading: string
 	): string {
-		const lines: string[] = [
-			ENRICHMENT_START,
-			`## ${heading}`,
-			'',
-		];
+		const bodyLines: string[] = [];
 		for (const ref of refs) {
 			// Sanitize AI-generated strings to prevent markdown injection
 			const safeTitle = ref.title.replace(/[[\]()]/g, '');
@@ -181,17 +176,21 @@ export class EnrichmentApplier {
 			} catch {
 				continue; // Skip invalid URLs
 			}
-			lines.push(`- [${safeTitle}](${safeUrl}) — ${safeReason}`);
+			bodyLines.push(`- [${safeTitle}](${safeUrl}) — ${safeReason}`);
 		}
-		lines.push('', ENRICHMENT_END);
-		return lines.join('\n');
+		return buildCallout(
+			CALLOUT_TYPES.enrichment,
+			heading,
+			bodyLines.join('\n')
+		).trim();
 	}
 
 	private removeEnrichmentSections(body: string): string {
+		let result = body;
+
+		// Remove legacy comment-marker sections
 		const startMarker = ENRICHMENT_START;
 		const endMarker = ENRICHMENT_END;
-
-		let result = body;
 		while (true) {
 			const startIdx = result.indexOf(startMarker);
 			if (startIdx === -1) break;
@@ -202,6 +201,13 @@ export class EnrichmentApplier {
 			const after = result.slice(endIdx + endMarker.length);
 			result = before + after;
 		}
+
+		// Remove callout-format enrichment sections
+		const calloutPattern = new RegExp(
+			`^> \\[!${CALLOUT_TYPES.enrichment}\\][^\\n]*(?:\\n>[^\\n]*)*\\n?`,
+			'gm'
+		);
+		result = result.replace(calloutPattern, '').replace(/\n{3,}/g, '\n\n');
 
 		return result;
 	}

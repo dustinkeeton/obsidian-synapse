@@ -79,6 +79,17 @@ describe('findVideoUrls', () => {
 		expect(result).toHaveLength(0);
 	});
 
+	it('skips URLs that already have a callout transcription below', () => {
+		const content = [
+			'https://youtube.com/watch?v=abc123',
+			'',
+			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=abc123',
+			'> Some transcribed text',
+		].join('\n');
+		const result = findVideoUrls(content);
+		expect(result).toHaveLength(0);
+	});
+
 	it('returns URL that does not yet have a transcription', () => {
 		const content = [
 			'https://youtube.com/watch?v=abc123',
@@ -171,5 +182,23 @@ describe('hasTranscriptionBelow', () => {
 			'> **Transcription of https://youtube.com/watch?v=abc**',
 		];
 		expect(hasTranscriptionBelow(lines, 0, 'https://youtube.com/watch?v=abc')).toBe(true);
+	});
+
+	it('returns true for callout-format transcription below', () => {
+		const lines = [
+			'https://youtube.com/watch?v=abc',
+			'',
+			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=abc',
+			'> text',
+		];
+		expect(hasTranscriptionBelow(lines, 0, 'https://youtube.com/watch?v=abc')).toBe(true);
+	});
+
+	it('returns false for callout transcription of different URL', () => {
+		const lines = [
+			'https://youtube.com/watch?v=abc',
+			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=xyz',
+		];
+		expect(hasTranscriptionBelow(lines, 0, 'https://youtube.com/watch?v=abc')).toBe(false);
 	});
 });

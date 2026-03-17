@@ -1,7 +1,7 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { AudioModule, TranscriptionResult } from '../audio';
-import { ensureFolder, NotificationManager, sanitizeUrl } from '../shared';
+import { ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES } from '../shared';
 import { AudioExtractor } from './audio-extractor';
 import { NoteVideoModal } from './note-video-modal';
 import { findVideoUrls } from './note-scanner';
@@ -218,12 +218,13 @@ export class VideoModule {
 					blockLines.push('');
 				}
 
-				blockLines.push(
-					`> **Transcription of ${embed.url}**`,
-					'>',
-					...text.split('\n').map(line => `> ${line}`),
-					''
+				const callout = buildCallout(
+					CALLOUT_TYPES.transcription,
+					`Transcription of ${embed.url}`,
+					text,
+					true
 				);
+				blockLines.push(callout);
 
 				lines.splice(embed.line + 1, 0, blockLines.join('\n'));
 				content = lines.join('\n');
@@ -267,12 +268,13 @@ export class VideoModule {
 					blockLines.push('');
 				}
 
-				blockLines.push(
-					`> **Transcription of ${url}**`,
-					'>',
-					...text.split('\n').map(line => `> ${line}`),
-					''
+				const callout = buildCallout(
+					CALLOUT_TYPES.transcription,
+					`Transcription of ${url}`,
+					text,
+					true
 				);
+				blockLines.push(callout);
 
 				const content = await this.plugin.app.vault.read(activeFile);
 				await this.plugin.app.vault.modify(activeFile, content + blockLines.join('\n'));
