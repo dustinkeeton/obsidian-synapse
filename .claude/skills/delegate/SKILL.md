@@ -87,6 +87,54 @@ Proceed?
 
 Wait for the user to approve, modify, or cancel before proceeding.
 
+## Board Setup
+
+Before execution begins, discover the project board metadata for kanban sync. This is best-effort — if the project or status options are not found, log a warning and skip all board updates.
+
+1. Get repo owner/name:
+   ```bash
+   OWNER=$(gh repo view --json owner -q .owner.login)
+   REPO=$(gh repo view --json name -q .name)
+   ```
+
+2. Discover `PROJECT_ID` via the `user.projectsV2` GraphQL query:
+   ```bash
+   gh api graphql -f query='
+     query($owner: String!) {
+       user(login: $owner) {
+         projectsV2(first: 20) {
+           nodes { id number title }
+         }
+       }
+     }
+   ' -f owner="$OWNER"
+   ```
+
+3. Get `STATUS_FIELD_ID` and status option IDs (`IN_PROGRESS_OPTION_ID`, `IN_REVIEW_OPTION_ID`) from the project fields:
+   ```bash
+   gh api graphql -f query='
+     query($projectId: ID!) {
+       node(id: $projectId) {
+         ... on ProjectV2 {
+           fields(first: 50) {
+             nodes {
+               ... on ProjectV2SingleSelectField {
+                 id name
+                 options { id name }
+               }
+             }
+           }
+         }
+       }
+     }
+   ' -f projectId="$PROJECT_ID"
+   ```
+   Look for the "Status" field and extract option IDs for "In Progress" and "In Review".
+
+4. If any of the above fail → set `BOARD_SYNC_ENABLED=false`, log a warning, and skip all board updates in subsequent phases.
+
+See the `github-project-management` skill for the full GraphQL query catalog.
+
 ## Phase 4: Execute
 
 ### Branch naming
@@ -96,6 +144,52 @@ Each agent gets a branch named per git-workflow conventions:
 - Enhancement: `feat/issue-{N}-{short-desc}`
 - Refactor: `refactor/issue-{N}-{short-desc}`
 - Chore/docs: `chore/issue-{N}-{short-desc}`
+
+### Set In Progress
+
+Before spawning each agent, update the issue's status on the project board:
+
+1. Get the issue node ID:
+   ```bash
+   ISSUE_NODE_ID=$(gh api graphql -f query='
+     query($owner: String!, $repo: String!, $number: Int!) {
+       repository(owner: $owner, name: $repo) {
+         issue(number: $number) { id }
+       }
+     }
+   ' -f owner="$OWNER" -f repo="$REPO" -F number=$ISSUE_NUMBER --jq '.data.repository.issue.id')
+   ```
+
+2. Add the issue to the project board (idempotent — returns existing item if already present):
+   ```bash
+   ITEM_ID=$(gh api graphql -f query='
+     mutation($projectId: ID!, $contentId: ID!) {
+       addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+         item { id }
+       }
+     }
+   ' -f projectId="$PROJECT_ID" -f contentId="$ISSUE_NODE_ID" --jq '.data.addProjectV2ItemById.item.id')
+   ```
+
+3. Set status to "In Progress":
+   ```bash
+   gh api graphql -f query='
+     mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+       updateProjectV2ItemFieldValue(input: {
+         projectId: $projectId
+         itemId: $itemId
+         fieldId: $fieldId
+         value: {singleSelectOptionId: $optionId}
+       }) {
+         projectV2Item { id }
+       }
+     }
+   ' -f projectId="$PROJECT_ID" -f itemId="$ITEM_ID" -f fieldId="$STATUS_FIELD_ID" -f optionId="$IN_PROGRESS_OPTION_ID"
+   ```
+
+4. Retain `ITEM_ID` for each issue (needed for status update in the Report phase).
+
+Errors in any step → log a warning and continue. Board updates must never block agent execution.
 
 ### Spawning agents
 
@@ -168,6 +262,29 @@ After all agents complete, present a summary:
 Build: passing
 ```
 
+### Update to In Review
+
+For each issue where the agent **succeeded AND created a PR**, update the board status:
+
+```bash
+gh api graphql -f query='
+  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+    updateProjectV2ItemFieldValue(input: {
+      projectId: $projectId
+      itemId: $itemId
+      fieldId: $fieldId
+      value: {singleSelectOptionId: $optionId}
+    }) {
+      projectV2Item { id }
+    }
+  }
+' -f projectId="$PROJECT_ID" -f itemId="$ITEM_ID" -f fieldId="$STATUS_FIELD_ID" -f optionId="$IN_REVIEW_OPTION_ID"
+```
+
+**Skip if:** agent failed, no PR was created, or board setup was disabled (warning in Board Setup phase).
+
+**Failed agents** leave the issue as "In Progress" — this is intentional, as stalled "In Progress" items are visible on the board as work that needs attention.
+
 Include any failures or skipped issues with reasons.
 
 ## Error Handling
@@ -176,3 +293,4 @@ Include any failures or skipped issues with reasons.
 - **Agent cannot complete** — add a comment to the GitHub issue via `gh issue comment {N} --body "..."` explaining what was attempted and what blocked completion, then move on to the next issue
 - **Worktree conflict** — fall back to serial execution in the main working directory, report the conflict
 - **All agents failed** — present a summary of all failures and suggest manual intervention
+- **Board sync failure** — log warning and continue; board updates are informational, never blocking
