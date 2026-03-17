@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { TFile, TFolder } from 'obsidian';
 import { DeepDiveStore } from './deep-dive-store';
+import { buildDeepDivePath } from './index';
 import { DeepDiveProposal, DeepDiveRun } from './types';
 
 // ── Mock Obsidian ──
@@ -179,6 +181,46 @@ describe('DeepDiveStore', () => {
 
 			const all = await store.loadAllProposals();
 			expect(all.length).toBe(0);
+		});
+	});
+
+	describe('buildDeepDivePath', () => {
+		function makeRootFile(path: string, parentPath?: string): TFile {
+			const file = { path, basename: path.split('/').pop()?.replace(/\.[^.]+$/, '') || '', parent: null } as TFile;
+			if (parentPath !== undefined) {
+				file.parent = { path: parentPath } as TFolder;
+			}
+			return file;
+		}
+
+		it('uses per-root subfolder with default setting', () => {
+			const root = makeRootFile('notes/Machine Learning.md', 'notes');
+			const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: 'Deep Dives' });
+			expect(result).toBe('Deep Dives/Machine Learning/Neural Networks.md');
+		});
+
+		it('uses per-root subfolder with custom output folder', () => {
+			const root = makeRootFile('notes/Machine Learning.md', 'notes');
+			const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: 'Custom Folder' });
+			expect(result).toBe('Custom Folder/Machine Learning/Neural Networks.md');
+		});
+
+		it('falls back to source folder when output folder is empty', () => {
+			const root = makeRootFile('notes/Machine Learning.md', 'notes');
+			const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: '' });
+			expect(result).toBe('notes/Neural Networks.md');
+		});
+
+		it('falls back to vault root when output folder is empty and source has no parent', () => {
+			const root = makeRootFile('Machine Learning.md');
+			const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: '' });
+			expect(result).toBe('Neural Networks.md');
+		});
+
+		it('sanitizes special characters in topic title', () => {
+			const root = makeRootFile('notes/Root.md', 'notes');
+			const result = buildDeepDivePath('What is AI? A "Deep" Look', root, { noteOutputFolder: 'Deep Dives' });
+			expect(result).toBe('Deep Dives/Root/What is AI- A -Deep- Look.md');
 		});
 	});
 

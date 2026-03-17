@@ -757,10 +757,10 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Note output folder')
-			.setDesc('Where to create new notes (empty = same folder as source)')
+			.setDesc('Where to create new notes. Uses a subfolder per root note. (empty = same folder as source)')
 			.addText((text) =>
 				text
-					.setPlaceholder('Leave empty for source folder')
+					.setPlaceholder('Deep Dives')
 					.setValue(this.plugin.settings.deepDive.noteOutputFolder)
 					.onChange(async (value) => {
 						this.plugin.settings.deepDive.noteOutputFolder = value;
