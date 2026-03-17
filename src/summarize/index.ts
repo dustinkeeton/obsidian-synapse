@@ -3,8 +3,10 @@ import { AutoNotesSettings } from '../settings';
 import { FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout, CALLOUT_TYPES } from '../shared';
 import { OperationHandle } from '../shared';
 import { isSupportedUrl } from '../video';
+import { findAudioEmbeds } from '../audio';
 import { fetchPageContent } from './content-fetcher';
 import { findSummarizeTargets } from './note-scanner';
+import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
 import { Summarizer } from './summarizer';
 import { SummarizeTarget } from './types';
@@ -19,6 +21,14 @@ export type { SummarizeSettings } from '../settings';
 export type TranscribeUrlFn = (
 	url: string,
 	parentOp?: { update: (msg: string) => void }
+) => Promise<string>;
+
+/**
+ * Function that transcribes an audio file and returns the transcript text.
+ * Injected by main.ts from the AudioModule.
+ */
+export type TranscribeAudioFn = (
+	file: TFile
 ) => Promise<string>;
 
 const COMPREHENSIVE_SUMMARY_PROMPT =
@@ -45,6 +55,7 @@ interface ProcessResult {
 export class SummarizeModule {
 	private summarizer: Summarizer;
 	private transcribeUrl: TranscribeUrlFn | null;
+	private transcribeAudio: TranscribeAudioFn | null;
 
 	/** Optional callback invoked after summarization completes. Wired by main.ts for enrichment. */
 	onSummaryComplete: ((filePath: string) => void) | null = null;
@@ -56,10 +67,12 @@ export class SummarizeModule {
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
 		private notifications: NotificationManager,
-		transcribeUrl?: TranscribeUrlFn
+		transcribeUrl?: TranscribeUrlFn,
+		transcribeAudio?: TranscribeAudioFn
 	) {
 		this.summarizer = new Summarizer(getSettings);
 		this.transcribeUrl = transcribeUrl ?? null;
+		this.transcribeAudio = transcribeAudio ?? null;
 	}
 
 	async onload(): Promise<void> {
@@ -91,10 +104,10 @@ export class SummarizeModule {
 
 	private async summarizeNote(file: TFile): Promise<void> {
 		const content = await this.plugin.app.vault.read(file);
-		const targets = findSummarizeTargets(content);
+		const targets = this.collectTargets(content, file.path);
 
 		if (targets.length === 0) {
-			this.notifications.info('No URLs or transcriptions to summarize in this note');
+			this.notifications.info('No URLs, transcriptions, or audio to summarize in this note');
 			return;
 		}
 
@@ -109,6 +122,41 @@ export class SummarizeModule {
 				}
 			).open();
 		}
+	}
+
+	/**
+	 * Collect all summarization targets from a note: URLs, transcription
+	 * blocks (from the pure string scanner), and audio embeds (requires
+	 * MetadataCache). Results are merged and sorted by line number.
+	 */
+	private collectTargets(content: string, sourcePath: string): SummarizeTarget[] {
+		const targets = findSummarizeTargets(content);
+
+		if (this.transcribeAudio) {
+			const lines = content.split('\n');
+			const audioEmbeds = findAudioEmbeds(
+				content,
+				sourcePath,
+				this.plugin.app.metadataCache
+			);
+
+			for (const embed of audioEmbeds) {
+				// Skip audio embeds that already have a summary below
+				if (hasSummaryBelow(lines, embed.line, embed.fileName)) continue;
+
+				targets.push({
+					type: 'audio',
+					source: embed.fileName,
+					line: embed.line,
+					endLine: embed.line,
+				});
+			}
+
+			// Re-sort by line number to maintain consistent ordering
+			targets.sort((a, b) => a.line - b.line);
+		}
+
+		return targets;
 	}
 
 	private async processTargets(
@@ -258,7 +306,14 @@ export class SummarizeModule {
 					// \u2500\u2500 Inline target: insert summary blockquote \u2500\u2500
 					let textToSummarize: string;
 
-					if (target.type === 'transcription' && target.content) {
+					if (target.type === 'audio' && this.transcribeAudio) {
+						op.update(`Transcribing audio ${target.source}`);
+						textToSummarize = await this.fetchContentForAudio(
+							target.source,
+							file,
+							settings.maxContentLength
+						);
+					} else if (target.type === 'transcription' && target.content) {
 						textToSummarize = target.content;
 					} else {
 						op.update(`Fetching ${target.source}`);
@@ -345,6 +400,28 @@ export class SummarizeModule {
 	}
 
 	/**
+	 * Transcribe an audio file embed and return its text content.
+	 * Resolves the file via MetadataCache, reads the binary data,
+	 * and calls the injected transcribeAudio callback.
+	 */
+	private async fetchContentForAudio(
+		fileName: string,
+		sourceFile: TFile,
+		maxLength: number
+	): Promise<string> {
+		const audioFile = this.plugin.app.metadataCache.getFirstLinkpathDest(
+			fileName,
+			sourceFile.path
+		);
+		if (!audioFile || !(audioFile instanceof TFile)) {
+			throw new Error(`Audio file not found in vault: ${fileName}`);
+		}
+
+		const transcript = await this.transcribeAudio!(audioFile);
+		return transcript.slice(0, maxLength);
+	}
+
+	/**
 	 * Build the vault path for a summary note without creating it.
 	 */
 	private buildNotePath(title: string, sourceFolder: string): string {
@@ -379,7 +456,7 @@ export class SummarizeModule {
 				if (this.isExcluded(file)) continue;
 
 				const content = await this.plugin.app.vault.read(file);
-				const targets = findSummarizeTargets(content);
+				const targets = this.collectTargets(content, file.path);
 				if (targets.length > 0) {
 					filesWithTargets.push({ file, targets });
 				}
@@ -430,7 +507,7 @@ export class SummarizeModule {
 			// changed since the initial scan, e.g. a previous file's
 			// enrichment callback modifying this file).
 			const content = await this.plugin.app.vault.read(file);
-			const targets = findSummarizeTargets(content);
+			const targets = this.collectTargets(content, file.path);
 			if (targets.length === 0) continue;
 			const result = await this.processFileTargets(file, targets, genOp, content);
 			totalInline += result.inlineCompleted;
