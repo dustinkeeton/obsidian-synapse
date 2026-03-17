@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-16
+last-updated: 2026-03-17
 ---
 
 # Views Module
 
-Unified sidebar view combining elaboration, enrichment, organize, and deep-dive proposals in a single pane.
+Unified sidebar view combining elaboration, enrichment, organize, and deep-dive proposals in a single pane. Supports batch Accept All.
 
 ## Public API
 
@@ -45,9 +45,9 @@ class UnifiedProposalView extends ItemView {
 |------|-------------|---------|
 | `unified-proposal-view.ts` | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `UnifiedViewCallbacks` | Combined proposal sidebar |
 
-## Five Rendering Modes
+## Rendering Modes
 
-1. **List mode**: Groups all pending proposals by source note path. Each card shows badge, reasons/summary, preview, and action buttons (Review/Accept/Reject).
+1. **List mode**: Groups all pending proposals by source note path. Accept All button when 2+ proposals. Each card shows badge, reasons/summary, preview, and action buttons (Review/Accept/Reject).
 
 2. **Elaboration review**: Back button, source note link, detection reasons, editable textarea for proposed additions. Accept sends edited content.
 
@@ -56,6 +56,14 @@ class UnifiedProposalView extends ItemView {
 4. **Organize review**: Back button, source note link, proposed directory path, AI reasoning text. Accept/Reject buttons.
 
 5. **Deep-dive review**: Back button, topic title, depth badge, quality score, source note link, quality reasoning, proposed path, read-only content preview, child count warning. Accept/Reject buttons.
+
+## Accept All
+
+- Available when 2+ proposals pending
+- Processes sequentially (organize proposals may affect file paths)
+- Shows progress bar during batch
+- Stops on first failure, reports count
+- For enrichment: accepts all suggested items (tags + links + refs + frontmatter)
 
 ## Card Types
 

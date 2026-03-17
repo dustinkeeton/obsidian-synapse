@@ -10,3 +10,4 @@ data.json
 *.tmp
 .DS_Store
 coverage/
+.claude/

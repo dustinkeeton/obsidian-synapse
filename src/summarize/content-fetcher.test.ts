@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { extractReadableText, fetchPageContent } from './content-fetcher';
-import { isSupportedUrl } from '../video/url-detector';
+import { isSupportedUrl } from '../video';
 
 /**
  * Tests for the content fetcher and video URL detection integration.

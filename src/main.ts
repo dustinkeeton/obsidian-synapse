@@ -10,6 +10,9 @@ import { TidyModule } from './tidy';
 import { OrganizeModule } from './organize';
 import { DeepDiveModule } from './deep-dive';
 import { NotificationManager } from './shared';
+import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
+import { findAudioEmbeds } from './audio';
+import { findVideoUrls } from './video';
 import {
 	UNIFIED_VIEW_TYPE,
 	UnifiedProposalView,
@@ -139,8 +142,9 @@ export default class AutoNotesPlugin extends Plugin {
 			this.activateUnifiedView();
 		});
 
-		this.addRibbonIcon('mic', 'Transcribe audio', () => {
-			this.audio.openTranscriptionModal();
+		// Unified transcription ribbon icon
+		this.addRibbonIcon('mic', 'Transcribe media', () => {
+			this.openUnifiedModal();
 		});
 
 		this.addCommand({
@@ -148,6 +152,25 @@ export default class AutoNotesPlugin extends Plugin {
 			name: 'Open proposal review sidebar',
 			callback: () => this.activateUnifiedView(),
 		});
+
+		// Unified transcription commands (if either audio or video enabled)
+		if (this.settings.audio.enabled || this.settings.video.enabled) {
+			this.addCommand({
+				id: 'auto-notes:transcribe-media',
+				name: 'Transcribe media',
+				callback: () => this.openUnifiedModal(),
+			});
+
+			this.addCommand({
+				id: 'auto-notes:transcribe-note-media',
+				name: 'Transcribe media from current note',
+				editorCallback: async (_editor, ctx) => {
+					if (ctx.file) {
+						await this.transcribeMediaFromNote(ctx.file);
+					}
+				},
+			});
+		}
 	}
 
 	onunload(): void {
@@ -170,6 +193,47 @@ export default class AutoNotesPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	private openUnifiedModal(): void {
+		new UnifiedTranscriptionModal(
+			this.app,
+			() => this.settings,
+			{
+				audio: this.settings.audio.enabled,
+				video: this.settings.video.enabled,
+			},
+			{
+				onTranscribeFile: (file) => this.audio.transcribeFileToActiveNote(file),
+				onTranscribeUrl: (url) => this.video.transcribeUrlToActiveNote(url),
+			}
+		).open();
+	}
+
+	private async transcribeMediaFromNote(file: import('obsidian').TFile): Promise<void> {
+		const content = await this.app.vault.read(file);
+
+		const audioEmbeds = this.settings.audio.enabled
+			? findAudioEmbeds(content, file.path, this.app.metadataCache)
+			: [];
+		const videoEmbeds = this.settings.video.enabled
+			? findVideoUrls(content)
+			: [];
+
+		if (audioEmbeds.length === 0 && videoEmbeds.length === 0) {
+			this.notifications.info('No media found in this note');
+			return;
+		}
+
+		new NoteMediaModal(
+			this.app,
+			audioEmbeds,
+			videoEmbeds,
+			{
+				onTranscribeAudio: (selected) => this.audio.transcribeAndInsert(file, selected),
+				onTranscribeVideo: (selected) => this.video.transcribeAndInsert(file, selected),
+			}
+		).open();
 	}
 
 	private async activateUnifiedView(): Promise<void> {

@@ -2,7 +2,7 @@ import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout, CALLOUT_TYPES } from '../shared';
 import { OperationHandle } from '../shared';
-import { isSupportedUrl } from '../video/url-detector';
+import { isSupportedUrl } from '../video';
 import { fetchPageContent } from './content-fetcher';
 import { findSummarizeTargets } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';

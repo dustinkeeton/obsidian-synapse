@@ -22,8 +22,8 @@ vi.mock('./note-scanner', () => ({
 	]),
 }));
 
-// Mock the video URL detector
-vi.mock('../video/url-detector', () => ({
+// Mock the video module
+vi.mock('../video', () => ({
 	isSupportedUrl: vi.fn().mockReturnValue(false),
 }));
 
@@ -32,6 +32,8 @@ vi.mock('../shared', () => ({
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
+	CALLOUT_TYPES: { transcription: 'auto-notes-transcription', summary: 'auto-notes-summary' },
+	buildCallout: vi.fn((_type: string, _title: string, content: string) => `> ${content}`),
 }));
 
 function createMockNotifications() {
