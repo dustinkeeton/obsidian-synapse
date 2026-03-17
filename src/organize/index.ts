@@ -1,6 +1,7 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder } from '../shared';
+import { FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary } from '../shared';
+import { MoveRecord } from '../shared/diagram-generator';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
 import { OrganizeStore } from './organize-store';
@@ -175,16 +176,24 @@ export class OrganizeModule {
 		let movedCount = 0;
 		let proposalCount = 0;
 		let errorCount = 0;
+		const moveRecords: MoveRecord[] = [];
 
 		for (let i = 0; i < eligible.length; i++) {
 			if (genOp.cancelled) break;
 
 			genOp.progress(i + 1, eligible.length, 'Organizing notes');
 			try {
+				const originalPath = eligible[i].path;
 				const result = await this.organizeFile(eligible[i]);
 
 				if (result) {
-					if (result.movedDirectly) movedCount++;
+					if (result.movedDirectly && result.action.type === 'move') {
+						movedCount++;
+						const newPath = normalizePath(
+							`${result.action.targetDirectory}/${eligible[i].name}`
+						);
+						moveRecords.push({ originalPath, newPath });
+					}
 					if (result.proposalCreated) proposalCount++;
 				}
 			} catch (error) {
@@ -204,6 +213,16 @@ export class OrganizeModule {
 		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
 		if (errorCount > 0) parts.push(`${errorCount} failed`);
 		genOp.finish(parts.length > 0 ? parts.join(', ') : 'No changes needed');
+
+		// Generate organize summary with move diagram
+		if (moveRecords.length > 0) {
+			const summaryPath = await this.writeOrganizeSummary(moveRecords);
+			if (summaryPath) {
+				this.notifications.info(
+					`Organize summary saved to ${summaryPath}`
+				);
+			}
+		}
 
 		if (proposalCount > 0) {
 			await this.onViewRefreshNeeded?.();
@@ -261,6 +280,18 @@ export class OrganizeModule {
 
 			await this.store.updateProposalStatus(id, 'accepted');
 			this.notifications.success(`Moved to ${proposal.proposedDirectory}`);
+
+			// Generate organize summary with move diagram
+			const moveRecords: MoveRecord[] = [
+				{ originalPath: file.path, newPath },
+			];
+			const summaryPath = await this.writeOrganizeSummary(moveRecords);
+			if (summaryPath) {
+				this.notifications.info(
+					`Organize summary saved to ${summaryPath}`
+				);
+			}
+
 			await this.onViewRefreshNeeded?.();
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
@@ -422,10 +453,39 @@ export class OrganizeModule {
 		return candidatePath;
 	}
 
+	/**
+	 * Write an organize summary note containing a Mermaid move diagram.
+	 * Summaries are stored at .auto-notes/organize/summaries/{date}-organize-summary.md.
+	 * Returns the path of the summary note, or null on failure.
+	 */
+	private async writeOrganizeSummary(moves: MoveRecord[]): Promise<string | null> {
+		try {
+			const timestamp = new Date().toISOString();
+			const summaryPath = buildSummaryPath(timestamp);
+			const content = generateOrganizeSummary(moves, timestamp);
+			await writeNote(this.plugin.app, summaryPath, content);
+			return summaryPath;
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			console.warn(`[Auto Notes] Failed to write organize summary: ${msg}`);
+			return null;
+		}
+	}
+
 	private generateId(): string {
 		return (
 			Date.now().toString(36) +
 			Math.random().toString(36).slice(2, 10)
 		);
 	}
+}
+
+/**
+ * Build the vault path for an organize summary note.
+ * Format: .auto-notes/organize/summaries/{YYYY-MM-DD}-organize-summary.md
+ * Exported for testing.
+ */
+export function buildSummaryPath(timestamp: string): string {
+	const date = timestamp.split('T')[0] || timestamp;
+	return normalizePath(`.auto-notes/organize/summaries/${date}-organize-summary.md`);
 }
