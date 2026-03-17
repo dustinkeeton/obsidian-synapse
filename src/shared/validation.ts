@@ -68,18 +68,43 @@ export function sanitizePath(filePath: string): string {
 
 /**
  * Validates that a path resolves within a given base directory (vault boundary check).
+ * Uses portable string-based path resolution (no Node.js `path` module) so it works on mobile.
  * @throws Error if the path escapes the base directory.
  */
 export function ensureWithinVault(filePath: string, vaultBasePath: string): string {
-	const path = require('path') as typeof import('path');
-	const resolved = path.resolve(vaultBasePath, filePath);
-	const resolvedBase = path.resolve(vaultBasePath);
+	const resolved = portableResolve(vaultBasePath, filePath);
+	const resolvedBase = portableResolve(vaultBasePath);
 
 	if (!resolved.startsWith(resolvedBase + '/') && resolved !== resolvedBase) {
 		throw new Error('Path escapes vault boundary');
 	}
 
 	return resolved;
+}
+
+/**
+ * Portable path.resolve replacement: normalizes slashes, resolves `.` and `..` segments.
+ * If `relative` is absolute it is used as-is; otherwise it is joined to `base`.
+ */
+function portableResolve(base: string, relative?: string): string {
+	let combined = base.replace(/\\/g, '/');
+	if (relative) {
+		const rel = relative.replace(/\\/g, '/');
+		combined = rel.startsWith('/') ? rel : combined + '/' + rel;
+	}
+
+	const parts: string[] = [];
+	for (const seg of combined.split('/')) {
+		if (seg === '' || seg === '.') continue;
+		if (seg === '..') {
+			parts.pop();
+		} else {
+			parts.push(seg);
+		}
+	}
+
+	const prefix = combined.startsWith('/') ? '/' : '';
+	return prefix + parts.join('/');
 }
 
 /**
