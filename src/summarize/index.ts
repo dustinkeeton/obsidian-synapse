@@ -1,6 +1,10 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout, CALLOUT_TYPES } from '../shared';
+import {
+	FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout,
+	CALLOUT_TYPES, CheckpointManager,
+} from '../shared';
+import type { CheckpointWorkItem } from '../shared';
 import { OperationHandle } from '../shared';
 import { isSupportedUrl } from '../video';
 import { findAudioEmbeds } from '../audio';
@@ -56,6 +60,7 @@ export class SummarizeModule {
 	private summarizer: Summarizer;
 	private transcribeUrl: TranscribeUrlFn | null;
 	private transcribeAudio: TranscribeAudioFn | null;
+	private checkpointManager: CheckpointManager;
 
 	/** Optional callback invoked after summarization completes. Wired by main.ts for enrichment. */
 	onSummaryComplete: ((filePath: string) => void) | null = null;
@@ -73,6 +78,7 @@ export class SummarizeModule {
 		this.summarizer = new Summarizer(getSettings);
 		this.transcribeUrl = transcribeUrl ?? null;
 		this.transcribeAudio = transcribeAudio ?? null;
+		this.checkpointManager = new CheckpointManager(plugin.app);
 	}
 
 	async onload(): Promise<void> {
@@ -487,7 +493,7 @@ export class SummarizeModule {
 			return;
 		}
 
-		// Phase 3: Process files
+		// Phase 3: Process files (checkpointed)
 		const genOp = this.notifications.startOperation(
 			'Generating summaries',
 			'summarize-vault-generate'
@@ -495,6 +501,18 @@ export class SummarizeModule {
 		let totalInline = 0;
 		let totalEnrichment = 0;
 		let totalLinksUpdated = 0;
+
+		// Create checkpoint for resumability
+		const checkpointItems: CheckpointWorkItem[] = filesWithTargets.map((ft, i) => ({
+			id: `sum-${i}-${ft.file.path}`,
+			label: ft.file.path,
+			payload: { filePath: ft.file.path } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'summarize',
+			operationLabel: `Summarize: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			items: checkpointItems,
+		});
 
 		for (let i = 0; i < filesWithTargets.length; i++) {
 			if (genOp.cancelled) break;
@@ -515,9 +533,17 @@ export class SummarizeModule {
 			totalLinksUpdated += result.linksUpdated;
 
 			this.fireEnrichmentCallbacks(file.path, result);
+
+			// Save checkpoint progress
+			await this.checkpointManager.completeItem(
+				checkpoint.id,
+				checkpointItems[i].id
+			);
 		}
 
 		if (!genOp.cancelled) {
+			// Mark checkpoint completed
+			await this.checkpointManager.complete(checkpoint.id);
 			const parts: string[] = [];
 			if (totalInline > 0) parts.push(`${totalInline} inline summaries`);
 			if (totalEnrichment > 0) parts.push(`${totalEnrichment} notes created`);

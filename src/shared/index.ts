@@ -33,3 +33,11 @@ export {
 } from './diagram-generator';
 export type { TreeNode, MoveRecord } from './diagram-generator';
 export { addEnhancedSlider } from './slider-helper';
+export { CheckpointManager } from './checkpoint-manager';
+export type {
+	Checkpoint,
+	CheckpointModule,
+	CheckpointStatus,
+	CheckpointWorkItem,
+	DeferredTask,
+} from './checkpoint-types';

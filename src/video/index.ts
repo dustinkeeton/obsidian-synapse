@@ -1,7 +1,11 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
 import { AudioModule, TranscriptionResult } from '../audio';
-import { ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES } from '../shared';
+import {
+	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES,
+	CheckpointManager,
+} from '../shared';
+import type { CheckpointWorkItem } from '../shared';
 import { AudioExtractor } from './audio-extractor';
 import { findVideoUrls } from './note-scanner';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
@@ -21,6 +25,7 @@ export { findVideoUrls } from './note-scanner';
 
 export class VideoModule {
 	private extractor: AudioExtractor;
+	private checkpointManager: CheckpointManager;
 
 	/** Optional callback invoked after video transcription completes. Wired by main.ts for enrichment. */
 	onTranscriptionComplete: ((filePath: string) => void) | null = null;
@@ -32,6 +37,7 @@ export class VideoModule {
 		private notifications: NotificationManager
 	) {
 		this.extractor = new AudioExtractor(getSettings);
+		this.checkpointManager = new CheckpointManager(plugin.app);
 	}
 
 	async onload(): Promise<void> {
@@ -159,6 +165,18 @@ export class VideoModule {
 			`video-batch-${noteFile.path}`
 		);
 
+		// Create checkpoint for batch video transcription
+		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({
+			id: `video-${i}-${e.url}`,
+			label: e.url,
+			payload: { url: e.url, line: e.line } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'video',
+			operationLabel: `Video transcription: ${noteFile.basename} (${total} videos)`,
+			items: checkpointItems,
+		});
+
 		// Process in reverse line order so insertions don't shift line numbers
 		const sorted = [...embeds].sort((a, b) => b.line - a.line);
 
@@ -197,6 +215,14 @@ export class VideoModule {
 				content = lines.join('\n');
 
 				completed++;
+
+				// Save checkpoint progress
+				const cpItemId = checkpointItems.find(
+					(ci) => ci.payload.url === embed.url
+				)?.id;
+				if (cpItemId) {
+					await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
+				}
 			} catch (error) {
 				this.notifications.notifyError(`Video transcription failed for ${embed.url}`, error);
 			}
@@ -207,6 +233,7 @@ export class VideoModule {
 			this.onTranscriptionComplete?.(noteFile.path);
 		}
 		if (!op.cancelled) {
+			await this.checkpointManager.complete(checkpoint.id);
 			op.finish(`Done — ${completed}/${total} video transcriptions added`);
 		}
 	}

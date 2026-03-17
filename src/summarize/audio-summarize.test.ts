@@ -45,6 +45,13 @@ vi.mock('../shared', () => ({
 	buildCallout: vi.fn((_type: string, title: string, content: string) =>
 		`\n> [!auto-notes-summary] ${title}\n> ${content}\n`
 	),
+	CheckpointManager: class MockCheckpointManager {
+		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
+		completeItem = vi.fn().mockResolvedValue(null);
+		complete = vi.fn().mockResolvedValue([]);
+		discard = vi.fn().mockResolvedValue(undefined);
+		listIncomplete = vi.fn().mockResolvedValue([]);
+	},
 }));
 
 function createMockNotifications() {

@@ -1,6 +1,10 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles, NotificationManager, sanitizeAIResponse } from '../shared';
+import {
+	buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles,
+	NotificationManager, sanitizeAIResponse, CheckpointManager,
+} from '../shared';
+import type { CheckpointWorkItem } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator } from './proposer';
@@ -13,6 +17,7 @@ export class ElaborationModule {
 	private proposer: ProposalGenerator;
 	private store: ProposalStore;
 	private scanInterval: number | null = null;
+	private checkpointManager: CheckpointManager;
 
 	/** Optional callback invoked after a proposal is accepted. Wired by main.ts for enrichment. */
 	onProposalAccepted: ((filePath: string) => void) | null = null;
@@ -28,6 +33,7 @@ export class ElaborationModule {
 		this.detector = new PlaceholderDetector(plugin.app, getSettings);
 		this.proposer = new ProposalGenerator(plugin.app, getSettings);
 		this.store = new ProposalStore(plugin.app, getSettings);
+		this.checkpointManager = new CheckpointManager(plugin.app);
 	}
 
 	async onload(): Promise<void> {
@@ -130,13 +136,25 @@ export class ElaborationModule {
 			return 0;
 		}
 
-		// --- Phase 3: Proposal generation (heavy, cancellable) ---
+		// --- Phase 3: Proposal generation (heavy, cancellable, checkpointed) ---
 		const genOp = this.notifications.startOperation(
 			'Generating proposals',
 			'vault-generate'
 		);
 		const createdProposalIds: string[] = [];
 		let proposalCount = 0;
+
+		// Create checkpoint for resumability
+		const checkpointItems: CheckpointWorkItem[] = detected.map((d, i) => ({
+			id: `elab-${i}-${d.notePath}`,
+			label: d.notePath,
+			payload: { notePath: d.notePath } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'elaboration',
+			operationLabel: `Elaboration: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			items: checkpointItems,
+		});
 
 		try {
 			for (let i = 0; i < detected.length; i++) {
@@ -147,6 +165,12 @@ export class ElaborationModule {
 				await this.store.save(proposal);
 				createdProposalIds.push(proposal.id);
 				proposalCount++;
+
+				// Save checkpoint progress
+				await this.checkpointManager.completeItem(
+					checkpoint.id,
+					checkpointItems[i].id
+				);
 			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
@@ -164,6 +188,8 @@ export class ElaborationModule {
 			return 0;
 		}
 
+		// Mark checkpoint completed
+		await this.checkpointManager.complete(checkpoint.id);
 		genOp.finish(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
 		await this.refreshView();
 		return proposalCount;

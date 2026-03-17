@@ -1,6 +1,10 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { AutoNotesSettings, DeepDiveNestingMode } from '../settings';
-import { NotificationManager, ensureFolder, readNote, writeNote, wordCount } from '../shared';
+import {
+	NotificationManager, ensureFolder, readNote, writeNote, wordCount,
+	CheckpointManager,
+} from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { ContentAnalyzer, DirectoryMatcher } from '../organize';
 import { DeepDiveStore } from './deep-dive-store';
 import { NoteGenerator } from './note-generator';
@@ -51,6 +55,7 @@ export class DeepDiveModule {
 	private store: DeepDiveStore;
 	private contentAnalyzer: ContentAnalyzer;
 	private directoryMatcher: DirectoryMatcher;
+	private checkpointManager: CheckpointManager;
 
 	constructor(
 		private plugin: Plugin,
@@ -62,6 +67,7 @@ export class DeepDiveModule {
 		this.store = new DeepDiveStore(plugin.app, getSettings);
 		this.contentAnalyzer = new ContentAnalyzer(plugin.app, getSettings);
 		this.directoryMatcher = new DirectoryMatcher(plugin.app);
+		this.checkpointManager = new CheckpointManager(plugin.app);
 	}
 
 	async onload(): Promise<void> {
@@ -231,6 +237,29 @@ export class DeepDiveModule {
 			'deep-dive-generate'
 		);
 
+		// Create checkpoint for resumability
+		const workItems: CheckpointWorkItem[] = rootTopics
+			.filter(t => !t.existsInVault)
+			.map((topic, i) => ({
+				id: `topic-${i}-${topic.title}`,
+				label: topic.title,
+				payload: {
+					content,
+					title: file.basename,
+					path: file.path,
+					topic,
+					depth: 0,
+					ancestorTopics: [file.basename],
+				} as Record<string, unknown>,
+			}));
+
+		const checkpoint = await this.checkpointManager.create({
+			module: 'deep-dive',
+			operationLabel: `Deep dive: ${file.basename}`,
+			items: workItems,
+			metadata: { runId: run.id, rootNotePath: file.path },
+		});
+
 		try {
 			// Queue: items to process at each depth
 			type QueueItem = {
@@ -337,6 +366,10 @@ export class DeepDiveModule {
 						}
 					}
 
+					// Save checkpoint progress after each proposal
+					const itemId = `topic-${processedCount - 1}-${topic.title}`;
+					await this.checkpointManager.completeItem(checkpoint.id, itemId);
+
 					// Queue children if quality is above threshold and depth allows
 					if (
 						quality.score >= settings.qualityThreshold &&
@@ -365,6 +398,8 @@ export class DeepDiveModule {
 			if (genOp.cancelled) {
 				this.notifications.info('Deep dive cancelled');
 			} else {
+				// Mark checkpoint completed and fire deferred tasks
+				await this.checkpointManager.complete(checkpoint.id);
 				const depthSummary = Object.entries(run.stats.byDepth)
 					.map(([d, c]) => `depth ${d}: ${c}`)
 					.join(', ');
