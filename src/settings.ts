@@ -153,6 +153,9 @@ export interface OrganizeSettings {
 	organizeConfidenceThreshold: number;
 }
 
+/** Controls how deep dive notes are placed in the folder hierarchy. */
+export type DeepDiveNestingMode = 'nested' | 'flat' | 'auto-organize';
+
 export interface DeepDiveSettings {
 	enabled: boolean;
 	proposalFolderPath: string;
@@ -160,6 +163,8 @@ export interface DeepDiveSettings {
 	qualityThreshold: number;
 	maxNotesPerRun: number;
 	noteOutputFolder: string;
+	/** How child notes are placed: nested under parent, flat in root subfolder, or AI-organized. */
+	nestingMode: DeepDiveNestingMode;
 	excludeFolders: string[];
 	excludeTags: string[];
 	autoEnrichOnAccept: boolean;
@@ -296,6 +301,7 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		qualityThreshold: 0.4,
 		maxNotesPerRun: 50,
 		noteOutputFolder: 'Deep Dives',
+		nestingMode: 'nested',
 		excludeFolders: ['templates', '.auto-notes'],
 		excludeTags: ['no-deep-dive'],
 		autoEnrichOnAccept: true,

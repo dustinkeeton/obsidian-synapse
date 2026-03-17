@@ -193,34 +193,112 @@ describe('DeepDiveStore', () => {
 			return file;
 		}
 
-		it('uses per-root subfolder with default setting', () => {
-			const root = makeRootFile('notes/Machine Learning.md', 'notes');
-			const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: 'Deep Dives' });
-			expect(result).toBe('Deep Dives/Machine Learning/Neural Networks.md');
+		describe('flat mode', () => {
+			it('uses per-root subfolder with default setting', () => {
+				const root = makeRootFile('notes/Machine Learning.md', 'notes');
+				const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: 'Deep Dives', nestingMode: 'flat' });
+				expect(result).toBe('Deep Dives/Machine Learning/Neural Networks.md');
+			});
+
+			it('uses per-root subfolder with custom output folder', () => {
+				const root = makeRootFile('notes/Machine Learning.md', 'notes');
+				const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: 'Custom Folder', nestingMode: 'flat' });
+				expect(result).toBe('Custom Folder/Machine Learning/Neural Networks.md');
+			});
+
+			it('falls back to source folder when output folder is empty', () => {
+				const root = makeRootFile('notes/Machine Learning.md', 'notes');
+				const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: '', nestingMode: 'flat' });
+				expect(result).toBe('notes/Neural Networks.md');
+			});
+
+			it('falls back to vault root when output folder is empty and source has no parent', () => {
+				const root = makeRootFile('Machine Learning.md');
+				const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: '', nestingMode: 'flat' });
+				expect(result).toBe('Neural Networks.md');
+			});
+
+			it('ignores parentProposedPath in flat mode', () => {
+				const root = makeRootFile('notes/Machine Learning.md', 'notes');
+				const result = buildDeepDivePath(
+					'Backpropagation',
+					root,
+					{ noteOutputFolder: 'Deep Dives', nestingMode: 'flat' },
+					'Deep Dives/Machine Learning/Neural Networks.md'
+				);
+				expect(result).toBe('Deep Dives/Machine Learning/Backpropagation.md');
+			});
 		});
 
-		it('uses per-root subfolder with custom output folder', () => {
-			const root = makeRootFile('notes/Machine Learning.md', 'notes');
-			const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: 'Custom Folder' });
-			expect(result).toBe('Custom Folder/Machine Learning/Neural Networks.md');
+		describe('nested mode', () => {
+			it('places root-level topics in per-root subfolder (no parent)', () => {
+				const root = makeRootFile('notes/Machine Learning.md', 'notes');
+				const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: 'Deep Dives', nestingMode: 'nested' });
+				expect(result).toBe('Deep Dives/Machine Learning/Neural Networks.md');
+			});
+
+			it('nests child topics under parent topic subfolder', () => {
+				const root = makeRootFile('notes/Machine Learning.md', 'notes');
+				const result = buildDeepDivePath(
+					'Backpropagation',
+					root,
+					{ noteOutputFolder: 'Deep Dives', nestingMode: 'nested' },
+					'Deep Dives/Machine Learning/Neural Networks.md'
+				);
+				expect(result).toBe('Deep Dives/Machine Learning/Neural Networks/Backpropagation.md');
+			});
+
+			it('nests grandchild topics under child topic subfolder', () => {
+				const root = makeRootFile('notes/Machine Learning.md', 'notes');
+				const result = buildDeepDivePath(
+					'Learning Rate Schedules',
+					root,
+					{ noteOutputFolder: 'Deep Dives', nestingMode: 'nested' },
+					'Deep Dives/Machine Learning/Gradient Descent.md'
+				);
+				expect(result).toBe('Deep Dives/Machine Learning/Gradient Descent/Learning Rate Schedules.md');
+			});
+
+			it('handles deeply nested paths (3+ levels)', () => {
+				const root = makeRootFile('notes/Machine Learning.md', 'notes');
+				const result = buildDeepDivePath(
+					'Cosine Annealing',
+					root,
+					{ noteOutputFolder: 'Deep Dives', nestingMode: 'nested' },
+					'Deep Dives/Machine Learning/Gradient Descent/Learning Rate Schedules.md'
+				);
+				expect(result).toBe('Deep Dives/Machine Learning/Gradient Descent/Learning Rate Schedules/Cosine Annealing.md');
+			});
 		});
 
-		it('falls back to source folder when output folder is empty', () => {
-			const root = makeRootFile('notes/Machine Learning.md', 'notes');
-			const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: '' });
-			expect(result).toBe('notes/Neural Networks.md');
-		});
+		describe('defaults and edge cases', () => {
+			it('defaults to nested mode when nestingMode is not set', () => {
+				const root = makeRootFile('notes/Machine Learning.md', 'notes');
+				const result = buildDeepDivePath(
+					'Backpropagation',
+					root,
+					{ noteOutputFolder: 'Deep Dives' },
+					'Deep Dives/Machine Learning/Neural Networks.md'
+				);
+				expect(result).toBe('Deep Dives/Machine Learning/Neural Networks/Backpropagation.md');
+			});
 
-		it('falls back to vault root when output folder is empty and source has no parent', () => {
-			const root = makeRootFile('Machine Learning.md');
-			const result = buildDeepDivePath('Neural Networks', root, { noteOutputFolder: '' });
-			expect(result).toBe('Neural Networks.md');
-		});
+			it('sanitizes special characters in topic title', () => {
+				const root = makeRootFile('notes/Root.md', 'notes');
+				const result = buildDeepDivePath('What is AI? A "Deep" Look', root, { noteOutputFolder: 'Deep Dives', nestingMode: 'nested' });
+				expect(result).toBe('Deep Dives/Root/What is AI- A -Deep- Look.md');
+			});
 
-		it('sanitizes special characters in topic title', () => {
-			const root = makeRootFile('notes/Root.md', 'notes');
-			const result = buildDeepDivePath('What is AI? A "Deep" Look', root, { noteOutputFolder: 'Deep Dives' });
-			expect(result).toBe('Deep Dives/Root/What is AI- A -Deep- Look.md');
+			it('sanitizes special characters in nested paths', () => {
+				const root = makeRootFile('notes/Root.md', 'notes');
+				const result = buildDeepDivePath(
+					'What is "Neural"?',
+					root,
+					{ noteOutputFolder: 'Deep Dives', nestingMode: 'nested' },
+					'Deep Dives/Root/AI Overview.md'
+				);
+				expect(result).toBe('Deep Dives/Root/AI Overview/What is -Neural--.md');
+			});
 		});
 	});
 

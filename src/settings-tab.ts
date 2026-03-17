@@ -769,6 +769,24 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName('Folder nesting mode')
+			.setDesc('How child notes are placed: nested under parent topic folders, flat in a single folder, or AI-organized by content semantics')
+			.addDropdown((dd) =>
+				dd
+					.addOptions({
+						nested: 'Nested (subfolder per parent topic)',
+						flat: 'Flat (all in root subfolder)',
+						'auto-organize': 'Auto-organize (AI-based placement)',
+					})
+					.setValue(this.plugin.settings.deepDive.nestingMode || 'nested')
+					.onChange(async (value) => {
+						this.plugin.settings.deepDive.nestingMode =
+							value as 'nested' | 'flat' | 'auto-organize';
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName('Auto-enrich on accept')
 			.setDesc('Automatically trigger enrichment when a deep dive note is accepted')
 			.addToggle((toggle) =>
