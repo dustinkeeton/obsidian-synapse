@@ -169,13 +169,22 @@ export class ElaborationModule {
 		return proposalCount;
 	}
 
-	async scanNote(file: TFile): Promise<void> {
+	async scanNote(file: TFile, userInvoked = true): Promise<void> {
 		const op = this.notifications.startOperation(
 			`Scanning ${file.basename}`,
 			`scan-${file.path}`
 		);
 		try {
-			const result = await this.detector.detect(file);
+			const detectorResult = await this.detector.detect(file);
+
+			// When user explicitly invoked elaboration, bypass the stub gate:
+			// use detector results as hints if available, otherwise create a
+			// synthetic detection result so the proposer always runs.
+			let result: DetectionResult | null = detectorResult;
+			if (!result && userInvoked) {
+				result = { notePath: file.path, reasons: [{ type: 'user-requested' }] };
+			}
+
 			if (result) {
 				op.update(`Generating proposal for ${file.basename}`);
 				const proposal = await this.proposer.generate(result);
