@@ -90,3 +90,39 @@
   --callout-color: 60, 180, 200;
   --callout-icon: lucide-layers;
 }
+
+/* ── Modal action buttons ── */
+
+.auto-notes-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* ── Proposal editor textarea ── */
+
+.auto-notes-proposal-editor {
+  max-height: 60vh;
+  resize: vertical;
+}
+
+/* ── Mobile-responsive overrides ── */
+
+@media (max-width: 768px) {
+  .auto-notes-slider-wrapper {
+    min-width: 0;
+  }
+
+  .auto-notes-proposal-editor {
+    max-height: 40vh;
+  }
+
+  .auto-notes-modal-actions {
+    flex-direction: column;
+  }
+
+  .auto-notes-modal-actions button {
+    width: 100%;
+  }
+}
