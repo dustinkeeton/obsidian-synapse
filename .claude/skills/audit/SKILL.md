@@ -19,15 +19,89 @@ Run the full audit pipeline in consecutive order. Each agent audits the codebase
 
 ## Execution Steps
 
-1. Create a team named `audit-{timestamp}` with yourself as team lead
-2. Create 5 tasks with sequential blocking dependencies (task N+1 blocked by task N)
-3. Spawn agents one at a time. After each completes:
-   - Mark its task completed
-   - Shut it down
-   - Spawn the next agent
-4. For the second security pass, spawn a new security agent named `security-final`
-5. After all 5 complete, present the user a consolidated summary table of findings and fixes per agent
-6. Clean up: shut down all agents, delete the team
+### 1. Create Team
+
+```
+TeamCreate(team_name: "audit-{timestamp}")
+```
+
+### 2. Create Tasks with Dependencies
+
+```
+task1 = TaskCreate(description: "architect audit", team_name: "audit-{timestamp}")
+task2 = TaskCreate(description: "security pass 1", team_name: "audit-{timestamp}", addBlockedBy: [task1.id])
+task3 = TaskCreate(description: "docs-agent", team_name: "audit-{timestamp}", addBlockedBy: [task2.id])
+task4 = TaskCreate(description: "docs-human", team_name: "audit-{timestamp}", addBlockedBy: [task3.id])
+task5 = TaskCreate(description: "security pass 2", team_name: "audit-{timestamp}", addBlockedBy: [task4.id])
+```
+
+### 3. Spawn Agents Sequentially
+
+For each step, spawn the agent into the team, wait for completion, then proceed:
+
+```
+Agent(
+  subagent_type: "architect",
+  team_name: "audit-{timestamp}",
+  name: "architect",
+  prompt: <architect prompt>
+)
+# After completion:
+TaskUpdate(id: task1.id, status: "completed")
+```
+
+```
+Agent(
+  subagent_type: "security",
+  team_name: "audit-{timestamp}",
+  name: "security-pass1",
+  prompt: <security pass 1 prompt>
+)
+TaskUpdate(id: task2.id, status: "completed")
+```
+
+```
+Agent(
+  subagent_type: "docs-agent",
+  team_name: "audit-{timestamp}",
+  name: "docs-agent",
+  prompt: <docs-agent prompt>
+)
+TaskUpdate(id: task3.id, status: "completed")
+```
+
+```
+Agent(
+  subagent_type: "docs-human",
+  team_name: "audit-{timestamp}",
+  name: "docs-human",
+  prompt: <docs-human prompt>
+)
+TaskUpdate(id: task4.id, status: "completed")
+```
+
+```
+Agent(
+  subagent_type: "security",
+  team_name: "audit-{timestamp}",
+  name: "security-final",
+  prompt: <security pass 2 prompt>
+)
+TaskUpdate(id: task5.id, status: "completed")
+```
+
+### 4. Summary and Cleanup
+
+After all 5 complete, present the user a consolidated summary table of findings and fixes per agent, then clean up:
+
+```
+SendMessage(type: "shutdown_request", to: "architect")
+SendMessage(type: "shutdown_request", to: "security-pass1")
+SendMessage(type: "shutdown_request", to: "docs-agent")
+SendMessage(type: "shutdown_request", to: "docs-human")
+SendMessage(type: "shutdown_request", to: "security-final")
+TeamDelete(team_name: "audit-{timestamp}")
+```
 
 ## Agent Prompts
 
@@ -36,8 +110,8 @@ Each agent should:
 - Read the full codebase under `src/` and project root
 - Implement fixes directly (not just report)
 - Verify the build passes after changes (`npx tsc --noEmit`)
-- Send a findings summary to the team lead via SendMessage
-- Mark its task as completed via TaskUpdate
+- Send a findings summary to the team lead: `SendMessage(to: "team-lead", content: <summary>)`
+- Mark its task as completed: `TaskUpdate(id: <task_id>, status: "completed")`
 
 ### Architect (Task 1)
 Audit for: module pattern adherence, file structure conventions, naming (kebab-case files, PascalCase classes, camelCase functions), dependency rules (no circular deps), import paths (through index.ts), type exports in types.ts, main.ts lifecycle-only, index.ts as public API. Fix all issues.
