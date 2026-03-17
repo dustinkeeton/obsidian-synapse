@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SummarizeModule } from './index';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
+import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
 // Mock the content fetcher to avoid real network calls
 vi.mock('./content-fetcher', () => ({
@@ -94,7 +95,8 @@ describe('SummarizeModule organize scope', () => {
 		module = new SummarizeModule(
 			mockPlugin as any,
 			() => settings,
-			mockNotifications as any
+			mockNotifications as any,
+			createMockCheckpointManager() as any
 		);
 	});
 

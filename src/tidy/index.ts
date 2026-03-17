@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { AIClient, NotificationManager, parseFrontmatter, sanitizeAIResponse, serializeFrontmatter, withRetry } from '../shared';
+import { AIClient, NotificationManager, parseFrontmatter, sanitizeAIResponse, serializeFrontmatter, withRetry, generateId } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
 
@@ -78,7 +78,7 @@ export class TidyModule {
 
 			// Store snapshot for undo before any changes
 			const snapshot: TidySnapshot = {
-				id: this.generateId(),
+				id: generateId(),
 				filePath: file.path,
 				originalContent: content,
 				createdAt: new Date().toISOString(),
@@ -141,10 +141,4 @@ export class TidyModule {
 		return trimmed;
 	}
 
-	private generateId(): string {
-		return (
-			Date.now().toString(36) +
-			Math.random().toString(36).slice(2, 10)
-		);
-	}
 }

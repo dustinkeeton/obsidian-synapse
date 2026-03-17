@@ -29,6 +29,7 @@ export interface UnifiedViewCallbacks {
 	onDeepDiveReject: (id: string) => Promise<void>;
 	// Checkpoints
 	onCheckpointDiscard: (id: string) => Promise<void>;
+	onCheckpointResume: (id: string) => Promise<void>;
 }
 
 /**
@@ -824,6 +825,11 @@ export class UnifiedProposalView extends ItemView {
 			fill.style.width = `${total > 0 ? Math.round((done / total) * 100) : 0}%`;
 
 			const actions = card.createDiv({ cls: 'auto-notes-actions' });
+
+			const resumeBtn = actions.createEl('button', { text: 'Resume', cls: 'mod-cta' });
+			resumeBtn.addEventListener('click', () => {
+				this.callbacks.onCheckpointResume(cp.id);
+			});
 
 			const discardBtn = actions.createEl('button', { text: 'Discard' });
 			discardBtn.addEventListener('click', () => {

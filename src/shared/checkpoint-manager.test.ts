@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { CheckpointManager } from './checkpoint-manager';
 import { Checkpoint, CheckpointWorkItem, DeferredTask } from './checkpoint-types';
 
-// ── Mock Obsidian vault adapter ──
+// -- Mock Obsidian vault adapter --
 const mockFiles = new Map<string, string>();
 
 const mockAdapter = {
@@ -45,7 +45,7 @@ const mockApp = { vault: mockVault } as unknown as import('obsidian').App;
 
 function makeItems(count: number): CheckpointWorkItem[] {
 	return Array.from({ length: count }, (_, i) => ({
-		id: `item-${i}`,
+		id: `item${i}`,
 		label: `Item ${i}`,
 		payload: { index: i },
 	}));
@@ -71,7 +71,7 @@ describe('CheckpointManager', () => {
 				module: 'deep-dive',
 				operationLabel: 'Deep dive into ML',
 				items,
-				metadata: { runId: 'run-1' },
+				metadata: { runId: 'run1' },
 			});
 
 			expect(cp.id).toBeTruthy();
@@ -81,7 +81,7 @@ describe('CheckpointManager', () => {
 			expect(cp.remainingItems).toHaveLength(3);
 			expect(cp.completedItems).toHaveLength(0);
 			expect(cp.deferredTasks).toHaveLength(0);
-			expect(cp.metadata).toEqual({ runId: 'run-1' });
+			expect(cp.metadata).toEqual({ runId: 'run1' });
 		});
 
 		it('persists the checkpoint to disk', async () => {
@@ -115,12 +115,12 @@ describe('CheckpointManager', () => {
 				items: makeItems(3),
 			});
 
-			const updated = await manager.completeItem(cp.id, 'item-1');
+			const updated = await manager.completeItem(cp.id, 'item1');
 
 			expect(updated).not.toBeNull();
 			expect(updated!.remainingItems).toHaveLength(2);
 			expect(updated!.completedItems).toHaveLength(1);
-			expect(updated!.completedItems[0].id).toBe('item-1');
+			expect(updated!.completedItems[0].id).toBe('item1');
 		});
 
 		it('returns checkpoint unchanged for non-existent item', async () => {
@@ -130,14 +130,15 @@ describe('CheckpointManager', () => {
 				items: makeItems(2),
 			});
 
-			const updated = await manager.completeItem(cp.id, 'no-such-item');
+			const updated = await manager.completeItem(cp.id, 'nosuchitem');
 
 			expect(updated!.remainingItems).toHaveLength(2);
 			expect(updated!.completedItems).toHaveLength(0);
 		});
 
 		it('returns null for non-existent checkpoint', async () => {
-			const result = await manager.completeItem('no-such-cp', 'item-0');
+			// Use a valid-format ID that does not exist
+			const result = await manager.completeItem('nosuchcp', 'item0');
 			expect(result).toBeNull();
 		});
 
@@ -149,7 +150,7 @@ describe('CheckpointManager', () => {
 			});
 			await manager.complete(cp.id);
 
-			const result = await manager.completeItem(cp.id, 'item-0');
+			const result = await manager.completeItem(cp.id, 'item0');
 			expect(result).toBeNull();
 		});
 
@@ -164,7 +165,7 @@ describe('CheckpointManager', () => {
 			// Small delay to ensure timestamp differs
 			await new Promise((r) => setTimeout(r, 5));
 
-			const updated = await manager.completeItem(cp.id, 'item-0');
+			const updated = await manager.completeItem(cp.id, 'item0');
 			expect(updated!.updatedAt).not.toBe(originalUpdatedAt);
 		});
 	});
@@ -177,16 +178,16 @@ describe('CheckpointManager', () => {
 				items: makeItems(1),
 			});
 
-			const task = makeDeferredTask('task-1', 'enrich');
+			const task = makeDeferredTask('task1', 'enrich');
 			const updated = await manager.addDeferredTask(cp.id, task);
 
 			expect(updated!.deferredTasks).toHaveLength(1);
-			expect(updated!.deferredTasks[0].id).toBe('task-1');
+			expect(updated!.deferredTasks[0].id).toBe('task1');
 		});
 
 		it('returns null for non-existent checkpoint', async () => {
-			const task = makeDeferredTask('task-1', 'enrich');
-			const result = await manager.addDeferredTask('no-such-cp', task);
+			const task = makeDeferredTask('task1', 'enrich');
+			const result = await manager.addDeferredTask('nosuchcp', task);
 			expect(result).toBeNull();
 		});
 
@@ -198,7 +199,7 @@ describe('CheckpointManager', () => {
 			});
 			await manager.discard(cp.id);
 
-			const task = makeDeferredTask('task-1', 'enrich');
+			const task = makeDeferredTask('task1', 'enrich');
 			const result = await manager.addDeferredTask(cp.id, task);
 			expect(result).toBeNull();
 		});
@@ -212,19 +213,19 @@ describe('CheckpointManager', () => {
 				items: makeItems(1),
 			});
 
-			const task = makeDeferredTask('task-1', 'enrich');
+			const task = makeDeferredTask('task1', 'enrich');
 			await manager.addDeferredTask(cp.id, task);
 
 			const tasks = await manager.complete(cp.id);
 			expect(tasks).toHaveLength(1);
-			expect(tasks[0].id).toBe('task-1');
+			expect(tasks[0].id).toBe('task1');
 
 			const loaded = await manager.load(cp.id);
 			expect(loaded!.status).toBe('completed');
 		});
 
 		it('returns empty array for non-existent checkpoint', async () => {
-			const tasks = await manager.complete('no-such-cp');
+			const tasks = await manager.complete('nosuchcp');
 			expect(tasks).toEqual([]);
 		});
 
@@ -257,7 +258,7 @@ describe('CheckpointManager', () => {
 
 		it('no-ops for non-existent checkpoint', async () => {
 			// Should not throw
-			await manager.discard('no-such-cp');
+			await manager.discard('nosuchcp');
 		});
 	});
 
@@ -277,7 +278,44 @@ describe('CheckpointManager', () => {
 
 		it('no-ops for non-existent checkpoint', async () => {
 			// Should not throw
-			await manager.remove('no-such-cp');
+			await manager.remove('nosuchcp');
+		});
+	});
+
+	describe('resume', () => {
+		it('returns the checkpoint with remaining items for active checkpoints', async () => {
+			const items = makeItems(3);
+			const cp = await manager.create({
+				module: 'elaboration',
+				operationLabel: 'Test',
+				items,
+			});
+
+			// Complete one item
+			await manager.completeItem(cp.id, 'item0');
+
+			const resumed = await manager.resume(cp.id);
+			expect(resumed).not.toBeNull();
+			expect(resumed!.remainingItems).toHaveLength(2);
+			expect(resumed!.completedItems).toHaveLength(1);
+			expect(resumed!.status).toBe('active');
+		});
+
+		it('returns null for completed checkpoints', async () => {
+			const cp = await manager.create({
+				module: 'deep-dive',
+				operationLabel: 'Test',
+				items: [],
+			});
+			await manager.complete(cp.id);
+
+			const result = await manager.resume(cp.id);
+			expect(result).toBeNull();
+		});
+
+		it('returns null for non-existent checkpoints', async () => {
+			const result = await manager.resume('nosuchcp');
+			expect(result).toBeNull();
 		});
 	});
 
@@ -380,7 +418,7 @@ describe('CheckpointManager', () => {
 
 	describe('load', () => {
 		it('returns null for non-existent checkpoint', async () => {
-			const loaded = await manager.load('no-such-id');
+			const loaded = await manager.load('nosuchid');
 			expect(loaded).toBeNull();
 		});
 
@@ -388,6 +426,48 @@ describe('CheckpointManager', () => {
 			mockFiles.set('.auto-notes/checkpoints/corrupt.json', 'not json');
 			const loaded = await manager.load('corrupt');
 			expect(loaded).toBeNull();
+		});
+	});
+
+	describe('ID validation', () => {
+		it('rejects IDs with path traversal characters', async () => {
+			await expect(manager.load('../etc/passwd')).rejects.toThrow('Invalid checkpoint ID');
+		});
+
+		it('rejects IDs with slashes', async () => {
+			await expect(manager.load('foo/bar')).rejects.toThrow('Invalid checkpoint ID');
+		});
+
+		it('rejects IDs with dots', async () => {
+			await expect(manager.load('foo.bar')).rejects.toThrow('Invalid checkpoint ID');
+		});
+
+		it('accepts valid base36 IDs', async () => {
+			// Should not throw, just return null for non-existent
+			const loaded = await manager.load('abc123def');
+			expect(loaded).toBeNull();
+		});
+	});
+
+	describe('concurrency guard', () => {
+		it('serializes concurrent writes to the same checkpoint', async () => {
+			const cp = await manager.create({
+				module: 'deep-dive',
+				operationLabel: 'Test',
+				items: makeItems(5),
+			});
+
+			// Fire multiple completeItem calls concurrently
+			const results = await Promise.all([
+				manager.completeItem(cp.id, 'item0'),
+				manager.completeItem(cp.id, 'item1'),
+				manager.completeItem(cp.id, 'item2'),
+			]);
+
+			// All should succeed
+			const finalLoaded = await manager.load(cp.id);
+			expect(finalLoaded!.completedItems).toHaveLength(3);
+			expect(finalLoaded!.remainingItems).toHaveLength(2);
 		});
 	});
 });
