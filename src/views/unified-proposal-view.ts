@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, Notice, WorkspaceLeaf } from 'obsidian';
 import type { Proposal } from '../elaboration';
 import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
@@ -43,6 +43,8 @@ export class UnifiedProposalView extends ItemView {
 	private reviewingEnrichment: EnrichmentProposal | null = null;
 	private reviewingOrganize: OrganizeProposal | null = null;
 	private reviewingDeepDive: DeepDiveProposal | null = null;
+
+	private acceptAllInProgress = false;
 
 	// Enrichment review selection state
 	private selectedTags = new Set<string>();
@@ -137,6 +139,113 @@ export class UnifiedProposalView extends ItemView {
 		this.render();
 	}
 
+	// ── Accept All ─────────────────────────────────────────────
+
+	/**
+	 * Accept every pending proposal in presentation order (top to bottom).
+	 * Runs sequentially because organize proposals may affect file paths.
+	 * Stops on the first failure, leaving remaining proposals untouched.
+	 */
+	private async acceptAll(): Promise<void> {
+		if (this.acceptAllInProgress) return;
+		this.acceptAllInProgress = true;
+
+		// Snapshot the items in current presentation order
+		const snapshot = [...this.items];
+		const total = snapshot.length;
+		let accepted = 0;
+
+		// Show initial progress
+		this.renderAcceptAllProgress(accepted, total);
+
+		for (const item of snapshot) {
+			try {
+				await this.acceptSingleItem(item);
+				accepted++;
+				this.renderAcceptAllProgress(accepted, total);
+			} catch (err) {
+				this.acceptAllInProgress = false;
+				const label = this.itemLabel(item);
+				const message = err instanceof Error ? err.message : String(err);
+				new Notice(
+					`Accept All stopped: failed on "${label}" -- ${message}. ` +
+					`${accepted}/${total} accepted, ${total - accepted} remaining.`
+				);
+				this.render();
+				return;
+			}
+		}
+
+		this.acceptAllInProgress = false;
+		new Notice(`${accepted} proposal${accepted === 1 ? '' : 's'} accepted`);
+		this.render();
+	}
+
+	/**
+	 * Call the appropriate accept callback for a single proposal item.
+	 * For enrichment proposals, all suggested items are accepted (same as
+	 * clicking "Accept All" on an individual enrichment card).
+	 */
+	private async acceptSingleItem(item: UnifiedItem): Promise<void> {
+		switch (item.kind) {
+			case 'elaboration':
+				await this.callbacks.onElaborationAccept(
+					item.data.id,
+					item.data.proposedAdditions
+				);
+				break;
+			case 'enrichment': {
+				const { result } = item.data;
+				const all: AcceptedItems = {
+					tags: result.tags.map(t => t.tag),
+					internalLinks: result.internalLinks.map(l => l.targetPath),
+					externalLinks: result.externalLinks.map(r => r.url),
+					frontmatter: result.frontmatter.map(f => f.key),
+				};
+				await this.callbacks.onEnrichmentAcceptSelected(item.data.id, all);
+				break;
+			}
+			case 'organize':
+				await this.callbacks.onOrganizeAccept(item.data.id);
+				break;
+			case 'deep-dive':
+				await this.callbacks.onDeepDiveAccept(item.data.id);
+				break;
+		}
+	}
+
+	/** Human-readable label for a proposal, used in error messages. */
+	private itemLabel(item: UnifiedItem): string {
+		switch (item.kind) {
+			case 'elaboration':
+				return `Elaboration: ${item.data.sourceNotePath}`;
+			case 'enrichment':
+				return `Enrichment: ${item.data.sourceNotePath}`;
+			case 'organize':
+				return `Organize: ${item.data.sourceNotePath}`;
+			case 'deep-dive':
+				return `Deep Dive: ${(item.data as DeepDiveProposal).topic.title}`;
+		}
+	}
+
+	/** Render a minimal progress indicator during batch accept. */
+	private renderAcceptAllProgress(current: number, total: number): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('auto-notes-view-root');
+		contentEl.createEl('h3', { text: 'Pending Proposals' });
+
+		const progressBar = contentEl.createDiv({ cls: 'auto-notes-accept-all-progress' });
+		progressBar.createEl('p', {
+			text: `Accepting ${current + 1}/${total}...`,
+			cls: 'auto-notes-accept-all-progress-text',
+		});
+
+		const track = progressBar.createDiv({ cls: 'auto-notes-accept-all-track' });
+		const fill = track.createDiv({ cls: 'auto-notes-accept-all-fill' });
+		fill.style.width = `${Math.round((current / total) * 100)}%`;
+	}
+
 	// ── List Mode ──────────────────────────────────────────────
 
 	private renderList(): void {
@@ -151,6 +260,19 @@ export class UnifiedProposalView extends ItemView {
 				cls: 'auto-notes-empty',
 			});
 			return;
+		}
+
+		// Accept All button — only when 2+ proposals are pending
+		if (this.items.length >= 2) {
+			const acceptAllBar = contentEl.createDiv({ cls: 'auto-notes-accept-all-bar' });
+			const acceptAllBtn = acceptAllBar.createEl('button', {
+				text: 'Accept All',
+				cls: 'auto-notes-accept-all-btn mod-cta',
+			});
+			if (this.acceptAllInProgress) {
+				acceptAllBtn.disabled = true;
+			}
+			acceptAllBtn.addEventListener('click', () => this.acceptAll());
 		}
 
 		const list = contentEl.createDiv({ cls: 'auto-notes-proposal-list' });
@@ -1031,6 +1153,57 @@ export class UnifiedProposalView extends ItemView {
 				border-top: none;
 				border-radius: 0 0 4px 4px;
 				margin: 0;
+			}
+
+			/* ── Accept All ── */
+			.auto-notes-accept-all-bar {
+				flex-shrink: 0;
+				margin-bottom: 8px;
+			}
+			.auto-notes-accept-all-btn {
+				width: 100%;
+				padding: 6px 16px;
+				border-radius: 4px;
+				font-size: 13px;
+				font-weight: 600;
+				cursor: pointer;
+				border: 1px solid var(--interactive-accent);
+				background: var(--interactive-accent);
+				color: var(--text-on-accent);
+			}
+			.auto-notes-accept-all-btn:hover {
+				opacity: 0.9;
+			}
+			.auto-notes-accept-all-btn:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+			.auto-notes-accept-all-progress {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 12px;
+				padding: 32px 16px;
+			}
+			.auto-notes-accept-all-progress-text {
+				font-size: 14px;
+				font-weight: 600;
+				color: var(--text-normal);
+				margin: 0;
+			}
+			.auto-notes-accept-all-track {
+				width: 100%;
+				height: 6px;
+				border-radius: 3px;
+				background: var(--background-modifier-border);
+				overflow: hidden;
+			}
+			.auto-notes-accept-all-fill {
+				height: 100%;
+				border-radius: 3px;
+				background: var(--interactive-accent);
+				transition: width 0.2s ease;
 			}
 		`;
 		document.head.appendChild(style);
