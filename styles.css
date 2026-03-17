@@ -57,3 +57,36 @@
   background-color: var(--text-faint);
   flex-shrink: 0;
 }
+
+/* ── AI content callout styles ── */
+
+.callout[data-callout^="auto-notes-"] {
+  --callout-blend-mode: normal;
+  border-left-width: 3px;
+  opacity: 0.95;
+}
+
+.callout[data-callout="auto-notes-summary"] {
+  --callout-color: 100, 160, 255;
+  --callout-icon: lucide-file-text;
+}
+
+.callout[data-callout="auto-notes-transcription"] {
+  --callout-color: 160, 120, 220;
+  --callout-icon: lucide-mic;
+}
+
+.callout[data-callout="auto-notes-enrichment"] {
+  --callout-color: 80, 180, 120;
+  --callout-icon: lucide-link;
+}
+
+.callout[data-callout="auto-notes-elaboration"] {
+  --callout-color: 220, 160, 60;
+  --callout-icon: lucide-pen-tool;
+}
+
+.callout[data-callout="auto-notes-deep-dive"] {
+  --callout-color: 60, 180, 200;
+  --callout-icon: lucide-layers;
+}
