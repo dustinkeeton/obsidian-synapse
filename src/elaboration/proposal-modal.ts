@@ -44,7 +44,7 @@ export class ProposalDetailModal extends Modal {
 			cls: 'auto-notes-proposal-editor',
 		});
 		textarea.value = this.proposal.proposedAdditions;
-		textarea.rows = 20;
+		textarea.rows = 12;
 		textarea.style.width = '100%';
 		textarea.style.fontFamily = 'monospace';
 
