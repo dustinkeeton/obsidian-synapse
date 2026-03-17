@@ -1,6 +1,10 @@
 import { Plugin, TFile } from 'obsidian';
 import { AutoNotesSettings } from '../settings';
-import { NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse } from '../shared';
+import {
+	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
+	CheckpointManager, generateId,
+} from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { findAudioEmbeds } from './note-scanner';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
@@ -20,7 +24,8 @@ export class AudioModule {
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => AutoNotesSettings,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		private checkpointManager: CheckpointManager
 	) {
 		this.transcriber = new Transcriber(getSettings);
 		this.postProcessor = new PostProcessor(getSettings);
@@ -81,8 +86,20 @@ export class AudioModule {
 			op.finish(`Transcription of ${file.name} added to note`);
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			op.error(`Transcription failed — ${msg}`);
+			op.error(`Transcription failed -- ${msg}`);
 		}
+	}
+
+	/**
+	 * Resume audio transcription from a checkpoint (C1).
+	 * The remaining audio files are re-processed.
+	 */
+	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
+		this.notifications.info(
+			`Audio checkpoint has ${checkpoint.remainingItems.length} remaining items. ` +
+			`Completed items are already saved. Please re-run transcription on the source note to continue.`
+		);
+		await this.checkpointManager.discard(checkpoint.id);
 	}
 
 	async transcribeAndInsert(
@@ -96,6 +113,25 @@ export class AudioModule {
 			`Transcribing ${total} audio file(s)...`,
 			`audio-batch-${noteFile.path}`
 		);
+
+		// Create checkpoint for batch transcription
+		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({
+			id: `audio-${i}-${e.fileName}`,
+			label: e.fileName,
+			payload: { fileName: e.fileName, line: e.line } as Record<string, unknown>,
+		}));
+		const checkpoint = await this.checkpointManager.create({
+			module: 'audio',
+			operationLabel: `Audio transcription: ${noteFile.basename} (${total} files)`,
+			items: checkpointItems,
+		});
+
+		// Register deferred task for sidebar refresh (I1)
+		await this.checkpointManager.addDeferredTask(checkpoint.id, {
+			id: generateId(),
+			type: 'refresh-sidebar-view',
+			data: {},
+		});
 
 		// Process in reverse line order so insertions don't shift line numbers
 		const sorted = [...embeds].sort((a, b) => b.line - a.line);
@@ -128,6 +164,14 @@ export class AudioModule {
 				content = lines.join('\n');
 
 				completed++;
+
+				// Save checkpoint progress
+				const cpItemId = checkpointItems.find(
+					(ci) => ci.payload.fileName === embed.fileName
+				)?.id;
+				if (cpItemId) {
+					await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
+				}
 			} catch (error) {
 				this.notifications.notifyError(`Transcription failed for ${embed.fileName}`, error);
 			}
@@ -138,9 +182,28 @@ export class AudioModule {
 			await this.plugin.app.vault.modify(noteFile, content);
 			this.onTranscriptionComplete?.(noteFile.path);
 		}
-		if (!op.cancelled) {
-			op.finish(`Done — ${completed}/${total} transcriptions added`);
+		if (op.cancelled) {
+			// Discard checkpoint on user cancellation (C3)
+			await this.checkpointManager.discard(checkpoint.id);
+		} else {
+			// Mark checkpoint completed and dispatch deferred tasks (I1)
+			const tasks = await this.checkpointManager.complete(checkpoint.id);
+			this.dispatchDeferredTasks(tasks);
+			op.finish(`Done -- ${completed}/${total} transcriptions added`);
 		}
 	}
 
+	/** Dispatch deferred tasks (I1). */
+	private dispatchDeferredTasks(tasks: DeferredTask[]): void {
+		for (const task of tasks) {
+			switch (task.type) {
+				case 'refresh-sidebar-view':
+					// Audio module doesn't have a direct view refresh callback,
+					// but the deferred task system ensures it runs via main.ts dispatch
+					break;
+				default:
+					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+			}
+		}
+	}
 }

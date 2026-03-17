@@ -73,3 +73,35 @@ export function createMockPlugin(settingsOverrides?: Record<string, unknown>) {
 export function makeSettings<T>(defaults: T, overrides?: Partial<T>): T {
 	return { ...structuredClone(defaults), ...overrides } as T;
 }
+
+/**
+ * Create a mock CheckpointManager with all methods stubbed.
+ * Useful for passing to module constructors in tests.
+ */
+export function createMockCheckpointManager() {
+	return {
+		create: vi.fn().mockResolvedValue({
+			id: 'mockcheckpoint',
+			module: 'test',
+			operationLabel: 'test',
+			status: 'active',
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+			completedItems: [],
+			remainingItems: [],
+			deferredTasks: [],
+			metadata: {},
+		}),
+		completeItem: vi.fn().mockResolvedValue(null),
+		addDeferredTask: vi.fn().mockResolvedValue(null),
+		complete: vi.fn().mockResolvedValue([]),
+		discard: vi.fn().mockResolvedValue(undefined),
+		remove: vi.fn().mockResolvedValue(undefined),
+		load: vi.fn().mockResolvedValue(null),
+		resume: vi.fn().mockResolvedValue(null),
+		listIncomplete: vi.fn().mockResolvedValue([]),
+		listByStatus: vi.fn().mockResolvedValue([]),
+		listAll: vi.fn().mockResolvedValue([]),
+		cleanup: vi.fn().mockResolvedValue(0),
+	};
+}

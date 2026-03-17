@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ElaborationModule } from './index';
 import { DEFAULT_SETTINGS, AutoNotesSettings } from '../settings';
 import { NotificationManager } from '../shared/notifications';
-import { mockFile } from '../__test-utils__/mock-factories';
+import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import { DetectionResult } from './types';
 
 // Shared mock function that all MockAIClient instances delegate to.
@@ -85,7 +85,8 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		module = new ElaborationModule(
 			mockPlugin as any,
 			() => settings,
-			notifications
+			notifications,
+			createMockCheckpointManager() as any
 		);
 	});
 

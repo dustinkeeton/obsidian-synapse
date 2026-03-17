@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SummarizeModule } from './index';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
+import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
 // Mock the content fetcher to avoid real network calls
 vi.mock('./content-fetcher', () => ({
@@ -34,6 +35,13 @@ vi.mock('../shared', () => ({
 	NotificationManager: vi.fn(),
 	CALLOUT_TYPES: { transcription: 'auto-notes-transcription', summary: 'auto-notes-summary' },
 	buildCallout: vi.fn((_type: string, _title: string, content: string) => `> ${content}`),
+	CheckpointManager: class MockCheckpointManager {
+		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
+		completeItem = vi.fn().mockResolvedValue(null);
+		complete = vi.fn().mockResolvedValue([]);
+		discard = vi.fn().mockResolvedValue(undefined);
+		listIncomplete = vi.fn().mockResolvedValue([]);
+	},
 }));
 
 function createMockNotifications() {
@@ -87,7 +95,8 @@ describe('SummarizeModule organize scope', () => {
 		module = new SummarizeModule(
 			mockPlugin as any,
 			() => settings,
-			mockNotifications as any
+			mockNotifications as any,
+			createMockCheckpointManager() as any
 		);
 	});
 
