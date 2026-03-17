@@ -55,12 +55,35 @@ This document serves as a checklist and roadmap for releasing Auto Notes as an O
 
 ## 3. Mobile Compatibility
 
-- [x] **Plugin is marked desktop-only** -- `manifest.json` has `"isDesktopOnly": true`.
-- [x] **Desktop-only API usage documented** -- The following features depend on Node.js/desktop-only APIs:
-  - **Video transcription**: `execFile` for yt-dlp and ffmpeg
-  - **Local Whisper**: `execFile` for local whisper binary (not yet implemented)
-  - **Path resolution**: `require('path')` in `ensureWithinVault()` (shared/validation.ts)
-- [x] **Future mobile considerations noted** -- Audio transcription via Whisper API and Deepgram uses only `fetch` and could theoretically work on mobile. AI features (elaboration, enrichment, summarize, tidy, organize, deep dive) use Obsidian's `requestUrl` and could also work on mobile. However, video transcription is fundamentally desktop-only due to yt-dlp/ffmpeg dependency.
+- [x] **Plugin supports mobile** -- `manifest.json` has `"isDesktopOnly": false`. Mobile support added in v0.4.0 milestone (#96).
+- [x] **Desktop-only features gated behind `Platform.isDesktop`** -- `VideoModule` is only instantiated on desktop (`main.ts`). `AudioExtractor` (which has top-level `require('child_process')`) is never loaded on mobile.
+- [x] **Status bar item gated** -- `addStatusBarItem()` wrapped in `Platform.isDesktop` check (mobile doesn't support status bar items).
+- [x] **Settings hidden on mobile** -- Video Transcription settings section and `local-whisper` provider option are hidden via `Platform.isDesktop` checks in `settings-tab.ts`.
+- [x] **Commands/ribbon gated** -- `mic` ribbon icon is desktop-only. Transcription commands only register when audio is enabled or video is available (desktop).
+- [x] **Unified modal adapted** -- Video URL input section hidden on mobile in `unified-modal.ts`.
+- [x] **Portable path resolution** -- `ensureWithinVault()` in `shared/validation.ts` replaced `require('path')` with string-based path normalization that works on all platforms.
+- [x] **Mobile-responsive CSS** -- `@media (max-width: 768px)` queries added for sliders, modal actions, and proposal editor (#100).
+
+### Per-Feature Mobile Compatibility Matrix
+
+| Feature | Mobile Status | Dependency | Notes |
+|---------|:------------:|------------|-------|
+| Elaboration | Ready | `requestUrl` | Fully compatible |
+| Enrichment | Ready | `requestUrl` | Fully compatible |
+| Summarize | Ready | `requestUrl` | Video URL summarization falls back to error on mobile |
+| Tidy | Ready | `requestUrl` | Fully compatible |
+| Organize | Ready | `requestUrl` | Fully compatible |
+| Deep Dive | Ready | `requestUrl` | Fully compatible |
+| Audio Transcription (Whisper API) | Ready | `fetch` + `FormData` | CSP verification pending |
+| Audio Transcription (Deepgram) | Ready | `fetch` + `FormData` | CSP verification pending |
+| Audio Transcription (Local Whisper) | Desktop-only | `execFile` | Hidden from provider dropdown on mobile |
+| Video Transcription | Desktop-only | `execFile` (yt-dlp, ffmpeg) | Module not loaded on mobile; UI hidden |
+
+### Remaining Mobile Items
+
+- [ ] **CSP verification** -- Verify `fetch` + `FormData` in `audio/transcriber.ts` works within Obsidian mobile sandbox. Migrate to `requestUrl` if needed.
+- [ ] **Test on Android** -- Sideload and verify all mobile-ready features work.
+- [ ] **Test on iOS** -- Sideload and verify all mobile-ready features work.
 
 ---
 
@@ -160,10 +183,10 @@ Reference: [Obsidian Plugin Guidelines](https://docs.obsidian.md/Plugins/Releasi
   - `minAppVersion`: `0.15.0`
   - `description`: `AI-powered note elaboration, audio transcription, and video transcription for Obsidian`
   - `author`: `Dustin Keeton`
-  - `isDesktopOnly`: `true`
+  - `isDesktopOnly`: `false`
 - [~] **manifest.json optional fields** -- Missing `authorUrl` and `fundingUrl`. These are optional but recommended. **Next step**: Add `authorUrl` (GitHub profile or website) and optionally `fundingUrl`.
 - [x] **Plugin ID follows naming conventions** -- `auto-notes` uses lowercase with hyphens, no special characters. Follows the `kebab-case` convention.
-- [~] **No banned APIs used** -- The plugin uses `requestUrl` (recommended) for most HTTP calls. However, it uses native `fetch` for audio transcription (Whisper/Deepgram) because `requestUrl` does not natively support `FormData` / multipart uploads. `execFile` is used for subprocess management (not banned but requires `isDesktopOnly: true`, which is set). **Next step**: Verify with Obsidian review team that native `fetch` usage for multipart uploads is acceptable, or find a `requestUrl`-based workaround.
+- [~] **No banned APIs used** -- The plugin uses `requestUrl` (recommended) for most HTTP calls. However, it uses native `fetch` for audio transcription (Whisper/Deepgram) because `requestUrl` does not natively support `FormData` / multipart uploads. `execFile` is used for subprocess management but only on desktop (`Platform.isDesktop` guard prevents loading on mobile). **Next step**: Verify with Obsidian review team that native `fetch` usage for multipart uploads is acceptable, or find a `requestUrl`-based workaround.
 - [ ] **Follows Obsidian plugin guidelines (full audit)** -- A comprehensive audit against the [full guidelines checklist](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines) has not been performed. **Next step**: Walk through every item in the Obsidian plugin guidelines document and verify compliance. Key areas to check:
   - No modification of `.obsidian/` config files
   - No accessing `app.vault.adapter` directly for operations available through `vault` API
