@@ -46,3 +46,7 @@ After docs-agent completes, spawn the `docs-human` agent with this prompt:
 - Each step must complete before the next begins — the output of each informs the next.
 - The architect agent should NOT modify files — it only reports.
 - docs-agent and docs-human SHOULD modify their respective documentation files.
+
+## Why No Teams
+
+This skill intentionally does **not** use agent teams. The 3-step pipeline (architect → docs-agent → docs-human) is strictly sequential — each step's output is the next step's input. There is no parallelism to exploit, so team coordination overhead would add complexity with no benefit. If this pipeline gains a parallel step in the future, reconsider.
