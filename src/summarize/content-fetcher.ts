@@ -4,17 +4,27 @@ import { sanitizeUrl } from '../shared';
 /**
  * Fetch a webpage and extract readable text content.
  */
+/** Default timeout for page fetch requests (30 seconds). */
+const FETCH_TIMEOUT_MS = 30_000;
+
 export async function fetchPageContent(url: string, maxLength: number): Promise<string> {
 	const validatedUrl = sanitizeUrl(url);
 
-	const response = await requestUrl({
-		url: validatedUrl,
-		method: 'GET',
-		headers: {
-			'User-Agent': 'Mozilla/5.0 (compatible; ObsidianAutoNotes/1.0)',
-			'Accept': 'text/html,application/xhtml+xml',
-		},
-	});
+	const timeout = new Promise<never>((_, reject) =>
+		setTimeout(() => reject(new Error('Page fetch timed out')), FETCH_TIMEOUT_MS)
+	);
+
+	const response = await Promise.race([
+		requestUrl({
+			url: validatedUrl,
+			method: 'GET',
+			headers: {
+				'User-Agent': 'Mozilla/5.0 (compatible; ObsidianAutoNotes/1.0)',
+				'Accept': 'text/html,application/xhtml+xml',
+			},
+		}),
+		timeout,
+	]);
 
 	const html = response.text;
 	const text = extractReadableText(html);

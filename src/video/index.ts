@@ -3,11 +3,9 @@ import { AutoNotesSettings } from '../settings';
 import { AudioModule, TranscriptionResult } from '../audio';
 import { ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES } from '../shared';
 import { AudioExtractor } from './audio-extractor';
-import { NoteVideoModal } from './note-video-modal';
 import { findVideoUrls } from './note-scanner';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
-import { detectPlatform, isSupportedUrl } from './url-detector';
-import { VideoTranscriptionModal } from './video-modal';
+import { detectPlatform } from './url-detector';
 
 export type {
 	ExtractionResult,
@@ -19,6 +17,7 @@ export type {
 	VideoUrlEmbed,
 } from './types';
 export { detectPlatform, isSupportedUrl } from './url-detector';
+export { findVideoUrls } from './note-scanner';
 
 export class VideoModule {
 	private extractor: AudioExtractor;
@@ -40,30 +39,6 @@ export class VideoModule {
 			this.plugin.app,
 			this.getSettings().video.tempFolder
 		);
-
-		this.plugin.addCommand({
-			id: 'auto-notes:transcribe-video-url',
-			name: 'Transcribe video from URL',
-			callback: () => this.openUrlModal(),
-		});
-
-		this.plugin.addCommand({
-			id: 'auto-notes:transcribe-note-video',
-			name: 'Transcribe video URLs from current note',
-			editorCallback: async (_editor, ctx) => {
-				if (ctx.file) {
-					await this.transcribeFromNote(ctx.file);
-				}
-			},
-		});
-
-		this.plugin.addCommand({
-			id: 'auto-notes:transcribe-video-file',
-			name: 'Transcribe local video file',
-			callback: () => {
-				this.notifications.info('Video file transcription coming soon');
-			},
-		});
 
 		this.plugin.addCommand({
 			id: 'auto-notes:check-dependencies',
@@ -131,56 +106,48 @@ export class VideoModule {
 		return { ...result, videoVaultPath };
 	}
 
-	/**
-	 * Download the video file into the vault's download folder.
-	 * Returns the vault-relative path to the saved file.
-	 */
-	private async downloadVideoToVault(url: string, metadata: VideoMetadata): Promise<string> {
-		const settings = this.getSettings().video;
-		const fs = require('fs') as typeof import('fs');
-
-		await ensureFolder(this.plugin.app, settings.downloadFolder);
-
-		const title = (metadata.title || 'video')
-			.replace(/[^a-zA-Z0-9-_ ]/g, '')
-			.trim()
-			.slice(0, 60);
-		const date = new Date().toISOString().split('T')[0];
-		const fileName = `${date}-${title}.mp4`;
-
-		// Download via extractor (uses correct PATH and ytDlpPath setting)
-		const tempPath = await this.extractor.downloadVideo(url);
-
-		// Read the downloaded file and write it into the vault
-		const videoData = fs.readFileSync(tempPath);
-		const vaultPath = `${settings.downloadFolder}/${fileName}`;
-		await this.plugin.app.vault.adapter.writeBinary(vaultPath, videoData.buffer as ArrayBuffer);
-
-		// Clean up temp video file
-		try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
-
-		return vaultPath;
-	}
-
-	private async transcribeFromNote(noteFile: TFile): Promise<void> {
-		const content = await this.plugin.app.vault.read(noteFile);
-		const embeds = findVideoUrls(content);
-
-		if (embeds.length === 0) {
-			this.notifications.info('No video URLs found in this note');
+	async transcribeUrlToActiveNote(url: string): Promise<void> {
+		const activeFile = this.plugin.app.workspace.getActiveFile();
+		if (!activeFile) {
+			this.notifications.info('Open a note first to insert the transcription');
 			return;
 		}
 
-		new NoteVideoModal(
-			this.plugin.app,
-			embeds,
-			async (selected) => {
-				await this.transcribeAndInsert(noteFile, selected);
+		const op = this.notifications.startOperation(
+			'Processing video URL...',
+			`video-url-${Date.now()}`
+		);
+		try {
+			const result = await this.processUrl(url, { insertMode: true }, op);
+			const text = result.processed || result.raw;
+
+			const blockLines: string[] = [''];
+
+			if (this.getSettings().video.embedInNote && result.videoVaultPath) {
+				const fileName = result.videoVaultPath.split('/').pop()!;
+				blockLines.push(`![[${fileName}]]`);
+				blockLines.push('');
 			}
-		).open();
+
+			const callout = buildCallout(
+				CALLOUT_TYPES.transcription,
+				`Transcription of ${url}`,
+				text,
+				true
+			);
+			blockLines.push(callout);
+
+			const content = await this.plugin.app.vault.read(activeFile);
+			await this.plugin.app.vault.modify(activeFile, content + blockLines.join('\n'));
+			this.onTranscriptionComplete?.(activeFile.path);
+			op.finish('Video transcription added to note');
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			op.error(`Video transcription failed — ${msg}`);
+		}
 	}
 
-	private async transcribeAndInsert(
+	async transcribeAndInsert(
 		noteFile: TFile,
 		embeds: VideoUrlEmbed[]
 	): Promise<void> {
@@ -244,47 +211,35 @@ export class VideoModule {
 		}
 	}
 
-	private openUrlModal(): void {
-		new VideoTranscriptionModal(this.plugin.app, async (url) => {
-			const activeFile = this.plugin.app.workspace.getActiveFile();
-			if (!activeFile) {
-				this.notifications.info('Open a note first to insert the transcription');
-				return;
-			}
+	/**
+	 * Download the video file into the vault's download folder.
+	 * Returns the vault-relative path to the saved file.
+	 */
+	private async downloadVideoToVault(url: string, metadata: VideoMetadata): Promise<string> {
+		const settings = this.getSettings().video;
+		const fs = require('fs') as typeof import('fs');
 
-			const op = this.notifications.startOperation(
-				'Processing video URL...',
-				`video-url-${Date.now()}`
-			);
-			try {
-				const result = await this.processUrl(url, { insertMode: true }, op);
-				const text = result.processed || result.raw;
+		await ensureFolder(this.plugin.app, settings.downloadFolder);
 
-				const blockLines: string[] = [''];
+		const title = (metadata.title || 'video')
+			.replace(/[^a-zA-Z0-9-_ ]/g, '')
+			.trim()
+			.slice(0, 60);
+		const date = new Date().toISOString().split('T')[0];
+		const fileName = `${date}-${title}.mp4`;
 
-				if (this.getSettings().video.embedInNote && result.videoVaultPath) {
-					const fileName = result.videoVaultPath.split('/').pop()!;
-					blockLines.push(`![[${fileName}]]`);
-					blockLines.push('');
-				}
+		// Download via extractor (uses correct PATH and ytDlpPath setting)
+		const tempPath = await this.extractor.downloadVideo(url);
 
-				const callout = buildCallout(
-					CALLOUT_TYPES.transcription,
-					`Transcription of ${url}`,
-					text,
-					true
-				);
-				blockLines.push(callout);
+		// Read the downloaded file and write it into the vault
+		const videoData = fs.readFileSync(tempPath);
+		const vaultPath = `${settings.downloadFolder}/${fileName}`;
+		await this.plugin.app.vault.adapter.writeBinary(vaultPath, videoData.buffer as ArrayBuffer);
 
-				const content = await this.plugin.app.vault.read(activeFile);
-				await this.plugin.app.vault.modify(activeFile, content + blockLines.join('\n'));
-				this.onTranscriptionComplete?.(activeFile.path);
-				op.finish('Video transcription added to note');
-			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				op.error(`Video transcription failed — ${msg}`);
-			}
-		}).open();
+		// Clean up temp video file
+		try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+
+		return vaultPath;
 	}
 
 	private async checkDependencies(): Promise<void> {

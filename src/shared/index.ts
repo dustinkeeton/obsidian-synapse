@@ -32,3 +32,4 @@ export {
 	generateOrganizeSummary,
 } from './diagram-generator';
 export type { TreeNode, MoveRecord } from './diagram-generator';
+export { addEnhancedSlider } from './slider-helper';

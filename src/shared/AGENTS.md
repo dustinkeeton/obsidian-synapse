@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-16
+last-updated: 2026-03-17
 ---
 
 # Shared Module
@@ -63,6 +63,22 @@ interface ParsedNote { frontmatter: Record<string, unknown>; body: string; hasFr
 function parseFrontmatter(content: string): ParsedNote
 function serializeFrontmatter(frontmatter: Record<string, unknown>, body: string): string
 function mergeTags(frontmatter: Record<string, unknown>, newTags: string[]): void
+
+// callouts.ts
+const CALLOUT_TYPES: { summary, transcription, enrichment, elaboration, deepDive, nav }
+type CalloutType = 'auto-notes-summary' | 'auto-notes-transcription' | ...
+function buildCallout(type: CalloutType, title: string, body: string, collapsed?: boolean): string
+
+// diagram-generator.ts
+function generateTreeDiagram(root: TreeNode): string
+function generateMoveDiagram(moves: MoveRecord[]): string
+function generateOrganizeSummary(moves: MoveRecord[], timestamp: string): string
+
+// slider-helper.ts
+function addEnhancedSlider(setting: Setting, options: SliderOptions): void
+
+// folder-picker-modal.ts
+class FolderPickerModal extends SuggestModal<TFolder> { ... }
 ```
 
 ## File Inventory
@@ -79,6 +95,13 @@ function mergeTags(frontmatter: Record<string, unknown>, newTags: string[]): voi
 | `validation.test.ts` | Tests | Validation tests |
 | `frontmatter-utils.ts` | `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `ParsedNote` | YAML frontmatter parsing and serialization |
 | `frontmatter-utils.test.ts` | Tests | Frontmatter tests |
+| `callouts.ts` | `CALLOUT_TYPES`, `buildCallout`, `CalloutType` | Unified callout registry and builder for AI content |
+| `callouts.test.ts` | Tests | Callout tests |
+| `diagram-generator.ts` | `generateTreeDiagram`, `generateMoveDiagram`, `generateOrganizeSummary`, `TreeNode`, `MoveRecord` | Mermaid diagram generation for organize summaries |
+| `diagram-generator.test.ts` | Tests | Diagram generator tests |
+| `slider-helper.ts` | `addEnhancedSlider` | Settings UI helper for range sliders with ticks |
+| `folder-picker-modal.ts` | `FolderPickerModal` | Modal for folder selection with autocomplete |
+| `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests |
 | `index.ts` | re-exports | Barrel file |
 
 ## AIClient Provider Routing

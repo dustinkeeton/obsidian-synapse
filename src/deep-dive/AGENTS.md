@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-16
+last-updated: 2026-03-17
 ---
 
-# deep-dive module
+# Deep Dive Module
 
-Recursively explores a note by extracting topics and generating child notes. Uses quality scoring to control recursion depth.
+Recursively explores a note by extracting topics and generating child notes. Uses quality scoring to control recursion depth. Generates syllabus index and inter-note navigation.
 
 ## Public API (`index.ts`)
 
@@ -21,18 +21,35 @@ class DeepDiveModule {
   acceptProposal(id: string): Promise<void>
   rejectProposal(id: string): Promise<void>
 }
+
+function buildDeepDivePath(topicTitle: string, rootFile: TFile, settings: {...}, parentProposedPath?: string): string
+
+// Syllabus navigator exports
+function computeTraversalOrder(proposals: DeepDiveProposal[], run: DeepDiveRun): TraversalNode[]
+function buildNavigationContext(proposalId: string, nodes: TraversalNode[], run: DeepDiveRun, syllabusPath: string): NavigationContext | null
+function renderNavigationBlock(ctx: NavigationContext): string
+function renderSyllabusContent(nodes: TraversalNode[], run: DeepDiveRun): string
+function buildTreeFromNodes(nodes: TraversalNode[]): TreeNode[]
+function syllabusTitle(rootNotePath: string): string
+function syllabusPath(rootNotePath: string, outputFolder: string): string
+function injectNavigationBlock(content: string, navBlock: string): string
 ```
 
-Exported types: `DeepDiveProposal`, `DeepDiveRun`, `ExtractedTopic`, `QualityScore`, `DeepDiveProposalStatus`, `DeepDiveRunStatus`
+Exported types: `DeepDiveProposal`, `DeepDiveRun`, `ExtractedTopic`, `QualityScore`, `DeepDiveProposalStatus`, `DeepDiveRunStatus`, `TraversalNode`, `NavigationContext`
 
 ## Internal Components
 
 | File | Class/Function | Role |
 |------|---------------|------|
 | `topic-analyzer.ts` | `TopicAnalyzer` | AI topic extraction from note content, checks vault for existing notes |
+| `topic-analyzer.test.ts` | Tests | TopicAnalyzer tests |
 | `note-generator.ts` | `NoteGenerator` | AI content generation for a topic given parent context |
 | `quality-scorer.ts` | `scoreQuality` | Local heuristic scoring: word count, child topics, overlap, genericity |
+| `quality-scorer.test.ts` | Tests | Quality scorer tests |
+| `syllabus-navigator.ts` | Navigation utilities | Traversal ordering, syllabus index, prev/next navigation blocks |
+| `syllabus-navigator.test.ts` | Tests | Syllabus navigator tests |
 | `deep-dive-store.ts` | `DeepDiveStore` | JSON persistence for proposals and runs |
+| `deep-dive-store.test.ts` | Tests | DeepDiveStore tests |
 | `types.ts` | -- | All deep-dive types |
 
 ## Data Flow
@@ -46,6 +63,7 @@ deepDive(file)
   Phase 3: Recursive generation (BFS queue)
     for each topic:
       --> NoteGenerator.generateContent(topic, parentTitle, parentContent)  [AI]
+      --> buildProposedPath(title, rootFile, parentPath)
       --> if depth < maxDepth: TopicAnalyzer.extractTopics(childContent)  [AI]
       --> scoreQuality({title, childTopics, wordCount, depth, ancestors})
       --> DeepDiveStore.saveProposal()
@@ -53,14 +71,26 @@ deepDive(file)
     --> DeepDiveStore.saveRun()
 
 acceptProposal(id)
-  --> writeNote(app, proposedPath, proposedContent)
+  --> updateRunNavigation(runId, proposedPath, proposedContent)
+    --> computeTraversalOrder(proposals, run)
+    --> renderSyllabusContent() -> writeNote(syllabusPath)
+    --> for each accepted node: injectNavigationBlock() -> writeNote()
   --> DeepDiveStore.updateProposalStatus('accepted')
   --> onNoteAccepted?.(proposedPath)  [triggers enrichment]
   --> onOrganizeRequested?.(file)  [triggers organize if enabled]
 
 rejectProposal(id)
   --> DeepDiveStore.cascadeReject(id)  [rejects children too]
+  --> updateRunNavigation(runId)  [refresh remaining notes]
 ```
+
+## Path Building (nestingMode)
+
+| Mode | Behavior |
+|------|----------|
+| `nested` | Children placed in subfolder named after parent: `Deep Dives/ML/Neural Networks/Backprop.md` |
+| `flat` | All notes in root subfolder: `Deep Dives/ML/Backprop.md` |
+| `auto-organize` | Uses organize module's ContentAnalyzer + DirectoryMatcher; falls back to nested |
 
 ## Key Types
 
@@ -112,10 +142,5 @@ interface DeepDiveRun {
 ## Dependencies
 
 - `shared/` (NotificationManager, ensureFolder, readNote, writeNote, wordCount)
-- `settings.ts` (AutoNotesSettings)
-
-## Tests
-
-- `deep-dive-store.test.ts`
-- `quality-scorer.test.ts`
-- `topic-analyzer.test.ts`
+- `organize/` (ContentAnalyzer, DirectoryMatcher -- for auto-organize nesting mode)
+- `settings.ts` (AutoNotesSettings, DeepDiveNestingMode)

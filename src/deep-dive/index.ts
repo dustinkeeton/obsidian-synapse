@@ -1,8 +1,7 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { AutoNotesSettings, DeepDiveNestingMode } from '../settings';
 import { NotificationManager, ensureFolder, readNote, writeNote, wordCount } from '../shared';
-import { ContentAnalyzer } from '../organize/content-analyzer';
-import { DirectoryMatcher } from '../organize/directory-matcher';
+import { ContentAnalyzer, DirectoryMatcher } from '../organize';
 import { DeepDiveStore } from './deep-dive-store';
 import { NoteGenerator } from './note-generator';
 import { scoreQuality } from './quality-scorer';
