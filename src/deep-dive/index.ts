@@ -1,6 +1,8 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { AutoNotesSettings, DeepDiveNestingMode } from '../settings';
 import { NotificationManager, ensureFolder, readNote, writeNote, wordCount } from '../shared';
+import { ContentAnalyzer } from '../organize/content-analyzer';
+import { DirectoryMatcher } from '../organize/directory-matcher';
 import { DeepDiveStore } from './deep-dive-store';
 import { NoteGenerator } from './note-generator';
 import { scoreQuality } from './quality-scorer';
@@ -28,6 +30,8 @@ export class DeepDiveModule {
 	private analyzer: TopicAnalyzer;
 	private generator: NoteGenerator;
 	private store: DeepDiveStore;
+	private contentAnalyzer: ContentAnalyzer;
+	private directoryMatcher: DirectoryMatcher;
 
 	constructor(
 		private plugin: Plugin,
@@ -37,6 +41,8 @@ export class DeepDiveModule {
 		this.analyzer = new TopicAnalyzer(plugin.app, getSettings);
 		this.generator = new NoteGenerator(getSettings);
 		this.store = new DeepDiveStore(plugin.app, getSettings);
+		this.contentAnalyzer = new ContentAnalyzer(plugin.app, getSettings);
+		this.directoryMatcher = new DirectoryMatcher(plugin.app);
 	}
 
 	async onload(): Promise<void> {
@@ -203,6 +209,8 @@ export class DeepDiveModule {
 				depth: number;
 				ancestorTopics: string[];
 				parentProposalId?: string;
+				/** The proposed path of the parent note (used for nested folder placement). */
+				parentProposedPath?: string;
 			};
 
 			const queue: QueueItem[] = [{
@@ -235,7 +243,11 @@ export class DeepDiveModule {
 						item.content
 					);
 
-					const proposedPath = this.buildProposedPath(topic.title, file);
+					const proposedPath = await this.buildProposedPath(
+					topic.title,
+					file,
+					item.parentProposedPath
+				);
 
 					// Score quality using child topics (extracted from generated content)
 					const childAncestors = [...item.ancestorTopics, topic.title];
@@ -307,6 +319,7 @@ export class DeepDiveModule {
 							depth: item.depth + 1,
 							ancestorTopics: childAncestors,
 							parentProposalId: proposal.id,
+							parentProposedPath: proposedPath,
 						});
 					} else if (quality.score < settings.qualityThreshold) {
 						run.stats.earlyTerminations++;
@@ -343,8 +356,60 @@ export class DeepDiveModule {
 		await this.onViewRefreshNeeded?.();
 	}
 
-	private buildProposedPath(topicTitle: string, rootFile: TFile): string {
-		return buildDeepDivePath(topicTitle, rootFile, this.getSettings().deepDive);
+	private async buildProposedPath(
+		topicTitle: string,
+		rootFile: TFile,
+		parentProposedPath?: string
+	): Promise<string> {
+		const settings = this.getSettings().deepDive;
+		const mode = settings.nestingMode || 'nested';
+
+		if (mode === 'auto-organize') {
+			return this.buildAutoOrganizedPath(topicTitle, rootFile, parentProposedPath);
+		}
+
+		return buildDeepDivePath(topicTitle, rootFile, settings, parentProposedPath);
+	}
+
+	/**
+	 * Use the organize module's ContentAnalyzer + DirectoryMatcher to
+	 * determine the best placement based on content semantics.
+	 * Falls back to nested placement if no good match is found.
+	 */
+	private async buildAutoOrganizedPath(
+		topicTitle: string,
+		rootFile: TFile,
+		parentProposedPath?: string
+	): Promise<string> {
+		const settings = this.getSettings().deepDive;
+		try {
+			const topics = await this.contentAnalyzer.extractTopics(
+				topicTitle,
+				[]
+			);
+
+			if (topics.length > 0) {
+				// Build a synthetic ContentAnalysis to pass to the directory matcher
+				const analysis = {
+					notePath: '',
+					topics,
+					tags: [],
+					links: [],
+				};
+
+				const scores = this.directoryMatcher.scoreDirectories(analysis);
+				if (scores.length > 0 && scores[0].score >= 0.6) {
+					const safeName = topicTitle.replace(/[\\/:*?"<>|]/g, '-').trim();
+					const path = `${scores[0].directoryPath}/${safeName}.md`;
+					return normalizePath(path);
+				}
+			}
+		} catch {
+			// Fall back to nested if AI analysis fails
+		}
+
+		// Default: fall back to nested placement
+		return buildDeepDivePath(topicTitle, rootFile, settings, parentProposedPath);
 	}
 
 	private isExcluded(file: TFile): boolean {
@@ -378,14 +443,41 @@ export class DeepDiveModule {
 	}
 }
 
-/** Exported for testing. Builds the proposed vault path for a deep-dive note. */
+/**
+ * Exported for testing. Builds the proposed vault path for a deep-dive note.
+ *
+ * When nestingMode is 'nested' and a parentProposedPath is provided,
+ * children are placed in a subfolder named after the parent topic:
+ *
+ *   Deep Dives/Machine Learning/
+ *     Neural Networks.md
+ *     Neural Networks/
+ *       Backpropagation.md
+ *       Activation Functions.md
+ *
+ * When nestingMode is 'flat' (or no parentProposedPath), all notes land
+ * in the root subfolder: Deep Dives/Machine Learning/Backpropagation.md
+ */
 export function buildDeepDivePath(
 	topicTitle: string,
 	rootFile: TFile,
-	settings: { noteOutputFolder: string },
+	settings: { noteOutputFolder: string; nestingMode?: DeepDiveNestingMode },
+	parentProposedPath?: string,
 ): string {
 	const safeName = topicTitle.replace(/[\\/:*?"<>|]/g, '-').trim();
+	const mode = settings.nestingMode || 'nested';
 
+	// In nested mode with a parent, place children under a subfolder
+	// named after the parent note (derived from the parent's proposed path).
+	if (mode === 'nested' && parentProposedPath) {
+		// parentProposedPath is e.g. "Deep Dives/Machine Learning/Neural Networks.md"
+		// We want: "Deep Dives/Machine Learning/Neural Networks/Backpropagation.md"
+		const parentFolder = parentProposedPath.replace(/\.md$/, '');
+		const path = `${parentFolder}/${safeName}.md`;
+		return normalizePath(path);
+	}
+
+	// Flat mode or root-level topics: place in the root subfolder
 	let folder: string;
 	if (settings.noteOutputFolder) {
 		// Per-root subfolder: Deep Dives/Machine Learning/
