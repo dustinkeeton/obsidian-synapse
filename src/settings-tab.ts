@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, Platform, PluginSettingTab, Setting } from 'obsidian';
 import type AutoNotesPlugin from './main';
 import { MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
@@ -197,15 +197,19 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
+		const providerOptions: Record<string, string> = {
+			'whisper-api': 'OpenAI Whisper API',
+			deepgram: 'Deepgram',
+		};
+		if (Platform.isDesktop) {
+			providerOptions['local-whisper'] = 'Local Whisper';
+		}
+
 		new Setting(containerEl)
 			.setName('Transcription provider')
 			.addDropdown((dd) =>
 				dd
-					.addOptions({
-						'whisper-api': 'OpenAI Whisper API',
-						deepgram: 'Deepgram',
-						'local-whisper': 'Local Whisper',
-					})
+					.addOptions(providerOptions)
 					.setValue(this.plugin.settings.audio.transcriptionProvider)
 					.onChange(async (value) => {
 						this.plugin.settings.audio.transcriptionProvider =
@@ -281,67 +285,69 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── Video Transcription ──
-		containerEl.createEl('h3', { text: 'Video Transcription' });
+		// ── Video Transcription (desktop only — requires yt-dlp + ffmpeg) ──
+		if (Platform.isDesktop) {
+			containerEl.createEl('h3', { text: 'Video Transcription' });
 
-		new Setting(containerEl)
-			.setName('Enable video transcription')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.video.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.video.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
+			new Setting(containerEl)
+				.setName('Enable video transcription')
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.video.enabled)
+						.onChange(async (value) => {
+							this.plugin.settings.video.enabled = value;
+							await this.plugin.saveSettings();
+						})
+				);
 
-		new Setting(containerEl)
-			.setName('yt-dlp path')
-			.setDesc('Path to yt-dlp binary')
-			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.video.ytDlpPath)
-					.onChange(async (value) => {
-						this.plugin.settings.video.ytDlpPath = value;
-						await this.plugin.saveSettings();
-					})
-			);
+			new Setting(containerEl)
+				.setName('yt-dlp path')
+				.setDesc('Path to yt-dlp binary')
+				.addText((text) =>
+					text
+						.setValue(this.plugin.settings.video.ytDlpPath)
+						.onChange(async (value) => {
+							this.plugin.settings.video.ytDlpPath = value;
+							await this.plugin.saveSettings();
+						})
+				);
 
-		new Setting(containerEl)
-			.setName('ffmpeg path')
-			.setDesc('Path to ffmpeg binary')
-			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.video.ffmpegPath)
-					.onChange(async (value) => {
-						this.plugin.settings.video.ffmpegPath = value;
-						await this.plugin.saveSettings();
-					})
-			);
+			new Setting(containerEl)
+				.setName('ffmpeg path')
+				.setDesc('Path to ffmpeg binary')
+				.addText((text) =>
+					text
+						.setValue(this.plugin.settings.video.ffmpegPath)
+						.onChange(async (value) => {
+							this.plugin.settings.video.ffmpegPath = value;
+							await this.plugin.saveSettings();
+						})
+				);
 
-		new Setting(containerEl)
-			.setName('Video download folder')
-			.setDesc('Where to save downloaded video files in the vault')
-			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.video.downloadFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.video.downloadFolder = value;
-						await this.plugin.saveSettings();
-					})
-			);
+			new Setting(containerEl)
+				.setName('Video download folder')
+				.setDesc('Where to save downloaded video files in the vault')
+				.addText((text) =>
+					text
+						.setValue(this.plugin.settings.video.downloadFolder)
+						.onChange(async (value) => {
+							this.plugin.settings.video.downloadFolder = value;
+							await this.plugin.saveSettings();
+						})
+				);
 
-		new Setting(containerEl)
-			.setName('Embed video in note')
-			.setDesc('Add an embed link to the downloaded video file in the note')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.video.embedInNote)
-					.onChange(async (value) => {
-						this.plugin.settings.video.embedInNote = value;
-						await this.plugin.saveSettings();
-					})
-			);
+			new Setting(containerEl)
+				.setName('Embed video in note')
+				.setDesc('Add an embed link to the downloaded video file in the note')
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.video.embedInNote)
+						.onChange(async (value) => {
+							this.plugin.settings.video.embedInNote = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
 
 		// ── Note Enrichment ──
 		containerEl.createEl('h2', { text: 'Note Enrichment' });

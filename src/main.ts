@@ -163,10 +163,12 @@ export default class AutoNotesPlugin extends Plugin {
 			this.activateUnifiedView();
 		});
 
-		// Unified transcription ribbon icon
-		this.addRibbonIcon('mic', 'Transcribe media', () => {
-			this.openUnifiedModal();
-		});
+		// Unified transcription ribbon icon (desktop only — mic icon implies video support)
+		if (Platform.isDesktop) {
+			this.addRibbonIcon('mic', 'Transcribe media', () => {
+				this.openUnifiedModal();
+			});
+		}
 
 		this.addCommand({
 			id: 'auto-notes:review-proposals',
@@ -183,8 +185,9 @@ export default class AutoNotesPlugin extends Plugin {
 		// Startup check for incomplete checkpoints (delayed to avoid blocking load)
 		setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
 
-		// Unified transcription commands (if either audio or video enabled)
-		if (this.settings.audio.enabled || this.settings.video.enabled) {
+		// Unified transcription commands (audio on any platform, video on desktop only)
+		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video);
+		if (hasTranscription) {
 			this.addCommand({
 				id: 'auto-notes:transcribe-media',
 				name: 'Transcribe media',
