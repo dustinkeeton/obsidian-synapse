@@ -172,6 +172,24 @@ describe('DeepDiveStore', () => {
 		});
 	});
 
+	describe('loadProposalsByRunId', () => {
+		it('returns only proposals matching the run ID', async () => {
+			await store.saveProposal(makeProposal({ id: 'p1', runId: 'run-1' }));
+			await store.saveProposal(makeProposal({ id: 'p2', runId: 'run-1' }));
+			await store.saveProposal(makeProposal({ id: 'p3', runId: 'run-2' }));
+
+			const run1Proposals = await store.loadProposalsByRunId('run-1');
+			expect(run1Proposals.length).toBe(2);
+			expect(run1Proposals.map(p => p.id).sort()).toEqual(['p1', 'p2']);
+		});
+
+		it('returns empty array when no proposals match', async () => {
+			await store.saveProposal(makeProposal({ id: 'p1', runId: 'run-1' }));
+			const result = await store.loadProposalsByRunId('no-such-run');
+			expect(result).toEqual([]);
+		});
+	});
+
 	describe('deleteAllProposals', () => {
 		it('removes all proposals', async () => {
 			await store.saveProposal(makeProposal({ id: 'p1' }));
