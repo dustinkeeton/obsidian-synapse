@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import type AutoNotesPlugin from './main';
 import { MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
+import { addEnhancedSlider } from './shared/slider-helper';
 
 export class AutoNotesSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: AutoNotesPlugin) {
@@ -95,19 +96,22 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 				});
 			});
 
-		new Setting(containerEl)
-			.setName('Temperature')
-			.setDesc('Controls randomness (0-1)')
-			.addSlider((slider) =>
-				slider
-					.setLimits(0, 1, 0.1)
-					.setValue(this.plugin.settings.ai.temperature)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.ai.temperature = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		addEnhancedSlider(
+			new Setting(containerEl)
+				.setName('Temperature')
+				.setDesc('Controls randomness (0-1)'),
+			{
+				min: 0,
+				max: 1,
+				step: 0.1,
+				value: this.plugin.settings.ai.temperature,
+				showTicks: true,
+				onChange: async (value) => {
+					this.plugin.settings.ai.temperature = value;
+					await this.plugin.saveSettings();
+				},
+			},
+		);
 
 		// ── Note Elaboration ──
 		containerEl.createEl('h2', { text: 'Note Elaboration' });
@@ -435,19 +439,21 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
-			.setName('Internal link threshold')
-			.setDesc('Minimum relevance score for internal links (0-1, lower = more liberal)')
-			.addSlider((slider) =>
-				slider
-					.setLimits(0, 1, 0.05)
-					.setValue(this.plugin.settings.enrichment.internalLinkThreshold)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.enrichment.internalLinkThreshold = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		addEnhancedSlider(
+			new Setting(containerEl)
+				.setName('Internal link threshold')
+				.setDesc('Minimum relevance score for internal links (0-1, lower = more liberal)'),
+			{
+				min: 0,
+				max: 1,
+				step: 0.05,
+				value: this.plugin.settings.enrichment.internalLinkThreshold,
+				onChange: async (value) => {
+					this.plugin.settings.enrichment.internalLinkThreshold = value;
+					await this.plugin.saveSettings();
+				},
+			},
+		);
 
 		// Weight settings
 		containerEl.createEl('h3', { text: 'Proximity Weights' });
@@ -464,19 +470,21 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 
 		for (const field of weightFields) {
 			const key = field.key;
-			new Setting(containerEl)
-				.setName(field.name)
-				.setDesc(field.desc)
-				.addSlider((slider) =>
-					slider
-						.setLimits(0, 1, 0.05)
-						.setValue(this.plugin.settings.enrichment.weights[key])
-						.setDynamicTooltip()
-						.onChange(async (value) => {
-							this.plugin.settings.enrichment.weights[key] = value;
-							await this.plugin.saveSettings();
-						})
-				);
+			addEnhancedSlider(
+				new Setting(containerEl)
+					.setName(field.name)
+					.setDesc(field.desc),
+				{
+					min: 0,
+					max: 1,
+					step: 0.05,
+					value: this.plugin.settings.enrichment.weights[key],
+					onChange: async (value) => {
+						this.plugin.settings.enrichment.weights[key] = value;
+						await this.plugin.saveSettings();
+					},
+				},
+			);
 		}
 
 		// Tag Vocabulary
@@ -563,19 +571,22 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
-			.setName('Max content length')
-			.setDesc('Maximum characters of content to send to AI for summarization')
-			.addSlider((slider) =>
-				slider
-					.setLimits(1000, 10000, 500)
-					.setValue(this.plugin.settings.summarize.maxContentLength)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.summarize.maxContentLength = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		addEnhancedSlider(
+			new Setting(containerEl)
+				.setName('Max content length')
+				.setDesc('Maximum characters of content to send to AI for summarization'),
+			{
+				min: 1000,
+				max: 10000,
+				step: 500,
+				value: this.plugin.settings.summarize.maxContentLength,
+				showTicks: true,
+				onChange: async (value) => {
+					this.plugin.settings.summarize.maxContentLength = value;
+					await this.plugin.saveSettings();
+				},
+			},
+		);
 
 		new Setting(containerEl)
 			.setName('Custom prompt')
@@ -658,19 +669,22 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
-			.setName('New folder confidence threshold')
-			.setDesc('Minimum topic confidence to propose a new folder (0.5-1.0). Higher = fewer new folders.')
-			.addSlider((slider) =>
-				slider
-					.setLimits(0.5, 1.0, 0.05)
-					.setValue(this.plugin.settings.organize.organizeConfidenceThreshold)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.organize.organizeConfidenceThreshold = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		addEnhancedSlider(
+			new Setting(containerEl)
+				.setName('New folder confidence threshold')
+				.setDesc('Minimum topic confidence to propose a new folder (0.5-1.0). Higher = fewer new folders.'),
+			{
+				min: 0.5,
+				max: 1.0,
+				step: 0.05,
+				value: this.plugin.settings.organize.organizeConfidenceThreshold,
+				showTicks: true,
+				onChange: async (value) => {
+					this.plugin.settings.organize.organizeConfidenceThreshold = value;
+					await this.plugin.saveSettings();
+				},
+			},
+		);
 
 		new Setting(containerEl)
 			.setName('Excluded folders')
@@ -713,47 +727,55 @@ export class AutoNotesSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
-			.setName('Max depth')
-			.setDesc('Maximum levels of recursion (1-5)')
-			.addSlider((slider) =>
-				slider
-					.setLimits(1, 5, 1)
-					.setValue(this.plugin.settings.deepDive.maxDepth)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.deepDive.maxDepth = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		addEnhancedSlider(
+			new Setting(containerEl)
+				.setName('Max depth')
+				.setDesc('Maximum levels of recursion (1-5)'),
+			{
+				min: 1,
+				max: 5,
+				step: 1,
+				value: this.plugin.settings.deepDive.maxDepth,
+				showTicks: true,
+				onChange: async (value) => {
+					this.plugin.settings.deepDive.maxDepth = value;
+					await this.plugin.saveSettings();
+				},
+			},
+		);
 
-		new Setting(containerEl)
-			.setName('Quality threshold')
-			.setDesc('Minimum quality score to continue recursing (0.1-0.9)')
-			.addSlider((slider) =>
-				slider
-					.setLimits(0.1, 0.9, 0.05)
-					.setValue(this.plugin.settings.deepDive.qualityThreshold)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.deepDive.qualityThreshold = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		addEnhancedSlider(
+			new Setting(containerEl)
+				.setName('Quality threshold')
+				.setDesc('Minimum quality score to continue recursing (0.1-0.9)'),
+			{
+				min: 0.1,
+				max: 0.9,
+				step: 0.05,
+				value: this.plugin.settings.deepDive.qualityThreshold,
+				onChange: async (value) => {
+					this.plugin.settings.deepDive.qualityThreshold = value;
+					await this.plugin.saveSettings();
+				},
+			},
+		);
 
-		new Setting(containerEl)
-			.setName('Max notes per run')
-			.setDesc('Maximum number of notes to generate in a single deep dive (10-100)')
-			.addSlider((slider) =>
-				slider
-					.setLimits(10, 100, 5)
-					.setValue(this.plugin.settings.deepDive.maxNotesPerRun)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.deepDive.maxNotesPerRun = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		addEnhancedSlider(
+			new Setting(containerEl)
+				.setName('Max notes per run')
+				.setDesc('Maximum number of notes to generate in a single deep dive (10-100)'),
+			{
+				min: 10,
+				max: 100,
+				step: 5,
+				value: this.plugin.settings.deepDive.maxNotesPerRun,
+				showTicks: true,
+				onChange: async (value) => {
+					this.plugin.settings.deepDive.maxNotesPerRun = value;
+					await this.plugin.saveSettings();
+				},
+			},
+		);
 
 		new Setting(containerEl)
 			.setName('Note output folder')

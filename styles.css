@@ -11,3 +11,44 @@
   max-height: 50vh;
   width: auto;
 }
+
+/* ── Enhanced slider labels and tick marks ── */
+
+.auto-notes-slider-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 0;
+}
+
+.auto-notes-slider-current-value {
+  text-align: right;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  color: var(--text-accent);
+  margin-bottom: 2px;
+  min-width: 2em;
+}
+
+.auto-notes-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-top: 2px;
+  padding: 0 2px;
+}
+
+.auto-notes-slider-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 6px;
+  margin-top: 1px;
+}
+
+.auto-notes-slider-tick {
+  width: 1px;
+  height: 6px;
+  background-color: var(--text-faint);
+  flex-shrink: 0;
+}
