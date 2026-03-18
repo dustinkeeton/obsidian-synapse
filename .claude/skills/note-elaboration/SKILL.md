@@ -29,7 +29,7 @@ Identify notes likely to be placeholders:
 vault/
 ├── notes/
 │   └── my-note.md              # Original note (untouched)
-└── .auto-notes/                 # Hidden proposals directory
+└── .synapse/                 # Hidden proposals directory
     └── proposals/
         └── my-note.proposal.md # Proposed additions
 ```
@@ -56,7 +56,7 @@ status: pending  # pending | accepted | rejected | partial
 
 1. User triggers scan (manual command or on schedule)
 2. Plugin identifies candidate notes
-3. AI generates proposals stored in `.auto-notes/proposals/`
+3. AI generates proposals stored in `.synapse/proposals/`
 4. User reviews proposals via dedicated UI (sidebar, modal, or diff view)
 5. User can accept, reject, or partially accept each proposal
 6. Accepted content is merged into original note

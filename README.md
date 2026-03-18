@@ -1,10 +1,10 @@
-# Auto Notes
+# Synapse
 
 AI-powered note elaboration, audio transcription, video transcription, and more for [Obsidian](https://obsidian.md).
 
 ## Overview
 
-Auto Notes is an Obsidian plugin that uses AI to help you build, maintain, and connect your knowledge base. It detects incomplete or stub notes and proposes content expansions, transcribes audio and video media into searchable text, enriches notes with tags, internal links, and references, summarizes content, corrects formatting, organizes your vault directory structure, and recursively explores topics into interlinked knowledge trees.
+Synapse is an Obsidian plugin that uses AI to help you build, maintain, and connect your knowledge base. It detects incomplete or stub notes and proposes content expansions, transcribes audio and video media into searchable text, enriches notes with tags, internal links, and references, summarizes content, corrects formatting, organizes your vault directory structure, and recursively explores topics into interlinked knowledge trees.
 
 Every AI-generated change goes through a proposal review system. You see what the plugin wants to do, accept or reject each suggestion, and undo any change with built-in checkpoint support. Nothing is written to your vault without your approval.
 
@@ -44,12 +44,12 @@ Recursively explores a note's topics into a tree of interlinked child notes. Use
 
 ## Installation
 
-Auto Notes is not yet published to the Obsidian Community Plugin directory. To install manually:
+Synapse is not yet published to the Obsidian Community Plugin directory. To install manually:
 
 1. Clone the repository:
    ```sh
-   git clone https://github.com/dustinkeeton/obsidian-auto-notes.git
-   cd obsidian-auto-notes
+   git clone https://github.com/dustinkeeton/obsidian-synapse.git
+   cd obsidian-synapse
    ```
 
 2. Install dependencies and build:
@@ -60,11 +60,11 @@ Auto Notes is not yet published to the Obsidian Community Plugin directory. To i
 
 3. Copy the built plugin into your vault:
    ```sh
-   mkdir -p /path/to/your/vault/.obsidian/plugins/auto-notes
-   cp main.js manifest.json styles.css /path/to/your/vault/.obsidian/plugins/auto-notes/
+   mkdir -p /path/to/your/vault/.obsidian/plugins/synapse
+   cp main.js manifest.json styles.css /path/to/your/vault/.obsidian/plugins/synapse/
    ```
 
-4. Open Obsidian, go to **Settings > Community plugins**, and enable **Auto Notes**.
+4. Open Obsidian, go to **Settings > Community plugins**, and enable **Synapse**.
 
 ### External tools (optional)
 
@@ -73,11 +73,11 @@ For video transcription, you need these tools installed and available on your PA
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) -- downloads video from YouTube, TikTok, and other platforms
 - [ffmpeg](https://ffmpeg.org/) -- extracts audio from video files
 
-Use the command **Auto Notes: Check dependencies** to verify these are available.
+Use the command **Synapse: Check dependencies** to verify these are available.
 
 ## Configuration
 
-Open **Settings > Auto Notes** to configure the plugin. All features can be individually enabled or disabled.
+Open **Settings > Synapse** to configure the plugin. All features can be individually enabled or disabled.
 
 ### AI Configuration
 
@@ -97,7 +97,7 @@ Open **Settings > Auto Notes** to configure the plugin. All features can be indi
 | Minimum word threshold | Notes with fewer words are considered stubs | 50 |
 | Detect TODO markers | Flag notes containing TODO, TBD, FIXME, PLACEHOLDER | On |
 | Detect empty sections | Flag notes with headings but no content | On |
-| Excluded folders | Comma-separated folders to skip | `templates, .auto-notes` |
+| Excluded folders | Comma-separated folders to skip | `templates, .synapse` |
 
 ### Audio Transcription
 
@@ -177,8 +177,8 @@ Open **Settings > Auto Notes** to configure the plugin. All features can be indi
 ### Setup
 
 ```sh
-git clone https://github.com/dustinkeeton/obsidian-auto-notes.git
-cd obsidian-auto-notes
+git clone https://github.com/dustinkeeton/obsidian-synapse.git
+cd obsidian-synapse
 npm install
 ```
 
@@ -222,7 +222,7 @@ For development, symlink or copy the built plugin into your vault:
 
 ```sh
 # From your vault's plugin directory:
-ln -s /path/to/obsidian-auto-notes .obsidian/plugins/auto-notes
+ln -s /path/to/obsidian-synapse .obsidian/plugins/synapse
 ```
 
 Then run `npm run dev` to rebuild automatically on changes. Reload Obsidian (Cmd+R / Ctrl+R) to pick up changes.

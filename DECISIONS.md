@@ -4,6 +4,55 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-18: Rebrand from Auto Notes to Synapse (Issue #124)
+
+**Context**: The plugin name "Auto Notes" was generic and didn't convey the plugin's purpose of connecting knowledge through AI. A more distinctive name was needed as the project matured toward public release.
+
+**Decision**: Rename the plugin from "Auto Notes" to "Synapse" across all code, configuration, and documentation:
+- Manifest: `id: "synapse"`, `name: "Synapse"`
+- Plugin class: `AutoNotesPlugin` → `SynapsePlugin`
+- Settings type: `AutoNotesSettings` → `SynapseSettings`
+- Data folder: `.auto-notes/` → `.synapse/`
+- Callout types: `auto-notes-*` → `synapse-*`
+- All user-facing strings and command prefixes
+
+A one-time data folder migration runs on load: if `.auto-notes/` exists and `.synapse/` does not, the old folder is renamed. If both exist, a warning is logged and the user must merge manually. The legacy `.auto-notes/` folder is added to `.gitignore`.
+
+**Alternatives considered**:
+- Keep "Auto Notes" (too generic, likely name collisions with other plugins)
+- Use a migration plugin or manual instructions (more friction for existing users)
+- Support both names indefinitely (maintenance burden, confusing code)
+
+**Rationale**: "Synapse" evokes neural connections, fitting for a plugin that builds knowledge graphs. The automatic migration ensures existing users don't lose data. The clean break (no dual-name support) keeps the codebase simple.
+
+**Impact**: All references to "Auto Notes" are historical. Existing users with `.auto-notes/` data folders are migrated automatically. Callout CSS selectors changed (users with custom CSS for `auto-notes-*` callouts need to update).
+
+---
+
+## 2026-03-18: Shared CheckpointManager singleton (Issue #47)
+
+**Context**: Long-running operations (vault-wide scans, batch transcriptions) could be interrupted by plugin reload or Obsidian restart, losing all progress. Each module could create its own checkpoint manager, but that would mean duplicated storage and inconsistent UX.
+
+**Decision**: Create a single `CheckpointManager` in `main.ts` and inject it into all modules via constructor. The checkpoint manager:
+- Stores checkpoints as JSON in `.synapse/checkpoints/`
+- Tracks `completedItems` and `remainingItems` per operation
+- Supports `resume()` to return remaining work and `discard()` to abandon
+- Fires deferred tasks (e.g., sidebar refresh) on completion
+- Uses per-checkpoint write mutex to prevent concurrent read-modify-write corruption
+
+On startup (delayed 3 seconds), `main.ts` checks for incomplete checkpoints and offers the user Resume/Dismiss options. The unified sidebar shows a banner for any incomplete checkpoints.
+
+**Alternatives considered**:
+- Per-module checkpoint managers (duplicated code, inconsistent storage)
+- No checkpoint support, restart from scratch (poor UX for expensive operations)
+- Obsidian's `loadData`/`saveData` for state (doesn't support per-operation granularity)
+
+**Rationale**: A single shared manager ensures consistent storage, UI integration, and lifecycle management. Constructor injection makes the dependency explicit and testable. The delayed startup check avoids blocking plugin load.
+
+**Impact**: All feature modules accept `CheckpointManager` as a constructor parameter. Each module implements `resumeFromCheckpoint(checkpoint)`. The `synapse:manage-checkpoints` command provides manual access to interrupted operations.
+
+---
+
 ## 2026-03-17: Unified transcription — 6 commands to 2 + 1 utility (Issue #20)
 
 **Context**: Audio and video modules each had their own modal classes for transcription: `TranscriptionModal` and `NoteAudioModal` in `src/audio/`, `VideoModal` and `NoteVideoModal` in `src/video/`. This meant 6 separate transcription commands, 4 modal classes, and duplicated UI patterns across two modules.
@@ -13,9 +62,9 @@ Decisions listed in reverse chronological order.
 - **NoteMediaModal** — scans the current note for both audio embeds and video URLs, presents a unified selection UI (replaces `NoteAudioModal` + `NoteVideoModal`)
 
 Reduce to 2 unified commands + 1 utility:
-- `auto-notes:transcribe-media` — opens UnifiedTranscriptionModal
-- `auto-notes:transcribe-note-media` — opens NoteMediaModal for the current note
-- `auto-notes:check-dependencies` — checks yt-dlp/ffmpeg availability (retained from video module)
+- `synapse:transcribe-media` — opens UnifiedTranscriptionModal
+- `synapse:transcribe-note-media` — opens NoteMediaModal for the current note
+- `synapse:check-dependencies` — checks yt-dlp/ffmpeg availability (retained from video module)
 
 The transcription module is UI-only; it delegates all work to AudioModule and VideoModule via callbacks wired in `main.ts`. AudioModule and VideoModule expose new public methods (`transcribeFileToActiveNote`, `transcribeUrlToActiveNote`, `transcribeAndInsert`) for the unified orchestration.
 
@@ -322,7 +371,7 @@ On error or cancellation in Phase 3, all created proposals are rejected and pend
 
 **Context**: The tidy feature (spelling/formatting correction) was being designed. Other modules (elaboration, enrichment) use a proposal-review workflow where changes are stored as JSON proposals and presented in a sidebar for user approval.
 
-**Decision**: Tidy applies changes immediately to the note without a proposal step. A snapshot of the original content is saved to `.auto-notes/tidy-snapshots/` for undo capability.
+**Decision**: Tidy applies changes immediately to the note without a proposal step. A snapshot of the original content is saved to `.synapse/tidy-snapshots/` for undo capability.
 
 **Alternatives considered**:
 - Proposal workflow like elaboration/enrichment (adds friction for low-risk changes)
@@ -472,7 +521,7 @@ Callbacks are only wired when the relevant modules and settings are enabled.
 
 **Context**: Enrichment adds "Related Notes" and "References" sections to notes. If enrichment runs again on the same note (e.g., after re-elaboration), it needs to update these sections rather than duplicating them.
 
-**Decision**: Wrap enrichment-added sections with HTML comment markers: `%% auto-notes-enrichment-start %%` and `%% auto-notes-enrichment-end %%`. On subsequent enrichments, content between markers is replaced. Undo removes everything between markers.
+**Decision**: Wrap enrichment-added sections with HTML comment markers: `%% synapse-enrichment-start %%` and `%% synapse-enrichment-end %%`. On subsequent enrichments, content between markers is replaced. Undo removes everything between markers.
 
 **Alternatives considered**:
 - Heading-based detection only (fragile -- user might have a heading with the same name)
@@ -566,16 +615,16 @@ Callbacks are only wired when the relevant modules and settings are enabled.
 
 ---
 
-## 2026-03-12: Non-destructive proposal storage in `.auto-notes/`
+## 2026-03-12: Non-destructive proposal storage in `.synapse/`
 
 **Context**: AI-generated elaborations and enrichments should never modify a user's notes without explicit consent. Proposals need to survive plugin reloads and Obsidian restarts.
 
-**Decision**: Store proposals as JSON files in `.auto-notes/` with subdirectories per module:
-- `.auto-notes/proposals/` -- elaboration proposals
-- `.auto-notes/enrichments/` -- enrichment proposals
-- `.auto-notes/tidy-snapshots/` -- tidy undo snapshots
-- `.auto-notes/organize/proposals/` and `.auto-notes/organize/snapshots/` -- organize data
-- `.auto-notes/deep-dive/` -- deep-dive proposals and `runs/` subdirectory
+**Decision**: Store proposals as JSON files in `.synapse/` with subdirectories per module:
+- `.synapse/proposals/` -- elaboration proposals
+- `.synapse/enrichments/` -- enrichment proposals
+- `.synapse/tidy-snapshots/` -- tidy undo snapshots
+- `.synapse/organize/proposals/` and `.synapse/organize/snapshots/` -- organize data
+- `.synapse/deep-dive/` -- deep-dive proposals and `runs/` subdirectory
 
 Each proposal is a separate file with metadata and proposed content.
 
@@ -584,9 +633,9 @@ Each proposal is a separate file with metadata and proposed content.
 - Single database file (merge conflicts, corruption risk)
 - Frontmatter annotations on original notes (modifies user files)
 
-**Rationale**: JSON files are human-inspectable, diffable, and survive reloads. Individual files avoid corruption cascading across proposals. The `.auto-notes/` folder is excluded from all module scans by default.
+**Rationale**: JSON files are human-inspectable, diffable, and survive reloads. Individual files avoid corruption cascading across proposals. The `.synapse/` folder is excluded from all module scans by default.
 
-**Impact**: Vault contains a `.auto-notes/` folder with module-specific subdirectories. Users can inspect, back up, or delete proposal/snapshot files manually.
+**Impact**: Vault contains a `.synapse/` folder with module-specific subdirectories. Users can inspect, back up, or delete proposal/snapshot files manually.
 
 ---
 

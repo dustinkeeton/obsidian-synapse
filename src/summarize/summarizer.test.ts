@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Summarizer } from './summarizer';
-import type { AutoNotesSettings } from '../settings';
+import type { SynapseSettings } from '../settings';
 import { DEFAULT_SETTINGS } from '../settings';
 
 const mockComplete = vi.fn().mockResolvedValue('- Key point 1\n- Key point 2');
@@ -18,7 +18,7 @@ describe('Summarizer', () => {
 	beforeEach(() => {
 		mockComplete.mockReset();
 		mockComplete.mockResolvedValue('- Key point 1\n- Key point 2');
-		summarizer = new Summarizer(() => DEFAULT_SETTINGS as AutoNotesSettings);
+		summarizer = new Summarizer(() => DEFAULT_SETTINGS as SynapseSettings);
 	});
 
 	it('calls AI with content and source', async () => {

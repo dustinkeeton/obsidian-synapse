@@ -1,17 +1,17 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # Views Module
 
-Unified sidebar view combining elaboration, enrichment, organize, and deep-dive proposals in a single pane. Supports batch Accept All.
+Unified sidebar view combining elaboration, enrichment, organize, and deep-dive proposals in a single pane. Displays checkpoint recovery banner for interrupted operations. Supports batch Accept All.
 
 ## Public API
 
 Exported from `unified-proposal-view.ts`:
 
 ```ts
-const UNIFIED_VIEW_TYPE = 'auto-notes-proposals'
+const UNIFIED_VIEW_TYPE = 'synapse-proposals'
 
 type UnifiedItem =
   | { kind: 'elaboration'; data: Proposal }
@@ -28,13 +28,16 @@ interface UnifiedViewCallbacks {
   onOrganizeReject: (id: string) => Promise<void>
   onDeepDiveAccept: (id: string) => Promise<void>
   onDeepDiveReject: (id: string) => Promise<void>
+  onCheckpointDiscard: (id: string) => Promise<void>
+  onCheckpointResume: (id: string) => Promise<void>
 }
 
 class UnifiedProposalView extends ItemView {
   constructor(leaf: WorkspaceLeaf, callbacks: UnifiedViewCallbacks)
   setItems(items: UnifiedItem[]): void
-  getViewType(): string   // 'auto-notes-proposals'
-  getDisplayText(): string // 'Auto Notes Proposals'
+  setCheckpoints(checkpoints: Checkpoint[]): void
+  getViewType(): string   // 'synapse-proposals'
+  getDisplayText(): string // 'Synapse Proposals'
   getIcon(): string        // 'sparkles'
 }
 ```
@@ -43,19 +46,21 @@ class UnifiedProposalView extends ItemView {
 
 | File | Class/Export | Purpose |
 |------|-------------|---------|
-| `unified-proposal-view.ts` | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `UnifiedViewCallbacks` | Combined proposal sidebar |
+| `unified-proposal-view.ts` | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `UnifiedViewCallbacks` | Combined proposal sidebar with checkpoint banner |
 
 ## Rendering Modes
 
-1. **List mode**: Groups all pending proposals by source note path. Accept All button when 2+ proposals. Each card shows badge, reasons/summary, preview, and action buttons (Review/Accept/Reject).
+1. **Checkpoint banner**: When incomplete checkpoints exist, shows a banner per checkpoint with module label, progress (done/total), and Resume/Discard buttons.
 
-2. **Elaboration review**: Back button, source note link, detection reasons, editable textarea for proposed additions. Accept sends edited content.
+2. **List mode**: Groups all pending proposals by source note path. Accept All button when 2+ proposals. Each card shows badge, reasons/summary, preview, and action buttons (Review/Accept/Reject).
 
-3. **Enrichment review**: Back button, source note link, per-item checkboxes for tags/links/refs/frontmatter. Accept Selected/All/None/Reject buttons.
+3. **Elaboration review**: Back button, source note link, detection reasons, editable textarea for proposed additions. Accept sends edited content.
 
-4. **Organize review**: Back button, source note link, proposed directory path, AI reasoning text. Accept/Reject buttons.
+4. **Enrichment review**: Back button, source note link, per-item checkboxes for tags/links/refs/frontmatter. Accept Selected/All/None/Reject buttons.
 
-5. **Deep-dive review**: Back button, topic title, depth badge, quality score, source note link, quality reasoning, proposed path, read-only content preview, child count warning. Accept/Reject buttons.
+5. **Organize review**: Back button, source note link, proposed directory path, AI reasoning text. Accept/Reject buttons.
+
+6. **Deep-dive review**: Back button, topic title, depth badge, quality score, source note link, quality reasoning, proposed path, read-only content preview, child count warning. Accept/Reject buttons.
 
 ## Accept All
 
@@ -89,11 +94,13 @@ this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
     onOrganizeReject: (id) => this.organize.rejectProposal(id),
     onDeepDiveAccept: (id) => this.deepDive.acceptProposal(id),
     onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
+    onCheckpointDiscard: (id) => this.discardCheckpoint(id),
+    onCheckpointResume: (id) => this.resumeCheckpoint(id),
   });
 });
 ```
 
-Refreshed via `main.refreshUnifiedView()` which gathers items from all four modules.
+Refreshed via `main.refreshUnifiedView()` which gathers items from all four modules and incomplete checkpoints.
 
 ## Dependencies
 
@@ -103,10 +110,12 @@ Refreshed via `main.refreshUnifiedView()` which gathers items from all four modu
 | `AcceptedItems`, `EnrichmentProposal` | `../enrichment` (type only) |
 | `OrganizeProposal` | `../organize` (type only) |
 | `DeepDiveProposal` | `../deep-dive` (type only) |
+| `Checkpoint` | `../shared` (type only) |
 
 ## Features
 
 - Clickable note headings open the source note in main editor
 - Auto-exits review mode if reviewed proposal is no longer in pending list
-- Injects scoped CSS on first open (id: `auto-notes-unified-view-styles`)
+- Injects scoped CSS on first open (id: `synapse-unified-view-styles`)
 - Color-coded cards: blue for elaboration, green for enrichment, orange for organize, purple for deep-dive
+- Checkpoint banner with progress display and Resume/Discard actions

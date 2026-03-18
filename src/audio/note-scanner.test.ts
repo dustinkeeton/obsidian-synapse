@@ -52,7 +52,7 @@ describe('findAudioEmbeds', () => {
 		const content = [
 			'![[recording.mp3]]',
 			'',
-			'> [!auto-notes-transcription]- Transcription of recording.mp3',
+			'> [!synapse-transcription]- Transcription of recording.mp3',
 			'> Some text',
 		].join('\n');
 		const result = findAudioEmbeds(content, 'test.md', cache);
@@ -126,7 +126,7 @@ describe('hasTranscriptionBelow', () => {
 		const lines = [
 			'![[recording.mp3]]',
 			'',
-			'> [!auto-notes-transcription]- Transcription of recording.mp3',
+			'> [!synapse-transcription]- Transcription of recording.mp3',
 			'> text',
 		];
 		expect(hasTranscriptionBelow(lines, 0, 'recording.mp3')).toBe(true);

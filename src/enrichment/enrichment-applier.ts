@@ -1,10 +1,10 @@
 import { App, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { mergeTags, parseFrontmatter, serializeFrontmatter, buildCallout, CALLOUT_TYPES } from '../shared';
 import { EnrichmentProposal, AcceptedItems } from './types';
 
-export const ENRICHMENT_START = '%% auto-notes-enrichment-start %%';
-export const ENRICHMENT_END = '%% auto-notes-enrichment-end %%';
+export const ENRICHMENT_START = '%% synapse-enrichment-start %%';
+export const ENRICHMENT_END = '%% synapse-enrichment-end %%';
 
 /**
  * Applies accepted enrichments to a note non-destructively.
@@ -19,7 +19,7 @@ export const ENRICHMENT_END = '%% auto-notes-enrichment-end %%';
 export class EnrichmentApplier {
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {}
 
 	/**

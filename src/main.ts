@@ -1,6 +1,6 @@
-import { Platform, Plugin } from 'obsidian';
-import { AutoNotesSettings, DEFAULT_SETTINGS } from './settings';
-import { AutoNotesSettingTab } from './settings-tab';
+import { Notice, Platform, Plugin } from 'obsidian';
+import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
+import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule } from './video';
@@ -17,11 +17,11 @@ import { findVideoUrls } from './video';
 import {
 	UNIFIED_VIEW_TYPE,
 	UnifiedProposalView,
-	UnifiedItem,
-} from './views/unified-proposal-view';
+} from './views';
+import type { UnifiedItem } from './views';
 
-export default class AutoNotesPlugin extends Plugin {
-	settings!: AutoNotesSettings;
+export default class SynapsePlugin extends Plugin {
+	settings!: SynapseSettings;
 	notifications!: NotificationManager;
 	private checkpointManager!: CheckpointManager;
 
@@ -36,7 +36,11 @@ export default class AutoNotesPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
-		this.addSettingTab(new AutoNotesSettingTab(this.app, this));
+
+		// Migrate legacy .auto-notes folder to .synapse (one-time, backward compat)
+		await this.migrateDataFolder();
+
+		this.addSettingTab(new SynapseSettingTab(this.app, this));
 
 		// Centralized notification manager
 		this.notifications = new NotificationManager();
@@ -171,13 +175,13 @@ export default class AutoNotesPlugin extends Plugin {
 		}
 
 		this.addCommand({
-			id: 'auto-notes:review-proposals',
+			id: 'synapse:review-proposals',
 			name: 'Open proposal review sidebar',
 			callback: () => this.activateUnifiedView(),
 		});
 
 		this.addCommand({
-			id: 'auto-notes:manage-checkpoints',
+			id: 'synapse:manage-checkpoints',
 			name: 'Manage interrupted operations',
 			callback: () => this.manageCheckpoints(),
 		});
@@ -189,13 +193,13 @@ export default class AutoNotesPlugin extends Plugin {
 		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video);
 		if (hasTranscription) {
 			this.addCommand({
-				id: 'auto-notes:transcribe-media',
+				id: 'synapse:transcribe-media',
 				name: 'Transcribe media',
 				callback: () => this.openUnifiedModal(),
 			});
 
 			this.addCommand({
-				id: 'auto-notes:transcribe-note-media',
+				id: 'synapse:transcribe-note-media',
 				name: 'Transcribe media from current note',
 				editorCallback: async (_editor, ctx) => {
 					if (ctx.file) {
@@ -405,7 +409,7 @@ export default class AutoNotesPlugin extends Plugin {
 			// Clean up old completed/discarded checkpoints
 			await this.checkpointManager.cleanup();
 		} catch (error) {
-			console.warn('[Auto Notes] Failed to check for incomplete checkpoints:', error);
+			console.warn('[Synapse] Failed to check for incomplete checkpoints:', error);
 		}
 	}
 
@@ -462,8 +466,45 @@ export default class AutoNotesPlugin extends Plugin {
 					this.refreshUnifiedView();
 					break;
 				default:
-					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
 			}
+		}
+	}
+
+	/**
+	 * Migrate the legacy `.auto-notes/` data folder to `.synapse/`.
+	 * Runs once on load; skips silently if the old folder does not exist
+	 * or the new folder already exists.
+	 */
+	private async migrateDataFolder(): Promise<void> {
+		const OLD_FOLDER = '.auto-notes';
+		const NEW_FOLDER = '.synapse';
+		const adapter = this.app.vault.adapter;
+
+		try {
+			const oldExists = await adapter.exists(OLD_FOLDER);
+			if (!oldExists) return;
+
+			const newExists = await adapter.exists(NEW_FOLDER);
+			if (newExists) {
+				// Both folders exist -- do not overwrite, warn the user
+				console.warn(
+					`[Synapse] Both ${OLD_FOLDER}/ and ${NEW_FOLDER}/ exist. ` +
+					`Skipping automatic migration. Please merge manually.`
+				);
+				return;
+			}
+
+			await adapter.rename(OLD_FOLDER, NEW_FOLDER);
+			new Notice(
+				`Synapse: migrated data folder from ${OLD_FOLDER}/ to ${NEW_FOLDER}/`
+			);
+		} catch (error) {
+			console.error('[Synapse] Failed to migrate data folder:', error);
+			new Notice(
+				`Synapse: failed to migrate ${OLD_FOLDER}/ to ${NEW_FOLDER}/ -- ` +
+				`please rename it manually.`
+			);
 		}
 	}
 

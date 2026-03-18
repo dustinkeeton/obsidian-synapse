@@ -1,11 +1,11 @@
 # MVP Product Requirements Document -- Obsidian Community Plugin Release
 
-**Plugin**: Auto Notes
+**Plugin**: Synapse
 **Version**: 0.1.0
 **Date**: 2026-03-17
 **Status**: Draft -- items marked with checkboxes for tracking
 
-This document serves as a checklist and roadmap for releasing Auto Notes as an Obsidian community plugin. Each item is marked as done `[x]`, needs work `[ ]`, or partial `[~]`.
+This document serves as a checklist and roadmap for releasing Synapse as an Obsidian community plugin. Each item is marked as done `[x]`, needs work `[ ]`, or partial `[~]`.
 
 ---
 
@@ -35,7 +35,7 @@ This document serves as a checklist and roadmap for releasing Auto Notes as an O
 - [x] **Ollama HTTPS enforcement** -- `ai-client.ts` requires HTTPS for non-localhost Ollama endpoints. Settings tab validates this at input time; the client enforces again at call time.
 - [x] **Prototype pollution protection** -- `deepMerge()` in `main.ts` (lines 291-315) skips `__proto__`, `constructor`, and `prototype` keys during settings merge.
 - [x] **Frontmatter safety** -- `enrichment/enrichment-applier.ts` validates key names with regex and maintains a forbidden keys blocklist.
-- [x] **.gitignore covers sensitive files** -- `.env`, `.env.*`, `data.json` (Obsidian settings with API keys), and `.auto-notes/` are all gitignored.
+- [x] **.gitignore covers sensitive files** -- `.env`, `.env.*`, `data.json` (Obsidian settings with API keys), and `.synapse/` are all gitignored.
 - [ ] **CSP compliance for Obsidian sandbox** -- Not explicitly verified. Obsidian's Electron sandbox imposes Content Security Policy restrictions. The plugin uses `requestUrl` (Obsidian's CSP-compliant HTTP wrapper) for AI calls, but audio transcription uses native `fetch` + `FormData` directly. **Next step**: Verify that native `fetch` calls in `audio/transcriber.ts` work within Obsidian's CSP. Consider migrating to `requestUrl` with binary body support if not.
 
 ---
@@ -167,7 +167,7 @@ Test infrastructure: **Vitest** with co-located test files (`*.test.ts` next to 
 - [ ] **README exists** -- No `README.md` at the repository root. PR #69 (from Issue #15) is referenced but not yet merged. **Next step**: Merge or create README with: feature overview, installation instructions, configuration guide, usage examples, and screenshots.
 - [ ] **LICENSE file exists** -- No `LICENSE` file at the repository root. `package.json` declares `"license": "MIT"` but the actual license text is missing. **Next step**: Add a `LICENSE` file with the MIT license text. Obsidian community plugin guidelines require a license file.
 - [x] **In-app help/descriptions for settings** -- Every setting in the settings tab has a name and description. Descriptions explain what each setting does in plain language.
-- [x] **Error messages are user-friendly** -- `NotificationManager` prefixes all messages with "Auto Notes:" and uses color-coded notices (info, progress, success, warning, error). API errors are redacted and shown in a readable format. Operations show progress counters (e.g., "Scanning 3/5").
+- [x] **Error messages are user-friendly** -- `NotificationManager` prefixes all messages with "Synapse:" and uses color-coded notices (info, progress, success, warning, error). API errors are redacted and shown in a readable format. Operations show progress counters (e.g., "Scanning 3/5").
 - [ ] **CHANGELOG** -- No CHANGELOG.md exists. **Next step**: Create a CHANGELOG.md with release notes for 0.1.0 (or adopt GitHub Releases for this).
 
 ---
@@ -177,15 +177,15 @@ Test infrastructure: **Vitest** with co-located test files (`*.test.ts` next to 
 Reference: [Obsidian Plugin Guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines)
 
 - [x] **manifest.json has all required fields** -- `id`, `name`, `version`, `minAppVersion`, `description`, `author`, `isDesktopOnly` are all present. Current values:
-  - `id`: `auto-notes`
-  - `name`: `Auto Notes`
+  - `id`: `synapse`
+  - `name`: `Synapse`
   - `version`: `0.1.0`
   - `minAppVersion`: `0.15.0`
   - `description`: `AI-powered note elaboration, audio transcription, and video transcription for Obsidian`
   - `author`: `Dustin Keeton`
   - `isDesktopOnly`: `false`
 - [~] **manifest.json optional fields** -- Missing `authorUrl` and `fundingUrl`. These are optional but recommended. **Next step**: Add `authorUrl` (GitHub profile or website) and optionally `fundingUrl`.
-- [x] **Plugin ID follows naming conventions** -- `auto-notes` uses lowercase with hyphens, no special characters. Follows the `kebab-case` convention.
+- [x] **Plugin ID follows naming conventions** -- `synapse` uses lowercase with hyphens, no special characters. Follows the `kebab-case` convention.
 - [~] **No banned APIs used** -- The plugin uses `requestUrl` (recommended) for most HTTP calls. However, it uses native `fetch` for audio transcription (Whisper/Deepgram) because `requestUrl` does not natively support `FormData` / multipart uploads. `execFile` is used for subprocess management but only on desktop (`Platform.isDesktop` guard prevents loading on mobile). **Next step**: Verify with Obsidian review team that native `fetch` usage for multipart uploads is acceptable, or find a `requestUrl`-based workaround.
 - [ ] **Follows Obsidian plugin guidelines (full audit)** -- A comprehensive audit against the [full guidelines checklist](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines) has not been performed. **Next step**: Walk through every item in the Obsidian plugin guidelines document and verify compliance. Key areas to check:
   - No modification of `.obsidian/` config files
@@ -223,11 +223,11 @@ Reference: [Obsidian Plugin Guidelines](https://docs.obsidian.md/Plugins/Releasi
 ## 9. UX Polish
 
 - [x] **Loading states for AI operations** -- `NotificationManager.startOperation()` creates a persistent, non-dismissible notice with animated ellipsis, progress counter updates, and a Cancel button. Status bar shows operation summary.
-- [x] **Error handling with user-friendly messages** -- All modules use `notifyError(context, error)` which: prefixes with "Auto Notes:", redacts API keys, shows for 8 seconds, logs to console. No raw stack traces shown to users.
+- [x] **Error handling with user-friendly messages** -- All modules use `notifyError(context, error)` which: prefixes with "Synapse:", redacts API keys, shows for 8 seconds, logs to console. No raw stack traces shown to users.
 - [x] **Settings UI is organized and intuitive** -- Settings are grouped under clear headings: AI Configuration, Note Elaboration, Media Transcription (with Audio/Video subheadings), Note Enrichment (with Proximity Weights/Tag Vocabulary subsections), Summarize, Note Tidy, Note Organize, Deep Dive. Sliders have tick marks, labels, and current-value display.
 - [x] **Commands are well-named in the command palette** -- 21 commands follow "Action target" naming pattern. Examples: "Open proposal review sidebar", "Transcribe media", "Enrich current note", "Scan vault", "Undo enrichment".
 - [x] **Confirmation dialogs for destructive operations** -- Vault-wide scans prompt "Found N eligible notes. Proceed?" before making AI calls. Cancel button on all long-running operations.
-- [x] **Visual identity for AI content** -- All AI-generated content uses Obsidian callouts from a shared registry (`auto-notes-summary`, `auto-notes-transcription`, etc.) with distinct colors and Lucide icons. Users can always identify which content was AI-generated.
+- [x] **Visual identity for AI content** -- All AI-generated content uses Obsidian callouts from a shared registry (`synapse-summary`, `synapse-transcription`, etc.) with distinct colors and Lucide icons. Users can always identify which content was AI-generated.
 - [x] **Ribbon icons** -- Two ribbon icons: sparkles (proposal review sidebar) and mic (transcribe media).
 - [~] **Settings UI for advanced features** -- Some settings lack UI controls (see Settings Audit: maxTokens, language). Frame extraction settings are visible but non-functional. **Next step**: Address the items flagged in the Settings Audit section.
 - [ ] **First-run experience** -- No onboarding flow or welcome message for new users. The plugin is functional but requires users to discover features through the command palette and settings. **Next step**: Consider adding a one-time notice on first install pointing users to the README or settings, or a minimal "Getting Started" modal.
@@ -276,25 +276,25 @@ Reference: [Obsidian Plugin Guidelines](https://docs.obsidian.md/Plugins/Releasi
 
 | Module | Command | ID |
 |--------|---------|-----|
-| Main | Open proposal review sidebar | `auto-notes:review-proposals` |
-| Main | Transcribe media | `auto-notes:transcribe-media` |
-| Main | Transcribe media from current note | `auto-notes:transcribe-note-media` |
-| Elaboration | Scan vault for stubs | `auto-notes:elaboration-scan-vault` |
-| Elaboration | Scan current note | `auto-notes:elaboration-scan-note` |
-| Elaboration | Clear all proposals | `auto-notes:elaboration-clear` |
-| Video | Check dependencies | `auto-notes:video-check-deps` |
-| Enrichment | Enrich current note | `auto-notes:enrichment-enrich-note` |
-| Enrichment | Scan vault for enrichment | `auto-notes:enrichment-scan-vault` |
-| Enrichment | Undo enrichment | `auto-notes:enrichment-undo` |
-| Summarize | Summarize current note | `auto-notes:summarize-note` |
-| Summarize | Scan vault for summarization | `auto-notes:summarize-scan-vault` |
-| Tidy | Tidy current note | `auto-notes:tidy-note` |
-| Tidy | Undo tidy | `auto-notes:tidy-undo` |
-| Organize | Organize current note | `auto-notes:organize-note` |
-| Organize | Scan directory | `auto-notes:organize-scan-directory` |
-| Organize | Undo organize | `auto-notes:organize-undo` |
-| Deep Dive | Deep dive into note | `auto-notes:deep-dive-note` |
-| Deep Dive | Clear deep dive proposals | `auto-notes:deep-dive-clear` |
+| Main | Open proposal review sidebar | `synapse:review-proposals` |
+| Main | Transcribe media | `synapse:transcribe-media` |
+| Main | Transcribe media from current note | `synapse:transcribe-note-media` |
+| Elaboration | Scan vault for stubs | `synapse:elaboration-scan-vault` |
+| Elaboration | Scan current note | `synapse:elaboration-scan-note` |
+| Elaboration | Clear all proposals | `synapse:elaboration-clear` |
+| Video | Check dependencies | `synapse:video-check-deps` |
+| Enrichment | Enrich current note | `synapse:enrichment-enrich-note` |
+| Enrichment | Scan vault for enrichment | `synapse:enrichment-scan-vault` |
+| Enrichment | Undo enrichment | `synapse:enrichment-undo` |
+| Summarize | Summarize current note | `synapse:summarize-note` |
+| Summarize | Scan vault for summarization | `synapse:summarize-scan-vault` |
+| Tidy | Tidy current note | `synapse:tidy-note` |
+| Tidy | Undo tidy | `synapse:tidy-undo` |
+| Organize | Organize current note | `synapse:organize-note` |
+| Organize | Scan directory | `synapse:organize-scan-directory` |
+| Organize | Undo organize | `synapse:organize-undo` |
+| Deep Dive | Deep dive into note | `synapse:deep-dive-note` |
+| Deep Dive | Clear deep dive proposals | `synapse:deep-dive-clear` |
 
 ## Appendix: External Dependencies
 

@@ -47,7 +47,7 @@ export interface DeferredTask {
 
 /**
  * The persisted checkpoint document, stored as JSON in
- * `.auto-notes/checkpoints/{id}.json`.
+ * `.synapse/checkpoints/{id}.json`.
  */
 export interface Checkpoint {
 	/** Unique checkpoint ID */

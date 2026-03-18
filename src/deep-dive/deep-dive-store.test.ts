@@ -45,9 +45,9 @@ const mockVault = {
 const mockApp = { vault: mockVault } as unknown as import('obsidian').App;
 const getSettings = () => ({
 	deepDive: {
-		proposalFolderPath: '.auto-notes/deep-dive',
+		proposalFolderPath: '.synapse/deep-dive',
 	},
-}) as unknown as import('../settings').AutoNotesSettings;
+}) as unknown as import('../settings').SynapseSettings;
 
 function makeProposal(overrides: Partial<DeepDiveProposal> = {}): DeepDiveProposal {
 	return {

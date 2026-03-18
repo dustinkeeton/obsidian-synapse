@@ -1,5 +1,5 @@
 import { App } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse } from '../shared';
 import { DetectionResult, Proposal } from './types';
 
@@ -8,7 +8,7 @@ export class ProposalGenerator {
 
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {
 		this.aiClient = new AIClient(getSettings);
 	}

@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
-# Auto Notes — Agent Reference
+# Synapse — Agent Reference
 
-AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, note enrichment (tags, links, references), summarization, note tidying, semantic organization, and recursive deep dive note generation.
+AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, and checkpoint-based operation resumability.
 
 ## Build and Test
 
@@ -23,20 +23,20 @@ Output: `main.js` (single bundle, Obsidian loads this)
 
 | Module | Path | Purpose | Public API |
 |--------|------|---------|------------|
-| main | `src/main.ts` | Plugin entry, module orchestration, command/view registration | `AutoNotesPlugin` (default) |
-| settings | `src/settings.ts` | Settings interfaces, defaults, model options | `AutoNotesSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
-| settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `AutoNotesSettingTab` |
+| main | `src/main.ts` | Plugin entry, module orchestration, command/view registration, checkpoint dispatch | `SynapsePlugin` (default) |
+| settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
+| settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `SynapseSettingTab` |
 | elaboration | `src/elaboration/` | Stub note detection, AI proposal generation | `ElaborationModule`, types |
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, types |
 | transcription | `src/transcription/` | Unified transcription UI modals | `UnifiedTranscriptionModal`, `NoteMediaModal` |
 | enrichment | `src/enrichment/` | Metadata classification, topic extraction, link resolution, external refs, frontmatter | `EnrichmentModule`, types |
-| summarize | `src/summarize/` | URL and transcription summarization, standalone summary notes | `SummarizeModule`, types |
+| summarize | `src/summarize/` | URL and transcription summarization, standalone summary notes, audio-embed summarization | `SummarizeModule`, types |
 | tidy | `src/tidy/` | Spelling correction and markdown formatting via AI | `TidyModule`, `TidySnapshot` |
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes | `OrganizeModule`, types |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
-| shared | `src/shared/` | AI client, file utils, validation, notifications, callouts, frontmatter | `AIClient`, `NotificationManager`, file/validation utils, callout registry |
-| views | `src/views/` | Unified sidebar for all proposal types | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem` |
+| shared | `src/shared/` | AI client, file utils, validation, notifications, callouts, frontmatter, checkpoints | `AIClient`, `NotificationManager`, `CheckpointManager`, file/validation utils, callout registry, id-utils |
+| views | `src/views/` | Unified sidebar for all proposal types and checkpoint management | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem` |
 
 ## Dependency Graph
 
@@ -44,63 +44,65 @@ Output: `main.js` (single bundle, Obsidian loads this)
 main.ts
   |-- settings.ts
   |-- settings-tab.ts
-  |-- shared/
-  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types
-  |-- elaboration/ --> shared/
-  |-- audio/ --> shared/
-  |-- video/ --> shared/, audio/ (reuses transcription pipeline)
+  |-- shared/ (CheckpointManager, NotificationManager)
+  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types, shared/checkpoint-types
+  |-- elaboration/ --> shared/ (CheckpointManager)
+  |-- audio/ --> shared/ (CheckpointManager)
+  |-- video/ --> shared/ (CheckpointManager), audio/ (reuses transcription pipeline)
   |-- transcription/ --> audio/ (types), video/ (detectPlatform)
-  |-- enrichment/ --> shared/
-  |-- summarize/ --> shared/, video/ (transcribeUrl injection)
+  |-- enrichment/ --> shared/ (CheckpointManager)
+  |-- summarize/ --> shared/ (CheckpointManager), video/ (transcribeUrl injection), audio/ (findAudioEmbeds)
   |-- tidy/ --> shared/
-  |-- organize/ --> shared/
-  +-- deep-dive/ --> shared/, organize/ (ContentAnalyzer, DirectoryMatcher)
+  |-- organize/ --> shared/ (CheckpointManager)
+  +-- deep-dive/ --> shared/ (CheckpointManager), organize/ (ContentAnalyzer, DirectoryMatcher)
 ```
 
 Key constraints:
 - `video` depends on `audio` (reuses transcription pipeline)
 - `transcription` is UI-only; delegates work to `audio` and `video` modules
-- `summarize` receives `video.transcribeUrl` via constructor injection
+- `summarize` receives `video.transcribeUrl` and audio transcribe callback via constructor injection
 - `deep-dive` reuses `organize` for auto-organize nesting mode
 - All feature modules depend on `shared`; no circular dependencies
-- `views` imports types only from feature modules
+- All feature modules except `tidy` and `transcription` receive `CheckpointManager` for resumable operations
+- `views` imports types only from feature modules and `Checkpoint` from shared
 
 ## Command Registry
 
 | ID | Name | Type | Module |
 |----|------|------|--------|
-| `auto-notes:review-proposals` | Open proposal review sidebar | callback | main |
-| `auto-notes:transcribe-media` | Transcribe media | callback | main |
-| `auto-notes:transcribe-note-media` | Transcribe media from current note | editorCallback | main |
-| `auto-notes:scan-vault` | Scan vault for stub notes | callback | elaboration |
-| `auto-notes:scan-current-note` | Scan current note for elaboration | editorCallback | elaboration |
-| `auto-notes:clear-proposals` | Clear all pending proposals | callback | elaboration |
-| `auto-notes:check-dependencies` | Check external tool availability | callback | video |
-| `auto-notes:enrich-current-note` | Enrich current note | editorCallback | enrichment |
-| `auto-notes:scan-vault-enrichment` | Scan vault for enrichment | callback | enrichment |
-| `auto-notes:undo-enrichment` | Undo last enrichment on current note | editorCallback | enrichment |
-| `auto-notes:summarize-current-note` | Summarize current note | editorCallback | summarize |
-| `auto-notes:scan-vault-summarize` | Scan vault for notes to summarize | callback | summarize |
-| `auto-notes:tidy-current-note` | Tidy current note | editorCallback | tidy |
-| `auto-notes:undo-tidy` | Undo last tidy on current note | editorCallback | tidy |
-| `auto-notes:organize-current-note` | Organize current note | editorCallback | organize |
-| `auto-notes:scan-directory-organize` | Scan directory for organization | callback | organize |
-| `auto-notes:undo-organize` | Undo last organize on current note | editorCallback | organize |
-| `auto-notes:deep-dive` | Deep dive into current note | editorCallback | deep-dive |
-| `auto-notes:clear-deep-dive` | Clear deep dive proposals | callback | deep-dive |
+| `synapse:review-proposals` | Open proposal review sidebar | callback | main |
+| `synapse:manage-checkpoints` | Manage interrupted operations | callback | main |
+| `synapse:transcribe-media` | Transcribe media | callback | main |
+| `synapse:transcribe-note-media` | Transcribe media from current note | editorCallback | main |
+| `synapse:scan-vault` | Scan vault for stub notes | callback | elaboration |
+| `synapse:scan-current-note` | Scan current note for elaboration | editorCallback | elaboration |
+| `synapse:clear-proposals` | Clear all pending proposals | callback | elaboration |
+| `synapse:check-dependencies` | Check external tool availability | callback | video |
+| `synapse:enrich-current-note` | Enrich current note | editorCallback | enrichment |
+| `synapse:scan-vault-enrichment` | Scan vault for enrichment | callback | enrichment |
+| `synapse:undo-enrichment` | Undo last enrichment on current note | editorCallback | enrichment |
+| `synapse:summarize-current-note` | Summarize current note | editorCallback | summarize |
+| `synapse:scan-vault-summarize` | Scan vault for notes to summarize | callback | summarize |
+| `synapse:tidy-current-note` | Tidy current note | editorCallback | tidy |
+| `synapse:undo-tidy` | Undo last tidy on current note | editorCallback | tidy |
+| `synapse:organize-current-note` | Organize current note | editorCallback | organize |
+| `synapse:scan-directory-organize` | Scan directory for organization | callback | organize |
+| `synapse:undo-organize` | Undo last organize on current note | editorCallback | organize |
+| `synapse:deep-dive` | Deep dive into current note | editorCallback | deep-dive |
+| `synapse:clear-deep-dive` | Clear deep dive proposals | callback | deep-dive |
 
 ## Ribbon Icons
 
 | Icon | Label | Action |
 |------|-------|--------|
 | `sparkles` | Review proposals | Opens unified proposal sidebar |
-| `mic` | Transcribe media | Opens unified transcription modal |
+| `mic` | Transcribe media | Opens unified transcription modal (desktop only) |
 
 ## View Types
 
 | View Type ID | Class | Location |
 |--------------|-------|----------|
-| `auto-notes-proposals` | `UnifiedProposalView` | `src/views/unified-proposal-view.ts` |
+| `synapse-proposals` | `UnifiedProposalView` | `src/views/unified-proposal-view.ts` |
 
 Legacy views (`ProposalReviewView`, `EnrichmentReviewView`) exist in source but are not registered.
 
@@ -110,17 +112,17 @@ All AI-generated content uses Obsidian callouts. Registry in `src/shared/callout
 
 | Key | Type string | Usage |
 |-----|-------------|-------|
-| summary | `auto-notes-summary` | Inline URL/transcription summaries |
-| transcription | `auto-notes-transcription` | Audio/video transcriptions |
-| enrichment | `auto-notes-enrichment` | Enrichment sections |
-| elaboration | `auto-notes-elaboration` | Elaboration proposals |
-| deepDive | `auto-notes-deep-dive` | Deep dive content |
-| nav | `auto-notes-nav` | Deep dive navigation blocks |
+| summary | `synapse-summary` | Inline URL/transcription summaries |
+| transcription | `synapse-transcription` | Audio/video transcriptions |
+| enrichment | `synapse-enrichment` | Enrichment sections |
+| elaboration | `synapse-elaboration` | Elaboration proposals |
+| deepDive | `synapse-deep-dive` | Deep dive content |
+| nav | `synapse-nav` | Deep dive navigation blocks |
 
 ## Settings Schema
 
 ```ts
-AutoNotesSettings {
+SynapseSettings {
   ai: AISettings {
     provider: 'openai' | 'anthropic' | 'ollama'   // default: 'openai'
     apiKey: string                                  // default: ''
@@ -131,7 +133,7 @@ AutoNotesSettings {
   }
   elaboration: ElaborationSettings {
     enabled: boolean                                // default: true
-    proposalFolderPath: string                      // default: '.auto-notes/proposals'
+    proposalFolderPath: string                      // default: '.synapse/proposals'
     scanOnStartup: boolean                          // default: false
     autoScanInterval: number                        // default: 0 (disabled, minutes)
     detection: DetectionSettings {
@@ -139,7 +141,7 @@ AutoNotesSettings {
       detectTodoMarkers: boolean                    // default: true
       detectEmptySections: boolean                  // default: true
       detectSparseLinks: boolean                    // default: true
-      excludeFolders: string[]                      // default: ['templates', '.auto-notes']
+      excludeFolders: string[]                      // default: ['templates', '.synapse']
       excludeTags: string[]                         // default: ['no-elaborate']
     }
     proposal: ProposalSettings {
@@ -168,7 +170,7 @@ AutoNotesSettings {
     enabled: boolean                                // default: true
     ytDlpPath: string                               // default: 'yt-dlp'
     ffmpegPath: string                              // default: 'ffmpeg'
-    tempFolder: string                              // default: '.auto-notes/temp'
+    tempFolder: string                              // default: '.synapse/temp'
     downloadFolder: string                          // default: 'Media'
     embedInNote: boolean                            // default: true
     supportedPlatforms: { youtube: boolean, tiktok: boolean }
@@ -190,8 +192,8 @@ AutoNotesSettings {
     tagVocabulary: TagVocabularyEntry[]              // default: 3 entries (Status, Type, Source)
     internalLinkThreshold: number                   // default: 0.3
     weights: EnrichmentWeightSettings               // sameFolder, siblingFolder, cousinFolder, distantFolder, decayPerLevel, minWeight
-    enrichmentFolderPath: string                    // default: '.auto-notes/enrichments'
-    excludeFolders: string[]                        // default: ['templates', '.auto-notes']
+    enrichmentFolderPath: string                    // default: '.synapse/enrichments'
+    excludeFolders: string[]                        // default: ['templates', '.synapse']
     excludeTags: string[]                           // default: ['no-enrich']
     relatedNotesHeading: string                     // default: 'Related Notes'
     referencesHeading: string                       // default: 'References'
@@ -201,31 +203,31 @@ AutoNotesSettings {
     maxContentLength: number                        // default: 4000
     summaryStyle: 'bullets' | 'paragraph' | 'key-points'  // default: 'bullets'
     customPrompt: string                            // default: ''
-    excludeFolders: string[]                        // default: ['templates', '.auto-notes']
+    excludeFolders: string[]                        // default: ['templates', '.synapse']
     excludeTags: string[]                           // default: ['no-summarize']
     autoOrganizeOnSummarize: boolean                // default: false
   }
   tidy: TidySettings {
     enabled: boolean                                // default: true
-    snapshotFolderPath: string                      // default: '.auto-notes/tidy-snapshots'
+    snapshotFolderPath: string                      // default: '.synapse/tidy-snapshots'
   }
   organize: OrganizeSettings {
     enabled: boolean                                // default: true
-    proposalFolderPath: string                      // default: '.auto-notes/organize/proposals'
-    snapshotFolderPath: string                      // default: '.auto-notes/organize/snapshots'
-    excludeFolders: string[]                        // default: ['templates', '.auto-notes']
+    proposalFolderPath: string                      // default: '.synapse/organize/proposals'
+    snapshotFolderPath: string                      // default: '.synapse/organize/snapshots'
+    excludeFolders: string[]                        // default: ['templates', '.synapse']
     excludeTags: string[]                           // default: ['no-organize']
     organizeConfidenceThreshold: number             // default: 0.9
   }
   deepDive: DeepDiveSettings {
     enabled: boolean                                // default: true
-    proposalFolderPath: string                      // default: '.auto-notes/deep-dive'
+    proposalFolderPath: string                      // default: '.synapse/deep-dive'
     maxDepth: number                                // default: 3
     qualityThreshold: number                        // default: 0.4
     maxNotesPerRun: number                          // default: 50
     noteOutputFolder: string                        // default: 'Deep Dives'
     nestingMode: 'nested' | 'flat' | 'auto-organize'  // default: 'nested'
-    excludeFolders: string[]                        // default: ['templates', '.auto-notes']
+    excludeFolders: string[]                        // default: ['templates', '.synapse']
     excludeTags: string[]                           // default: ['no-deep-dive']
     autoEnrichOnAccept: boolean                     // default: true
     autoOrganizeOnAccept: boolean                   // default: false
@@ -237,15 +239,16 @@ AutoNotesSettings {
 
 | Purpose | Path | Format |
 |---------|------|--------|
-| Elaboration proposals | `.auto-notes/proposals/*.json` | `Proposal` JSON |
-| Enrichment proposals | `.auto-notes/enrichments/*.json` | `EnrichmentProposal` JSON |
-| Tidy snapshots | `.auto-notes/tidy-snapshots/*.json` | `TidySnapshot` JSON |
-| Organize proposals | `.auto-notes/organize/proposals/*.json` | `OrganizeProposal` JSON |
-| Organize snapshots | `.auto-notes/organize/snapshots/*.json` | `OrganizeSnapshot` JSON |
-| Organize summaries | `.auto-notes/organize/summaries/*.md` | Mermaid move diagrams |
-| Deep dive proposals | `.auto-notes/deep-dive/*.json` | `DeepDiveProposal` JSON |
-| Deep dive runs | `.auto-notes/deep-dive/runs/*.json` | `DeepDiveRun` JSON |
-| Temp video/audio | `.auto-notes/temp/` | Binary (auto-cleaned) |
+| Elaboration proposals | `.synapse/proposals/*.json` | `Proposal` JSON |
+| Enrichment proposals | `.synapse/enrichments/*.json` | `EnrichmentProposal` JSON |
+| Tidy snapshots | `.synapse/tidy-snapshots/*.json` | `TidySnapshot` JSON |
+| Organize proposals | `.synapse/organize/proposals/*.json` | `OrganizeProposal` JSON |
+| Organize snapshots | `.synapse/organize/snapshots/*.json` | `OrganizeSnapshot` JSON |
+| Organize summaries | `.synapse/organize/summaries/*.md` | Mermaid move diagrams |
+| Deep dive proposals | `.synapse/deep-dive/*.json` | `DeepDiveProposal` JSON |
+| Deep dive runs | `.synapse/deep-dive/runs/*.json` | `DeepDiveRun` JSON |
+| Checkpoints | `.synapse/checkpoints/*.json` | `Checkpoint` JSON |
+| Temp video/audio | `.synapse/temp/` | Binary (auto-cleaned) |
 | Downloaded videos | `Media/` (configurable) | Video files |
 
 ## Cross-Module Callbacks (wired in main.ts)
@@ -270,12 +273,36 @@ Deep-dive enrichment wired when `deepDive.autoEnrichOnAccept`.
 Deep-dive organize wired when `deepDive.autoOrganizeOnAccept && organize.enabled`.
 Summarize organize wired when `summarize.autoOrganizeOnSummarize && organize.enabled`.
 
+## Checkpoint System
+
+All vault-scan operations (elaboration, enrichment, audio, video, summarize, organize, deep-dive) use `CheckpointManager` for resumable operations:
+
+```
+main.ts creates single CheckpointManager, injected into all modules
+  |
+  |-- On vault scan: module creates checkpoint with work items
+  |-- After each file: module calls completeItem()
+  |-- On completion: module calls complete(), dispatches deferred tasks
+  |-- On cancel/error: module calls discard()
+  |
+  |-- On startup (3s delay): main.checkForIncompleteCheckpoints()
+  |     Lists active checkpoints, offers Resume/Review/Dismiss
+  |
+  |-- synapse:manage-checkpoints command: iterates incomplete checkpoints
+  |     Per checkpoint: Resume / Discard / Keep
+  |
+  |-- UnifiedProposalView: shows checkpoint banner with Resume/Discard buttons
+  |-- main.resumeCheckpoint(id): dispatches to module.resumeFromCheckpoint()
+```
+
+Checkpoint cleanup: completed/discarded checkpoints older than 7 days are auto-removed on startup.
+
 ## External Dependencies (Runtime)
 
 | Tool | Required By | Detection |
 |------|-------------|-----------|
-| yt-dlp | video module | `auto-notes:check-dependencies` command |
-| ffmpeg | video module | `auto-notes:check-dependencies` command |
+| yt-dlp | video module | `synapse:check-dependencies` command |
+| ffmpeg | video module | `synapse:check-dependencies` command |
 
 No npm runtime dependencies. Uses Obsidian `requestUrl`, `execFile` (argument arrays, no shell), and browser `fetch`.
 
@@ -300,4 +327,6 @@ Framework: Vitest, globals enabled, node environment.
 - Ollama endpoint: HTTPS required (HTTP for localhost only)
 - External commands use `execFile` with argument arrays (no shell interpolation)
 - Frontmatter keys validated against allowlist pattern + forbidden keys blocklist
-- Enrichment sections use `%% auto-notes-enrichment-start/end %%` markers for idempotent updates
+- Enrichment sections use `%% synapse-enrichment-start/end %%` markers for idempotent updates
+- Checkpoint IDs validated against `/^[a-z0-9]+$/` to prevent path traversal
+- Deep merge in settings rejects `__proto__`, `constructor`, `prototype` keys

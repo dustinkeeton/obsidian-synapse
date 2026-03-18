@@ -84,7 +84,7 @@ describe('NotificationManager', () => {
 		it('shows idle text when no operations are running', () => {
 			const mockEl = { setText: vi.fn() } as unknown as HTMLElement;
 			manager.setStatusBarEl(mockEl);
-			expect((mockEl as any).setText).toHaveBeenCalledWith('Auto Notes');
+			expect((mockEl as any).setText).toHaveBeenCalledWith('Synapse');
 		});
 
 		it('shows operation label when one operation is running', () => {
@@ -92,7 +92,7 @@ describe('NotificationManager', () => {
 			manager.setStatusBarEl(mockEl);
 			manager.startOperation('Scanning vault', 'sb-test');
 			expect((mockEl as any).setText).toHaveBeenCalledWith(
-				'Auto Notes: Scanning vault'
+				'Synapse: Scanning vault'
 			);
 		});
 
@@ -102,7 +102,7 @@ describe('NotificationManager', () => {
 			manager.startOperation('Op A', 'sb-a');
 			manager.startOperation('Op B', 'sb-b');
 			expect((mockEl as any).setText).toHaveBeenCalledWith(
-				'Auto Notes: 2 tasks running'
+				'Synapse: 2 tasks running'
 			);
 		});
 
@@ -111,7 +111,7 @@ describe('NotificationManager', () => {
 			manager.setStatusBarEl(mockEl);
 			const handle = manager.startOperation('Work', 'sb-done');
 			handle.finish();
-			expect((mockEl as any).setText).toHaveBeenLastCalledWith('Auto Notes');
+			expect((mockEl as any).setText).toHaveBeenLastCalledWith('Synapse');
 		});
 	});
 
@@ -128,7 +128,7 @@ describe('NotificationManager', () => {
 			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 			manager.notifyError('API call', new Error('Failed with sk-1234567890abcdef'));
 			expect(consoleSpy).toHaveBeenCalledWith(
-				expect.stringContaining('[Auto Notes]'),
+				expect.stringContaining('[Synapse]'),
 				expect.stringContaining('[REDACTED]')
 			);
 			consoleSpy.mockRestore();

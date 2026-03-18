@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # Audio Module
@@ -12,9 +12,10 @@ Exported from `index.ts`:
 
 ```ts
 class AudioModule {
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager)
   onload(): Promise<void>
   onunload(): void
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
   transcribeFileToActiveNote(file: TFile): Promise<void>
   transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>
@@ -75,7 +76,7 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
    |  sanitizeAIResponse() on output
    |
 5. Result wrapped in callout block:
-   > [!auto-notes-transcription]- Transcription of filename.mp3
+   > [!synapse-transcription]- Transcription of filename.mp3
    > ...transcribed text...
 ```
 
@@ -107,5 +108,5 @@ All under `settings.audio`:
 ## Commands
 
 No commands registered directly. Commands are registered in `main.ts` (unified transcription):
-- `auto-notes:transcribe-media` -> `AudioModule.transcribeFileToActiveNote(file)`
-- `auto-notes:transcribe-note-media` -> `AudioModule.transcribeAndInsert(file, embeds)`
+- `synapse:transcribe-media` -> `AudioModule.transcribeFileToActiveNote(file)`
+- `synapse:transcribe-note-media` -> `AudioModule.transcribeAndInsert(file, embeds)`

@@ -1,12 +1,12 @@
 import { App, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { wordCount } from '../shared';
 import { DetectionReason, DetectionResult } from './types';
 
 export class PlaceholderDetector {
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {}
 
 	async detect(file: TFile): Promise<DetectionResult | null> {

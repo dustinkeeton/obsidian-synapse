@@ -1,8 +1,8 @@
 # Project Status
 
-**Last updated**: 2026-03-17
-**Branch**: `feat/issue-20-unified-transcription`
-**Phase**: 9 modules (8 feature + 1 UI-only transcription); unified transcription refactor in progress
+**Last updated**: 2026-03-18
+**Branch**: `feat/issue-124-rebrand-synapse`
+**Phase**: 9 modules (8 feature + 1 UI-only transcription); rebrand from Auto Notes to Synapse in progress
 
 ---
 
@@ -21,8 +21,8 @@
 | **Video** -- note scanning for URLs | Yes | -- | Yes | **Working** |
 | **Video** -- local file transcription | -- | -- | No | Not started (stub) |
 | **Video** -- frame extraction | -- | -- | No | Not started (placeholder) |
-| **Transcription** -- unified modal (file + URL) | Yes | Yes | No | **New (issue #20)** |
-| **Transcription** -- note media modal (scan + select) | Yes | Yes | No | **New (issue #20)** |
+| **Transcription** -- unified modal (file + URL) | Yes | Yes | No | **Working** |
+| **Transcription** -- note media modal (scan + select) | Yes | Yes | No | **Working** |
 | **Enrichment** -- metadata classification (vocabulary-based) | Yes | Yes | Yes | **Working** |
 | **Enrichment** -- topic extraction (AI topics to links) | Yes | Yes | Yes | **Working** |
 | **Enrichment** -- link resolution (graph + topic merge) | Yes | Yes | Yes | **Working** |
@@ -48,6 +48,7 @@
 | **Shared** -- NotificationManager | Yes | -- | Yes | **Working** |
 | **Shared** -- validation and sanitization | Yes | -- | Yes | **Working** |
 | **Shared** -- callout registry | Yes | -- | Yes | **Working** |
+| **Shared** -- checkpoint/resume framework | Yes | Yes | Yes | **Working** |
 
 ---
 
@@ -69,17 +70,18 @@
 
 ## Current Focus
 
-- **Unified transcription refactor** (issue #20): 6 separate transcription commands consolidated to 2 unified commands + 1 utility. New `src/transcription/` module with `UnifiedTranscriptionModal` and `NoteMediaModal`. 4 old modal files deleted.
+- **Rebrand**: Auto Notes renamed to Synapse across all source code, config, and documentation (issue #124)
+- **Architect audit**: module structure cleanup, export fixes, constructor standardization
+- **Security pass**: `.gitignore` hardening for legacy `.auto-notes/` folder
 - **Documentation audit**: updating AGENTS.md (machine-readable) and human docs (DECISIONS.md, STATUS.md, ARCHITECTURE.md)
 
-## Recent Changes (2026-03-17)
+## Recent Changes (2026-03-18)
 
-- Created `src/transcription/` module: `UnifiedTranscriptionModal`, `NoteMediaModal`
-- Deleted 4 modal files: `audio/transcription-modal.ts`, `audio/note-audio-modal.ts`, `video/video-modal.ts`, `video/note-video-modal.ts`
-- AudioModule and VideoModule expose new public methods for unified orchestration
-- Settings tab reorganized: "Media Transcription" parent heading groups audio and video settings
-- Audio module adds `note-scanner.ts` with `findAudioEmbeds()` and tests
-- Updated all AGENTS.md files across the codebase
+- Rebranded plugin from "Auto Notes" to "Synapse" (manifest, settings, callouts, data folder)
+- Added `.auto-notes/` to `.synapse/` data folder migration (one-time, on load)
+- Added legacy `.auto-notes/` to `.gitignore`
+- Architect audit: fixed module structure, cleaned up exports
+- Updated all AGENTS.md files with checkpoint system and constructor changes
 
 ---
 
@@ -96,11 +98,11 @@
 
 ---
 
-## Command Registry (21 commands)
+## Command Registry (22 commands)
 
 | Module | Commands |
 |--------|----------|
-| Main | Open proposal review sidebar, Transcribe media, Transcribe media from current note |
+| Main | Open proposal review sidebar, Manage interrupted operations, Transcribe media, Transcribe media from current note |
 | Elaboration | Scan vault, Scan current note, Clear proposals |
 | Video | Check dependencies |
 | Enrichment | Enrich current note, Scan vault, Undo enrichment |
@@ -135,4 +137,4 @@
 | Organize | `content-analyzer.test.ts`, `directory-matcher.test.ts`, `organize-store.test.ts` | Core logic |
 | Deep Dive | `deep-dive-store.test.ts`, `quality-scorer.test.ts`, `topic-analyzer.test.ts`, `syllabus-navigator.test.ts` | Store + scoring + nav |
 | Video | `url-detector.test.ts`, `note-scanner.test.ts` | URL detection + scanning |
-| Shared | `notifications.test.ts`, `validation.test.ts`, `frontmatter-utils.test.ts`, `callouts.test.ts`, `diagram-generator.test.ts`, `folder-picker-modal.test.ts` | Utilities |
+| Shared | `notifications.test.ts`, `validation.test.ts`, `frontmatter-utils.test.ts`, `callouts.test.ts`, `diagram-generator.test.ts`, `folder-picker-modal.test.ts`, `checkpoint-manager.test.ts` | Utilities + checkpoint |

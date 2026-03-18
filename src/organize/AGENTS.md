@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # organize module
 
-AI-powered semantic directory structuring. Analyzes note content to determine the best directory, moves directly to existing directories or creates proposals for new ones.
+AI-powered semantic directory structuring. Analyzes note content to determine the best directory, moves directly to existing directories or creates proposals for new ones. Supports checkpointed vault scans for resumability.
 
 ## Public API (`index.ts`)
 
@@ -12,9 +12,10 @@ AI-powered semantic directory structuring. Analyzes note content to determine th
 class OrganizeModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
 
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager)
   onload(): Promise<void>
   onunload(): void
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   getPendingProposals(): Promise<OrganizeProposal[]>
   organizeNote(file: TFile): Promise<OrganizeResult | null>
   scanDirectory(folderPath?: string): Promise<number>
@@ -60,6 +61,27 @@ undoOrganize(file)
   --> OrganizeStore.removeSnapshot()
 ```
 
+## Directory Scan (checkpointed)
+
+```
+scanDirectory(folderPath?)
+  Phase 1: Collect eligible files
+  Phase 2: User confirmation
+  Phase 3: Checkpointed processing
+    --> checkpointManager.create(module: 'organize', items)
+    --> addDeferredTask('refresh-sidebar-view')
+    --> for each file: organizeFile(), completeItem()
+    --> on cancel: checkpointManager.discard()
+    --> on success: checkpointManager.complete(), dispatch deferred tasks
+    --> writeOrganizeSummary() if any files moved
+
+resumeFromCheckpoint(checkpoint)
+  --> re-processes remaining items from saved checkpoint
+  --> completeItem() after each file
+  --> on cancel: discard()
+  --> on success: complete(), dispatch deferred tasks, write summary
+```
+
 ## Key Types
 
 ```ts
@@ -93,8 +115,8 @@ interface OrganizeResult {
 
 ## Dependencies
 
-- `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder)
-- `settings.ts` (AutoNotesSettings)
+- `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary, CheckpointManager, generateId, Checkpoint, CheckpointWorkItem, DeferredTask, MoveRecord)
+- `settings.ts` (SynapseSettings)
 
 ## Tests
 

@@ -1,12 +1,12 @@
 import { App, normalizePath } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { ensureFolder } from '../shared';
 import { Proposal } from './types';
 
 export class ProposalStore {
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {}
 
 	private get folderPath(): string {

@@ -1,11 +1,11 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder,
 	writeNote, generateOrganizeSummary, CheckpointManager, generateId,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
-import { MoveRecord } from '../shared';
+import type { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
 import { OrganizeStore } from './organize-store';
@@ -33,7 +33,7 @@ export class OrganizeModule {
 
 	constructor(
 		private plugin: Plugin,
-		private getSettings: () => AutoNotesSettings,
+		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager
 	) {
@@ -46,7 +46,7 @@ export class OrganizeModule {
 		await this.store.init();
 
 		this.plugin.addCommand({
-			id: 'auto-notes:organize-current-note',
+			id: 'synapse:organize-current-note',
 			name: 'Organize current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -56,7 +56,7 @@ export class OrganizeModule {
 		});
 
 		this.plugin.addCommand({
-			id: 'auto-notes:scan-directory-organize',
+			id: 'synapse:scan-directory-organize',
 			name: 'Scan directory for organization',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -69,7 +69,7 @@ export class OrganizeModule {
 		});
 
 		this.plugin.addCommand({
-			id: 'auto-notes:undo-organize',
+			id: 'synapse:undo-organize',
 			name: 'Undo last organize on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -131,7 +131,7 @@ export class OrganizeModule {
 				} catch (error) {
 					errorCount++;
 					const msg = error instanceof Error ? error.message : String(error);
-					console.warn(`[Auto Notes] Failed to organize ${file.path}: ${msg}`);
+					console.warn(`[Synapse] Failed to organize ${file.path}: ${msg}`);
 				}
 
 				await this.checkpointManager.completeItem(checkpoint.id, item.id);
@@ -307,7 +307,7 @@ export class OrganizeModule {
 			} catch (error) {
 				errorCount++;
 				const msg = error instanceof Error ? error.message : String(error);
-				console.warn(`[Auto Notes] Failed to organize ${eligible[i].path}: ${msg}`);
+				console.warn(`[Synapse] Failed to organize ${eligible[i].path}: ${msg}`);
 			}
 
 			// Save checkpoint progress
@@ -566,7 +566,7 @@ export class OrganizeModule {
 		const existing = this.plugin.app.vault.getAbstractFileByPath(candidatePath);
 		if (existing) {
 			console.warn(
-				`[Auto Notes] Skipping move -- file already exists at ${candidatePath}`
+				`[Synapse] Skipping move -- file already exists at ${candidatePath}`
 			);
 			return null;
 		}
@@ -575,7 +575,7 @@ export class OrganizeModule {
 
 	/**
 	 * Write an organize summary note containing a Mermaid move diagram.
-	 * Summaries are stored at .auto-notes/organize/summaries/{date}-organize-summary.md.
+	 * Summaries are stored at .synapse/organize/summaries/{date}-organize-summary.md.
 	 * Returns the path of the summary note, or null on failure.
 	 */
 	private async writeOrganizeSummary(moves: MoveRecord[]): Promise<string | null> {
@@ -587,7 +587,7 @@ export class OrganizeModule {
 			return summaryPath;
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
-			console.warn(`[Auto Notes] Failed to write organize summary: ${msg}`);
+			console.warn(`[Synapse] Failed to write organize summary: ${msg}`);
 			return null;
 		}
 	}
@@ -600,7 +600,7 @@ export class OrganizeModule {
 					this.onViewRefreshNeeded?.();
 					break;
 				default:
-					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
 			}
 		}
 	}
@@ -608,10 +608,10 @@ export class OrganizeModule {
 
 /**
  * Build the vault path for an organize summary note.
- * Format: .auto-notes/organize/summaries/{YYYY-MM-DD}-organize-summary.md
+ * Format: .synapse/organize/summaries/{YYYY-MM-DD}-organize-summary.md
  * Exported for testing.
  */
 export function buildSummaryPath(timestamp: string): string {
 	const date = timestamp.split('T')[0] || timestamp;
-	return normalizePath(`.auto-notes/organize/summaries/${date}-organize-summary.md`);
+	return normalizePath(`.synapse/organize/summaries/${date}-organize-summary.md`);
 }

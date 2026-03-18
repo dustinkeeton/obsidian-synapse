@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TopicExtractor } from './topic-extractor';
-import { AutoNotesSettings, DEFAULT_SETTINGS } from '../settings';
+import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 
 const mockComplete = vi.fn();
 
@@ -15,7 +15,7 @@ vi.mock('./weight-calculator', () => ({
 	computeProximityWeight: () => 0.8,
 }));
 
-function makeSettings(overrides?: Partial<AutoNotesSettings['enrichment']>): () => AutoNotesSettings {
+function makeSettings(overrides?: Partial<SynapseSettings['enrichment']>): () => SynapseSettings {
 	return () => ({
 		...DEFAULT_SETTINGS,
 		enrichment: {

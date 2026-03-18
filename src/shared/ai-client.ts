@@ -1,5 +1,5 @@
 import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { ChatMessage } from './types';
 
 /** Redact API keys/tokens that may appear in API error response bodies. */
@@ -57,7 +57,7 @@ function resolveModelId(provider: string, model: string): string {
 }
 
 export class AIClient {
-	constructor(private getSettings: () => AutoNotesSettings) {}
+	constructor(private getSettings: () => SynapseSettings) {}
 
 	async complete(prompt: string, systemPrompt?: string): Promise<string> {
 		const messages: ChatMessage[] = [];

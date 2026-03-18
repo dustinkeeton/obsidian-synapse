@@ -19,7 +19,7 @@ export async function fetchPageContent(url: string, maxLength: number): Promise<
 			url: validatedUrl,
 			method: 'GET',
 			headers: {
-				'User-Agent': 'Mozilla/5.0 (compatible; ObsidianAutoNotes/1.0)',
+				'User-Agent': 'Mozilla/5.0 (compatible; ObsidianSynapse/1.0)',
 				'Accept': 'text/html,application/xhtml+xml',
 			},
 		}),

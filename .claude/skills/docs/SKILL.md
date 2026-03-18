@@ -24,7 +24,7 @@ Spawn the `architect` agent with this prompt:
 
 Take the architect's change report and spawn the `docs-agent` agent with this prompt:
 
-> Here is the architect's change report for the Auto Notes codebase:
+> Here is the architect's change report for the Synapse codebase:
 >
 > {architect's output}
 >

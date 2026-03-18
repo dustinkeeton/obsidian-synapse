@@ -1,5 +1,5 @@
 import { App, TFile, getAllTags } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { AIClient, parseFrontmatter, sanitizeAIResponse, withRetry } from '../shared';
 import { ContentAnalysis, NoteTopic } from './types';
 
@@ -28,7 +28,7 @@ export class ContentAnalyzer {
 
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {
 		this.aiClient = new AIClient(getSettings);
 	}

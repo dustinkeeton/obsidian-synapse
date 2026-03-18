@@ -1,5 +1,5 @@
 import { Plugin, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { AudioModule, TranscriptionResult } from '../audio';
 import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES,
@@ -31,7 +31,7 @@ export class VideoModule {
 
 	constructor(
 		private plugin: Plugin,
-		private getSettings: () => AutoNotesSettings,
+		private getSettings: () => SynapseSettings,
 		private audioModule: AudioModule,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager
@@ -46,7 +46,7 @@ export class VideoModule {
 		);
 
 		this.plugin.addCommand({
-			id: 'auto-notes:check-dependencies',
+			id: 'synapse:check-dependencies',
 			name: 'Check external tool availability',
 			callback: () => this.checkDependencies(),
 		});
@@ -318,7 +318,7 @@ export class VideoModule {
 					// but the deferred task system ensures it runs via main.ts dispatch
 					break;
 				default:
-					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
 			}
 		}
 	}

@@ -1,5 +1,5 @@
 import { App } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { ensureFolder } from '../shared';
 import { TidySnapshot } from './types';
 
@@ -10,7 +10,7 @@ import { TidySnapshot } from './types';
 export class TidyStore {
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {}
 
 	async init(): Promise<void> {

@@ -1,6 +1,6 @@
 ---
 name: security-audit
-description: Security auditing for the Auto Notes plugin. Covers secret detection, input validation, command injection prevention, API key handling, and .gitignore enforcement. Use when reviewing code for security vulnerabilities or setting up security guardrails.
+description: Security auditing for the Synapse plugin. Covers secret detection, input validation, command injection prevention, API key handling, and .gitignore enforcement. Use when reviewing code for security vulnerabilities or setting up security guardrails.
 user-invocable: false
 ---
 
@@ -10,7 +10,7 @@ user-invocable: false
 
 ### 1. Secret Prevention
 - **No hardcoded secrets** — API keys, tokens, passwords must never appear in source
-- **`.gitignore` enforcement** — ensure `.env`, `data.json`, `.auto-notes/` are gitignored
+- **`.gitignore` enforcement** — ensure `.env`, `data.json`, `.synapse/` are gitignored
 - **Settings storage** — API keys stored via Obsidian's `saveData()` (encrypted at rest by OS)
 - **Audit**: grep for patterns like `sk-`, `key-`, API key formats, base64-encoded strings
 
@@ -35,7 +35,7 @@ user-invocable: false
 
 ### 5. File System Safety
 - **Vault boundary** — never read/write outside the vault directory
-- **Proposal files** — validate proposal paths resolve within `.auto-notes/`
+- **Proposal files** — validate proposal paths resolve within `.synapse/`
 - **Temp files** — clean up temporary audio/video files after processing
 - **Symlink safety** — resolve symlinks and verify they stay within vault
 

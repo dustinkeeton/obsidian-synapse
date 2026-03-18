@@ -1,5 +1,5 @@
 {
-  "name": "auto-notes",
+  "name": "synapse",
   "version": "0.1.0",
   "description": "AI-powered note elaboration, audio transcription, and video transcription for Obsidian",
   "main": "main.js",

@@ -1,6 +1,6 @@
 ---
 name: codebase-architecture
-description: Codebase architecture standards and best practices for the Auto Notes Obsidian plugin. Covers file structure conventions, module patterns, naming conventions, dependency rules, and code organization. Use when enforcing or communicating architectural decisions.
+description: Codebase architecture standards and best practices for the Synapse Obsidian plugin. Covers file structure conventions, module patterns, naming conventions, dependency rules, and code organization. Use when enforcing or communicating architectural decisions.
 user-invocable: false
 ---
 
@@ -12,7 +12,7 @@ Every feature module follows a consistent contract:
 
 ```typescript
 class FeatureModule {
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings) {}
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings) {}
   async onload(): Promise<void>;  // register commands, views, events
   onunload(): void;               // cleanup
 }

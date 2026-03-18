@@ -1,10 +1,10 @@
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse } from '../shared';
 
 export class PostProcessor {
 	private aiClient: AIClient;
 
-	constructor(private getSettings: () => AutoNotesSettings) {
+	constructor(private getSettings: () => SynapseSettings) {
 		this.aiClient = new AIClient(getSettings);
 	}
 

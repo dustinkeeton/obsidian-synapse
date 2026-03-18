@@ -35,20 +35,20 @@ export class ProposalDetailModal extends Modal {
 			})
 			.join(', ');
 
-		contentEl.createEl('p', { text: `Detected: ${reasons}`, cls: 'auto-notes-detection-info' });
+		contentEl.createEl('p', { text: `Detected: ${reasons}`, cls: 'synapse-detection-info' });
 
 		contentEl.createEl('h3', { text: 'Proposed Additions' });
 		contentEl.createEl('p', { text: 'Edit the content below before accepting:' });
 
 		const textarea = contentEl.createEl('textarea', {
-			cls: 'auto-notes-proposal-editor',
+			cls: 'synapse-proposal-editor',
 		});
 		textarea.value = this.proposal.proposedAdditions;
 		textarea.rows = 12;
 		textarea.style.width = '100%';
 		textarea.style.fontFamily = 'monospace';
 
-		const actions = contentEl.createDiv({ cls: 'auto-notes-modal-actions' });
+		const actions = contentEl.createDiv({ cls: 'synapse-modal-actions' });
 
 		const acceptBtn = actions.createEl('button', {
 			text: 'Accept',

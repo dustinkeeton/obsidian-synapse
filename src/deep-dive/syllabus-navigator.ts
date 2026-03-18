@@ -194,7 +194,7 @@ export function buildNavigationContext(
  * Render the navigation callout block for a deep dive note.
  *
  * Format:
- * > [!auto-notes-nav] Deep Dive Navigation
+ * > [!synapse-nav] Deep Dive Navigation
  * > Machine Learning > Neural Networks > Backpropagation
  * > **Root:** [[Machine Learning]] | **Up:** [[Neural Networks]]
  * > **Prev:** [[Activation Functions]] | **Next:** [[Regularization Techniques]]
@@ -202,7 +202,7 @@ export function buildNavigationContext(
  */
 export function renderNavigationBlock(ctx: NavigationContext): string {
 	const lines: string[] = [];
-	lines.push('> [!auto-notes-nav] Deep Dive Navigation');
+	lines.push('> [!synapse-nav] Deep Dive Navigation');
 
 	// Breadcrumb line
 	const breadcrumbLine = ctx.breadcrumbs.join(' > ');
@@ -370,7 +370,7 @@ export function renderSyllabusContent(
 /**
  * Prepend or update the navigation block in a note's content.
  *
- * If the note already has a `> [!auto-notes-nav]` callout, replace it.
+ * If the note already has a `> [!synapse-nav]` callout, replace it.
  * Otherwise, prepend it at the top (after frontmatter if present).
  */
 export function injectNavigationBlock(
@@ -378,7 +378,7 @@ export function injectNavigationBlock(
 	navBlock: string
 ): string {
 	// Pattern to match an existing nav block (callout lines starting with >)
-	const navPattern = /^> \[!auto-notes-nav\][^\n]*(?:\n>[^\n]*)*\n?/m;
+	const navPattern = /^> \[!synapse-nav\][^\n]*(?:\n>[^\n]*)*\n?/m;
 
 	if (navPattern.test(content)) {
 		return content.replace(navPattern, navBlock + '\n');

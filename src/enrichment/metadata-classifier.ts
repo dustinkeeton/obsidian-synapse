@@ -1,4 +1,4 @@
-import { AutoNotesSettings, TagVocabularyEntry } from '../settings';
+import { SynapseSettings, TagVocabularyEntry } from '../settings';
 import { AIClient, sanitizeAIResponse } from '../shared';
 import { TagCandidate } from './types';
 
@@ -12,7 +12,7 @@ const TAG_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_/\-]{0,49}$/;
 export class MetadataClassifier {
 	private aiClient: AIClient;
 
-	constructor(private getSettings: () => AutoNotesSettings) {
+	constructor(private getSettings: () => SynapseSettings) {
 		this.aiClient = new AIClient(getSettings);
 	}
 

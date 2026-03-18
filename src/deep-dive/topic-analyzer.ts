@@ -1,5 +1,5 @@
 import { App, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse } from '../shared';
 import { ExtractedTopic } from './types';
 
@@ -12,7 +12,7 @@ export class TopicAnalyzer {
 
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {
 		this.aiClient = new AIClient(getSettings);
 	}
@@ -78,7 +78,7 @@ ${content.slice(0, 4000)}`;
 						: [],
 				}));
 		} catch {
-			console.warn('[Auto Notes] Failed to parse topic extraction response');
+			console.warn('[Synapse] Failed to parse topic extraction response');
 			return [];
 		}
 	}

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # Enrichment Module
@@ -12,9 +12,10 @@ Exported from `index.ts`:
 
 ```ts
 class EnrichmentModule {
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager)
   onload(): Promise<void>
   onunload(): void
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   enrich(filePath: string, trigger: EnrichmentTrigger): Promise<void>
   scanVault(folderPath?: string): Promise<number>
   getPendingProposals(): Promise<EnrichmentProposal[]>
@@ -176,7 +177,7 @@ Pure function `computeProximityWeight(sourcePath, targetPath, config)`:
 - Internal links: appended as `## Related Notes` section with markers
 - External links: appended as `## References` section with markers
 - Frontmatter: keys added (never overwrites existing)
-- Markers: `%% auto-notes-enrichment-start/end %%` for idempotent updates
+- Markers: `%% synapse-enrichment-start/end %%` for idempotent updates
 - Undo: removes accepted tags, deletes added frontmatter keys, strips marker sections
 
 ## Security

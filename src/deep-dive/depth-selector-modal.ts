@@ -19,12 +19,12 @@ export class DepthSelectorModal extends Modal {
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass('auto-notes-depth-selector');
+		contentEl.addClass('synapse-depth-selector');
 
 		contentEl.createEl('h3', { text: 'Select recursion depth' });
 
 		// Slider with tick labels
-		const sliderContainer = contentEl.createDiv({ cls: 'auto-notes-depth-slider' });
+		const sliderContainer = contentEl.createDiv({ cls: 'synapse-depth-slider' });
 
 		addEnhancedSlider(
 			new Setting(sliderContainer)

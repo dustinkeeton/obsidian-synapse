@@ -37,7 +37,7 @@ export class EnrichmentDetailModal extends Modal {
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass('auto-notes-enrichment-detail');
+		contentEl.addClass('synapse-enrichment-detail');
 
 		contentEl.createEl('h2', { text: `Enrichment: ${this.proposal.sourceNotePath}` });
 		contentEl.createEl('small', {
@@ -82,7 +82,7 @@ export class EnrichmentDetailModal extends Modal {
 		}
 
 		// Action buttons
-		const actions = contentEl.createDiv({ cls: 'auto-notes-modal-actions' });
+		const actions = contentEl.createDiv({ cls: 'synapse-modal-actions' });
 
 		const acceptBtn = actions.createEl('button', {
 			text: 'Accept Selected',
@@ -131,14 +131,14 @@ export class EnrichmentDetailModal extends Modal {
 			selectedSet: Set<string>;
 		}
 	): void {
-		const section = container.createDiv({ cls: 'auto-notes-enrichment-section' });
+		const section = container.createDiv({ cls: 'synapse-enrichment-section' });
 		section.createEl('h3', { text: title });
 
 		for (const item of items) {
 			const id = config.getId(item);
 			const label = config.getLabel(item);
 
-			const row = section.createDiv({ cls: 'auto-notes-enrichment-item' });
+			const row = section.createDiv({ cls: 'synapse-enrichment-item' });
 			const checkbox = row.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
 			checkbox.checked = config.selectedSet.has(id);
 			checkbox.addEventListener('change', () => {

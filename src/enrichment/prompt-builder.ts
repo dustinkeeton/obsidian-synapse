@@ -1,4 +1,4 @@
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse } from '../shared';
 import { ExternalLinkCandidate, FrontmatterEnrichment } from './types';
 
@@ -35,7 +35,7 @@ function isValidExternalUrl(url: string): boolean {
 export class PromptBuilder {
 	private aiClient: AIClient;
 
-	constructor(private getSettings: () => AutoNotesSettings) {
+	constructor(private getSettings: () => SynapseSettings) {
 		this.aiClient = new AIClient(getSettings);
 	}
 
