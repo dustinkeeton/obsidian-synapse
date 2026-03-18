@@ -5,6 +5,7 @@ dist/
 data.json
 .env
 .env.*
+.synapse/
 .auto-notes/
 *.bak
 *.tmp

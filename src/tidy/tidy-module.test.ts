@@ -78,8 +78,8 @@ describe('TidyModule', () => {
 
 			expect(mockPlugin.addCommand).toHaveBeenCalledTimes(2);
 			const commands = mockPlugin.addCommand.mock.calls.map((c: any) => c[0].id);
-			expect(commands).toContain('auto-notes:tidy-current-note');
-			expect(commands).toContain('auto-notes:undo-tidy');
+			expect(commands).toContain('synapse:tidy-current-note');
+			expect(commands).toContain('synapse:undo-tidy');
 		});
 	});
 
@@ -203,7 +203,7 @@ describe('TidyModule', () => {
 			// Access undoTidy through the command callback
 			await module.onload();
 			const undoCommand = mockPlugin.addCommand.mock.calls.find(
-				(c: any) => c[0].id === 'auto-notes:undo-tidy'
+				(c: any) => c[0].id === 'synapse:undo-tidy'
 			)[0];
 
 			// Call the editorCallback directly
@@ -222,7 +222,7 @@ describe('TidyModule', () => {
 
 			await module.onload();
 			const undoCommand = mockPlugin.addCommand.mock.calls.find(
-				(c: any) => c[0].id === 'auto-notes:undo-tidy'
+				(c: any) => c[0].id === 'synapse:undo-tidy'
 			)[0];
 
 			await undoCommand.editorCallback({}, { file });
@@ -248,7 +248,7 @@ describe('TidyModule', () => {
 
 			await module.onload();
 			const undoCommand = mockPlugin.addCommand.mock.calls.find(
-				(c: any) => c[0].id === 'auto-notes:undo-tidy'
+				(c: any) => c[0].id === 'synapse:undo-tidy'
 			)[0];
 
 			await undoCommand.editorCallback({}, { file });

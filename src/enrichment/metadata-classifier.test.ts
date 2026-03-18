@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MetadataClassifier } from './metadata-classifier';
-import { AutoNotesSettings, DEFAULT_SETTINGS } from '../settings';
+import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 
 const mockComplete = vi.fn();
 
@@ -11,7 +11,7 @@ vi.mock('../shared', () => ({
 	sanitizeAIResponse: (text: string) => text,
 }));
 
-function makeSettings(overrides?: Partial<AutoNotesSettings['enrichment']>): () => AutoNotesSettings {
+function makeSettings(overrides?: Partial<SynapseSettings['enrichment']>): () => SynapseSettings {
 	return () => ({
 		...DEFAULT_SETTINGS,
 		enrichment: {

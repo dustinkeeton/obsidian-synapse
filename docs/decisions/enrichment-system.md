@@ -105,7 +105,7 @@ audio.onTranscriptionComplete  --> enrichment.enrich(file, 'transcription')
 video.onTranscriptionComplete  --> enrichment.enrich(file, 'transcription')
 ```
 
-Plus a manual command: `auto-notes:enrich-current-note`.
+Plus a manual command: `synapse:enrich-current-note`.
 
 **Alternatives considered**:
 - **Event bus / pub-sub**: Rejected. The plugin currently has four modules and explicit wiring is easier to trace than indirect event dispatch. An event bus adds indirection that helps at scale but hurts readability in a small system. This can be revisited if the module count grows significantly.
@@ -134,14 +134,14 @@ Even when `autoEnrich` is enabled, the system only *generates* proposals automat
 Enrichment content is wrapped in Obsidian-compatible marker comments:
 
 ```markdown
-%% auto-notes-enrichment-start %%
+%% synapse-enrichment-start %%
 ... enrichment content ...
-%% auto-notes-enrichment-end %%
+%% synapse-enrichment-end %%
 ```
 
 This enables:
 - **Idempotent re-enrichment**: Running enrichment again on the same note replaces the marked section rather than duplicating content.
-- **Clean undo**: The `auto-notes:undo-enrichment` command can surgically remove everything between the markers without touching user-written content.
+- **Clean undo**: The `synapse:undo-enrichment` command can surgically remove everything between the markers without touching user-written content.
 - **Visibility**: Users can see exactly what was added by searching for the markers.
 
 ### Layer 3: Additive-Only Operations
@@ -161,7 +161,7 @@ This enables:
 
 **Context**: The enrichment system has many knobs. They need sensible defaults so most users never touch them, but power users should have full control.
 
-**Decision**: `EnrichmentSettings` interface nested under `AutoNotesSettings.enrichment`:
+**Decision**: `EnrichmentSettings` interface nested under `SynapseSettings.enrichment`:
 
 | Setting | Type | Default | Purpose |
 |---------|------|---------|---------|
@@ -177,7 +177,7 @@ This enables:
 | `weights.distantFolder` | number | 0.2 | Proximity weight for distant folders |
 | `weights.decayPerLevel` | number | 0.15 | Weight reduction per folder level |
 | `weights.minimumFloor` | number | 0.1 | Minimum weight (never goes below this) |
-| `excludeFolders` | string[] | ['templates', '.auto-notes'] | Folders to skip during vault analysis |
+| `excludeFolders` | string[] | ['templates', '.synapse'] | Folders to skip during vault analysis |
 | `excludeTags` | string[] | ['no-enrich'] | Notes with these tags are skipped |
 | `relatedNotesHeading` | string | 'Related Notes' | Heading for the internal links section |
 | `referencesHeading` | string | 'References' | Heading for external references |

@@ -1,4 +1,4 @@
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse } from '../shared';
 import { ExtractedTopic } from './types';
 
@@ -8,7 +8,7 @@ import { ExtractedTopic } from './types';
 export class NoteGenerator {
 	private aiClient: AIClient;
 
-	constructor(private getSettings: () => AutoNotesSettings) {
+	constructor(private getSettings: () => SynapseSettings) {
 		this.aiClient = new AIClient(getSettings);
 	}
 

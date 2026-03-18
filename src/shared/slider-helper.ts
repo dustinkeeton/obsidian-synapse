@@ -70,24 +70,24 @@ export function addEnhancedSlider(
 		const controlEl = setting.controlEl;
 
 		// Create a wrapper div and move the slider input into it
-		const wrapper = createDiv({ cls: 'auto-notes-slider-wrapper' });
+		const wrapper = createDiv({ cls: 'synapse-slider-wrapper' });
 		controlEl.insertBefore(wrapper, sliderEl);
 		wrapper.appendChild(sliderEl);
 
 		// Current value badge (above the slider track)
 		const currentValueEl = wrapper.createDiv({
-			cls: 'auto-notes-slider-current-value',
+			cls: 'synapse-slider-current-value',
 			text: formatValue(value),
 		});
 
 		// Min/max label row (below the slider track)
-		const labelsRow = wrapper.createDiv({ cls: 'auto-notes-slider-labels' });
+		const labelsRow = wrapper.createDiv({ cls: 'synapse-slider-labels' });
 		labelsRow.createSpan({
-			cls: 'auto-notes-slider-label-min',
+			cls: 'synapse-slider-label-min',
 			text: formatValue(min),
 		});
 		labelsRow.createSpan({
-			cls: 'auto-notes-slider-label-max',
+			cls: 'synapse-slider-label-max',
 			text: formatValue(max),
 		});
 
@@ -97,10 +97,10 @@ export function addEnhancedSlider(
 			// Only render ticks when there are 2-20 stops (avoids visual noise)
 			if (tickCount >= 2 && tickCount <= 20) {
 				const tickContainer = wrapper.createDiv({
-					cls: 'auto-notes-slider-ticks',
+					cls: 'synapse-slider-ticks',
 				});
 				for (let i = 0; i <= tickCount; i++) {
-					tickContainer.createDiv({ cls: 'auto-notes-slider-tick' });
+					tickContainer.createDiv({ cls: 'synapse-slider-tick' });
 				}
 			}
 		}

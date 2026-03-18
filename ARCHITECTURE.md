@@ -1,6 +1,8 @@
 # Architecture Overview
 
-Auto Notes is an Obsidian plugin that provides eight AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, summarization, note tidying, semantic organization, and recursive deep-dive note generation. Desktop only (requires Node.js APIs for video processing).
+Synapse is an Obsidian plugin that provides eight AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, summarization, note tidying, semantic organization, and recursive deep-dive note generation. Desktop only (requires Node.js APIs for video processing).
+
+> **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
 ---
 
@@ -9,9 +11,10 @@ Auto Notes is an Obsidian plugin that provides eight AI-powered features: note e
 ```mermaid
 graph TB
     subgraph Obsidian["Obsidian Desktop"]
-        Main["main.ts<br/>AutoNotesPlugin"]
+        Main["main.ts<br/>SynapsePlugin"]
         Settings["Settings + Tab"]
         Sidebar["Unified Proposal View<br/>(sidebar)"]
+        CkptMgr["CheckpointManager<br/>(shared, singleton)"]
 
         subgraph Features["Feature Modules"]
             Elab["Elaboration"]
@@ -36,8 +39,10 @@ graph TB
 
     Main --> Settings
     Main --> Sidebar
+    Main --> CkptMgr
     Main --> Features
     Features --> Shared
+    Features --> CkptMgr
     Shared --> AI
     Audio --> TransAPI
     Video --> Tools
@@ -49,6 +54,7 @@ graph TB
 
     style Trans fill:#f9f,stroke:#333
     style Sidebar fill:#bbf,stroke:#333
+    style CkptMgr fill:#ffd,stroke:#333
 ```
 
 ---
@@ -121,6 +127,9 @@ src/
 │
 ├── shared/                 # Cross-cutting utilities
 │   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Ollama)
+│   ├── checkpoint-manager.ts #  Checkpoint/resume for long-running operations
+│   ├── checkpoint-types.ts #   Checkpoint type definitions
+│   ├── id-utils.ts         #   ID generation and validation
 │   ├── notifications.ts    #   Centralized notification system
 │   ├── validation.ts       #   URL, path, AI response sanitization
 │   ├── file-utils.ts       #   Vault file operations
@@ -133,7 +142,7 @@ src/
 │   └── index.ts            #   Barrel export
 │
 └── views/                  # UI components
-    └── unified-proposal-view.ts  # Single sidebar for all proposal types
+    └── unified-proposal-view.ts  # Single sidebar for all proposal types + checkpoints
 ```
 
 ---
@@ -184,6 +193,7 @@ Key constraints:
 - **Deep Dive reuses Organize** for `auto-organize` nesting mode
 - **All feature modules depend on Shared** — no circular dependencies
 - **Views imports types only** from feature modules
+- **CheckpointManager is a singleton** — created in `main.ts`, injected into all modules that need it
 
 ---
 
@@ -195,20 +205,51 @@ sequenceDiagram
     participant M as main.ts
     participant Mod as Modules (×8)
     participant CB as Callbacks
+    participant CK as CheckpointManager
 
     O->>M: onload()
     M->>M: loadSettings() (deep-merge)
+    M->>M: migrateDataFolder() (.auto-notes → .synapse)
     M->>M: addSettingTab()
     M->>M: NotificationManager()
-    M->>Mod: Initialize 8 modules<br/>(Audio before Video)
+    M->>CK: new CheckpointManager(app)
+    M->>Mod: Initialize 8 modules<br/>(Audio before Video, inject CheckpointManager)
     M->>M: registerView(UnifiedProposalView)
     M->>CB: Wire refresh callbacks
     M->>Mod: Conditional module.onload()<br/>(if enabled in settings)
     M->>CB: Wire enrichment callbacks<br/>(if autoEnrich)
     M->>CB: Wire organize callbacks<br/>(if autoOrganizeOnAccept)
     M->>M: addRibbonIcon (sparkles, mic)
-    M->>M: addCommand (review, transcribe)
+    M->>M: addCommand (review, checkpoints, transcribe)
+    M->>CK: checkForIncompleteCheckpoints() (delayed 3s)
 ```
+
+---
+
+## Checkpoint/Resume System
+
+Long-running operations (vault scans, batch transcriptions) can be interrupted by plugin reload or Obsidian restart. The checkpoint system preserves progress:
+
+```mermaid
+graph TB
+    Start["Module starts operation"] --> Create["CheckpointManager.create()<br/>Record all work items"]
+    Create --> Work["Process items one at a time"]
+    Work --> Complete["completeItem(id)<br/>Move to completedItems"]
+    Complete --> More{More items?}
+    More -->|Yes| Work
+    More -->|No| Finish["complete()<br/>Fire deferred tasks"]
+
+    Work -->|"Interrupted!"| Persist["Checkpoint saved to<br/>.synapse/checkpoints/{id}.json"]
+    Persist --> Reload["Plugin reloads"]
+    Reload --> Detect["checkForIncompleteCheckpoints()<br/>Notify user"]
+    Detect --> Resume["resume(id)<br/>Return remaining items"]
+    Resume --> Work
+```
+
+- Checkpoints are stored as JSON in `.synapse/checkpoints/`
+- Each module implements `resumeFromCheckpoint(checkpoint)` to continue work
+- Users can also discard checkpoints (completed items are kept, remaining items abandoned)
+- The unified sidebar shows a banner for any incomplete checkpoints
 
 ---
 
@@ -234,7 +275,7 @@ graph TB
         YtDlp["yt-dlp + ffmpeg"]
     end
 
-    Ribbon["🎤 Ribbon Icon"] --> UM
+    Ribbon["Ribbon Icon (mic)"] --> UM
     Cmd1["transcribe-media command"] --> UM
     Cmd2["transcribe-note-media command"] --> NM
 
@@ -323,7 +364,8 @@ Root Note
 
 ```mermaid
 graph TB
-    Start["User triggers deep dive"] --> Phase1["Phase 1: Extract Topics<br/>TopicAnalyzer.extractTopics()"]
+    Start["User triggers deep dive"] --> Depth["DepthSelectorModal<br/>Choose max depth (1-5)"]
+    Depth --> Phase1["Phase 1: Extract Topics<br/>TopicAnalyzer.extractTopics()"]
     Phase1 --> Filter["Filter: skip existing vault notes"]
     Filter --> Phase2["Phase 2: User Confirmation<br/>'Found N new topics. Generate?'"]
     Phase2 --> BFS["Phase 3: BFS Generation Loop"]
@@ -385,10 +427,10 @@ graph TB
 
 ## Storage Layer
 
-All module data is stored as individual JSON files under `.auto-notes/`:
+All module data is stored as individual JSON files under `.synapse/`:
 
 ```
-.auto-notes/
+.synapse/
 ├── proposals/                    # Elaboration
 │   └── {id}.json                 #   Proposal with detection reasons + AI content
 ├── enrichments/                  # Enrichment
@@ -402,6 +444,8 @@ All module data is stored as individual JSON files under `.auto-notes/`:
 ├── deep-dive/
 │   ├── {id}.json                 # Individual note proposals
 │   └── runs/{id}.json            # Run metadata (stats, depth breakdown)
+├── checkpoints/                  # Checkpoint/resume
+│   └── {id}.json                 # Operation state (completed + remaining items)
 └── temp/                         # Temporary video/audio (auto-cleaned)
 ```
 
@@ -409,7 +453,8 @@ Design principles:
 - One file per proposal/snapshot (no corruption cascade)
 - Human-inspectable JSON (debuggable)
 - Survives plugin reloads and Obsidian restarts
-- `.auto-notes/` excluded from all module scans by default
+- `.synapse/` excluded from all module scans by default
+- Legacy `.auto-notes/` folder auto-migrated on first load
 
 ---
 
@@ -438,19 +483,19 @@ All AI-generated content uses Obsidian callouts from a shared registry:
 
 | Key | Type String | Usage |
 |-----|-------------|-------|
-| summary | `auto-notes-summary` | Inline URL/transcription summaries |
-| transcription | `auto-notes-transcription` | Audio/video transcriptions |
-| enrichment | `auto-notes-enrichment` | Enrichment sections |
-| elaboration | `auto-notes-elaboration` | Elaboration proposals |
-| deepDive | `auto-notes-deep-dive` | Deep dive content |
-| nav | `auto-notes-nav` | Deep dive navigation blocks |
+| summary | `synapse-summary` | Inline URL/transcription summaries |
+| transcription | `synapse-transcription` | Audio/video transcriptions |
+| enrichment | `synapse-enrichment` | Enrichment sections |
+| elaboration | `synapse-elaboration` | Elaboration proposals |
+| deepDive | `synapse-deep-dive` | Deep dive content |
+| nav | `synapse-nav` | Deep dive navigation blocks |
 
 ---
 
 ## Settings Hierarchy
 
 ```
-AutoNotesSettings
+SynapseSettings
 ├── ai              → Provider, API key, model, temperature, max tokens
 ├── elaboration     → Detection thresholds, scan behavior, proposal storage
 │   ├── detection   → Word threshold, TODO markers, empty sections, excludes
@@ -483,7 +528,8 @@ Modules access settings via `getSettings()` closure — always reads latest valu
 | API key protection | `redactSecrets()` in error messages, password-masked inputs | `shared/ai-client.ts` |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
-| Idempotent updates | `%% auto-notes-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
+| Idempotent updates | `%% synapse-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
+| Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
 
 ---
 
@@ -492,7 +538,7 @@ Modules access settings via `getSettings()` closure — always reads latest valu
 1. Clone into Obsidian vault's plugin directory
 2. `npm install` then `npm run dev` (watch mode)
 3. Module pattern: each feature in `src/<module>/` with `index.ts` exporting the module class
-4. Follow the FeatureModule contract: `constructor(plugin, getSettings, notifications)`, `onload()`, `onunload()`
+4. Follow the FeatureModule contract: `constructor(plugin, getSettings, notifications, checkpointManager)`, `onload()`, `onunload()`
 5. Types go in `<module>/types.ts`, tests co-located as `<name>.test.ts`
 6. All shared utilities imported from `../shared` (barrel export)
 7. Build check: `npm run build` (type-checks + bundles)

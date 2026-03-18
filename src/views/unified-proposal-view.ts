@@ -5,7 +5,7 @@ import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
 import type { Checkpoint } from '../shared';
 
-export const UNIFIED_VIEW_TYPE = 'auto-notes-proposals';
+export const UNIFIED_VIEW_TYPE = 'synapse-proposals';
 
 /** Wrapper to unify elaboration, enrichment, organize, and deep-dive proposals in one list. */
 export type UnifiedItem =
@@ -67,7 +67,7 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return 'Auto Notes Proposals';
+		return 'Synapse Proposals';
 	}
 
 	getIcon(): string {
@@ -242,17 +242,17 @@ export class UnifiedProposalView extends ItemView {
 	private renderAcceptAllProgress(current: number, total: number): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass('auto-notes-view-root');
+		contentEl.addClass('synapse-view-root');
 		contentEl.createEl('h3', { text: 'Pending Proposals' });
 
-		const progressBar = contentEl.createDiv({ cls: 'auto-notes-accept-all-progress' });
+		const progressBar = contentEl.createDiv({ cls: 'synapse-accept-all-progress' });
 		progressBar.createEl('p', {
 			text: `Accepting ${current + 1}/${total}...`,
-			cls: 'auto-notes-accept-all-progress-text',
+			cls: 'synapse-accept-all-progress-text',
 		});
 
-		const track = progressBar.createDiv({ cls: 'auto-notes-accept-all-track' });
-		const fill = track.createDiv({ cls: 'auto-notes-accept-all-fill' });
+		const track = progressBar.createDiv({ cls: 'synapse-accept-all-track' });
+		const fill = track.createDiv({ cls: 'synapse-accept-all-fill' });
 		fill.style.width = `${Math.round((current / total) * 100)}%`;
 	}
 
@@ -261,7 +261,7 @@ export class UnifiedProposalView extends ItemView {
 	private renderList(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass('auto-notes-view-root');
+		contentEl.addClass('synapse-view-root');
 		contentEl.createEl('h3', { text: 'Pending Proposals' });
 
 		// Render incomplete checkpoints banner
@@ -272,7 +272,7 @@ export class UnifiedProposalView extends ItemView {
 		if (this.items.length === 0 && this.incompleteCheckpoints.length === 0) {
 			contentEl.createEl('p', {
 				text: 'No pending proposals. Scan your vault or enrich a note to get started.',
-				cls: 'auto-notes-empty',
+				cls: 'synapse-empty',
 			});
 			return;
 		}
@@ -283,10 +283,10 @@ export class UnifiedProposalView extends ItemView {
 
 		// Accept All button — only when 2+ proposals are pending
 		if (this.items.length >= 2) {
-			const acceptAllBar = contentEl.createDiv({ cls: 'auto-notes-accept-all-bar' });
+			const acceptAllBar = contentEl.createDiv({ cls: 'synapse-accept-all-bar' });
 			const acceptAllBtn = acceptAllBar.createEl('button', {
 				text: 'Accept All',
-				cls: 'auto-notes-accept-all-btn mod-cta',
+				cls: 'synapse-accept-all-btn mod-cta',
 			});
 			if (this.acceptAllInProgress) {
 				acceptAllBtn.disabled = true;
@@ -294,7 +294,7 @@ export class UnifiedProposalView extends ItemView {
 			acceptAllBtn.addEventListener('click', () => this.acceptAll());
 		}
 
-		const list = contentEl.createDiv({ cls: 'auto-notes-proposal-list' });
+		const list = contentEl.createDiv({ cls: 'synapse-proposal-list' });
 
 		const grouped = new Map<string, UnifiedItem[]>();
 		for (const item of this.items) {
@@ -305,10 +305,10 @@ export class UnifiedProposalView extends ItemView {
 		}
 
 		for (const [notePath, noteItems] of grouped) {
-			const section = list.createDiv({ cls: 'auto-notes-proposal-group' });
+			const section = list.createDiv({ cls: 'synapse-proposal-group' });
 			const heading = section.createEl('h4', {
 				text: notePath,
-				cls: 'auto-notes-note-link',
+				cls: 'synapse-note-link',
 			});
 			heading.addEventListener('click', () => this.openNote(notePath));
 
@@ -327,20 +327,20 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	private renderElaborationCard(container: HTMLElement, proposal: Proposal): void {
-		const card = container.createDiv({ cls: 'auto-notes-proposal-card auto-notes-card--elaboration' });
+		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--elaboration' });
 
-		card.createEl('span', { text: 'Elaboration', cls: 'auto-notes-badge auto-notes-badge--elaboration' });
+		card.createEl('span', { text: 'Elaboration', cls: 'synapse-badge synapse-badge--elaboration' });
 
 		const reasons = proposal.detectionReasons.map(r => r.type).join(', ');
-		card.createEl('small', { text: reasons, cls: 'auto-notes-reasons' });
+		card.createEl('small', { text: reasons, cls: 'synapse-reasons' });
 
 		const preview = proposal.proposedAdditions.slice(0, 200);
 		card.createEl('p', {
 			text: preview + (proposal.proposedAdditions.length > 200 ? '...' : ''),
-			cls: 'auto-notes-preview',
+			cls: 'synapse-preview',
 		});
 
-		const actions = card.createDiv({ cls: 'auto-notes-actions' });
+		const actions = card.createDiv({ cls: 'synapse-actions' });
 
 		const viewBtn = actions.createEl('button', { text: 'Review' });
 		viewBtn.addEventListener('click', () => {
@@ -360,9 +360,9 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	private renderEnrichmentCard(container: HTMLElement, proposal: EnrichmentProposal): void {
-		const card = container.createDiv({ cls: 'auto-notes-proposal-card auto-notes-card--enrichment' });
+		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--enrichment' });
 
-		card.createEl('span', { text: 'Enrichment', cls: 'auto-notes-badge auto-notes-badge--enrichment' });
+		card.createEl('span', { text: 'Enrichment', cls: 'synapse-badge synapse-badge--enrichment' });
 
 		const { result } = proposal;
 		const parts: string[] = [];
@@ -373,7 +373,7 @@ export class UnifiedProposalView extends ItemView {
 
 		card.createEl('small', {
 			text: `${proposal.triggerSource} | ${parts.join(', ')}`,
-			cls: 'auto-notes-reasons',
+			cls: 'synapse-reasons',
 		});
 
 		if (result.tags.length > 0) {
@@ -390,11 +390,11 @@ export class UnifiedProposalView extends ItemView {
 				.join('; ');
 			card.createEl('p', {
 				text: tagPreview + (result.tags.length > 5 ? '...' : ''),
-				cls: 'auto-notes-preview',
+				cls: 'synapse-preview',
 			});
 		}
 
-		const actions = card.createDiv({ cls: 'auto-notes-actions' });
+		const actions = card.createDiv({ cls: 'synapse-actions' });
 
 		const viewBtn = actions.createEl('button', { text: 'Review' });
 		viewBtn.addEventListener('click', () => {
@@ -419,22 +419,22 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	private renderOrganizeCard(container: HTMLElement, proposal: OrganizeProposal): void {
-		const card = container.createDiv({ cls: 'auto-notes-proposal-card auto-notes-card--organize' });
+		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--organize' });
 
-		card.createEl('span', { text: 'Organize', cls: 'auto-notes-badge auto-notes-badge--organize' });
+		card.createEl('span', { text: 'Organize', cls: 'synapse-badge synapse-badge--organize' });
 
 		card.createEl('small', {
 			text: `Move to ${proposal.proposedDirectory}`,
-			cls: 'auto-notes-reasons',
+			cls: 'synapse-reasons',
 		});
 
 		const preview = proposal.reasoning.slice(0, 200);
 		card.createEl('p', {
 			text: preview + (proposal.reasoning.length > 200 ? '...' : ''),
-			cls: 'auto-notes-preview',
+			cls: 'synapse-preview',
 		});
 
-		const actions = card.createDiv({ cls: 'auto-notes-actions' });
+		const actions = card.createDiv({ cls: 'synapse-actions' });
 
 		const viewBtn = actions.createEl('button', { text: 'Review' });
 		viewBtn.addEventListener('click', () => {
@@ -458,15 +458,15 @@ export class UnifiedProposalView extends ItemView {
 	private renderElaborationReview(proposal: Proposal): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass('auto-notes-view-root');
+		contentEl.addClass('synapse-view-root');
 
-		const header = contentEl.createDiv({ cls: 'auto-notes-review-header' });
-		const backBtn = header.createEl('button', { text: 'Back', cls: 'auto-notes-review-back' });
+		const header = contentEl.createDiv({ cls: 'synapse-review-header' });
+		const backBtn = header.createEl('button', { text: 'Back', cls: 'synapse-review-back' });
 		backBtn.addEventListener('click', () => this.exitReview());
 
 		const titleLink = header.createEl('span', {
 			text: proposal.sourceNotePath,
-			cls: 'auto-notes-review-title auto-notes-note-link',
+			cls: 'synapse-review-title synapse-note-link',
 		});
 		titleLink.addEventListener('click', () => this.openNote(proposal.sourceNotePath));
 
@@ -481,17 +481,17 @@ export class UnifiedProposalView extends ItemView {
 			})
 			.join(' | ');
 
-		contentEl.createEl('small', { text: reasons, cls: 'auto-notes-review-reasons' });
+		contentEl.createEl('small', { text: reasons, cls: 'synapse-review-reasons' });
 
-		const editorPane = contentEl.createDiv({ cls: 'auto-notes-review-pane' });
+		const editorPane = contentEl.createDiv({ cls: 'synapse-review-pane' });
 		editorPane.createEl('div', {
 			text: 'Proposed Additions',
-			cls: 'auto-notes-review-pane-label auto-notes-review-pane-label--elaboration',
+			cls: 'synapse-review-pane-label synapse-review-pane-label--elaboration',
 		});
-		const textarea = editorPane.createEl('textarea', { cls: 'auto-notes-review-editor' });
+		const textarea = editorPane.createEl('textarea', { cls: 'synapse-review-editor' });
 		textarea.value = proposal.proposedAdditions;
 
-		const actionBar = contentEl.createDiv({ cls: 'auto-notes-review-actions' });
+		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
 		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			this.reviewingElaboration = null;
@@ -519,26 +519,26 @@ export class UnifiedProposalView extends ItemView {
 	private renderEnrichmentReview(proposal: EnrichmentProposal): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass('auto-notes-view-root');
+		contentEl.addClass('synapse-view-root');
 
 		// Header
-		const header = contentEl.createDiv({ cls: 'auto-notes-review-header' });
-		const backBtn = header.createEl('button', { text: 'Back', cls: 'auto-notes-review-back' });
+		const header = contentEl.createDiv({ cls: 'synapse-review-header' });
+		const backBtn = header.createEl('button', { text: 'Back', cls: 'synapse-review-back' });
 		backBtn.addEventListener('click', () => this.exitReview());
 
 		const titleLink = header.createEl('span', {
 			text: proposal.sourceNotePath,
-			cls: 'auto-notes-review-title auto-notes-note-link',
+			cls: 'synapse-review-title synapse-note-link',
 		});
 		titleLink.addEventListener('click', () => this.openNote(proposal.sourceNotePath));
 
 		contentEl.createEl('small', {
 			text: `${proposal.triggerSource} | ${proposal.createdAt.split('T')[0]}`,
-			cls: 'auto-notes-review-reasons',
+			cls: 'synapse-review-reasons',
 		});
 
 		// Scrollable checklist
-		const checklist = contentEl.createDiv({ cls: 'auto-notes-enrichment-checklist' });
+		const checklist = contentEl.createDiv({ cls: 'synapse-enrichment-checklist' });
 
 		const { result } = proposal;
 
@@ -575,7 +575,7 @@ export class UnifiedProposalView extends ItemView {
 		}
 
 		// Action bar
-		const actionBar = contentEl.createDiv({ cls: 'auto-notes-review-actions' });
+		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
 
 		const acceptBtn = actionBar.createEl('button', { text: 'Accept Selected', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
@@ -619,47 +619,47 @@ export class UnifiedProposalView extends ItemView {
 	private renderOrganizeReview(proposal: OrganizeProposal): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass('auto-notes-view-root');
+		contentEl.addClass('synapse-view-root');
 
-		const header = contentEl.createDiv({ cls: 'auto-notes-review-header' });
-		const backBtn = header.createEl('button', { text: 'Back', cls: 'auto-notes-review-back' });
+		const header = contentEl.createDiv({ cls: 'synapse-review-header' });
+		const backBtn = header.createEl('button', { text: 'Back', cls: 'synapse-review-back' });
 		backBtn.addEventListener('click', () => this.exitReview());
 
 		const titleLink = header.createEl('span', {
 			text: proposal.sourceNotePath,
-			cls: 'auto-notes-review-title auto-notes-note-link',
+			cls: 'synapse-review-title synapse-note-link',
 		});
 		titleLink.addEventListener('click', () => this.openNote(proposal.sourceNotePath));
 
 		contentEl.createEl('small', {
 			text: `Proposed ${proposal.createdAt.split('T')[0]}`,
-			cls: 'auto-notes-review-reasons',
+			cls: 'synapse-review-reasons',
 		});
 
 		// Proposed directory
-		const dirPane = contentEl.createDiv({ cls: 'auto-notes-organize-detail' });
+		const dirPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		dirPane.createEl('div', {
 			text: 'Proposed Directory',
-			cls: 'auto-notes-review-pane-label auto-notes-review-pane-label--organize',
+			cls: 'synapse-review-pane-label synapse-review-pane-label--organize',
 		});
 		dirPane.createEl('p', {
 			text: proposal.proposedDirectory,
-			cls: 'auto-notes-organize-directory',
+			cls: 'synapse-organize-directory',
 		});
 
 		// Reasoning
-		const reasonPane = contentEl.createDiv({ cls: 'auto-notes-organize-detail' });
+		const reasonPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		reasonPane.createEl('div', {
 			text: 'Reasoning',
-			cls: 'auto-notes-review-pane-label auto-notes-review-pane-label--organize',
+			cls: 'synapse-review-pane-label synapse-review-pane-label--organize',
 		});
 		reasonPane.createEl('p', {
 			text: proposal.reasoning,
-			cls: 'auto-notes-organize-reasoning',
+			cls: 'synapse-organize-reasoning',
 		});
 
 		// Action bar
-		const actionBar = contentEl.createDiv({ cls: 'auto-notes-review-actions' });
+		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
 		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			this.reviewingOrganize = null;
@@ -675,33 +675,33 @@ export class UnifiedProposalView extends ItemView {
 	// ── Deep Dive Card ────────────────────────────────────────
 
 	private renderDeepDiveCard(container: HTMLElement, proposal: DeepDiveProposal): void {
-		const card = container.createDiv({ cls: 'auto-notes-proposal-card auto-notes-card--deep-dive' });
+		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--deep-dive' });
 
-		const badgeRow = card.createDiv({ cls: 'auto-notes-badge-row' });
-		badgeRow.createEl('span', { text: 'Deep Dive', cls: 'auto-notes-badge auto-notes-badge--deep-dive' });
+		const badgeRow = card.createDiv({ cls: 'synapse-badge-row' });
+		badgeRow.createEl('span', { text: 'Deep Dive', cls: 'synapse-badge synapse-badge--deep-dive' });
 		badgeRow.createEl('span', {
 			text: `D${proposal.depth}`,
-			cls: 'auto-notes-depth-badge',
+			cls: 'synapse-depth-badge',
 		});
 		badgeRow.createEl('span', {
 			text: `Q: ${proposal.qualityScore.score.toFixed(2)}`,
-			cls: 'auto-notes-quality-badge',
+			cls: 'synapse-quality-badge',
 		});
 
 		card.createEl('strong', { text: proposal.topic.title });
 
 		card.createEl('small', {
 			text: proposal.topic.description,
-			cls: 'auto-notes-reasons',
+			cls: 'synapse-reasons',
 		});
 
 		const preview = proposal.proposedContent.slice(0, 200);
 		card.createEl('p', {
 			text: preview + (proposal.proposedContent.length > 200 ? '...' : ''),
-			cls: 'auto-notes-preview',
+			cls: 'synapse-preview',
 		});
 
-		const actions = card.createDiv({ cls: 'auto-notes-actions' });
+		const actions = card.createDiv({ cls: 'synapse-actions' });
 
 		const viewBtn = actions.createEl('button', { text: 'Review' });
 		viewBtn.addEventListener('click', () => {
@@ -725,53 +725,53 @@ export class UnifiedProposalView extends ItemView {
 	private renderDeepDiveReview(proposal: DeepDiveProposal): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass('auto-notes-view-root');
+		contentEl.addClass('synapse-view-root');
 
-		const header = contentEl.createDiv({ cls: 'auto-notes-review-header' });
-		const backBtn = header.createEl('button', { text: 'Back', cls: 'auto-notes-review-back' });
+		const header = contentEl.createDiv({ cls: 'synapse-review-header' });
+		const backBtn = header.createEl('button', { text: 'Back', cls: 'synapse-review-back' });
 		backBtn.addEventListener('click', () => this.exitReview());
 
 		header.createEl('span', {
 			text: proposal.topic.title,
-			cls: 'auto-notes-review-title',
+			cls: 'synapse-review-title',
 		});
 
 		// Metadata row
-		const meta = contentEl.createDiv({ cls: 'auto-notes-deep-dive-meta' });
-		meta.createEl('span', { text: `Depth: ${proposal.depth}`, cls: 'auto-notes-depth-badge' });
+		const meta = contentEl.createDiv({ cls: 'synapse-deep-dive-meta' });
+		meta.createEl('span', { text: `Depth: ${proposal.depth}`, cls: 'synapse-depth-badge' });
 		meta.createEl('span', {
 			text: `Quality: ${proposal.qualityScore.score.toFixed(2)}`,
-			cls: 'auto-notes-quality-badge',
+			cls: 'synapse-quality-badge',
 		});
 
 		contentEl.createEl('small', {
 			text: `From: ${proposal.sourceNotePath}`,
-			cls: 'auto-notes-review-reasons',
+			cls: 'synapse-review-reasons',
 		});
 
 		contentEl.createEl('small', {
 			text: proposal.qualityScore.reasoning,
-			cls: 'auto-notes-review-reasons',
+			cls: 'synapse-review-reasons',
 		});
 
 		// Proposed path
-		const pathPane = contentEl.createDiv({ cls: 'auto-notes-organize-detail' });
+		const pathPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		pathPane.createEl('div', {
 			text: 'Proposed Path',
-			cls: 'auto-notes-review-pane-label auto-notes-review-pane-label--deep-dive',
+			cls: 'synapse-review-pane-label synapse-review-pane-label--deep-dive',
 		});
 		pathPane.createEl('p', {
 			text: proposal.proposedPath,
-			cls: 'auto-notes-organize-directory',
+			cls: 'synapse-organize-directory',
 		});
 
 		// Content preview
-		const editorPane = contentEl.createDiv({ cls: 'auto-notes-review-pane' });
+		const editorPane = contentEl.createDiv({ cls: 'synapse-review-pane' });
 		editorPane.createEl('div', {
 			text: 'Proposed Content',
-			cls: 'auto-notes-review-pane-label auto-notes-review-pane-label--deep-dive',
+			cls: 'synapse-review-pane-label synapse-review-pane-label--deep-dive',
 		});
-		const textarea = editorPane.createEl('textarea', { cls: 'auto-notes-review-editor auto-notes-review-editor--deep-dive' });
+		const textarea = editorPane.createEl('textarea', { cls: 'synapse-review-editor synapse-review-editor--deep-dive' });
 		textarea.value = proposal.proposedContent;
 		textarea.readOnly = true;
 
@@ -779,12 +779,12 @@ export class UnifiedProposalView extends ItemView {
 		if (proposal.childProposalIds.length > 0) {
 			contentEl.createEl('small', {
 				text: `${proposal.childProposalIds.length} child proposal${proposal.childProposalIds.length === 1 ? '' : 's'} — rejecting will cascade`,
-				cls: 'auto-notes-review-reasons',
+				cls: 'synapse-review-reasons',
 			});
 		}
 
 		// Action bar
-		const actionBar = contentEl.createDiv({ cls: 'auto-notes-review-actions' });
+		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
 		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			this.reviewingDeepDive = null;
@@ -800,31 +800,31 @@ export class UnifiedProposalView extends ItemView {
 	// ── Checkpoint Banner ─────────────────────────────────────
 
 	private renderCheckpointBanner(container: HTMLElement): void {
-		const section = container.createDiv({ cls: 'auto-notes-checkpoint-banner' });
+		const section = container.createDiv({ cls: 'synapse-checkpoint-banner' });
 		section.createEl('div', {
 			text: 'Interrupted Operations',
-			cls: 'auto-notes-checkpoint-heading',
+			cls: 'synapse-checkpoint-heading',
 		});
 
 		for (const cp of this.incompleteCheckpoints) {
 			const total = cp.completedItems.length + cp.remainingItems.length;
 			const done = cp.completedItems.length;
 
-			const card = section.createDiv({ cls: 'auto-notes-checkpoint-card' });
+			const card = section.createDiv({ cls: 'synapse-checkpoint-card' });
 
-			const info = card.createDiv({ cls: 'auto-notes-checkpoint-info' });
+			const info = card.createDiv({ cls: 'synapse-checkpoint-info' });
 			info.createEl('strong', { text: cp.operationLabel });
 			info.createEl('small', {
 				text: `${done}/${total} completed -- ${cp.remainingItems.length} remaining`,
-				cls: 'auto-notes-reasons',
+				cls: 'synapse-reasons',
 			});
 
 			// Progress bar
-			const track = card.createDiv({ cls: 'auto-notes-checkpoint-track' });
-			const fill = track.createDiv({ cls: 'auto-notes-checkpoint-fill' });
+			const track = card.createDiv({ cls: 'synapse-checkpoint-track' });
+			const fill = track.createDiv({ cls: 'synapse-checkpoint-fill' });
 			fill.style.width = `${total > 0 ? Math.round((done / total) * 100) : 0}%`;
 
-			const actions = card.createDiv({ cls: 'auto-notes-actions' });
+			const actions = card.createDiv({ cls: 'synapse-actions' });
 
 			const resumeBtn = actions.createEl('button', { text: 'Resume', cls: 'mod-cta' });
 			resumeBtn.addEventListener('click', () => {
@@ -850,14 +850,14 @@ export class UnifiedProposalView extends ItemView {
 			selectedSet: Set<string>;
 		}
 	): void {
-		const section = container.createDiv({ cls: 'auto-notes-checklist-section' });
-		section.createEl('div', { text: title, cls: 'auto-notes-checklist-heading' });
+		const section = container.createDiv({ cls: 'synapse-checklist-section' });
+		section.createEl('div', { text: title, cls: 'synapse-checklist-heading' });
 
 		for (const item of items) {
 			const id = config.getId(item);
 			const label = config.getLabel(item);
 
-			const row = section.createEl('label', { cls: 'auto-notes-checklist-row' });
+			const row = section.createEl('label', { cls: 'synapse-checklist-row' });
 			const checkbox = row.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
 			checkbox.checked = config.selectedSet.has(id);
 			checkbox.addEventListener('change', () => {
@@ -874,34 +874,34 @@ export class UnifiedProposalView extends ItemView {
 	// ── Styles ─────────────────────────────────────────────────
 
 	private injectStyles(): void {
-		const id = 'auto-notes-unified-view-styles';
+		const id = 'synapse-unified-view-styles';
 		if (document.getElementById(id)) return;
 
 		const style = document.createElement('style');
 		style.id = id;
 		style.textContent = `
 			/* ── Layout ── */
-			.auto-notes-view-root {
+			.synapse-view-root {
 				display: flex;
 				flex-direction: column;
 				height: 100%;
 				overflow: hidden;
 			}
-			.auto-notes-view-root > h3 {
+			.synapse-view-root > h3 {
 				flex-shrink: 0;
 				margin: 0 0 8px;
 				padding: 0;
 			}
 
 			/* ── List Mode ── */
-			.auto-notes-proposal-list {
+			.synapse-proposal-list {
 				flex: 1;
 				overflow-y: auto;
 				display: flex;
 				flex-direction: column;
 				gap: 4px;
 			}
-			.auto-notes-proposal-card {
+			.synapse-proposal-card {
 				border-left: 3px solid var(--text-muted);
 				padding: 8px 12px;
 				margin: 6px 0;
@@ -912,22 +912,22 @@ export class UnifiedProposalView extends ItemView {
 				display: flex;
 				flex-direction: column;
 			}
-			.auto-notes-proposal-card .auto-notes-preview {
+			.synapse-proposal-card .synapse-preview {
 				flex: 1;
 			}
-			.auto-notes-proposal-card .auto-notes-actions {
+			.synapse-proposal-card .synapse-actions {
 				margin-top: auto;
 			}
-			.auto-notes-card--elaboration {
+			.synapse-card--elaboration {
 				border-left-color: var(--interactive-accent);
 			}
-			.auto-notes-card--enrichment {
+			.synapse-card--enrichment {
 				border-left-color: var(--color-green);
 			}
-			.auto-notes-card--organize {
+			.synapse-card--organize {
 				border-left-color: var(--color-orange);
 			}
-			.auto-notes-badge {
+			.synapse-badge {
 				display: inline-block;
 				font-size: 10px;
 				font-weight: 600;
@@ -939,34 +939,34 @@ export class UnifiedProposalView extends ItemView {
 				width: min-content;
 				white-space: nowrap;
 			}
-			.auto-notes-badge--elaboration {
+			.synapse-badge--elaboration {
 				background: var(--interactive-accent);
 				color: var(--text-on-accent);
 			}
-			.auto-notes-badge--enrichment {
+			.synapse-badge--enrichment {
 				background: var(--color-green);
 				color: var(--text-on-accent);
 			}
-			.auto-notes-badge--organize {
+			.synapse-badge--organize {
 				background: var(--color-orange);
 				color: var(--text-on-accent);
 			}
-			.auto-notes-reasons {
+			.synapse-reasons {
 				display: block;
 				color: var(--text-muted);
 				margin: 4px 0;
 			}
-			.auto-notes-preview {
+			.synapse-preview {
 				font-size: 13px;
 				color: var(--text-normal);
 				margin: 4px 0;
 			}
-			.auto-notes-actions {
+			.synapse-actions {
 				display: flex;
 				gap: 6px;
 				margin-top: 6px;
 			}
-			.auto-notes-actions button {
+			.synapse-actions button {
 				padding: 2px 10px;
 				border-radius: 4px;
 				font-size: 12px;
@@ -975,38 +975,38 @@ export class UnifiedProposalView extends ItemView {
 				background: var(--background-primary);
 				color: var(--text-normal);
 			}
-			.auto-notes-actions button:hover {
+			.synapse-actions button:hover {
 				background: var(--background-modifier-hover);
 			}
-			.auto-notes-proposal-group h4 {
+			.synapse-proposal-group h4 {
 				margin: 12px 0 4px;
 				font-size: 13px;
 				color: var(--text-muted);
 			}
-			.auto-notes-note-link {
+			.synapse-note-link {
 				cursor: pointer;
 				text-decoration: underline;
 				text-decoration-color: transparent;
 				transition: text-decoration-color 0.15s, color 0.15s;
 			}
-			.auto-notes-note-link:hover {
+			.synapse-note-link:hover {
 				color: var(--text-accent);
 				text-decoration-color: var(--text-accent);
 			}
-			.auto-notes-empty {
+			.synapse-empty {
 				color: var(--text-muted);
 				font-style: italic;
 			}
 
 			/* ── Review Mode (shared) ── */
-			.auto-notes-review-header {
+			.synapse-review-header {
 				flex-shrink: 0;
 				display: flex;
 				align-items: center;
 				gap: 8px;
 				margin-bottom: 6px;
 			}
-			.auto-notes-review-back {
+			.synapse-review-back {
 				padding: 2px 8px;
 				border-radius: 4px;
 				font-size: 12px;
@@ -1016,25 +1016,25 @@ export class UnifiedProposalView extends ItemView {
 				color: var(--text-muted);
 				flex-shrink: 0;
 			}
-			.auto-notes-review-back:hover {
+			.synapse-review-back:hover {
 				color: var(--text-normal);
 				border-color: var(--text-muted);
 			}
-			.auto-notes-review-title {
+			.synapse-review-title {
 				font-weight: 600;
 				font-size: 13px;
 				overflow: hidden;
 				text-overflow: ellipsis;
 				white-space: nowrap;
 			}
-			.auto-notes-review-reasons {
+			.synapse-review-reasons {
 				flex-shrink: 0;
 				display: block;
 				color: var(--text-muted);
 				margin-bottom: 8px;
 				font-size: 11px;
 			}
-			.auto-notes-review-actions {
+			.synapse-review-actions {
 				flex-shrink: 0;
 				display: flex;
 				gap: 8px;
@@ -1042,7 +1042,7 @@ export class UnifiedProposalView extends ItemView {
 				border-top: 1px solid var(--background-modifier-border);
 				margin-top: 8px;
 			}
-			.auto-notes-review-actions button {
+			.synapse-review-actions button {
 				padding: 4px 16px;
 				border-radius: 4px;
 				font-size: 13px;
@@ -1051,23 +1051,23 @@ export class UnifiedProposalView extends ItemView {
 				background: var(--background-primary);
 				color: var(--text-normal);
 			}
-			.auto-notes-review-actions button.mod-cta {
+			.synapse-review-actions button.mod-cta {
 				background: var(--interactive-accent);
 				color: var(--text-on-accent);
 				border-color: var(--interactive-accent);
 			}
-			.auto-notes-review-actions button:hover {
+			.synapse-review-actions button:hover {
 				opacity: 0.9;
 			}
 
 			/* ── Elaboration Review ── */
-			.auto-notes-review-pane {
+			.synapse-review-pane {
 				flex: 1;
 				display: flex;
 				flex-direction: column;
 				min-height: 0;
 			}
-			.auto-notes-review-pane-label {
+			.synapse-review-pane-label {
 				flex-shrink: 0;
 				font-size: 11px;
 				font-weight: 600;
@@ -1076,11 +1076,11 @@ export class UnifiedProposalView extends ItemView {
 				padding: 4px 8px;
 				border-radius: 4px 4px 0 0;
 			}
-			.auto-notes-review-pane-label--elaboration {
+			.synapse-review-pane-label--elaboration {
 				background: var(--interactive-accent);
 				color: var(--text-on-accent);
 			}
-			.auto-notes-review-editor {
+			.synapse-review-editor {
 				flex: 1;
 				padding: 8px;
 				font-size: 13px;
@@ -1094,21 +1094,21 @@ export class UnifiedProposalView extends ItemView {
 				color: var(--text-normal);
 				min-height: 120px;
 			}
-			.auto-notes-review-editor:focus {
+			.synapse-review-editor:focus {
 				outline: none;
 				border-color: var(--interactive-accent-hover);
 			}
 
 			/* ── Enrichment Review (checklist) ── */
-			.auto-notes-enrichment-checklist {
+			.synapse-enrichment-checklist {
 				flex: 1;
 				overflow-y: auto;
 				min-height: 0;
 			}
-			.auto-notes-checklist-section {
+			.synapse-checklist-section {
 				margin-bottom: 12px;
 			}
-			.auto-notes-checklist-heading {
+			.synapse-checklist-heading {
 				font-size: 11px;
 				font-weight: 600;
 				text-transform: uppercase;
@@ -1119,7 +1119,7 @@ export class UnifiedProposalView extends ItemView {
 				color: var(--text-on-accent);
 				margin-bottom: 4px;
 			}
-			.auto-notes-checklist-row {
+			.synapse-checklist-row {
 				display: flex;
 				align-items: flex-start;
 				gap: 8px;
@@ -1129,33 +1129,33 @@ export class UnifiedProposalView extends ItemView {
 				font-size: 13px;
 				line-height: 1.4;
 			}
-			.auto-notes-checklist-row:hover {
+			.synapse-checklist-row:hover {
 				background: var(--background-modifier-hover);
 			}
-			.auto-notes-checklist-row input[type="checkbox"] {
+			.synapse-checklist-row input[type="checkbox"] {
 				margin-top: 2px;
 				flex-shrink: 0;
 			}
-			.auto-notes-checklist-row span {
+			.synapse-checklist-row span {
 				color: var(--text-normal);
 				word-break: break-word;
 			}
 
 			/* ── Deep Dive ── */
-			.auto-notes-card--deep-dive {
+			.synapse-card--deep-dive {
 				border-left-color: var(--color-purple);
 			}
-			.auto-notes-badge--deep-dive {
+			.synapse-badge--deep-dive {
 				background: var(--color-purple);
 				color: var(--text-on-accent);
 			}
-			.auto-notes-badge-row {
+			.synapse-badge-row {
 				display: flex;
 				align-items: center;
 				gap: 6px;
 				margin-bottom: 4px;
 			}
-			.auto-notes-depth-badge {
+			.synapse-depth-badge {
 				font-size: 10px;
 				font-weight: 600;
 				padding: 1px 6px;
@@ -1163,35 +1163,35 @@ export class UnifiedProposalView extends ItemView {
 				background: var(--background-modifier-border);
 				color: var(--text-muted);
 			}
-			.auto-notes-quality-badge {
+			.synapse-quality-badge {
 				font-size: 10px;
 				padding: 1px 6px;
 				border-radius: 3px;
 				background: var(--background-modifier-border);
 				color: var(--text-muted);
 			}
-			.auto-notes-deep-dive-meta {
+			.synapse-deep-dive-meta {
 				display: flex;
 				gap: 8px;
 				margin-bottom: 6px;
 			}
-			.auto-notes-review-pane-label--deep-dive {
+			.synapse-review-pane-label--deep-dive {
 				background: var(--color-purple);
 				color: var(--text-on-accent);
 			}
-			.auto-notes-review-editor--deep-dive {
+			.synapse-review-editor--deep-dive {
 				border-color: var(--color-purple);
 			}
 
 			/* ── Organize Review ── */
-			.auto-notes-review-pane-label--organize {
+			.synapse-review-pane-label--organize {
 				background: var(--color-orange);
 				color: var(--text-on-accent);
 			}
-			.auto-notes-organize-detail {
+			.synapse-organize-detail {
 				margin-bottom: 12px;
 			}
-			.auto-notes-organize-directory {
+			.synapse-organize-directory {
 				font-size: 14px;
 				font-weight: 600;
 				font-family: var(--font-monospace);
@@ -1203,7 +1203,7 @@ export class UnifiedProposalView extends ItemView {
 				border-radius: 0 0 4px 4px;
 				margin: 0;
 			}
-			.auto-notes-organize-reasoning {
+			.synapse-organize-reasoning {
 				font-size: 13px;
 				line-height: 1.5;
 				color: var(--text-normal);
@@ -1216,14 +1216,14 @@ export class UnifiedProposalView extends ItemView {
 			}
 
 			/* ── Checkpoint Banner ── */
-			.auto-notes-checkpoint-banner {
+			.synapse-checkpoint-banner {
 				margin-bottom: 12px;
 				padding: 8px;
 				background: var(--background-secondary);
 				border-radius: 6px;
 				border-left: 3px solid var(--color-yellow);
 			}
-			.auto-notes-checkpoint-heading {
+			.synapse-checkpoint-heading {
 				font-size: 11px;
 				font-weight: 600;
 				text-transform: uppercase;
@@ -1231,23 +1231,23 @@ export class UnifiedProposalView extends ItemView {
 				color: var(--color-yellow);
 				margin-bottom: 6px;
 			}
-			.auto-notes-checkpoint-card {
+			.synapse-checkpoint-card {
 				padding: 6px 0;
 				border-bottom: 1px solid var(--background-modifier-border);
 			}
-			.auto-notes-checkpoint-card:last-child {
+			.synapse-checkpoint-card:last-child {
 				border-bottom: none;
 			}
-			.auto-notes-checkpoint-info {
+			.synapse-checkpoint-info {
 				display: flex;
 				flex-direction: column;
 				gap: 2px;
 				margin-bottom: 4px;
 			}
-			.auto-notes-checkpoint-info strong {
+			.synapse-checkpoint-info strong {
 				font-size: 13px;
 			}
-			.auto-notes-checkpoint-track {
+			.synapse-checkpoint-track {
 				width: 100%;
 				height: 4px;
 				border-radius: 2px;
@@ -1255,7 +1255,7 @@ export class UnifiedProposalView extends ItemView {
 				overflow: hidden;
 				margin-bottom: 6px;
 			}
-			.auto-notes-checkpoint-fill {
+			.synapse-checkpoint-fill {
 				height: 100%;
 				border-radius: 2px;
 				background: var(--color-yellow);
@@ -1263,11 +1263,11 @@ export class UnifiedProposalView extends ItemView {
 			}
 
 			/* ── Accept All ── */
-			.auto-notes-accept-all-bar {
+			.synapse-accept-all-bar {
 				flex-shrink: 0;
 				margin-bottom: 8px;
 			}
-			.auto-notes-accept-all-btn {
+			.synapse-accept-all-btn {
 				width: 100%;
 				padding: 6px 16px;
 				border-radius: 4px;
@@ -1278,14 +1278,14 @@ export class UnifiedProposalView extends ItemView {
 				background: var(--interactive-accent);
 				color: var(--text-on-accent);
 			}
-			.auto-notes-accept-all-btn:hover {
+			.synapse-accept-all-btn:hover {
 				opacity: 0.9;
 			}
-			.auto-notes-accept-all-btn:disabled {
+			.synapse-accept-all-btn:disabled {
 				opacity: 0.5;
 				cursor: not-allowed;
 			}
-			.auto-notes-accept-all-progress {
+			.synapse-accept-all-progress {
 				display: flex;
 				flex-direction: column;
 				align-items: center;
@@ -1293,20 +1293,20 @@ export class UnifiedProposalView extends ItemView {
 				gap: 12px;
 				padding: 32px 16px;
 			}
-			.auto-notes-accept-all-progress-text {
+			.synapse-accept-all-progress-text {
 				font-size: 14px;
 				font-weight: 600;
 				color: var(--text-normal);
 				margin: 0;
 			}
-			.auto-notes-accept-all-track {
+			.synapse-accept-all-track {
 				width: 100%;
 				height: 6px;
 				border-radius: 3px;
 				background: var(--background-modifier-border);
 				overflow: hidden;
 			}
-			.auto-notes-accept-all-fill {
+			.synapse-accept-all-fill {
 				height: 100%;
 				border-radius: 3px;
 				background: var(--interactive-accent);

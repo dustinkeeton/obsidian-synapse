@@ -171,7 +171,7 @@ export interface DeepDiveSettings {
 	autoOrganizeOnAccept: boolean;
 }
 
-export interface AutoNotesSettings {
+export interface SynapseSettings {
 	ai: AISettings;
 	elaboration: ElaborationSettings;
 	audio: AudioSettings;
@@ -183,7 +183,7 @@ export interface AutoNotesSettings {
 	deepDive: DeepDiveSettings;
 }
 
-export const DEFAULT_SETTINGS: AutoNotesSettings = {
+export const DEFAULT_SETTINGS: SynapseSettings = {
 	ai: {
 		provider: 'openai',
 		apiKey: '',
@@ -194,7 +194,7 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 	} as AISettings,
 	elaboration: {
 		enabled: true,
-		proposalFolderPath: '.auto-notes/proposals',
+		proposalFolderPath: '.synapse/proposals',
 		scanOnStartup: false,
 		autoScanInterval: 0,
 		detection: {
@@ -202,7 +202,7 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 			detectTodoMarkers: true,
 			detectEmptySections: true,
 			detectSparseLinks: true,
-			excludeFolders: ['templates', '.auto-notes'],
+			excludeFolders: ['templates', '.synapse'],
 			excludeTags: ['no-elaborate'],
 		},
 		proposal: {
@@ -231,7 +231,7 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		enabled: true,
 		ytDlpPath: 'yt-dlp',
 		ffmpegPath: 'ffmpeg',
-		tempFolder: '.auto-notes/temp',
+		tempFolder: '.synapse/temp',
 		downloadFolder: 'Media',
 		embedInNote: true,
 		supportedPlatforms: {
@@ -267,8 +267,8 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 			decayPerLevel: 0.15,
 			minWeight: 0.1,
 		},
-		enrichmentFolderPath: '.auto-notes/enrichments',
-		excludeFolders: ['templates', '.auto-notes'],
+		enrichmentFolderPath: '.synapse/enrichments',
+		excludeFolders: ['templates', '.synapse'],
 		excludeTags: ['no-enrich'],
 		relatedNotesHeading: 'Related Notes',
 		referencesHeading: 'References',
@@ -278,31 +278,31 @@ export const DEFAULT_SETTINGS: AutoNotesSettings = {
 		maxContentLength: 4000,
 		summaryStyle: 'bullets',
 		customPrompt: '',
-		excludeFolders: ['templates', '.auto-notes'],
+		excludeFolders: ['templates', '.synapse'],
 		excludeTags: ['no-summarize'],
 		autoOrganizeOnSummarize: false,
 	},
 	tidy: {
 		enabled: true,
-		snapshotFolderPath: '.auto-notes/tidy-snapshots',
+		snapshotFolderPath: '.synapse/tidy-snapshots',
 	},
 	organize: {
 		enabled: true,
-		proposalFolderPath: '.auto-notes/organize/proposals',
-		snapshotFolderPath: '.auto-notes/organize/snapshots',
-		excludeFolders: ['templates', '.auto-notes'],
+		proposalFolderPath: '.synapse/organize/proposals',
+		snapshotFolderPath: '.synapse/organize/snapshots',
+		excludeFolders: ['templates', '.synapse'],
 		excludeTags: ['no-organize'],
 		organizeConfidenceThreshold: 0.9,
 	},
 	deepDive: {
 		enabled: true,
-		proposalFolderPath: '.auto-notes/deep-dive',
+		proposalFolderPath: '.synapse/deep-dive',
 		maxDepth: 3,
 		qualityThreshold: 0.4,
 		maxNotesPerRun: 50,
 		noteOutputFolder: 'Deep Dives',
 		nestingMode: 'nested',
-		excludeFolders: ['templates', '.auto-notes'],
+		excludeFolders: ['templates', '.synapse'],
 		excludeTags: ['no-deep-dive'],
 		autoEnrichOnAccept: true,
 		autoOrganizeOnAccept: false,

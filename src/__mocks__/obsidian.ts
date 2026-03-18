@@ -2,7 +2,7 @@
  * Centralized mock for the 'obsidian' module.
  * Auto-resolved by Vitest via vi.mock('obsidian') in setup.ts.
  *
- * Provides stubs for all Obsidian APIs used by the Auto Notes plugin.
+ * Provides stubs for all Obsidian APIs used by the Synapse plugin.
  * Tests should use createMockApp() from __test-utils__/mock-factories.ts
  * for per-test instances with spy functions.
  */
@@ -46,7 +46,7 @@ export class TFolder {
 
 export class Plugin {
 	app: unknown = {};
-	manifest = { id: 'auto-notes', name: 'Auto Notes', version: '0.1.0' };
+	manifest = { id: 'synapse', name: 'Synapse', version: '0.1.0' };
 	addCommand = vi.fn();
 	addRibbonIcon = vi.fn();
 	addSettingTab = vi.fn();

@@ -1,8 +1,8 @@
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { TranscriptionResult } from './types';
 
 export class Transcriber {
-	constructor(private getSettings: () => AutoNotesSettings) {}
+	constructor(private getSettings: () => SynapseSettings) {}
 
 	async transcribe(
 		audioData: ArrayBuffer,

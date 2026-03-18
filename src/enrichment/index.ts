@@ -1,5 +1,5 @@
 import { Plugin, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter,
 	CheckpointManager, generateId,
@@ -24,7 +24,7 @@ export type {
 	ExternalLinkCandidate,
 	WeightConfig,
 } from './types';
-export type { TagVocabularyEntry } from '../settings';
+
 
 export class EnrichmentModule {
 	private analyzer: VaultAnalyzer;
@@ -40,7 +40,7 @@ export class EnrichmentModule {
 
 	constructor(
 		private plugin: Plugin,
-		private getSettings: () => AutoNotesSettings,
+		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager
 	) {
@@ -64,7 +64,7 @@ export class EnrichmentModule {
 		);
 
 		this.plugin.addCommand({
-			id: 'auto-notes:enrich-current-note',
+			id: 'synapse:enrich-current-note',
 			name: 'Enrich current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -74,7 +74,7 @@ export class EnrichmentModule {
 		});
 
 		this.plugin.addCommand({
-			id: 'auto-notes:scan-vault-enrichment',
+			id: 'synapse:scan-vault-enrichment',
 			name: 'Scan vault for enrichment',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -87,7 +87,7 @@ export class EnrichmentModule {
 		});
 
 		this.plugin.addCommand({
-			id: 'auto-notes:undo-enrichment',
+			id: 'synapse:undo-enrichment',
 			name: 'Undo last enrichment on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -539,7 +539,7 @@ export class EnrichmentModule {
 					this.onViewRefreshNeeded?.();
 					break;
 				default:
-					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
 			}
 		}
 	}

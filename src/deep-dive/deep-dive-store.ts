@@ -1,5 +1,5 @@
 import { App, normalizePath } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { ensureFolder } from '../shared';
 import { DeepDiveProposal, DeepDiveProposalStatus, DeepDiveRun } from './types';
 
@@ -11,7 +11,7 @@ import { DeepDiveProposal, DeepDiveProposalStatus, DeepDiveRun } from './types';
 export class DeepDiveStore {
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {}
 
 	private get basePath(): string {

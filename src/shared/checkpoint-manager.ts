@@ -9,7 +9,7 @@ import {
 } from './checkpoint-types';
 import { generateId, isValidCheckpointId } from './id-utils';
 
-const CHECKPOINT_FOLDER = '.auto-notes/checkpoints';
+const CHECKPOINT_FOLDER = '.synapse/checkpoints';
 
 /**
  * Manages checkpoint persistence for long-running operations.

@@ -1,5 +1,5 @@
 import { AIClient, sanitizeAIResponse } from '../shared';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 
 type SummaryStyle = 'bullets' | 'paragraph' | 'key-points';
 
@@ -12,7 +12,7 @@ const STYLE_PROMPTS: Record<SummaryStyle, string> = {
 export class Summarizer {
 	private client: AIClient;
 
-	constructor(private getSettings: () => AutoNotesSettings) {
+	constructor(private getSettings: () => SynapseSettings) {
 		this.client = new AIClient(getSettings);
 	}
 

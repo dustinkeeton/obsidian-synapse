@@ -1,17 +1,17 @@
 import { App, normalizePath } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { ensureFolder } from '../shared';
 import { OrganizeProposal, OrganizeProposalStatus, OrganizeSnapshot } from './types';
 
 /**
  * Persists organize proposals and undo snapshots as JSON files.
- * Proposals live in .auto-notes/organize/proposals/.
- * Snapshots live in .auto-notes/organize/snapshots/.
+ * Proposals live in .synapse/organize/proposals/.
+ * Snapshots live in .synapse/organize/snapshots/.
  */
 export class OrganizeStore {
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {}
 
 	private get proposalFolder(): string {

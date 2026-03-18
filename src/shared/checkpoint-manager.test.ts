@@ -381,7 +381,7 @@ describe('CheckpointManager', () => {
 			// Manually backdating the updatedAt to simulate old checkpoint
 			const loaded = await manager.load(cp1.id);
 			loaded!.updatedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
-			const path = `.auto-notes/checkpoints/${cp1.id}.json`;
+			const path = `.synapse/checkpoints/${cp1.id}.json`;
 			mockFiles.set(path, JSON.stringify(loaded, null, 2));
 
 			const cp2 = await manager.create({
@@ -408,7 +408,7 @@ describe('CheckpointManager', () => {
 			// Backdate
 			const loaded = await manager.load(cp.id);
 			loaded!.updatedAt = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-			const path = `.auto-notes/checkpoints/${cp.id}.json`;
+			const path = `.synapse/checkpoints/${cp.id}.json`;
 			mockFiles.set(path, JSON.stringify(loaded, null, 2));
 
 			const removed = await manager.cleanup(1);
@@ -423,7 +423,7 @@ describe('CheckpointManager', () => {
 		});
 
 		it('returns null for corrupt file', async () => {
-			mockFiles.set('.auto-notes/checkpoints/corrupt.json', 'not json');
+			mockFiles.set('.synapse/checkpoints/corrupt.json', 'not json');
 			const loaded = await manager.load('corrupt');
 			expect(loaded).toBeNull();
 		});

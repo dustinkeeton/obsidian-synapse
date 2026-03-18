@@ -1,5 +1,5 @@
 import { App, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse } from '../shared';
 import { InternalLinkCandidate } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
@@ -27,7 +27,7 @@ export class TopicExtractor {
 	constructor(
 		private app: App,
 		private analyzer: VaultAnalyzer,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {
 		this.aiClient = new AIClient(getSettings);
 	}

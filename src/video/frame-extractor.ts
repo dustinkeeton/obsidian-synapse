@@ -1,10 +1,10 @@
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 
 // Stretch goal: frame extraction and vision analysis
 // This module is a placeholder for future implementation
 
 export class FrameExtractor {
-	constructor(private getSettings: () => AutoNotesSettings) {}
+	constructor(private getSettings: () => SynapseSettings) {}
 
 	async extractFrames(_videoPath: string): Promise<string[]> {
 		const settings = this.getSettings().video.frameExtraction;

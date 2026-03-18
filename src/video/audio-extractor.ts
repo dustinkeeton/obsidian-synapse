@@ -1,4 +1,4 @@
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { ExtractionResult, VideoMetadata } from './types';
 import { sanitizePath, sanitizeUrl } from '../shared';
 
@@ -34,13 +34,13 @@ function shellEnv(): NodeJS.ProcessEnv {
 }
 
 export class AudioExtractor {
-	constructor(private getSettings: () => AutoNotesSettings) {}
+	constructor(private getSettings: () => SynapseSettings) {}
 
 	async extractFromUrl(url: string): Promise<ExtractionResult> {
 		const sanitizedUrl = sanitizeUrl(url);
 		const settings = this.getSettings().video;
 		// Use OS temp dir for absolute path — yt-dlp needs a real filesystem path
-		const outputPath = path.join(os.tmpdir(), `auto-notes-audio-${Date.now()}.mp3`);
+		const outputPath = path.join(os.tmpdir(), `synapse-audio-${Date.now()}.mp3`);
 
 		// Get metadata first
 		const metadata = await this.getMetadata(sanitizedUrl);
@@ -58,7 +58,7 @@ export class AudioExtractor {
 	async extractFromFile(filePath: string): Promise<ExtractionResult> {
 		const sanitizedPath = sanitizePath(filePath);
 		const settings = this.getSettings().video;
-		const outputPath = path.join(os.tmpdir(), `auto-notes-audio-${Date.now()}.mp3`);
+		const outputPath = path.join(os.tmpdir(), `synapse-audio-${Date.now()}.mp3`);
 
 		await this.runCommand(sanitizePath(settings.ffmpegPath), [
 			'-i', sanitizedPath,
@@ -80,7 +80,7 @@ export class AudioExtractor {
 	async downloadVideo(url: string): Promise<string> {
 		const sanitizedUrl = sanitizeUrl(url);
 		const settings = this.getSettings().video;
-		const outputPath = path.join(os.tmpdir(), `auto-notes-video-${Date.now()}.mp4`);
+		const outputPath = path.join(os.tmpdir(), `synapse-video-${Date.now()}.mp4`);
 
 		await this.runCommand(sanitizePath(settings.ytDlpPath), [
 			'-f', 'mp4/best',
