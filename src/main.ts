@@ -1,4 +1,4 @@
-import { Platform, Plugin } from 'obsidian';
+import { Notice, Platform, Plugin } from 'obsidian';
 import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
 import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
@@ -36,6 +36,10 @@ export default class SynapsePlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+
+		// Migrate legacy .auto-notes folder to .synapse (one-time, backward compat)
+		await this.migrateDataFolder();
+
 		this.addSettingTab(new SynapseSettingTab(this.app, this));
 
 		// Centralized notification manager
@@ -464,6 +468,43 @@ export default class SynapsePlugin extends Plugin {
 				default:
 					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
 			}
+		}
+	}
+
+	/**
+	 * Migrate the legacy `.auto-notes/` data folder to `.synapse/`.
+	 * Runs once on load; skips silently if the old folder does not exist
+	 * or the new folder already exists.
+	 */
+	private async migrateDataFolder(): Promise<void> {
+		const OLD_FOLDER = '.auto-notes';
+		const NEW_FOLDER = '.synapse';
+		const adapter = this.app.vault.adapter;
+
+		try {
+			const oldExists = await adapter.exists(OLD_FOLDER);
+			if (!oldExists) return;
+
+			const newExists = await adapter.exists(NEW_FOLDER);
+			if (newExists) {
+				// Both folders exist -- do not overwrite, warn the user
+				console.warn(
+					`[Synapse] Both ${OLD_FOLDER}/ and ${NEW_FOLDER}/ exist. ` +
+					`Skipping automatic migration. Please merge manually.`
+				);
+				return;
+			}
+
+			await adapter.rename(OLD_FOLDER, NEW_FOLDER);
+			new Notice(
+				`Synapse: migrated data folder from ${OLD_FOLDER}/ to ${NEW_FOLDER}/`
+			);
+		} catch (error) {
+			console.error('[Synapse] Failed to migrate data folder:', error);
+			new Notice(
+				`Synapse: failed to migrate ${OLD_FOLDER}/ to ${NEW_FOLDER}/ -- ` +
+				`please rename it manually.`
+			);
 		}
 	}
 
