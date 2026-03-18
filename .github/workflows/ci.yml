@@ -25,5 +25,8 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Version consistency check
+        run: node scripts/version-bump.mjs --check
+
       - name: Build
         run: node esbuild.config.mjs production
