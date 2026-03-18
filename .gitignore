@@ -6,6 +6,7 @@ data.json
 .env
 .env.*
 .synapse/
+.auto-notes/
 *.bak
 *.tmp
 .DS_Store
