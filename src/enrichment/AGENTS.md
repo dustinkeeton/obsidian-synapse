@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # Enrichment Module
@@ -12,9 +12,10 @@ Exported from `index.ts`:
 
 ```ts
 class EnrichmentModule {
-  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager)
   onload(): Promise<void>
   onunload(): void
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   enrich(filePath: string, trigger: EnrichmentTrigger): Promise<void>
   scanVault(folderPath?: string): Promise<number>
   getPendingProposals(): Promise<EnrichmentProposal[]>

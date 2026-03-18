@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # Deep Dive Module
 
-Recursively explores a note by extracting topics and generating child notes. Uses quality scoring to control recursion depth. Generates syllabus index and inter-note navigation.
+Recursively explores a note by extracting topics and generating child notes. Uses quality scoring to control recursion depth. Generates syllabus index and inter-note navigation. Supports checkpointed generation for resumability.
 
 ## Public API (`index.ts`)
 
@@ -14,9 +14,10 @@ class DeepDiveModule {
   onNoteAccepted: ((filePath: string) => void) | null
   onOrganizeRequested: ((file: TFile) => void) | null
 
-  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager)
   onload(): Promise<void>
   onunload(): void
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   getPendingProposals(): Promise<DeepDiveProposal[]>
   acceptProposal(id: string): Promise<void>
   rejectProposal(id: string): Promise<void>
@@ -50,6 +51,8 @@ Exported types: `DeepDiveProposal`, `DeepDiveRun`, `ExtractedTopic`, `QualitySco
 | `syllabus-navigator.test.ts` | Tests | Syllabus navigator tests |
 | `deep-dive-store.ts` | `DeepDiveStore` | JSON persistence for proposals and runs |
 | `deep-dive-store.test.ts` | Tests | DeepDiveStore tests |
+| `depth-selector-modal.ts` | `DepthSelectorModal`, `selectDepth`, `MIN_DEPTH`, `MAX_DEPTH` | Modal for user to select recursion depth (1-6) |
+| `depth-selector-modal.test.ts` | Tests | DepthSelectorModal tests |
 | `types.ts` | -- | All deep-dive types |
 
 ## Data Flow
@@ -59,16 +62,29 @@ deepDive(file)
   Phase 1: Extract topics
     --> TopicAnalyzer.extractTopics(content, title, [])  [AI]
     --> filter new vs existing topics
-  Phase 2: User confirmation
-  Phase 3: Recursive generation (BFS queue)
+  Phase 2a: Select depth
+    --> selectDepth(app, defaultDepth)  [DepthSelectorModal]
+  Phase 2b: User confirmation
+  Phase 3: Recursive generation (BFS queue, checkpointed)
+    --> checkpointManager.create(module: 'deep-dive', items: root topics)
+    --> addDeferredTask('refresh-sidebar-view')
     for each topic:
       --> NoteGenerator.generateContent(topic, parentTitle, parentContent)  [AI]
       --> buildProposedPath(title, rootFile, parentPath)
       --> if depth < maxDepth: TopicAnalyzer.extractTopics(childContent)  [AI]
       --> scoreQuality({title, childTopics, wordCount, depth, ancestors})
       --> DeepDiveStore.saveProposal()
+      --> checkpointManager.completeItem(checkpoint, topic-title)
       --> if quality >= threshold && depth+1 < maxDepth: queue children
     --> DeepDiveStore.saveRun()
+    --> on cancel: checkpointManager.discard()
+    --> on success: checkpointManager.complete(), dispatch deferred tasks
+    --> on error: checkpointManager.discard()
+
+resumeFromCheckpoint(checkpoint)
+  --> Deep dive cannot directly resume (recursive BFS state not serializable)
+  --> Discards checkpoint, notifies user to re-run on source note
+  --> Completed proposals from partial run are already saved
 
 acceptProposal(id)
   --> updateRunNavigation(runId, proposedPath, proposedContent)
@@ -141,6 +157,6 @@ interface DeepDiveRun {
 
 ## Dependencies
 
-- `shared/` (NotificationManager, ensureFolder, readNote, writeNote, wordCount)
+- `shared/` (NotificationManager, ensureFolder, readNote, writeNote, wordCount, CheckpointManager, generateId, Checkpoint, CheckpointWorkItem, DeferredTask)
 - `organize/` (ContentAnalyzer, DirectoryMatcher -- for auto-organize nesting mode)
 - `settings.ts` (SynapseSettings, DeepDiveNestingMode)

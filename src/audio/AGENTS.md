@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # Audio Module
@@ -12,9 +12,10 @@ Exported from `index.ts`:
 
 ```ts
 class AudioModule {
-  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager)
   onload(): Promise<void>
   onunload(): void
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
   transcribeFileToActiveNote(file: TFile): Promise<void>
   transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>

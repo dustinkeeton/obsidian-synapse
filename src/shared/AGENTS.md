@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # Shared Module
 
-Cross-cutting utilities used by all feature modules: AI client, file operations, notifications, validation, and frontmatter parsing.
+Cross-cutting utilities used by all feature modules: AI client, file operations, notifications, validation, frontmatter parsing, checkpoint management, and ID generation.
 
 ## Public API
 
@@ -79,6 +79,45 @@ function addEnhancedSlider(setting: Setting, options: SliderOptions): void
 
 // folder-picker-modal.ts
 class FolderPickerModal extends SuggestModal<TFolder> { ... }
+
+// id-utils.ts
+function generateId(): string                    // timestamp(base36) + random(base36)
+function isValidCheckpointId(id: string): boolean // /^[a-z0-9]+$/
+
+// checkpoint-manager.ts
+class CheckpointManager {
+  constructor(app: App)
+  create(params: { module: CheckpointModule; operationLabel: string; items: CheckpointWorkItem[]; metadata?: Record<string, unknown> }): Promise<Checkpoint>
+  resume(checkpointId: string): Promise<Checkpoint | null>
+  completeItem(checkpointId: string, itemId: string): Promise<Checkpoint | null>
+  addDeferredTask(checkpointId: string, task: DeferredTask): Promise<Checkpoint | null>
+  complete(checkpointId: string): Promise<DeferredTask[]>
+  discard(checkpointId: string): Promise<void>
+  remove(checkpointId: string): Promise<void>
+  load(checkpointId: string): Promise<Checkpoint | null>
+  listIncomplete(): Promise<Checkpoint[]>
+  listByStatus(status: CheckpointStatus): Promise<Checkpoint[]>
+  listAll(): Promise<Checkpoint[]>
+  cleanup(maxAgeMs?: number): Promise<number>
+}
+
+// checkpoint-types.ts
+type CheckpointModule = 'deep-dive' | 'elaboration' | 'enrichment' | 'audio' | 'video' | 'summarize' | 'organize'
+type CheckpointStatus = 'active' | 'completed' | 'discarded'
+interface CheckpointWorkItem { id: string; label: string; payload: Record<string, unknown> }
+interface DeferredTask { id: string; type: string; data: Record<string, unknown> }
+interface Checkpoint {
+  id: string
+  module: CheckpointModule
+  operationLabel: string
+  status: CheckpointStatus
+  createdAt: string
+  updatedAt: string
+  completedItems: CheckpointWorkItem[]
+  remainingItems: CheckpointWorkItem[]
+  deferredTasks: DeferredTask[]
+  metadata: Record<string, unknown>
+}
 ```
 
 ## File Inventory
@@ -102,6 +141,10 @@ class FolderPickerModal extends SuggestModal<TFolder> { ... }
 | `slider-helper.ts` | `addEnhancedSlider` | Settings UI helper for range sliders with ticks |
 | `folder-picker-modal.ts` | `FolderPickerModal` | Modal for folder selection with autocomplete |
 | `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests |
+| `id-utils.ts` | `generateId`, `isValidCheckpointId` | ID generation and validation for checkpoint paths |
+| `checkpoint-types.ts` | `CheckpointModule`, `CheckpointStatus`, `CheckpointWorkItem`, `DeferredTask`, `Checkpoint` | Checkpoint data model types |
+| `checkpoint-manager.ts` | `CheckpointManager` | CRUD and lifecycle management for resumable operation checkpoints |
+| `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
 | `index.ts` | re-exports | Barrel file |
 
 ## AIClient Provider Routing
@@ -122,6 +165,38 @@ AIClient.chat(messages)
 All use Obsidian requestUrl via safeRequest() (handles errors, redacts secrets)
 ```
 
+## CheckpointManager Lifecycle
+
+```
+create(module, label, items)
+  --> generates ID via generateId()
+  --> saves to .synapse/checkpoints/{id}.json
+  --> returns Checkpoint (status: 'active')
+
+completeItem(checkpointId, itemId)
+  --> moves item from remainingItems to completedItems
+  --> serialized with per-checkpoint write mutex
+
+addDeferredTask(checkpointId, task)
+  --> appends task to deferredTasks array
+
+complete(checkpointId)
+  --> sets status to 'completed'
+  --> returns deferredTasks for caller to execute
+
+discard(checkpointId)
+  --> sets status to 'discarded'
+  --> deferred tasks are NOT executed
+
+resume(checkpointId)
+  --> returns checkpoint if status === 'active', else null
+
+cleanup(maxAgeMs = 7 days)
+  --> removes completed/discarded checkpoints older than threshold
+```
+
+Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent read-modify-write races.
+
 ## NotificationManager Features
 
 - Tracked operations with animated ellipsis, progress counters, cancel buttons
@@ -140,6 +215,7 @@ All use Obsidian requestUrl via safeRequest() (handles errors, redacts secrets)
 | `ensureWithinVault` | paths resolving outside vault base |
 | `sanitizeAIResponse` | script tags, event handlers, javascript/data/vbscript URIs, iframe/embed/object |
 | `blockquoteOriginal` | (transforms) wraps body in blockquote, preserves frontmatter |
+| `isValidCheckpointId` | anything not matching `/^[a-z0-9]+$/` |
 
 ## Consumers
 
@@ -147,10 +223,11 @@ All use Obsidian requestUrl via safeRequest() (handles errors, redacts secrets)
 |---------|---------|
 | `AIClient` | elaboration/proposer, audio/post-processor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `NotificationManager` | all feature modules (injected via constructor) |
-| `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index, organize/index, deep-dive/index |
+| `CheckpointManager` | main (creates), elaboration, audio, video, enrichment, summarize, organize, deep-dive (all injected via constructor) |
+| `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index, organize/index, deep-dive/index, checkpoint-manager |
 | `wordCount` | elaboration/detector, deep-dive/index |
 | `readNote` | deep-dive/index |
-| `writeNote` | deep-dive/index |
+| `writeNote` | deep-dive/index, organize/index |
 | `sanitizeUrl` | video/index, video/audio-extractor |
 | `sanitizePath` | video/audio-extractor |
 | `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
@@ -159,4 +236,5 @@ All use Obsidian requestUrl via safeRequest() (handles errors, redacts secrets)
 | `mergeTags` | enrichment/enrichment-applier |
 | `blockquoteOriginal` | elaboration/index |
 | `withRetry` | tidy/index |
+| `generateId` | elaboration, enrichment, summarize, organize, deep-dive (proposal/run IDs) |
 | `notifyError` | (legacy, replaced by NotificationManager in most modules) |

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # Video Module
@@ -12,9 +12,10 @@ Exported from `index.ts`:
 
 ```ts
 class VideoModule {
-  constructor(plugin: Plugin, getSettings: () => SynapseSettings, audioModule: AudioModule, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, audioModule: AudioModule, notifications: NotificationManager, checkpointManager: CheckpointManager)
   onload(): Promise<void>
   onunload(): void
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   transcribeUrl(url: string, parentOp?: { update: (msg: string) => void }): Promise<string>
   processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>
   transcribeUrlToActiveNote(url: string): Promise<void>

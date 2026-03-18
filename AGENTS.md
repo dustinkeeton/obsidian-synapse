@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-17
+last-updated: 2026-03-18
 ---
 
 # Synapse — Agent Reference
 
-AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, note enrichment (tags, links, references), summarization, note tidying, semantic organization, and recursive deep dive note generation.
+AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, and checkpoint-based operation resumability.
 
 ## Build and Test
 
@@ -23,7 +23,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 
 | Module | Path | Purpose | Public API |
 |--------|------|---------|------------|
-| main | `src/main.ts` | Plugin entry, module orchestration, command/view registration | `SynapsePlugin` (default) |
+| main | `src/main.ts` | Plugin entry, module orchestration, command/view registration, checkpoint dispatch | `SynapsePlugin` (default) |
 | settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `SynapseSettingTab` |
 | elaboration | `src/elaboration/` | Stub note detection, AI proposal generation | `ElaborationModule`, types |
@@ -31,12 +31,12 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, types |
 | transcription | `src/transcription/` | Unified transcription UI modals | `UnifiedTranscriptionModal`, `NoteMediaModal` |
 | enrichment | `src/enrichment/` | Metadata classification, topic extraction, link resolution, external refs, frontmatter | `EnrichmentModule`, types |
-| summarize | `src/summarize/` | URL and transcription summarization, standalone summary notes | `SummarizeModule`, types |
+| summarize | `src/summarize/` | URL and transcription summarization, standalone summary notes, audio-embed summarization | `SummarizeModule`, types |
 | tidy | `src/tidy/` | Spelling correction and markdown formatting via AI | `TidyModule`, `TidySnapshot` |
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes | `OrganizeModule`, types |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
-| shared | `src/shared/` | AI client, file utils, validation, notifications, callouts, frontmatter | `AIClient`, `NotificationManager`, file/validation utils, callout registry |
-| views | `src/views/` | Unified sidebar for all proposal types | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem` |
+| shared | `src/shared/` | AI client, file utils, validation, notifications, callouts, frontmatter, checkpoints | `AIClient`, `NotificationManager`, `CheckpointManager`, file/validation utils, callout registry, id-utils |
+| views | `src/views/` | Unified sidebar for all proposal types and checkpoint management | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem` |
 
 ## Dependency Graph
 
@@ -44,32 +44,34 @@ Output: `main.js` (single bundle, Obsidian loads this)
 main.ts
   |-- settings.ts
   |-- settings-tab.ts
-  |-- shared/
-  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types
-  |-- elaboration/ --> shared/
-  |-- audio/ --> shared/
-  |-- video/ --> shared/, audio/ (reuses transcription pipeline)
+  |-- shared/ (CheckpointManager, NotificationManager)
+  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types, shared/checkpoint-types
+  |-- elaboration/ --> shared/ (CheckpointManager)
+  |-- audio/ --> shared/ (CheckpointManager)
+  |-- video/ --> shared/ (CheckpointManager), audio/ (reuses transcription pipeline)
   |-- transcription/ --> audio/ (types), video/ (detectPlatform)
-  |-- enrichment/ --> shared/
-  |-- summarize/ --> shared/, video/ (transcribeUrl injection)
+  |-- enrichment/ --> shared/ (CheckpointManager)
+  |-- summarize/ --> shared/ (CheckpointManager), video/ (transcribeUrl injection), audio/ (findAudioEmbeds)
   |-- tidy/ --> shared/
-  |-- organize/ --> shared/
-  +-- deep-dive/ --> shared/, organize/ (ContentAnalyzer, DirectoryMatcher)
+  |-- organize/ --> shared/ (CheckpointManager)
+  +-- deep-dive/ --> shared/ (CheckpointManager), organize/ (ContentAnalyzer, DirectoryMatcher)
 ```
 
 Key constraints:
 - `video` depends on `audio` (reuses transcription pipeline)
 - `transcription` is UI-only; delegates work to `audio` and `video` modules
-- `summarize` receives `video.transcribeUrl` via constructor injection
+- `summarize` receives `video.transcribeUrl` and audio transcribe callback via constructor injection
 - `deep-dive` reuses `organize` for auto-organize nesting mode
 - All feature modules depend on `shared`; no circular dependencies
-- `views` imports types only from feature modules
+- All feature modules except `tidy` and `transcription` receive `CheckpointManager` for resumable operations
+- `views` imports types only from feature modules and `Checkpoint` from shared
 
 ## Command Registry
 
 | ID | Name | Type | Module |
 |----|------|------|--------|
 | `synapse:review-proposals` | Open proposal review sidebar | callback | main |
+| `synapse:manage-checkpoints` | Manage interrupted operations | callback | main |
 | `synapse:transcribe-media` | Transcribe media | callback | main |
 | `synapse:transcribe-note-media` | Transcribe media from current note | editorCallback | main |
 | `synapse:scan-vault` | Scan vault for stub notes | callback | elaboration |
@@ -94,7 +96,7 @@ Key constraints:
 | Icon | Label | Action |
 |------|-------|--------|
 | `sparkles` | Review proposals | Opens unified proposal sidebar |
-| `mic` | Transcribe media | Opens unified transcription modal |
+| `mic` | Transcribe media | Opens unified transcription modal (desktop only) |
 
 ## View Types
 
@@ -245,6 +247,7 @@ SynapseSettings {
 | Organize summaries | `.synapse/organize/summaries/*.md` | Mermaid move diagrams |
 | Deep dive proposals | `.synapse/deep-dive/*.json` | `DeepDiveProposal` JSON |
 | Deep dive runs | `.synapse/deep-dive/runs/*.json` | `DeepDiveRun` JSON |
+| Checkpoints | `.synapse/checkpoints/*.json` | `Checkpoint` JSON |
 | Temp video/audio | `.synapse/temp/` | Binary (auto-cleaned) |
 | Downloaded videos | `Media/` (configurable) | Video files |
 
@@ -269,6 +272,30 @@ Enrichment callbacks wired when `enrichment.enabled && enrichment.autoEnrich`.
 Deep-dive enrichment wired when `deepDive.autoEnrichOnAccept`.
 Deep-dive organize wired when `deepDive.autoOrganizeOnAccept && organize.enabled`.
 Summarize organize wired when `summarize.autoOrganizeOnSummarize && organize.enabled`.
+
+## Checkpoint System
+
+All vault-scan operations (elaboration, enrichment, audio, video, summarize, organize, deep-dive) use `CheckpointManager` for resumable operations:
+
+```
+main.ts creates single CheckpointManager, injected into all modules
+  |
+  |-- On vault scan: module creates checkpoint with work items
+  |-- After each file: module calls completeItem()
+  |-- On completion: module calls complete(), dispatches deferred tasks
+  |-- On cancel/error: module calls discard()
+  |
+  |-- On startup (3s delay): main.checkForIncompleteCheckpoints()
+  |     Lists active checkpoints, offers Resume/Review/Dismiss
+  |
+  |-- synapse:manage-checkpoints command: iterates incomplete checkpoints
+  |     Per checkpoint: Resume / Discard / Keep
+  |
+  |-- UnifiedProposalView: shows checkpoint banner with Resume/Discard buttons
+  |-- main.resumeCheckpoint(id): dispatches to module.resumeFromCheckpoint()
+```
+
+Checkpoint cleanup: completed/discarded checkpoints older than 7 days are auto-removed on startup.
 
 ## External Dependencies (Runtime)
 
@@ -301,3 +328,5 @@ Framework: Vitest, globals enabled, node environment.
 - External commands use `execFile` with argument arrays (no shell interpolation)
 - Frontmatter keys validated against allowlist pattern + forbidden keys blocklist
 - Enrichment sections use `%% synapse-enrichment-start/end %%` markers for idempotent updates
+- Checkpoint IDs validated against `/^[a-z0-9]+$/` to prevent path traversal
+- Deep merge in settings rejects `__proto__`, `constructor`, `prototype` keys
