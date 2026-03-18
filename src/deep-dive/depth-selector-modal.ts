@@ -1,4 +1,5 @@
 import { App, Modal, Setting } from 'obsidian';
+import { addEnhancedSlider } from 'src/shared/slider-helper';
 
 export const MIN_DEPTH = 1;
 export const MAX_DEPTH = 6;
@@ -25,32 +26,22 @@ export class DepthSelectorModal extends Modal {
 		// Slider with tick labels
 		const sliderContainer = contentEl.createDiv({ cls: 'auto-notes-depth-slider' });
 
-		const valueDisplay = sliderContainer.createEl('span', {
-			cls: 'auto-notes-depth-value',
-			text: this.formatLabel(this.selectedDepth),
-		});
-
-		new Setting(sliderContainer)
-			.setName('')
-			.addSlider((slider) => {
-				slider
-					.setLimits(MIN_DEPTH, MAX_DEPTH, 1)
-					.setValue(this.selectedDepth)
-					.setDynamicTooltip()
-					.onChange((value) => {
+		addEnhancedSlider(
+			new Setting(sliderContainer)
+				.setName('Recursion Depth')
+				.setDesc('How many generations of topics to explore'),
+				{
+					min: MIN_DEPTH,
+					max: MAX_DEPTH,
+					step: 1,
+					value: this.selectedDepth,
+					showTicks: true,
+					onChange: async (value) => {
 						this.selectedDepth = value;
-						valueDisplay.textContent = this.formatLabel(value);
-					});
-			});
-
-		// Tick labels row
-		const tickRow = sliderContainer.createDiv({ cls: 'auto-notes-depth-ticks' });
-		for (let i = MIN_DEPTH; i <= MAX_DEPTH; i++) {
-			tickRow.createEl('span', {
-				text: String(i),
-				cls: 'auto-notes-depth-tick',
-			});
-		}
+					},
+				}
+				
+		);
 
 		// Confirm / Cancel buttons
 		new Setting(contentEl)
