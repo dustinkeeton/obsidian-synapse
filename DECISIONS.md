@@ -4,6 +4,55 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-18: Rebrand from Auto Notes to Synapse (Issue #124)
+
+**Context**: The plugin name "Auto Notes" was generic and didn't convey the plugin's purpose of connecting knowledge through AI. A more distinctive name was needed as the project matured toward public release.
+
+**Decision**: Rename the plugin from "Auto Notes" to "Synapse" across all code, configuration, and documentation:
+- Manifest: `id: "synapse"`, `name: "Synapse"`
+- Plugin class: `AutoNotesPlugin` → `SynapsePlugin`
+- Settings type: `AutoNotesSettings` → `SynapseSettings`
+- Data folder: `.auto-notes/` → `.synapse/`
+- Callout types: `auto-notes-*` → `synapse-*`
+- All user-facing strings and command prefixes
+
+A one-time data folder migration runs on load: if `.auto-notes/` exists and `.synapse/` does not, the old folder is renamed. If both exist, a warning is logged and the user must merge manually. The legacy `.auto-notes/` folder is added to `.gitignore`.
+
+**Alternatives considered**:
+- Keep "Auto Notes" (too generic, likely name collisions with other plugins)
+- Use a migration plugin or manual instructions (more friction for existing users)
+- Support both names indefinitely (maintenance burden, confusing code)
+
+**Rationale**: "Synapse" evokes neural connections, fitting for a plugin that builds knowledge graphs. The automatic migration ensures existing users don't lose data. The clean break (no dual-name support) keeps the codebase simple.
+
+**Impact**: All references to "Auto Notes" are historical. Existing users with `.auto-notes/` data folders are migrated automatically. Callout CSS selectors changed (users with custom CSS for `auto-notes-*` callouts need to update).
+
+---
+
+## 2026-03-18: Shared CheckpointManager singleton (Issue #47)
+
+**Context**: Long-running operations (vault-wide scans, batch transcriptions) could be interrupted by plugin reload or Obsidian restart, losing all progress. Each module could create its own checkpoint manager, but that would mean duplicated storage and inconsistent UX.
+
+**Decision**: Create a single `CheckpointManager` in `main.ts` and inject it into all modules via constructor. The checkpoint manager:
+- Stores checkpoints as JSON in `.synapse/checkpoints/`
+- Tracks `completedItems` and `remainingItems` per operation
+- Supports `resume()` to return remaining work and `discard()` to abandon
+- Fires deferred tasks (e.g., sidebar refresh) on completion
+- Uses per-checkpoint write mutex to prevent concurrent read-modify-write corruption
+
+On startup (delayed 3 seconds), `main.ts` checks for incomplete checkpoints and offers the user Resume/Dismiss options. The unified sidebar shows a banner for any incomplete checkpoints.
+
+**Alternatives considered**:
+- Per-module checkpoint managers (duplicated code, inconsistent storage)
+- No checkpoint support, restart from scratch (poor UX for expensive operations)
+- Obsidian's `loadData`/`saveData` for state (doesn't support per-operation granularity)
+
+**Rationale**: A single shared manager ensures consistent storage, UI integration, and lifecycle management. Constructor injection makes the dependency explicit and testable. The delayed startup check avoids blocking plugin load.
+
+**Impact**: All feature modules accept `CheckpointManager` as a constructor parameter. Each module implements `resumeFromCheckpoint(checkpoint)`. The `synapse:manage-checkpoints` command provides manual access to interrupted operations.
+
+---
+
 ## 2026-03-17: Unified transcription — 6 commands to 2 + 1 utility (Issue #20)
 
 **Context**: Audio and video modules each had their own modal classes for transcription: `TranscriptionModal` and `NoteAudioModal` in `src/audio/`, `VideoModal` and `NoteVideoModal` in `src/video/`. This meant 6 separate transcription commands, 4 modal classes, and duplicated UI patterns across two modules.
