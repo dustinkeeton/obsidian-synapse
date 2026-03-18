@@ -22,7 +22,7 @@ const mockApp = {
 	},
 } as unknown as import('obsidian').App;
 
-const getSettings = () => ({}) as import('../settings').AutoNotesSettings;
+const getSettings = () => ({}) as import('../settings').SynapseSettings;
 
 describe('TopicAnalyzer', () => {
 	let analyzer: TopicAnalyzer;

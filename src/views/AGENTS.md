@@ -11,7 +11,7 @@ Unified sidebar view combining elaboration, enrichment, organize, and deep-dive 
 Exported from `unified-proposal-view.ts`:
 
 ```ts
-const UNIFIED_VIEW_TYPE = 'auto-notes-proposals'
+const UNIFIED_VIEW_TYPE = 'synapse-proposals'
 
 type UnifiedItem =
   | { kind: 'elaboration'; data: Proposal }
@@ -33,8 +33,8 @@ interface UnifiedViewCallbacks {
 class UnifiedProposalView extends ItemView {
   constructor(leaf: WorkspaceLeaf, callbacks: UnifiedViewCallbacks)
   setItems(items: UnifiedItem[]): void
-  getViewType(): string   // 'auto-notes-proposals'
-  getDisplayText(): string // 'Auto Notes Proposals'
+  getViewType(): string   // 'synapse-proposals'
+  getDisplayText(): string // 'Synapse Proposals'
   getIcon(): string        // 'sparkles'
 }
 ```
@@ -108,5 +108,5 @@ Refreshed via `main.refreshUnifiedView()` which gathers items from all four modu
 
 - Clickable note headings open the source note in main editor
 - Auto-exits review mode if reviewed proposal is no longer in pending list
-- Injects scoped CSS on first open (id: `auto-notes-unified-view-styles`)
+- Injects scoped CSS on first open (id: `synapse-unified-view-styles`)
 - Color-coded cards: blue for elaboration, green for enrichment, orange for organize, purple for deep-dive

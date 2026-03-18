@@ -15,7 +15,7 @@ class SummarizeModule {
 
   constructor(
     plugin: Plugin,
-    getSettings: () => AutoNotesSettings,
+    getSettings: () => SynapseSettings,
     notifications: NotificationManager,
     transcribeUrl?: TranscribeUrlFn
   )
@@ -103,7 +103,7 @@ interface SummarizeTarget {
 
 - `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, OperationHandle, buildCallout, CALLOUT_TYPES)
 - `video/` (isSupportedUrl -- used in fetchContentForUrl)
-- `settings.ts` (AutoNotesSettings, SummarizeSettings)
+- `settings.ts` (SynapseSettings, SummarizeSettings)
 
 ## Tests
 

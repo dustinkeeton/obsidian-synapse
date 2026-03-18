@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Auto Notes is an Obsidian plugin that provides eight AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, summarization, note tidying, semantic organization, and recursive deep-dive note generation. Desktop only (requires Node.js APIs for video processing).
+Synapse is an Obsidian plugin that provides eight AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, summarization, note tidying, semantic organization, and recursive deep-dive note generation. Desktop only (requires Node.js APIs for video processing).
 
 ---
 
@@ -9,7 +9,7 @@ Auto Notes is an Obsidian plugin that provides eight AI-powered features: note e
 ```mermaid
 graph TB
     subgraph Obsidian["Obsidian Desktop"]
-        Main["main.ts<br/>AutoNotesPlugin"]
+        Main["main.ts<br/>SynapsePlugin"]
         Settings["Settings + Tab"]
         Sidebar["Unified Proposal View<br/>(sidebar)"]
 
@@ -385,10 +385,10 @@ graph TB
 
 ## Storage Layer
 
-All module data is stored as individual JSON files under `.auto-notes/`:
+All module data is stored as individual JSON files under `.synapse/`:
 
 ```
-.auto-notes/
+.synapse/
 ├── proposals/                    # Elaboration
 │   └── {id}.json                 #   Proposal with detection reasons + AI content
 ├── enrichments/                  # Enrichment
@@ -409,7 +409,7 @@ Design principles:
 - One file per proposal/snapshot (no corruption cascade)
 - Human-inspectable JSON (debuggable)
 - Survives plugin reloads and Obsidian restarts
-- `.auto-notes/` excluded from all module scans by default
+- `.synapse/` excluded from all module scans by default
 
 ---
 
@@ -438,19 +438,19 @@ All AI-generated content uses Obsidian callouts from a shared registry:
 
 | Key | Type String | Usage |
 |-----|-------------|-------|
-| summary | `auto-notes-summary` | Inline URL/transcription summaries |
-| transcription | `auto-notes-transcription` | Audio/video transcriptions |
-| enrichment | `auto-notes-enrichment` | Enrichment sections |
-| elaboration | `auto-notes-elaboration` | Elaboration proposals |
-| deepDive | `auto-notes-deep-dive` | Deep dive content |
-| nav | `auto-notes-nav` | Deep dive navigation blocks |
+| summary | `synapse-summary` | Inline URL/transcription summaries |
+| transcription | `synapse-transcription` | Audio/video transcriptions |
+| enrichment | `synapse-enrichment` | Enrichment sections |
+| elaboration | `synapse-elaboration` | Elaboration proposals |
+| deepDive | `synapse-deep-dive` | Deep dive content |
+| nav | `synapse-nav` | Deep dive navigation blocks |
 
 ---
 
 ## Settings Hierarchy
 
 ```
-AutoNotesSettings
+SynapseSettings
 ├── ai              → Provider, API key, model, temperature, max tokens
 ├── elaboration     → Detection thresholds, scan behavior, proposal storage
 │   ├── detection   → Word threshold, TODO markers, empty sections, excludes
@@ -483,7 +483,7 @@ Modules access settings via `getSettings()` closure — always reads latest valu
 | API key protection | `redactSecrets()` in error messages, password-masked inputs | `shared/ai-client.ts` |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
-| Idempotent updates | `%% auto-notes-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
+| Idempotent updates | `%% synapse-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
 
 ---
 

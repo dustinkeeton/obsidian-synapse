@@ -92,9 +92,9 @@ interface EnrichmentProposal {
 }
 ```
 
-## Settings (extends AutoNotesSettings)
+## Settings (extends SynapseSettings)
 
-The enrichment module adds `AutoNotesSettings.enrichment` of type `EnrichmentSettings`:
+The enrichment module adds `SynapseSettings.enrichment` of type `EnrichmentSettings`:
 
 ```ts
 interface EnrichmentSettings {
@@ -106,11 +106,11 @@ interface EnrichmentSettings {
   maxLinkSuggestions: number;       // default: 5
   maxExternalLinks: number;         // default: 3
   frontmatterKeys: string[];       // default: ['topics', 'related']
-  proposalFolder: string;          // default: '.auto-notes/enrichments'
+  proposalFolder: string;          // default: '.synapse/enrichments'
 }
 ```
 
-This requires adding `enrichment: EnrichmentSettings` to `AutoNotesSettings` in `src/settings.ts:L110-115` and a corresponding default block in `DEFAULT_SETTINGS`.
+This requires adding `enrichment: EnrichmentSettings` to `SynapseSettings` in `src/settings.ts:L110-115` and a corresponding default block in `DEFAULT_SETTINGS`.
 
 ## Public API (index.ts)
 
@@ -118,7 +118,7 @@ This requires adding `enrichment: EnrichmentSettings` to `AutoNotesSettings` in 
 class EnrichmentModule {
   constructor(
     plugin: Plugin,
-    getSettings: () => AutoNotesSettings,
+    getSettings: () => SynapseSettings,
     notifications: NotificationManager
   )
 
@@ -277,9 +277,9 @@ These hooks must be wired in `main.ts` after the enrichment module is loaded.
 
 | Command ID | Name | Callback |
 |-----------|------|----------|
-| `auto-notes:enrich-current-note` | Enrich current note | `enrichNote(activeFile, 'manual')` |
-| `auto-notes:review-enrichments` | Review enrichment proposals | `activateEnrichmentView()` |
-| `auto-notes:undo-enrichment` | Undo last enrichment | `undoEnrichment(lastAcceptedId)` |
+| `synapse:enrich-current-note` | Enrich current note | `enrichNote(activeFile, 'manual')` |
+| `synapse:review-enrichments` | Review enrichment proposals | `activateEnrichmentView()` |
+| `synapse:undo-enrichment` | Undo last enrichment | `undoEnrichment(lastAcceptedId)` |
 
 ### Views
 

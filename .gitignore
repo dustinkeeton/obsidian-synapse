@@ -5,7 +5,7 @@ dist/
 data.json
 .env
 .env.*
-.auto-notes/
+.synapse/
 *.bak
 *.tmp
 .DS_Store

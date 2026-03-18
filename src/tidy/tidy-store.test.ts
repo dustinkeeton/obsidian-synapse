@@ -44,7 +44,7 @@ describe('TidyStore', () => {
 
 		expect(mockAdapter.write).toHaveBeenCalledOnce();
 		const [path, content] = mockAdapter.write.mock.calls[0];
-		expect(path).toContain('.auto-notes/tidy-snapshots/');
+		expect(path).toContain('.synapse/tidy-snapshots/');
 		expect(path.endsWith('.json')).toBe(true);
 		expect(JSON.parse(content)).toEqual(snapshot);
 	});

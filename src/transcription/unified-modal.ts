@@ -1,5 +1,5 @@
 import { App, Modal, Notice, Platform, Setting, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { AUDIO_EXTENSIONS } from '../audio';
 import { detectPlatform } from '../video';
 
@@ -9,7 +9,7 @@ export class UnifiedTranscriptionModal extends Modal {
 
 	constructor(
 		app: App,
-		private getSettings: () => AutoNotesSettings,
+		private getSettings: () => SynapseSettings,
 		private enabledModules: { audio: boolean; video: boolean },
 		private callbacks: {
 			onTranscribeFile: (file: TFile) => Promise<void>;
@@ -59,7 +59,7 @@ export class UnifiedTranscriptionModal extends Modal {
 		// URL section (desktop only — video transcription requires yt-dlp + ffmpeg)
 		if (this.enabledModules.video && Platform.isDesktop) {
 			const platformBadge = contentEl.createDiv({
-				cls: 'auto-notes-platform-badge',
+				cls: 'synapse-platform-badge',
 			});
 			platformBadge.hide();
 

@@ -14,7 +14,7 @@ Exported from `index.ts`:
 class UnifiedTranscriptionModal extends Modal {
   constructor(
     app: App,
-    getSettings: () => AutoNotesSettings,
+    getSettings: () => SynapseSettings,
     enabledModules: { audio: boolean; video: boolean },
     callbacks: {
       onTranscribeFile: (file: TFile) => Promise<void>;
@@ -55,7 +55,7 @@ Single modal combining audio file selection and video URL input:
 
 Opened via:
 - Ribbon icon (`mic`)
-- Command `auto-notes:transcribe-media`
+- Command `synapse:transcribe-media`
 
 ## NoteMediaModal
 
@@ -66,7 +66,7 @@ Selection modal for media embedded in the current note:
 - Transcribe Selected button dispatches to separate audio/video callbacks
 
 Opened via:
-- Command `auto-notes:transcribe-note-media`
+- Command `synapse:transcribe-note-media`
 
 ## Dependencies
 

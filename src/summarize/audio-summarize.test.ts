@@ -42,9 +42,9 @@ vi.mock('../shared', () => ({
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
-	CALLOUT_TYPES: { transcription: 'auto-notes-transcription', summary: 'auto-notes-summary' },
+	CALLOUT_TYPES: { transcription: 'synapse-transcription', summary: 'synapse-summary' },
 	buildCallout: vi.fn((_type: string, title: string, content: string) =>
-		`\n> [!auto-notes-summary] ${title}\n> ${content}\n`
+		`\n> [!synapse-summary] ${title}\n> ${content}\n`
 	),
 	CheckpointManager: class MockCheckpointManager {
 		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
@@ -133,7 +133,7 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = makeTFile('notes/test.md');
@@ -151,7 +151,7 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = makeTFile('notes/test.md');
@@ -173,7 +173,7 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = makeTFile('notes/test.md');
@@ -192,7 +192,7 @@ describe('SummarizeModule audio target detection', () => {
 			'',
 			'![[recording.mp3]]',
 			'',
-			'> [!auto-notes-summary] Summary of recording.mp3',
+			'> [!synapse-summary] Summary of recording.mp3',
 			'> Previous summary content',
 		].join('\n');
 
@@ -205,7 +205,7 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = makeTFile('notes/test.md');
@@ -237,7 +237,7 @@ describe('SummarizeModule audio target detection', () => {
 
 		await moduleNoAudio.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = makeTFile('notes/test.md');
@@ -268,7 +268,7 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = makeTFile('notes/test.md');
@@ -291,7 +291,7 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = makeTFile('notes/test.md');
@@ -311,7 +311,7 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = makeTFile('notes/test.md');
@@ -354,7 +354,7 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = makeTFile('notes/lecture.md');

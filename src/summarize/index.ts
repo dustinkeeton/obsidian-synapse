@@ -1,5 +1,5 @@
 import { Plugin, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout,
 	CALLOUT_TYPES, CheckpointManager, generateId,
@@ -69,7 +69,7 @@ export class SummarizeModule {
 
 	constructor(
 		private plugin: Plugin,
-		private getSettings: () => AutoNotesSettings,
+		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
 		transcribeUrl?: TranscribeUrlFn,
@@ -82,7 +82,7 @@ export class SummarizeModule {
 
 	async onload(): Promise<void> {
 		this.plugin.addCommand({
-			id: 'auto-notes:summarize-current-note',
+			id: 'synapse:summarize-current-note',
 			name: 'Summarize current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -92,7 +92,7 @@ export class SummarizeModule {
 		});
 
 		this.plugin.addCommand({
-			id: 'auto-notes:scan-vault-summarize',
+			id: 'synapse:scan-vault-summarize',
 			name: 'Scan vault for notes to summarize',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -652,7 +652,7 @@ export class SummarizeModule {
 					// Summarize module doesn't have a direct view refresh callback
 					break;
 				default:
-					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
 			}
 		}
 	}

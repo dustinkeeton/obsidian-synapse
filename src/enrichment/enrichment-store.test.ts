@@ -59,7 +59,7 @@ describe('EnrichmentStore', () => {
 	it('loads a proposal by id', async () => {
 		const proposal = makeProposal({ id: 'find-me-123' });
 		mockAdapter.list.mockResolvedValue({
-			files: ['.auto-notes/enrichments/test-enrich-find-me-1.json'],
+			files: ['.synapse/enrichments/test-enrich-find-me-1.json'],
 			folders: [],
 		});
 		mockAdapter.read.mockResolvedValue(JSON.stringify(proposal));
@@ -132,7 +132,7 @@ describe('EnrichmentStore', () => {
 	it('deletes a proposal by id', async () => {
 		const proposal = makeProposal({ id: 'delete-me' });
 		mockAdapter.list.mockResolvedValue({
-			files: ['.auto-notes/enrichments/test.json'],
+			files: ['.synapse/enrichments/test.json'],
 			folders: [],
 		});
 		mockAdapter.read.mockResolvedValue(JSON.stringify(proposal));

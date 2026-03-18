@@ -38,7 +38,7 @@ export class SummarizeSelectionModal extends Modal {
 				});
 			});
 
-		const listEl = contentEl.createDiv({ cls: 'auto-notes-summarize-list' });
+		const listEl = contentEl.createDiv({ cls: 'synapse-summarize-list' });
 		this.renderCheckboxes(listEl);
 
 		new Setting(contentEl).addButton((btn) => {

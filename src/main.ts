@@ -1,6 +1,6 @@
 import { Platform, Plugin } from 'obsidian';
-import { AutoNotesSettings, DEFAULT_SETTINGS } from './settings';
-import { AutoNotesSettingTab } from './settings-tab';
+import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
+import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule } from './video';
@@ -20,8 +20,8 @@ import {
 	UnifiedItem,
 } from './views/unified-proposal-view';
 
-export default class AutoNotesPlugin extends Plugin {
-	settings!: AutoNotesSettings;
+export default class SynapsePlugin extends Plugin {
+	settings!: SynapseSettings;
 	notifications!: NotificationManager;
 	private checkpointManager!: CheckpointManager;
 
@@ -36,7 +36,7 @@ export default class AutoNotesPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
-		this.addSettingTab(new AutoNotesSettingTab(this.app, this));
+		this.addSettingTab(new SynapseSettingTab(this.app, this));
 
 		// Centralized notification manager
 		this.notifications = new NotificationManager();
@@ -171,13 +171,13 @@ export default class AutoNotesPlugin extends Plugin {
 		}
 
 		this.addCommand({
-			id: 'auto-notes:review-proposals',
+			id: 'synapse:review-proposals',
 			name: 'Open proposal review sidebar',
 			callback: () => this.activateUnifiedView(),
 		});
 
 		this.addCommand({
-			id: 'auto-notes:manage-checkpoints',
+			id: 'synapse:manage-checkpoints',
 			name: 'Manage interrupted operations',
 			callback: () => this.manageCheckpoints(),
 		});
@@ -189,13 +189,13 @@ export default class AutoNotesPlugin extends Plugin {
 		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video);
 		if (hasTranscription) {
 			this.addCommand({
-				id: 'auto-notes:transcribe-media',
+				id: 'synapse:transcribe-media',
 				name: 'Transcribe media',
 				callback: () => this.openUnifiedModal(),
 			});
 
 			this.addCommand({
-				id: 'auto-notes:transcribe-note-media',
+				id: 'synapse:transcribe-note-media',
 				name: 'Transcribe media from current note',
 				editorCallback: async (_editor, ctx) => {
 					if (ctx.file) {
@@ -405,7 +405,7 @@ export default class AutoNotesPlugin extends Plugin {
 			// Clean up old completed/discarded checkpoints
 			await this.checkpointManager.cleanup();
 		} catch (error) {
-			console.warn('[Auto Notes] Failed to check for incomplete checkpoints:', error);
+			console.warn('[Synapse] Failed to check for incomplete checkpoints:', error);
 		}
 	}
 
@@ -462,7 +462,7 @@ export default class AutoNotesPlugin extends Plugin {
 					this.refreshUnifiedView();
 					break;
 				default:
-					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
 			}
 		}
 	}

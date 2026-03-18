@@ -12,7 +12,7 @@ Exported from `index.ts`:
 
 ```ts
 class ElaborationModule {
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
   scanVault(folderPath?: string): Promise<number>
@@ -102,7 +102,7 @@ interface Proposal {
 
 ## Accept Behavior
 
-On accept, sanitized AI additions are wrapped in an `auto-notes-elaboration` callout and appended to the note via `buildCallout(CALLOUT_TYPES.elaboration, 'Elaboration', additions)`.
+On accept, sanitized AI additions are wrapped in an `synapse-elaboration` callout and appended to the note via `buildCallout(CALLOUT_TYPES.elaboration, 'Elaboration', additions)`.
 
 ## Error Handling
 

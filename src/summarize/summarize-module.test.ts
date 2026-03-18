@@ -33,7 +33,7 @@ vi.mock('../shared', () => ({
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
-	CALLOUT_TYPES: { transcription: 'auto-notes-transcription', summary: 'auto-notes-summary' },
+	CALLOUT_TYPES: { transcription: 'synapse-transcription', summary: 'synapse-summary' },
 	buildCallout: vi.fn((_type: string, _title: string, content: string) => `> ${content}`),
 	CheckpointManager: class MockCheckpointManager {
 		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
@@ -107,7 +107,7 @@ describe('SummarizeModule organize scope', () => {
 		// Register commands so we can invoke the summarize command
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = new TFile('notes/test.md') as any;
@@ -125,7 +125,7 @@ describe('SummarizeModule organize scope', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = new TFile('notes/test.md') as any;
@@ -141,7 +141,7 @@ describe('SummarizeModule organize scope', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const file = new TFile('notes/test.md') as any;
@@ -160,7 +160,7 @@ describe('SummarizeModule organize scope', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'auto-notes:summarize-current-note'
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
 		)[0];
 
 		const specificFile = new TFile('projects/research/my-note.md') as any;

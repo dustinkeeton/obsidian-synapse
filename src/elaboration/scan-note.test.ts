@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ElaborationModule } from './index';
-import { DEFAULT_SETTINGS, AutoNotesSettings } from '../settings';
+import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager } from '../shared/notifications';
 import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import { DetectionResult } from './types';
@@ -73,7 +73,7 @@ function createMockPluginForElaboration(appOverrides: Record<string, unknown> = 
 describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 	let module: ElaborationModule;
 	let mockPlugin: ReturnType<typeof createMockPluginForElaboration>;
-	let settings: AutoNotesSettings;
+	let settings: SynapseSettings;
 	let notifications: NotificationManager;
 
 	beforeEach(async () => {

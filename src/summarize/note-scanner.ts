@@ -141,7 +141,7 @@ export function hasSummaryBelow(lines: string[], startLine: number, source: stri
 		if (lines[j].includes(`**Summary of ${source}**`)) {
 			return true;
 		}
-		// Callout format: > [!auto-notes-summary] Summary of <source>
+		// Callout format: > [!synapse-summary] Summary of <source>
 		if (lines[j].includes(CALLOUT_SUMMARY_PREFIX) && lines[j].includes(`Summary of ${source}`)) {
 			return true;
 		}
@@ -162,7 +162,7 @@ function hasTranscriptionBelow(lines: string[], urlLine: number, url: string): b
 		if (lines[j].includes(`**Transcription of ${url}**`)) {
 			return true;
 		}
-		// Callout format: > [!auto-notes-transcription] Transcription of <url>
+		// Callout format: > [!synapse-transcription] Transcription of <url>
 		if (lines[j].includes(CALLOUT_TRANSCRIPTION_PREFIX) && lines[j].includes(`Transcription of ${url}`)) {
 			return true;
 		}

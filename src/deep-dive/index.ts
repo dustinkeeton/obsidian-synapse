@@ -1,5 +1,5 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
-import { AutoNotesSettings, DeepDiveNestingMode } from '../settings';
+import { SynapseSettings, DeepDiveNestingMode } from '../settings';
 import {
 	NotificationManager, ensureFolder, readNote, writeNote, wordCount,
 	CheckpointManager, generateId,
@@ -59,7 +59,7 @@ export class DeepDiveModule {
 
 	constructor(
 		private plugin: Plugin,
-		private getSettings: () => AutoNotesSettings,
+		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager
 	) {
@@ -74,7 +74,7 @@ export class DeepDiveModule {
 		await this.store.init();
 
 		this.plugin.addCommand({
-			id: 'auto-notes:deep-dive',
+			id: 'synapse:deep-dive',
 			name: 'Deep dive into current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -84,7 +84,7 @@ export class DeepDiveModule {
 		});
 
 		this.plugin.addCommand({
-			id: 'auto-notes:clear-deep-dive',
+			id: 'synapse:clear-deep-dive',
 			name: 'Clear deep dive proposals',
 			callback: async () => {
 				await this.clearProposals();
@@ -601,7 +601,7 @@ export class DeepDiveModule {
 					this.onViewRefreshNeeded?.();
 					break;
 				default:
-					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
 			}
 		}
 	}

@@ -1,16 +1,16 @@
 import { App, normalizePath } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { ensureFolder } from '../shared';
 import { EnrichmentProposal, EnrichmentStatus } from './types';
 
 /**
- * Persists enrichment proposals as JSON files in .auto-notes/enrichments/.
+ * Persists enrichment proposals as JSON files in .synapse/enrichments/.
  * Mirrors the elaboration ProposalStore pattern.
  */
 export class EnrichmentStore {
 	constructor(
 		private app: App,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {}
 
 	private get folderPath(): string {

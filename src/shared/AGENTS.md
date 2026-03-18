@@ -13,7 +13,7 @@ Exported from `index.ts`:
 ```ts
 // ai-client.ts
 class AIClient {
-  constructor(getSettings: () => AutoNotesSettings)
+  constructor(getSettings: () => SynapseSettings)
   complete(prompt: string, systemPrompt?: string): Promise<string>
   chat(messages: ChatMessage[]): Promise<string>
 }
@@ -66,7 +66,7 @@ function mergeTags(frontmatter: Record<string, unknown>, newTags: string[]): voi
 
 // callouts.ts
 const CALLOUT_TYPES: { summary, transcription, enrichment, elaboration, deepDive, nav }
-type CalloutType = 'auto-notes-summary' | 'auto-notes-transcription' | ...
+type CalloutType = 'synapse-summary' | 'synapse-transcription' | ...
 function buildCallout(type: CalloutType, title: string, body: string, collapsed?: boolean): string
 
 // diagram-generator.ts

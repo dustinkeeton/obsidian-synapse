@@ -22,7 +22,7 @@ interface TrackedOperation {
 	notice: Notice;
 	/** Wrapper span — contains labelEl and dotsEl */
 	textEl: HTMLElement;
-	/** Span holding the static message text (e.g. "Auto Notes: Scanning") */
+	/** Span holding the static message text (e.g. "Synapse: Scanning") */
 	labelEl: HTMLElement;
 	/** Fixed-width span that holds the animated dots, preventing layout reflow */
 	dotsEl: HTMLElement;
@@ -31,7 +31,7 @@ interface TrackedOperation {
 }
 
 /** CSS class prefix */
-const CLS = 'auto-notes-notice';
+const CLS = 'synapse-notice';
 
 let stylesInjected = false;
 
@@ -42,7 +42,7 @@ function injectStyles(): void {
 	if (typeof document === 'undefined') return;
 
 	const style = document.createElement('style');
-	style.id = 'auto-notes-notification-styles';
+	style.id = 'synapse-notification-styles';
 	style.textContent = `
 		.${CLS} {
 			border-left: 3px solid var(--text-muted);
@@ -223,7 +223,7 @@ export class NotificationManager {
 		const row = el.createDiv({ cls: `${CLS}-op` });
 		const textEl = row.createEl('span', { cls: `${CLS}-op-text` });
 		const labelEl = textEl.createEl('span', {
-			text: `Auto Notes: ${baseLabel}`,
+			text: `Synapse: ${baseLabel}`,
 		});
 		const dotsEl = textEl.createEl('span', {
 			cls: `${CLS}-op-dots`,
@@ -263,7 +263,7 @@ export class NotificationManager {
 				if (op.state !== 'running') return;
 				const base = stripTrailingDots(message);
 				op.message = base;
-				op.labelEl.textContent = `Auto Notes: ${base}`;
+				op.labelEl.textContent = `Synapse: ${base}`;
 				op.dotsEl.textContent = '.';
 				stopEllipsis(op.ellipsisInterval);
 				op.ellipsisInterval = startEllipsisOnEl(op.dotsEl);
@@ -279,7 +279,7 @@ export class NotificationManager {
 				// Progress counters don't need animated dots
 				stopEllipsis(op.ellipsisInterval);
 				op.ellipsisInterval = null;
-				op.labelEl.textContent = `Auto Notes: ${base}`;
+				op.labelEl.textContent = `Synapse: ${base}`;
 				op.dotsEl.textContent = '';
 				styleNotice(op.notice, 'progress');
 				this.updateStatusBar();
@@ -293,7 +293,7 @@ export class NotificationManager {
 			error: (message: string) => {
 				if (op.state !== 'running') return;
 				this.completeOperation(opId, 'error', message, 'error', 8000);
-				console.error(`[Auto Notes] ${op.label}:`, message);
+				console.error(`[Synapse] ${op.label}:`, message);
 			},
 		};
 
@@ -317,7 +317,7 @@ export class NotificationManager {
 			const el = getNoticeEl(notice);
 			el.empty();
 
-			el.createEl('div', { text: `Auto Notes: ${message}` });
+			el.createEl('div', { text: `Synapse: ${message}` });
 
 			const actions = el.createDiv({ cls: `${CLS}-actions` });
 
@@ -355,13 +355,13 @@ export class NotificationManager {
 
 	/** Show a one-shot informational notice (not tracked, dismissible) */
 	info(message: string, duration = 4000): void {
-		const notice = new Notice(`Auto Notes: ${message}`, duration);
+		const notice = new Notice(`Synapse: ${message}`, duration);
 		styleNotice(notice, 'info');
 	}
 
 	/** Show a one-shot success notice (dismissible) */
 	success(message: string, duration = 4000): void {
-		const notice = new Notice(`Auto Notes: ${message}`, duration);
+		const notice = new Notice(`Synapse: ${message}`, duration);
 		styleNotice(notice, 'success');
 	}
 
@@ -372,9 +372,9 @@ export class NotificationManager {
 			/(?:sk-|key-|dg-|anthropic-|Bearer\s+|Token\s+)[A-Za-z0-9_-]{8,}/g,
 			'[REDACTED]'
 		);
-		const notice = new Notice(`Auto Notes: ${context} — ${redacted}`, 8000);
+		const notice = new Notice(`Synapse: ${context} — ${redacted}`, 8000);
 		styleNotice(notice, 'error');
-		console.error(`[Auto Notes] ${context}:`, redacted);
+		console.error(`[Synapse] ${context}:`, redacted);
 	}
 
 	private completeOperation(
@@ -390,7 +390,7 @@ export class NotificationManager {
 		stopEllipsis(op.ellipsisInterval);
 		op.notice.hide();
 		// Completion/error/cancel notices are normal dismissible toasts
-		const notice = new Notice(`Auto Notes: ${message}`, duration);
+		const notice = new Notice(`Synapse: ${message}`, duration);
 		styleNotice(notice, level);
 		this.operations.delete(id);
 		this.updateStatusBar();
@@ -404,11 +404,11 @@ export class NotificationManager {
 		);
 
 		if (running.length === 0) {
-			this.statusBarEl.setText('Auto Notes');
+			this.statusBarEl.setText('Synapse');
 		} else if (running.length === 1) {
-			this.statusBarEl.setText(`Auto Notes: ${running[0].message}`);
+			this.statusBarEl.setText(`Synapse: ${running[0].message}`);
 		} else {
-			this.statusBarEl.setText(`Auto Notes: ${running.length} tasks running`);
+			this.statusBarEl.setText(`Synapse: ${running.length} tasks running`);
 		}
 	}
 }

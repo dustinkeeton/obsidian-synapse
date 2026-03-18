@@ -1,11 +1,11 @@
 import { App, Platform, PluginSettingTab, Setting } from 'obsidian';
-import type AutoNotesPlugin from './main';
+import type SynapsePlugin from './main';
 import { MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
 import { addEnhancedSlider } from './shared';
 
-export class AutoNotesSettingTab extends PluginSettingTab {
-	constructor(app: App, private plugin: AutoNotesPlugin) {
+export class SynapseSettingTab extends PluginSettingTab {
+	constructor(app: App, private plugin: SynapsePlugin) {
 		super(app, plugin);
 	}
 

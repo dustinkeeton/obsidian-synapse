@@ -12,7 +12,7 @@ Exported from `index.ts`:
 
 ```ts
 class VideoModule {
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, audioModule: AudioModule, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, audioModule: AudioModule, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
   transcribeUrl(url: string, parentOp?: { update: (msg: string) => void }): Promise<string>
@@ -92,11 +92,11 @@ interface VideoUrlEmbed { url: string; platform: Platform; line: number }
 ## Commands
 
 Only one command registered directly:
-- `auto-notes:check-dependencies` -- checks yt-dlp and ffmpeg availability
+- `synapse:check-dependencies` -- checks yt-dlp and ffmpeg availability
 
 Transcription commands registered in `main.ts` (unified):
-- `auto-notes:transcribe-media` -> `VideoModule.transcribeUrlToActiveNote(url)`
-- `auto-notes:transcribe-note-media` -> `VideoModule.transcribeAndInsert(file, embeds)`
+- `synapse:transcribe-media` -> `VideoModule.transcribeUrlToActiveNote(url)`
+- `synapse:transcribe-note-media` -> `VideoModule.transcribeAndInsert(file, embeds)`
 
 ## External Dependencies
 

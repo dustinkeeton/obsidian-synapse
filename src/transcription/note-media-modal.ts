@@ -49,8 +49,8 @@ export class NoteMediaModal extends Modal {
 				});
 			});
 
-		const audioListEl = contentEl.createDiv({ cls: 'auto-notes-audio-list' });
-		const videoListEl = contentEl.createDiv({ cls: 'auto-notes-video-list' });
+		const audioListEl = contentEl.createDiv({ cls: 'synapse-audio-list' });
+		const videoListEl = contentEl.createDiv({ cls: 'synapse-video-list' });
 		this.renderCheckboxes(audioListEl, videoListEl);
 
 		// Transcribe button

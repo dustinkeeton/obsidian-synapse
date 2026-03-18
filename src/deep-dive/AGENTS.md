@@ -14,7 +14,7 @@ class DeepDiveModule {
   onNoteAccepted: ((filePath: string) => void) | null
   onOrganizeRequested: ((file: TFile) => void) | null
 
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
   getPendingProposals(): Promise<DeepDiveProposal[]>
@@ -143,4 +143,4 @@ interface DeepDiveRun {
 
 - `shared/` (NotificationManager, ensureFolder, readNote, writeNote, wordCount)
 - `organize/` (ContentAnalyzer, DirectoryMatcher -- for auto-organize nesting mode)
-- `settings.ts` (AutoNotesSettings, DeepDiveNestingMode)
+- `settings.ts` (SynapseSettings, DeepDiveNestingMode)

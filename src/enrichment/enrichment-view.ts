@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { EnrichmentProposal } from './types';
 
-export const ENRICHMENT_VIEW_TYPE = 'auto-notes-enrichment-review';
+export const ENRICHMENT_VIEW_TYPE = 'synapse-enrichment-review';
 
 export class EnrichmentReviewView extends ItemView {
 	private proposals: EnrichmentProposal[] = [];
@@ -58,7 +58,7 @@ export class EnrichmentReviewView extends ItemView {
 		if (pending.length === 0) {
 			contentEl.createEl('p', {
 				text: 'No pending enrichments. Enrichments are generated after elaboration or transcription.',
-				cls: 'auto-notes-empty',
+				cls: 'synapse-empty',
 			});
 			return;
 		}
@@ -72,11 +72,11 @@ export class EnrichmentReviewView extends ItemView {
 		}
 
 		for (const [notePath, noteProposals] of grouped) {
-			const section = contentEl.createDiv({ cls: 'auto-notes-enrichment-group' });
+			const section = contentEl.createDiv({ cls: 'synapse-enrichment-group' });
 			section.createEl('h4', { text: notePath });
 
 			for (const proposal of noteProposals) {
-				const card = section.createDiv({ cls: 'auto-notes-enrichment-card' });
+				const card = section.createDiv({ cls: 'synapse-enrichment-card' });
 
 				// Summary line
 				const { result } = proposal;
@@ -88,7 +88,7 @@ export class EnrichmentReviewView extends ItemView {
 
 				card.createEl('small', {
 					text: `${proposal.triggerSource} | ${parts.join(', ')}`,
-					cls: 'auto-notes-enrichment-summary',
+					cls: 'synapse-enrichment-summary',
 				});
 
 				// Tag preview
@@ -99,11 +99,11 @@ export class EnrichmentReviewView extends ItemView {
 						.join(', ');
 					card.createEl('p', {
 						text: `Tags: ${tagPreview}${result.tags.length > 5 ? '...' : ''}`,
-						cls: 'auto-notes-enrichment-preview',
+						cls: 'synapse-enrichment-preview',
 					});
 				}
 
-				const actions = card.createDiv({ cls: 'auto-notes-actions' });
+				const actions = card.createDiv({ cls: 'synapse-actions' });
 
 				const viewBtn = actions.createEl('button', { text: 'Review' });
 				viewBtn.addEventListener('click', () => this.onDetail(proposal.id));

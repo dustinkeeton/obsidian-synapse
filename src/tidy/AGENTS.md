@@ -12,7 +12,7 @@ Exported from `index.ts`:
 
 ```ts
 class TidyModule {
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
   tidy(file: TFile): Promise<void>
@@ -39,7 +39,7 @@ interface TidySnapshot {
 ## Data Flow
 
 ```
-1. User triggers auto-notes:tidy-current-note
+1. User triggers synapse:tidy-current-note
    |
 2. TidyStore.save(snapshot) -- saves original content for undo
    |
@@ -61,7 +61,7 @@ interface TidySnapshot {
 ## Undo Flow
 
 ```
-1. User triggers auto-notes:undo-tidy
+1. User triggers synapse:undo-tidy
    |
 2. TidyStore.load(filePath) -- retrieves snapshot
    |
@@ -72,7 +72,7 @@ interface TidySnapshot {
 
 ## TidyStore
 
-- Storage: `settings.tidy.snapshotFolderPath` (default: `.auto-notes/tidy-snapshots`)
+- Storage: `settings.tidy.snapshotFolderPath` (default: `.synapse/tidy-snapshots`)
 - One snapshot per file path (overwrites previous)
 - Filename: `{path-with-double-underscores}.json` (deterministic)
 - Uses `vault.adapter.write()` for atomic overwrites

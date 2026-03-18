@@ -25,8 +25,8 @@ plugin-root/
 
 ```json
 {
-  "id": "auto-notes",
-  "name": "Auto Notes",
+  "id": "synapse",
+  "name": "Synapse",
   "version": "0.1.0",
   "minAppVersion": "0.15.0",
   "description": "Flesh out and elaborate on notes with AI assistance",
@@ -40,11 +40,11 @@ plugin-root/
 ```typescript
 import { Plugin } from 'obsidian';
 
-export default class AutoNotesPlugin extends Plugin {
+export default class SynapsePlugin extends Plugin {
   async onload() {
     // Load settings, register UI, commands, events
     await this.loadSettings();
-    this.addSettingTab(new AutoNotesSettingTab(this.app, this));
+    this.addSettingTab(new SynapseSettingTab(this.app, this));
     this.registerCommands();
   }
 

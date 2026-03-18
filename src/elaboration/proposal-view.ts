@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { Proposal } from './types';
 
-export const PROPOSAL_VIEW_TYPE = 'auto-notes-proposal-review';
+export const PROPOSAL_VIEW_TYPE = 'synapse-proposal-review';
 
 export class ProposalReviewView extends ItemView {
 	private proposals: Proposal[] = [];
@@ -28,7 +28,7 @@ export class ProposalReviewView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return 'Auto Notes Proposals';
+		return 'Synapse Proposals';
 	}
 
 	getIcon(): string {
@@ -58,7 +58,7 @@ export class ProposalReviewView extends ItemView {
 		if (pending.length === 0) {
 			contentEl.createEl('p', {
 				text: 'No pending proposals. Run "Scan vault" to find stub notes.',
-				cls: 'auto-notes-empty',
+				cls: 'synapse-empty',
 			});
 			return;
 		}
@@ -72,24 +72,24 @@ export class ProposalReviewView extends ItemView {
 		}
 
 		for (const [notePath, noteProposals] of grouped) {
-			const section = contentEl.createDiv({ cls: 'auto-notes-proposal-group' });
+			const section = contentEl.createDiv({ cls: 'synapse-proposal-group' });
 			section.createEl('h4', { text: notePath });
 
 			for (const proposal of noteProposals) {
-				const card = section.createDiv({ cls: 'auto-notes-proposal-card' });
+				const card = section.createDiv({ cls: 'synapse-proposal-card' });
 
 				const reasons = proposal.detectionReasons
 					.map(r => r.type)
 					.join(', ');
-				card.createEl('small', { text: reasons, cls: 'auto-notes-reasons' });
+				card.createEl('small', { text: reasons, cls: 'synapse-reasons' });
 
 				const preview = proposal.proposedAdditions.slice(0, 200);
 				card.createEl('p', {
 					text: preview + (proposal.proposedAdditions.length > 200 ? '...' : ''),
-					cls: 'auto-notes-preview',
+					cls: 'synapse-preview',
 				});
 
-				const actions = card.createDiv({ cls: 'auto-notes-actions' });
+				const actions = card.createDiv({ cls: 'synapse-actions' });
 
 				const viewBtn = actions.createEl('button', { text: 'View' });
 				viewBtn.addEventListener('click', () => this.onDetail(proposal.id));

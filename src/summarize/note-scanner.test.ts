@@ -60,7 +60,7 @@ describe('findSummarizeTargets', () => {
 		const content = [
 			'https://example.com/article',
 			'',
-			'> [!auto-notes-summary] Summary of https://example.com/article',
+			'> [!synapse-summary] Summary of https://example.com/article',
 			'> Some summary text',
 		].join('\n');
 		const targets = findSummarizeTargets(content);
@@ -83,7 +83,7 @@ describe('findSummarizeTargets', () => {
 
 	it('finds a callout-format transcription block', () => {
 		const content = [
-			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=abc',
+			'> [!synapse-transcription]- Transcription of https://youtube.com/watch?v=abc',
 			'> Hello world this is a test',
 			'> Second line of transcription',
 		].join('\n');
@@ -99,10 +99,10 @@ describe('findSummarizeTargets', () => {
 
 	it('skips callout transcription with callout summary below', () => {
 		const content = [
-			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=abc',
+			'> [!synapse-transcription]- Transcription of https://youtube.com/watch?v=abc',
 			'> Transcribed text',
 			'',
-			'> [!auto-notes-summary] Summary of https://youtube.com/watch?v=abc',
+			'> [!synapse-summary] Summary of https://youtube.com/watch?v=abc',
 			'> Summary text',
 		].join('\n');
 		const targets = findSummarizeTargets(content);
@@ -113,7 +113,7 @@ describe('findSummarizeTargets', () => {
 		const content = [
 			'https://example.com/user-url',
 			'',
-			'> [!auto-notes-enrichment] References',
+			'> [!synapse-enrichment] References',
 			'> - [Some Article](https://example.com/enrichment-ref) — background',
 			'> - [Another](https://other.com/resource) — related',
 		].join('\n');
@@ -142,7 +142,7 @@ describe('findSummarizeTargets', () => {
 
 	it('exits callout enrichment section at non-blockquote line', () => {
 		const content = [
-			'> [!auto-notes-enrichment] References',
+			'> [!synapse-enrichment] References',
 			'> - [Inside](https://inside.com/ref) — reason',
 			'',
 			'https://example.com/after-enrichment',
@@ -209,13 +209,13 @@ describe('findSummarizeTargets', () => {
 		const content = [
 			'https://example.com/user-url',
 			'',
-			'%% auto-notes-enrichment-start %%',
+			'%% synapse-enrichment-start %%',
 			'## References',
 			'',
 			'- [Some Article](https://example.com/enrichment-ref) — background',
 			'- [Another](https://other.com/resource) — related',
 			'',
-			'%% auto-notes-enrichment-end %%',
+			'%% synapse-enrichment-end %%',
 		].join('\n');
 		const targets = findSummarizeTargets(content);
 		expect(targets).toHaveLength(3);
@@ -246,19 +246,19 @@ describe('findSummarizeTargets', () => {
 		const content = [
 			'https://example.com/keep-this',
 			'',
-			'%% auto-notes-enrichment-start %%',
+			'%% synapse-enrichment-start %%',
 			'## Related Notes',
 			'',
 			'- [[Topic]] — reason',
 			'',
-			'%% auto-notes-enrichment-end %%',
+			'%% synapse-enrichment-end %%',
 			'',
-			'%% auto-notes-enrichment-start %%',
+			'%% synapse-enrichment-start %%',
 			'## References',
 			'',
 			'- [Ref](https://skip.com/this) — reason',
 			'',
-			'%% auto-notes-enrichment-end %%',
+			'%% synapse-enrichment-end %%',
 		].join('\n');
 		const targets = findSummarizeTargets(content);
 		expect(targets).toHaveLength(2);
@@ -271,12 +271,12 @@ describe('findSummarizeTargets', () => {
 
 	it('ignores wikilinks inside enrichment sections', () => {
 		const content = [
-			'%% auto-notes-enrichment-start %%',
+			'%% synapse-enrichment-start %%',
 			'## Related Notes',
 			'',
 			'- [[Existing Note]] — shares topic',
 			'',
-			'%% auto-notes-enrichment-end %%',
+			'%% synapse-enrichment-end %%',
 		].join('\n');
 		const targets = findSummarizeTargets(content);
 		expect(targets).toHaveLength(0);
@@ -284,12 +284,12 @@ describe('findSummarizeTargets', () => {
 
 	it('finds URLs after enrichment section ends', () => {
 		const content = [
-			'%% auto-notes-enrichment-start %%',
+			'%% synapse-enrichment-start %%',
 			'## References',
 			'',
 			'- [Inside](https://inside.com/ref) — reason',
 			'',
-			'%% auto-notes-enrichment-end %%',
+			'%% synapse-enrichment-end %%',
 			'',
 			'https://example.com/after-enrichment',
 		].join('\n');
@@ -312,13 +312,13 @@ describe('findSummarizeTargets', () => {
 		// After summarize replaces [Title](url) with [[Title]], re-scanning
 		// should not detect anything for that line
 		const content = [
-			'%% auto-notes-enrichment-start %%',
+			'%% synapse-enrichment-start %%',
 			'## References',
 			'',
 			'- [[AI Overview]] — background',
 			'- [Still External](https://other.com/page) — reason',
 			'',
-			'%% auto-notes-enrichment-end %%',
+			'%% synapse-enrichment-end %%',
 		].join('\n');
 		const targets = findSummarizeTargets(content);
 		expect(targets).toHaveLength(1);
@@ -340,20 +340,20 @@ describe('findSummarizeTargets', () => {
 			'> Hey everyone, here is what I learned today about AI...',
 			'> It was really interesting stuff.',
 			'',
-			'%% auto-notes-enrichment-start %%',
+			'%% synapse-enrichment-start %%',
 			'## Related Notes',
 			'',
 			'- [[Artificial Intelligence]] — shares topic',
 			'',
-			'%% auto-notes-enrichment-end %%',
+			'%% synapse-enrichment-end %%',
 			'',
-			'%% auto-notes-enrichment-start %%',
+			'%% synapse-enrichment-start %%',
 			'## References',
 			'',
 			'- [AI Overview](https://en.wikipedia.org/wiki/Artificial_intelligence) — background',
 			'- [TikTok Creator](https://tiktok.com/@creator) — source',
 			'',
-			'%% auto-notes-enrichment-end %%',
+			'%% synapse-enrichment-end %%',
 		].join('\n');
 		const targets = findSummarizeTargets(content);
 		expect(targets).toHaveLength(3);
@@ -393,13 +393,13 @@ describe('findSummarizeTargets', () => {
 			'>',
 			'> Summary of the transcription',
 			'',
-			'%% auto-notes-enrichment-start %%',
+			'%% synapse-enrichment-start %%',
 			'## References',
 			'',
 			'- [[AI Overview]] — background',
 			'- [[TikTok Creator]] — source',
 			'',
-			'%% auto-notes-enrichment-end %%',
+			'%% synapse-enrichment-end %%',
 		].join('\n');
 		const targets = findSummarizeTargets(content);
 		// Transcription already has summary, enrichment refs already converted
@@ -452,7 +452,7 @@ describe('hasSummaryBelow', () => {
 		const lines = [
 			'https://example.com/article',
 			'',
-			'> [!auto-notes-summary] Summary of https://example.com/article',
+			'> [!synapse-summary] Summary of https://example.com/article',
 			'> Summary text',
 		];
 		expect(hasSummaryBelow(lines, 0, 'https://example.com/article')).toBe(true);
@@ -461,7 +461,7 @@ describe('hasSummaryBelow', () => {
 	it('returns false for callout summary of different source', () => {
 		const lines = [
 			'https://example.com/article',
-			'> [!auto-notes-summary] Summary of https://example.com/other',
+			'> [!synapse-summary] Summary of https://example.com/other',
 		];
 		expect(hasSummaryBelow(lines, 0, 'https://example.com/article')).toBe(false);
 	});
@@ -552,9 +552,9 @@ describe('multi-URL inline insertion (integration)', () => {
 
 		const result = simulateInsertion(content, summaries);
 
-		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=abc');
+		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=abc');
 		expect(result).toContain('> Summary of first video.');
-		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=xyz');
+		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=xyz');
 		expect(result).toContain('> Summary of second video.');
 	});
 
@@ -575,11 +575,11 @@ describe('multi-URL inline insertion (integration)', () => {
 
 		const result = simulateInsertion(content, summaries);
 
-		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=first');
+		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=first');
 		expect(result).toContain('> First summary.');
-		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=second');
+		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=second');
 		expect(result).toContain('> Second summary.');
-		expect(result).toContain('> [!auto-notes-summary] Summary of https://youtube.com/watch?v=third');
+		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=third');
 		expect(result).toContain('> Third summary.');
 	});
 
@@ -671,8 +671,8 @@ describe('multi-URL inline insertion (integration)', () => {
 		const secondUrlIdx = lines.indexOf('https://example.com/second');
 
 		// Find the summary header lines
-		const firstSummaryIdx = lines.indexOf('> [!auto-notes-summary] Summary of https://example.com/first');
-		const secondSummaryIdx = lines.indexOf('> [!auto-notes-summary] Summary of https://example.com/second');
+		const firstSummaryIdx = lines.indexOf('> [!synapse-summary] Summary of https://example.com/first');
+		const secondSummaryIdx = lines.indexOf('> [!synapse-summary] Summary of https://example.com/second');
 
 		// Each summary should come after its URL and before the next URL
 		expect(firstSummaryIdx).toBeGreaterThan(firstUrlIdx);
@@ -694,9 +694,9 @@ describe('multi-URL inline insertion (integration)', () => {
 
 		const result = simulateInsertion(content, summaries);
 
-		expect(result).toContain('> [!auto-notes-summary] Summary of https://example.com/a');
+		expect(result).toContain('> [!synapse-summary] Summary of https://example.com/a');
 		expect(result).toContain('> Summary A.');
-		expect(result).toContain('> [!auto-notes-summary] Summary of https://example.com/b');
+		expect(result).toContain('> [!synapse-summary] Summary of https://example.com/b');
 		expect(result).toContain('> Summary B.');
 	});
 });

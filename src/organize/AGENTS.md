@@ -12,7 +12,7 @@ AI-powered semantic directory structuring. Analyzes note content to determine th
 class OrganizeModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
 
-  constructor(plugin: Plugin, getSettings: () => AutoNotesSettings, notifications: NotificationManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager)
   onload(): Promise<void>
   onunload(): void
   getPendingProposals(): Promise<OrganizeProposal[]>
@@ -94,7 +94,7 @@ interface OrganizeResult {
 ## Dependencies
 
 - `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder)
-- `settings.ts` (AutoNotesSettings)
+- `settings.ts` (SynapseSettings)
 
 ## Tests
 

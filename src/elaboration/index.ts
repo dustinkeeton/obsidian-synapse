@@ -1,5 +1,5 @@
 import { Plugin, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import {
 	buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles,
 	NotificationManager, sanitizeAIResponse, CheckpointManager, generateId,
@@ -26,7 +26,7 @@ export class ElaborationModule {
 
 	constructor(
 		private plugin: Plugin,
-		private getSettings: () => AutoNotesSettings,
+		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager
 	) {
@@ -39,7 +39,7 @@ export class ElaborationModule {
 		await this.store.init();
 
 		this.plugin.addCommand({
-			id: 'auto-notes:scan-vault',
+			id: 'synapse:scan-vault',
 			name: 'Scan vault for stub notes',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -52,7 +52,7 @@ export class ElaborationModule {
 		});
 
 		this.plugin.addCommand({
-			id: 'auto-notes:scan-current-note',
+			id: 'synapse:scan-current-note',
 			name: 'Scan current note for elaboration',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -62,7 +62,7 @@ export class ElaborationModule {
 		});
 
 		this.plugin.addCommand({
-			id: 'auto-notes:clear-proposals',
+			id: 'synapse:clear-proposals',
 			name: 'Clear all pending proposals',
 			callback: () => this.clearProposals(),
 		});
@@ -355,7 +355,7 @@ export class ElaborationModule {
 					this.onViewRefreshNeeded?.();
 					break;
 				default:
-					console.warn(`[Auto Notes] Unknown deferred task type: ${task.type}`);
+					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
 			}
 		}
 	}

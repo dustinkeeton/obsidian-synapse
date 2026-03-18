@@ -13,9 +13,9 @@ Decisions listed in reverse chronological order.
 - **NoteMediaModal** — scans the current note for both audio embeds and video URLs, presents a unified selection UI (replaces `NoteAudioModal` + `NoteVideoModal`)
 
 Reduce to 2 unified commands + 1 utility:
-- `auto-notes:transcribe-media` — opens UnifiedTranscriptionModal
-- `auto-notes:transcribe-note-media` — opens NoteMediaModal for the current note
-- `auto-notes:check-dependencies` — checks yt-dlp/ffmpeg availability (retained from video module)
+- `synapse:transcribe-media` — opens UnifiedTranscriptionModal
+- `synapse:transcribe-note-media` — opens NoteMediaModal for the current note
+- `synapse:check-dependencies` — checks yt-dlp/ffmpeg availability (retained from video module)
 
 The transcription module is UI-only; it delegates all work to AudioModule and VideoModule via callbacks wired in `main.ts`. AudioModule and VideoModule expose new public methods (`transcribeFileToActiveNote`, `transcribeUrlToActiveNote`, `transcribeAndInsert`) for the unified orchestration.
 
@@ -322,7 +322,7 @@ On error or cancellation in Phase 3, all created proposals are rejected and pend
 
 **Context**: The tidy feature (spelling/formatting correction) was being designed. Other modules (elaboration, enrichment) use a proposal-review workflow where changes are stored as JSON proposals and presented in a sidebar for user approval.
 
-**Decision**: Tidy applies changes immediately to the note without a proposal step. A snapshot of the original content is saved to `.auto-notes/tidy-snapshots/` for undo capability.
+**Decision**: Tidy applies changes immediately to the note without a proposal step. A snapshot of the original content is saved to `.synapse/tidy-snapshots/` for undo capability.
 
 **Alternatives considered**:
 - Proposal workflow like elaboration/enrichment (adds friction for low-risk changes)
@@ -472,7 +472,7 @@ Callbacks are only wired when the relevant modules and settings are enabled.
 
 **Context**: Enrichment adds "Related Notes" and "References" sections to notes. If enrichment runs again on the same note (e.g., after re-elaboration), it needs to update these sections rather than duplicating them.
 
-**Decision**: Wrap enrichment-added sections with HTML comment markers: `%% auto-notes-enrichment-start %%` and `%% auto-notes-enrichment-end %%`. On subsequent enrichments, content between markers is replaced. Undo removes everything between markers.
+**Decision**: Wrap enrichment-added sections with HTML comment markers: `%% synapse-enrichment-start %%` and `%% synapse-enrichment-end %%`. On subsequent enrichments, content between markers is replaced. Undo removes everything between markers.
 
 **Alternatives considered**:
 - Heading-based detection only (fragile -- user might have a heading with the same name)
@@ -566,16 +566,16 @@ Callbacks are only wired when the relevant modules and settings are enabled.
 
 ---
 
-## 2026-03-12: Non-destructive proposal storage in `.auto-notes/`
+## 2026-03-12: Non-destructive proposal storage in `.synapse/`
 
 **Context**: AI-generated elaborations and enrichments should never modify a user's notes without explicit consent. Proposals need to survive plugin reloads and Obsidian restarts.
 
-**Decision**: Store proposals as JSON files in `.auto-notes/` with subdirectories per module:
-- `.auto-notes/proposals/` -- elaboration proposals
-- `.auto-notes/enrichments/` -- enrichment proposals
-- `.auto-notes/tidy-snapshots/` -- tidy undo snapshots
-- `.auto-notes/organize/proposals/` and `.auto-notes/organize/snapshots/` -- organize data
-- `.auto-notes/deep-dive/` -- deep-dive proposals and `runs/` subdirectory
+**Decision**: Store proposals as JSON files in `.synapse/` with subdirectories per module:
+- `.synapse/proposals/` -- elaboration proposals
+- `.synapse/enrichments/` -- enrichment proposals
+- `.synapse/tidy-snapshots/` -- tidy undo snapshots
+- `.synapse/organize/proposals/` and `.synapse/organize/snapshots/` -- organize data
+- `.synapse/deep-dive/` -- deep-dive proposals and `runs/` subdirectory
 
 Each proposal is a separate file with metadata and proposed content.
 
@@ -584,9 +584,9 @@ Each proposal is a separate file with metadata and proposed content.
 - Single database file (merge conflicts, corruption risk)
 - Frontmatter annotations on original notes (modifies user files)
 
-**Rationale**: JSON files are human-inspectable, diffable, and survive reloads. Individual files avoid corruption cascading across proposals. The `.auto-notes/` folder is excluded from all module scans by default.
+**Rationale**: JSON files are human-inspectable, diffable, and survive reloads. Individual files avoid corruption cascading across proposals. The `.synapse/` folder is excluded from all module scans by default.
 
-**Impact**: Vault contains a `.auto-notes/` folder with module-specific subdirectories. Users can inspect, back up, or delete proposal/snapshot files manually.
+**Impact**: Vault contains a `.synapse/` folder with module-specific subdirectories. Users can inspect, back up, or delete proposal/snapshot files manually.
 
 ---
 

@@ -83,7 +83,7 @@ describe('findVideoUrls', () => {
 		const content = [
 			'https://youtube.com/watch?v=abc123',
 			'',
-			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=abc123',
+			'> [!synapse-transcription]- Transcription of https://youtube.com/watch?v=abc123',
 			'> Some transcribed text',
 		].join('\n');
 		const result = findVideoUrls(content);
@@ -188,7 +188,7 @@ describe('hasTranscriptionBelow', () => {
 		const lines = [
 			'https://youtube.com/watch?v=abc',
 			'',
-			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=abc',
+			'> [!synapse-transcription]- Transcription of https://youtube.com/watch?v=abc',
 			'> text',
 		];
 		expect(hasTranscriptionBelow(lines, 0, 'https://youtube.com/watch?v=abc')).toBe(true);
@@ -197,7 +197,7 @@ describe('hasTranscriptionBelow', () => {
 	it('returns false for callout transcription of different URL', () => {
 		const lines = [
 			'https://youtube.com/watch?v=abc',
-			'> [!auto-notes-transcription]- Transcription of https://youtube.com/watch?v=xyz',
+			'> [!synapse-transcription]- Transcription of https://youtube.com/watch?v=xyz',
 		];
 		expect(hasTranscriptionBelow(lines, 0, 'https://youtube.com/watch?v=abc')).toBe(false);
 	});

@@ -1,5 +1,5 @@
 import { App, TFile } from 'obsidian';
-import { AutoNotesSettings } from '../settings';
+import { SynapseSettings } from '../settings';
 import { InternalLinkCandidate, WeightConfig } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
 import { computeProximityWeight } from './weight-calculator';
@@ -19,7 +19,7 @@ export class LinkResolver {
 	constructor(
 		private app: App,
 		private analyzer: VaultAnalyzer,
-		private getSettings: () => AutoNotesSettings
+		private getSettings: () => SynapseSettings
 	) {}
 
 	findInternalLinks(

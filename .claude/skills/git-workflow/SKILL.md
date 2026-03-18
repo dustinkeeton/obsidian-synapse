@@ -1,6 +1,6 @@
 ---
 name: git-workflow
-description: Git branching strategy, commit standards, and PR workflow for the Auto Notes project. Use when performing any git operations (commits, branches, pushes, PRs).
+description: Git branching strategy, commit standards, and PR workflow for the Synapse project. Use when performing any git operations (commits, branches, pushes, PRs).
 user_invocable: false
 ---
 
@@ -102,7 +102,7 @@ When multiple agents work in parallel on files that might conflict:
 
 1. **Use git worktrees** to isolate work:
    ```bash
-   git worktree add ../auto-notes-feat-x feat/feature-x
+   git worktree add ../synapse-feat-x feat/feature-x
    ```
 
 2. **Lock files** — if two agents suspect they'll edit the same file, one should finish first. Use `TaskList(team_name: ...)` to check which files other agents are modifying.
@@ -111,7 +111,7 @@ When multiple agents work in parallel on files that might conflict:
 
 4. **Clean up** worktrees after merging:
    ```bash
-   git worktree remove ../auto-notes-feat-x
+   git worktree remove ../synapse-feat-x
    ```
 
 Teams and worktrees are orthogonal — teams provide coordination (task tracking, messaging), worktrees provide isolation (separate working directories). Use both together for parallel agent work.

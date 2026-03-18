@@ -30,6 +30,6 @@ export function notifyError(context: string, error: unknown): void {
 		/(?:sk-|key-|dg-|anthropic-|Bearer\s+|Token\s+)[A-Za-z0-9_-]{8,}/g,
 		'[REDACTED]'
 	);
-	new Notice(`Auto Notes: ${context} - ${redacted}`);
-	console.error(`[Auto Notes] ${context}:`, redacted);
+	new Notice(`Synapse: ${context} - ${redacted}`);
+	console.error(`[Synapse] ${context}:`, redacted);
 }
