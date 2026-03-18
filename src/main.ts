@@ -17,8 +17,8 @@ import { findVideoUrls } from './video';
 import {
 	UNIFIED_VIEW_TYPE,
 	UnifiedProposalView,
-	UnifiedItem,
-} from './views/unified-proposal-view';
+} from './views';
+import type { UnifiedItem } from './views';
 
 export default class SynapsePlugin extends Plugin {
 	settings!: SynapseSettings;

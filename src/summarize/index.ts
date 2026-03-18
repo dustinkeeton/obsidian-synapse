@@ -16,7 +16,6 @@ import { Summarizer } from './summarizer';
 import { SummarizeTarget } from './types';
 
 export type { SummarizeTarget } from './types';
-export type { SummarizeSettings } from '../settings';
 
 /**
  * Function that transcribes a video URL and returns the transcript text.

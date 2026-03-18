@@ -5,7 +5,7 @@ import {
 	writeNote, generateOrganizeSummary, CheckpointManager, generateId,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
-import { MoveRecord } from '../shared';
+import type { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
 import { OrganizeStore } from './organize-store';

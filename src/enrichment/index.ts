@@ -24,7 +24,7 @@ export type {
 	ExternalLinkCandidate,
 	WeightConfig,
 } from './types';
-export type { TagVocabularyEntry } from '../settings';
+
 
 export class EnrichmentModule {
 	private analyzer: VaultAnalyzer;
