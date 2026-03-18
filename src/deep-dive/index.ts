@@ -17,6 +17,7 @@ import {
 	syllabusPath,
 	injectNavigationBlock,
 } from './syllabus-navigator';
+import { selectDepth } from './depth-selector-modal';
 import { TopicAnalyzer } from './topic-analyzer';
 import {
 	DeepDiveProposal,
@@ -222,9 +223,16 @@ export class DeepDiveModule {
 			return;
 		}
 
-		// Phase 2: Confirm with user
+		// Phase 2a: Select recursion depth
+		const selectedDepth = await selectDepth(this.plugin.app, settings.maxDepth);
+		if (selectedDepth === null) {
+			this.notifications.info('Deep dive cancelled');
+			return;
+		}
+
+		// Phase 2b: Confirm with user
 		const proceed = await this.notifications.confirm(
-			`Found ${newTopics.length} new topic${newTopics.length === 1 ? '' : 's'} to explore (depth ${settings.maxDepth}). Generate deep dive?`,
+			`Found ${newTopics.length} new topic${newTopics.length === 1 ? '' : 's'} to explore (depth ${selectedDepth}). Generate deep dive?`,
 			{ proceedLabel: 'Generate', cancelLabel: 'Cancel' }
 		);
 
@@ -237,7 +245,7 @@ export class DeepDiveModule {
 		const run: DeepDiveRun = {
 			id: generateId(),
 			rootNotePath: file.path,
-			maxDepth: settings.maxDepth,
+			maxDepth: selectedDepth,
 			qualityThreshold: settings.qualityThreshold,
 			proposalIds: [],
 			stats: { totalProposals: 0, byDepth: {}, earlyTerminations: 0 },
@@ -336,7 +344,7 @@ export class DeepDiveModule {
 					let childTopics: ExtractedTopic[] = [];
 
 					// Only extract child topics if we haven't reached max depth
-					if (item.depth + 1 < settings.maxDepth) {
+					if (item.depth + 1 < run.maxDepth) {
 						try {
 							childTopics = await this.analyzer.extractTopics(
 								noteContent,
@@ -354,7 +362,7 @@ export class DeepDiveModule {
 						childTopicTitles: childTopics.map(t => t.title),
 						wordCount: wordCount(noteContent),
 						depth: item.depth,
-						maxDepth: settings.maxDepth,
+						maxDepth: run.maxDepth,
 						ancestorTopics: item.ancestorTopics,
 					});
 
@@ -394,7 +402,7 @@ export class DeepDiveModule {
 					// Queue children if quality is above threshold and depth allows
 					if (
 						quality.score >= settings.qualityThreshold &&
-						item.depth + 1 < settings.maxDepth &&
+						item.depth + 1 < run.maxDepth &&
 						childTopics.length > 0
 					) {
 						queue.push({
