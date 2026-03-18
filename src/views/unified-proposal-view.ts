@@ -50,6 +50,7 @@ export class UnifiedProposalView extends ItemView {
 	private reviewingDeepDive: DeepDiveProposal | null = null;
 
 	private acceptAllInProgress = false;
+	private rejectAllInProgress = false;
 
 	// Enrichment review selection state
 	private selectedTags = new Set<string>();
@@ -157,7 +158,7 @@ export class UnifiedProposalView extends ItemView {
 	 * Stops on the first failure, leaving remaining proposals untouched.
 	 */
 	private async acceptAll(): Promise<void> {
-		if (this.acceptAllInProgress) return;
+		if (this.acceptAllInProgress || this.rejectAllInProgress) return;
 		this.acceptAllInProgress = true;
 
 		// Snapshot the items in current presentation order
@@ -240,6 +241,76 @@ export class UnifiedProposalView extends ItemView {
 
 	/** Render a minimal progress indicator during batch accept. */
 	private renderAcceptAllProgress(current: number, total: number): void {
+		this.renderBulkProgress('Accepting', current, total);
+	}
+
+	// ── Reject All ────────────────────────────────────────────
+
+	/**
+	 * Reject every pending proposal in presentation order (top to bottom).
+	 * Runs sequentially to match acceptAll() behavior.
+	 * Stops on the first failure, leaving remaining proposals untouched.
+	 */
+	private async rejectAll(): Promise<void> {
+		if (this.rejectAllInProgress || this.acceptAllInProgress) return;
+		this.rejectAllInProgress = true;
+
+		// Snapshot the items in current presentation order
+		const snapshot = [...this.items];
+		const total = snapshot.length;
+		let rejected = 0;
+
+		// Show initial progress
+		this.renderRejectAllProgress(rejected, total);
+
+		for (const item of snapshot) {
+			try {
+				await this.rejectSingleItem(item);
+				rejected++;
+				this.renderRejectAllProgress(rejected, total);
+			} catch (err) {
+				this.rejectAllInProgress = false;
+				const label = this.itemLabel(item);
+				const message = err instanceof Error ? err.message : String(err);
+				new Notice(
+					`Reject All stopped: failed on "${label}" -- ${message}. ` +
+					`${rejected}/${total} rejected, ${total - rejected} remaining.`
+				);
+				this.render();
+				return;
+			}
+		}
+
+		this.rejectAllInProgress = false;
+		new Notice(`${rejected} proposal${rejected === 1 ? '' : 's'} rejected`);
+		this.render();
+	}
+
+	/** Call the appropriate reject callback for a single proposal item. */
+	private async rejectSingleItem(item: UnifiedItem): Promise<void> {
+		switch (item.kind) {
+			case 'elaboration':
+				await this.callbacks.onElaborationReject(item.data.id);
+				break;
+			case 'enrichment':
+				await this.callbacks.onEnrichmentReject(item.data.id);
+				break;
+			case 'organize':
+				await this.callbacks.onOrganizeReject(item.data.id);
+				break;
+			case 'deep-dive':
+				await this.callbacks.onDeepDiveReject(item.data.id);
+				break;
+		}
+	}
+
+	/** Render a minimal progress indicator during batch reject. */
+	private renderRejectAllProgress(current: number, total: number): void {
+		this.renderBulkProgress('Rejecting', current, total);
+	}
+
+	/** Render a progress indicator for bulk accept/reject operations. */
+	private renderBulkProgress(verb: string, current: number, total: number): void {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('synapse-view-root');
@@ -247,7 +318,7 @@ export class UnifiedProposalView extends ItemView {
 
 		const progressBar = contentEl.createDiv({ cls: 'synapse-accept-all-progress' });
 		progressBar.createEl('p', {
-			text: `Accepting ${current + 1}/${total}...`,
+			text: `${verb} ${current + 1}/${total}...`,
 			cls: 'synapse-accept-all-progress-text',
 		});
 
@@ -281,17 +352,28 @@ export class UnifiedProposalView extends ItemView {
 			return;
 		}
 
-		// Accept All button — only when 2+ proposals are pending
+		// Accept All / Reject All buttons — only when 2+ proposals are pending
 		if (this.items.length >= 2) {
-			const acceptAllBar = contentEl.createDiv({ cls: 'synapse-accept-all-bar' });
-			const acceptAllBtn = acceptAllBar.createEl('button', {
+			const bulkBar = contentEl.createDiv({ cls: 'synapse-accept-all-bar' });
+			const bulkInProgress = this.acceptAllInProgress || this.rejectAllInProgress;
+
+			const acceptAllBtn = bulkBar.createEl('button', {
 				text: 'Accept All',
 				cls: 'synapse-accept-all-btn mod-cta',
 			});
-			if (this.acceptAllInProgress) {
+			if (bulkInProgress) {
 				acceptAllBtn.disabled = true;
 			}
 			acceptAllBtn.addEventListener('click', () => this.acceptAll());
+
+			const rejectAllBtn = bulkBar.createEl('button', {
+				text: 'Reject All',
+				cls: 'synapse-reject-all-btn',
+			});
+			if (bulkInProgress) {
+				rejectAllBtn.disabled = true;
+			}
+			rejectAllBtn.addEventListener('click', () => this.rejectAll());
 		}
 
 		const list = contentEl.createDiv({ cls: 'synapse-proposal-list' });
@@ -1262,13 +1344,15 @@ export class UnifiedProposalView extends ItemView {
 				transition: width 0.2s ease;
 			}
 
-			/* ── Accept All ── */
+			/* ── Accept All / Reject All ── */
 			.synapse-accept-all-bar {
 				flex-shrink: 0;
+				display: flex;
+				gap: 6px;
 				margin-bottom: 8px;
 			}
 			.synapse-accept-all-btn {
-				width: 100%;
+				flex: 1;
 				padding: 6px 16px;
 				border-radius: 4px;
 				font-size: 13px;
@@ -1282,6 +1366,24 @@ export class UnifiedProposalView extends ItemView {
 				opacity: 0.9;
 			}
 			.synapse-accept-all-btn:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+			.synapse-reject-all-btn {
+				flex: 1;
+				padding: 6px 16px;
+				border-radius: 4px;
+				font-size: 13px;
+				font-weight: 600;
+				cursor: pointer;
+				border: 1px solid var(--background-modifier-border);
+				background: var(--background-primary);
+				color: var(--text-normal);
+			}
+			.synapse-reject-all-btn:hover {
+				background: var(--background-modifier-hover);
+			}
+			.synapse-reject-all-btn:disabled {
 				opacity: 0.5;
 				cursor: not-allowed;
 			}
