@@ -1,5 +1,5 @@
 import { App, Modal, Setting } from 'obsidian';
-import { addEnhancedSlider } from 'src/shared/slider-helper';
+import { addEnhancedSlider } from '../shared/slider-helper';
 
 export const MIN_DEPTH = 1;
 export const MAX_DEPTH = 6;
@@ -73,12 +73,6 @@ export class DepthSelectorModal extends Modal {
 	/** Attach the promise resolver before opening. */
 	setResolver(resolve: (depth: number | null) => void): void {
 		this.resolve = resolve;
-	}
-
-	private formatLabel(depth: number): string {
-		return depth === this.defaultDepth
-			? `Depth ${depth} (default)`
-			: `Depth ${depth}`;
 	}
 }
 
