@@ -49,6 +49,8 @@ Exported types: `SummarizeTarget`, `SummarizeSettings`, `TranscribeUrlFn`, `Tran
 | `summarize-modal.ts` | `SummarizeSelectionModal` | Selection modal when multiple targets found |
 | `summarize-module.test.ts` | Tests | SummarizeModule integration tests |
 | `audio-summarize.test.ts` | Tests | Audio-embed summarization tests |
+| `templates.ts` | `detectContentTemplate`, `isRecipeContent`, `scoreRecipeContent`, `CONTENT_TEMPLATES` | Content-aware template detection (recipe format, extensible) |
+| `templates.test.ts` | Tests | Template detection unit tests |
 | `types.ts` | -- | `SummarizeTarget` |
 
 ## Data Flow
@@ -72,9 +74,11 @@ processFileTargets(file, targets, op, content)
       --> fetchContentForAudio(fileName, sourceFile)  [transcribeAudio callback]
       --> Summarizer.summarize(transcript, source, style)
       --> insert callout after target line
-    else:
+    else (inline target):
       --> fetchContentForUrl(url) or use transcription content
-      --> Summarizer.summarize(content, url, style)
+      --> determine effectivePrompt:
+            customPrompt > detectContentTemplate(content) > style default
+      --> Summarizer.summarize(content, url, style, effectivePrompt)
       --> insert callout after target line
   --> vault.modify(sourceFile)
   --> vault.create() for pending notes
@@ -151,10 +155,32 @@ this.summarize = new SummarizeModule(
 - `audio/` (findAudioEmbeds -- used in collectTargets)
 - `settings.ts` (SynapseSettings, SummarizeSettings)
 
+## Content-Aware Templates
+
+When `autoDetectTemplates` is enabled (default: true) and no `customPrompt` is set, the module runs `detectContentTemplate(content)` on inline-target content before summarization. If a template matches, its specialized prompt replaces the style-based default.
+
+Priority chain: `customPrompt` > template match > style default.
+
+Enrichment targets (standalone notes) always use `COMPREHENSIVE_SUMMARY_PROMPT` and are not affected by template detection.
+
+### Templates
+
+| ID | Name | Detection | Prompt Format |
+|----|------|-----------|---------------|
+| `recipe` | Recipe | Keyword scoring (structural headers, cooking verbs, measurements); threshold >= 5 | Structured recipe: title, times, servings, ingredients list, numbered instructions, notes |
+
+### Adding New Templates
+
+1. Create a detection function in `templates.ts` (pure function, no side effects).
+2. Define the specialized prompt string.
+3. Add a `ContentTemplate` entry to the `CONTENT_TEMPLATES` array.
+4. Add tests in `templates.test.ts` for both positive and negative detection.
+
 ## Tests
 
 - `summarizer.test.ts`
 - `content-fetcher.test.ts`
 - `note-scanner.test.ts`
 - `summarize-module.test.ts`
+- `templates.test.ts`
 - `audio-summarize.test.ts`
