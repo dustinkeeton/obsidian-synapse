@@ -253,4 +253,23 @@ describe('RECIPE_PROMPT content', () => {
 	it('instructs to include step images', () => {
 		expect(recipe!.prompt).toContain('![step description](image-url)');
 	});
+
+	it('contains amalgamation instruction for structured data', () => {
+		expect(recipe!.prompt).toContain('most complete and specific ingredient list');
+		expect(recipe!.prompt).toContain('structured recipe data is present at the beginning');
+	});
+});
+
+// ── Structured Data Score Boost ──────────────────────────────────────
+
+describe('scoreRecipeContent with structured preamble', () => {
+	it('gives 10-point boost when content starts with STRUCTURED RECIPE DATA', () => {
+		const content = 'STRUCTURED RECIPE DATA (from page schema):\nRecipe: Test\nIngredients:\n- 1 cup flour';
+		expect(scoreRecipeContent(content)).toBeGreaterThanOrEqual(10);
+	});
+
+	it('isRecipeContent returns true when structured preamble is present', () => {
+		const content = 'STRUCTURED RECIPE DATA (from page schema):\nRecipe: Simple';
+		expect(isRecipeContent(content)).toBe(true);
+	});
 });
