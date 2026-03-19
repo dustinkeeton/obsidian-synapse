@@ -53,6 +53,34 @@ describe('findVideoUrls', () => {
 		expect(result).toHaveLength(2);
 	});
 
+	it('finds YouTube URL with v= not as first query param', () => {
+		const content = 'https://youtube.com/watch?feature=share&v=dQw4w9WgXcQ';
+		const result = findVideoUrls(content);
+		expect(result).toHaveLength(1);
+		expect(result[0].platform).toBe('youtube');
+	});
+
+	it('finds YouTube embed URL', () => {
+		const content = 'https://youtube.com/embed/dQw4w9WgXcQ';
+		const result = findVideoUrls(content);
+		expect(result).toHaveLength(1);
+		expect(result[0].platform).toBe('youtube');
+	});
+
+	it('finds YouTube live URL', () => {
+		const content = 'https://youtube.com/live/dQw4w9WgXcQ';
+		const result = findVideoUrls(content);
+		expect(result).toHaveLength(1);
+		expect(result[0].platform).toBe('youtube');
+	});
+
+	it('finds TikTok URL with locale prefix', () => {
+		const content = 'https://www.tiktok.com/en/@user/video/1234567890';
+		const result = findVideoUrls(content);
+		expect(result).toHaveLength(1);
+		expect(result[0].platform).toBe('tiktok');
+	});
+
 	it('ignores non-video URLs', () => {
 		const content = 'https://example.com\nhttps://google.com\nhttps://vimeo.com/123';
 		const result = findVideoUrls(content);
