@@ -4,6 +4,38 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-19: Hybrid extraction strategy for cross-platform media support (Issue #166)
+
+**Context**: Synapse depends on `yt-dlp` and `ffmpeg` as external CLI tools that users must install themselves. This creates high onboarding friction (Homebrew/apt installs, PATH configuration, manual updates), makes the entire video transcription pipeline desktop-only (Obsidian Mobile has no `child_process` / shell access), and ties the plugin to a macOS-centric `shellEnv()` workaround that is fragile on Linux and Windows. Issue #166 asks how we might eliminate or reduce this external dependency burden, especially for mobile.
+
+**Decision**: Adopt a hybrid extraction strategy (Option D) with three implementation phases:
+
+1. **Abstract the extraction interface** -- Refactor `AudioExtractor` into a strategy interface (`MediaExtractor`) with `extractAudioFromUrl(url)`, `extractAudioFromFile(path)`, `downloadVideo(url)`, and `checkAvailability()` methods. Implement `LocalExtractor` (wraps existing yt-dlp/ffmpeg `execFile` logic) and `ServerExtractor` (calls a cloud endpoint).
+
+2. **Server-side extraction endpoint** -- Deploy a cloud function (AWS Lambda preferred over Cloudflare Workers due to Lambda's higher memory ceiling of 10GB, 900-second timeout, and ability to run yt-dlp as a Lambda layer) that accepts a URL and returns extracted audio. The endpoint is opt-in, user-configurable, and self-hostable. No Synapse-operated default instance ships initially -- users must provide their own endpoint URL or use a community-hosted instance.
+
+3. **Platform-aware strategy selection** -- On desktop (`Platform.isDesktopApp`), default to `LocalExtractor` with fallback to `ServerExtractor` if local tools are missing. On mobile (`Platform.isMobileApp`), use `ServerExtractor` exclusively. A settings override lets users force either strategy on any platform.
+
+**Alternatives considered**:
+
+- **Option A -- WASM-based media processing (ffmpeg.wasm)**: Rejected as a primary strategy. ffmpeg.wasm can transcode local audio/video files but cannot replace yt-dlp's URL downloading capability -- it has no network fetching, site-specific extraction logic, or DRM handling. The core WASM binary is approximately 25MB (custom builds can reduce to ~5MB but lose codecs), which would nearly double Synapse's bundle size. The 2GB WebAssembly memory hard limit constrains file processing. Multi-threaded mode requires SharedArrayBuffer with cross-origin isolation headers (`COOP`/`COEP`), which Obsidian's Electron renderer does not set by default and which conflict with loading cross-origin resources. On mobile, Obsidian uses WKWebView (iOS) and Android WebView via Capacitor -- both support WASM execution in principle, but SharedArrayBuffer availability and Worker thread support in these embedded WebViews is inconsistent and unverified in Obsidian's specific build. Furthermore, ffmpeg.wasm officially dropped Node.js support as of v0.12.0, making it purely browser-targeted. For an Electron app that already has native `child_process` access, native ffmpeg via `execFile` is faster, more capable, and uses less memory. ffmpeg.wasm remains viable as a future local-file-only fallback for mobile if server extraction is unavailable, but this is a stretch goal, not a primary path.
+
+- **Option B -- Server-side extraction only**: Rejected as the sole strategy. Moving all extraction to a cloud service conflicts with Synapse's privacy-first philosophy (user URLs and potentially copyrighted content would transit an external server) and the zero-runtime-deps policy (creates a hard service dependency). It also introduces cost questions (who pays for Lambda compute?), latency (cold starts, large file transfers), and reliability concerns (service outages block all transcription). However, server-side extraction is the only viable path for mobile, so it is incorporated as the mobile leg of the hybrid approach with explicit opt-in and self-hosting support.
+
+- **Option C -- Platform-native APIs**: Rejected. The Web Audio API is a DSP toolkit for processing audio that is already loaded in memory -- it cannot fetch media from URLs, does not understand video container formats, and has no site-specific extraction logic. Obsidian Mobile runs in a Capacitor WebView but does not expose native media framework bridges (iOS AVFoundation, Android MediaCodec) to plugins. Obsidian's plugin API provides `Platform.isDesktopApp`, `Platform.isMobileApp`, `Platform.isIosApp`, `Platform.isAndroidApp`, vault filesystem operations, and `requestUrl` for HTTP -- but no Capacitor plugin bridge for native media processing. Writing custom Capacitor plugins would require forking Obsidian's mobile app, which is not open source. There is no viable path here for URL-based media extraction.
+
+**Rationale**: The hybrid approach is pragmatic and incremental. It preserves the working desktop pipeline (no regression), unlocks mobile support through server-side extraction (the only technically viable mobile path), and creates a clean abstraction that accommodates future extraction backends (community services like cobalt.tools, future WASM improvements, or native Obsidian media APIs if they emerge). The strategy interface also improves testability -- `ServerExtractor` and `LocalExtractor` can be independently mocked and tested. The self-host-first server model avoids creating a Synapse-operated service dependency while still enabling the feature.
+
+**Impact**:
+- `AudioExtractor` class refactored into `MediaExtractor` interface + `LocalExtractor` + `ServerExtractor` implementations
+- New settings: `video.extractionStrategy` (`auto` | `local` | `server`), `video.serverEndpoint` (URL), `video.serverApiKey` (optional auth)
+- `VideoModule` constructor accepts a `MediaExtractor` instead of creating `AudioExtractor` directly
+- Mobile users gain access to video transcription features (previously completely gated behind `Platform.isDesktop`)
+- Three follow-up implementation issues created for v0.7.0 milestone
+- No changes to the audio transcription pipeline (Whisper API) -- only the media fetching/extraction layer is affected
+
+---
+
 ## 2026-03-19: Image OCR module with multi-modal AIClient (Issues #162, #165)
 
 **Context**: Users embed images (screenshots, diagrams, handwritten notes) in their vault notes. These images contain text and context that is invisible to AI-powered features — elaboration, enrichment, and summarization all operate on text content only.
