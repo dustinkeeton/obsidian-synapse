@@ -1,5 +1,5 @@
 export { AIClient } from './ai-client';
-export type { ChatMessage } from './types';
+export type { ChatMessage, ContentBlock, TextContentBlock, ImageContentBlock } from './types';
 export { withRetry, sleep, notifyError } from './api-utils';
 export {
 	ensureFolder,

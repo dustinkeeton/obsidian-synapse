@@ -13,6 +13,7 @@ export const CALLOUT_TYPES = {
 	elaboration: 'synapse-elaboration',
 	deepDive: 'synapse-deep-dive',
 	nav: 'synapse-nav',
+	ocr: 'synapse-ocr',
 } as const;
 
 export type CalloutType = (typeof CALLOUT_TYPES)[keyof typeof CALLOUT_TYPES];

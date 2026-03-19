@@ -4,6 +4,7 @@ import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule } from './video';
+import { ImageModule } from './image';
 import { EnrichmentModule } from './enrichment';
 import { SummarizeModule } from './summarize';
 import { TidyModule } from './tidy';
@@ -15,6 +16,7 @@ import type { DeferredTask, Checkpoint } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
 import { findVideoUrls } from './video';
+import { findImageEmbeds } from './image';
 import {
 	UNIFIED_VIEW_TYPE,
 	UnifiedProposalView,
@@ -29,6 +31,7 @@ export default class SynapsePlugin extends Plugin {
 	private elaboration!: ElaborationModule;
 	private audio!: AudioModule;
 	private video: VideoModule | null = null;
+	private image!: ImageModule;
 	private enrichment!: EnrichmentModule;
 	private summarize!: SummarizeModule;
 	private tidy!: TidyModule;
@@ -62,6 +65,7 @@ export default class SynapsePlugin extends Plugin {
 		if (Platform.isDesktop) {
 			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager);
 		}
+		this.image = new ImageModule(this, getSettings, this.notifications, this.checkpointManager);
 		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager);
 		this.summarize = new SummarizeModule(
 			this, getSettings, this.notifications, this.checkpointManager,
@@ -115,6 +119,9 @@ export default class SynapsePlugin extends Plugin {
 		if (this.settings.video.enabled && this.video) {
 			await this.video.onload();
 		}
+		if (this.settings.image.enabled) {
+			await this.image.onload();
+		}
 		if (this.settings.enrichment.enabled) {
 			await this.enrichment.onload();
 		}
@@ -156,6 +163,12 @@ export default class SynapsePlugin extends Plugin {
 					}
 				};
 			}
+			this.image.onExtractionComplete = (filePath: string) => {
+				this.enrichment.enrich(filePath, 'transcription');
+				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
+					this.title.checkTitle(filePath);
+				}
+			};
 			this.summarize.onSummaryComplete = (filePath: string) => {
 				this.enrichment.enrich(filePath, 'summarization');
 				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
@@ -186,6 +199,9 @@ export default class SynapsePlugin extends Plugin {
 					this.title.checkTitle(filePath);
 				};
 			}
+			this.image.onExtractionComplete = (filePath: string) => {
+				this.title.checkTitle(filePath);
+			};
 			this.summarize.onSummaryComplete = (filePath: string) => {
 				this.title.checkTitle(filePath);
 			};
@@ -235,8 +251,8 @@ export default class SynapsePlugin extends Plugin {
 		// Startup check for incomplete checkpoints (delayed to avoid blocking load)
 		setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
 
-		// Unified transcription commands (audio on any platform, video on desktop only)
-		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video);
+		// Unified transcription commands (audio on any platform, video on desktop only, image OCR)
+		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video) || this.settings.image.enabled;
 		if (hasTranscription) {
 			this.addCommand({
 				id: 'synapse:transcribe-media',
@@ -260,6 +276,7 @@ export default class SynapsePlugin extends Plugin {
 		this.elaboration?.onunload();
 		this.audio?.onunload();
 		this.video?.onunload();
+		this.image?.onunload();
 		this.enrichment?.onunload();
 		this.summarize?.onunload();
 		this.tidy?.onunload();
@@ -305,8 +322,11 @@ export default class SynapsePlugin extends Plugin {
 		const videoEmbeds = this.settings.video.enabled && this.video
 			? findVideoUrls(content)
 			: [];
+		const imageEmbeds = this.settings.image.enabled
+			? findImageEmbeds(content, file.path, this.app.metadataCache)
+			: [];
 
-		if (audioEmbeds.length === 0 && videoEmbeds.length === 0) {
+		if (audioEmbeds.length === 0 && videoEmbeds.length === 0 && imageEmbeds.length === 0) {
 			this.notifications.info('No media found in this note');
 			return;
 		}
@@ -315,11 +335,13 @@ export default class SynapsePlugin extends Plugin {
 			this.app,
 			audioEmbeds,
 			videoEmbeds,
+			imageEmbeds,
 			{
 				onTranscribeAudio: (selected) => this.audio.transcribeAndInsert(file, selected),
 				onTranscribeVideo: this.video
 					? (selected) => this.video!.transcribeAndInsert(file, selected)
 					: async () => { /* unreachable: video hidden on mobile */ },
+				onExtractImages: (selected) => this.image.extractAndInsert(file, selected),
 			}
 		).open();
 	}
@@ -377,6 +399,9 @@ export default class SynapsePlugin extends Plugin {
 				} else {
 					this.notifications.info('Video transcription is not available on mobile');
 				}
+				break;
+			case 'image':
+				await this.image.resumeFromCheckpoint(checkpoint);
 				break;
 			case 'summarize':
 				await this.summarize.resumeFromCheckpoint(checkpoint);
