@@ -116,6 +116,12 @@ function injectStyles(): void {
 	document.head.appendChild(style);
 }
 
+export function removeNotificationStyles(): void {
+	if (!stylesInjected) return;
+	document.getElementById('synapse-notification-styles')?.remove();
+	stylesInjected = false;
+}
+
 /** Get the underlying DOM element from a Notice */
 function getNoticeEl(notice: Notice): HTMLElement {
 	return (notice as unknown as { noticeEl: HTMLElement }).noticeEl;
