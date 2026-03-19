@@ -8,7 +8,7 @@ export {
 	getMarkdownFiles,
 	wordCount,
 } from './file-utils';
-export { NotificationManager } from './notifications';
+export { NotificationManager, removeNotificationStyles } from './notifications';
 export type { OperationHandle } from './notifications';
 export { FolderPickerModal } from './folder-picker-modal';
 export {
