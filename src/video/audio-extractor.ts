@@ -91,6 +91,23 @@ export class AudioExtractor {
 		return outputPath;
 	}
 
+	/**
+	 * Clip an audio file to a specific time range using ffmpeg.
+	 * Returns the path to the clipped temp file. Caller is responsible for cleanup.
+	 */
+	async clipAudio(inputPath: string, startSeconds: number, endSeconds: number): Promise<string> {
+		const settings = this.getSettings().video;
+		const outputPath = path.join(os.tmpdir(), `synapse-clipped-${Date.now()}.mp3`);
+		await this.runCommand(sanitizePath(settings.ffmpegPath), [
+			'-i', sanitizePath(inputPath),
+			'-ss', String(startSeconds),
+			'-to', String(endSeconds),
+			'-vn', '-acodec', 'libmp3lame',
+			outputPath,
+		]);
+		return outputPath;
+	}
+
 	async checkDependencies(): Promise<{
 		ytDlp: boolean;
 		ffmpeg: boolean;

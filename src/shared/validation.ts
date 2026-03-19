@@ -129,6 +129,95 @@ export function sanitizeAIResponse(text: string): string {
 }
 
 /**
+ * A validated time range in seconds, used for clipping audio/video before transcription.
+ */
+export interface TimeRange {
+	startSeconds: number;
+	endSeconds: number;
+}
+
+/**
+ * Parses a timestamp string into total seconds.
+ * Accepts `HH:MM:SS`, `MM:SS`, or raw seconds (e.g. `"90"`).
+ * @throws Error on malformed input.
+ */
+export function parseTimestamp(input: string): number {
+	if (!input || input.trim().length === 0) {
+		throw new Error('Timestamp cannot be empty');
+	}
+	const trimmed = input.trim();
+
+	// Raw seconds (integer or decimal, no colons)
+	if (/^\d+(\.\d+)?$/.test(trimmed)) {
+		return parseFloat(trimmed);
+	}
+
+	// MM:SS or HH:MM:SS
+	const parts = trimmed.split(':');
+	if (parts.length < 2 || parts.length > 3) {
+		throw new Error(`Invalid timestamp format: "${input}"`);
+	}
+
+	for (const part of parts) {
+		if (!/^\d+$/.test(part)) {
+			throw new Error(`Invalid timestamp format: "${input}"`);
+		}
+	}
+
+	const nums = parts.map(Number);
+
+	if (parts.length === 2) {
+		// MM:SS
+		const [minutes, seconds] = nums;
+		if (seconds >= 60) throw new Error(`Invalid timestamp: seconds must be < 60 in "${input}"`);
+		return minutes * 60 + seconds;
+	}
+
+	// HH:MM:SS
+	const [hours, minutes, seconds] = nums;
+	if (minutes >= 60) throw new Error(`Invalid timestamp: minutes must be < 60 in "${input}"`);
+	if (seconds >= 60) throw new Error(`Invalid timestamp: seconds must be < 60 in "${input}"`);
+	return hours * 3600 + minutes * 60 + seconds;
+}
+
+/**
+ * Validates that start < end and (if duration is known) end <= duration.
+ * @throws Error on invalid range.
+ */
+export function validateTimeRange(start: string, end: string, duration?: number): TimeRange {
+	const startSeconds = parseTimestamp(start);
+	const endSeconds = parseTimestamp(end);
+
+	if (endSeconds <= startSeconds) {
+		throw new Error('End time must be after start time');
+	}
+
+	if (duration !== undefined && endSeconds > duration) {
+		throw new Error(`End time (${endSeconds}s) exceeds media duration (${duration}s)`);
+	}
+
+	return { startSeconds, endSeconds };
+}
+
+/**
+ * Formats a TimeRange for display in callout titles.
+ * Returns `[MM:SS – MM:SS]` or `[HH:MM:SS – HH:MM:SS]` when hours > 0.
+ */
+export function formatTimeRange(range: TimeRange): string {
+	const needsHours = range.startSeconds >= 3600 || range.endSeconds >= 3600;
+	const fmt = (s: number): string => {
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		const sec = Math.floor(s % 60);
+		if (needsHours) {
+			return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+		}
+		return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+	};
+	return `[${fmt(range.startSeconds)} – ${fmt(range.endSeconds)}]`;
+}
+
+/**
  * Removes wrapping code fences that LLMs sometimes add despite instructions.
  * Only strips when the entire text is wrapped in a single code fence block.
  */
