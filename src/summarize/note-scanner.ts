@@ -1,5 +1,4 @@
-import { ENRICHMENT_START, ENRICHMENT_END } from '../enrichment/enrichment-applier';
-import { CALLOUT_TYPES } from '../shared';
+import { CALLOUT_TYPES, ENRICHMENT_START, ENRICHMENT_END } from '../shared';
 import { SummarizeTarget } from './types';
 
 const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;

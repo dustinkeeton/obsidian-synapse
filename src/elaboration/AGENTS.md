@@ -30,6 +30,7 @@ type DetectionReason =
   | { type: 'todo-marker'; markers: string[] }
   | { type: 'empty-section'; heading: string }
   | { type: 'sparse-link'; linkedFrom: string[] }
+  | { type: 'user-requested' }
 
 interface DetectionResult {
   notePath: string

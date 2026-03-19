@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Synapse is an Obsidian plugin that provides eight AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, summarization, note tidying, semantic organization, and recursive deep-dive note generation. Desktop only (requires Node.js APIs for video processing).
+Synapse is an Obsidian plugin that provides nine AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, and title proposal. It runs on both desktop and mobile (video features are desktop-only).
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -10,7 +10,7 @@ Synapse is an Obsidian plugin that provides eight AI-powered features: note elab
 
 ```mermaid
 graph TB
-    subgraph Obsidian["Obsidian Desktop"]
+    subgraph Obsidian["Obsidian"]
         Main["main.ts<br/>SynapsePlugin"]
         Settings["Settings + Tab"]
         Sidebar["Unified Proposal View<br/>(sidebar)"]
@@ -26,6 +26,7 @@ graph TB
             Tidy["Tidy"]
             Org["Organize"]
             DD["Deep Dive"]
+            Title["Title"]
         end
 
         Shared["Shared Layer<br/>AIClient · Notifications · Validation<br/>File Utils · Frontmatter · Callouts"]
@@ -55,6 +56,7 @@ graph TB
     style Trans fill:#f9f,stroke:#333
     style Sidebar fill:#bbf,stroke:#333
     style CkptMgr fill:#ffd,stroke:#333
+    style Title fill:#ffc,stroke:#333
 ```
 
 ---
@@ -80,7 +82,7 @@ src/
 │   └── index.ts            #   AudioModule orchestrator
 │
 ├── video/                  # Video download + transcription
-│   ├── url-detector.ts     #   YouTube/TikTok URL parsing
+│   ├── url-detector.ts     #   YouTube/TikTok URL parsing + normalization
 │   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile
 │   ├── note-scanner.ts     #   Find video URLs in note content
 │   └── index.ts            #   VideoModule orchestrator (delegates to Audio)
@@ -103,7 +105,7 @@ src/
 │
 ├── summarize/              # URL + transcription summarization
 │   ├── summarizer.ts       #   AI summarization (bullets/paragraph/key-points)
-│   ├── content-fetcher.ts  #   HTTP fetch + HTML-to-text extraction
+│   ├── content-fetcher.ts  #   HTTP fetch + HTML-to-text + JSON-LD extraction
 │   ├── note-scanner.ts     #   Find summarizable targets in notes
 │   └── index.ts            #   SummarizeModule orchestrator
 │
@@ -125,6 +127,13 @@ src/
 │   ├── deep-dive-store.ts  #   Proposal + run persistence
 │   └── index.ts            #   DeepDiveModule orchestrator
 │
+├── title/                  # Note title suggestions
+│   ├── title-module.ts     #   Title checking, proposal lifecycle
+│   ├── title-suggester.ts  #   AI title generation + mismatch detection
+│   ├── title-proposal-store.ts # JSON persistence
+│   ├── types.ts            #   TitleProposal, trigger/status types
+│   └── index.ts            #   Re-exports module, types, isUntitled
+│
 ├── shared/                 # Cross-cutting utilities
 │   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Ollama)
 │   ├── checkpoint-manager.ts #  Checkpoint/resume for long-running operations
@@ -142,7 +151,8 @@ src/
 │   └── index.ts            #   Barrel export
 │
 └── views/                  # UI components
-    └── unified-proposal-view.ts  # Single sidebar for all proposal types + checkpoints
+    ├── unified-proposal-view.ts  # Single sidebar for all proposal types + checkpoints
+    └── types.ts                  # UnifiedItem, UnifiedViewCallbacks
 ```
 
 ---
@@ -164,6 +174,7 @@ graph LR
     Main --> Tidy["tidy/"]
     Main --> Org["organize/"]
     Main --> DD["deep-dive/"]
+    Main --> Title["title/"]
 
     Elab --> Shared
     Audio --> Shared
@@ -178,22 +189,26 @@ graph LR
     Org --> Shared
     DD --> Shared
     DD --> Org
+    Title --> Shared
     Views --> Elab
     Views --> Enrich
     Views --> Org
     Views --> DD
+    Views --> Title
 
     style Trans fill:#f9f,stroke:#333
+    style Title fill:#ffc,stroke:#333
 ```
 
 Key constraints:
-- **Video depends on Audio** — reuses transcription pipeline
-- **Transcription is UI-only** — delegates all work to Audio and Video via callbacks
+- **Video depends on Audio** -- reuses transcription pipeline
+- **Transcription is UI-only** -- delegates all work to Audio and Video via callbacks
 - **Summarize receives `video.transcribeUrl`** via constructor injection (dotted line)
 - **Deep Dive reuses Organize** for `auto-organize` nesting mode
-- **All feature modules depend on Shared** — no circular dependencies
+- **All feature modules depend on Shared** -- no circular dependencies
 - **Views imports types only** from feature modules
-- **CheckpointManager is a singleton** — created in `main.ts`, injected into all modules that need it
+- **CheckpointManager is a singleton** -- created in `main.ts`, injected into all modules that need it
+- **Title has no CheckpointManager** -- operates on single notes, not vault scans
 
 ---
 
@@ -203,21 +218,21 @@ Key constraints:
 sequenceDiagram
     participant O as Obsidian
     participant M as main.ts
-    participant Mod as Modules (×8)
+    participant Mod as Modules (x9)
     participant CB as Callbacks
     participant CK as CheckpointManager
 
     O->>M: onload()
     M->>M: loadSettings() (deep-merge)
-    M->>M: migrateDataFolder() (.auto-notes → .synapse)
+    M->>M: migrateDataFolder() (.auto-notes -> .synapse)
     M->>M: addSettingTab()
     M->>M: NotificationManager()
     M->>CK: new CheckpointManager(app)
-    M->>Mod: Initialize 8 modules<br/>(Audio before Video, inject CheckpointManager)
+    M->>Mod: Initialize 9 modules<br/>(Audio before Video, inject CheckpointManager)
     M->>M: registerView(UnifiedProposalView)
-    M->>CB: Wire refresh callbacks
+    M->>CB: Wire refresh callbacks (5 modules)
     M->>Mod: Conditional module.onload()<br/>(if enabled in settings)
-    M->>CB: Wire enrichment callbacks<br/>(if autoEnrich)
+    M->>CB: Wire enrichment + title callbacks<br/>(if autoEnrich / title.checkAfterOperations)
     M->>CB: Wire organize callbacks<br/>(if autoOrganizeOnAccept)
     M->>M: addRibbonIcon (sparkles, mic)
     M->>M: addCommand (review, checkpoints, transcribe)
@@ -261,7 +276,7 @@ The transcription system uses a **UI layer + backend modules** pattern:
 graph TB
     subgraph UI["Transcription UI (src/transcription/)"]
         UM["UnifiedTranscriptionModal<br/>File picker + URL input"]
-        NM["NoteMediaModal<br/>Scan note → select media"]
+        NM["NoteMediaModal<br/>Scan note -> select media"]
     end
 
     subgraph Backend["Backend Modules"]
@@ -300,33 +315,40 @@ All inter-module communication flows through `main.ts` via nullable callback ass
 
 ```mermaid
 graph LR
-    subgraph Triggers["Enrichment Triggers (when autoEnrich)"]
+    subgraph Triggers["Enrichment + Title Triggers"]
         Elab["Elaboration<br/>onProposalAccepted"]
         Audio["Audio<br/>onTranscriptionComplete"]
         Video["Video<br/>onTranscriptionComplete"]
         Summ["Summarize<br/>onSummaryComplete"]
-        DD["Deep Dive<br/>onNoteAccepted"]
+        DDa["Deep Dive<br/>onNoteAccepted"]
     end
 
     Enrich["Enrichment.enrich()"]
+    TitleChk["Title.checkTitle()"]
 
     Elab -->|"'elaboration'"| Enrich
     Audio -->|"'transcription'"| Enrich
     Video -->|"'transcription'"| Enrich
     Summ -->|"'summarization'"| Enrich
-    DD -->|"'deep-dive'"| Enrich
+    DDa -->|"'deep-dive'"| Enrich
+
+    Elab --> TitleChk
+    Audio --> TitleChk
+    Video --> TitleChk
+    Summ --> TitleChk
+    DDa --> TitleChk
 
     DD2["Deep Dive<br/>onOrganizeRequested"] -->|"when autoOrganize"| Org["Organize.organizeNote()"]
     Summ2["Summarize<br/>onOrganizeRequested"] -->|"when autoOrganize"| Org
 
-    ElabR["Elaboration"] & EnrichR["Enrichment"] & OrgR["Organize"] & DDR["Deep Dive"] -->|onViewRefreshNeeded| Refresh["main.refreshUnifiedView()"]
+    ElabR["Elaboration"] & EnrichR["Enrichment"] & OrgR["Organize"] & DDR["Deep Dive"] & TitleR["Title"] -->|onViewRefreshNeeded| Refresh["main.refreshUnifiedView()"]
 ```
 
 ---
 
 ## Proposal System Architecture
 
-Four modules generate proposals that appear in the unified sidebar. Each has a different review workflow:
+Five modules generate proposals that appear in the unified sidebar. Each has a different review workflow:
 
 | Module | Proposal Type | Review UX | Accept Behavior |
 |--------|--------------|-----------|-----------------|
@@ -334,16 +356,17 @@ Four modules generate proposals that appear in the unified sidebar. Each has a d
 | Enrichment | Tags, links, refs, frontmatter | Per-item checkboxes | Cherry-pick items, apply with markers |
 | Organize | New directory suggestion | Directory path + AI reasoning | Create directory, move file |
 | Deep Dive | Generated child note | Read-only content preview | Create note at proposed path |
+| Title | Rename suggestion | Current vs proposed title + reasoning | Rename file |
 
 ### Proposal States
 
 ```
-Generated ──► Pending ──┬──► Accepted
-                        ├──► Rejected
-                        └──► Partially Accepted (enrichment only)
+Generated --> Pending --+--> Accepted
+                        +--> Rejected
+                        +--> Partially Accepted (enrichment only)
 ```
 
-Tidy and Summarize do NOT use proposals — they apply changes immediately (tidy has undo via snapshots).
+Tidy and Summarize do NOT use proposals -- they apply changes immediately (tidy has undo via snapshots).
 
 ### Deep Dive: Cascade Rejection
 
@@ -351,11 +374,11 @@ Rejecting a parent automatically rejects all descendants:
 
 ```
 Root Note
-  ├── Topic A (rejected)
-  │   ├── Subtopic A1 (auto-rejected)
-  │   └── Subtopic A2 (auto-rejected)
-  └── Topic B (pending)
-      └── Subtopic B1 (pending)
+  +-- Topic A (rejected)
+  |   +-- Subtopic A1 (auto-rejected)
+  |   +-- Subtopic A2 (auto-rejected)
+  +-- Topic B (pending)
+      +-- Subtopic B1 (pending)
 ```
 
 ---
@@ -373,7 +396,7 @@ graph TB
     BFS --> Gen["NoteGenerator.generateContent()"]
     Gen --> Extract["TopicAnalyzer.extractTopics()<br/>(if depth+1 < maxDepth)"]
     Extract --> Score["scoreQuality()<br/>(local heuristic, no AI)"]
-    Score --> Decision{Score ≥ threshold<br/>AND depth < max?}
+    Score --> Decision{Score >= threshold<br/>AND depth < max?}
     Decision -->|Yes| Queue["Queue children"]
     Queue --> BFS
     Decision -->|No| Stop["Stop branch"]
@@ -384,13 +407,13 @@ graph TB
 ### Quality Scoring (Local, No AI)
 
 ```
-Score = topicCount × 0.3    min(1.0, childTopics / 3)
-      + wordCount  × 0.2    min(1.0, words / 200)
-      + generic    × 0.2    penalty for "Introduction", "Overview", etc.
-      + overlap    × 0.2    penalty for child topics matching ancestors
-      + depthDecay × 0.1    linear decay toward max depth
+Score = topicCount x 0.3    min(1.0, childTopics / 3)
+      + wordCount  x 0.2    min(1.0, words / 200)
+      + generic    x 0.2    penalty for "Introduction", "Overview", etc.
+      + overlap    x 0.2    penalty for child topics matching ancestors
+      + depthDecay x 0.1    linear decay toward max depth
 
-Below qualityThreshold (default 0.4) → stop recursion for this branch
+Below qualityThreshold (default 0.4) -> stop recursion for this branch
 ```
 
 ---
@@ -399,19 +422,19 @@ Below qualityThreshold (default 0.4) → stop recursion for this branch
 
 ```mermaid
 graph TB
-    Note["Note Content"] --> MC["MetadataClassifier.classify()<br/>AI → vocabulary-validated tags"]
-    Note --> TE["TopicExtractor.extractTopics()<br/>AI → 5-15 key concepts"]
+    Note["Note Content"] --> MC["MetadataClassifier.classify()<br/>AI -> vocabulary-validated tags"]
+    Note --> TE["TopicExtractor.extractTopics()<br/>AI -> 5-15 key concepts"]
     Note --> LR["LinkResolver.findInternalLinks()<br/>Graph hops + shared tags + proximity"]
-    Note --> PB1["PromptBuilder.suggestExternalLinks()<br/>AI → relevant URLs"]
-    Note --> PB2["PromptBuilder.suggestFrontmatter()<br/>AI → validated metadata keys"]
+    Note --> PB1["PromptBuilder.suggestExternalLinks()<br/>AI -> relevant URLs"]
+    Note --> PB2["PromptBuilder.suggestFrontmatter()<br/>AI -> validated metadata keys"]
 
-    TE --> Matched["Matched topics<br/>→ [[internal link]] candidates"]
-    TE --> Unmatched["Unmatched topics<br/>→ accumulated for cross-note resolution"]
+    TE --> Matched["Matched topics<br/>-> [[internal link]] candidates"]
+    TE --> Unmatched["Unmatched topics<br/>-> accumulated for cross-note resolution"]
 
     LR --> Merge["LinkResolver.mergeTopicCandidates()<br/>Topic relevance dominates"]
     Matched --> Merge
 
-    MC & Merge & PB1 & PB2 --> Proposal["EnrichmentProposal<br/>→ Unified Sidebar → User Review"]
+    MC & Merge & PB1 & PB2 --> Proposal["EnrichmentProposal<br/>-> Unified Sidebar -> User Review"]
 ```
 
 ### Vault-Wide Scan (4-Phase)
@@ -421,7 +444,27 @@ graph TB
 | 1. Scan | Collect eligible files, warm caches | Cheap |
 | 2. Confirm | User approval before AI calls | Free (gates cost) |
 | 3. Generate | Per-file enrichment, accumulate topics | Expensive (AI calls) |
-| 4. Resolve | Topics with 2+ references → new-note suggestions | Cheap |
+| 4. Resolve | Topics with 2+ references -> new-note suggestions | Cheap |
+
+---
+
+## Summarize: Content-Aware Templates
+
+The summarize module detects content type (e.g., recipe pages via JSON-LD schema data) and applies specialized templates:
+
+```
+Note with URL --> content-fetcher.ts
+  |-- Fetch HTML
+  |-- Extract JSON-LD structured data (Recipe, Article, etc.)
+  |-- Extract plain text
+  |
+  v
+summarizer.ts
+  |-- Detect content type from JSON-LD or heuristics
+  |-- Select template (recipe: ingredients + steps; default: bullets/paragraph/key-points)
+  |-- AI summarization with template-specific prompt
+  |-- Output: structured summary with amalgamated ingredients, step images, etc.
+```
 
 ---
 
@@ -431,22 +474,24 @@ All module data is stored as individual JSON files under `.synapse/`:
 
 ```
 .synapse/
-├── proposals/                    # Elaboration
-│   └── {id}.json                 #   Proposal with detection reasons + AI content
-├── enrichments/                  # Enrichment
-│   └── {id}.json                 #   Tags, links, refs, frontmatter suggestions
-├── tidy-snapshots/               # Tidy
-│   └── {path-as-filename}.json   #   Original content for undo (one per file)
-├── organize/
-│   ├── proposals/{id}.json       # New-directory proposals
-│   ├── snapshots/{id}.json       # Move snapshots for undo
-│   └── summaries/{name}.md       # Mermaid move diagrams
-├── deep-dive/
-│   ├── {id}.json                 # Individual note proposals
-│   └── runs/{id}.json            # Run metadata (stats, depth breakdown)
-├── checkpoints/                  # Checkpoint/resume
-│   └── {id}.json                 # Operation state (completed + remaining items)
-└── temp/                         # Temporary video/audio (auto-cleaned)
++-- proposals/                    # Elaboration
+|   +-- {id}.json                 #   Proposal with detection reasons + AI content
++-- enrichments/                  # Enrichment
+|   +-- {id}.json                 #   Tags, links, refs, frontmatter suggestions
++-- tidy-snapshots/               # Tidy
+|   +-- {path-as-filename}.json   #   Original content for undo (one per file)
++-- organize/
+|   +-- proposals/{id}.json       # New-directory proposals
+|   +-- snapshots/{id}.json       # Move snapshots for undo
+|   +-- summaries/{name}.md       # Mermaid move diagrams
++-- deep-dive/
+|   +-- {id}.json                 # Individual note proposals
+|   +-- runs/{id}.json            # Run metadata (stats, depth breakdown)
++-- title-proposals/              # Title
+|   +-- {id}.json                 # Title rename proposals
++-- checkpoints/                  # Checkpoint/resume
+|   +-- {id}.json                 # Operation state (completed + remaining items)
++-- temp/                         # Temporary video/audio (auto-cleaned)
 ```
 
 Design principles:
@@ -465,7 +510,7 @@ graph TB
     AIC["AIClient<br/>(shared/ai-client.ts)"]
 
     AIC -->|"'openai'"| OAI["POST api.openai.com/v1/chat/completions<br/>Auth: Bearer {ai.apiKey}"]
-    AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>Models: opus→claude-opus-4-6, etc."]
+    AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>Models: opus->claude-opus-4-6, etc."]
     AIC -->|"'ollama'"| OLL["POST {ollamaEndpoint}/api/chat<br/>HTTPS required (HTTP localhost only)"]
 
     AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout<br/>Error extraction · Key redaction"]
@@ -496,25 +541,26 @@ All AI-generated content uses Obsidian callouts from a shared registry:
 
 ```
 SynapseSettings
-├── ai              → Provider, API key, model, temperature, max tokens
-├── elaboration     → Detection thresholds, scan behavior, proposal storage
-│   ├── detection   → Word threshold, TODO markers, empty sections, excludes
-│   └── proposal    → Max per note, preserve frontmatter, include context
-├── audio           → Transcription provider, API keys, post-processing
-│   └── postProcessing → Filler removal, structure, key points, custom prompt
-├── video           → yt-dlp/ffmpeg paths, download folder, embed setting
-│   └── frameExtraction → (Not implemented) interval, vision model, max frames
-├── enrichment      → Auto-enrich, max tags/links, vocabulary, proximity weights
-│   ├── tagVocabulary   → TagVocabularyEntry[] (category, tags, description)
-│   └── weights         → Same/sibling/cousin/distant folder, decay, minimum
-├── summarize       → Style (bullets/paragraph/key-points), max length, excludes
-├── tidy            → Snapshot folder path
-├── organize        → Proposal/snapshot folder paths, confidence threshold, excludes
-└── deepDive        → Max depth, quality threshold, max notes, output folder,
-                      nesting mode, auto-enrich/organize on accept, excludes
++-- ai              -> Provider, API key, model, temperature, max tokens
++-- elaboration     -> Detection thresholds, scan behavior, proposal storage
+|   +-- detection   -> Word threshold, TODO markers, empty sections, excludes
+|   +-- proposal    -> Max per note, preserve frontmatter, include context
++-- audio           -> Transcription provider, API keys, post-processing
+|   +-- postProcessing -> Filler removal, structure, key points, custom prompt
++-- video           -> yt-dlp/ffmpeg paths, download folder, embed setting
+|   +-- frameExtraction -> (Not implemented) interval, vision model, max frames
++-- enrichment      -> Auto-enrich, max tags/links, vocabulary, proximity weights
+|   +-- tagVocabulary   -> TagVocabularyEntry[] (category, tags, description)
+|   +-- weights         -> Same/sibling/cousin/distant folder, decay, minimum
++-- summarize       -> Style (bullets/paragraph/key-points), max length, templates
++-- tidy            -> Snapshot folder path
++-- organize        -> Proposal/snapshot folder paths, confidence threshold, excludes
++-- deepDive        -> Max depth, quality threshold, max notes, output folder,
+|                     nesting mode, auto-enrich/organize on accept, excludes
++-- title           -> Enabled, proposal folder path, check after operations
 ```
 
-Modules access settings via `getSettings()` closure — always reads latest values, no event subscriptions needed.
+Modules access settings via `getSettings()` closure -- always reads latest values, no event subscriptions needed.
 
 ---
 

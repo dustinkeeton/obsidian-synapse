@@ -203,6 +203,7 @@ SynapseSettings {
     maxContentLength: number                        // default: 4000
     summaryStyle: 'bullets' | 'paragraph' | 'key-points'  // default: 'bullets'
     customPrompt: string                            // default: ''
+    autoDetectTemplates: boolean                    // default: true
     excludeFolders: string[]                        // default: ['templates', '.synapse']
     excludeTags: string[]                           // default: ['no-summarize']
     autoOrganizeOnSummarize: boolean                // default: false
@@ -232,6 +233,11 @@ SynapseSettings {
     autoEnrichOnAccept: boolean                     // default: true
     autoOrganizeOnAccept: boolean                   // default: false
   }
+  title: TitleSettings {
+    enabled: boolean                                // default: true
+    proposalFolderPath: string                      // default: '.synapse/title-proposals'
+    checkAfterOperations: boolean                   // default: true
+  }
 }
 ```
 
@@ -247,6 +253,7 @@ SynapseSettings {
 | Organize summaries | `.synapse/organize/summaries/*.md` | Mermaid move diagrams |
 | Deep dive proposals | `.synapse/deep-dive/*.json` | `DeepDiveProposal` JSON |
 | Deep dive runs | `.synapse/deep-dive/runs/*.json` | `DeepDiveRun` JSON |
+| Title proposals | `.synapse/title-proposals/*.json` | `TitleProposal` JSON |
 | Checkpoints | `.synapse/checkpoints/*.json` | `Checkpoint` JSON |
 | Temp video/audio | `.synapse/temp/` | Binary (auto-cleaned) |
 | Downloaded videos | `Media/` (configurable) | Video files |
@@ -262,16 +269,25 @@ deepDive.onNoteAccepted(filePath)        --> enrichment.enrich(filePath, 'deep-d
 deepDive.onOrganizeRequested(file)       --> organize.organizeNote(file)
 summarize.onOrganizeRequested(file)      --> organize.organizeNote(file)
 
+// Title checks (after enrichment or standalone when enrichment disabled)
+elaboration.onProposalAccepted(filePath) --> title.checkTitle(filePath)
+audio.onTranscriptionComplete(filePath)  --> title.checkTitle(filePath)
+video.onTranscriptionComplete(filePath)  --> title.checkTitle(filePath)
+summarize.onSummaryComplete(filePath)    --> title.checkTitle(filePath)
+deepDive.onNoteAccepted(filePath)        --> title.checkTitle(filePath)
+
 elaboration.onViewRefreshNeeded()        --> main.refreshUnifiedView()
 enrichment.onViewRefreshNeeded()         --> main.refreshUnifiedView()
 organize.onViewRefreshNeeded()           --> main.refreshUnifiedView()
 deepDive.onViewRefreshNeeded()           --> main.refreshUnifiedView()
+title.onViewRefreshNeeded()              --> main.refreshUnifiedView()
 ```
 
 Enrichment callbacks wired when `enrichment.enabled && enrichment.autoEnrich`.
 Deep-dive enrichment wired when `deepDive.autoEnrichOnAccept`.
 Deep-dive organize wired when `deepDive.autoOrganizeOnAccept && organize.enabled`.
 Summarize organize wired when `summarize.autoOrganizeOnSummarize && organize.enabled`.
+Title checks wired when `title.enabled && title.checkAfterOperations`.
 
 ## Checkpoint System
 

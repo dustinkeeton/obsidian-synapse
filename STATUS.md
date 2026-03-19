@@ -1,8 +1,9 @@
 # Project Status
 
 **Last updated**: 2026-03-18
-**Branch**: `feat/issue-124-rebrand-synapse`
-**Phase**: 9 modules (8 feature + 1 UI-only transcription); rebrand from Auto Notes to Synapse in progress
+**Version**: 0.2.1
+**Branch**: `main`
+**Phase**: 10 modules (9 feature + 1 UI-only transcription); title proposals, recipe templates, and TikTok URL normalization recently shipped
 
 ---
 
@@ -18,6 +19,7 @@
 | **Audio** -- note scanning for embeds | Yes | -- | Yes | **Working** |
 | **Video** -- URL detection (YT + TikTok) | Yes | -- | Yes | **Working** |
 | **Video** -- yt-dlp download + transcribe | Yes | Yes | No | **Working** |
+| **Video** -- TikTok URL normalization | Yes | -- | Yes | **Working** |
 | **Video** -- note scanning for URLs | Yes | -- | Yes | **Working** |
 | **Video** -- local file transcription | -- | -- | No | Not started (stub) |
 | **Video** -- frame extraction | -- | -- | No | Not started (placeholder) |
@@ -32,6 +34,7 @@
 | **Summarize** -- URL summarization (inline) | Yes | Yes | No | **Working** |
 | **Summarize** -- transcription summarization | Yes | Yes | No | **Working** |
 | **Summarize** -- enrichment link -> standalone note | Yes | -- | Yes | **Working** |
+| **Summarize** -- content-aware templates (recipe detection) | Yes | -- | Yes | **Working** |
 | **Summarize** -- vault-wide scan | Yes | Yes | No | **Working** |
 | **Tidy** -- spelling/formatting | Yes | -- | Yes | **Working** |
 | **Tidy** -- undo | Yes | -- | Yes | **Working** |
@@ -44,6 +47,9 @@
 | **Deep Dive** -- local quality scoring | Yes | -- | Yes | **Working** |
 | **Deep Dive** -- sidebar review (unified view) | Yes | Yes | No | **Working** |
 | **Deep Dive** -- cascade rejection | Yes | -- | No | **Working** |
+| **Title** -- untitled note detection | Yes | -- | No | **Working** |
+| **Title** -- content-mismatch detection (AI) | Yes | -- | No | **Working** |
+| **Title** -- proposal review + file rename | Yes | Yes | No | **Working** |
 | **Shared** -- AIClient (3 providers) | Yes | -- | No | **Working** |
 | **Shared** -- NotificationManager | Yes | -- | Yes | **Working** |
 | **Shared** -- validation and sanitization | Yes | -- | Yes | **Working** |
@@ -52,36 +58,37 @@
 
 ---
 
-## Module Summary (9 modules)
+## Module Summary (10 modules)
 
 | Module | Path | Purpose | UI Surface |
 |--------|------|---------|------------|
 | Elaboration | `src/elaboration/` | Detect stub notes, generate content proposals | Sidebar (editable) |
 | Audio | `src/audio/` | Transcribe audio files via Whisper/Deepgram | None (inline insert) |
 | Video | `src/video/` | Download + transcribe YouTube/TikTok videos | None (inline insert) |
-| Transcription | `src/transcription/` | Unified transcription UI modals (issue #20) | 2 modals |
+| Transcription | `src/transcription/` | Unified transcription UI modals | 2 modals |
 | Enrichment | `src/enrichment/` | Tags, links, refs, frontmatter suggestions | Sidebar (checkboxes) |
 | Summarize | `src/summarize/` | URL and transcription summarization | None (inline or standalone note) |
 | Tidy | `src/tidy/` | Spelling/formatting fixes | None (immediate apply + undo) |
 | Organize | `src/organize/` | AI-powered directory structuring | Sidebar (new dirs only) |
 | Deep Dive | `src/deep-dive/` | Recursive topic extraction + child note generation | Sidebar (tree view) |
+| Title | `src/title/` | Detect untitled/mismatched note titles, propose renames | Sidebar (accept = rename) |
 
 ---
 
 ## Current Focus
 
-- **Rebrand**: Auto Notes renamed to Synapse across all source code, config, and documentation (issue #124)
-- **Architect audit**: module structure cleanup, export fixes, constructor standardization
-- **Security pass**: `.gitignore` hardening for legacy `.auto-notes/` folder
-- **Documentation audit**: updating AGENTS.md (machine-readable) and human docs (DECISIONS.md, STATUS.md, ARCHITECTURE.md)
+- **Documentation audit**: Updating AGENTS.md, DECISIONS.md, STATUS.md, ARCHITECTURE.md
+- **Security pass**: Ongoing audit for input validation and credential handling
 
 ## Recent Changes (2026-03-18)
 
-- Rebranded plugin from "Auto Notes" to "Synapse" (manifest, settings, callouts, data folder)
-- Added `.auto-notes/` to `.synapse/` data folder migration (one-time, on load)
-- Added legacy `.auto-notes/` to `.gitignore`
-- Architect audit: fixed module structure, cleaned up exports
-- Updated all AGENTS.md files with checkpoint system and constructor changes
+- Added title proposal module -- detects "Untitled" filenames and content-title mismatches, proposes AI-generated titles (#150, #157)
+- Normalized TikTok URLs by stripping query params before dedup/matching (#155, #156)
+- Added JSON-LD recipe data extraction to amalgamate ingredients (#153, #154)
+- Added exact ingredient amounts and step images to recipe summary template (#149, #152)
+- Added content-aware summary templates with recipe detection (#145, #148)
+- Added Reject All button for proposals (#141)
+- Strip code fences from AI elaboration output (#147)
 
 ---
 
@@ -95,21 +102,6 @@
 | Local Whisper not implemented | Medium | `local-whisper` provider throws on use |
 | Local video file transcription not implemented | Medium | Command shows "coming soon" notice |
 | Frame extraction not implemented | Medium | `FrameExtractor` is a placeholder |
-
----
-
-## Command Registry (22 commands)
-
-| Module | Commands |
-|--------|----------|
-| Main | Open proposal review sidebar, Manage interrupted operations, Transcribe media, Transcribe media from current note |
-| Elaboration | Scan vault, Scan current note, Clear proposals |
-| Video | Check dependencies |
-| Enrichment | Enrich current note, Scan vault, Undo enrichment |
-| Summarize | Summarize current note, Scan vault |
-| Tidy | Tidy current note, Undo tidy |
-| Organize | Organize current note, Scan directory, Undo organize |
-| Deep Dive | Deep dive into note, Clear proposals |
 
 ---
 
