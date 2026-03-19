@@ -379,6 +379,40 @@ describe('findSummarizeTargets', () => {
 		});
 	});
 
+	it('matches transcription/summary when URL has query params stripped', () => {
+		// A note with the bare URL on the first line, but the transcription
+		// header uses the same bare URL — should still match even if the
+		// original paste had query params.
+		const content = [
+			'https://www.tiktok.com/@user/video/123?is_from_webapp=1&sender_device=pc',
+			'',
+			'> **Transcription of https://www.tiktok.com/@user/video/123**',
+			'>',
+			'> Some transcribed text here.',
+			'',
+			'> **Summary of https://www.tiktok.com/@user/video/123**',
+			'>',
+			'> A summary.',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		// Transcription already has summary — no targets expected
+		expect(targets).toHaveLength(0);
+	});
+
+	it('matches when stored URL has params but header is bare', () => {
+		const content = [
+			'https://www.tiktok.com/@user/video/456?web_id=999',
+			'',
+			'> **Transcription of https://www.tiktok.com/@user/video/456**',
+			'>',
+			'> Text content.',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		// Transcription exists but no summary — should return transcription target
+		expect(targets).toHaveLength(1);
+		expect(targets[0].type).toBe('transcription');
+	});
+
 	it('enrichment targets survive idempotent re-scan after note creation', () => {
 		// After processing, the external links become wikilinks.
 		// Re-scanning should find no enrichment targets.

@@ -31,6 +31,12 @@ describe('isSupportedUrl integration with summarize', () => {
 		expect(isSupportedUrl('https://vm.tiktok.com/ZMxxxxxxx/')).toBe(true);
 	});
 
+	it('identifies TikTok URLs with query params as video', () => {
+		expect(isSupportedUrl('https://www.tiktok.com/@user/video/1234567890?is_from_webapp=1&sender_device=pc')).toBe(true);
+		expect(isSupportedUrl('https://www.tiktok.com/t/ZThw1txpF/?refer=creator&web_id=123')).toBe(true);
+		expect(isSupportedUrl('https://vm.tiktok.com/ZMxxxxxxx/?sender_device=mobile')).toBe(true);
+	});
+
 	it('does not flag regular article URLs as video', () => {
 		expect(isSupportedUrl('https://example.com/article')).toBe(false);
 		expect(isSupportedUrl('https://en.wikipedia.org/wiki/Topic')).toBe(false);
