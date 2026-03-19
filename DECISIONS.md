@@ -4,6 +4,117 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-19: Revised hybrid strategy -- caption-first with extraction fallback (Issue #166, follow-up)
+
+**Context**: After the initial hybrid extraction decision (below), a key insight emerged: Synapse's actual need is transcription (URL to text), not video downloading. The user does not need the video file itself -- they need the transcript, and optionally a summary. This reframes the problem: if we can get text from a URL without ever downloading audio or video, the entire yt-dlp/ffmpeg dependency becomes unnecessary for the most common use case.
+
+**Decision**: Adopt a three-tier "caption-first" strategy that tries the cheapest/simplest approach first and falls back progressively:
+
+### Tier 1: Caption/subtitle extraction (no audio processing, no external tools)
+
+For YouTube specifically, captions can be fetched as text without downloading any media:
+
+- **YouTube Data API v3** (`captions.list` + `captions.download`): Can list and download caption tracks for any public video. Requires only an API key for listing, but downloading caption content requires OAuth 2.0 authorization as the video owner -- so this path is limited to listing available tracks and their metadata. It cannot download third-party video captions with just an API key.
+
+- **youtube-transcript libraries / innertube API**: Multiple open-source libraries (e.g., `youtube-transcript`, `youtubei.js`) access YouTube's internal transcript endpoint without OAuth. These work as pure HTTP requests (no CLI tools) and return timed transcript text for any video that has captions enabled. This is the most promising Tier 1 path -- it is a simple HTTP call that works from any platform including mobile, requires no API keys, and handles the majority of YouTube videos (auto-generated captions cover most English-language content).
+
+- **Limitations**: Tier 1 only works for platforms that expose captions. YouTube has excellent coverage (auto-generated captions for most videos). TikTok does not expose captions via any public API -- there is no equivalent subtitle endpoint.
+
+### Tier 2: URL-based transcription via existing provider APIs
+
+Both Deepgram and AssemblyAI accept URLs as direct input -- no local audio extraction needed:
+
+- **Deepgram**: The `/v1/listen` endpoint accepts a JSON body with `{"url": "https://..."}` pointing to a publicly accessible audio or video file. Deepgram's server fetches the media and transcribes it. This works for direct media URLs (e.g., `.mp3`, `.mp4` hosted files) but does NOT work for YouTube/TikTok page URLs -- Deepgram cannot resolve a `youtube.com/watch?v=...` URL to its underlying media stream.
+
+- **AssemblyAI**: The `/v2/transcript` endpoint accepts `{"audio_url": "https://..."}` and handles fetching and transcription server-side. Same limitation as Deepgram: requires a direct media file URL, not a platform page URL.
+
+- **OpenAI Whisper API**: Does NOT accept URLs. The `/v1/audio/transcriptions` endpoint requires a file upload via `multipart/form-data`. The audio data must be in the request body. This means Whisper always requires the audio file to be obtained locally first.
+
+- **Practical implication**: Tier 2 works for direct audio/video file URLs (e.g., podcast RSS enclosures, hosted recordings) but cannot replace yt-dlp for platform URLs. It is useful as a fallback for non-YouTube sources where a direct media URL is available.
+
+### Tier 3: Full extraction fallback (existing pipeline)
+
+When Tiers 1 and 2 cannot handle the URL:
+- **Desktop**: Use yt-dlp + ffmpeg via `LocalExtractor` (existing pipeline, unchanged)
+- **Mobile**: Use `ServerExtractor` calling a user-configured endpoint (as originally designed)
+- **Covers**: TikTok URLs, age-restricted YouTube videos without captions, any platform where caption extraction fails
+
+### Revised architecture
+
+The `MediaExtractor` strategy interface from the original decision is retained, but the implementation hierarchy changes:
+
+```
+TranscriptionStrategy (interface)
+  |-- CaptionExtractor        (Tier 1: HTTP-only, YouTube captions, cross-platform)
+  |-- UrlTranscriptionProvider (Tier 2: Deepgram/AssemblyAI URL input, cross-platform)
+  |-- LocalExtractor           (Tier 3: yt-dlp + ffmpeg, desktop only)
+  |-- ServerExtractor          (Tier 3: cloud function, mobile fallback)
+```
+
+The orchestrator tries tiers in order: caption extraction first (free, fast, no API cost), then URL-based transcription if the user has Deepgram/AssemblyAI configured and a direct URL is available, then full extraction as last resort.
+
+**Alternatives considered**:
+
+- **Caption-only, drop extraction entirely**: Rejected. TikTok has no caption API, and some YouTube videos have captions disabled. The extraction fallback is necessary for full platform coverage. However, caption-first dramatically reduces how often extraction is needed.
+
+- **Require Deepgram/AssemblyAI for URL transcription**: Rejected as sole strategy. These services cannot resolve platform page URLs (youtube.com, tiktok.com) to media streams. They work for direct file URLs only. Also requires users to sign up for and pay for an additional service beyond what they already have (OpenAI/Anthropic).
+
+- **Build a YouTube caption fetcher only, skip TikTok**: Considered as an MVP. YouTube is likely 90%+ of the use case. TikTok support could be deferred to a later milestone if the extraction fallback proves too complex.
+
+**Rationale**: This tiered approach is a significant simplification over the original hybrid decision:
+
+1. **YouTube transcription works everywhere with zero dependencies** -- Caption extraction is pure HTTP, works on mobile and desktop, requires no API keys, no external tools, and no server endpoint. This covers the dominant use case.
+
+2. **The custom server endpoint (issue #181) becomes optional, not required for mobile** -- Mobile users get YouTube transcription via caption extraction without any server. The server endpoint is only needed for TikTok on mobile or for videos without captions.
+
+3. **Existing OpenAI Whisper users are unaffected** -- For local audio files, the pipeline is unchanged. Whisper API is still the transcription backend for file-based audio.
+
+4. **Cost savings** -- Caption extraction is free (no API call). Even when falling back to Whisper, skipping yt-dlp download + extraction is faster.
+
+**Impact on follow-up issues**:
+
+- **Issue #180 (abstract extraction interface)**: Still needed, but the interface expands from `MediaExtractor` to `TranscriptionStrategy` with four implementations instead of two. Scope increases slightly but complexity per implementation decreases (CaptionExtractor is ~50 lines of HTTP code).
+
+- **Issue #181 (server-side endpoint)**: Downgraded from "required for mobile" to "optional fallback." Mobile YouTube transcription works without it via caption extraction. The server endpoint is still valuable for TikTok-on-mobile and captionless videos, but it is no longer a blocker for the v0.7.0 mobile milestone.
+
+- **Issue #182 (mobile-aware strategy selection)**: Simplified. Instead of "desktop = local, mobile = server (required)", the logic becomes "try captions first (any platform), then try URL transcription, then try local extraction (desktop), then try server extraction (if configured)." Mobile works out of the box for YouTube without any server configuration.
+
+- **New issue needed**: YouTube caption fetcher implementation (Tier 1). This is the highest-value, lowest-complexity piece and should be prioritized first.
+
+---
+
+## 2026-03-19: Hybrid extraction strategy for cross-platform media support (Issue #166)
+
+**Context**: Synapse depends on `yt-dlp` and `ffmpeg` as external CLI tools that users must install themselves. This creates high onboarding friction (Homebrew/apt installs, PATH configuration, manual updates), makes the entire video transcription pipeline desktop-only (Obsidian Mobile has no `child_process` / shell access), and ties the plugin to a macOS-centric `shellEnv()` workaround that is fragile on Linux and Windows. Issue #166 asks how we might eliminate or reduce this external dependency burden, especially for mobile.
+
+**Decision**: Adopt a hybrid extraction strategy (Option D) with three implementation phases:
+
+1. **Abstract the extraction interface** -- Refactor `AudioExtractor` into a strategy interface (`MediaExtractor`) with `extractAudioFromUrl(url)`, `extractAudioFromFile(path)`, `downloadVideo(url)`, and `checkAvailability()` methods. Implement `LocalExtractor` (wraps existing yt-dlp/ffmpeg `execFile` logic) and `ServerExtractor` (calls a cloud endpoint).
+
+2. **Server-side extraction endpoint** -- Deploy a cloud function (AWS Lambda preferred over Cloudflare Workers due to Lambda's higher memory ceiling of 10GB, 900-second timeout, and ability to run yt-dlp as a Lambda layer) that accepts a URL and returns extracted audio. The endpoint is opt-in, user-configurable, and self-hostable. No Synapse-operated default instance ships initially -- users must provide their own endpoint URL or use a community-hosted instance.
+
+3. **Platform-aware strategy selection** -- On desktop (`Platform.isDesktopApp`), default to `LocalExtractor` with fallback to `ServerExtractor` if local tools are missing. On mobile (`Platform.isMobileApp`), use `ServerExtractor` exclusively. A settings override lets users force either strategy on any platform.
+
+**Alternatives considered**:
+
+- **Option A -- WASM-based media processing (ffmpeg.wasm)**: Rejected as a primary strategy. ffmpeg.wasm can transcode local audio/video files but cannot replace yt-dlp's URL downloading capability -- it has no network fetching, site-specific extraction logic, or DRM handling. The core WASM binary is approximately 25MB (custom builds can reduce to ~5MB but lose codecs), which would nearly double Synapse's bundle size. The 2GB WebAssembly memory hard limit constrains file processing. Multi-threaded mode requires SharedArrayBuffer with cross-origin isolation headers (`COOP`/`COEP`), which Obsidian's Electron renderer does not set by default and which conflict with loading cross-origin resources. On mobile, Obsidian uses WKWebView (iOS) and Android WebView via Capacitor -- both support WASM execution in principle, but SharedArrayBuffer availability and Worker thread support in these embedded WebViews is inconsistent and unverified in Obsidian's specific build. Furthermore, ffmpeg.wasm officially dropped Node.js support as of v0.12.0, making it purely browser-targeted. For an Electron app that already has native `child_process` access, native ffmpeg via `execFile` is faster, more capable, and uses less memory. ffmpeg.wasm remains viable as a future local-file-only fallback for mobile if server extraction is unavailable, but this is a stretch goal, not a primary path.
+
+- **Option B -- Server-side extraction only**: Rejected as the sole strategy. Moving all extraction to a cloud service conflicts with Synapse's privacy-first philosophy (user URLs and potentially copyrighted content would transit an external server) and the zero-runtime-deps policy (creates a hard service dependency). It also introduces cost questions (who pays for Lambda compute?), latency (cold starts, large file transfers), and reliability concerns (service outages block all transcription). However, server-side extraction is the only viable path for mobile, so it is incorporated as the mobile leg of the hybrid approach with explicit opt-in and self-hosting support.
+
+- **Option C -- Platform-native APIs**: Rejected. The Web Audio API is a DSP toolkit for processing audio that is already loaded in memory -- it cannot fetch media from URLs, does not understand video container formats, and has no site-specific extraction logic. Obsidian Mobile runs in a Capacitor WebView but does not expose native media framework bridges (iOS AVFoundation, Android MediaCodec) to plugins. Obsidian's plugin API provides `Platform.isDesktopApp`, `Platform.isMobileApp`, `Platform.isIosApp`, `Platform.isAndroidApp`, vault filesystem operations, and `requestUrl` for HTTP -- but no Capacitor plugin bridge for native media processing. Writing custom Capacitor plugins would require forking Obsidian's mobile app, which is not open source. There is no viable path here for URL-based media extraction.
+
+**Rationale**: The hybrid approach is pragmatic and incremental. It preserves the working desktop pipeline (no regression), unlocks mobile support through server-side extraction (the only technically viable mobile path), and creates a clean abstraction that accommodates future extraction backends (community services like cobalt.tools, future WASM improvements, or native Obsidian media APIs if they emerge). The strategy interface also improves testability -- `ServerExtractor` and `LocalExtractor` can be independently mocked and tested. The self-host-first server model avoids creating a Synapse-operated service dependency while still enabling the feature.
+
+**Impact**:
+- `AudioExtractor` class refactored into `MediaExtractor` interface + `LocalExtractor` + `ServerExtractor` implementations
+- New settings: `video.extractionStrategy` (`auto` | `local` | `server`), `video.serverEndpoint` (URL), `video.serverApiKey` (optional auth)
+- `VideoModule` constructor accepts a `MediaExtractor` instead of creating `AudioExtractor` directly
+- Mobile users gain access to video transcription features (previously completely gated behind `Platform.isDesktop`)
+- Three follow-up implementation issues created for v0.7.0 milestone
+- No changes to the audio transcription pipeline (Whisper API) -- only the media fetching/extraction layer is affected
+
+---
+
 ## 2026-03-19: Image OCR module with multi-modal AIClient (Issues #162, #165)
 
 **Context**: Users embed images (screenshots, diagrams, handwritten notes) in their vault notes. These images contain text and context that is invisible to AI-powered features — elaboration, enrichment, and summarization all operate on text content only.
