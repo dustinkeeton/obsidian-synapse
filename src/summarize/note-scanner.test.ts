@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCallout, CALLOUT_TYPES } from '../shared/callouts';
+import { buildCallout, CALLOUT_TYPES } from '../shared';
 import { findSummarizeTargets, hasSummaryBelow, extractTranscriptionContent } from './note-scanner';
 
 describe('findSummarizeTargets', () => {

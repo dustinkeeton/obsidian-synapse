@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-18
+last-updated: 2026-03-19
 ---
 
 # Transcription Module
 
-Unified transcription UI modals. Replaces the former separate modals in audio/ and video/ modules.
+Unified transcription and OCR UI modals. Replaces the former separate modals in audio/ and video/ modules. Now also handles image OCR selection.
 
 ## Public API
 
@@ -28,9 +28,11 @@ class NoteMediaModal extends Modal {
     app: App,
     audioEmbeds: AudioEmbed[],
     videoEmbeds: VideoUrlEmbed[],
+    imageEmbeds: ImageEmbed[],
     callbacks: {
       onTranscribeAudio: (embeds: AudioEmbed[]) => Promise<void>;
       onTranscribeVideo: (embeds: VideoUrlEmbed[]) => Promise<void>;
+      onExtractImages: (embeds: ImageEmbed[]) => Promise<void>;
     }
   )
 }
@@ -60,10 +62,10 @@ Opened via:
 ## NoteMediaModal
 
 Selection modal for media embedded in the current note:
-- Displays count of audio files and video URLs found
-- Toggle checkboxes for each audio embed and video URL
+- Displays count of audio files, video URLs, and images found
+- Toggle checkboxes for each audio embed, video URL, and image embed
 - Select All / Select None buttons
-- Transcribe Selected button dispatches to separate audio/video callbacks
+- Process Selected button dispatches to separate audio/video/image callbacks
 
 Opened via:
 - Command `synapse:transcribe-note-media`
@@ -76,6 +78,7 @@ Opened via:
 | `AudioEmbed` | `../audio` (type) |
 | `detectPlatform` | `../video` (function) |
 | `VideoUrlEmbed` | `../video` (type) |
+| `ImageEmbed` | `../image` (type) |
 
 ## Wiring (in main.ts)
 
@@ -87,9 +90,10 @@ new UnifiedTranscriptionModal(app, getSettings, enabledModules, {
 })
 
 // NoteMediaModal (after scanning note content)
-new NoteMediaModal(app, audioEmbeds, videoEmbeds, {
+new NoteMediaModal(app, audioEmbeds, videoEmbeds, imageEmbeds, {
   onTranscribeAudio: (selected) => audio.transcribeAndInsert(file, selected),
   onTranscribeVideo: (selected) => video.transcribeAndInsert(file, selected),
+  onExtractImages: (selected) => image.extractAndInsert(file, selected),
 })
 ```
 

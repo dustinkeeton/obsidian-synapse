@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Synapse is an Obsidian plugin that provides nine AI-powered features: note elaboration, audio transcription, video transcription, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, and title proposal. It runs on both desktop and mobile (video features are desktop-only).
+Synapse is an Obsidian plugin that provides ten AI-powered features: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, and title proposal. It runs on both desktop and mobile (video features are desktop-only).
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -17,9 +17,10 @@ graph TB
         CkptMgr["CheckpointManager<br/>(shared, singleton)"]
 
         subgraph Features["Feature Modules"]
-            Elab["Elaboration"]
+            Elab["Elaboration<br/>(+ ImageAnalyzer)"]
             Audio["Audio"]
             Video["Video"]
+            Image["Image OCR"]
             Trans["Transcription<br/>(UI only)"]
             Enrich["Enrichment"]
             Summ["Summarize"]
@@ -48,8 +49,11 @@ graph TB
     Audio --> TransAPI
     Video --> Tools
     Video --> Audio
+    Image --> AI
+    Elab -.->|image analysis| Image
     Trans --> Audio
     Trans --> Video
+    Trans --> Image
     Summ -.->|transcribeUrl injection| Video
     DD -.->|auto-organize| Org
 
@@ -57,6 +61,7 @@ graph TB
     style Sidebar fill:#bbf,stroke:#333
     style CkptMgr fill:#ffd,stroke:#333
     style Title fill:#ffc,stroke:#333
+    style Image fill:#e8f5e9,stroke:#333
 ```
 
 ---
@@ -69,9 +74,10 @@ src/
 ├── settings.ts             # Type definitions, defaults, model options
 ├── settings-tab.ts         # Obsidian settings UI
 │
-├── elaboration/            # Stub note detection + AI content proposals
+├── elaboration/            # Stub note detection + AI content proposals (image-aware)
 │   ├── detector.ts         #   PlaceholderDetector (short notes, TODOs, empty sections)
 │   ├── proposer.ts         #   ProposalGenerator (context gathering + AI generation)
+│   ├── image-analyzer.ts   #   Multi-modal image analysis for proposal enrichment
 │   ├── proposal-store.ts   #   JSON file persistence
 │   └── index.ts            #   ElaborationModule orchestrator
 │
@@ -86,6 +92,12 @@ src/
 │   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile
 │   ├── note-scanner.ts     #   Find video URLs in note content
 │   └── index.ts            #   VideoModule orchestrator (delegates to Audio)
+│
+├── image/                  # Image OCR via multi-modal AI (vision models)
+│   ├── extractor.ts        #   ImageExtractor (base64 + ContentBlock[] -> AI vision)
+│   ├── note-scanner.ts     #   Find image embeds (![[*.png]]) in note content
+│   ├── types.ts            #   ImageEmbed, OCRResult
+│   └── index.ts            #   ImageModule orchestrator (batch + checkpoint)
 │
 ├── transcription/          # Unified transcription UI (issue #20)
 │   ├── unified-modal.ts    #   File picker + URL input in a single modal
@@ -168,6 +180,7 @@ graph LR
     Main --> Elab["elaboration/"]
     Main --> Audio["audio/"]
     Main --> Video["video/"]
+    Main --> Image["image/"]
     Main --> Trans["transcription/"]
     Main --> Enrich["enrichment/"]
     Main --> Summ["summarize/"]
@@ -180,8 +193,11 @@ graph LR
     Audio --> Shared
     Video --> Shared
     Video --> Audio
+    Image --> Shared
+    Elab -.->|ImageAnalyzer| Image
     Trans --> Audio
     Trans --> Video
+    Trans --> Image
     Enrich --> Shared
     Summ --> Shared
     Summ -.-> Video
@@ -198,11 +214,14 @@ graph LR
 
     style Trans fill:#f9f,stroke:#333
     style Title fill:#ffc,stroke:#333
+    style Image fill:#e8f5e9,stroke:#333
 ```
 
 Key constraints:
 - **Video depends on Audio** -- reuses transcription pipeline
-- **Transcription is UI-only** -- delegates all work to Audio and Video via callbacks
+- **Transcription is UI-only** -- delegates all work to Audio, Video, and Image via callbacks
+- **Elaboration uses ImageAnalyzer** -- analyzes embedded images during proposal generation (dotted line to Image)
+- **Image module uses multi-modal AIClient** -- `ContentBlock[]` with vision model override
 - **Summarize receives `video.transcribeUrl`** via constructor injection (dotted line)
 - **Deep Dive reuses Organize** for `auto-organize` nesting mode
 - **All feature modules depend on Shared** -- no circular dependencies
@@ -218,7 +237,7 @@ Key constraints:
 sequenceDiagram
     participant O as Obsidian
     participant M as main.ts
-    participant Mod as Modules (x9)
+    participant Mod as Modules (x10)
     participant CB as Callbacks
     participant CK as CheckpointManager
 
@@ -228,7 +247,7 @@ sequenceDiagram
     M->>M: addSettingTab()
     M->>M: NotificationManager()
     M->>CK: new CheckpointManager(app)
-    M->>Mod: Initialize 9 modules<br/>(Audio before Video, inject CheckpointManager)
+    M->>Mod: Initialize 10 modules<br/>(Audio before Video, inject CheckpointManager)
     M->>M: registerView(UnifiedProposalView)
     M->>CB: Wire refresh callbacks (5 modules)
     M->>Mod: Conditional module.onload()<br/>(if enabled in settings)
@@ -282,12 +301,14 @@ graph TB
     subgraph Backend["Backend Modules"]
         Audio["AudioModule<br/>transcribeFileToActiveNote()<br/>transcribeAndInsert()"]
         Video["VideoModule<br/>transcribeUrlToActiveNote()<br/>transcribeAndInsert()"]
+        Image["ImageModule<br/>extractFromFile()<br/>extractAndInsert()"]
     end
 
-    subgraph Providers["Transcription Providers"]
+    subgraph Providers["Transcription/OCR Providers"]
         Whisper["Whisper API"]
         Deepgram["Deepgram"]
         YtDlp["yt-dlp + ffmpeg"]
+        Vision["Vision Models<br/>(GPT-4o, Claude, etc.)"]
     end
 
     Ribbon["Ribbon Icon (mic)"] --> UM
@@ -298,14 +319,16 @@ graph TB
     UM -->|onTranscribeUrl| Video
     NM -->|onTranscribeAudio| Audio
     NM -->|onTranscribeVideo| Video
+    NM -->|onExtractImages| Image
 
     Audio --> Whisper
     Audio --> Deepgram
     Video --> YtDlp
     Video -->|delegates| Audio
+    Image --> Vision
 ```
 
-The transcription module replaced 4 modal files across audio/ and video/ with 2 unified modals. All callbacks are wired in `main.ts`.
+The transcription module replaced 4 modal files across audio/ and video/ with 2 unified modals. The `NoteMediaModal` also handles image OCR extraction. All callbacks are wired in `main.ts`.
 
 ---
 
@@ -319,6 +342,7 @@ graph LR
         Elab["Elaboration<br/>onProposalAccepted"]
         Audio["Audio<br/>onTranscriptionComplete"]
         Video["Video<br/>onTranscriptionComplete"]
+        Img["Image<br/>onExtractionComplete"]
         Summ["Summarize<br/>onSummaryComplete"]
         DDa["Deep Dive<br/>onNoteAccepted"]
     end
@@ -329,12 +353,14 @@ graph LR
     Elab -->|"'elaboration'"| Enrich
     Audio -->|"'transcription'"| Enrich
     Video -->|"'transcription'"| Enrich
+    Img -->|"'transcription'"| Enrich
     Summ -->|"'summarization'"| Enrich
     DDa -->|"'deep-dive'"| Enrich
 
     Elab --> TitleChk
     Audio --> TitleChk
     Video --> TitleChk
+    Img --> TitleChk
     Summ --> TitleChk
     DDa --> TitleChk
 
@@ -352,7 +378,7 @@ Five modules generate proposals that appear in the unified sidebar. Each has a d
 
 | Module | Proposal Type | Review UX | Accept Behavior |
 |--------|--------------|-----------|-----------------|
-| Elaboration | Content additions | Editable textarea | Blockquote original, append additions in callout |
+| Elaboration | Content additions (image-aware) | Editable textarea | Blockquote original, append additions in callout |
 | Enrichment | Tags, links, refs, frontmatter | Per-item checkboxes | Cherry-pick items, apply with markers |
 | Organize | New directory suggestion | Directory path + AI reasoning | Create directory, move file |
 | Deep Dive | Generated child note | Read-only content preview | Create note at proposed path |
@@ -366,7 +392,7 @@ Generated --> Pending --+--> Accepted
                         +--> Partially Accepted (enrichment only)
 ```
 
-Tidy and Summarize do NOT use proposals -- they apply changes immediately (tidy has undo via snapshots).
+Tidy, Summarize, and Image do NOT use proposals -- they apply changes immediately (tidy has undo via snapshots; image OCR inserts callouts inline).
 
 ### Deep Dive: Cascade Rejection
 
@@ -516,6 +542,22 @@ graph TB
     AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout<br/>Error extraction · Key redaction"]
 ```
 
+### Multi-Modal Vision Support
+
+`AIClient.chat()` accepts `ChatMessage[]` where `content` can be `string | ContentBlock[]`:
+
+```
+ContentBlock = TextContentBlock { type: 'text', text: string }
+             | ImageContentBlock { type: 'image', data: base64, mediaType: string }
+```
+
+Provider-specific format conversion:
+- **OpenAI**: `image_url` with `data:` URI
+- **Anthropic**: `image` source with `base64` type
+- **Ollama**: separate `images` array on the message
+
+Used by: `image/extractor.ts` (OCR), `elaboration/image-analyzer.ts` (image analysis for proposals)
+
 Audio transcription uses separate APIs (not AIClient):
 - **Whisper**: OpenAI `/v1/audio/transcriptions` via native `fetch` + `FormData`
 - **Deepgram**: `/v1/listen` via native `fetch`
@@ -534,6 +576,7 @@ All AI-generated content uses Obsidian callouts from a shared registry:
 | elaboration | `synapse-elaboration` | Elaboration proposals |
 | deepDive | `synapse-deep-dive` | Deep dive content |
 | nav | `synapse-nav` | Deep dive navigation blocks |
+| ocr | `synapse-ocr` | Image OCR extraction results |
 
 ---
 
@@ -549,6 +592,7 @@ SynapseSettings
 |   +-- postProcessing -> Filler removal, structure, key points, custom prompt
 +-- video           -> yt-dlp/ffmpeg paths, download folder, embed setting
 |   +-- frameExtraction -> (Not implemented) interval, vision model, max frames
++-- image           -> Enabled, vision model override, language hint
 +-- enrichment      -> Auto-enrich, max tags/links, vocabulary, proximity weights
 |   +-- tagVocabulary   -> TagVocabularyEntry[] (category, tags, description)
 |   +-- weights         -> Same/sibling/cousin/distant folder, decay, minimum
