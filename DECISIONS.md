@@ -4,6 +4,100 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-18: Title proposal module for untitled and mismatched notes (Issue #150)
+
+**Context**: After elaboration, transcription, or summarization, notes often retain their original filename (e.g., "Untitled", "Untitled 2") or have titles that no longer match their content. Users had to manually rename files.
+
+**Decision**: Add a `title` module that detects two conditions and proposes AI-generated titles:
+- **Untitled detection**: filenames matching `Untitled*` pattern trigger `suggestTitle()` via AI
+- **Content-mismatch detection**: AI evaluates whether the current filename reflects the note's content; if not, it proposes a better title
+
+Title checks are wired as cross-module callbacks in `main.ts`, triggered after enrichment (or directly after elaboration/transcription/summarization/deep-dive when enrichment is disabled). Proposals appear in the unified sidebar with yellow color coding. Accepting a title proposal renames the file.
+
+The module does NOT use CheckpointManager (single-note operations, not vault scans).
+
+**Alternatives considered**:
+- Auto-rename without proposal (risky -- changes file paths, breaks links)
+- Only detect untitled notes (misses content drift after elaboration)
+- Batch title check during vault scan (over-engineered for a per-note operation)
+
+**Rationale**: Title proposals fit naturally into the existing proposal-review workflow. The two-trigger design catches both obvious cases (Untitled) and subtle ones (content evolved past the original title). File rename is a high-impact action that warrants user confirmation via the sidebar.
+
+**Impact**: New `src/title/` module with 5 files. Unified sidebar gains a 5th proposal type (yellow cards). Title settings added under `settings.title`. Cross-module callbacks in `main.ts` expanded.
+
+---
+
+## 2026-03-18: Content-aware summary templates with recipe detection (Issue #145)
+
+**Context**: The summarize module treated all URL content identically, producing bullet-point or paragraph summaries. Recipe pages contain structured data (ingredients, steps, prep time) that generic summaries lose.
+
+**Decision**: Add content-type detection to the summarize pipeline:
+1. `content-fetcher.ts` extracts JSON-LD structured data from fetched HTML (Recipe, Article, etc.)
+2. `summarizer.ts` detects content type and selects a specialized template
+3. Recipe template: amalgamates ingredients from multiple JSON-LD entries, requires exact amounts, includes step images
+4. Default template: existing bullets/paragraph/key-points behavior
+
+Subsequent PRs refined this: exact ingredient amounts required (#149), step images included (#149), JSON-LD recipe data extraction to amalgamate ingredients across multiple Recipe objects (#153).
+
+**Alternatives considered**:
+- Always use generic summarization (loses structured data)
+- Hard-code recipe detection only (not extensible to other content types)
+- Use a separate command for recipe summarization (fragments UX)
+
+**Rationale**: JSON-LD is a widely-used standard on recipe sites. Extracting structured data produces dramatically better summaries than feeding raw HTML to an LLM. The template system is extensible -- future content types (articles, products) can be added without changing the pipeline.
+
+**Impact**: Recipe URLs produce structured summaries with exact ingredients and steps. The `autoDetectTemplates` setting controls this behavior. Non-recipe URLs are unaffected.
+
+---
+
+## 2026-03-18: TikTok URL normalization (Issue #155)
+
+**Context**: TikTok URLs often include query parameters (tracking, session tokens) that cause the same video to be treated as different URLs. This led to duplicate transcription attempts and failed deduplication.
+
+**Decision**: Strip query parameters from TikTok URLs during normalization in `url-detector.ts`. The canonical URL form is `https://www.tiktok.com/@user/video/{id}` with no query string.
+
+**Alternatives considered**:
+- Strip query params from all URLs (would break YouTube timestamp URLs)
+- Normalize at transcription time only (wouldn't fix detection/matching)
+
+**Rationale**: TikTok query params are purely tracking/session data -- they don't affect video content. YouTube params (like `t=` for timestamp) are meaningful, so normalization must be platform-specific.
+
+**Impact**: TikTok URLs are consistently matched regardless of tracking parameters. No behavior change for YouTube URLs.
+
+---
+
+## 2026-03-18: Unified sidebar expanded to 5 proposal types
+
+**Context**: The title module added a 5th proposal type to the unified sidebar (previously elaboration, enrichment, organize, deep-dive).
+
+**Decision**: Extend `UnifiedItem` to a 5-way discriminated union adding `{ kind: 'title'; data: TitleProposal }`. Title cards show current vs proposed title, trigger reason (untitled/mismatch), and AI reasoning. Yellow color coding distinguishes them from other types. Accept triggers file rename.
+
+**Alternatives considered**:
+- Separate modal for title proposals (inconsistent with existing proposal workflow)
+- Auto-apply title changes without review (too risky -- renames affect links)
+
+**Rationale**: Consistency with the existing proposal-review pattern. Users already check the sidebar for proposals; title suggestions appear alongside other proposal types naturally.
+
+**Impact**: `UnifiedViewCallbacks` gains `onTitleAccept` and `onTitleReject`. Card type table now has 5 entries (blue, green, orange, purple, yellow).
+
+---
+
+## 2026-03-18: Reject All button for proposals (Issue #141)
+
+**Context**: Users with many pending proposals had to reject them one at a time. The existing Accept All button had no counterpart for bulk rejection.
+
+**Decision**: Add a "Reject All" button to the unified sidebar, visible when 2+ proposals are pending. Processes all proposals sequentially, same as Accept All.
+
+**Alternatives considered**:
+- Only provide individual reject buttons (tedious for large batches)
+- Add a "Clear All" that deletes proposals without marking them rejected (loses audit trail)
+
+**Rationale**: Symmetric with Accept All. Users who scan proposals and find them unhelpful shouldn't need to reject each one individually.
+
+**Impact**: New button in the unified sidebar header. All proposal types support rejection through their existing reject callbacks.
+
+---
+
 ## 2026-03-18: Rebrand from Auto Notes to Synapse (Issue #124)
 
 **Context**: The plugin name "Auto Notes" was generic and didn't convey the plugin's purpose of connecting knowledge through AI. A more distinctive name was needed as the project matured toward public release.
@@ -688,19 +782,23 @@ Each proposal is a separate file with metadata and proposed content.
 
 ---
 
-## 2026-03-12: `isDesktopOnly: true` in manifest
+## 2026-03-12: Mobile support with graceful degradation
 
-**Context**: The plugin uses `child_process` for yt-dlp/ffmpeg execution -- Node.js APIs unavailable on mobile.
+**Context**: The plugin uses `child_process` for yt-dlp/ffmpeg execution -- Node.js APIs unavailable on mobile. Originally marked `isDesktopOnly: true`.
 
-**Decision**: Mark the plugin as desktop-only in `manifest.json`.
+**Decision**: Set `isDesktopOnly: false` in `manifest.json` and gate desktop-only features behind `Platform.isDesktop`:
+- VideoModule is only initialized on desktop
+- Video-related ribbon icon (mic) hidden on mobile
+- `transcribeUrl` callback throws on mobile with a clear error message
+- All non-video features (elaboration, enrichment, summarize, tidy, organize, deep-dive, title, audio) work on both platforms
 
 **Alternatives considered**:
-- Graceful degradation (disable video features on mobile)
-- API-based video processing service
+- Keep desktop-only (excludes mobile users from all features)
+- API-based video processing service for mobile (adds complexity and external dependency)
 
-**Rationale**: Core video functionality depends on local CLI tools. Desktop-only is clearly communicated.
+**Rationale**: Most plugin features don't need Node.js APIs. Only video download/extraction requires local CLI tools. Mobile users get full access to AI-powered text features.
 
-**Impact**: Plugin will not appear in Obsidian's mobile plugin browser.
+**Impact**: Plugin is available on mobile. Video features are clearly gated. Settings tab hides video-only options on mobile.
 
 ---
 

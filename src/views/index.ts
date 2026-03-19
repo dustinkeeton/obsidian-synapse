@@ -5,4 +5,4 @@ export {
 export type {
 	UnifiedItem,
 	UnifiedViewCallbacks,
-} from './unified-proposal-view';
+} from './types';

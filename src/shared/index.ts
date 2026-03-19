@@ -19,7 +19,7 @@ export {
 	stripCodeFences,
 	blockquoteOriginal,
 } from './validation';
-export { CALLOUT_TYPES, buildCallout } from './callouts';
+export { CALLOUT_TYPES, buildCallout, ENRICHMENT_START, ENRICHMENT_END } from './callouts';
 export type { CalloutType } from './callouts';
 export {
 	parseFrontmatter,

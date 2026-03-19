@@ -18,6 +18,16 @@ export const CALLOUT_TYPES = {
 export type CalloutType = (typeof CALLOUT_TYPES)[keyof typeof CALLOUT_TYPES];
 
 /**
+ * Legacy comment-based enrichment section markers.
+ *
+ * Used by the enrichment module to wrap injected sections and by the
+ * summarize module to skip enrichment content during note scanning.
+ * Placed in shared/ because they are referenced cross-module.
+ */
+export const ENRICHMENT_START = '%% synapse-enrichment-start %%';
+export const ENRICHMENT_END = '%% synapse-enrichment-end %%';
+
+/**
  * Build an Obsidian callout block.
  *
  * @param type   - One of the CALLOUT_TYPES values (e.g. 'synapse-summary')
