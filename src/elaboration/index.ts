@@ -2,7 +2,7 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
 	buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles,
-	NotificationManager, sanitizeAIResponse, CheckpointManager, generateId,
+	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager, generateId,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { PlaceholderDetector } from './detector';
@@ -303,7 +303,7 @@ export class ElaborationModule {
 
 		const content = await this.plugin.app.vault.read(file);
 		const additions = editedContent ?? proposal.proposedAdditions;
-		const sanitizedAdditions = sanitizeAIResponse(additions);
+		const sanitizedAdditions = stripCodeFences(sanitizeAIResponse(additions));
 		const callout = buildCallout(
 			CALLOUT_TYPES.elaboration,
 			'Elaboration',

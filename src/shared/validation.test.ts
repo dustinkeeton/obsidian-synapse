@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { blockquoteOriginal, ensureWithinVault } from './validation';
+import { blockquoteOriginal, ensureWithinVault, stripCodeFences } from './validation';
 
 describe('blockquoteOriginal', () => {
 	it('converts plain text to a blockquote with attribution', () => {
@@ -106,5 +106,57 @@ describe('ensureWithinVault', () => {
 		expect(() => ensureWithinVault('/other/path', '/vault')).toThrow(
 			'Path escapes vault boundary'
 		);
+	});
+});
+
+describe('stripCodeFences', () => {
+	it('strips plain code fences wrapping content', () => {
+		const input = '```\nHello world\n```';
+		expect(stripCodeFences(input)).toBe('Hello world');
+	});
+
+	it('strips fences with "markdown" specifier', () => {
+		const input = '```markdown\n## Heading\nSome text\n```';
+		expect(stripCodeFences(input)).toBe('## Heading\nSome text');
+	});
+
+	it('strips fences with "md" specifier', () => {
+		const input = '```md\n## Heading\nSome text\n```';
+		expect(stripCodeFences(input)).toBe('## Heading\nSome text');
+	});
+
+	it('preserves multi-line content inside fences', () => {
+		const input = '```\nLine 1\nLine 2\nLine 3\n```';
+		expect(stripCodeFences(input)).toBe('Line 1\nLine 2\nLine 3');
+	});
+
+	it('returns input unchanged when there are no fences', () => {
+		const input = 'Just some regular text\nwith multiple lines';
+		expect(stripCodeFences(input)).toBe(input);
+	});
+
+	it('does not strip when only an opening fence is present', () => {
+		const input = '```\nSome content without closing fence';
+		expect(stripCodeFences(input)).toBe(input);
+	});
+
+	it('does not strip when only a closing fence is present', () => {
+		const input = 'Some content without opening fence\n```';
+		expect(stripCodeFences(input)).toBe(input);
+	});
+
+	it('does not strip internal code blocks within larger content', () => {
+		const input = 'Before\n```js\nconst x = 1;\n```\nAfter';
+		expect(stripCodeFences(input)).toBe(input);
+	});
+
+	it('trims leading and trailing whitespace', () => {
+		const input = '  \n```\nContent\n```\n  ';
+		expect(stripCodeFences(input)).toBe('Content');
+	});
+
+	it('handles empty content inside fences', () => {
+		const input = '```\n```';
+		expect(stripCodeFences(input)).toBe('');
 	});
 });

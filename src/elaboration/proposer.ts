@@ -1,6 +1,6 @@
 import { App } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences } from '../shared';
 import { DetectionResult, Proposal } from './types';
 
 export class ProposalGenerator {
@@ -23,10 +23,10 @@ export class ProposalGenerator {
 		}
 
 		const prompt = this.buildPrompt(content, detection, contextNotes);
-		const systemPrompt = `You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format.`;
+		const systemPrompt = `You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences.`;
 
 		const rawAdditions = await this.aiClient.complete(prompt, systemPrompt);
-		const proposedAdditions = sanitizeAIResponse(rawAdditions);
+		const proposedAdditions = stripCodeFences(sanitizeAIResponse(rawAdditions));
 
 		return {
 			id: this.generateId(),
