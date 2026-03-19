@@ -57,6 +57,28 @@ describe('Summarizer', () => {
 		expect(systemPrompt).toBe('My custom prompt');
 	});
 
+	it('includes image embed preservation instruction in user prompt', async () => {
+		await summarizer.summarize('Content with ![img](https://example.com/photo.jpg)', 'source', 'bullets');
+
+		const [userPrompt] = mockComplete.mock.calls[0];
+		expect(userPrompt).toContain(
+			'preserve them as markdown image embeds (![alt](url))'
+		);
+		expect(userPrompt).toContain('embed them as ![[image.jpg]]');
+	});
+
+	it('includes image embed instruction regardless of summary style', async () => {
+		for (const style of ['bullets', 'paragraph', 'key-points'] as const) {
+			mockComplete.mockClear();
+			await summarizer.summarize('Content', 'source', style);
+			const [userPrompt] = mockComplete.mock.calls[0];
+			expect(userPrompt).toContain(
+				'preserve them as markdown image embeds (![alt](url))'
+			);
+			expect(userPrompt).toContain('embed them as ![[image.jpg]]');
+		}
+	});
+
 	it('sanitizes AI response', async () => {
 		mockComplete.mockResolvedValue('<script>alert("xss")</script>Clean text');
 		const result = await summarizer.summarize('Content', 'source', 'bullets');
