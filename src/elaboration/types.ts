@@ -1,3 +1,5 @@
+import type { ImageAnalysis } from './image-analyzer';
+
 export type DetectionReason =
 	| { type: 'short-note'; wordCount: number }
 	| { type: 'todo-marker'; markers: string[] }
@@ -20,4 +22,6 @@ export interface Proposal {
 	insertionPoint: 'append' | 'after-heading' | 'replace-section';
 	insertionTarget?: string;
 	status: 'pending' | 'accepted' | 'rejected';
+	/** Image analysis results used during proposal generation, if any */
+	imageAnalysis?: ImageAnalysis[];
 }
