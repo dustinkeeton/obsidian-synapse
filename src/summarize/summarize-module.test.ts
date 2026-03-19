@@ -3,16 +3,23 @@ import { SummarizeModule } from './index';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { fetchPageContent } from './content-fetcher';
 
 // Mock the content fetcher to avoid real network calls
 vi.mock('./content-fetcher', () => ({
 	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
 }));
 
-// Mock the summarizer to return a canned summary
+// Mock the summarizer to return a canned summary.
+// Track the last created instance so tests can inspect call args.
+let lastSummarizerInstance: { summarize: ReturnType<typeof vi.fn> };
 vi.mock('./summarizer', () => ({
 	Summarizer: class MockSummarizer {
 		summarize = vi.fn().mockResolvedValue('This is a test summary.');
+		constructor() {
+			// eslint-disable-next-line @typescript-eslint/no-this-alias
+			lastSummarizerInstance = this as any;
+		}
 	},
 }));
 
@@ -170,5 +177,130 @@ describe('SummarizeModule organize scope', () => {
 		expect(organizeCallback).toHaveBeenCalledWith(specificFile);
 		// And it was called exactly once (not per-vault-file)
 		expect(organizeCallback).toHaveBeenCalledTimes(1);
+	});
+});
+
+// ── Content-Aware Template Detection Integration ──────────────────────
+
+const RECIPE_CONTENT = [
+	'# Chocolate Chip Cookies',
+	'',
+	'## Ingredients',
+	'- 2 cups all-purpose flour',
+	'- 1 cup butter',
+	'- 1 tsp vanilla extract',
+	'',
+	'## Instructions',
+	'1. Preheat oven to 375 degrees fahrenheit.',
+	'2. Whisk flour, baking soda, and salt together.',
+	'3. Stir in chocolate chips.',
+	'4. Bake for 10 minutes.',
+].join('\n');
+
+const NON_RECIPE_CONTENT = 'This is a plain news article about the economy.';
+
+describe('SummarizeModule content-aware templates', () => {
+	let module: SummarizeModule;
+	let mockPlugin: any;
+	let mockNotifications: ReturnType<typeof createMockNotifications>;
+	let settings: typeof DEFAULT_SETTINGS;
+
+	beforeEach(() => {
+		settings = structuredClone(DEFAULT_SETTINGS);
+		settings.summarize.autoOrganizeOnSummarize = false;
+
+		mockPlugin = {
+			app: {
+				vault: {
+					read: vi.fn().mockResolvedValue('# Note\n\nhttps://example.com\n'),
+					modify: vi.fn().mockResolvedValue(undefined),
+					create: vi.fn().mockResolvedValue(new TFile()),
+					getAbstractFileByPath: vi.fn().mockReturnValue(null),
+				},
+				metadataCache: {
+					getFileCache: vi.fn().mockReturnValue(null),
+				},
+				workspace: {
+					getActiveFile: vi.fn().mockReturnValue(null),
+				},
+			},
+			addCommand: vi.fn(),
+			registerEvent: vi.fn(),
+		};
+
+		mockNotifications = createMockNotifications();
+		module = new SummarizeModule(
+			mockPlugin as any,
+			() => settings,
+			mockNotifications as any,
+			createMockCheckpointManager() as any
+		);
+	});
+
+	async function invokeCommand(file: any): Promise<void> {
+		await module.onload();
+		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
+			(c: any) => c[0].id === 'synapse:summarize-current-note'
+		)[0];
+		await summarizeCmd.editorCallback({}, { file });
+	}
+
+	it('uses recipe template prompt when autoDetectTemplates is true and content matches', async () => {
+		settings.summarize.autoDetectTemplates = true;
+		settings.summarize.customPrompt = '';
+
+		// Return recipe content from the content fetcher
+		vi.mocked(fetchPageContent).mockResolvedValueOnce(RECIPE_CONTENT);
+
+		const file = new TFile('notes/recipe.md') as any;
+		await invokeCommand(file);
+
+		// The summarizer should have been called with the recipe template prompt
+		const summarizeCall = lastSummarizerInstance.summarize.mock.calls[0];
+		expect(summarizeCall[3]).toContain('Ingredients');
+		expect(summarizeCall[3]).toContain('Instructions');
+		expect(summarizeCall[3]).toContain('Notes');
+	});
+
+	it('skips template detection when autoDetectTemplates is false', async () => {
+		settings.summarize.autoDetectTemplates = false;
+		settings.summarize.customPrompt = '';
+
+		vi.mocked(fetchPageContent).mockResolvedValueOnce(RECIPE_CONTENT);
+
+		const file = new TFile('notes/recipe.md') as any;
+		await invokeCommand(file);
+
+		// The summarizer should have been called with undefined (style default)
+		const summarizeCall = lastSummarizerInstance.summarize.mock.calls[0];
+		expect(summarizeCall[3]).toBeUndefined();
+	});
+
+	it('customPrompt takes precedence over template detection', async () => {
+		settings.summarize.autoDetectTemplates = true;
+		settings.summarize.customPrompt = 'My custom override prompt';
+
+		vi.mocked(fetchPageContent).mockResolvedValueOnce(RECIPE_CONTENT);
+
+		const file = new TFile('notes/recipe.md') as any;
+		await invokeCommand(file);
+
+		// The summarizer should have been called with the custom prompt
+		const summarizeCall = lastSummarizerInstance.summarize.mock.calls[0];
+		expect(summarizeCall[3]).toBe('My custom override prompt');
+	});
+
+	it('falls back to style prompt when content does not match any template', async () => {
+		settings.summarize.autoDetectTemplates = true;
+		settings.summarize.customPrompt = '';
+
+		vi.mocked(fetchPageContent).mockResolvedValueOnce(NON_RECIPE_CONTENT);
+
+		const file = new TFile('notes/article.md') as any;
+		await invokeCommand(file);
+
+		// The summarizer should have been called with undefined (style default)
+		const summarizeCall = lastSummarizerInstance.summarize.mock.calls[0];
+		expect(summarizeCall[3]).toBeUndefined();
 	});
 });
