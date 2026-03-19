@@ -236,3 +236,21 @@ describe('CONTENT_TEMPLATES', () => {
 		expect(recipe!.prompt).toContain('Notes');
 	});
 });
+
+// ── RECIPE_PROMPT Content ────────────────────────────────────────────
+
+describe('RECIPE_PROMPT content', () => {
+	const recipe = CONTENT_TEMPLATES.find(t => t.id === 'recipe');
+
+	it('requires exact ingredient amounts', () => {
+		expect(recipe!.prompt).toContain('exact amount');
+	});
+
+	it('instructs to preserve original measurements', () => {
+		expect(recipe!.prompt).toContain('Preserve the original measurements');
+	});
+
+	it('instructs to include step images', () => {
+		expect(recipe!.prompt).toContain('![step description](image-url)');
+	});
+});

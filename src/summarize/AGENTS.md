@@ -167,7 +167,7 @@ Enrichment targets (standalone notes) always use `COMPREHENSIVE_SUMMARY_PROMPT` 
 
 | ID | Name | Detection | Prompt Format |
 |----|------|-----------|---------------|
-| `recipe` | Recipe | Keyword scoring (structural headers, cooking verbs, measurements); threshold >= 5 | Structured recipe: title, times, servings, ingredients list, numbered instructions, notes |
+| `recipe` | Recipe | Keyword scoring (structural headers, cooking verbs, measurements); threshold >= 5 | Structured recipe: title, times, servings, ingredients with exact amounts, numbered instructions with step images, notes |
 
 ### Adding New Templates
 
