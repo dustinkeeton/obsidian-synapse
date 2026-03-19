@@ -11,7 +11,7 @@ import { TidyModule } from './tidy';
 import { OrganizeModule } from './organize';
 import { DeepDiveModule } from './deep-dive';
 import { TitleModule } from './title';
-import { NotificationManager, CheckpointManager } from './shared';
+import { NotificationManager, CheckpointManager, removeNotificationStyles } from './shared';
 import type { DeferredTask, Checkpoint } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
@@ -38,6 +38,7 @@ export default class SynapsePlugin extends Plugin {
 	private organize!: OrganizeModule;
 	private deepDive!: DeepDiveModule;
 	private title!: TitleModule;
+	private startupTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -249,7 +250,7 @@ export default class SynapsePlugin extends Plugin {
 		});
 
 		// Startup check for incomplete checkpoints (delayed to avoid blocking load)
-		setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
+		this.startupTimeout = setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
 
 		// Unified transcription commands (audio on any platform, video on desktop only, image OCR)
 		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video) || this.settings.image.enabled;
@@ -273,6 +274,10 @@ export default class SynapsePlugin extends Plugin {
 	}
 
 	onunload(): void {
+		if (this.startupTimeout !== null) {
+			clearTimeout(this.startupTimeout);
+			this.startupTimeout = null;
+		}
 		this.elaboration?.onunload();
 		this.audio?.onunload();
 		this.video?.onunload();
@@ -283,6 +288,8 @@ export default class SynapsePlugin extends Plugin {
 		this.organize?.onunload();
 		this.deepDive?.onunload();
 		this.title?.onunload();
+		removeNotificationStyles();
+		UnifiedProposalView.removeStyles();
 	}
 
 	async loadSettings(): Promise<void> {

@@ -1059,6 +1059,10 @@ export class UnifiedProposalView extends ItemView {
 		}
 	}
 
+	static removeStyles(): void {
+		document.getElementById('synapse-unified-view-styles')?.remove();
+	}
+
 	// ── Styles ─────────────────────────────────────────────────
 
 	private injectStyles(): void {

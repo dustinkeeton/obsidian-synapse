@@ -17,6 +17,7 @@ export class ElaborationModule {
 	private proposer: ProposalGenerator;
 	private store: ProposalStore;
 	private scanInterval: number | null = null;
+	private startupTimeout: number | null = null;
 
 	/** Optional callback invoked after a proposal is accepted. Wired by main.ts for enrichment. */
 	onProposalAccepted: ((filePath: string) => void) | null = null;
@@ -69,7 +70,7 @@ export class ElaborationModule {
 
 		const settings = this.getSettings().elaboration;
 		if (settings.scanOnStartup) {
-			setTimeout(() => this.scanVault(), 5000);
+			this.startupTimeout = window.setTimeout(() => this.scanVault(), 5000);
 		}
 
 		if (settings.autoScanInterval > 0) {
@@ -81,6 +82,10 @@ export class ElaborationModule {
 	}
 
 	onunload(): void {
+		if (this.startupTimeout !== null) {
+			window.clearTimeout(this.startupTimeout);
+			this.startupTimeout = null;
+		}
 		if (this.scanInterval !== null) {
 			window.clearInterval(this.scanInterval);
 		}
