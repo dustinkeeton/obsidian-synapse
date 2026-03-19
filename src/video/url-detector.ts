@@ -1,10 +1,10 @@
 import { UrlDetectionResult } from './types';
 
 const YOUTUBE_REGEX =
-	/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]+)/;
-// Full TikTok URL: tiktok.com/@user/video/123
+	/(?:youtube\.com\/watch\?(?:[^#\s]*?&)?v=|youtu\.be\/|youtube\.com\/(?:shorts|embed|live)\/)([a-zA-Z0-9_-]+)/;
+// Full TikTok URL: tiktok.com/@user/video/123 (with optional locale prefix like /en/)
 const TIKTOK_VIDEO_REGEX =
-	/tiktok\.com\/@[\w.-]+\/video\/(\d+)/;
+	/tiktok\.com\/(?:[a-z]{2}(?:-[A-Za-z]{2,4})?\/)?@[\w.-]+\/video\/(\d+)/;
 // Short/share TikTok URLs: tiktok.com/t/..., vm.tiktok.com/..., vt.tiktok.com/...
 const TIKTOK_SHORT_REGEX =
 	/(?:vm\.|vt\.)?tiktok\.com\/(?:t\/)?[\w.-]+/;
