@@ -18,7 +18,11 @@ export {
 	sanitizeAIResponse,
 	stripCodeFences,
 	blockquoteOriginal,
+	parseTimestamp,
+	validateTimeRange,
+	formatTimeRange,
 } from './validation';
+export type { TimeRange } from './validation';
 export { CALLOUT_TYPES, buildCallout, ENRICHMENT_START, ENRICHMENT_END } from './callouts';
 export type { CalloutType } from './callouts';
 export {

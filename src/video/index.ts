@@ -3,8 +3,9 @@ import { SynapseSettings } from '../settings';
 import { AudioModule, TranscriptionResult } from '../audio';
 import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES,
-	CheckpointManager, generateId,
+	CheckpointManager, generateId, formatTimeRange,
 } from '../shared';
+import type { TimeRange } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { AudioExtractor } from './audio-extractor';
 import { findVideoUrls } from './note-scanner';
@@ -20,6 +21,7 @@ export type {
 	VideoSource,
 	VideoUrlEmbed,
 } from './types';
+export { AudioExtractor } from './audio-extractor';
 export { detectPlatform, isSupportedUrl } from './url-detector';
 export { findVideoUrls } from './note-scanner';
 
@@ -92,7 +94,25 @@ export class VideoModule {
 
 		update('Extracting audio...');
 		const fs = require('fs') as typeof import('fs');
-		const audioData = fs.readFileSync(extraction.audioPath);
+
+		let audioPath = extraction.audioPath;
+
+		// Clip audio to time range if specified
+		if (options?.timeRange) {
+			const { startSeconds, endSeconds } = options.timeRange;
+			if (extraction.metadata.duration && endSeconds > extraction.metadata.duration) {
+				throw new Error(
+					`End time (${endSeconds}s) exceeds video duration (${extraction.metadata.duration}s)`
+				);
+			}
+			update('Clipping audio to time range...');
+			const clippedPath = await this.extractor.clipAudio(audioPath, startSeconds, endSeconds);
+			// Clean up the original unclipped audio
+			try { fs.unlinkSync(audioPath); } catch { /* ignore */ }
+			audioPath = clippedPath;
+		}
+
+		const audioData = fs.readFileSync(audioPath);
 
 		update('Transcribing...');
 		const result = await this.audioModule.transcribe(
@@ -103,7 +123,7 @@ export class VideoModule {
 
 		// Clean up temp audio file
 		try {
-			fs.unlinkSync(extraction.audioPath);
+			fs.unlinkSync(audioPath);
 		} catch {
 			// Ignore cleanup errors
 		}
@@ -111,7 +131,7 @@ export class VideoModule {
 		return { ...result, videoVaultPath };
 	}
 
-	async transcribeUrlToActiveNote(url: string): Promise<void> {
+	async transcribeUrlToActiveNote(url: string, timeRange?: TimeRange): Promise<void> {
 		const activeFile = this.plugin.app.workspace.getActiveFile();
 		if (!activeFile) {
 			this.notifications.info('Open a note first to insert the transcription');
@@ -123,7 +143,7 @@ export class VideoModule {
 			`video-url-${Date.now()}`
 		);
 		try {
-			const result = await this.processUrl(url, { insertMode: true }, op);
+			const result = await this.processUrl(url, { insertMode: true, timeRange }, op);
 			const text = result.processed || result.raw;
 
 			const blockLines: string[] = [''];
@@ -134,9 +154,12 @@ export class VideoModule {
 				blockLines.push('');
 			}
 
+			const title = timeRange
+				? `Transcription of ${url} ${formatTimeRange(timeRange)}`
+				: `Transcription of ${url}`;
 			const callout = buildCallout(
 				CALLOUT_TYPES.transcription,
-				`Transcription of ${url}`,
+				title,
 				text,
 				true
 			);

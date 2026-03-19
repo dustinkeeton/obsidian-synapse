@@ -2,14 +2,15 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
-	CheckpointManager, generateId,
+	CheckpointManager, generateId, formatTimeRange,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, TimeRange } from '../shared';
 import { findAudioEmbeds } from './note-scanner';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
 import { Transcriber } from './transcriber';
 import { TranscribeOptions, TranscriptionResult } from './types';
+import type { AudioExtractor } from '../video/audio-extractor';
 
 export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from './note-scanner';
 export type { AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
@@ -25,7 +26,8 @@ export class AudioModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager
+		private checkpointManager: CheckpointManager,
+		private extractor?: AudioExtractor
 	) {
 		this.transcriber = new Transcriber(getSettings);
 		this.postProcessor = new PostProcessor(getSettings);
@@ -57,7 +59,7 @@ export class AudioModule {
 		return result;
 	}
 
-	async transcribeFileToActiveNote(file: TFile): Promise<void> {
+	async transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void> {
 		const activeFile = this.plugin.app.workspace.getActiveFile();
 		if (!activeFile) {
 			this.notifications.info('Open a note first to insert the transcription');
@@ -69,13 +71,39 @@ export class AudioModule {
 			`audio-${file.path}`
 		);
 		try {
-			const data = await this.plugin.app.vault.readBinary(file);
+			let data = await this.plugin.app.vault.readBinary(file);
+
+			// Clip audio to time range if specified (requires ffmpeg via AudioExtractor)
+			if (timeRange && this.extractor) {
+				const os = require('os') as typeof import('os');
+				const path = require('path') as typeof import('path');
+				const fs = require('fs') as typeof import('fs');
+
+				const tempPath = path.join(os.tmpdir(), `synapse-clip-src-${Date.now()}.mp3`);
+				fs.writeFileSync(tempPath, Buffer.from(data));
+
+				const clippedPath = await this.extractor.clipAudio(
+					tempPath, timeRange.startSeconds, timeRange.endSeconds
+				);
+
+				data = fs.readFileSync(clippedPath).buffer as ArrayBuffer;
+
+				// Clean up temp files
+				try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+				try { fs.unlinkSync(clippedPath); } catch { /* ignore */ }
+			} else if (timeRange && !this.extractor) {
+				this.notifications.info('Time-range clipping requires ffmpeg (desktop only). Transcribing full file.');
+			}
+
 			const result = await this.transcribe(data, file.name);
 			const text = result.processed || result.raw;
 
+			const title = timeRange && this.extractor
+				? `Transcription of ${file.name} ${formatTimeRange(timeRange)}`
+				: `Transcription of ${file.name}`;
 			const transcriptionBlock = buildCallout(
 				CALLOUT_TYPES.transcription,
-				`Transcription of ${file.name}`,
+				title,
 				text,
 				true
 			);

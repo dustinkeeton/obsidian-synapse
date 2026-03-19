@@ -3,7 +3,7 @@ import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
 import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
-import { VideoModule } from './video';
+import { VideoModule, AudioExtractor } from './video';
 import { ImageModule } from './image';
 import { EnrichmentModule } from './enrichment';
 import { SummarizeModule } from './summarize';
@@ -62,7 +62,9 @@ export default class SynapsePlugin extends Plugin {
 		// Initialize modules (Audio before Video since Video depends on Audio)
 		// Pass checkpointManager to each module instead of letting them create their own
 		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager);
-		this.audio = new AudioModule(this, getSettings, this.notifications, this.checkpointManager);
+		// Create a shared AudioExtractor on desktop for clipping support
+		const audioExtractor = Platform.isDesktop ? new AudioExtractor(getSettings) : undefined;
+		this.audio = new AudioModule(this, getSettings, this.notifications, this.checkpointManager, audioExtractor);
 		if (Platform.isDesktop) {
 			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager);
 		}
@@ -312,9 +314,9 @@ export default class SynapsePlugin extends Plugin {
 				video: this.settings.video.enabled && this.video !== null,
 			},
 			{
-				onTranscribeFile: (file) => this.audio.transcribeFileToActiveNote(file),
+				onTranscribeFile: (file, timeRange) => this.audio.transcribeFileToActiveNote(file, timeRange),
 				onTranscribeUrl: this.video
-					? (url) => this.video!.transcribeUrlToActiveNote(url)
+					? (url, timeRange) => this.video!.transcribeUrlToActiveNote(url, timeRange)
 					: async () => { /* unreachable: video hidden on mobile */ },
 			}
 		).open();
