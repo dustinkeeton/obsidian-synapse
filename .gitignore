@@ -11,5 +11,6 @@ data.json
 *.tmp
 .DS_Store
 coverage/
-.claude/
+.claude/worktrees
+.claude/settings.local.json
 .obsidian/
