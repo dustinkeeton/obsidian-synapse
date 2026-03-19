@@ -5,5 +5,6 @@
   "minAppVersion": "0.15.0",
   "description": "AI-powered note elaboration, audio transcription, and video transcription for Obsidian",
   "author": "Dustin Keeton",
+  "authorUrl": "https://github.com/dustinkeeton",
   "isDesktopOnly": false
 }
