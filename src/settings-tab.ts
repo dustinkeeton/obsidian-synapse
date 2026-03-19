@@ -14,7 +14,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		// ── AI Configuration ──
-		containerEl.createEl('h2', { text: 'AI Configuration' });
+		new Setting(containerEl).setHeading().setName('AI Configuration');
 
 		new Setting(containerEl)
 			.setName('AI Provider')
@@ -114,7 +114,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		);
 
 		// ── Note Elaboration ──
-		containerEl.createEl('h2', { text: 'Note Elaboration' });
+		new Setting(containerEl).setHeading().setName('Note Elaboration');
 
 		new Setting(containerEl)
 			.setName('Enable elaboration')
@@ -181,10 +181,10 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Media Transcription ──
-		containerEl.createEl('h2', { text: 'Media Transcription' });
+		new Setting(containerEl).setHeading().setName('Media Transcription');
 
 		// ── Audio Transcription ──
-		containerEl.createEl('h3', { text: 'Audio Transcription' });
+		new Setting(containerEl).setHeading().setName('Audio Transcription');
 
 		new Setting(containerEl)
 			.setName('Enable audio transcription')
@@ -287,7 +287,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		// ── Video Transcription (desktop only — requires yt-dlp + ffmpeg) ──
 		if (Platform.isDesktop) {
-			containerEl.createEl('h3', { text: 'Video Transcription' });
+			new Setting(containerEl).setHeading().setName('Video Transcription');
 
 			new Setting(containerEl)
 				.setName('Enable video transcription')
@@ -350,7 +350,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		}
 
 		// ── Note Enrichment ──
-		containerEl.createEl('h2', { text: 'Note Enrichment' });
+		new Setting(containerEl).setHeading().setName('Note Enrichment');
 
 		new Setting(containerEl)
 			.setName('Enable enrichment')
@@ -466,7 +466,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		);
 
 		// Weight settings
-		containerEl.createEl('h3', { text: 'Proximity Weights' });
+		new Setting(containerEl).setHeading().setName('Proximity Weights');
 
 		type WeightKey = keyof import('./settings').EnrichmentWeightSettings;
 		const weightFields: Array<{ key: WeightKey; name: string; desc: string }> = [
@@ -499,11 +499,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		}
 
 		// Tag Vocabulary
-		containerEl.createEl('h3', { text: 'Tag Vocabulary' });
-		containerEl.createEl('p', {
-			text: 'Define metadata tag categories. Tags classify notes (status, type, source) — topics become [[links]] instead.',
-			cls: 'setting-item-description',
-		});
+		new Setting(containerEl).setHeading().setName('Tag Vocabulary').setDesc('Define metadata tag categories. Tags classify notes (status, type, source) — topics become [[links]] instead.');
 
 		for (let i = 0; i < this.plugin.settings.enrichment.tagVocabulary.length; i++) {
 			const entry = this.plugin.settings.enrichment.tagVocabulary[i];
@@ -550,7 +546,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Summarize ──
-		containerEl.createEl('h2', { text: 'Summarize' });
+		new Setting(containerEl).setHeading().setName('Summarize');
 
 		new Setting(containerEl)
 			.setName('Enable summarize')
@@ -661,7 +657,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Note Tidy ──
-		containerEl.createEl('h2', { text: 'Note Tidy' });
+		new Setting(containerEl).setHeading().setName('Note Tidy');
 
 		new Setting(containerEl)
 			.setName('Enable tidy')
@@ -676,7 +672,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Note Organize ──
-		containerEl.createEl('h2', { text: 'Note Organize' });
+		new Setting(containerEl).setHeading().setName('Note Organize');
 
 		new Setting(containerEl)
 			.setName('Enable organize')
@@ -734,7 +730,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Deep Dive ──
-		containerEl.createEl('h2', { text: 'Deep Dive' });
+		new Setting(containerEl).setHeading().setName('Deep Dive');
 
 		new Setting(containerEl)
 			.setName('Enable deep dive')
