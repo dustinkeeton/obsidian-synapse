@@ -172,6 +172,12 @@ export interface DeepDiveSettings {
 	autoOrganizeOnAccept: boolean;
 }
 
+export interface TitleSettings {
+	enabled: boolean;
+	proposalFolderPath: string;
+	checkAfterOperations: boolean;
+}
+
 export interface SynapseSettings {
 	ai: AISettings;
 	elaboration: ElaborationSettings;
@@ -182,6 +188,7 @@ export interface SynapseSettings {
 	tidy: TidySettings;
 	organize: OrganizeSettings;
 	deepDive: DeepDiveSettings;
+	title: TitleSettings;
 }
 
 export const DEFAULT_SETTINGS: SynapseSettings = {
@@ -308,5 +315,10 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		excludeTags: ['no-deep-dive'],
 		autoEnrichOnAccept: true,
 		autoOrganizeOnAccept: false,
+	},
+	title: {
+		enabled: true,
+		proposalFolderPath: '.synapse/title-proposals',
+		checkAfterOperations: true,
 	},
 };

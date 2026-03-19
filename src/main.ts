@@ -9,6 +9,7 @@ import { SummarizeModule } from './summarize';
 import { TidyModule } from './tidy';
 import { OrganizeModule } from './organize';
 import { DeepDiveModule } from './deep-dive';
+import { TitleModule } from './title';
 import { NotificationManager, CheckpointManager } from './shared';
 import type { DeferredTask, Checkpoint } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
@@ -33,6 +34,7 @@ export default class SynapsePlugin extends Plugin {
 	private tidy!: TidyModule;
 	private organize!: OrganizeModule;
 	private deepDive!: DeepDiveModule;
+	private title!: TitleModule;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -75,6 +77,7 @@ export default class SynapsePlugin extends Plugin {
 		this.tidy = new TidyModule(this, getSettings, this.notifications);
 		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager);
 		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager);
+		this.title = new TitleModule(this, getSettings, this.notifications);
 
 		// Register the unified proposal view
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
@@ -87,6 +90,8 @@ export default class SynapsePlugin extends Plugin {
 				onOrganizeReject: (id) => this.organize.rejectProposal(id),
 				onDeepDiveAccept: (id) => this.deepDive.acceptProposal(id),
 				onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
+				onTitleAccept: (id) => this.title.acceptProposal(id),
+				onTitleReject: (id) => this.title.rejectProposal(id),
 				onCheckpointDiscard: (id) => this.discardCheckpoint(id),
 				onCheckpointResume: (id) => this.resumeCheckpoint(id),
 			});
@@ -98,6 +103,7 @@ export default class SynapsePlugin extends Plugin {
 		this.enrichment.onViewRefreshNeeded = refreshView;
 		this.organize.onViewRefreshNeeded = refreshView;
 		this.deepDive.onViewRefreshNeeded = refreshView;
+		this.title.onViewRefreshNeeded = refreshView;
 
 		// Load enabled modules
 		if (this.settings.elaboration.enabled) {
@@ -124,28 +130,68 @@ export default class SynapsePlugin extends Plugin {
 		if (this.settings.deepDive.enabled) {
 			await this.deepDive.onload();
 		}
+		if (this.settings.title.enabled) {
+			await this.title.onload();
+		}
 
 		// Wire enrichment callbacks -- triggers after other processes complete
 		if (this.settings.enrichment.enabled && this.settings.enrichment.autoEnrich) {
 			this.elaboration.onProposalAccepted = (filePath: string) => {
 				this.enrichment.enrich(filePath, 'elaboration');
+				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
+					this.title.checkTitle(filePath);
+				}
 			};
 			this.audio.onTranscriptionComplete = (filePath: string) => {
 				this.enrichment.enrich(filePath, 'transcription');
+				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
+					this.title.checkTitle(filePath);
+				}
 			};
 			if (this.video) {
 				this.video.onTranscriptionComplete = (filePath: string) => {
 					this.enrichment.enrich(filePath, 'transcription');
+					if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
+						this.title.checkTitle(filePath);
+					}
 				};
 			}
 			this.summarize.onSummaryComplete = (filePath: string) => {
 				this.enrichment.enrich(filePath, 'summarization');
+				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
+					this.title.checkTitle(filePath);
+				}
 			};
 			if (this.settings.deepDive.autoEnrichOnAccept) {
 				this.deepDive.onNoteAccepted = (filePath: string) => {
 					this.enrichment.enrich(filePath, 'deep-dive');
+					if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
+						this.title.checkTitle(filePath);
+					}
 				};
 			}
+		}
+
+		// Wire title check when enrichment is disabled but title is enabled
+		if (this.settings.title.enabled && this.settings.title.checkAfterOperations &&
+			!(this.settings.enrichment.enabled && this.settings.enrichment.autoEnrich)) {
+			this.elaboration.onProposalAccepted = (filePath: string) => {
+				this.title.checkTitle(filePath);
+			};
+			this.audio.onTranscriptionComplete = (filePath: string) => {
+				this.title.checkTitle(filePath);
+			};
+			if (this.video) {
+				this.video.onTranscriptionComplete = (filePath: string) => {
+					this.title.checkTitle(filePath);
+				};
+			}
+			this.summarize.onSummaryComplete = (filePath: string) => {
+				this.title.checkTitle(filePath);
+			};
+			this.deepDive.onNoteAccepted = (filePath: string) => {
+				this.title.checkTitle(filePath);
+			};
 		}
 
 		// Wire deep-dive auto-organize callback
@@ -219,6 +265,7 @@ export default class SynapsePlugin extends Plugin {
 		this.tidy?.onunload();
 		this.organize?.onunload();
 		this.deepDive?.onunload();
+		this.title?.onunload();
 	}
 
 	async loadSettings(): Promise<void> {
@@ -372,6 +419,11 @@ export default class SynapsePlugin extends Plugin {
 		const deepDiveProposals = await this.deepDive.getPendingProposals();
 		for (const p of deepDiveProposals) {
 			items.push({ kind: 'deep-dive', data: p });
+		}
+
+		const titleProposals = await this.title.getPendingProposals();
+		for (const p of titleProposals) {
+			items.push({ kind: 'title', data: p });
 		}
 
 		// Gather incomplete checkpoints for the sidebar banner
