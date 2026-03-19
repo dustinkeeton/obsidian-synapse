@@ -1,5 +1,6 @@
 import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse } from '../shared';
+import { resolveExpertise, buildElixrPromptFragment } from '../elixr';
 import { ExtractedTopic } from './types';
 
 /**
@@ -23,7 +24,7 @@ export class NoteGenerator {
 		sourceTitle: string,
 		sourceContent: string
 	): Promise<string> {
-		const systemPrompt = `You are a knowledge base author. Write a comprehensive note about a specific topic. The note should be well-structured markdown suitable for an Obsidian vault.
+		let systemPrompt = `You are a knowledge base author. Write a comprehensive note about a specific topic. The note should be well-structured markdown suitable for an Obsidian vault.
 
 Rules:
 - Start with a brief frontmatter block (tags, related)
@@ -33,6 +34,14 @@ Rules:
 - If URLs are provided, reference them naturally in the text
 - Do NOT include the note title as an H1 — Obsidian uses the filename
 - Write in an encyclopedic, informative tone`;
+
+		// Inject EliXr expertise context when enabled
+		const settings = this.getSettings();
+		if (settings.elixr.enabled) {
+			// Resolve against the source content (parent note) for topical context
+			const { topic: resolvedTopic, level } = resolveExpertise(sourceContent, settings.elixr);
+			systemPrompt += buildElixrPromptFragment(resolvedTopic, level);
+		}
 
 		const urlContext = topic.relatedUrls.length > 0
 			? `\nRelevant URLs: ${topic.relatedUrls.join(', ')}`

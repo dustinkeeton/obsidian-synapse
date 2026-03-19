@@ -1,5 +1,6 @@
 import { AIClient, sanitizeAIResponse } from '../shared';
 import { SynapseSettings } from '../settings';
+import { resolveExpertise, buildElixrPromptFragment } from '../elixr';
 
 type SummaryStyle = 'bullets' | 'paragraph' | 'key-points';
 
@@ -22,7 +23,14 @@ export class Summarizer {
 		style: SummaryStyle,
 		customPrompt?: string
 	): Promise<string> {
-		const systemPrompt = customPrompt || STYLE_PROMPTS[style];
+		let systemPrompt = customPrompt || STYLE_PROMPTS[style];
+
+		// Inject EliXr expertise context when enabled
+		const settings = this.getSettings();
+		if (settings.elixr.enabled) {
+			const { topic, level } = resolveExpertise(content, settings.elixr);
+			systemPrompt += buildElixrPromptFragment(topic, level);
+		}
 
 		const userPrompt = `Source: ${source}\n\n${content}`;
 

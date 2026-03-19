@@ -3,6 +3,7 @@ import type SynapsePlugin from './main';
 import { MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
 import { addEnhancedSlider } from './shared';
+import type { ExpertiseLevel } from './elixr';
 
 export class SynapseSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: SynapsePlugin) {
@@ -112,6 +113,104 @@ export class SynapseSettingTab extends PluginSettingTab {
 				},
 			},
 		);
+
+		// ── EliXr (Explain Like I'm X) ──
+		containerEl.createEl('h2', { text: 'EliXr — Per-Topic Expertise' });
+		containerEl.createEl('p', {
+			text: 'Declare your expertise level per topic so AI output matches your background. Affects summarization, elaboration, and deep dive.',
+			cls: 'setting-item-description',
+		});
+
+		new Setting(containerEl)
+			.setName('Enable EliXr')
+			.setDesc('Inject expertise-level context into AI prompts')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.elixr.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.elixr.enabled = value;
+						await this.plugin.saveSettings();
+						this.display();
+					})
+			);
+
+		if (this.plugin.settings.elixr.enabled) {
+			new Setting(containerEl)
+				.setName('Default expertise level')
+				.setDesc('Used when a note does not match any defined topic')
+				.addDropdown((dd) =>
+					dd
+						.addOptions({
+							beginner: 'Beginner',
+							intermediate: 'Intermediate',
+							advanced: 'Advanced',
+							expert: 'Expert',
+						})
+						.setValue(this.plugin.settings.elixr.defaultLevel)
+						.onChange(async (value) => {
+							this.plugin.settings.elixr.defaultLevel = value as ExpertiseLevel;
+							await this.plugin.saveSettings();
+						})
+				);
+
+			// Existing topic-level entries
+			containerEl.createEl('h3', { text: 'Expertise Profile' });
+
+			for (let i = 0; i < this.plugin.settings.elixr.entries.length; i++) {
+				const entry = this.plugin.settings.elixr.entries[i];
+
+				new Setting(containerEl)
+					.setName(entry.topic || '(empty topic)')
+					.addText((text) =>
+						text
+							.setPlaceholder('Topic name')
+							.setValue(entry.topic)
+							.onChange(async (value) => {
+								this.plugin.settings.elixr.entries[i].topic = value;
+								await this.plugin.saveSettings();
+							})
+					)
+					.addDropdown((dd) =>
+						dd
+							.addOptions({
+								beginner: 'Beginner',
+								intermediate: 'Intermediate',
+								advanced: 'Advanced',
+								expert: 'Expert',
+							})
+							.setValue(entry.level)
+							.onChange(async (value) => {
+								this.plugin.settings.elixr.entries[i].level = value as ExpertiseLevel;
+								await this.plugin.saveSettings();
+							})
+					)
+					.addExtraButton((btn) =>
+						btn
+							.setIcon('trash')
+							.setTooltip('Remove')
+							.onClick(async () => {
+								this.plugin.settings.elixr.entries.splice(i, 1);
+								await this.plugin.saveSettings();
+								this.display();
+							})
+					);
+			}
+
+			new Setting(containerEl)
+				.addButton((btn) =>
+					btn
+						.setButtonText('Add topic')
+						.setCta()
+						.onClick(async () => {
+							this.plugin.settings.elixr.entries.push({
+								topic: '',
+								level: this.plugin.settings.elixr.defaultLevel,
+							});
+							await this.plugin.saveSettings();
+							this.display();
+						})
+				);
+		}
 
 		// ── Note Elaboration ──
 		containerEl.createEl('h2', { text: 'Note Elaboration' });

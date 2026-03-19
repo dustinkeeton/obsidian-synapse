@@ -181,6 +181,7 @@ export interface SynapseSettings {
 	tidy: TidySettings;
 	organize: OrganizeSettings;
 	deepDive: DeepDiveSettings;
+	elixr: import('./elixr').ElixrSettings;
 }
 
 export const DEFAULT_SETTINGS: SynapseSettings = {
@@ -306,5 +307,10 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		excludeTags: ['no-deep-dive'],
 		autoEnrichOnAccept: true,
 		autoOrganizeOnAccept: false,
+	},
+	elixr: {
+		enabled: false,
+		entries: [],
+		defaultLevel: 'intermediate',
 	},
 };
