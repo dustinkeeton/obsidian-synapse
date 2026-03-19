@@ -1,6 +1,6 @@
 {
 	"name": "synapse",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "AI-powered note elaboration, audio transcription, and video transcription for Obsidian",
 	"main": "main.js",
 	"scripts": {
