@@ -1,35 +1,45 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import { AudioEmbed } from '../audio';
 import { VideoUrlEmbed } from '../video';
+import { ImageEmbed } from '../image';
 
 export class NoteMediaModal extends Modal {
 	private selectedAudio: Set<string>;
 	private selectedVideo: Set<string>;
+	private selectedImage: Set<string>;
 
 	constructor(
 		app: App,
 		private audioEmbeds: AudioEmbed[],
 		private videoEmbeds: VideoUrlEmbed[],
+		private imageEmbeds: ImageEmbed[],
 		private callbacks: {
 			onTranscribeAudio: (embeds: AudioEmbed[]) => Promise<void>;
 			onTranscribeVideo: (embeds: VideoUrlEmbed[]) => Promise<void>;
+			onExtractImages: (embeds: ImageEmbed[]) => Promise<void>;
 		}
 	) {
 		super(app);
 		this.selectedAudio = new Set(audioEmbeds.map(e => e.fileName));
 		this.selectedVideo = new Set(videoEmbeds.map(e => e.url));
+		this.selectedImage = new Set(imageEmbeds.map(e => e.fileName));
 	}
 
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl('h2', { text: 'Transcribe Media from Note' });
+		contentEl.createEl('h2', { text: 'Process Media from Note' });
 
 		const audioCount = this.audioEmbeds.length;
 		const videoCount = this.videoEmbeds.length;
+		const imageCount = this.imageEmbeds.length;
+		const parts: string[] = [];
+		if (audioCount > 0) parts.push(`${audioCount} audio file(s)`);
+		if (videoCount > 0) parts.push(`${videoCount} video URL(s)`);
+		if (imageCount > 0) parts.push(`${imageCount} image(s)`);
 		contentEl.createEl('p', {
-			text: `Found ${audioCount} audio file(s) and ${videoCount} video URL(s).`,
+			text: `Found ${parts.join(', ')}.`,
 		});
 
 		// Select all / none
@@ -38,30 +48,34 @@ export class NoteMediaModal extends Modal {
 				btn.setButtonText('Select All').onClick(() => {
 					this.selectedAudio = new Set(this.audioEmbeds.map(e => e.fileName));
 					this.selectedVideo = new Set(this.videoEmbeds.map(e => e.url));
-					this.renderCheckboxes(audioListEl, videoListEl);
+					this.selectedImage = new Set(this.imageEmbeds.map(e => e.fileName));
+					this.renderCheckboxes(audioListEl, videoListEl, imageListEl);
 				});
 			})
 			.addButton((btn) => {
 				btn.setButtonText('Select None').onClick(() => {
 					this.selectedAudio.clear();
 					this.selectedVideo.clear();
-					this.renderCheckboxes(audioListEl, videoListEl);
+					this.selectedImage.clear();
+					this.renderCheckboxes(audioListEl, videoListEl, imageListEl);
 				});
 			});
 
 		const audioListEl = contentEl.createDiv({ cls: 'synapse-audio-list' });
 		const videoListEl = contentEl.createDiv({ cls: 'synapse-video-list' });
-		this.renderCheckboxes(audioListEl, videoListEl);
+		const imageListEl = contentEl.createDiv({ cls: 'synapse-image-list' });
+		this.renderCheckboxes(audioListEl, videoListEl, imageListEl);
 
-		// Transcribe button
+		// Process button
 		new Setting(contentEl).addButton((btn) => {
-			btn.setButtonText('Transcribe Selected')
+			btn.setButtonText('Process Selected')
 				.setCta()
 				.onClick(async () => {
 					const chosenAudio = this.audioEmbeds.filter(e => this.selectedAudio.has(e.fileName));
 					const chosenVideo = this.videoEmbeds.filter(e => this.selectedVideo.has(e.url));
+					const chosenImage = this.imageEmbeds.filter(e => this.selectedImage.has(e.fileName));
 
-					if (chosenAudio.length === 0 && chosenVideo.length === 0) {
+					if (chosenAudio.length === 0 && chosenVideo.length === 0 && chosenImage.length === 0) {
 						new Notice('Please select at least one item');
 						return;
 					}
@@ -74,13 +88,21 @@ export class NoteMediaModal extends Modal {
 					if (chosenVideo.length > 0) {
 						await this.callbacks.onTranscribeVideo(chosenVideo);
 					}
+					if (chosenImage.length > 0) {
+						await this.callbacks.onExtractImages(chosenImage);
+					}
 				});
 		});
 	}
 
-	private renderCheckboxes(audioContainer: HTMLElement, videoContainer: HTMLElement): void {
+	private renderCheckboxes(
+		audioContainer: HTMLElement,
+		videoContainer: HTMLElement,
+		imageContainer: HTMLElement
+	): void {
 		audioContainer.empty();
 		videoContainer.empty();
+		imageContainer.empty();
 
 		if (this.audioEmbeds.length > 0) {
 			audioContainer.createEl('h4', { text: 'Audio Files' });
@@ -114,6 +136,25 @@ export class NoteMediaModal extends Modal {
 									this.selectedVideo.add(embed.url);
 								} else {
 									this.selectedVideo.delete(embed.url);
+								}
+							});
+					});
+			}
+		}
+
+		if (this.imageEmbeds.length > 0) {
+			imageContainer.createEl('h4', { text: 'Images (OCR)' });
+			for (const embed of this.imageEmbeds) {
+				new Setting(imageContainer)
+					.setName(embed.fileName)
+					.addToggle((toggle) => {
+						toggle
+							.setValue(this.selectedImage.has(embed.fileName))
+							.onChange((val) => {
+								if (val) {
+									this.selectedImage.add(embed.fileName);
+								} else {
+									this.selectedImage.delete(embed.fileName);
 								}
 							});
 					});
