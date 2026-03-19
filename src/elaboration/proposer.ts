@@ -1,29 +1,43 @@
 import { App } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse, stripCodeFences } from '../shared';
+import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import { DetectionResult, Proposal } from './types';
 
 export class ProposalGenerator {
 	private aiClient: AIClient;
+	private imageAnalyzer: ImageAnalyzer;
 
 	constructor(
 		private app: App,
 		private getSettings: () => SynapseSettings
 	) {
 		this.aiClient = new AIClient(getSettings);
+		this.imageAnalyzer = new ImageAnalyzer(app, getSettings);
 	}
 
 	async generate(detection: DetectionResult): Promise<Proposal> {
 		const content = await this.app.vault.adapter.read(detection.notePath);
-		const settings = this.getSettings().elaboration;
+		const settings = this.getSettings();
 
 		let contextNotes = '';
-		if (settings.proposal.includeSourceContext) {
+		if (settings.elaboration.proposal.includeSourceContext) {
 			contextNotes = await this.gatherContext(detection.notePath);
 		}
 
-		const prompt = this.buildPrompt(content, detection, contextNotes);
-		const systemPrompt = `You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. If the source content contains image URLs, preserve them as markdown image embeds (![alt](url)) rather than describing the image in text. For internal images referenced as [[image.jpg]], embed them as ![[image.jpg]].`;
+		// Gather image context if image module is enabled
+		let imageContext = '';
+		let analyses: ImageAnalysis[] = [];
+		if (settings.image.enabled) {
+			const result = await this.gatherImageContext(detection.notePath, content);
+			imageContext = result.context;
+			analyses = result.analyses;
+		}
+
+		const prompt = this.buildPrompt(content, detection, contextNotes, imageContext);
+		const systemPrompt = imageContext
+			? 'You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. Image analysis has been provided -- use the descriptions to write contextually aware content that references what the images actually show. Preserve all image embeds in their original format.'
+			: 'You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. If the source content contains image URLs, preserve them as markdown image embeds (![alt](url)) rather than describing the image in text. For internal images referenced as [[image.jpg]], embed them as ![[image.jpg]].';
 
 		const rawAdditions = await this.aiClient.complete(prompt, systemPrompt);
 		const proposedAdditions = stripCodeFences(sanitizeAIResponse(rawAdditions));
@@ -37,13 +51,15 @@ export class ProposalGenerator {
 			proposedAdditions,
 			insertionPoint: 'append',
 			status: 'pending',
+			imageAnalysis: analyses.length > 0 ? analyses : undefined,
 		};
 	}
 
 	private buildPrompt(
 		content: string,
 		detection: DetectionResult,
-		contextNotes: string
+		contextNotes: string,
+		imageContext: string
 	): string {
 		const reasonDescriptions = detection.reasons.map(r => {
 			switch (r.type) {
@@ -74,6 +90,10 @@ export class ProposalGenerator {
 			prompt += `\n\nContext from related notes:\n${contextNotes}`;
 		}
 
+		if (imageContext) {
+			prompt += `\n\nImage analysis from this note:\n${imageContext}`;
+		}
+
 		return prompt;
 	}
 
@@ -95,6 +115,31 @@ export class ProposalGenerator {
 			}
 		}
 		return contextParts.join('\n\n');
+	}
+
+	private async gatherImageContext(
+		notePath: string,
+		content: string
+	): Promise<{ context: string; analyses: ImageAnalysis[] }> {
+		try {
+			const analyses = await this.imageAnalyzer.analyzeImagesInNote(notePath, content);
+			if (analyses.length === 0) return { context: '', analyses: [] };
+
+			const parts = analyses.map(a => {
+				let section = `**Image: ${a.reference}**\n- Description: ${a.description}`;
+				if (a.locationHints && a.locationHints !== 'No location clues detected.') {
+					section += `\n- Location: ${a.locationHints}`;
+				}
+				if (a.metadata && a.metadata !== 'No metadata observations.') {
+					section += `\n- Metadata: ${a.metadata}`;
+				}
+				return section;
+			});
+			return { context: parts.join('\n\n'), analyses };
+		} catch (error) {
+			console.warn('[Synapse] Failed to gather image context:', error);
+			return { context: '', analyses: [] };
+		}
 	}
 
 	private generateId(): string {
