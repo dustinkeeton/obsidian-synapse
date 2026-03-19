@@ -13,6 +13,8 @@ export class SynapseSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		new Setting(containerEl).setHeading().setName(`Synapse v${this.plugin.manifest.version}`);
+
 		// ── AI Configuration ──
 		new Setting(containerEl).setHeading().setName('AI Configuration');
 
