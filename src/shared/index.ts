@@ -16,6 +16,7 @@ export {
 	sanitizePath,
 	ensureWithinVault,
 	sanitizeAIResponse,
+	stripCodeFences,
 	blockquoteOriginal,
 } from './validation';
 export { CALLOUT_TYPES, buildCallout } from './callouts';

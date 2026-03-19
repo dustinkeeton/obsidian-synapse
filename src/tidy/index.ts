@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, NotificationManager, parseFrontmatter, sanitizeAIResponse, serializeFrontmatter, withRetry, generateId } from '../shared';
+import { AIClient, NotificationManager, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
 
@@ -102,7 +102,7 @@ export class TidyModule {
 
 			// Sanitize AI output then strip any code fences the AI may have wrapped it in
 			const sanitized = sanitizeAIResponse(tidiedBody);
-			const cleaned = this.stripCodeFences(sanitized);
+			const cleaned = stripCodeFences(sanitized);
 
 			// Reassemble with original frontmatter
 			const finalContent = parsed.frontmatter
@@ -128,17 +128,6 @@ export class TidyModule {
 		await this.plugin.app.vault.modify(file, snapshot.originalContent);
 		await this.store.remove(file.path);
 		this.notifications.success('Tidy undone');
-	}
-
-	/** Remove wrapping code fences that LLMs sometimes add despite instructions. */
-	private stripCodeFences(text: string): string {
-		const trimmed = text.trim();
-		if (trimmed.startsWith('```') && trimmed.endsWith('```')) {
-			// Remove first line (```markdown or ```) and last line (```)
-			const lines = trimmed.split('\n');
-			return lines.slice(1, -1).join('\n');
-		}
-		return trimmed;
 	}
 
 }
