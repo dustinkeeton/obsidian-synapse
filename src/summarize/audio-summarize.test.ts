@@ -46,6 +46,8 @@ vi.mock('../shared', () => ({
 	buildCallout: vi.fn((_type: string, title: string, content: string) =>
 		`\n> [!synapse-summary] ${title}\n> ${content}\n`
 	),
+	ENRICHMENT_START: '%% synapse-enrichment-start %%',
+	ENRICHMENT_END: '%% synapse-enrichment-end %%',
 	CheckpointManager: class MockCheckpointManager {
 		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
 		completeItem = vi.fn().mockResolvedValue(null);
