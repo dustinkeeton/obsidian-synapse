@@ -64,6 +64,37 @@ describe('detectPlatform', () => {
 			expect(result?.platform).toBe('tiktok');
 			expect(result?.videoId).toBe('short-url');
 		});
+
+		it('strips query params from full video URL', () => {
+			const result = detectPlatform(
+				'https://www.tiktok.com/@username/video/1234567890123456789?is_from_webapp=1&sender_device=pc&web_id=7890'
+			);
+			expect(result?.platform).toBe('tiktok');
+			expect(result?.videoId).toBe('1234567890123456789');
+			expect(result?.url).toBe('https://www.tiktok.com/@username/video/1234567890123456789');
+		});
+
+		it('strips query params from short share URL', () => {
+			const result = detectPlatform(
+				'https://www.tiktok.com/t/ZTh7nJafa/?refer=creator'
+			);
+			expect(result?.platform).toBe('tiktok');
+			expect(result?.url).toBe('https://www.tiktok.com/t/ZTh7nJafa/');
+		});
+
+		it('strips fragment from TikTok URL', () => {
+			const result = detectPlatform(
+				'https://www.tiktok.com/@user/video/123456789#some-fragment'
+			);
+			expect(result?.url).toBe('https://www.tiktok.com/@user/video/123456789');
+		});
+
+		it('strips query params from vm.tiktok.com URL', () => {
+			const result = detectPlatform(
+				'https://vm.tiktok.com/ZMxxxxxxx/?sender_device=mobile'
+			);
+			expect(result?.url).toBe('https://vm.tiktok.com/ZMxxxxxxx/');
+		});
 	});
 
 	describe('unsupported URLs', () => {

@@ -3,6 +3,7 @@ import { CALLOUT_TYPES } from '../shared';
 import { SummarizeTarget } from './types';
 
 const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
+const TIKTOK_HOST_RE = /(?:vm\.|vt\.)?tiktok\.com/;
 const TRANSCRIPTION_HEADER = /^>\s*\*\*Transcription of (.+?)\*\*$/;
 const CALLOUT_TRANSCRIPTION_HEADER = new RegExp(
 	`^>\\s*\\[!${CALLOUT_TYPES.transcription}\\][-+]?\\s+Transcription of (.+)$`
@@ -132,21 +133,34 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
 }
 
 /**
+ * Strip query parameters and fragment from TikTok URLs for comparison.
+ * Non-TikTok URLs are returned unchanged.
+ */
+function normalizeTikTokUrl(url: string): string {
+	if (TIKTOK_HOST_RE.test(url)) {
+		return url.replace(/[?#].*$/, '');
+	}
+	return url;
+}
+
+/**
  * Check if a summary block already exists below a given line for the specified source.
  * Looks within 3 lines below, allowing blank lines and blockquotes.
  */
 export function hasSummaryBelow(lines: string[], startLine: number, source: string): boolean {
+	const normalized = normalizeTikTokUrl(source);
 	for (let j = startLine + 1; j < lines.length && j <= startLine + 3; j++) {
+		const line = lines[j];
 		// Legacy format: > **Summary of <source>**
-		if (lines[j].includes(`**Summary of ${source}**`)) {
+		if (line.includes(`**Summary of ${source}**`) || line.includes(`**Summary of ${normalized}**`)) {
 			return true;
 		}
 		// Callout format: > [!synapse-summary] Summary of <source>
-		if (lines[j].includes(CALLOUT_SUMMARY_PREFIX) && lines[j].includes(`Summary of ${source}`)) {
+		if (line.includes(CALLOUT_SUMMARY_PREFIX) && (line.includes(`Summary of ${source}`) || line.includes(`Summary of ${normalized}`))) {
 			return true;
 		}
 		// Stop at non-empty, non-blockquote content
-		if (lines[j].trim().length > 0 && !lines[j].startsWith('>') && lines[j].trim() !== '') {
+		if (line.trim().length > 0 && !line.startsWith('>') && line.trim() !== '') {
 			break;
 		}
 	}
@@ -157,17 +171,19 @@ export function hasSummaryBelow(lines: string[], startLine: number, source: stri
  * Check if a transcription block exists below a URL line.
  */
 function hasTranscriptionBelow(lines: string[], urlLine: number, url: string): boolean {
+	const normalized = normalizeTikTokUrl(url);
 	for (let j = urlLine + 1; j < lines.length && j <= urlLine + 5; j++) {
+		const line = lines[j];
 		// Legacy format: > **Transcription of <url>**
-		if (lines[j].includes(`**Transcription of ${url}**`)) {
+		if (line.includes(`**Transcription of ${url}**`) || line.includes(`**Transcription of ${normalized}**`)) {
 			return true;
 		}
 		// Callout format: > [!synapse-transcription] Transcription of <url>
-		if (lines[j].includes(CALLOUT_TRANSCRIPTION_PREFIX) && lines[j].includes(`Transcription of ${url}`)) {
+		if (line.includes(CALLOUT_TRANSCRIPTION_PREFIX) && (line.includes(`Transcription of ${url}`) || line.includes(`Transcription of ${normalized}`))) {
 			return true;
 		}
 		// Stop at non-empty, non-blockquote content
-		if (lines[j].trim().length > 0 && !lines[j].startsWith('>') && lines[j].trim() !== '') {
+		if (line.trim().length > 0 && !line.startsWith('>') && line.trim() !== '') {
 			break;
 		}
 	}
