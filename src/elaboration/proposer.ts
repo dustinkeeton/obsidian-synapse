@@ -23,7 +23,7 @@ export class ProposalGenerator {
 		}
 
 		const prompt = this.buildPrompt(content, detection, contextNotes);
-		const systemPrompt = `You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. If the source content contains image URLs, preserve them as markdown image embeds (![alt](url)) rather than describing the image in text.`;
+		const systemPrompt = `You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. If the source content contains image URLs, preserve them as markdown image embeds (![alt](url)) rather than describing the image in text. For internal images referenced as [[image.jpg]], embed them as ![[image.jpg]].`;
 
 		const rawAdditions = await this.aiClient.complete(prompt, systemPrompt);
 		const proposedAdditions = stripCodeFences(sanitizeAIResponse(rawAdditions));

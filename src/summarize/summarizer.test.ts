@@ -64,6 +64,7 @@ describe('Summarizer', () => {
 		expect(userPrompt).toContain(
 			'preserve them as markdown image embeds (![alt](url))'
 		);
+		expect(userPrompt).toContain('embed them as ![[image.jpg]]');
 	});
 
 	it('includes image embed instruction regardless of summary style', async () => {
@@ -74,6 +75,7 @@ describe('Summarizer', () => {
 			expect(userPrompt).toContain(
 				'preserve them as markdown image embeds (![alt](url))'
 			);
+			expect(userPrompt).toContain('embed them as ![[image.jpg]]');
 		}
 	});
 

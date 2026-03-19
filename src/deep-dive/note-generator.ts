@@ -31,7 +31,7 @@ Rules:
 - Be thorough but concise — aim for 200-500 words of body content
 - Include [[wikilinks]] to related concepts where natural
 - If URLs are provided, reference them naturally in the text
-- If image URLs are present, preserve them as markdown image embeds (![alt](url)) rather than describing the image
+- If image URLs are present, preserve them as markdown image embeds (![alt](url)) rather than describing the image. For internal images like [[image.jpg]], embed them as ![[image.jpg]]
 - Do NOT include the note title as an H1 — Obsidian uses the filename
 - Write in an encyclopedic, informative tone`;
 

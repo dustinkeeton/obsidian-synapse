@@ -42,6 +42,7 @@ describe('NoteGenerator — image embed preservation', () => {
 		expect(systemPrompt).toContain(
 			'preserve them as markdown image embeds (![alt](url))'
 		);
+		expect(systemPrompt).toContain('embed them as ![[image.jpg]]');
 	});
 
 	it('image embed rule appears alongside the URL reference rule', async () => {
@@ -60,5 +61,6 @@ describe('NoteGenerator — image embed preservation', () => {
 		expect(systemPrompt).toContain(
 			'preserve them as markdown image embeds (![alt](url))'
 		);
+		expect(systemPrompt).toContain('embed them as ![[image.jpg]]');
 	});
 });

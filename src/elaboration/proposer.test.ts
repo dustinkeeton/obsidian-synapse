@@ -53,6 +53,7 @@ describe('ProposalGenerator — image embed preservation', () => {
 		expect(systemPrompt).toContain(
 			'preserve them as markdown image embeds (![alt](url))'
 		);
+		expect(systemPrompt).toContain('embed them as ![[image.jpg]]');
 	});
 
 	it('includes image embed instruction for stub detection as well', async () => {
@@ -68,5 +69,6 @@ describe('ProposalGenerator — image embed preservation', () => {
 		expect(systemPrompt).toContain(
 			'preserve them as markdown image embeds (![alt](url))'
 		);
+		expect(systemPrompt).toContain('embed them as ![[image.jpg]]');
 	});
 });
