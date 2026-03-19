@@ -53,6 +53,11 @@ export function scoreRecipeContent(content: string): number {
 	let score = 0;
 	const lower = content.toLowerCase();
 
+	// JSON-LD structured recipe data — strong signal
+	if (content.startsWith('STRUCTURED RECIPE DATA')) {
+		score += 10;
+	}
+
 	// Structural signals — 2 points each
 	for (const pattern of STRUCTURAL_PATTERNS) {
 		if (pattern.test(content)) {
@@ -92,6 +97,9 @@ const RECIPE_PROMPT =
 	'1. Numbered steps, each a clear action. If the source includes images associated with a step, include them using `![step description](image-url)` on a new line after the step text.\n\n' +
 	'### Notes\n' +
 	'- Any tips, substitutions, or storage instructions from the original content\n\n' +
+	'The source may contain the ingredient list in multiple places (e.g., structured data at the top and a narrative list further down). ' +
+	'Scan the entire content and use the most complete and specific ingredient list — typically the one with exact measurements. ' +
+	'If structured recipe data is present at the beginning of the content, prefer it as the canonical source.\n\n' +
 	'Extract all information from the provided content. If a field is not present in the source, write "Not specified". ' +
 	'Do not invent information that is not in the original text.';
 

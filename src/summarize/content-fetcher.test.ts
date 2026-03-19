@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { extractReadableText, fetchPageContent } from './content-fetcher';
+import { extractReadableText, fetchPageContent, extractJsonLdRecipes, formatRecipeStructuredData } from './content-fetcher';
 import { isSupportedUrl } from '../video';
 
 /**
@@ -121,5 +121,199 @@ describe('extractReadableText', () => {
 		const text = extractReadableText(html);
 		expect(text).not.toContain('comment');
 		expect(text).toContain('Text');
+	});
+});
+
+// ── extractJsonLdRecipes ──────────────────────────────────────────────
+
+describe('extractJsonLdRecipes', () => {
+	it('extracts a direct Recipe JSON-LD', () => {
+		const html = `<html><head><script type="application/ld+json">{"@type":"Recipe","name":"Pancakes","recipeIngredient":["1 cup flour","2 eggs"]}</script></head><body></body></html>`;
+		const recipes = extractJsonLdRecipes(html);
+		expect(recipes).toHaveLength(1);
+		expect(recipes[0].name).toBe('Pancakes');
+		expect(recipes[0].recipeIngredient).toEqual(['1 cup flour', '2 eggs']);
+	});
+
+	it('extracts recipes from @graph wrapper', () => {
+		const html = `<script type="application/ld+json">{"@graph":[{"@type":"WebPage","name":"Site"},{"@type":"Recipe","name":"Soup","recipeIngredient":["1 lb chicken"]}]}</script>`;
+		const recipes = extractJsonLdRecipes(html);
+		expect(recipes).toHaveLength(1);
+		expect(recipes[0].name).toBe('Soup');
+	});
+
+	it('extracts recipes from top-level array', () => {
+		const html = `<script type="application/ld+json">[{"@type":"Recipe","name":"Cake"},{"@type":"Recipe","name":"Cookies"}]</script>`;
+		const recipes = extractJsonLdRecipes(html);
+		expect(recipes).toHaveLength(2);
+		expect(recipes[0].name).toBe('Cake');
+		expect(recipes[1].name).toBe('Cookies');
+	});
+
+	it('handles @type as array', () => {
+		const html = `<script type="application/ld+json">{"@type":["Recipe","HowTo"],"name":"Bread"}</script>`;
+		const recipes = extractJsonLdRecipes(html);
+		expect(recipes).toHaveLength(1);
+		expect(recipes[0].name).toBe('Bread');
+	});
+
+	it('returns empty array when no ld+json scripts exist', () => {
+		const html = `<html><head><script>var x = 1;</script></head><body>Hello</body></html>`;
+		expect(extractJsonLdRecipes(html)).toEqual([]);
+	});
+
+	it('skips non-Recipe types', () => {
+		const html = `<script type="application/ld+json">{"@type":"Article","name":"News"}</script>`;
+		expect(extractJsonLdRecipes(html)).toEqual([]);
+	});
+
+	it('skips malformed JSON', () => {
+		const html = `<script type="application/ld+json">{not valid json}</script>`;
+		expect(extractJsonLdRecipes(html)).toEqual([]);
+	});
+
+	it('handles multiple script blocks', () => {
+		const html = `
+			<script type="application/ld+json">{"@type":"Article","name":"News"}</script>
+			<script type="application/ld+json">{"@type":"Recipe","name":"Tacos"}</script>
+		`;
+		const recipes = extractJsonLdRecipes(html);
+		expect(recipes).toHaveLength(1);
+		expect(recipes[0].name).toBe('Tacos');
+	});
+
+	it('handles recipes with missing optional fields', () => {
+		const html = `<script type="application/ld+json">{"@type":"Recipe"}</script>`;
+		const recipes = extractJsonLdRecipes(html);
+		expect(recipes).toHaveLength(1);
+		expect(recipes[0].name).toBeUndefined();
+		expect(recipes[0].recipeIngredient).toBeUndefined();
+	});
+
+	it('handles HowToStep instruction objects', () => {
+		const html = `<script type="application/ld+json">{"@type":"Recipe","name":"Pasta","recipeInstructions":[{"@type":"HowToStep","text":"Boil water","image":"http://img.com/step1.jpg"}]}</script>`;
+		const recipes = extractJsonLdRecipes(html);
+		expect(recipes).toHaveLength(1);
+		expect(recipes[0].recipeInstructions).toHaveLength(1);
+	});
+
+	it('handles string instructions', () => {
+		const html = `<script type="application/ld+json">{"@type":"Recipe","name":"Toast","recipeInstructions":["Put bread in toaster","Wait 2 minutes"]}</script>`;
+		const recipes = extractJsonLdRecipes(html);
+		expect(recipes[0].recipeInstructions).toEqual(['Put bread in toaster', 'Wait 2 minutes']);
+	});
+});
+
+// ── formatRecipeStructuredData ────────────────────────────────────────
+
+describe('formatRecipeStructuredData', () => {
+	it('formats a complete recipe', () => {
+		const result = formatRecipeStructuredData([{
+			name: 'Pancakes',
+			recipeIngredient: ['1 cup flour', '2 eggs'],
+			recipeInstructions: ['Mix ingredients', 'Cook on griddle'],
+			image: 'http://img.com/pancakes.jpg',
+			prepTime: 'PT10M',
+			cookTime: 'PT15M',
+			totalTime: 'PT25M',
+			recipeYield: '4 servings',
+		}]);
+		expect(result).toContain('STRUCTURED RECIPE DATA');
+		expect(result).toContain('Recipe: Pancakes');
+		expect(result).toContain('- 1 cup flour');
+		expect(result).toContain('- 2 eggs');
+		expect(result).toContain('1. Mix ingredients');
+		expect(result).toContain('2. Cook on griddle');
+		expect(result).toContain('Images: http://img.com/pancakes.jpg');
+		expect(result).toContain('Prep time: PT10M');
+		expect(result).toContain('Cook time: PT15M');
+		expect(result).toContain('Total time: PT25M');
+		expect(result).toContain('Yield: 4 servings');
+	});
+
+	it('returns empty string for empty array', () => {
+		expect(formatRecipeStructuredData([])).toBe('');
+	});
+
+	it('omits missing sections', () => {
+		const result = formatRecipeStructuredData([{ name: 'Simple' }]);
+		expect(result).toContain('Recipe: Simple');
+		expect(result).not.toContain('Ingredients:');
+		expect(result).not.toContain('Instructions:');
+		expect(result).not.toContain('Images:');
+	});
+
+	it('formats multiple recipes', () => {
+		const result = formatRecipeStructuredData([
+			{ name: 'Recipe A', recipeIngredient: ['1 cup sugar'] },
+			{ name: 'Recipe B', recipeIngredient: ['2 tbsp oil'] },
+		]);
+		expect(result).toContain('Recipe: Recipe A');
+		expect(result).toContain('Recipe: Recipe B');
+		expect(result).toContain('- 1 cup sugar');
+		expect(result).toContain('- 2 tbsp oil');
+	});
+
+	it('includes step images from HowToStep objects', () => {
+		const result = formatRecipeStructuredData([{
+			name: 'Pasta',
+			recipeInstructions: [
+				{ '@type': 'HowToStep', text: 'Boil water', image: 'http://img.com/boil.jpg' },
+			],
+		}]);
+		expect(result).toContain('1. Boil water [Image: http://img.com/boil.jpg]');
+	});
+
+	it('handles image as array', () => {
+		const result = formatRecipeStructuredData([{
+			name: 'Cake',
+			image: ['http://img.com/a.jpg', 'http://img.com/b.jpg'],
+		}]);
+		expect(result).toContain('Images: http://img.com/a.jpg, http://img.com/b.jpg');
+	});
+
+	it('handles image as string', () => {
+		const result = formatRecipeStructuredData([{
+			name: 'Cake',
+			image: 'http://img.com/cake.jpg',
+		}]);
+		expect(result).toContain('Images: http://img.com/cake.jpg');
+	});
+
+	it('handles recipeYield as array', () => {
+		const result = formatRecipeStructuredData([{
+			name: 'Bread',
+			recipeYield: ['1 loaf', '8 slices'],
+		}]);
+		expect(result).toContain('Yield: 1 loaf, 8 slices');
+	});
+});
+
+// ── fetchPageContent integration ──────────────────────────────────────
+
+describe('fetchPageContent with JSON-LD', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('prepends structured recipe data when JSON-LD is present', async () => {
+		const { requestUrl } = await import('obsidian');
+		const html = `<html><head><script type="application/ld+json">{"@type":"Recipe","name":"Test","recipeIngredient":["1 cup flour"]}</script></head><body><p>Some article text</p></body></html>`;
+		vi.mocked(requestUrl).mockResolvedValue({ text: html } as never);
+
+		const result = await fetchPageContent('https://example.com/recipe', 10000);
+		expect(result).toMatch(/^STRUCTURED RECIPE DATA/);
+		expect(result).toContain('- 1 cup flour');
+		expect(result).toContain('Some article text');
+	});
+
+	it('returns plain text for non-recipe pages', async () => {
+		const { requestUrl } = await import('obsidian');
+		const html = `<html><body><p>Just a blog post</p></body></html>`;
+		vi.mocked(requestUrl).mockResolvedValue({ text: html } as never);
+
+		const result = await fetchPageContent('https://example.com/blog', 10000);
+		expect(result).not.toContain('STRUCTURED RECIPE DATA');
+		expect(result).toContain('Just a blog post');
 	});
 });
