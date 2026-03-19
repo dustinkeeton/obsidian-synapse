@@ -1,4 +1,5 @@
 import { TFile } from 'obsidian';
+import { TimeRange } from '../shared/validation';
 
 export interface TranscriptionResult {
 	raw: string;
@@ -19,6 +20,7 @@ export interface TranscribeOptions {
 	language?: string;
 	postProcess?: boolean;
 	sourceName?: string;
+	timeRange?: TimeRange;
 }
 
 export interface AudioEmbed {

@@ -2,18 +2,22 @@ import { App, Modal, Notice, Platform, Setting, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AUDIO_EXTENSIONS } from '../audio';
 import { detectPlatform } from '../video';
+import { validateTimeRange } from '../shared/validation';
+import type { TimeRange } from '../shared/validation';
 
 export class UnifiedTranscriptionModal extends Modal {
 	private selectedFile: TFile | null = null;
 	private url = '';
+	private startTime = '';
+	private endTime = '';
 
 	constructor(
 		app: App,
 		private getSettings: () => SynapseSettings,
 		private enabledModules: { audio: boolean; video: boolean },
 		private callbacks: {
-			onTranscribeFile: (file: TFile) => Promise<void>;
-			onTranscribeUrl: (url: string) => Promise<void>;
+			onTranscribeFile: (file: TFile, timeRange?: TimeRange) => Promise<void>;
+			onTranscribeUrl: (url: string, timeRange?: TimeRange) => Promise<void>;
 		}
 	) {
 		super(app);
@@ -85,21 +89,56 @@ export class UnifiedTranscriptionModal extends Modal {
 				});
 		}
 
+		// Time Range section (desktop only — requires ffmpeg)
+		if (Platform.isDesktop) {
+			contentEl.createEl('h3', { text: 'Time Range (optional)' });
+
+			new Setting(contentEl)
+				.setName('Start time')
+				.setDesc('Format: HH:MM:SS or MM:SS. Leave blank for full file.')
+				.addText((text) => {
+					text.setPlaceholder('00:00:00');
+					text.onChange((value) => { this.startTime = value; });
+				});
+
+			new Setting(contentEl)
+				.setName('End time')
+				.addText((text) => {
+					text.setPlaceholder('00:00:00');
+					text.onChange((value) => { this.endTime = value; });
+				});
+		}
+
 		// Transcribe button
 		new Setting(contentEl).addButton((btn) => {
 			btn.setButtonText('Transcribe')
 				.setCta()
 				.onClick(async () => {
+					// Validate time range if provided
+					let timeRange: TimeRange | undefined;
+					if (this.startTime || this.endTime) {
+						if (!this.startTime || !this.endTime) {
+							new Notice('Both start and end times are required');
+							return;
+						}
+						try {
+							timeRange = validateTimeRange(this.startTime, this.endTime);
+						} catch (error) {
+							new Notice(error instanceof Error ? error.message : String(error));
+							return;
+						}
+					}
+
 					if (this.selectedFile) {
 						this.close();
-						await this.callbacks.onTranscribeFile(this.selectedFile);
+						await this.callbacks.onTranscribeFile(this.selectedFile, timeRange);
 					} else if (this.url) {
 						if (!detectPlatform(this.url)) {
 							new Notice('Unsupported URL. Please use YouTube or TikTok.');
 							return;
 						}
 						this.close();
-						await this.callbacks.onTranscribeUrl(this.url);
+						await this.callbacks.onTranscribeUrl(this.url, timeRange);
 					} else {
 						new Notice('Please select a file or enter a URL');
 					}

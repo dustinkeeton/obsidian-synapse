@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { blockquoteOriginal, ensureWithinVault, stripCodeFences } from './validation';
+import {
+	blockquoteOriginal, ensureWithinVault, stripCodeFences,
+	parseTimestamp, validateTimeRange, formatTimeRange,
+} from './validation';
 
 describe('blockquoteOriginal', () => {
 	it('converts plain text to a blockquote with attribution', () => {
@@ -106,6 +109,90 @@ describe('ensureWithinVault', () => {
 		expect(() => ensureWithinVault('/other/path', '/vault')).toThrow(
 			'Path escapes vault boundary'
 		);
+	});
+});
+
+describe('parseTimestamp', () => {
+	it('parses HH:MM:SS format', () => {
+		expect(parseTimestamp('01:30:00')).toBe(5400);
+	});
+
+	it('parses MM:SS format', () => {
+		expect(parseTimestamp('05:30')).toBe(330);
+	});
+
+	it('parses raw seconds', () => {
+		expect(parseTimestamp('90')).toBe(90);
+	});
+
+	it('parses zero timestamp', () => {
+		expect(parseTimestamp('0:00')).toBe(0);
+	});
+
+	it('parses 00:00:00', () => {
+		expect(parseTimestamp('00:00:00')).toBe(0);
+	});
+
+	it('rejects non-numeric input', () => {
+		expect(() => parseTimestamp('abc')).toThrow('Invalid timestamp format');
+	});
+
+	it('rejects negative-looking input', () => {
+		expect(() => parseTimestamp('-1:00')).toThrow('Invalid timestamp format');
+	});
+
+	it('rejects empty string', () => {
+		expect(() => parseTimestamp('')).toThrow('Timestamp cannot be empty');
+	});
+
+	it('trims whitespace', () => {
+		expect(parseTimestamp('  05:30  ')).toBe(330);
+	});
+});
+
+describe('validateTimeRange', () => {
+	it('returns a valid TimeRange', () => {
+		const range = validateTimeRange('01:00', '05:00');
+		expect(range).toEqual({ startSeconds: 60, endSeconds: 300 });
+	});
+
+	it('rejects end <= start', () => {
+		expect(() => validateTimeRange('05:00', '01:00')).toThrow('End time must be after start time');
+	});
+
+	it('rejects equal start and end', () => {
+		expect(() => validateTimeRange('01:00', '01:00')).toThrow('End time must be after start time');
+	});
+
+	it('rejects end > duration', () => {
+		expect(() => validateTimeRange('00:00', '02:00', 60)).toThrow('exceeds media duration');
+	});
+
+	it('allows end = duration exactly', () => {
+		const range = validateTimeRange('00:00', '01:00', 60);
+		expect(range).toEqual({ startSeconds: 0, endSeconds: 60 });
+	});
+});
+
+describe('formatTimeRange', () => {
+	it('formats MM:SS when under an hour', () => {
+		expect(formatTimeRange({ startSeconds: 60, endSeconds: 300 }))
+			.toBe('[01:00 – 05:00]');
+	});
+
+	it('formats HH:MM:SS when hours > 0', () => {
+		expect(formatTimeRange({ startSeconds: 0, endSeconds: 5400 }))
+			.toBe('[00:00:00 – 01:30:00]');
+	});
+
+	it('uses HH:MM:SS when start has hours', () => {
+		expect(formatTimeRange({ startSeconds: 3600, endSeconds: 3660 }))
+			.toBe('[01:00:00 – 01:01:00]');
+	});
+
+	it('formats zero-start correctly', () => {
+		expect(formatTimeRange({ startSeconds: 0, endSeconds: 90 }))
+			.toBe('[00:00 – 01:30]');
 	});
 });
 

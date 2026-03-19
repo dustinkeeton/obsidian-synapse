@@ -16,11 +16,14 @@ export interface VideoSource {
 	duration?: number;
 }
 
+import { TimeRange } from '../shared/validation';
+
 export interface VideoProcessOptions {
 	postProcess?: boolean;
 	extractFrames?: boolean;
 	outputPath?: string;
 	insertMode?: boolean;
+	timeRange?: TimeRange;
 }
 
 export interface ExtractionResult {
