@@ -133,6 +133,7 @@ export interface SummarizeSettings {
 	maxContentLength: number;
 	summaryStyle: 'bullets' | 'paragraph' | 'key-points';
 	customPrompt: string;
+	autoDetectTemplates: boolean;
 	excludeFolders: string[];
 	excludeTags: string[];
 	autoOrganizeOnSummarize: boolean;
@@ -278,6 +279,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		maxContentLength: 4000,
 		summaryStyle: 'bullets',
 		customPrompt: '',
+		autoDetectTemplates: true,
 		excludeFolders: ['templates', '.synapse'],
 		excludeTags: ['no-summarize'],
 		autoOrganizeOnSummarize: false,

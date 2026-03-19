@@ -13,6 +13,7 @@ import { findSummarizeTargets } from './note-scanner';
 import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
 import { Summarizer } from './summarizer';
+import { detectContentTemplate } from './templates';
 import { SummarizeTarget } from './types';
 
 export type { SummarizeTarget } from './types';
@@ -396,11 +397,21 @@ export class SummarizeModule {
 					}
 
 					op.update(`Summarizing ${target.source}`);
+
+					// Priority chain: customPrompt > template match > style default
+					let effectivePrompt = settings.customPrompt || undefined;
+					if (!effectivePrompt && settings.autoDetectTemplates) {
+						const template = detectContentTemplate(textToSummarize);
+						if (template) {
+							effectivePrompt = template.prompt;
+						}
+					}
+
 					const summary = await this.summarizer.summarize(
 						textToSummarize,
 						target.source,
 						settings.summaryStyle,
-						settings.customPrompt || undefined
+						effectivePrompt
 					);
 
 					const callout = buildCallout(

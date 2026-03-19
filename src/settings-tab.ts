@@ -582,6 +582,16 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
+		new Setting(containerEl)
+			.setName('Auto-detect content templates')
+			.setDesc('Automatically detect content type (e.g. recipes) and use a specialized summary format')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.summarize.autoDetectTemplates)
+				.onChange(async (value) => {
+					this.plugin.settings.summarize.autoDetectTemplates = value;
+					await this.plugin.saveSettings();
+				}));
+
 		addEnhancedSlider(
 			new Setting(containerEl)
 				.setName('Max content length')
