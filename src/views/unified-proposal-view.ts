@@ -3,16 +3,18 @@ import type { Proposal } from '../elaboration';
 import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
+import type { TitleProposal } from '../title';
 import type { Checkpoint } from '../shared';
 
 export const UNIFIED_VIEW_TYPE = 'synapse-proposals';
 
-/** Wrapper to unify elaboration, enrichment, organize, and deep-dive proposals in one list. */
+/** Wrapper to unify elaboration, enrichment, organize, deep-dive, and title proposals in one list. */
 export type UnifiedItem =
 	| { kind: 'elaboration'; data: Proposal }
 	| { kind: 'enrichment'; data: EnrichmentProposal }
 	| { kind: 'organize'; data: OrganizeProposal }
-	| { kind: 'deep-dive'; data: DeepDiveProposal };
+	| { kind: 'deep-dive'; data: DeepDiveProposal }
+	| { kind: 'title'; data: TitleProposal };
 
 export interface UnifiedViewCallbacks {
 	// Elaboration
@@ -27,6 +29,9 @@ export interface UnifiedViewCallbacks {
 	// Deep Dive
 	onDeepDiveAccept: (id: string) => Promise<void>;
 	onDeepDiveReject: (id: string) => Promise<void>;
+	// Title
+	onTitleAccept: (id: string) => Promise<void>;
+	onTitleReject: (id: string) => Promise<void>;
 	// Checkpoints
 	onCheckpointDiscard: (id: string) => Promise<void>;
 	onCheckpointResume: (id: string) => Promise<void>;
@@ -48,6 +53,7 @@ export class UnifiedProposalView extends ItemView {
 	private reviewingEnrichment: EnrichmentProposal | null = null;
 	private reviewingOrganize: OrganizeProposal | null = null;
 	private reviewingDeepDive: DeepDiveProposal | null = null;
+	private reviewingTitle: TitleProposal | null = null;
 
 	private acceptAllInProgress = false;
 	private rejectAllInProgress = false;
@@ -116,6 +122,12 @@ export class UnifiedProposalView extends ItemView {
 			);
 			if (!exists) this.reviewingDeepDive = null;
 		}
+		if (this.reviewingTitle) {
+			const exists = items.some(
+				i => i.kind === 'title' && i.data.id === this.reviewingTitle!.id
+			);
+			if (!exists) this.reviewingTitle = null;
+		}
 		this.render();
 	}
 
@@ -128,6 +140,8 @@ export class UnifiedProposalView extends ItemView {
 			this.renderOrganizeReview(this.reviewingOrganize);
 		} else if (this.reviewingDeepDive) {
 			this.renderDeepDiveReview(this.reviewingDeepDive);
+		} else if (this.reviewingTitle) {
+			this.renderTitleReview(this.reviewingTitle);
 		} else {
 			this.renderList();
 		}
@@ -147,6 +161,7 @@ export class UnifiedProposalView extends ItemView {
 		this.reviewingEnrichment = null;
 		this.reviewingOrganize = null;
 		this.reviewingDeepDive = null;
+		this.reviewingTitle = null;
 		this.render();
 	}
 
@@ -222,6 +237,9 @@ export class UnifiedProposalView extends ItemView {
 			case 'deep-dive':
 				await this.callbacks.onDeepDiveAccept(item.data.id);
 				break;
+			case 'title':
+				await this.callbacks.onTitleAccept(item.data.id);
+				break;
 		}
 	}
 
@@ -236,6 +254,8 @@ export class UnifiedProposalView extends ItemView {
 				return `Organize: ${item.data.sourceNotePath}`;
 			case 'deep-dive':
 				return `Deep Dive: ${(item.data as DeepDiveProposal).topic.title}`;
+			case 'title':
+				return `Title: ${item.data.sourceNotePath}`;
 		}
 	}
 
@@ -300,6 +320,9 @@ export class UnifiedProposalView extends ItemView {
 				break;
 			case 'deep-dive':
 				await this.callbacks.onDeepDiveReject(item.data.id);
+				break;
+			case 'title':
+				await this.callbacks.onTitleReject(item.data.id);
 				break;
 		}
 	}
@@ -401,8 +424,10 @@ export class UnifiedProposalView extends ItemView {
 					this.renderEnrichmentCard(section, item.data);
 				} else if (item.kind === 'organize') {
 					this.renderOrganizeCard(section, item.data);
-				} else {
+				} else if (item.kind === 'deep-dive') {
 					this.renderDeepDiveCard(section, item.data);
+				} else if (item.kind === 'title') {
+					this.renderTitleCard(section, item.data);
 				}
 			}
 		}
@@ -879,6 +904,113 @@ export class UnifiedProposalView extends ItemView {
 		});
 	}
 
+	// ── Title Card ───────────────────────────────────────────
+
+	private renderTitleCard(container: HTMLElement, proposal: TitleProposal): void {
+		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--title' });
+
+		card.createEl('span', { text: 'Title', cls: 'synapse-badge synapse-badge--title' });
+
+		const triggerLabel = proposal.trigger === 'untitled' ? 'Untitled note' : 'Content mismatch';
+		card.createEl('small', {
+			text: `${triggerLabel} | "${proposal.currentTitle}" -> "${proposal.proposedTitle}"`,
+			cls: 'synapse-reasons',
+		});
+
+		card.createEl('p', {
+			text: proposal.reasoning,
+			cls: 'synapse-preview',
+		});
+
+		const actions = card.createDiv({ cls: 'synapse-actions' });
+
+		const viewBtn = actions.createEl('button', { text: 'Review' });
+		viewBtn.addEventListener('click', () => {
+			this.reviewingTitle = proposal;
+			this.render();
+		});
+
+		const acceptBtn = actions.createEl('button', { text: 'Accept' });
+		acceptBtn.addEventListener('click', () =>
+			this.callbacks.onTitleAccept(proposal.id)
+		);
+
+		const rejectBtn = actions.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () =>
+			this.callbacks.onTitleReject(proposal.id)
+		);
+	}
+
+	// ── Title Review ─────────────────────────────────────────
+
+	private renderTitleReview(proposal: TitleProposal): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('synapse-view-root');
+
+		const header = contentEl.createDiv({ cls: 'synapse-review-header' });
+		const backBtn = header.createEl('button', { text: 'Back', cls: 'synapse-review-back' });
+		backBtn.addEventListener('click', () => this.exitReview());
+
+		const titleLink = header.createEl('span', {
+			text: proposal.sourceNotePath,
+			cls: 'synapse-review-title synapse-note-link',
+		});
+		titleLink.addEventListener('click', () => this.openNote(proposal.sourceNotePath));
+
+		const triggerLabel = proposal.trigger === 'untitled' ? 'Untitled note detected' : 'Title/content mismatch detected';
+		contentEl.createEl('small', {
+			text: `${triggerLabel} | ${proposal.createdAt.split('T')[0]}`,
+			cls: 'synapse-review-reasons',
+		});
+
+		// Current title
+		const currentPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
+		currentPane.createEl('div', {
+			text: 'Current Title',
+			cls: 'synapse-review-pane-label synapse-review-pane-label--title',
+		});
+		currentPane.createEl('p', {
+			text: proposal.currentTitle,
+			cls: 'synapse-organize-directory',
+		});
+
+		// Proposed title
+		const proposedPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
+		proposedPane.createEl('div', {
+			text: 'Proposed Title',
+			cls: 'synapse-review-pane-label synapse-review-pane-label--title',
+		});
+		proposedPane.createEl('p', {
+			text: proposal.proposedTitle,
+			cls: 'synapse-organize-directory',
+		});
+
+		// Reasoning
+		const reasonPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
+		reasonPane.createEl('div', {
+			text: 'Reasoning',
+			cls: 'synapse-review-pane-label synapse-review-pane-label--title',
+		});
+		reasonPane.createEl('p', {
+			text: proposal.reasoning,
+			cls: 'synapse-organize-reasoning',
+		});
+
+		// Action bar
+		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
+		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
+		acceptBtn.addEventListener('click', () => {
+			this.reviewingTitle = null;
+			this.callbacks.onTitleAccept(proposal.id);
+		});
+		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () => {
+			this.reviewingTitle = null;
+			this.callbacks.onTitleReject(proposal.id);
+		});
+	}
+
 	// ── Checkpoint Banner ─────────────────────────────────────
 
 	private renderCheckpointBanner(container: HTMLElement): void {
@@ -1263,6 +1395,19 @@ export class UnifiedProposalView extends ItemView {
 			}
 			.synapse-review-editor--deep-dive {
 				border-color: var(--color-purple);
+			}
+
+			/* ── Title ── */
+			.synapse-card--title {
+				border-left-color: var(--color-cyan);
+			}
+			.synapse-badge--title {
+				background: var(--color-cyan);
+				color: var(--text-on-accent);
+			}
+			.synapse-review-pane-label--title {
+				background: var(--color-cyan);
+				color: var(--text-on-accent);
 			}
 
 			/* ── Organize Review ── */
