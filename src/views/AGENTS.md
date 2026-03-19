@@ -4,7 +4,7 @@ last-updated: 2026-03-18
 
 # Views Module
 
-Unified sidebar view combining elaboration, enrichment, organize, and deep-dive proposals in a single pane. Displays checkpoint recovery banner for interrupted operations. Supports batch Accept All.
+Unified sidebar view combining elaboration, enrichment, organize, deep-dive, and title proposals in a single pane. Displays checkpoint recovery banner for interrupted operations. Supports batch Accept All.
 
 ## Public API
 
@@ -18,6 +18,7 @@ type UnifiedItem =
   | { kind: 'enrichment'; data: EnrichmentProposal }
   | { kind: 'organize'; data: OrganizeProposal }
   | { kind: 'deep-dive'; data: DeepDiveProposal }
+  | { kind: 'title'; data: TitleProposal }
 
 interface UnifiedViewCallbacks {
   onElaborationAccept: (id: string, editedContent: string) => Promise<void>
@@ -28,6 +29,8 @@ interface UnifiedViewCallbacks {
   onOrganizeReject: (id: string) => Promise<void>
   onDeepDiveAccept: (id: string) => Promise<void>
   onDeepDiveReject: (id: string) => Promise<void>
+  onTitleAccept: (id: string) => Promise<void>
+  onTitleReject: (id: string) => Promise<void>
   onCheckpointDiscard: (id: string) => Promise<void>
   onCheckpointResume: (id: string) => Promise<void>
 }
@@ -46,7 +49,8 @@ class UnifiedProposalView extends ItemView {
 
 | File | Class/Export | Purpose |
 |------|-------------|---------|
-| `unified-proposal-view.ts` | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `UnifiedViewCallbacks` | Combined proposal sidebar with checkpoint banner |
+| `unified-proposal-view.ts` | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE` | Combined proposal sidebar with checkpoint banner |
+| `types.ts` | `UnifiedItem`, `UnifiedViewCallbacks` | View type definitions |
 
 ## Rendering Modes
 
@@ -61,6 +65,8 @@ class UnifiedProposalView extends ItemView {
 5. **Organize review**: Back button, source note link, proposed directory path, AI reasoning text. Accept/Reject buttons.
 
 6. **Deep-dive review**: Back button, topic title, depth badge, quality score, source note link, quality reasoning, proposed path, read-only content preview, child count warning. Accept/Reject buttons.
+
+7. **Title review**: Back button, source note link, current vs proposed title, trigger reason (untitled/mismatch), AI reasoning. Accept (rename)/Reject buttons.
 
 ## Accept All
 
@@ -78,6 +84,7 @@ class UnifiedProposalView extends ItemView {
 | enrichment | `color-green` | `color-green` |
 | organize | `color-orange` | `color-orange` |
 | deep-dive | `color-purple` | `color-purple` |
+| title | `color-yellow` | `color-yellow` |
 
 Deep-dive cards additionally show depth badge and quality score badge.
 
@@ -94,13 +101,15 @@ this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
     onOrganizeReject: (id) => this.organize.rejectProposal(id),
     onDeepDiveAccept: (id) => this.deepDive.acceptProposal(id),
     onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
+    onTitleAccept: (id) => this.title.acceptProposal(id),
+    onTitleReject: (id) => this.title.rejectProposal(id),
     onCheckpointDiscard: (id) => this.discardCheckpoint(id),
     onCheckpointResume: (id) => this.resumeCheckpoint(id),
   });
 });
 ```
 
-Refreshed via `main.refreshUnifiedView()` which gathers items from all four modules and incomplete checkpoints.
+Refreshed via `main.refreshUnifiedView()` which gathers items from all five modules and incomplete checkpoints.
 
 ## Dependencies
 
@@ -110,6 +119,7 @@ Refreshed via `main.refreshUnifiedView()` which gathers items from all four modu
 | `AcceptedItems`, `EnrichmentProposal` | `../enrichment` (type only) |
 | `OrganizeProposal` | `../organize` (type only) |
 | `DeepDiveProposal` | `../deep-dive` (type only) |
+| `TitleProposal` | `../title` (type only) |
 | `Checkpoint` | `../shared` (type only) |
 
 ## Features
@@ -117,5 +127,5 @@ Refreshed via `main.refreshUnifiedView()` which gathers items from all four modu
 - Clickable note headings open the source note in main editor
 - Auto-exits review mode if reviewed proposal is no longer in pending list
 - Injects scoped CSS on first open (id: `synapse-unified-view-styles`)
-- Color-coded cards: blue for elaboration, green for enrichment, orange for organize, purple for deep-dive
+- Color-coded cards: blue for elaboration, green for enrichment, orange for organize, purple for deep-dive, yellow for title
 - Checkpoint banner with progress display and Resume/Discard actions

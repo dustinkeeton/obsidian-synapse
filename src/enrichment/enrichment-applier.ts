@@ -1,10 +1,10 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { mergeTags, parseFrontmatter, serializeFrontmatter, buildCallout, CALLOUT_TYPES } from '../shared';
+import {
+	mergeTags, parseFrontmatter, serializeFrontmatter, buildCallout, CALLOUT_TYPES,
+	ENRICHMENT_START, ENRICHMENT_END,
+} from '../shared';
 import { EnrichmentProposal, AcceptedItems } from './types';
-
-export const ENRICHMENT_START = '%% synapse-enrichment-start %%';
-export const ENRICHMENT_END = '%% synapse-enrichment-end %%';
 
 /**
  * Applies accepted enrichments to a note non-destructively.
