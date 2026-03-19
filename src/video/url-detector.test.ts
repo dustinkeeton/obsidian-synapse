@@ -33,6 +33,36 @@ describe('detectPlatform', () => {
 			const result = detectPlatform('https://youtube.com/watch?v=abc_DEF-123');
 			expect(result?.videoId).toBe('abc_DEF-123');
 		});
+
+		it('matches when v= is not the first query param', () => {
+			const result = detectPlatform('https://youtube.com/watch?feature=share&v=dQw4w9WgXcQ');
+			expect(result?.platform).toBe('youtube');
+			expect(result?.videoId).toBe('dQw4w9WgXcQ');
+		});
+
+		it('matches when v= is after multiple query params', () => {
+			const result = detectPlatform('https://youtube.com/watch?list=PLxxx&index=3&v=abc123');
+			expect(result?.platform).toBe('youtube');
+			expect(result?.videoId).toBe('abc123');
+		});
+
+		it('matches embed URL', () => {
+			const result = detectPlatform('https://youtube.com/embed/dQw4w9WgXcQ');
+			expect(result?.platform).toBe('youtube');
+			expect(result?.videoId).toBe('dQw4w9WgXcQ');
+		});
+
+		it('matches live URL', () => {
+			const result = detectPlatform('https://youtube.com/live/dQw4w9WgXcQ');
+			expect(result?.platform).toBe('youtube');
+			expect(result?.videoId).toBe('dQw4w9WgXcQ');
+		});
+
+		it('matches www.youtube.com embed URL', () => {
+			const result = detectPlatform('https://www.youtube.com/embed/abc_DEF-123');
+			expect(result?.platform).toBe('youtube');
+			expect(result?.videoId).toBe('abc_DEF-123');
+		});
 	});
 
 	describe('TikTok URLs', () => {
@@ -94,6 +124,18 @@ describe('detectPlatform', () => {
 				'https://vm.tiktok.com/ZMxxxxxxx/?sender_device=mobile'
 			);
 			expect(result?.url).toBe('https://vm.tiktok.com/ZMxxxxxxx/');
+		});
+
+		it('matches URL with locale prefix', () => {
+			const result = detectPlatform('https://www.tiktok.com/en/@user/video/1234567890');
+			expect(result?.platform).toBe('tiktok');
+			expect(result?.videoId).toBe('1234567890');
+		});
+
+		it('matches URL with locale-country prefix', () => {
+			const result = detectPlatform('https://www.tiktok.com/es-MX/@user/video/1234567890');
+			expect(result?.platform).toBe('tiktok');
+			expect(result?.videoId).toBe('1234567890');
 		});
 	});
 
