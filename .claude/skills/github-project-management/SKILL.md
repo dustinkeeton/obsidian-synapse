@@ -105,6 +105,113 @@ gh api graphql -f query='
 ' -f projectId="PROJECT_ID" -f itemId="ITEM_ID" -f fieldId="STATUS_FIELD_ID" -f optionId="OPTION_ID"
 ```
 
+### Update item date field (Start / Target)
+
+```bash
+gh api graphql -f query='
+  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $date: Date!) {
+    updateProjectV2ItemFieldValue(input: {
+      projectId: $projectId
+      itemId: $itemId
+      fieldId: $fieldId
+      value: {date: $date}
+    }) {
+      projectV2Item { id }
+    }
+  }
+' -f projectId="PROJECT_ID" -f itemId="ITEM_ID" -f fieldId="DATE_FIELD_ID" -f date="2026-04-01"
+```
+
+### Batch-update dates using aliased mutations
+
+Update multiple items in a single API call using GraphQL aliases. Up to ~20 operations per call:
+
+```bash
+gh api graphql -f query='
+  mutation {
+    s1: updateProjectV2ItemFieldValue(input: {
+      projectId: "PROJECT_ID", itemId: "ITEM_1", fieldId: "START_FIELD_ID",
+      value: {date: "2026-03-20"}
+    }) { projectV2Item { id } }
+    t1: updateProjectV2ItemFieldValue(input: {
+      projectId: "PROJECT_ID", itemId: "ITEM_1", fieldId: "TARGET_FIELD_ID",
+      value: {date: "2026-03-25"}
+    }) { projectV2Item { id } }
+    s2: updateProjectV2ItemFieldValue(input: {
+      projectId: "PROJECT_ID", itemId: "ITEM_2", fieldId: "START_FIELD_ID",
+      value: {date: "2026-03-22"}
+    }) { projectV2Item { id } }
+    t2: updateProjectV2ItemFieldValue(input: {
+      projectId: "PROJECT_ID", itemId: "ITEM_2", fieldId: "TARGET_FIELD_ID",
+      value: {date: "2026-03-28"}
+    }) { projectV2Item { id } }
+  }
+'
+```
+
+### Query items with date fields
+
+```bash
+gh api graphql -f query='
+  query($projectId: ID!) {
+    node(id: $projectId) {
+      ... on ProjectV2 {
+        items(first: 100) {
+          nodes {
+            id
+            content { ... on Issue { number title } }
+            fieldValues(first: 20) {
+              nodes {
+                ... on ProjectV2ItemFieldDateValue {
+                  field { ... on ProjectV2Field { name } }
+                  date
+                }
+                ... on ProjectV2ItemFieldSingleSelectValue {
+                  field { ... on ProjectV2SingleSelectField { name } }
+                  name
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+' -f projectId="PROJECT_ID"
+```
+
+### Clear a date field
+
+Set the date value to `null` (empty string) to clear it:
+
+```bash
+gh api graphql -f query='
+  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
+    clearProjectV2ItemFieldValue(input: {
+      projectId: $projectId
+      itemId: $itemId
+      fieldId: $fieldId
+    }) {
+      projectV2Item { id }
+    }
+  }
+' -f projectId="PROJECT_ID" -f itemId="ITEM_ID" -f fieldId="DATE_FIELD_ID"
+```
+
+### Predict dates for items
+
+When assigning predicted Start and Target dates, use these heuristics:
+
+1. **Done items** — use actual `createdAt` as Start and `closedAt` as Target (from `gh issue list --state closed --json number,createdAt,closedAt`)
+2. **In Review / In Progress** — Start = when work began (estimate from PR open date or status change), Target = 3-7 days from now depending on size
+3. **Todo** — Start = next available slot after current In Progress items finish
+4. **Backlog** — schedule within the milestone window:
+   - **Priority order**: Critical → High → Medium → Low → unset
+   - **Size → duration**: S = 2-3 days, M = 5 days, L = 10 days, unset = 5 days
+   - **Dependencies**: items that block others go first
+   - **Parallel capacity**: assume 2-3 items can be worked in parallel
+5. **No milestone** — schedule after all milestoned work
+
 ### Update item iteration (sprint)
 
 ```bash
