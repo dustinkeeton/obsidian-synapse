@@ -4,6 +4,85 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-19: Revised hybrid strategy -- caption-first with extraction fallback (Issue #166, follow-up)
+
+**Context**: After the initial hybrid extraction decision (below), a key insight emerged: Synapse's actual need is transcription (URL to text), not video downloading. The user does not need the video file itself -- they need the transcript, and optionally a summary. This reframes the problem: if we can get text from a URL without ever downloading audio or video, the entire yt-dlp/ffmpeg dependency becomes unnecessary for the most common use case.
+
+**Decision**: Adopt a three-tier "caption-first" strategy that tries the cheapest/simplest approach first and falls back progressively:
+
+### Tier 1: Caption/subtitle extraction (no audio processing, no external tools)
+
+For YouTube specifically, captions can be fetched as text without downloading any media:
+
+- **YouTube Data API v3** (`captions.list` + `captions.download`): Can list and download caption tracks for any public video. Requires only an API key for listing, but downloading caption content requires OAuth 2.0 authorization as the video owner -- so this path is limited to listing available tracks and their metadata. It cannot download third-party video captions with just an API key.
+
+- **youtube-transcript libraries / innertube API**: Multiple open-source libraries (e.g., `youtube-transcript`, `youtubei.js`) access YouTube's internal transcript endpoint without OAuth. These work as pure HTTP requests (no CLI tools) and return timed transcript text for any video that has captions enabled. This is the most promising Tier 1 path -- it is a simple HTTP call that works from any platform including mobile, requires no API keys, and handles the majority of YouTube videos (auto-generated captions cover most English-language content).
+
+- **Limitations**: Tier 1 only works for platforms that expose captions. YouTube has excellent coverage (auto-generated captions for most videos). TikTok does not expose captions via any public API -- there is no equivalent subtitle endpoint.
+
+### Tier 2: URL-based transcription via existing provider APIs
+
+Both Deepgram and AssemblyAI accept URLs as direct input -- no local audio extraction needed:
+
+- **Deepgram**: The `/v1/listen` endpoint accepts a JSON body with `{"url": "https://..."}` pointing to a publicly accessible audio or video file. Deepgram's server fetches the media and transcribes it. This works for direct media URLs (e.g., `.mp3`, `.mp4` hosted files) but does NOT work for YouTube/TikTok page URLs -- Deepgram cannot resolve a `youtube.com/watch?v=...` URL to its underlying media stream.
+
+- **AssemblyAI**: The `/v2/transcript` endpoint accepts `{"audio_url": "https://..."}` and handles fetching and transcription server-side. Same limitation as Deepgram: requires a direct media file URL, not a platform page URL.
+
+- **OpenAI Whisper API**: Does NOT accept URLs. The `/v1/audio/transcriptions` endpoint requires a file upload via `multipart/form-data`. The audio data must be in the request body. This means Whisper always requires the audio file to be obtained locally first.
+
+- **Practical implication**: Tier 2 works for direct audio/video file URLs (e.g., podcast RSS enclosures, hosted recordings) but cannot replace yt-dlp for platform URLs. It is useful as a fallback for non-YouTube sources where a direct media URL is available.
+
+### Tier 3: Full extraction fallback (existing pipeline)
+
+When Tiers 1 and 2 cannot handle the URL:
+- **Desktop**: Use yt-dlp + ffmpeg via `LocalExtractor` (existing pipeline, unchanged)
+- **Mobile**: Use `ServerExtractor` calling a user-configured endpoint (as originally designed)
+- **Covers**: TikTok URLs, age-restricted YouTube videos without captions, any platform where caption extraction fails
+
+### Revised architecture
+
+The `MediaExtractor` strategy interface from the original decision is retained, but the implementation hierarchy changes:
+
+```
+TranscriptionStrategy (interface)
+  |-- CaptionExtractor        (Tier 1: HTTP-only, YouTube captions, cross-platform)
+  |-- UrlTranscriptionProvider (Tier 2: Deepgram/AssemblyAI URL input, cross-platform)
+  |-- LocalExtractor           (Tier 3: yt-dlp + ffmpeg, desktop only)
+  |-- ServerExtractor          (Tier 3: cloud function, mobile fallback)
+```
+
+The orchestrator tries tiers in order: caption extraction first (free, fast, no API cost), then URL-based transcription if the user has Deepgram/AssemblyAI configured and a direct URL is available, then full extraction as last resort.
+
+**Alternatives considered**:
+
+- **Caption-only, drop extraction entirely**: Rejected. TikTok has no caption API, and some YouTube videos have captions disabled. The extraction fallback is necessary for full platform coverage. However, caption-first dramatically reduces how often extraction is needed.
+
+- **Require Deepgram/AssemblyAI for URL transcription**: Rejected as sole strategy. These services cannot resolve platform page URLs (youtube.com, tiktok.com) to media streams. They work for direct file URLs only. Also requires users to sign up for and pay for an additional service beyond what they already have (OpenAI/Anthropic).
+
+- **Build a YouTube caption fetcher only, skip TikTok**: Considered as an MVP. YouTube is likely 90%+ of the use case. TikTok support could be deferred to a later milestone if the extraction fallback proves too complex.
+
+**Rationale**: This tiered approach is a significant simplification over the original hybrid decision:
+
+1. **YouTube transcription works everywhere with zero dependencies** -- Caption extraction is pure HTTP, works on mobile and desktop, requires no API keys, no external tools, and no server endpoint. This covers the dominant use case.
+
+2. **The custom server endpoint (issue #181) becomes optional, not required for mobile** -- Mobile users get YouTube transcription via caption extraction without any server. The server endpoint is only needed for TikTok on mobile or for videos without captions.
+
+3. **Existing OpenAI Whisper users are unaffected** -- For local audio files, the pipeline is unchanged. Whisper API is still the transcription backend for file-based audio.
+
+4. **Cost savings** -- Caption extraction is free (no API call). Even when falling back to Whisper, skipping yt-dlp download + extraction is faster.
+
+**Impact on follow-up issues**:
+
+- **Issue #180 (abstract extraction interface)**: Still needed, but the interface expands from `MediaExtractor` to `TranscriptionStrategy` with four implementations instead of two. Scope increases slightly but complexity per implementation decreases (CaptionExtractor is ~50 lines of HTTP code).
+
+- **Issue #181 (server-side endpoint)**: Downgraded from "required for mobile" to "optional fallback." Mobile YouTube transcription works without it via caption extraction. The server endpoint is still valuable for TikTok-on-mobile and captionless videos, but it is no longer a blocker for the v0.7.0 mobile milestone.
+
+- **Issue #182 (mobile-aware strategy selection)**: Simplified. Instead of "desktop = local, mobile = server (required)", the logic becomes "try captions first (any platform), then try URL transcription, then try local extraction (desktop), then try server extraction (if configured)." Mobile works out of the box for YouTube without any server configuration.
+
+- **New issue needed**: YouTube caption fetcher implementation (Tier 1). This is the highest-value, lowest-complexity piece and should be prioritized first.
+
+---
+
 ## 2026-03-19: Hybrid extraction strategy for cross-platform media support (Issue #166)
 
 **Context**: Synapse depends on `yt-dlp` and `ffmpeg` as external CLI tools that users must install themselves. This creates high onboarding friction (Homebrew/apt installs, PATH configuration, manual updates), makes the entire video transcription pipeline desktop-only (Obsidian Mobile has no `child_process` / shell access), and ties the plugin to a macOS-centric `shellEnv()` workaround that is fragile on Linux and Windows. Issue #166 asks how we might eliminate or reduce this external dependency burden, especially for mobile.
