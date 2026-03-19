@@ -87,9 +87,9 @@ const RECIPE_PROMPT =
 	'**Total time:** [time or "Not specified"]\n' +
 	'**Servings:** [number or "Not specified"]\n\n' +
 	'### Ingredients\n' +
-	'- List each ingredient with quantity and preparation notes\n\n' +
+	'- List each ingredient with its **exact amount** (e.g. "2 cups", "1 tbsp") and preparation notes. Preserve the original measurements from the source.\n\n' +
 	'### Instructions\n' +
-	'1. Numbered steps, each a clear action\n\n' +
+	'1. Numbered steps, each a clear action. If the source includes images associated with a step, include them using `![step description](image-url)` on a new line after the step text.\n\n' +
 	'### Notes\n' +
 	'- Any tips, substitutions, or storage instructions from the original content\n\n' +
 	'Extract all information from the provided content. If a field is not present in the source, write "Not specified". ' +
