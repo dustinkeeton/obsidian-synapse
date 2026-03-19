@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { AIClient } from '../shared';
-import type { ContentBlock } from '../shared/types';
+import type { ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
 
 export interface ImageAnalysis {

@@ -4,6 +4,104 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-19: Image OCR module with multi-modal AIClient (Issues #162, #165)
+
+**Context**: Users embed images (screenshots, diagrams, handwritten notes) in their vault notes. These images contain text and context that is invisible to AI-powered features — elaboration, enrichment, and summarization all operate on text content only.
+
+**Decision**: Add a dedicated `image` module (`src/image/`) for OCR text extraction using vision models, and extend `AIClient.chat()` to support multi-modal content:
+
+1. **Multi-modal AIClient**: `ChatMessage.content` accepts `string | ContentBlock[]` where `ContentBlock` is either `TextContentBlock` or `ImageContentBlock`. Provider-specific format conversion handles OpenAI (`image_url` with data URI), Anthropic (`image` source with base64), and Ollama (separate `images` array).
+
+2. **ImageExtractor**: Reads image binary from vault, converts to base64, sends to vision model via `AIClient.chat()` with "OCR assistant" system prompt. Results wrapped in `[!synapse-ocr]` callouts.
+
+3. **ImageModule**: Follows standard FeatureModule contract with `CheckpointManager` support. Batch extraction processes embeds in reverse line order with 2-second delay between API calls to avoid rate limits.
+
+4. **Vision model override**: `settings.image.visionModel` temporarily overrides `settings.ai.model` for the duration of vision API calls, then restores the original.
+
+**Alternatives considered**:
+- Dedicated OCR library (adds runtime dependency, violates zero-deps policy)
+- Always use the primary AI model for vision (some models lack vision capability)
+- Process images client-side without AI (limited OCR quality)
+
+**Rationale**: Vision models (GPT-4o, Claude) already excel at OCR and image understanding. Using the existing `AIClient` with multi-modal extensions avoids new dependencies while leveraging provider-native vision support. The model override pattern lets users choose a vision-capable model independently of their text model.
+
+**Impact**: New `src/image/` module with 6 files. `AIClient` gains `ContentBlock` support across all three providers. `synapse-ocr` callout type added. Image OCR accessible via `NoteMediaModal` (transcription UI) or direct API.
+
+---
+
+## 2026-03-19: Image analysis enriches elaboration proposals (Issues #163, #167)
+
+**Context**: When generating elaboration proposals for stub notes, the AI only sees the note's text content. Images embedded in the note (screenshots, diagrams, photos) often contain crucial context — a photo of a location, a diagram of an architecture, handwritten meeting notes — that should inform the proposal.
+
+**Decision**: Add `ImageAnalyzer` to the elaboration module that uses multi-modal `AIClient.chat()` to analyze up to 5 embedded images per note before proposal generation:
+
+- Finds both wiki-link (`![[image.png]]`) and markdown (`![alt](path)`) image references
+- Skips external URLs (only vault images analyzed)
+- Produces `ImageAnalysis` objects with description, location hints, and metadata clues
+- Image analysis context is injected into the proposal generation prompt
+- Graceful degradation: individual image failures are skipped without blocking the proposal
+
+**Alternatives considered**:
+- Analyze images only in the image module, not during elaboration (misses contextual value)
+- Always analyze all images without cap (token overflow risk on image-heavy notes)
+- Use OCR text extraction instead of image analysis (loses visual context like layout, colors, spatial relationships)
+
+**Rationale**: A stub note with a photo of a mountain and the text "Trip notes" should produce proposals about a hiking trip, not generic travel content. Image analysis provides semantic understanding beyond OCR — it can describe what's in a photo, read a diagram's structure, or identify a location from visual cues. The 5-image cap prevents token explosion while covering most real-world notes.
+
+**Impact**: Elaboration proposals are more contextually relevant for notes containing images. Uses the same `image.visionModel` override pattern as the image module.
+
+---
+
+## 2026-03-19: Preserve image embeds in AI-generated content (Issue #161)
+
+**Context**: When AI models process note content containing image embeds (`![[photo.png]]` or `![alt](url)`), they sometimes strip or mangle the embed syntax. Image references in the original note would be lost after elaboration or tidy operations.
+
+**Decision**: Sanitize AI responses to preserve image embed syntax. Both external URL embeds (`![alt](https://...)`) and internal wiki-links (`![[image.png]]`) are protected during response processing.
+
+**Alternatives considered**:
+- Strip all images from AI input and re-inject after (complex, loses contextual placement)
+- Post-process AI output to restore images from original (fragile, depends on position matching)
+
+**Rationale**: Preserving embeds inline is simpler and more robust than stripping and re-injecting. AI models generally handle the syntax well; the sanitizer just needs to avoid removing it.
+
+**Impact**: Image embeds survive elaboration, tidy, and other AI-powered transformations.
+
+---
+
+## 2026-03-19: Proper resource cleanup on plugin unload (Issue #170)
+
+**Context**: The plugin registered `setTimeout` handles and injected custom CSS styles (for notifications) during operation but did not clean them up when the plugin was unloaded. This caused stale timers firing after reload and orphaned `<style>` elements accumulating in the DOM.
+
+**Decision**: Track all `setTimeout` handles and injected `<style>` elements, and clean them up in `onunload()`. Specifically:
+- `NotificationManager` removes its injected `<style>` element
+- `main.ts` clears the delayed checkpoint check timer
+- All modules properly clean up on `onunload()`
+
+**Alternatives considered**:
+- Ignore cleanup (works but accumulates DOM garbage across reloads)
+- Use Obsidian's `registerInterval()` for all timers (doesn't cover one-shot `setTimeout`)
+
+**Rationale**: Clean unload is essential for plugin development (frequent reloads) and for Obsidian stability. Leaked timers can cause errors when callbacks fire against a destroyed plugin instance.
+
+**Impact**: No more stale timers or orphaned styles after plugin unload/reload.
+
+---
+
+## 2026-03-19: Migrate settings headings to setHeading() API (Issue #171)
+
+**Context**: The settings tab used `containerEl.createEl('h2', ...)` to render section headings. Obsidian's `Setting` API provides `setHeading()` which integrates better with the settings UI (proper indentation, collapsible sections in future).
+
+**Decision**: Replace all `createEl('h2', ...)` and `createEl('h3', ...)` calls in `settings-tab.ts` with `new Setting(containerEl).setName('...').setHeading()`.
+
+**Alternatives considered**:
+- Keep `createEl` (works but inconsistent with Obsidian API best practices)
+
+**Rationale**: `setHeading()` is the idiomatic Obsidian approach for settings section headers. It ensures consistent styling and forward-compatibility with future Obsidian settings UI improvements.
+
+**Impact**: Visual appearance unchanged. Settings tab code follows Obsidian API conventions.
+
+---
+
 ## 2026-03-18: Title proposal module for untitled and mismatched notes (Issue #150)
 
 **Context**: After elaboration, transcription, or summarization, notes often retain their original filename (e.g., "Untitled", "Untitled 2") or have titles that no longer match their content. Users had to manually rename files.

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-18
+last-updated: 2026-03-19
 ---
 
 # Shared Module
@@ -19,7 +19,10 @@ class AIClient {
 }
 
 // types.ts
-interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
+interface TextContentBlock { type: 'text'; text: string }
+interface ImageContentBlock { type: 'image'; data: string; mediaType: string }
+type ContentBlock = TextContentBlock | ImageContentBlock
+interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string | ContentBlock[] }
 
 // notifications.ts
 class NotificationManager {
@@ -102,7 +105,7 @@ class CheckpointManager {
 }
 
 // checkpoint-types.ts
-type CheckpointModule = 'deep-dive' | 'elaboration' | 'enrichment' | 'audio' | 'video' | 'summarize' | 'organize'
+type CheckpointModule = 'deep-dive' | 'elaboration' | 'enrichment' | 'audio' | 'video' | 'image' | 'summarize' | 'organize'
 type CheckpointStatus = 'active' | 'completed' | 'discarded'
 interface CheckpointWorkItem { id: string; label: string; payload: Record<string, unknown> }
 interface DeferredTask { id: string; type: string; data: Record<string, unknown> }
@@ -124,8 +127,8 @@ interface Checkpoint {
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `ai-client.ts` | `AIClient` | Multi-provider AI completion; `safeRequest`, `redactSecrets`, `resolveModelId` (internal) |
-| `types.ts` | `ChatMessage` | Shared type |
+| `ai-client.ts` | `AIClient` | Multi-provider AI completion with multi-modal support; `safeRequest`, `redactSecrets`, `resolveModelId`, `toOpenAIContent`, `toAnthropicContent`, `toOllamaMessage` (internal) |
+| `types.ts` | `ChatMessage`, `ContentBlock`, `TextContentBlock`, `ImageContentBlock` | Shared types including multi-modal content blocks |
 | `notifications.ts` | `NotificationManager`, `OperationHandle`, `NoticeLevel` | Centralized notifications with cancellation, progress, confirmation snackbars |
 | `notifications.test.ts` | Tests | NotificationManager tests |
 | `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `wordCount` | Vault file operations |
@@ -221,16 +224,16 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 
 | Utility | Used By |
 |---------|---------|
-| `AIClient` | elaboration/proposer, audio/post-processor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
+| `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `NotificationManager` | all feature modules (injected via constructor) |
-| `CheckpointManager` | main (creates), elaboration, audio, video, enrichment, summarize, organize, deep-dive (all injected via constructor) |
+| `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive (all injected via constructor) |
 | `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index, organize/index, deep-dive/index, checkpoint-manager |
 | `wordCount` | elaboration/detector, deep-dive/index |
 | `readNote` | deep-dive/index |
 | `writeNote` | deep-dive/index, organize/index |
 | `sanitizeUrl` | video/index, video/audio-extractor |
 | `sanitizePath` | video/audio-extractor |
-| `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
+| `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, image/index, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `parseFrontmatter` | enrichment/index, enrichment/enrichment-applier, tidy/index |
 | `serializeFrontmatter` | enrichment/enrichment-applier, tidy/index |
 | `mergeTags` | enrichment/enrichment-applier |

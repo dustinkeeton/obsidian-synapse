@@ -1,9 +1,9 @@
 # Project Status
 
-**Last updated**: 2026-03-18
-**Version**: 0.2.1
+**Last updated**: 2026-03-19
+**Version**: 0.2.2
 **Branch**: `main`
-**Phase**: 10 modules (9 feature + 1 UI-only transcription); title proposals, recipe templates, and TikTok URL normalization recently shipped
+**Phase**: 11 modules (10 feature + 1 UI-only transcription); image OCR, multi-modal AI, and image-aware elaboration recently shipped
 
 ---
 
@@ -12,6 +12,7 @@
 | Feature | Core Logic | UI | Tests | Status |
 |---------|:---:|:---:|:---:|--------|
 | **Elaboration** -- detection and proposals | Yes | Yes | Partial | **Working** |
+| **Elaboration** -- image analysis for proposals | Yes | -- | Yes | **Working** |
 | **Elaboration** -- unified sidebar review | Yes | Yes | No | **Working** |
 | **Audio** -- Whisper API transcription | Yes | Yes | No | **Working** |
 | **Audio** -- Deepgram transcription | Yes | Yes | No | **Working** |
@@ -23,6 +24,9 @@
 | **Video** -- note scanning for URLs | Yes | -- | Yes | **Working** |
 | **Video** -- local file transcription | -- | -- | No | Not started (stub) |
 | **Video** -- frame extraction | -- | -- | No | Not started (placeholder) |
+| **Image** -- OCR via multi-modal AI | Yes | -- | Yes | **Working** |
+| **Image** -- batch extraction with checkpoints | Yes | -- | No | **Working** |
+| **Image** -- note scanning for embeds | Yes | -- | Yes | **Working** |
 | **Transcription** -- unified modal (file + URL) | Yes | Yes | No | **Working** |
 | **Transcription** -- note media modal (scan + select) | Yes | Yes | No | **Working** |
 | **Enrichment** -- metadata classification (vocabulary-based) | Yes | Yes | Yes | **Working** |
@@ -50,22 +54,23 @@
 | **Title** -- untitled note detection | Yes | -- | No | **Working** |
 | **Title** -- content-mismatch detection (AI) | Yes | -- | No | **Working** |
 | **Title** -- proposal review + file rename | Yes | Yes | No | **Working** |
-| **Shared** -- AIClient (3 providers) | Yes | -- | No | **Working** |
+| **Shared** -- AIClient (3 providers, multi-modal) | Yes | -- | No | **Working** |
 | **Shared** -- NotificationManager | Yes | -- | Yes | **Working** |
 | **Shared** -- validation and sanitization | Yes | -- | Yes | **Working** |
-| **Shared** -- callout registry | Yes | -- | Yes | **Working** |
+| **Shared** -- callout registry (7 types) | Yes | -- | Yes | **Working** |
 | **Shared** -- checkpoint/resume framework | Yes | Yes | Yes | **Working** |
 
 ---
 
-## Module Summary (10 modules)
+## Module Summary (11 modules)
 
 | Module | Path | Purpose | UI Surface |
 |--------|------|---------|------------|
-| Elaboration | `src/elaboration/` | Detect stub notes, generate content proposals | Sidebar (editable) |
+| Elaboration | `src/elaboration/` | Detect stub notes, generate content proposals (image-aware) | Sidebar (editable) |
 | Audio | `src/audio/` | Transcribe audio files via Whisper/Deepgram | None (inline insert) |
 | Video | `src/video/` | Download + transcribe YouTube/TikTok videos | None (inline insert) |
-| Transcription | `src/transcription/` | Unified transcription UI modals | 2 modals |
+| Image | `src/image/` | OCR text extraction from vault images via vision models | None (inline insert) |
+| Transcription | `src/transcription/` | Unified transcription UI modals (audio, video, image) | 2 modals |
 | Enrichment | `src/enrichment/` | Tags, links, refs, frontmatter suggestions | Sidebar (checkboxes) |
 | Summarize | `src/summarize/` | URL and transcription summarization | None (inline or standalone note) |
 | Tidy | `src/tidy/` | Spelling/formatting fixes | None (immediate apply + undo) |
@@ -80,15 +85,22 @@
 - **Documentation audit**: Updating AGENTS.md, DECISIONS.md, STATUS.md, ARCHITECTURE.md
 - **Security pass**: Ongoing audit for input validation and credential handling
 
-## Recent Changes (2026-03-18)
+## Recent Changes (2026-03-19)
 
-- Added title proposal module -- detects "Untitled" filenames and content-title mismatches, proposes AI-generated titles (#150, #157)
-- Normalized TikTok URLs by stripping query params before dedup/matching (#155, #156)
-- Added JSON-LD recipe data extraction to amalgamate ingredients (#153, #154)
-- Added exact ingredient amounts and step images to recipe summary template (#149, #152)
-- Added content-aware summary templates with recipe detection (#145, #148)
-- Added Reject All button for proposals (#141)
-- Strip code fences from AI elaboration output (#147)
+- Added image OCR module with multi-modal AIClient and vision model support (#162, #165)
+- Added image analysis to elaboration proposals for context-aware content generation (#163, #167)
+- Added image embed preservation in AI-generated content (#161)
+- Fixed resource cleanup: setTimeout handles and injected styles properly cleared on unload (#170)
+- Migrated settings headings from `createEl` to `setHeading()` API (#171)
+- Bumped version to 0.2.2 (#159)
+
+## Previous Milestone (2026-03-18)
+
+- Title proposal module (#150, #157)
+- TikTok URL normalization (#155, #156)
+- JSON-LD recipe data extraction (#153, #154)
+- Content-aware summary templates with recipe detection (#145, #148)
+- Reject All button for proposals (#141)
 
 ---
 
@@ -102,6 +114,7 @@
 | Local Whisper not implemented | Medium | `local-whisper` provider throws on use |
 | Local video file transcription not implemented | Medium | Command shows "coming soon" notice |
 | Frame extraction not implemented | Medium | `FrameExtractor` is a placeholder |
+| Image checkpoint resume is no-op | Low | `resumeFromCheckpoint()` discards and asks user to re-run (same pattern as deep-dive) |
 
 ---
 
@@ -111,8 +124,8 @@
 |------------|-------------|--------|
 | yt-dlp | Video download | User-installed; PATH auto-resolved |
 | ffmpeg | Audio extraction from video | User-installed; PATH auto-resolved |
-| OpenAI API key | Whisper transcription, GPT models | User-configured |
-| Anthropic API key | Claude models | User-configured |
+| OpenAI API key | Whisper transcription, GPT models (incl. vision) | User-configured |
+| Anthropic API key | Claude models (incl. vision) | User-configured |
 | Deepgram API key | Deepgram transcription (optional) | User-configured |
 
 ---
@@ -121,8 +134,9 @@
 
 | Area | Test Files | Coverage |
 |------|-----------|----------|
-| Elaboration | `proposal-store.test.ts` | Store CRUD |
+| Elaboration | `proposal-store.test.ts`, `scan-note.test.ts` | Store CRUD, scan integration |
 | Audio | `note-scanner.test.ts` | Note scanning |
+| Image | `extractor.test.ts`, `note-scanner.test.ts` | OCR extraction, note scanning |
 | Enrichment | `vault-analyzer.test.ts`, `weight-calculator.test.ts`, `metadata-classifier.test.ts`, `topic-extractor.test.ts`, `link-resolver.test.ts`, `enrichment-store.test.ts` | Comprehensive |
 | Summarize | `summarizer.test.ts`, `content-fetcher.test.ts`, `note-scanner.test.ts`, `summarize-module.test.ts` | Core logic |
 | Tidy | `tidy-store.test.ts`, `tidy-module.test.ts` | Store + module |
