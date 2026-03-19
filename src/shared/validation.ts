@@ -129,6 +129,19 @@ export function sanitizeAIResponse(text: string): string {
 }
 
 /**
+ * Removes wrapping code fences that LLMs sometimes add despite instructions.
+ * Only strips when the entire text is wrapped in a single code fence block.
+ */
+export function stripCodeFences(text: string): string {
+	const trimmed = text.trim();
+	if (trimmed.startsWith('```') && trimmed.endsWith('```')) {
+		const lines = trimmed.split('\n');
+		return lines.slice(1, -1).join('\n');
+	}
+	return trimmed;
+}
+
+/**
  * Converts note body content into a blockquote with user-attribution.
  * Preserves YAML frontmatter (if present) outside the blockquote.
  */

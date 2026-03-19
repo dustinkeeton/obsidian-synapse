@@ -1,5 +1,5 @@
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences } from '../shared';
 import { ExtractedTopic } from './types';
 
 /**
@@ -46,12 +46,11 @@ Context from parent note (for reference, do not repeat):
 ${sourceContent.slice(0, 2000)}`;
 
 		const content = await this.aiClient.complete(userPrompt, systemPrompt);
-		return this.cleanContent(sanitizeAIResponse(content), topic, sourceTitle);
+		return this.cleanContent(stripCodeFences(sanitizeAIResponse(content)), topic, sourceTitle);
 	}
 
 	private cleanContent(content: string, topic: ExtractedTopic, sourceTitle: string): string {
-		// Strip markdown code fences if AI wrapped the entire response
-		let cleaned = content.replace(/^```(?:markdown|md)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+		let cleaned = content.trim();
 
 		// If AI added an H1 title, remove it (Obsidian uses filename)
 		cleaned = cleaned.replace(/^#\s+.+\n+/, '');
