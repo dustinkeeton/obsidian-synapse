@@ -1,6 +1,6 @@
 import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { ChatMessage } from './types';
+import { ChatMessage, ContentBlock } from './types';
 
 /** Redact API keys/tokens that may appear in API error response bodies. */
 function redactSecrets(text: string): string {
@@ -56,6 +56,61 @@ function resolveModelId(provider: string, model: string): string {
 	return model;
 }
 
+/**
+ * Convert ContentBlock[] to OpenAI's multimodal message format.
+ */
+function toOpenAIContent(blocks: ContentBlock[]): unknown[] {
+	return blocks.map(block => {
+		if (block.type === 'text') {
+			return { type: 'text', text: block.text };
+		}
+		return {
+			type: 'image_url',
+			image_url: { url: `data:${block.mediaType};base64,${block.data}` },
+		};
+	});
+}
+
+/**
+ * Convert ContentBlock[] to Anthropic's multimodal message format.
+ */
+function toAnthropicContent(blocks: ContentBlock[]): unknown[] {
+	return blocks.map(block => {
+		if (block.type === 'text') {
+			return { type: 'text', text: block.text };
+		}
+		return {
+			type: 'image',
+			source: {
+				type: 'base64',
+				media_type: block.mediaType,
+				data: block.data,
+			},
+		};
+	});
+}
+
+/**
+ * Convert ContentBlock[] to Ollama format: text goes into `content`,
+ * images go into a separate `images` array.
+ */
+function toOllamaMessage(role: string, blocks: ContentBlock[]): Record<string, unknown> {
+	const textParts: string[] = [];
+	const images: string[] = [];
+	for (const block of blocks) {
+		if (block.type === 'text') {
+			textParts.push(block.text);
+		} else {
+			images.push(block.data);
+		}
+	}
+	const msg: Record<string, unknown> = { role, content: textParts.join('\n') };
+	if (images.length > 0) {
+		msg.images = images;
+	}
+	return msg;
+}
+
 export class AIClient {
 	constructor(private getSettings: () => SynapseSettings) {}
 
@@ -95,7 +150,12 @@ export class AIClient {
 			},
 			body: JSON.stringify({
 				model,
-				messages,
+				messages: messages.map(m => ({
+					role: m.role,
+					content: typeof m.content === 'string'
+						? m.content
+						: toOpenAIContent(m.content),
+				})),
 				max_tokens: ai.maxTokens,
 				temperature: ai.temperature,
 			}),
@@ -115,11 +175,15 @@ export class AIClient {
 			temperature: ai.temperature,
 			messages: nonSystemMsgs.map(m => ({
 				role: m.role,
-				content: m.content,
+				content: typeof m.content === 'string'
+					? m.content
+					: toAnthropicContent(m.content),
 			})),
 		};
 		if (systemMsg) {
-			body.system = systemMsg.content;
+			body.system = typeof systemMsg.content === 'string'
+				? systemMsg.content
+				: systemMsg.content;
 		}
 
 		const response = await safeRequest({
@@ -157,7 +221,12 @@ export class AIClient {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				model,
-				messages,
+				messages: messages.map(m => {
+					if (typeof m.content === 'string') {
+						return { role: m.role, content: m.content };
+					}
+					return toOllamaMessage(m.role, m.content);
+				}),
 				stream: false,
 			}),
 		});

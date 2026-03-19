@@ -13,6 +13,7 @@ export type CheckpointModule =
 	| 'enrichment'
 	| 'audio'
 	| 'video'
+	| 'image'
 	| 'summarize'
 	| 'organize';
 

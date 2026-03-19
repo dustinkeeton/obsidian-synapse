@@ -95,6 +95,12 @@ export interface VideoSettings {
 	frameExtraction: FrameExtractionSettings;
 }
 
+export interface ImageSettings {
+	enabled: boolean;
+	visionModel: string;
+	language: string;
+}
+
 export interface EnrichmentWeightSettings {
 	sameFolder: number;
 	siblingFolder: number;
@@ -183,6 +189,7 @@ export interface SynapseSettings {
 	elaboration: ElaborationSettings;
 	audio: AudioSettings;
 	video: VideoSettings;
+	image: ImageSettings;
 	enrichment: EnrichmentSettings;
 	summarize: SummarizeSettings;
 	tidy: TidySettings;
@@ -252,6 +259,11 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 			visionModel: 'gpt-4o',
 			maxFrames: 20,
 		},
+	},
+	image: {
+		enabled: true,
+		visionModel: '',
+		language: '',
 	},
 	enrichment: {
 		enabled: true,
