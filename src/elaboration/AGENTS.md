@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-18
+last-updated: 2026-03-19
 ---
 
 # Elaboration Module
 
-Detects stub/placeholder notes in the vault and generates AI-powered elaboration proposals for non-destructive review.
+Detects stub/placeholder notes in the vault and generates AI-powered elaboration proposals for non-destructive review. Includes image analysis to enrich proposals with context from embedded images.
 
 ## Public API
 
@@ -61,6 +61,8 @@ interface Proposal {
 | `proposal-store.test.ts` | Tests | ProposalStore tests |
 | `proposal-view.ts` | `ProposalReviewView`, `PROPOSAL_VIEW_TYPE` | Legacy sidebar view (not registered by main.ts) |
 | `proposal-modal.ts` | `ProposalDetailModal` | Legacy modal for editing proposals |
+| `image-analyzer.ts` | `ImageAnalyzer`, `ImageAnalysis`, `MAX_IMAGES_PER_NOTE` | Multi-modal AI image analysis for enriching elaboration proposals |
+| `scan-note.test.ts` | Tests | ScanNote integration tests |
 | `index.ts` | `ElaborationModule` | Orchestrator, commands, scan intervals |
 
 ## Data Flow
@@ -105,6 +107,33 @@ interface Proposal {
 ## Accept Behavior
 
 On accept, sanitized AI additions are wrapped in an `synapse-elaboration` callout and appended to the note via `buildCallout(CALLOUT_TYPES.elaboration, 'Elaboration', additions)`.
+
+## Image Analysis
+
+`ImageAnalyzer` (in `image-analyzer.ts`) uses multi-modal `AIClient.chat()` with `ContentBlock[]` to analyze images embedded in notes during proposal generation:
+
+```ts
+class ImageAnalyzer {
+  constructor(app: App, getSettings: () => SynapseSettings)
+  findImageReferences(content: string): Array<{ reference: string; path: string; isInternal: boolean }>
+  analyzeImagesInNote(notePath: string, content: string): Promise<ImageAnalysis[]>
+}
+
+interface ImageAnalysis {
+  reference: string       // Original embed reference
+  description: string     // AI-generated image description
+  locationHints: string   // Location clues from visual content
+  metadata: string        // Observable metadata clues
+}
+
+const MAX_IMAGES_PER_NOTE = 5
+```
+
+- Finds both wiki-link (`![[image.png]]`) and markdown (`![alt](path)`) image references
+- Skips external URLs (only vault images)
+- Caps at 5 images per note to avoid token overflow
+- Uses `image.visionModel` override if configured (same pattern as `ImageExtractor`)
+- Graceful degradation: skips individual image failures
 
 ## Error Handling
 

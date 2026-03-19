@@ -1,6 +1,6 @@
 import { AIClient } from '../shared';
+import type { ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
-import { ContentBlock } from '../shared/types';
 import { OCRResult } from './types';
 
 export class ImageExtractor {

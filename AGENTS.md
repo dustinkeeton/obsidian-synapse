@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-18
+last-updated: 2026-03-19
 ---
 
 # Synapse — Agent Reference
 
-AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, and checkpoint-based operation resumability.
+AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, image OCR, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, and checkpoint-based operation resumability.
 
 ## Build and Test
 
@@ -26,16 +26,18 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | main | `src/main.ts` | Plugin entry, module orchestration, command/view registration, checkpoint dispatch | `SynapsePlugin` (default) |
 | settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `SynapseSettingTab` |
-| elaboration | `src/elaboration/` | Stub note detection, AI proposal generation | `ElaborationModule`, types |
+| elaboration | `src/elaboration/` | Stub note detection, AI proposal generation, image analysis for proposals | `ElaborationModule`, `ImageAnalyzer`, types |
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, types |
-| transcription | `src/transcription/` | Unified transcription UI modals | `UnifiedTranscriptionModal`, `NoteMediaModal` |
+| image | `src/image/` | Image OCR via multi-modal AI (vision models), batch extraction with checkpoints | `ImageModule`, `findImageEmbeds`, `ImageExtractor`, types |
+| transcription | `src/transcription/` | Unified transcription/OCR UI modals | `UnifiedTranscriptionModal`, `NoteMediaModal` |
 | enrichment | `src/enrichment/` | Metadata classification, topic extraction, link resolution, external refs, frontmatter | `EnrichmentModule`, types |
 | summarize | `src/summarize/` | URL and transcription summarization, standalone summary notes, audio-embed summarization | `SummarizeModule`, types |
 | tidy | `src/tidy/` | Spelling correction and markdown formatting via AI | `TidyModule`, `TidySnapshot` |
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes | `OrganizeModule`, types |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
-| shared | `src/shared/` | AI client, file utils, validation, notifications, callouts, frontmatter, checkpoints | `AIClient`, `NotificationManager`, `CheckpointManager`, file/validation utils, callout registry, id-utils |
+| title | `src/title/` | AI title suggestions for untitled/mismatched notes | `TitleModule`, types |
+| shared | `src/shared/` | AI client (multi-modal), file utils, validation, notifications, callouts, frontmatter, checkpoints | `AIClient`, `NotificationManager`, `CheckpointManager`, file/validation utils, callout registry, id-utils |
 | views | `src/views/` | Unified sidebar for all proposal types and checkpoint management | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem` |
 
 ## Dependency Graph
@@ -45,11 +47,12 @@ main.ts
   |-- settings.ts
   |-- settings-tab.ts
   |-- shared/ (CheckpointManager, NotificationManager)
-  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types, shared/checkpoint-types
-  |-- elaboration/ --> shared/ (CheckpointManager)
+  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types, title/types, shared/checkpoint-types
+  |-- elaboration/ --> shared/ (CheckpointManager), image/ (ImageAnalyzer uses shared/AIClient)
   |-- audio/ --> shared/ (CheckpointManager)
   |-- video/ --> shared/ (CheckpointManager), audio/ (reuses transcription pipeline)
-  |-- transcription/ --> audio/ (types), video/ (detectPlatform)
+  |-- image/ --> shared/ (CheckpointManager, AIClient, callouts, validation)
+  |-- transcription/ --> audio/ (types), video/ (detectPlatform), image/ (types)
   |-- enrichment/ --> shared/ (CheckpointManager)
   |-- summarize/ --> shared/ (CheckpointManager), video/ (transcribeUrl injection), audio/ (findAudioEmbeds)
   |-- tidy/ --> shared/
@@ -59,11 +62,13 @@ main.ts
 
 Key constraints:
 - `video` depends on `audio` (reuses transcription pipeline)
-- `transcription` is UI-only; delegates work to `audio` and `video` modules
+- `transcription` is UI-only; delegates work to `audio`, `video`, and `image` modules
 - `summarize` receives `video.transcribeUrl` and audio transcribe callback via constructor injection
 - `deep-dive` reuses `organize` for auto-organize nesting mode
+- `image` module uses multi-modal `AIClient.chat()` with `ContentBlock[]` for vision
+- `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
 - All feature modules depend on `shared`; no circular dependencies
-- All feature modules except `tidy` and `transcription` receive `CheckpointManager` for resumable operations
+- All feature modules except `tidy`, `title`, and `transcription` receive `CheckpointManager` for resumable operations
 - `views` imports types only from feature modules and `Checkpoint` from shared
 
 ## Command Registry
@@ -118,6 +123,7 @@ All AI-generated content uses Obsidian callouts. Registry in `src/shared/callout
 | elaboration | `synapse-elaboration` | Elaboration proposals |
 | deepDive | `synapse-deep-dive` | Deep dive content |
 | nav | `synapse-nav` | Deep dive navigation blocks |
+| ocr | `synapse-ocr` | Image OCR extraction results |
 
 ## Settings Schema
 
@@ -180,6 +186,11 @@ SynapseSettings {
       visionModel: string                           // default: 'gpt-4o'
       maxFrames: number                             // default: 20
     }
+  }
+  image: ImageSettings {
+    enabled: boolean                                // default: true
+    visionModel: string                             // default: '' (falls back to ai.model)
+    language: string                                // default: ''
   }
   enrichment: EnrichmentSettings {
     enabled: boolean                                // default: true
@@ -264,6 +275,7 @@ SynapseSettings {
 elaboration.onProposalAccepted(filePath) --> enrichment.enrich(filePath, 'elaboration')
 audio.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transcription')
 video.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transcription')
+image.onExtractionComplete(filePath)     --> enrichment.enrich(filePath, 'transcription')
 summarize.onSummaryComplete(filePath)    --> enrichment.enrich(filePath, 'summarization')
 deepDive.onNoteAccepted(filePath)        --> enrichment.enrich(filePath, 'deep-dive')
 deepDive.onOrganizeRequested(file)       --> organize.organizeNote(file)
@@ -273,6 +285,7 @@ summarize.onOrganizeRequested(file)      --> organize.organizeNote(file)
 elaboration.onProposalAccepted(filePath) --> title.checkTitle(filePath)
 audio.onTranscriptionComplete(filePath)  --> title.checkTitle(filePath)
 video.onTranscriptionComplete(filePath)  --> title.checkTitle(filePath)
+image.onExtractionComplete(filePath)     --> title.checkTitle(filePath)
 summarize.onSummaryComplete(filePath)    --> title.checkTitle(filePath)
 deepDive.onNoteAccepted(filePath)        --> title.checkTitle(filePath)
 
@@ -291,7 +304,7 @@ Title checks wired when `title.enabled && title.checkAfterOperations`.
 
 ## Checkpoint System
 
-All vault-scan operations (elaboration, enrichment, audio, video, summarize, organize, deep-dive) use `CheckpointManager` for resumable operations:
+All vault-scan operations (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive) use `CheckpointManager` for resumable operations:
 
 ```
 main.ts creates single CheckpointManager, injected into all modules
@@ -312,6 +325,23 @@ main.ts creates single CheckpointManager, injected into all modules
 ```
 
 Checkpoint cleanup: completed/discarded checkpoints older than 7 days are auto-removed on startup.
+
+## Multi-Modal AI Support
+
+`AIClient.chat()` accepts `ChatMessage[]` where `content` can be `string | ContentBlock[]`:
+
+```ts
+type ContentBlock = TextContentBlock | ImageContentBlock
+interface TextContentBlock { type: 'text'; text: string }
+interface ImageContentBlock { type: 'image'; data: string; mediaType: string }
+```
+
+Provider-specific format conversion:
+- OpenAI: `image_url` with `data:` URI
+- Anthropic: `image` source with `base64` type
+- Ollama: separate `images` array on the message
+
+Used by: `image/extractor.ts` (OCR), `elaboration/image-analyzer.ts` (image analysis for proposals)
 
 ## External Dependencies (Runtime)
 

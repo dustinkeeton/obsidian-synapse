@@ -1,5 +1,5 @@
 import { App, Modal, Setting } from 'obsidian';
-import { addEnhancedSlider } from '../shared/slider-helper';
+import { addEnhancedSlider } from '../shared';
 
 export const MIN_DEPTH = 1;
 export const MAX_DEPTH = 6;
