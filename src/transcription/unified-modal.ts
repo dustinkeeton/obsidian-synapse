@@ -2,8 +2,8 @@ import { App, Modal, Notice, Platform, Setting, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AUDIO_EXTENSIONS } from '../audio';
 import { detectPlatform } from '../video';
-import { validateTimeRange } from '../shared/validation';
-import type { TimeRange } from '../shared/validation';
+import { validateTimeRange } from '../shared';
+import type { TimeRange } from '../shared';
 import {
 	detectLocalFileDuration,
 	detectUrlDuration,

@@ -100,8 +100,11 @@ src/
 │   └── index.ts            #   ImageModule orchestrator (batch + checkpoint)
 │
 ├── transcription/          # Unified transcription UI (issue #20)
-│   ├── unified-modal.ts    #   File picker + URL input in a single modal
+│   ├── unified-modal.ts    #   File picker + URL input with duration + time-range
 │   ├── note-media-modal.ts #   Selection modal for media in current note
+│   ├── time-range-slider.ts#   Dual-handle range slider (pure DOM component)
+│   ├── time-range-toast.ts #   Confirmation toast with embedded slider
+│   ├── duration-detector.ts#   Media duration via ffprobe (local) / yt-dlp (URL)
 │   └── index.ts            #   Barrel export
 │
 ├── enrichment/             # Tags, links, refs, frontmatter
@@ -330,6 +333,25 @@ graph TB
 
 The transcription module replaced 4 modal files across audio/ and video/ with 2 unified modals. The `NoteMediaModal` also handles image OCR extraction. All callbacks are wired in `main.ts`.
 
+### Time-Range Clipping (v0.3.2)
+
+When a user selects an audio file or enters a video URL, the modal auto-detects media duration via ffprobe (local) or yt-dlp (URLs). If duration >= 10 seconds, a dual-handle `TimeRangeSlider` appears allowing sub-range selection. Clipping uses ffmpeg on the extracted audio (desktop only; mobile falls back to full-file transcription).
+
+```
+File/URL selected --> detectDuration() --> duration >= 10s?
+  |-- Yes --> Show TimeRangeSlider (dual handles, live timestamps)
+  |           User adjusts range --> TimeRange { start, end }
+  |           Transcribe button --> clip audio via ffmpeg --> transcribe clip
+  |-- No  --> Full file transcription (no slider shown)
+```
+
+### Supported Platforms
+
+URL detection (`video/url-detector.ts`) recognizes:
+- **YouTube**: `youtube.com/watch`, `youtu.be`, `youtube.com/shorts`, `music.youtube.com`
+- **TikTok**: `tiktok.com/@user/video/id`, `tiktok.com/t/...`, `vm.tiktok.com`, `vt.tiktok.com`
+- **Instagram**: `instagram.com/reel/{id}`, `instagram.com/p/{id}` (Reels)
+
 ---
 
 ## Cross-Module Communication
@@ -476,7 +498,7 @@ graph TB
 
 ## Summarize: Content-Aware Templates
 
-The summarize module detects content type (e.g., recipe pages via JSON-LD schema data) and applies specialized templates:
+The summarize module detects content type and applies specialized templates. Supports recipe pages (via JSON-LD schema data) and receipt images (via OCR keyword scoring):
 
 ```
 Note with URL --> content-fetcher.ts

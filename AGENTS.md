@@ -30,7 +30,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, types |
 | image | `src/image/` | Image OCR via multi-modal AI (vision models), batch extraction with checkpoints | `ImageModule`, `findImageEmbeds`, `ImageExtractor`, types |
-| transcription | `src/transcription/` | Unified transcription/OCR UI modals | `UnifiedTranscriptionModal`, `NoteMediaModal` |
+| transcription | `src/transcription/` | Unified transcription/OCR UI modals, duration detection, time-range clipping UI | `UnifiedTranscriptionModal`, `NoteMediaModal`, `TimeRangeSlider`, `showTimeRangeToast`, `detectLocalFileDuration`, `detectUrlDuration`, `formatTimestamp` |
 | enrichment | `src/enrichment/` | Metadata classification, topic extraction, link resolution, external refs, frontmatter | `EnrichmentModule`, types |
 | summarize | `src/summarize/` | URL and transcription summarization, standalone summary notes, audio-embed summarization | `SummarizeModule`, types |
 | tidy | `src/tidy/` | Spelling correction and markdown formatting via AI | `TidyModule`, `TidySnapshot` |
@@ -52,7 +52,7 @@ main.ts
   |-- audio/ --> shared/ (CheckpointManager)
   |-- video/ --> shared/ (CheckpointManager), audio/ (reuses transcription pipeline)
   |-- image/ --> shared/ (CheckpointManager, AIClient, callouts, validation)
-  |-- transcription/ --> audio/ (types), video/ (detectPlatform), image/ (types)
+  |-- transcription/ --> audio/ (types), video/ (detectPlatform), image/ (types), shared/ (TimeRange, validation)
   |-- enrichment/ --> shared/ (CheckpointManager)
   |-- summarize/ --> shared/ (CheckpointManager), video/ (transcribeUrl injection), audio/ (findAudioEmbeds)
   |-- tidy/ --> shared/

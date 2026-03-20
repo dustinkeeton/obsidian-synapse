@@ -10,7 +10,7 @@ import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
 import { Transcriber } from './transcriber';
 import { TranscribeOptions, TranscriptionResult } from './types';
-import type { AudioExtractor } from '../video/audio-extractor';
+import type { AudioExtractor } from '../video';
 
 export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from './note-scanner';
 export type { AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';

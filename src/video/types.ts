@@ -16,7 +16,7 @@ export interface VideoSource {
 	duration?: number;
 }
 
-import { TimeRange } from '../shared/validation';
+import { TimeRange } from '../shared';
 
 export interface VideoProcessOptions {
 	postProcess?: boolean;

@@ -1,6 +1,6 @@
 import { Platform, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
-import { sanitizePath } from '../shared/validation';
+import { sanitizePath, sanitizeUrl } from '../shared';
 
 /**
  * Result of a duration detection attempt.
@@ -81,13 +81,14 @@ export async function detectUrlDuration(
 	}
 
 	try {
+		const validatedUrl = sanitizeUrl(url);
 		const { execFile } = require('child_process') as typeof import('child_process');
 		const ytDlpPath = sanitizePath(getSettings().video.ytDlpPath);
 
 		const output = await new Promise<string>((resolve, reject) => {
 			execFile(
 				ytDlpPath,
-				['--dump-json', '--no-download', url],
+				['--dump-json', '--no-download', validatedUrl],
 				{ env: shellEnv(), maxBuffer: 10 * 1024 * 1024, timeout: 30_000 },
 				(error, stdout) => {
 					if (error) reject(error);
