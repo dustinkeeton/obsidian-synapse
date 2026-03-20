@@ -135,6 +135,45 @@ export function formatRecipeStructuredData(recipes: RecipeJsonLd[]): string {
 	return sections.join('\n');
 }
 
+/**
+ * Fetch tweet text via Twitter's oEmbed API (no auth required).
+ * Extracts the tweet body from the HTML field in the oEmbed response.
+ */
+export async function fetchTweetContent(url: string, maxLength: number): Promise<string> {
+	const validatedUrl = sanitizeUrl(url);
+	const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(validatedUrl)}`;
+
+	const timeout = new Promise<never>((_, reject) =>
+		setTimeout(() => reject(new Error('Tweet fetch timed out')), FETCH_TIMEOUT_MS)
+	);
+
+	const response = await Promise.race([
+		requestUrl({ url: oembedUrl, method: 'GET' }),
+		timeout,
+	]);
+
+	const data = JSON.parse(response.text);
+
+	// Extract tweet text from the blockquote in the HTML field
+	const blockquoteMatch = (data.html as string).match(/<blockquote[^>]*><p[^>]*>([\s\S]*?)<\/p>/);
+	const tweetText = blockquoteMatch
+		? blockquoteMatch[1]
+			.replace(/<br\s*\/?>/g, '\n')
+			.replace(/<a[^>]*>([\s\S]*?)<\/a>/g, '$1')
+			.replace(/<[^>]+>/g, '')
+			.replace(/&amp;/g, '&')
+			.replace(/&lt;/g, '<')
+			.replace(/&gt;/g, '>')
+			.replace(/&quot;/g, '"')
+			.replace(/&#39;/g, "'")
+			.trim()
+		: '';
+
+	const author = data.author_name ? `@${data.author_name}` : 'Unknown';
+	const formatted = `${author}: ${tweetText}\n\nSource: ${validatedUrl}`;
+	return formatted.slice(0, maxLength);
+}
+
 export async function fetchPageContent(url: string, maxLength: number): Promise<string> {
 	const validatedUrl = sanitizeUrl(url);
 

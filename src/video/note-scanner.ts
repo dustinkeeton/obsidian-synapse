@@ -17,7 +17,7 @@ export function findVideoUrls(content: string): VideoUrlEmbed[] {
 		for (const match of matches) {
 			const url = match[0];
 			const detected = detectPlatform(url);
-			if (!detected) continue;
+			if (!detected || detected.platform === 'twitter') continue;
 
 			if (hasTranscriptionBelow(lines, i, url)) {
 				continue;

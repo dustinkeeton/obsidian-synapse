@@ -8,6 +8,7 @@ import { fetchPageContent } from './content-fetcher';
 // Mock the content fetcher to avoid real network calls
 vi.mock('./content-fetcher', () => ({
 	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
+	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
 }));
 
 // Mock the summarizer to return a canned summary.
@@ -33,6 +34,7 @@ vi.mock('./note-scanner', () => ({
 // Mock the video module
 vi.mock('../video', () => ({
 	isSupportedUrl: vi.fn().mockReturnValue(false),
+	detectPlatform: vi.fn().mockReturnValue(null),
 }));
 
 // Mock the shared module to avoid folder picker / getMarkdownFiles issues

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { extractReadableText, fetchPageContent, extractJsonLdRecipes, formatRecipeStructuredData } from './content-fetcher';
+import { extractReadableText, fetchPageContent, fetchTweetContent, extractJsonLdRecipes, formatRecipeStructuredData } from './content-fetcher';
 import { isSupportedUrl } from '../video';
 
 /**
@@ -50,6 +50,12 @@ describe('isSupportedUrl integration with summarize', () => {
 
 	it('does not flag empty strings', () => {
 		expect(isSupportedUrl('')).toBe(false);
+	});
+
+	it('does not flag Twitter/X.com URLs as video (text content)', () => {
+		expect(isSupportedUrl('https://twitter.com/user/status/123456789')).toBe(false);
+		expect(isSupportedUrl('https://x.com/user/status/123456789')).toBe(false);
+		expect(isSupportedUrl('https://mobile.twitter.com/user/status/123456789')).toBe(false);
 	});
 });
 
@@ -321,5 +327,81 @@ describe('fetchPageContent with JSON-LD', () => {
 		const result = await fetchPageContent('https://example.com/blog', 10000);
 		expect(result).not.toContain('STRUCTURED RECIPE DATA');
 		expect(result).toContain('Just a blog post');
+	});
+});
+
+// ── fetchTweetContent ─────────────────────────────────────────────────
+
+describe('fetchTweetContent', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('extracts tweet text from oEmbed response', async () => {
+		const { requestUrl } = await import('obsidian');
+		const oembedResponse = {
+			text: JSON.stringify({
+				html: '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Hello world, this is a tweet!</p>&mdash; Test User (@testuser)</blockquote>',
+				author_name: 'testuser',
+				url: 'https://twitter.com/testuser/status/123',
+			}),
+		};
+		vi.mocked(requestUrl).mockResolvedValue(oembedResponse as never);
+
+		const result = await fetchTweetContent('https://twitter.com/testuser/status/123', 10000);
+		expect(result).toContain('@testuser');
+		expect(result).toContain('Hello world, this is a tweet!');
+		expect(result).toContain('Source: https://twitter.com/testuser/status/123');
+	});
+
+	it('handles tweet with HTML entities', async () => {
+		const { requestUrl } = await import('obsidian');
+		const oembedResponse = {
+			text: JSON.stringify({
+				html: '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Tom &amp; Jerry &lt;3</p>&mdash; User (@user)</blockquote>',
+				author_name: 'user',
+			}),
+		};
+		vi.mocked(requestUrl).mockResolvedValue(oembedResponse as never);
+
+		const result = await fetchTweetContent('https://x.com/user/status/456', 10000);
+		expect(result).toContain('Tom & Jerry <3');
+	});
+
+	it('handles tweet with links (strips anchor tags, keeps text)', async () => {
+		const { requestUrl } = await import('obsidian');
+		const oembedResponse = {
+			text: JSON.stringify({
+				html: '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Check out <a href="https://t.co/abc">https://example.com</a></p>&mdash; User (@user)</blockquote>',
+				author_name: 'user',
+			}),
+		};
+		vi.mocked(requestUrl).mockResolvedValue(oembedResponse as never);
+
+		const result = await fetchTweetContent('https://x.com/user/status/789', 10000);
+		expect(result).toContain('Check out https://example.com');
+		expect(result).not.toContain('<a');
+	});
+
+	it('truncates to maxLength', async () => {
+		const { requestUrl } = await import('obsidian');
+		const oembedResponse = {
+			text: JSON.stringify({
+				html: '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">A very long tweet content here</p>&mdash; User (@user)</blockquote>',
+				author_name: 'user',
+			}),
+		};
+		vi.mocked(requestUrl).mockResolvedValue(oembedResponse as never);
+
+		const result = await fetchTweetContent('https://x.com/user/status/999', 20);
+		expect(result.length).toBeLessThanOrEqual(20);
+	});
+
+	it('throws on network error', async () => {
+		const { requestUrl } = await import('obsidian');
+		vi.mocked(requestUrl).mockRejectedValue(new Error('Network error'));
+
+		await expect(fetchTweetContent('https://x.com/user/status/000', 10000))
+			.rejects.toThrow('Network error');
 	});
 });
