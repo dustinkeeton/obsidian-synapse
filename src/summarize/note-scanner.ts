@@ -4,6 +4,7 @@ import { SummarizeTarget } from './types';
 const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
 const TIKTOK_HOST_RE = /(?:vm\.|vt\.)?tiktok\.com/;
 const INSTAGRAM_HOST_RE = /instagram\.com/;
+const TWITTER_HOST_RE = /(?:mobile\.)?(?:twitter\.com|x\.com)/;
 const TRANSCRIPTION_HEADER = /^>\s*\*\*Transcription of (.+?)\*\*$/;
 const CALLOUT_TRANSCRIPTION_HEADER = new RegExp(
 	`^>\\s*\\[!${CALLOUT_TYPES.transcription}\\][-+]?\\s+Transcription of (.+)$`
@@ -137,7 +138,7 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
  * Other URLs are returned unchanged.
  */
 function normalizeSocialUrl(url: string): string {
-	if (TIKTOK_HOST_RE.test(url) || INSTAGRAM_HOST_RE.test(url)) {
+	if (TIKTOK_HOST_RE.test(url) || INSTAGRAM_HOST_RE.test(url) || TWITTER_HOST_RE.test(url)) {
 		return url.replace(/[?#].*$/, '');
 	}
 	return url;

@@ -413,6 +413,29 @@ describe('findSummarizeTargets', () => {
 		expect(targets[0].type).toBe('transcription');
 	});
 
+	it('matches summary for Twitter/X.com URL with query params stripped', () => {
+		const content = [
+			'https://x.com/user/status/123?s=20&t=abc',
+			'',
+			'> [!synapse-summary] Summary of https://x.com/user/status/123',
+			'> Tweet summary text.',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets).toHaveLength(0);
+	});
+
+	it('matches summary for twitter.com URL with params stripped', () => {
+		const content = [
+			'https://twitter.com/user/status/456?ref_src=twsrc',
+			'',
+			'> **Summary of https://twitter.com/user/status/456**',
+			'>',
+			'> Summary here.',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets).toHaveLength(0);
+	});
+
 	it('enrichment targets survive idempotent re-scan after note creation', () => {
 		// After processing, the external links become wikilinks.
 		// Re-scanning should find no enrichment targets.
