@@ -3,6 +3,7 @@ import { SummarizeTarget } from './types';
 
 const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
 const TIKTOK_HOST_RE = /(?:vm\.|vt\.)?tiktok\.com/;
+const INSTAGRAM_HOST_RE = /instagram\.com/;
 const TRANSCRIPTION_HEADER = /^>\s*\*\*Transcription of (.+?)\*\*$/;
 const CALLOUT_TRANSCRIPTION_HEADER = new RegExp(
 	`^>\\s*\\[!${CALLOUT_TYPES.transcription}\\][-+]?\\s+Transcription of (.+)$`
@@ -132,11 +133,11 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
 }
 
 /**
- * Strip query parameters and fragment from TikTok URLs for comparison.
- * Non-TikTok URLs are returned unchanged.
+ * Strip query parameters and fragment from TikTok / Instagram URLs for comparison.
+ * Other URLs are returned unchanged.
  */
-function normalizeTikTokUrl(url: string): string {
-	if (TIKTOK_HOST_RE.test(url)) {
+function normalizeSocialUrl(url: string): string {
+	if (TIKTOK_HOST_RE.test(url) || INSTAGRAM_HOST_RE.test(url)) {
 		return url.replace(/[?#].*$/, '');
 	}
 	return url;
@@ -147,7 +148,7 @@ function normalizeTikTokUrl(url: string): string {
  * Looks within 3 lines below, allowing blank lines and blockquotes.
  */
 export function hasSummaryBelow(lines: string[], startLine: number, source: string): boolean {
-	const normalized = normalizeTikTokUrl(source);
+	const normalized = normalizeSocialUrl(source);
 	for (let j = startLine + 1; j < lines.length && j <= startLine + 3; j++) {
 		const line = lines[j];
 		// Legacy format: > **Summary of <source>**
@@ -170,7 +171,7 @@ export function hasSummaryBelow(lines: string[], startLine: number, source: stri
  * Check if a transcription block exists below a URL line.
  */
 function hasTranscriptionBelow(lines: string[], urlLine: number, url: string): boolean {
-	const normalized = normalizeTikTokUrl(url);
+	const normalized = normalizeSocialUrl(url);
 	for (let j = urlLine + 1; j < lines.length && j <= urlLine + 5; j++) {
 		const line = lines[j];
 		// Legacy format: > **Transcription of <url>**

@@ -139,6 +139,79 @@ describe('detectPlatform', () => {
 		});
 	});
 
+	describe('Instagram URLs', () => {
+		it('matches /reel/ URL with www', () => {
+			const result = detectPlatform('https://www.instagram.com/reel/DAFnBq_xSHw/');
+			expect(result).toEqual({
+				platform: 'instagram',
+				videoId: 'DAFnBq_xSHw',
+				url: 'https://www.instagram.com/reel/DAFnBq_xSHw/',
+			});
+		});
+
+		it('matches /reel/ URL without www', () => {
+			const result = detectPlatform('https://instagram.com/reel/DAFnBq_xSHw/');
+			expect(result?.platform).toBe('instagram');
+			expect(result?.videoId).toBe('DAFnBq_xSHw');
+		});
+
+		it('matches /reels/ URL', () => {
+			const result = detectPlatform('https://www.instagram.com/reels/DAFnBq_xSHw/');
+			expect(result?.platform).toBe('instagram');
+			expect(result?.videoId).toBe('DAFnBq_xSHw');
+		});
+
+		it('matches /p/ post URL', () => {
+			const result = detectPlatform('https://www.instagram.com/p/CxYzAbCdEfG/');
+			expect(result?.platform).toBe('instagram');
+			expect(result?.videoId).toBe('CxYzAbCdEfG');
+		});
+
+		it('matches without trailing slash', () => {
+			const result = detectPlatform('https://www.instagram.com/reel/DAFnBq_xSHw');
+			expect(result?.platform).toBe('instagram');
+			expect(result?.videoId).toBe('DAFnBq_xSHw');
+		});
+
+		it('matches with query params', () => {
+			const result = detectPlatform('https://www.instagram.com/reel/DAFnBq_xSHw/?igsh=abc123');
+			expect(result?.platform).toBe('instagram');
+			expect(result?.videoId).toBe('DAFnBq_xSHw');
+		});
+
+		it('matches with fragment', () => {
+			const result = detectPlatform('https://www.instagram.com/reel/DAFnBq_xSHw/#comments');
+			expect(result?.platform).toBe('instagram');
+			expect(result?.videoId).toBe('DAFnBq_xSHw');
+		});
+
+		it('matches shortcode with hyphens', () => {
+			const result = detectPlatform('https://www.instagram.com/reel/abc-DEF-123/');
+			expect(result?.platform).toBe('instagram');
+			expect(result?.videoId).toBe('abc-DEF-123');
+		});
+
+		it('does not match profile URLs', () => {
+			expect(detectPlatform('https://www.instagram.com/username/')).toBeNull();
+		});
+
+		it('does not match story URLs', () => {
+			expect(detectPlatform('https://www.instagram.com/stories/username/123456789/')).toBeNull();
+		});
+
+		it('does not match explore URLs', () => {
+			expect(detectPlatform('https://www.instagram.com/explore/')).toBeNull();
+		});
+
+		it('does not match bare instagram.com', () => {
+			expect(detectPlatform('https://www.instagram.com/')).toBeNull();
+		});
+
+		it('does not match IGTV URL', () => {
+			expect(detectPlatform('https://www.instagram.com/tv/CxYzAbCdEfG/')).toBeNull();
+		});
+	});
+
 	describe('unsupported URLs', () => {
 		it('returns null for vimeo', () => {
 			expect(detectPlatform('https://vimeo.com/123456')).toBeNull();
@@ -166,10 +239,12 @@ describe('isSupportedUrl', () => {
 	it('returns true for supported URLs', () => {
 		expect(isSupportedUrl('https://youtube.com/watch?v=abc123')).toBe(true);
 		expect(isSupportedUrl('https://tiktok.com/t/ZTxxxxx/')).toBe(true);
+		expect(isSupportedUrl('https://www.instagram.com/reel/DAFnBq_xSHw/')).toBe(true);
 	});
 
 	it('returns false for unsupported URLs', () => {
 		expect(isSupportedUrl('https://example.com')).toBe(false);
 		expect(isSupportedUrl('')).toBe(false);
+		expect(isSupportedUrl('https://www.instagram.com/username/')).toBe(false);
 	});
 });
