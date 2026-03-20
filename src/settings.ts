@@ -88,10 +88,6 @@ export interface VideoSettings {
 	tempFolder: string;
 	downloadFolder: string;
 	embedInNote: boolean;
-	supportedPlatforms: {
-		youtube: boolean;
-		tiktok: boolean;
-	};
 	frameExtraction: FrameExtractionSettings;
 }
 
@@ -262,10 +258,6 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		tempFolder: '.synapse/temp',
 		downloadFolder: 'Media',
 		embedInNote: true,
-		supportedPlatforms: {
-			youtube: true,
-			tiktok: true,
-		},
 		frameExtraction: {
 			enabled: false,
 			intervalSeconds: 30,
