@@ -115,6 +115,23 @@ export class SynapseSettingTab extends PluginSettingTab {
 			},
 		);
 
+		addEnhancedSlider(
+			new Setting(containerEl)
+				.setName('Max tokens')
+				.setDesc('Maximum tokens in AI responses (256-8192)'),
+			{
+				min: 256,
+				max: 8192,
+				step: 256,
+				value: this.plugin.settings.ai.maxTokens,
+				showTicks: true,
+				onChange: async (value) => {
+					this.plugin.settings.ai.maxTokens = value;
+					await this.plugin.saveSettings();
+				},
+			},
+		);
+
 		// ── Note Elaboration ──
 		new Setting(containerEl).setHeading().setName('Note Elaboration');
 
