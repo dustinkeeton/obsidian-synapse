@@ -216,6 +216,33 @@ export function stringifyYaml(obj: any): string {
 	return lines.join('\n') + '\n';
 }
 
+// --- Platform detection (mock defaults to desktop) ---
+
+export const Platform = {
+	isDesktop: true,
+	isDesktopApp: true,
+	isMobile: false,
+	isMobileApp: false,
+	isIosApp: false,
+	isAndroidApp: false,
+	isPhone: false,
+	isTablet: false,
+	isMacOS: true,
+	isWin: false,
+	isLinux: false,
+	isSafari: false,
+};
+
+// --- SliderComponent (stub for slider-helper.ts) ---
+
+export class SliderComponent {
+	sliderEl: any = createStubEl();
+	setLimits = vi.fn().mockReturnThis();
+	setValue = vi.fn().mockReturnThis();
+	setDynamicTooltip = vi.fn().mockReturnThis();
+	onChange = vi.fn().mockReturnThis();
+}
+
 // --- Utility functions ---
 
 export function normalizePath(path: string): string {
