@@ -282,6 +282,37 @@ export class SynapseSettingTab extends PluginSettingTab {
 		}
 
 		new Setting(containerEl)
+			.setName('Language')
+			.setDesc('Audio language for transcription (auto-detect if empty)')
+			.addDropdown((dd) =>
+				dd
+					.addOptions({
+						'': 'Auto-detect',
+						en: 'English',
+						es: 'Spanish',
+						fr: 'French',
+						de: 'German',
+						ja: 'Japanese',
+						zh: 'Chinese',
+						ko: 'Korean',
+						pt: 'Portuguese',
+						ru: 'Russian',
+						ar: 'Arabic',
+						hi: 'Hindi',
+						it: 'Italian',
+						nl: 'Dutch',
+						pl: 'Polish',
+						sv: 'Swedish',
+						tr: 'Turkish',
+					})
+					.setValue(this.plugin.settings.audio.language)
+					.onChange(async (value) => {
+						this.plugin.settings.audio.language = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName('Post-processing')
 			.setDesc('Clean up and structure transcriptions with AI')
 			.addToggle((toggle) =>
