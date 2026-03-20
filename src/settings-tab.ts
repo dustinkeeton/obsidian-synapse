@@ -877,5 +877,64 @@ export class SynapseSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		// ── REM (Link Discovery) ──
+		new Setting(containerEl).setHeading().setName('REM (Link Discovery)');
+
+		new Setting(containerEl)
+			.setName('Enable REM')
+			.setDesc('Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.rem.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.rem.enabled = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Semantic matching')
+			.setDesc('Use AI to find conceptual matches beyond literal title/alias matching')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.rem.semanticMatching)
+					.onChange(async (value) => {
+						this.plugin.settings.rem.semanticMatching = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		addEnhancedSlider(
+			new Setting(containerEl)
+				.setName('Confidence threshold')
+				.setDesc('Minimum confidence for semantic matches (0-1)'),
+			{
+				min: 0,
+				max: 1,
+				step: 0.05,
+				value: this.plugin.settings.rem.confidenceThreshold,
+				showTicks: true,
+				onChange: async (value) => {
+					this.plugin.settings.rem.confidenceThreshold = value;
+					await this.plugin.saveSettings();
+				},
+			},
+		);
+
+		new Setting(containerEl)
+			.setName('Max links per note')
+			.setDesc('Maximum number of link candidates to suggest per scanned note')
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.rem.maxLinksPerNote))
+					.onChange(async (value) => {
+						const num = parseInt(value);
+						if (!isNaN(num) && num > 0) {
+							this.plugin.settings.rem.maxLinksPerNote = num;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
 	}
 }

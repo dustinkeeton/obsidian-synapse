@@ -11,6 +11,7 @@ import { TidyModule } from './tidy';
 import { OrganizeModule } from './organize';
 import { DeepDiveModule } from './deep-dive';
 import { TitleModule } from './title';
+import { RemModule } from './rem';
 import { NotificationManager, CheckpointManager, removeNotificationStyles } from './shared';
 import type { DeferredTask, Checkpoint } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
@@ -38,6 +39,7 @@ export default class SynapsePlugin extends Plugin {
 	private organize!: OrganizeModule;
 	private deepDive!: DeepDiveModule;
 	private title!: TitleModule;
+	private rem!: RemModule;
 	private startupTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	async onload(): Promise<void> {
@@ -85,6 +87,7 @@ export default class SynapsePlugin extends Plugin {
 		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager);
 		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager);
 		this.title = new TitleModule(this, getSettings, this.notifications);
+		this.rem = new RemModule(this, getSettings, this.notifications, this.checkpointManager);
 
 		// Register the unified proposal view
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
@@ -99,6 +102,8 @@ export default class SynapsePlugin extends Plugin {
 				onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
 				onTitleAccept: (id) => this.title.acceptProposal(id),
 				onTitleReject: (id) => this.title.rejectProposal(id),
+				onRemAcceptSelected: (id, texts) => this.rem.acceptProposal(id, texts),
+				onRemReject: (id) => this.rem.rejectProposal(id),
 				onCheckpointDiscard: (id) => this.discardCheckpoint(id),
 				onCheckpointResume: (id) => this.resumeCheckpoint(id),
 			});
@@ -111,6 +116,7 @@ export default class SynapsePlugin extends Plugin {
 		this.organize.onViewRefreshNeeded = refreshView;
 		this.deepDive.onViewRefreshNeeded = refreshView;
 		this.title.onViewRefreshNeeded = refreshView;
+		this.rem.onViewRefreshNeeded = refreshView;
 
 		// Load enabled modules
 		if (this.settings.elaboration.enabled) {
@@ -142,6 +148,9 @@ export default class SynapsePlugin extends Plugin {
 		}
 		if (this.settings.title.enabled) {
 			await this.title.onload();
+		}
+		if (this.settings.rem.enabled) {
+			await this.rem.onload();
 		}
 
 		// Wire enrichment callbacks -- triggers after other processes complete
@@ -290,6 +299,7 @@ export default class SynapsePlugin extends Plugin {
 		this.organize?.onunload();
 		this.deepDive?.onunload();
 		this.title?.onunload();
+		this.rem?.onunload();
 		removeNotificationStyles();
 		UnifiedProposalView.removeStyles();
 	}
@@ -421,6 +431,9 @@ export default class SynapsePlugin extends Plugin {
 			case 'deep-dive':
 				await this.deepDive.resumeFromCheckpoint(checkpoint);
 				break;
+			case 'rem':
+				await this.rem.resumeFromCheckpoint(checkpoint);
+				break;
 			default:
 				this.notifications.info(`Unknown module: ${checkpoint.module}`);
 		}
@@ -458,6 +471,11 @@ export default class SynapsePlugin extends Plugin {
 		const titleProposals = await this.title.getPendingProposals();
 		for (const p of titleProposals) {
 			items.push({ kind: 'title', data: p });
+		}
+
+		const remProposals = await this.rem.getPendingProposals();
+		for (const p of remProposals) {
+			items.push({ kind: 'rem', data: p });
 		}
 
 		// Gather incomplete checkpoints for the sidebar banner

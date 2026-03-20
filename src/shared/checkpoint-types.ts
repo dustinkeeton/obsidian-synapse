@@ -15,7 +15,8 @@ export type CheckpointModule =
 	| 'video'
 	| 'image'
 	| 'summarize'
-	| 'organize';
+	| 'organize'
+	| 'rem';
 
 /** Status of a checkpoint lifecycle. */
 export type CheckpointStatus = 'active' | 'completed' | 'discarded';
