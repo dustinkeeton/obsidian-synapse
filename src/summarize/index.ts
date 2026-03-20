@@ -513,7 +513,7 @@ export class SummarizeModule {
 		return `${folderPrefix}${safeName}.md`;
 	}
 
-	private async scanVault(folderPath?: string): Promise<void> {
+	async scanVault(folderPath?: string, skipConfirmation = false): Promise<void> {
 		const settings = this.getSettings().summarize;
 
 		// Phase 1: Scan for files with targets
@@ -555,15 +555,17 @@ export class SummarizeModule {
 			return;
 		}
 
-		// Phase 2: Confirm with user
-		const proceed = await this.notifications.confirm(
-			`Found ${totalTargets} item(s) to summarize across ${filesWithTargets.length} note(s). Proceed?`,
-			{ proceedLabel: 'Summarize', cancelLabel: 'Cancel' }
-		);
+		// Phase 2: Confirm with user (skipped when called from Fire Synapse)
+		if (!skipConfirmation) {
+			const proceed = await this.notifications.confirm(
+				`Found ${totalTargets} item(s) to summarize across ${filesWithTargets.length} note(s). Proceed?`,
+				{ proceedLabel: 'Summarize', cancelLabel: 'Cancel' }
+			);
 
-		if (!proceed) {
-			this.notifications.info('Vault summarization cancelled');
-			return;
+			if (!proceed) {
+				this.notifications.info('Vault summarization cancelled');
+				return;
+			}
 		}
 
 		// Phase 3: Process files (checkpointed)
