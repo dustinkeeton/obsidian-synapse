@@ -4,6 +4,7 @@ import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
+import type { RemProposal } from '../rem';
 import type { Checkpoint } from '../shared';
 import type { UnifiedItem, UnifiedViewCallbacks } from './types';
 
@@ -28,6 +29,10 @@ export class UnifiedProposalView extends ItemView {
 	private reviewingOrganize: OrganizeProposal | null = null;
 	private reviewingDeepDive: DeepDiveProposal | null = null;
 	private reviewingTitle: TitleProposal | null = null;
+	private reviewingRem: RemProposal | null = null;
+
+	// REM review selection state
+	private selectedRemLinks = new Set<string>();
 
 	private acceptAllInProgress = false;
 	private rejectAllInProgress = false;
@@ -102,6 +107,12 @@ export class UnifiedProposalView extends ItemView {
 			);
 			if (!exists) this.reviewingTitle = null;
 		}
+		if (this.reviewingRem) {
+			const exists = items.some(
+				i => i.kind === 'rem' && i.data.id === this.reviewingRem!.id
+			);
+			if (!exists) this.reviewingRem = null;
+		}
 		this.render();
 	}
 
@@ -116,6 +127,8 @@ export class UnifiedProposalView extends ItemView {
 			this.renderDeepDiveReview(this.reviewingDeepDive);
 		} else if (this.reviewingTitle) {
 			this.renderTitleReview(this.reviewingTitle);
+		} else if (this.reviewingRem) {
+			this.renderRemReview(this.reviewingRem);
 		} else {
 			this.renderList();
 		}
@@ -136,6 +149,7 @@ export class UnifiedProposalView extends ItemView {
 		this.reviewingOrganize = null;
 		this.reviewingDeepDive = null;
 		this.reviewingTitle = null;
+		this.reviewingRem = null;
 		this.render();
 	}
 
@@ -214,6 +228,11 @@ export class UnifiedProposalView extends ItemView {
 			case 'title':
 				await this.callbacks.onTitleAccept(item.data.id);
 				break;
+			case 'rem': {
+				const allTexts = item.data.candidates.map(c => c.matchedText);
+				await this.callbacks.onRemAcceptSelected(item.data.id, allTexts);
+				break;
+			}
 		}
 	}
 
@@ -230,6 +249,8 @@ export class UnifiedProposalView extends ItemView {
 				return `Deep Dive: ${(item.data as DeepDiveProposal).topic.title}`;
 			case 'title':
 				return `Title: ${item.data.sourceNotePath}`;
+			case 'rem':
+				return `REM: ${item.data.sourceNotePath}`;
 		}
 	}
 
@@ -297,6 +318,9 @@ export class UnifiedProposalView extends ItemView {
 				break;
 			case 'title':
 				await this.callbacks.onTitleReject(item.data.id);
+				break;
+			case 'rem':
+				await this.callbacks.onRemReject(item.data.id);
 				break;
 		}
 	}
@@ -402,6 +426,8 @@ export class UnifiedProposalView extends ItemView {
 					this.renderDeepDiveCard(section, item.data);
 				} else if (item.kind === 'title') {
 					this.renderTitleCard(section, item.data);
+				} else if (item.kind === 'rem') {
+					this.renderRemCard(section, item.data);
 				}
 			}
 		}
@@ -985,6 +1011,168 @@ export class UnifiedProposalView extends ItemView {
 		});
 	}
 
+	// ── REM Card ─────────────────────────────────────────────
+
+	private renderRemCard(container: HTMLElement, proposal: RemProposal): void {
+		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--rem' });
+
+		card.createEl('span', { text: 'REM', cls: 'synapse-badge synapse-badge--rem' });
+
+		const { candidates } = proposal;
+		const parts: string[] = [];
+		const titleCount = candidates.filter(c => c.matchType === 'title').length;
+		const aliasCount = candidates.filter(c => c.matchType === 'alias').length;
+		const semanticCount = candidates.filter(c => c.matchType === 'semantic').length;
+		if (titleCount > 0) parts.push(`${titleCount} title`);
+		if (aliasCount > 0) parts.push(`${aliasCount} alias`);
+		if (semanticCount > 0) parts.push(`${semanticCount} semantic`);
+
+		card.createEl('small', {
+			text: `${candidates.length} link${candidates.length === 1 ? '' : 's'} | ${parts.join(', ')}`,
+			cls: 'synapse-reasons',
+		});
+
+		// Preview: show first few candidates
+		const previewItems = candidates.slice(0, 3);
+		const previewText = previewItems
+			.map(c => `${c.matchedText} → [[${c.targetDisplayName}]]`)
+			.join('; ');
+		card.createEl('p', {
+			text: previewText + (candidates.length > 3 ? '...' : ''),
+			cls: 'synapse-preview',
+		});
+
+		const actions = card.createDiv({ cls: 'synapse-actions' });
+
+		const viewBtn = actions.createEl('button', { text: 'Review' });
+		viewBtn.addEventListener('click', () => {
+			this.enterRemReview(proposal);
+		});
+
+		const acceptBtn = actions.createEl('button', { text: 'Accept All' });
+		acceptBtn.addEventListener('click', () => {
+			const allTexts = candidates.map(c => c.matchedText);
+			this.callbacks.onRemAcceptSelected(proposal.id, allTexts);
+		});
+
+		const rejectBtn = actions.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () =>
+			this.callbacks.onRemReject(proposal.id)
+		);
+	}
+
+	// ── REM Review ───────────────────────────────────────────
+
+	private enterRemReview(proposal: RemProposal): void {
+		this.reviewingRem = proposal;
+		this.selectedRemLinks = new Set(proposal.candidates.map(c => c.matchedText));
+		this.render();
+	}
+
+	private renderRemReview(proposal: RemProposal): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('synapse-view-root');
+
+		// Header
+		const header = contentEl.createDiv({ cls: 'synapse-review-header' });
+		const backBtn = header.createEl('button', { text: 'Back', cls: 'synapse-review-back' });
+		backBtn.addEventListener('click', () => this.exitReview());
+
+		const titleLink = header.createEl('span', {
+			text: proposal.sourceNotePath,
+			cls: 'synapse-review-title synapse-note-link',
+		});
+		titleLink.addEventListener('click', () => this.openNote(proposal.sourceNotePath));
+
+		contentEl.createEl('small', {
+			text: `${proposal.candidates.length} linkable mention${proposal.candidates.length === 1 ? '' : 's'} | ${proposal.createdAt.split('T')[0]}`,
+			cls: 'synapse-review-reasons',
+		});
+
+		// Scrollable checklist of candidates
+		const checklist = contentEl.createDiv({ cls: 'synapse-enrichment-checklist' });
+
+		for (const candidate of proposal.candidates) {
+			const section = checklist.createDiv({ cls: 'synapse-checklist-section' });
+
+			// Header: target name + match type badge
+			const headingRow = section.createDiv({ cls: 'synapse-rem-candidate-header' });
+			headingRow.createEl('span', {
+				text: `[[${candidate.targetDisplayName}]]`,
+				cls: 'synapse-rem-target',
+			});
+			headingRow.createEl('span', {
+				text: candidate.matchType,
+				cls: `synapse-badge synapse-badge--rem-${candidate.matchType}`,
+			});
+			if (candidate.matchType === 'semantic') {
+				headingRow.createEl('span', {
+					text: `${Math.round(candidate.confidence * 100)}%`,
+					cls: 'synapse-quality-badge',
+				});
+			}
+
+			// Checkbox row for this candidate
+			const row = section.createEl('label', { cls: 'synapse-checklist-row' });
+			const checkbox = row.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
+			checkbox.checked = this.selectedRemLinks.has(candidate.matchedText);
+			checkbox.addEventListener('change', () => {
+				if (checkbox.checked) {
+					this.selectedRemLinks.add(candidate.matchedText);
+				} else {
+					this.selectedRemLinks.delete(candidate.matchedText);
+				}
+			});
+
+			const label = row.createEl('span');
+			label.createEl('strong', { text: `"${candidate.matchedText}"` });
+			label.createEl('span', {
+				text: ` (${candidate.occurrences.length} occurrence${candidate.occurrences.length === 1 ? '' : 's'})`,
+			});
+
+			// Show context for first occurrence
+			if (candidate.occurrences.length > 0) {
+				const occ = candidate.occurrences[0];
+				const contextEl = section.createEl('div', { cls: 'synapse-rem-context' });
+				const before = occ.lineText.slice(Math.max(0, occ.startOffset - 30), occ.startOffset);
+				const matched = occ.lineText.slice(occ.startOffset, occ.endOffset);
+				const after = occ.lineText.slice(occ.endOffset, occ.endOffset + 30);
+				contextEl.createEl('span', { text: `...${before}` });
+				contextEl.createEl('mark', { text: matched });
+				contextEl.createEl('span', { text: `${after}...` });
+			}
+		}
+
+		// Action bar
+		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
+
+		const acceptBtn = actionBar.createEl('button', { text: 'Accept Selected', cls: 'mod-cta' });
+		acceptBtn.addEventListener('click', () => {
+			const accepted = [...this.selectedRemLinks];
+			this.reviewingRem = null;
+			this.callbacks.onRemAcceptSelected(proposal.id, accepted);
+		});
+
+		const selectAllBtn = actionBar.createEl('button', { text: 'All' });
+		selectAllBtn.addEventListener('click', () => {
+			this.selectedRemLinks = new Set(proposal.candidates.map(c => c.matchedText));
+			this.render();
+		});
+
+		const noneBtn = actionBar.createEl('button', { text: 'None' });
+		noneBtn.addEventListener('click', () => {
+			this.selectedRemLinks.clear();
+			this.render();
+		});
+
+		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () => {
+			this.reviewingRem = null;
+			this.callbacks.onRemReject(proposal.id);
+		});
+	}
+
 	// ── Checkpoint Banner ─────────────────────────────────────
 
 	private renderCheckpointBanner(container: HTMLElement): void {
@@ -1386,6 +1574,64 @@ export class UnifiedProposalView extends ItemView {
 			.synapse-review-pane-label--title {
 				background: var(--color-cyan);
 				color: var(--text-on-accent);
+			}
+
+			/* ── REM ── */
+			.synapse-card--rem {
+				border-left-color: var(--color-pink);
+			}
+			.synapse-badge--rem {
+				background: var(--color-pink);
+				color: var(--text-on-accent);
+			}
+			.synapse-badge--rem-title {
+				background: var(--interactive-accent);
+				color: var(--text-on-accent);
+				font-size: 9px;
+				padding: 0 4px;
+				border-radius: 2px;
+			}
+			.synapse-badge--rem-alias {
+				background: var(--color-green);
+				color: var(--text-on-accent);
+				font-size: 9px;
+				padding: 0 4px;
+				border-radius: 2px;
+			}
+			.synapse-badge--rem-semantic {
+				background: var(--color-purple);
+				color: var(--text-on-accent);
+				font-size: 9px;
+				padding: 0 4px;
+				border-radius: 2px;
+			}
+			.synapse-rem-candidate-header {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: 4px 8px;
+				margin-bottom: 2px;
+			}
+			.synapse-rem-target {
+				font-weight: 600;
+				font-size: 13px;
+				color: var(--text-accent);
+			}
+			.synapse-rem-context {
+				font-size: 12px;
+				color: var(--text-muted);
+				padding: 2px 8px 4px 32px;
+				font-family: var(--font-monospace);
+				line-height: 1.4;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.synapse-rem-context mark {
+				background: var(--text-highlight-bg);
+				color: var(--text-normal);
+				padding: 0 2px;
+				border-radius: 2px;
 			}
 
 			/* ── Organize Review ── */
