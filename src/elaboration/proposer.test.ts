@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TFile } from '../__mocks__/obsidian';
+import { TFile, requestUrl } from '../__mocks__/obsidian';
 import { ProposalGenerator } from './proposer';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { DetectionResult } from './types';
@@ -15,6 +15,8 @@ vi.mock('../shared/ai-client', () => ({
 		chat = mockChat;
 	},
 }));
+
+const mockRequestUrl = vi.mocked(requestUrl);
 
 function makeSettings(): SynapseSettings {
 	return structuredClone(DEFAULT_SETTINGS);
@@ -246,5 +248,77 @@ describe('ProposalGenerator -- image analysis integration', () => {
 		const [prompt] = mockComplete.mock.calls[0];
 		// "No metadata observations." should be filtered from the context
 		expect(prompt).not.toContain('No metadata observations.');
+	});
+});
+
+describe('ProposalGenerator -- Twitter URL external context', () => {
+	let generator: ProposalGenerator;
+
+	beforeEach(() => {
+		mockComplete.mockClear();
+		mockChat.mockClear();
+		mockComplete.mockResolvedValue('Expanded content with tweet context.');
+
+		const noteContent = '# Thread Notes\n\nSee https://x.com/elonmusk/status/123456789\n\nGreat insight!';
+
+		const mockApp = {
+			vault: {
+				adapter: {
+					read: vi.fn().mockResolvedValue(noteContent),
+				},
+				read: vi.fn(),
+				readBinary: vi.fn(),
+			},
+			metadataCache: {
+				getCache: vi.fn().mockReturnValue(null),
+				getFirstLinkpathDest: vi.fn().mockReturnValue(null),
+			},
+		};
+
+		const settings = makeSettings();
+		settings.elaboration.proposal.includeSourceContext = false;
+		settings.image.enabled = false;
+		generator = new ProposalGenerator(mockApp as any, () => settings);
+
+		mockRequestUrl.mockResolvedValue({
+			text: JSON.stringify({
+				html: '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">This is the tweet text</p></blockquote>',
+				author_name: 'elonmusk',
+			}),
+		} as never);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('includes Twitter content as external context in prompt', async () => {
+		const detection: DetectionResult = {
+			notePath: 'notes/thread.md',
+			reasons: [{ type: 'user-requested' }],
+		};
+
+		await generator.generate(detection);
+
+		expect(mockComplete).toHaveBeenCalledOnce();
+		const [prompt] = mockComplete.mock.calls[0];
+		expect(prompt).toContain('External content referenced in this note:');
+		expect(prompt).toContain('@elonmusk');
+		expect(prompt).toContain('This is the tweet text');
+	});
+
+	it('gracefully handles tweet fetch failure', async () => {
+		mockRequestUrl.mockRejectedValue(new Error('503'));
+
+		const detection: DetectionResult = {
+			notePath: 'notes/thread.md',
+			reasons: [{ type: 'user-requested' }],
+		};
+
+		const proposal = await generator.generate(detection);
+		// Should still produce a proposal — tweet fetch is non-fatal
+		expect(proposal.proposedAdditions).toBeDefined();
+		const [prompt] = mockComplete.mock.calls[0];
+		expect(prompt).not.toContain('External content referenced in this note:');
 	});
 });
