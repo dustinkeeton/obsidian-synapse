@@ -37,6 +37,8 @@ export {
 	generateOrganizeSummary,
 } from './diagram-generator';
 export type { TreeNode, MoveRecord } from './diagram-generator';
+export { fetchTweetContent, isTwitterUrl } from './tweet-fetcher';
+export type { TweetContent } from './tweet-fetcher';
 export { addEnhancedSlider } from './slider-helper';
 export { generateId, isValidCheckpointId } from './id-utils';
 export { CheckpointManager } from './checkpoint-manager';

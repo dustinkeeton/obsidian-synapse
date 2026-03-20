@@ -2,7 +2,7 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter,
-	CheckpointManager, generateId,
+	CheckpointManager, generateId, isTwitterUrl, fetchTweetContent,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
@@ -369,24 +369,30 @@ export class EnrichmentModule {
 		const existingLinkPaths = [...this.analyzer.getOutgoingLinks(file.path)];
 		const existingExternalLinks = this.extractExternalUrls(content);
 
+		// Fetch tweet content for any Twitter URLs so classifiers see it
+		const twitterContext = await this.fetchTwitterContext(existingExternalLinks);
+		const classifierBody = twitterContext
+			? twitterContext + '\n\n' + parsed.body
+			: parsed.body;
+
 		// Run classifiers in parallel
 		const [tags, graphLinks, topicLinks, externalLinks, frontmatter] =
 			await Promise.all([
-				this.classifier.classify(parsed.body, existingTags),
+				this.classifier.classify(classifierBody, existingTags),
 				Promise.resolve(
 					this.linkResolver.findInternalLinks(file, existingLinkPaths)
 				),
 				this.topicExtractor.extractTopics(
-					parsed.body,
+					classifierBody,
 					file.path,
 					existingLinkPaths
 				),
 				this.promptBuilder.suggestExternalLinks(
-					parsed.body,
+					classifierBody,
 					existingExternalLinks
 				),
 				this.promptBuilder.suggestFrontmatter(
-					parsed.body,
+					classifierBody,
 					parsed.frontmatter
 				),
 			]);
@@ -524,6 +530,22 @@ export class EnrichmentModule {
 		}
 
 		return false;
+	}
+
+	private async fetchTwitterContext(urls: string[]): Promise<string> {
+		const twitterUrls = urls.filter(u => isTwitterUrl(u)).slice(0, 3);
+		if (twitterUrls.length === 0) return '';
+
+		const parts: string[] = [];
+		for (const url of twitterUrls) {
+			try {
+				const text = await fetchTweetContent(url, 500);
+				parts.push(text);
+			} catch {
+				// Non-fatal — skip tweets that can't be fetched
+			}
+		}
+		return parts.join('\n\n');
 	}
 
 	private extractExternalUrls(content: string): string[] {

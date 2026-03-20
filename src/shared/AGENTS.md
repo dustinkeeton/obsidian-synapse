@@ -67,6 +67,11 @@ function parseFrontmatter(content: string): ParsedNote
 function serializeFrontmatter(frontmatter: Record<string, unknown>, body: string): string
 function mergeTags(frontmatter: Record<string, unknown>, newTags: string[]): void
 
+// tweet-fetcher.ts
+function fetchTweetContent(url: string, maxLength: number): Promise<string>
+function isTwitterUrl(url: string): boolean
+interface TweetContent { author: string; text: string; url: string }
+
 // callouts.ts
 const CALLOUT_TYPES: { summary, transcription, enrichment, elaboration, deepDive, nav }
 type CalloutType = 'synapse-summary' | 'synapse-transcription' | ...
@@ -148,6 +153,8 @@ interface Checkpoint {
 | `checkpoint-types.ts` | `CheckpointModule`, `CheckpointStatus`, `CheckpointWorkItem`, `DeferredTask`, `Checkpoint` | Checkpoint data model types |
 | `checkpoint-manager.ts` | `CheckpointManager` | CRUD and lifecycle management for resumable operation checkpoints |
 | `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
+| `tweet-fetcher.ts` | `fetchTweetContent`, `isTwitterUrl`, `TweetContent` | Twitter/X.com tweet fetching with oEmbed → fxtwitter → vxtwitter fallback chain |
+| `tweet-fetcher.test.ts` | Tests | Tweet fetcher tests |
 | `index.ts` | re-exports | Barrel file |
 
 ## AIClient Provider Routing
@@ -231,6 +238,8 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 | `wordCount` | elaboration/detector, deep-dive/index |
 | `readNote` | deep-dive/index |
 | `writeNote` | deep-dive/index, organize/index |
+| `fetchTweetContent` | summarize/index, elaboration/proposer, enrichment/index |
+| `isTwitterUrl` | elaboration/proposer, enrichment/index |
 | `sanitizeUrl` | video/index, video/audio-extractor |
 | `sanitizePath` | video/audio-extractor |
 | `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, image/index, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |

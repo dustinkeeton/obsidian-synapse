@@ -1,6 +1,6 @@
 import { App } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import { DetectionResult, Proposal } from './types';
 
@@ -34,7 +34,10 @@ export class ProposalGenerator {
 			analyses = result.analyses;
 		}
 
-		const prompt = this.buildPrompt(content, detection, contextNotes, imageContext);
+		// Gather external context from Twitter URLs in the note
+		const externalContext = await this.gatherExternalContext(content);
+
+		const prompt = this.buildPrompt(content, detection, contextNotes, imageContext, externalContext);
 		const systemPrompt = imageContext
 			? 'You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. Image analysis has been provided -- use the descriptions to write contextually aware content that references what the images actually show. Preserve all image embeds in their original format.'
 			: 'You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. If the source content contains image URLs, preserve them as markdown image embeds (![alt](url)) rather than describing the image in text. For internal images referenced as [[image.jpg]], embed them as ![[image.jpg]].';
@@ -59,7 +62,8 @@ export class ProposalGenerator {
 		content: string,
 		detection: DetectionResult,
 		contextNotes: string,
-		imageContext: string
+		imageContext: string,
+		externalContext = ''
 	): string {
 		const reasonDescriptions = detection.reasons.map(r => {
 			switch (r.type) {
@@ -94,7 +98,32 @@ export class ProposalGenerator {
 			prompt += `\n\nImage analysis from this note:\n${imageContext}`;
 		}
 
+		if (externalContext) {
+			prompt += `\n\nExternal content referenced in this note:\n${externalContext}`;
+		}
+
 		return prompt;
+	}
+
+	private async gatherExternalContext(content: string): Promise<string> {
+		const urlRegex = /https?:\/\/[^\s)\]>]+/g;
+		const urls = [...content.matchAll(urlRegex)]
+			.map(m => m[0])
+			.filter(u => isTwitterUrl(u))
+			.slice(0, 3);
+
+		if (urls.length === 0) return '';
+
+		const parts: string[] = [];
+		for (const url of urls) {
+			try {
+				const tweetText = await fetchTweetContent(url, 500);
+				parts.push(tweetText);
+			} catch {
+				// Non-fatal — skip tweets that can't be fetched
+			}
+		}
+		return parts.join('\n\n---\n\n');
 	}
 
 	private async gatherContext(notePath: string): Promise<string> {
