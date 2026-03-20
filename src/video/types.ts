@@ -1,4 +1,4 @@
-export type Platform = 'youtube' | 'tiktok' | 'unknown';
+export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'unknown';
 
 export interface UrlDetectionResult {
 	platform: Platform;

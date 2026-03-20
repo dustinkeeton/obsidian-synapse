@@ -8,6 +8,9 @@ const TIKTOK_VIDEO_REGEX =
 // Short/share TikTok URLs: tiktok.com/t/..., vm.tiktok.com/..., vt.tiktok.com/...
 const TIKTOK_SHORT_REGEX =
 	/(?:vm\.|vt\.)?tiktok\.com\/(?:t\/)?[\w.-]+/;
+// Instagram Reels / posts: instagram.com/reel/CODE, /reels/CODE, /p/CODE
+const INSTAGRAM_REGEX =
+	/instagram\.com\/(?:reel|reels|p)\/([\w-]+)/;
 
 /**
  * Strip query parameters and fragment from TikTok URLs so the canonical
@@ -32,6 +35,11 @@ export function detectPlatform(url: string): UrlDetectionResult | null {
 	const ttShortMatch = url.match(TIKTOK_SHORT_REGEX);
 	if (ttShortMatch) {
 		return { platform: 'tiktok', videoId: 'short-url', url: stripTikTokParams(url) };
+	}
+
+	const igMatch = url.match(INSTAGRAM_REGEX);
+	if (igMatch) {
+		return { platform: 'instagram', videoId: igMatch[1], url };
 	}
 
 	return null;
