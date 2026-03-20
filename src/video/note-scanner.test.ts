@@ -81,6 +81,27 @@ describe('findVideoUrls', () => {
 		expect(result[0].platform).toBe('tiktok');
 	});
 
+	it('excludes Twitter/X.com URLs', () => {
+		const content = [
+			'https://twitter.com/user/status/1234567890',
+			'https://x.com/other/status/9876543210',
+		].join('\n');
+		const result = findVideoUrls(content);
+		expect(result).toHaveLength(0);
+	});
+
+	it('finds video URLs but excludes Twitter URLs in mixed content', () => {
+		const content = [
+			'https://youtube.com/watch?v=abc123',
+			'https://x.com/user/status/1234567890',
+			'https://www.tiktok.com/@user/video/9876543210',
+		].join('\n');
+		const result = findVideoUrls(content);
+		expect(result).toHaveLength(2);
+		expect(result[0].platform).toBe('youtube');
+		expect(result[1].platform).toBe('tiktok');
+	});
+
 	it('ignores non-video URLs', () => {
 		const content = 'https://example.com\nhttps://google.com\nhttps://vimeo.com/123';
 		const result = findVideoUrls(content);

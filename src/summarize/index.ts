@@ -6,9 +6,9 @@ import {
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { OperationHandle } from '../shared';
-import { isSupportedUrl } from '../video';
+import { isSupportedUrl, detectPlatform } from '../video';
 import { findAudioEmbeds } from '../audio';
-import { fetchPageContent } from './content-fetcher';
+import { fetchPageContent, fetchTweetContent } from './content-fetcher';
 import { findSummarizeTargets } from './note-scanner';
 import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
@@ -468,6 +468,10 @@ export class SummarizeModule {
 				const msg = error instanceof Error ? error.message : String(error);
 				throw new Error(`Video transcription failed for ${url}: ${msg}`);
 			}
+		}
+
+		if (detectPlatform(url)?.platform === 'twitter') {
+			return fetchTweetContent(url, maxLength);
 		}
 
 		return fetchPageContent(url, maxLength);

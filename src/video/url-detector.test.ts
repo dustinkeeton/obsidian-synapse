@@ -212,6 +212,73 @@ describe('detectPlatform', () => {
 		});
 	});
 
+	describe('Twitter/X.com URLs', () => {
+		it('matches twitter.com status URL', () => {
+			const result = detectPlatform('https://twitter.com/user/status/1234567890');
+			expect(result).toEqual({
+				platform: 'twitter',
+				videoId: '1234567890',
+				url: 'https://twitter.com/user/status/1234567890',
+			});
+		});
+
+		it('matches x.com status URL', () => {
+			const result = detectPlatform('https://x.com/user/status/1234567890');
+			expect(result?.platform).toBe('twitter');
+			expect(result?.videoId).toBe('1234567890');
+		});
+
+		it('matches www.twitter.com', () => {
+			const result = detectPlatform('https://www.twitter.com/user/status/1234567890');
+			expect(result?.platform).toBe('twitter');
+		});
+
+		it('matches www.x.com', () => {
+			const result = detectPlatform('https://www.x.com/user/status/1234567890');
+			expect(result?.platform).toBe('twitter');
+		});
+
+		it('matches mobile.twitter.com', () => {
+			const result = detectPlatform('https://mobile.twitter.com/user/status/1234567890');
+			expect(result?.platform).toBe('twitter');
+		});
+
+		it('matches mobile.x.com', () => {
+			const result = detectPlatform('https://mobile.x.com/user/status/1234567890');
+			expect(result?.platform).toBe('twitter');
+		});
+
+		it('matches twitter.com/i/web/status/ share redirect', () => {
+			const result = detectPlatform('https://twitter.com/i/web/status/1234567890');
+			expect(result?.platform).toBe('twitter');
+			expect(result?.videoId).toBe('1234567890');
+		});
+
+		it('matches x.com/i/web/status/ share redirect', () => {
+			const result = detectPlatform('https://x.com/i/web/status/1234567890');
+			expect(result?.platform).toBe('twitter');
+			expect(result?.videoId).toBe('1234567890');
+		});
+
+		it('strips query params', () => {
+			const result = detectPlatform('https://x.com/user/status/1234567890?s=20&t=abc');
+			expect(result?.url).toBe('https://x.com/user/status/1234567890');
+		});
+
+		it('strips fragment', () => {
+			const result = detectPlatform('https://twitter.com/user/status/1234567890#m');
+			expect(result?.url).toBe('https://twitter.com/user/status/1234567890');
+		});
+
+		it('does not match profile URLs', () => {
+			expect(detectPlatform('https://twitter.com/username')).toBeNull();
+		});
+
+		it('does not match bare twitter.com', () => {
+			expect(detectPlatform('https://twitter.com/')).toBeNull();
+		});
+	});
+
 	describe('unsupported URLs', () => {
 		it('returns null for vimeo', () => {
 			expect(detectPlatform('https://vimeo.com/123456')).toBeNull();
@@ -246,5 +313,10 @@ describe('isSupportedUrl', () => {
 		expect(isSupportedUrl('https://example.com')).toBe(false);
 		expect(isSupportedUrl('')).toBe(false);
 		expect(isSupportedUrl('https://www.instagram.com/username/')).toBe(false);
+	});
+
+	it('returns false for Twitter URLs (text content, not video)', () => {
+		expect(isSupportedUrl('https://twitter.com/user/status/123')).toBe(false);
+		expect(isSupportedUrl('https://x.com/user/status/123')).toBe(false);
 	});
 });
