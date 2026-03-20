@@ -107,6 +107,156 @@
   resize: vertical;
 }
 
+/* ── Dual-handle time-range slider ── */
+
+.synapse-time-range-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.synapse-time-range-range-label {
+  text-align: center;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  color: var(--text-accent);
+}
+
+.synapse-time-range-track-wrapper {
+  position: relative;
+  height: 28px;
+  width: 100%;
+}
+
+.synapse-time-range-track-highlight {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 6px;
+  background-color: var(--interactive-accent);
+  opacity: 0.4;
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.synapse-time-range-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+  z-index: 1;
+}
+
+/* Allow thumb interaction while keeping track transparent */
+.synapse-time-range-input::-webkit-slider-thumb {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  border: 2px solid var(--background-primary);
+  cursor: grab;
+  position: relative;
+  z-index: 2;
+}
+
+.synapse-time-range-input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  border: 2px solid var(--background-primary);
+  cursor: grab;
+}
+
+.synapse-time-range-input::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+}
+
+.synapse-time-range-input::-moz-range-track {
+  height: 4px;
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+}
+
+/* Only show track on the bottom (start) input */
+.synapse-time-range-input-end::-webkit-slider-runnable-track {
+  background: transparent;
+}
+.synapse-time-range-input-end::-moz-range-track {
+  background: transparent;
+}
+
+.synapse-time-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+.synapse-time-range-label-duration {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* ── Time-range toast ── */
+
+.synapse-notice--time-range {
+  min-width: 340px;
+  max-width: 480px;
+}
+
+.synapse-notice-time-range-title,
+.synapse-notice--time-range .synapse-notice-time-range-title {
+  font-weight: var(--font-semibold);
+  margin-bottom: 8px;
+}
+
+.synapse-notice-time-range-slider {
+  margin: 8px 0;
+}
+
+/* ── Fallback text input toast ── */
+
+.synapse-notice-time-range-desc {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.synapse-notice-time-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.synapse-notice-time-input {
+  width: 80px;
+  padding: 4px 6px;
+  font-size: var(--font-ui-small);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
 /* ── Mobile-responsive overrides ── */
 
 @media (max-width: 768px) {
