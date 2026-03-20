@@ -12,7 +12,9 @@ import { OrganizeModule } from './organize';
 import { DeepDiveModule } from './deep-dive';
 import { TitleModule } from './title';
 import { RemModule } from './rem';
-import { NotificationManager, CheckpointManager, removeNotificationStyles } from './shared';
+import { SynapseRunner } from './pipeline';
+import type { PipelineModuleMap } from './pipeline';
+import { FolderPickerModal, NotificationManager, CheckpointManager, removeNotificationStyles } from './shared';
 import type { DeferredTask, Checkpoint } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
@@ -282,6 +284,30 @@ export default class SynapsePlugin extends Plugin {
 				},
 			});
 		}
+
+		// Fire Synapse: run all enabled features on a directory
+		const moduleMap: PipelineModuleMap = {
+			elaboration: (fp, sc) => this.elaboration.scanVault(fp, sc),
+			summarize: (fp, sc) => this.summarize.scanVault(fp, sc),
+			enrichment: (fp, sc) => this.enrichment.scanVault(fp, sc),
+			rem: (fp) => this.rem.remScanDirectory(fp),
+			tidy: (fp, sc) => this.tidy.scanVault(fp, sc),
+			organize: (fp, sc) => this.organize.scanDirectory(fp, sc),
+		};
+		const synapseRunner = new SynapseRunner(moduleMap, getSettings, this.notifications);
+
+		this.addCommand({
+			id: 'synapse:fire',
+			name: 'Fire Synapse: run all features on a directory',
+			callback: () => {
+				const defaultPath = this.app.workspace.getActiveFile()?.parent?.path || '';
+				new FolderPickerModal(
+					this.app,
+					(folder) => synapseRunner.fire(folder.isRoot() ? undefined : folder.path),
+					defaultPath,
+				).open();
+			},
+		});
 	}
 
 	onunload(): void {

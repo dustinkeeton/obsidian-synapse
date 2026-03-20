@@ -215,7 +215,7 @@ export class OrganizeModule {
 	 * 2. User confirmation
 	 * 3. Analyze and organize each file (cancellable)
 	 */
-	async scanDirectory(folderPath?: string): Promise<number> {
+	async scanDirectory(folderPath?: string, skipConfirmation = false): Promise<number> {
 		// Phase 1: Collect eligible files
 		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
@@ -245,15 +245,17 @@ export class OrganizeModule {
 			return 0;
 		}
 
-		// Phase 2: User confirmation
-		const proceed = await this.notifications.confirm(
-			`Found ${eligible.length} note${eligible.length === 1 ? '' : 's'} to analyze. Organize?`,
-			{ proceedLabel: 'Organize', cancelLabel: 'Skip' }
-		);
+		// Phase 2: User confirmation (skipped when called from Fire Synapse)
+		if (!skipConfirmation) {
+			const proceed = await this.notifications.confirm(
+				`Found ${eligible.length} note${eligible.length === 1 ? '' : 's'} to analyze. Organize?`,
+				{ proceedLabel: 'Organize', cancelLabel: 'Skip' }
+			);
 
-		if (!proceed) {
-			this.notifications.info('Organization scan skipped');
-			return 0;
+			if (!proceed) {
+				this.notifications.info('Organization scan skipped');
+				return 0;
+			}
 		}
 
 		// Phase 3: Analyze and organize (checkpointed)

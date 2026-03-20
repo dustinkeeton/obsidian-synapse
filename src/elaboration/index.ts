@@ -157,7 +157,7 @@ export class ElaborationModule {
 	 * 2. Confirmation snackbar -- user decides whether to generate proposals
 	 * 3. Heavy proposal generation with cancellation support
 	 */
-	async scanVault(folderPath?: string): Promise<number> {
+	async scanVault(folderPath?: string, skipConfirmation = false): Promise<number> {
 		// --- Phase 1: Detection (lightweight, local-only) ---
 		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(scopeLabel, 'vault-scan');
@@ -184,15 +184,17 @@ export class ElaborationModule {
 			return 0;
 		}
 
-		// --- Phase 2: Confirmation ---
-		const proceed = await this.notifications.confirm(
-			`Found ${detected.length} stub note${detected.length === 1 ? '' : 's'}. Generate proposals?`,
-			{ proceedLabel: 'Generate', cancelLabel: 'Skip' }
-		);
+		// --- Phase 2: Confirmation (skipped when called from Fire Synapse) ---
+		if (!skipConfirmation) {
+			const proceed = await this.notifications.confirm(
+				`Found ${detected.length} stub note${detected.length === 1 ? '' : 's'}. Generate proposals?`,
+				{ proceedLabel: 'Generate', cancelLabel: 'Skip' }
+			);
 
-		if (!proceed) {
-			this.notifications.info('Scan skipped');
-			return 0;
+			if (!proceed) {
+				this.notifications.info('Scan skipped');
+				return 0;
+			}
 		}
 
 		// --- Phase 3: Proposal generation (heavy, cancellable, checkpointed) ---

@@ -1,6 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, NotificationManager, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId } from '../shared';
+import { AIClient, NotificationManager, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
 
@@ -66,6 +66,50 @@ export class TidyModule {
 	}
 
 	onunload(): void {}
+
+	async scanVault(folderPath?: string, skipConfirmation = false): Promise<number> {
+		const allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+
+		if (allFiles.length === 0) {
+			return 0;
+		}
+
+		if (!skipConfirmation) {
+			const proceed = await this.notifications.confirm(
+				`Found ${allFiles.length} note${allFiles.length === 1 ? '' : 's'} to tidy. Proceed?`,
+				{ proceedLabel: 'Tidy', cancelLabel: 'Cancel' }
+			);
+			if (!proceed) {
+				this.notifications.info('Tidy scan skipped');
+				return 0;
+			}
+		}
+
+		const op = this.notifications.startOperation(
+			'Tidying notes',
+			'tidy-vault'
+		);
+
+		let tidied = 0;
+		for (let i = 0; i < allFiles.length; i++) {
+			if (op.cancelled) break;
+			op.progress(i + 1, allFiles.length, 'Tidying notes');
+
+			try {
+				await this.tidy(allFiles[i]);
+				tidied++;
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				console.warn(`[Synapse] Failed to tidy ${allFiles[i].path}: ${msg}`);
+			}
+		}
+
+		if (!op.cancelled) {
+			op.finish(`Tidied ${tidied} note${tidied === 1 ? '' : 's'}`);
+		}
+
+		return tidied;
+	}
 
 	async tidy(file: TFile): Promise<void> {
 		const op = this.notifications.startOperation(
