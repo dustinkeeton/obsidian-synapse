@@ -178,6 +178,18 @@ export interface DeepDiveSettings {
 	autoOrganizeOnAccept: boolean;
 }
 
+export interface RemSettings {
+	enabled: boolean;
+	/** Use AI to find conceptual matches beyond literal title/alias matching. */
+	semanticMatching: boolean;
+	/** Minimum confidence for semantic matches (0-1). */
+	confidenceThreshold: number;
+	/** Maximum link candidates per scanned note. */
+	maxLinksPerNote: number;
+	/** Storage folder for REM proposals. */
+	remFolderPath: string;
+}
+
 export interface TitleSettings {
 	enabled: boolean;
 	proposalFolderPath: string;
@@ -196,6 +208,7 @@ export interface SynapseSettings {
 	organize: OrganizeSettings;
 	deepDive: DeepDiveSettings;
 	title: TitleSettings;
+	rem: RemSettings;
 }
 
 export const DEFAULT_SETTINGS: SynapseSettings = {
@@ -332,5 +345,12 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		enabled: true,
 		proposalFolderPath: '.synapse/title-proposals',
 		checkAfterOperations: true,
+	},
+	rem: {
+		enabled: true,
+		semanticMatching: false,
+		confidenceThreshold: 0.5,
+		maxLinksPerNote: 20,
+		remFolderPath: '.synapse/rem',
 	},
 };

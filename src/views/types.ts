@@ -3,14 +3,16 @@ import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
+import type { RemProposal } from '../rem';
 
-/** Wrapper to unify elaboration, enrichment, organize, deep-dive, and title proposals in one list. */
+/** Wrapper to unify elaboration, enrichment, organize, deep-dive, title, and REM proposals in one list. */
 export type UnifiedItem =
 	| { kind: 'elaboration'; data: Proposal }
 	| { kind: 'enrichment'; data: EnrichmentProposal }
 	| { kind: 'organize'; data: OrganizeProposal }
 	| { kind: 'deep-dive'; data: DeepDiveProposal }
-	| { kind: 'title'; data: TitleProposal };
+	| { kind: 'title'; data: TitleProposal }
+	| { kind: 'rem'; data: RemProposal };
 
 export interface UnifiedViewCallbacks {
 	// Elaboration
@@ -28,6 +30,9 @@ export interface UnifiedViewCallbacks {
 	// Title
 	onTitleAccept: (id: string) => Promise<void>;
 	onTitleReject: (id: string) => Promise<void>;
+	// REM
+	onRemAcceptSelected: (id: string, acceptedMatchTexts: string[]) => Promise<void>;
+	onRemReject: (id: string) => Promise<void>;
 	// Checkpoints
 	onCheckpointDiscard: (id: string) => Promise<void>;
 	onCheckpointResume: (id: string) => Promise<void>;
