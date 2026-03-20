@@ -12,12 +12,12 @@ Exported from `index.ts`:
 
 ```ts
 class AudioModule {
-  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager, extractor?: AudioExtractor)
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
-  transcribeFileToActiveNote(file: TFile): Promise<void>
+  transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void>
   transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>
   onTranscriptionComplete: ((filePath: string) => void) | null
 }
@@ -37,7 +37,7 @@ interface TranscriptionResult {
 }
 
 interface TimestampEntry { start: number; end: number; text: string }
-interface TranscribeOptions { language?: string; postProcess?: boolean; sourceName?: string }
+interface TranscribeOptions { language?: string; postProcess?: boolean; sourceName?: string; timeRange?: TimeRange }
 interface AudioEmbed { fileName: string; file: TFile; line: number }
 ```
 
@@ -57,8 +57,9 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 ```
 1. User triggers via UnifiedTranscriptionModal or NoteMediaModal (in transcription/)
    |
-2a. transcribeFileToActiveNote(file) -- single file to active note
-   |  Reads binary, calls transcribe(), builds callout, appends to active note
+2a. transcribeFileToActiveNote(file, timeRange?) -- single file to active note
+   |  Reads binary, clips audio via AudioExtractor if timeRange provided (desktop only)
+   |  Calls transcribe(), builds callout with time-range label, appends to active note
    |
 2b. transcribeAndInsert(noteFile, embeds) -- batch from note scan
    |  Processes embeds in reverse line order, 2s delay between API calls
@@ -101,9 +102,18 @@ All under `settings.audio`:
 | `language` | Language hint |
 | `postProcessing.*` | AI cleanup flags |
 
+## Time-Range Clipping
+
+When `timeRange` is provided to `transcribeFileToActiveNote()`:
+1. Audio file written to temp directory
+2. `AudioExtractor.clipAudio(tempPath, start, end)` clips via ffmpeg (desktop only)
+3. Clipped audio data passed to `transcribe()`
+4. Callout title includes time range: "Transcription of file.mp3 [01:30 - 05:00]"
+5. Falls back to full-file transcription on mobile (no AudioExtractor)
+
 ## Video Module Integration
 
-`AudioModule.transcribe()` is called by `VideoModule.processUrl()` at `video/index.ts:L93`. Video passes extracted audio as `ArrayBuffer` with `sourceName` set to video title.
+`AudioModule.transcribe()` is called by `VideoModule.processUrl()` at `video/index.ts:L118`. Video passes extracted audio as `ArrayBuffer` with `sourceName` set to video title.
 
 ## Commands
 

@@ -1,5 +1,5 @@
 import { Notice } from 'obsidian';
-import type { TimeRange } from '../shared/validation';
+import type { TimeRange } from '../shared';
 import { TimeRangeSlider } from './time-range-slider';
 
 /** CSS class prefix */

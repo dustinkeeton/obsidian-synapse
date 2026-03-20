@@ -18,7 +18,7 @@ class VideoModule {
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   transcribeUrl(url: string, parentOp?: { update: (msg: string) => void }): Promise<string>
   processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>
-  transcribeUrlToActiveNote(url: string): Promise<void>
+  transcribeUrlToActiveNote(url: string, timeRange?: TimeRange): Promise<void>
   transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>
   onTranscriptionComplete: ((filePath: string) => void) | null
 }
@@ -29,7 +29,7 @@ function findVideoUrls(content: string): VideoUrlEmbed[]
 
 type Platform = 'youtube' | 'tiktok' | 'unknown'
 interface UrlDetectionResult { platform: Platform; videoId: string; url: string }
-interface VideoProcessOptions { postProcess?: boolean; extractFrames?: boolean; outputPath?: string; insertMode?: boolean }
+interface VideoProcessOptions { postProcess?: boolean; extractFrames?: boolean; outputPath?: string; insertMode?: boolean; timeRange?: TimeRange }
 interface ExtractionResult { audioPath: string; metadata: VideoMetadata }
 interface VideoMetadata { title: string; channel?: string; duration?: number; uploadDate?: string; description?: string; platform?: string; url?: string }
 interface VideoUrlEmbed { url: string; platform: Platform; line: number }
@@ -53,8 +53,9 @@ interface VideoUrlEmbed { url: string; platform: Platform; line: number }
 ```
 1. User triggers via UnifiedTranscriptionModal or NoteMediaModal (in transcription/)
    |
-2a. transcribeUrlToActiveNote(url) -- single URL to active note
-   |  Calls processUrl(), builds callout + optional video embed, appends to active note
+2a. transcribeUrlToActiveNote(url, timeRange?) -- single URL to active note
+   |  Calls processUrl(url, {insertMode:true, timeRange}), clips audio if timeRange provided
+   |  Builds callout with time-range label + optional video embed, appends to active note
    |
 2b. transcribeAndInsert(noteFile, embeds) -- batch from note scan
    |  Processes embeds in reverse line order, 2s delay between API calls
@@ -73,6 +74,10 @@ interface VideoUrlEmbed { url: string; platform: Platform; line: number }
    |  getMetadata() --> yt-dlp --dump-json --no-download
    |  Download audio --> yt-dlp -x --audio-format mp3
    |  Tool paths via sanitizePath(), env via shellEnv()
+   |
+5a. [if timeRange] AudioExtractor.clipAudio(audioPath, start, end)
+   |  Clips extracted audio via ffmpeg -ss/-to, validates end < duration
+   |  Cleans up original unclipped audio
    |
 6. downloadVideoToVault() [if downloadFolder configured]
    |  yt-dlp -f mp4/best, writes to vault via adapter.writeBinary

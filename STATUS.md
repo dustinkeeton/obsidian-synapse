@@ -1,9 +1,9 @@
 # Project Status
 
 **Last updated**: 2026-03-19
-**Version**: 0.2.2
+**Version**: 0.3.2
 **Branch**: `main`
-**Phase**: 11 modules (10 feature + 1 UI-only transcription); image OCR, multi-modal AI, and image-aware elaboration recently shipped
+**Phase**: 11 modules (10 feature + 1 UI-only transcription); time-range clipping, Instagram Reels, receipt OCR templates, and mobile safety recently shipped
 
 ---
 
@@ -18,7 +18,7 @@
 | **Audio** -- Deepgram transcription | Yes | Yes | No | **Working** |
 | **Audio** -- local Whisper | -- | -- | No | Not started (throws) |
 | **Audio** -- note scanning for embeds | Yes | -- | Yes | **Working** |
-| **Video** -- URL detection (YT + TikTok) | Yes | -- | Yes | **Working** |
+| **Video** -- URL detection (YT + TikTok + Instagram) | Yes | -- | Yes | **Working** |
 | **Video** -- yt-dlp download + transcribe | Yes | Yes | No | **Working** |
 | **Video** -- TikTok URL normalization | Yes | -- | Yes | **Working** |
 | **Video** -- note scanning for URLs | Yes | -- | Yes | **Working** |
@@ -29,6 +29,9 @@
 | **Image** -- note scanning for embeds | Yes | -- | Yes | **Working** |
 | **Transcription** -- unified modal (file + URL) | Yes | Yes | No | **Working** |
 | **Transcription** -- note media modal (scan + select) | Yes | Yes | No | **Working** |
+| **Transcription** -- duration detection (ffprobe/yt-dlp) | Yes | -- | Yes | **Working** |
+| **Transcription** -- time-range slider (dual-handle) | Yes | Yes | No | **Working** |
+| **Transcription** -- time-range clipping (audio/video) | Yes | Yes | No | **Working** (desktop only) |
 | **Enrichment** -- metadata classification (vocabulary-based) | Yes | Yes | Yes | **Working** |
 | **Enrichment** -- topic extraction (AI topics to links) | Yes | Yes | Yes | **Working** |
 | **Enrichment** -- link resolution (graph + topic merge) | Yes | Yes | Yes | **Working** |
@@ -39,6 +42,7 @@
 | **Summarize** -- transcription summarization | Yes | Yes | No | **Working** |
 | **Summarize** -- enrichment link -> standalone note | Yes | -- | Yes | **Working** |
 | **Summarize** -- content-aware templates (recipe detection) | Yes | -- | Yes | **Working** |
+| **Summarize** -- receipt content template for OCR | Yes | -- | No | **Working** |
 | **Summarize** -- vault-wide scan | Yes | Yes | No | **Working** |
 | **Tidy** -- spelling/formatting | Yes | -- | Yes | **Working** |
 | **Tidy** -- undo | Yes | -- | Yes | **Working** |
@@ -84,21 +88,37 @@
 
 - **Documentation audit**: Updating AGENTS.md, DECISIONS.md, STATUS.md, ARCHITECTURE.md
 - **Security pass**: Ongoing audit for input validation and credential handling
+- **Hybrid extraction strategy**: Research complete (Issue #166); implementation planned for v0.7.0
 
-## Recent Changes (2026-03-19)
+## Recent Changes (v0.3.2 — 2026-03-19)
 
-- Added image OCR module with multi-modal AIClient and vision model support (#162, #165)
-- Added image analysis to elaboration proposals for context-aware content generation (#163, #167)
-- Added image embed preservation in AI-generated content (#161)
-- Fixed resource cleanup: setTimeout handles and injected styles properly cleared on unload (#170)
-- Migrated settings headings from `createEl` to `setHeading()` API (#171)
-- Bumped version to 0.2.2 (#159)
+- Added receipt content template for OCR text extraction (#200)
+- Moved top-level Node.js requires into lazy getters for mobile safety (#198)
+- Added Instagram Reels URL detection for transcription pipeline (#197)
+- Added duration-aware time-range slider for transcription clipping (#196)
+- Added optional time-range clipping for audio/video transcription (#194)
+- Broadened URL detection for YouTube and TikTok edge cases (#191)
+- Bumped version to 0.3.2 (#199)
 
-## Previous Milestone (2026-03-18)
+## Previous Milestones
 
+### v0.3.1 (2026-03-19)
+- Research: hybrid extraction strategy for cross-platform media support (#183)
+- Display plugin version in settings header (#178)
+
+### v0.3.0 (2026-03-19)
+- Full codebase audit — fix imports, update docs (#173)
+- Migrated settings headings from `createEl` to `setHeading()` (#171)
+- Fixed resource cleanup: setTimeout handles and injected styles on unload (#170)
+
+### v0.2.2 (2026-03-18)
+- Image OCR module with multi-modal AIClient and vision model support (#162, #165)
+- Image analysis in elaboration proposals (#163, #167)
+- Image embed preservation in AI content (#161)
+
+### v0.2.1 (2026-03-18)
 - Title proposal module (#150, #157)
 - TikTok URL normalization (#155, #156)
-- JSON-LD recipe data extraction (#153, #154)
 - Content-aware summary templates with recipe detection (#145, #148)
 - Reject All button for proposals (#141)
 
