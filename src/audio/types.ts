@@ -1,5 +1,5 @@
 import { TFile } from 'obsidian';
-import { TimeRange } from '../shared/validation';
+import { TimeRange } from '../shared';
 
 export interface TranscriptionResult {
 	raw: string;

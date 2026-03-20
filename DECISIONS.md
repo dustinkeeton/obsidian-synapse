@@ -4,6 +4,115 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-03-19: Receipt content template for OCR text extraction (Issue #200)
+
+**Context**: The OCR module extracts raw text from images, but receipt images contain structured data (store name, items, prices, totals) that benefits from a specialized extraction format rather than raw text dump.
+
+**Decision**: Add a `receipt` content template to the OCR pipeline that detects receipt-like content and applies a structured extraction prompt. The template formats OCR output with store info, line items with prices, subtotals, and totals.
+
+**Alternatives considered**:
+- Raw OCR only (loses structured financial data)
+- Separate receipt scanning command (fragments UX)
+- Post-processing step after OCR (doubles AI cost)
+
+**Rationale**: Receipt detection is cheap (keyword scoring on OCR output) and the structured template produces dramatically more useful output for expense tracking and bookkeeping workflows. Follows the same template pattern established for recipe summarization.
+
+**Impact**: Receipt images produce structured extractions with itemized data. Non-receipt images are unaffected.
+
+---
+
+## 2026-03-19: Lazy Node.js requires for mobile safety (Issue #198)
+
+**Context**: Obsidian mobile crashes on top-level `require('child_process')` / `require('fs')` even if the code path is never executed. The plugin had `isDesktopOnly: false` but still imported Node.js built-ins at module scope.
+
+**Decision**: Wrap all Node.js built-in requires (`child_process`, `fs`, `os`, `path`) in lazy getter functions that only resolve on first access. Desktop-only features (yt-dlp, ffmpeg, ffprobe) gracefully degrade on mobile.
+
+**Alternatives considered**:
+- Separate mobile/desktop builds — doubles build complexity
+- Dynamic `import()` — not supported in Obsidian's module system
+- Gate entire modules behind `Platform.isDesktop` — loses mobile access to non-CLI features within those modules
+
+**Rationale**: Lazy getters are minimal code change, zero runtime cost on mobile, and keep a single build artifact. The pattern is applied to `video/audio-extractor.ts` and `transcription/duration-detector.ts`.
+
+**Impact**: Plugin no longer crashes on mobile load. Video/audio clipping features silently fall back to full-file processing on mobile.
+
+---
+
+## 2026-03-19: Instagram Reels URL detection for transcription pipeline (Issue #197)
+
+**Context**: Users share Instagram Reels URLs in their notes. The transcription pipeline only recognized YouTube and TikTok URLs, leaving Instagram content unsupported.
+
+**Decision**: Add Instagram Reels detection to `url-detector.ts`. Recognizes `instagram.com/reel/{id}` and `instagram.com/p/{id}` URL patterns. Platform type extended to `'youtube' | 'tiktok' | 'instagram' | 'unknown'`.
+
+**Alternatives considered**:
+- Only support YouTube and TikTok (misses growing Instagram Reels usage)
+- Generic "any URL" support (yt-dlp supports many sites but detection UX needs platform-specific badges)
+
+**Rationale**: Instagram Reels are increasingly common in note-taking workflows. yt-dlp already supports Instagram extraction, so the only change needed is URL detection and badge display in the transcription modal.
+
+**Impact**: Instagram Reels URLs show platform badge in transcription modal and are processed through the existing yt-dlp pipeline. `UnifiedTranscriptionModal` displays Instagram badge alongside YouTube and TikTok.
+
+---
+
+## 2026-03-19: Duration-aware time-range slider for transcription clipping (Issues #192, #194, #196)
+
+**Context**: Users wanted to transcribe specific segments of audio/video rather than entire files. This required (1) knowing media duration before presenting a UI, and (2) a visual way to select the time range.
+
+**Decision**: Three-part implementation:
+
+1. **Duration detection** (`transcription/duration-detector.ts`): Probes media length via ffprobe (local files) or yt-dlp (URLs). Returns `DurationResult` with duration and title. Falls back gracefully on mobile or when tools are unavailable.
+
+2. **Time-range slider** (`transcription/time-range-slider.ts`): Pure DOM component with dual-handle range inputs on a shared track. Visual highlight for selected region, live timestamp labels (MM:SS or HH:MM:SS), step size adapts to media length (1s for <= 10min, 5s otherwise).
+
+3. **Time-range toast** (`transcription/time-range-toast.ts`): Non-dismissible Obsidian Notice with embedded slider. "Transcribe Selection" button returns `TimeRange`; "Full File" button returns `undefined`.
+
+The slider appears in `UnifiedTranscriptionModal` when detected duration >= 10 seconds (`MIN_SLIDER_DURATION`). Audio clipping uses ffmpeg; video clipping uses ffmpeg on extracted audio. Both are desktop-only with full-file fallback on mobile.
+
+**Alternatives considered**:
+- Text input for start/end times — error-prone, poor UX
+- Always show slider with unknown duration — misleading
+- Waveform visualization — complex, large dependency, marginal benefit
+
+**Rationale**: Duration detection is fast (metadata-only, no download). Dual-handle slider provides intuitive visual feedback. The toast pattern reuses Obsidian's Notice system without a full modal. Falls back gracefully when detection fails.
+
+**Impact**: New files in `transcription/`: `duration-detector.ts`, `time-range-slider.ts`, `time-range-toast.ts`. Callout titles include time range when clipped: "Transcription of file.mp3 [01:30 - 05:00]". Desktop-only for clipping (mobile gets full-file fallback).
+
+---
+
+## 2026-03-19: Broaden URL detection for YouTube and TikTok edge cases (Issue #190, #191)
+
+**Context**: Users encountered YouTube and TikTok URL variants that the existing regex patterns did not match: YouTube Shorts with query params, YouTube Music URLs, TikTok mobile share links with tracking parameters.
+
+**Decision**: Expand URL detection regexes in `url-detector.ts` to handle additional patterns:
+- YouTube: `music.youtube.com`, shorts with query params, embedded URLs
+- TikTok: `vm.tiktok.com`, `vt.tiktok.com` short links, URLs with tracking query params
+
+**Alternatives considered**:
+- Parse URLs with the `URL` API and match by hostname (cleaner but loses line-number tracking from regex scan)
+- Only support canonical URL forms (too restrictive for real-world note content)
+
+**Rationale**: Users paste URLs directly from mobile share sheets, which produce non-canonical forms. Broader regex coverage prevents false negatives without increasing false positives.
+
+**Impact**: More YouTube and TikTok URLs are correctly detected in notes. No behavior change for already-matched URLs.
+
+---
+
+## 2026-03-19: Display plugin version in settings header (Issue #178)
+
+**Context**: Users had no easy way to check which version of Synapse they were running, especially when reporting bugs.
+
+**Decision**: Display the plugin version from `manifest.json` in the settings tab header, next to the plugin name.
+
+**Alternatives considered**:
+- Separate "About" section in settings (over-engineered)
+- Console log on load (not discoverable)
+
+**Rationale**: Minimal change, high discoverability. Users see the version every time they open settings.
+
+**Impact**: Settings header shows "Synapse v0.3.2" (or current version).
+
+---
+
 ## 2026-03-19: Revised hybrid strategy -- caption-first with extraction fallback (Issue #166, follow-up)
 
 **Context**: After the initial hybrid extraction decision (below), a key insight emerged: Synapse's actual need is transcription (URL to text), not video downloading. The user does not need the video file itself -- they need the transcript, and optionally a summary. This reframes the problem: if we can get text from a URL without ever downloading audio or video, the entire yt-dlp/ffmpeg dependency becomes unnecessary for the most common use case.
