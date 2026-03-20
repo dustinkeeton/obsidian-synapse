@@ -172,7 +172,7 @@ export class EnrichmentModule {
 	 * 4. Resolve cross-note new-note candidates -- only topics referenced
 	 *    by 2+ notes become new-note link suggestions
 	 */
-	async scanVault(folderPath?: string): Promise<number> {
+	async scanVault(folderPath?: string, skipConfirmation = false): Promise<number> {
 		// -- Phase 1: Collect eligible files & warm caches --
 		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
@@ -207,15 +207,17 @@ export class EnrichmentModule {
 			return 0;
 		}
 
-		// -- Phase 2: User confirmation --
-		const proceed = await this.notifications.confirm(
-			`Found ${eligible.length} note${eligible.length === 1 ? '' : 's'} to enrich. Generate proposals?`,
-			{ proceedLabel: 'Generate', cancelLabel: 'Skip' }
-		);
+		// -- Phase 2: User confirmation (skipped when called from Fire Synapse) --
+		if (!skipConfirmation) {
+			const proceed = await this.notifications.confirm(
+				`Found ${eligible.length} note${eligible.length === 1 ? '' : 's'} to enrich. Generate proposals?`,
+				{ proceedLabel: 'Generate', cancelLabel: 'Skip' }
+			);
 
-		if (!proceed) {
-			this.notifications.info('Enrichment scan skipped');
-			return 0;
+			if (!proceed) {
+				this.notifications.info('Enrichment scan skipped');
+				return 0;
+			}
 		}
 
 		// -- Phase 3: Generate proposals (heavy, cancellable, checkpointed) --
