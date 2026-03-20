@@ -2,15 +2,6 @@ import { SynapseSettings } from '../settings';
 import { ExtractionResult, VideoMetadata } from './types';
 import { sanitizePath, sanitizeUrl } from '../shared';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const os = require('os') as typeof import('os');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const path = require('path') as typeof import('path');
-
-// child_process is available in Obsidian's Electron environment
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { execFile } = require('child_process') as typeof import('child_process');
-
 /**
  * Obsidian's Electron process has a minimal PATH that often excludes
  * user-installed tools. Append common install locations so yt-dlp/ffmpeg
@@ -34,13 +25,31 @@ function shellEnv(): NodeJS.ProcessEnv {
 }
 
 export class AudioExtractor {
+	private _node: {
+		os: typeof import('os');
+		path: typeof import('path');
+		execFile: typeof import('child_process')['execFile'];
+	} | null = null;
+
+	private get node() {
+		if (!this._node) {
+			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			this._node = {
+				os: require('os'),
+				path: require('path'),
+				execFile: require('child_process').execFile,
+			};
+		}
+		return this._node;
+	}
+
 	constructor(private getSettings: () => SynapseSettings) {}
 
 	async extractFromUrl(url: string): Promise<ExtractionResult> {
 		const sanitizedUrl = sanitizeUrl(url);
 		const settings = this.getSettings().video;
 		// Use OS temp dir for absolute path — yt-dlp needs a real filesystem path
-		const outputPath = path.join(os.tmpdir(), `synapse-audio-${Date.now()}.mp3`);
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-audio-${Date.now()}.mp3`);
 
 		// Get metadata first
 		const metadata = await this.getMetadata(sanitizedUrl);
@@ -58,7 +67,7 @@ export class AudioExtractor {
 	async extractFromFile(filePath: string): Promise<ExtractionResult> {
 		const sanitizedPath = sanitizePath(filePath);
 		const settings = this.getSettings().video;
-		const outputPath = path.join(os.tmpdir(), `synapse-audio-${Date.now()}.mp3`);
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-audio-${Date.now()}.mp3`);
 
 		await this.runCommand(sanitizePath(settings.ffmpegPath), [
 			'-i', sanitizedPath,
@@ -80,7 +89,7 @@ export class AudioExtractor {
 	async downloadVideo(url: string): Promise<string> {
 		const sanitizedUrl = sanitizeUrl(url);
 		const settings = this.getSettings().video;
-		const outputPath = path.join(os.tmpdir(), `synapse-video-${Date.now()}.mp4`);
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-video-${Date.now()}.mp4`);
 
 		await this.runCommand(sanitizePath(settings.ytDlpPath), [
 			'-f', 'mp4/best',
@@ -97,7 +106,7 @@ export class AudioExtractor {
 	 */
 	async clipAudio(inputPath: string, startSeconds: number, endSeconds: number): Promise<string> {
 		const settings = this.getSettings().video;
-		const outputPath = path.join(os.tmpdir(), `synapse-clipped-${Date.now()}.mp3`);
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-clipped-${Date.now()}.mp3`);
 		await this.runCommand(sanitizePath(settings.ffmpegPath), [
 			'-i', sanitizePath(inputPath),
 			'-ss', String(startSeconds),
@@ -143,7 +152,7 @@ export class AudioExtractor {
 
 	private runCommand(cmd: string, args: string[]): Promise<string> {
 		return new Promise((resolve, reject) => {
-			execFile(cmd, args, {
+			this.node.execFile(cmd, args, {
 				env: shellEnv(),
 				maxBuffer: 10 * 1024 * 1024,
 				timeout: 300_000, // 5 minute timeout for long downloads/conversions
