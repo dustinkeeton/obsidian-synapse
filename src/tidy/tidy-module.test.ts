@@ -75,13 +75,15 @@ describe('TidyModule', () => {
 	});
 
 	describe('onload', () => {
-		it('registers tidy and undo commands', async () => {
+		it('registers the tidy command (undo-tidy is gated off by the registry)', async () => {
 			await module.onload();
 
-			expect(mockPlugin.addCommand).toHaveBeenCalledTimes(2);
+			// `synapse:undo-tidy` ships as `status: 'disabled'` in COMMAND_REGISTRY, so
+			// the registrar gates it out — only the active tidy command registers.
+			expect(mockPlugin.addCommand).toHaveBeenCalledTimes(1);
 			const commands = mockPlugin.addCommand.mock.calls.map((c: any) => c[0].id);
 			expect(commands).toContain('synapse:tidy-current-note');
-			expect(commands).toContain('synapse:undo-tidy');
+			expect(commands).not.toContain('synapse:undo-tidy');
 		});
 	});
 
@@ -237,14 +239,10 @@ describe('TidyModule', () => {
 			mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockSnapshotFile);
 			mockPlugin.app.vault.read.mockResolvedValue(JSON.stringify(snapshot));
 
-			// Access undoTidy through the command callback
+			// undo-tidy is gated off as a palette command (registry master switch), so
+			// invoke the still-present undo logic directly.
 			await module.onload();
-			const undoCommand = mockPlugin.addCommand.mock.calls.find(
-				(c: any) => c[0].id === 'synapse:undo-tidy'
-			)[0];
-
-			// Call the editorCallback directly
-			await undoCommand.editorCallback({}, { file });
+			await (module as any).undoTidy(file);
 
 			expect(mockPlugin.app.vault.modify).toHaveBeenCalledWith(
 				file,
@@ -258,11 +256,7 @@ describe('TidyModule', () => {
 			mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(null);
 
 			await module.onload();
-			const undoCommand = mockPlugin.addCommand.mock.calls.find(
-				(c: any) => c[0].id === 'synapse:undo-tidy'
-			)[0];
-
-			await undoCommand.editorCallback({}, { file });
+			await (module as any).undoTidy(file);
 
 			expect(mockNotifications.info).toHaveBeenCalledWith(
 				'No tidy to undo for this note'
@@ -284,11 +278,7 @@ describe('TidyModule', () => {
 			mockPlugin.app.vault.read.mockResolvedValue(JSON.stringify(snapshot));
 
 			await module.onload();
-			const undoCommand = mockPlugin.addCommand.mock.calls.find(
-				(c: any) => c[0].id === 'synapse:undo-tidy'
-			)[0];
-
-			await undoCommand.editorCallback({}, { file });
+			await (module as any).undoTidy(file);
 
 			expect(mockPlugin.app.vault.delete).toHaveBeenCalled();
 		});

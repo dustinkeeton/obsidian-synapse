@@ -2,9 +2,9 @@
  * COMMAND_REGISTRY — the single declarative source of truth for every Synapse
  * command, plus the helpers that gate flows against it.
  *
- * Every entry ships `status: 'active'` with flows that preserve current behavior
- * exactly. To deprecate/disable a command or remove it from a flow, edit the
- * entry here — no module hunting required.
+ * Most entries ship `status: 'active'`; a few ship `'disabled'` as a developer-level
+ * master switch (the registry sits above user settings). To deprecate/disable a
+ * command or remove it from a flow, edit the entry here — no module hunting required.
  *
  * Precedence (all ANDed, registry authoritative):
  *   status (dev) -> flow membership (dev) -> settings.[feature].enabled (user) -> hasTranscription (runtime)
