@@ -1,5 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
+import { CommandRegistrar, isInFlow } from '../commands';
 import {
 	buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles,
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager, generateId,
@@ -29,7 +30,8 @@ export class ElaborationModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager
+		private checkpointManager: CheckpointManager,
+		private registrar: CommandRegistrar
 	) {
 		this.detector = new PlaceholderDetector(plugin.app, getSettings);
 		this.proposer = new ProposalGenerator(plugin.app, getSettings);
@@ -39,8 +41,7 @@ export class ElaborationModule {
 	async onload(): Promise<void> {
 		await this.store.init();
 
-		this.plugin.addCommand({
-			id: 'synapse:scan-vault',
+		this.registrar.register('synapse:scan-vault', this.getSettings().elaboration.enabled, {
 			name: 'Scan vault for stub notes',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -52,8 +53,7 @@ export class ElaborationModule {
 			},
 		});
 
-		this.plugin.addCommand({
-			id: 'synapse:scan-current-note',
+		this.registrar.register('synapse:scan-current-note', this.getSettings().elaboration.enabled, {
 			name: 'Scan current note for elaboration',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -62,18 +62,17 @@ export class ElaborationModule {
 			},
 		});
 
-		this.plugin.addCommand({
-			id: 'synapse:clear-proposals',
+		this.registrar.register('synapse:clear-proposals', this.getSettings().elaboration.enabled, {
 			name: 'Clear all pending proposals',
 			callback: () => this.clearProposals(),
 		});
 
 		const settings = this.getSettings().elaboration;
-		if (settings.scanOnStartup) {
+		if (settings.scanOnStartup && isInFlow('synapse:scan-vault', 'startup')) {
 			this.startupTimeout = window.setTimeout(() => this.scanVault(), 5000);
 		}
 
-		if (settings.autoScanInterval > 0) {
+		if (settings.autoScanInterval > 0 && isInFlow('synapse:scan-vault', 'startup')) {
 			this.scanInterval = window.setInterval(
 				() => this.scanVault(),
 				settings.autoScanInterval * 60 * 1000

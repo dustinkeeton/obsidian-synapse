@@ -1,5 +1,6 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings, DeepDiveNestingMode } from '../settings';
+import { CommandRegistrar } from '../commands';
 import {
 	NotificationManager, ensureFolder, readNote, writeNote, wordCount,
 	CheckpointManager, generateId,
@@ -61,7 +62,8 @@ export class DeepDiveModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager
+		private checkpointManager: CheckpointManager,
+		private registrar: CommandRegistrar
 	) {
 		this.analyzer = new TopicAnalyzer(plugin.app, getSettings);
 		this.generator = new NoteGenerator(getSettings);
@@ -73,8 +75,7 @@ export class DeepDiveModule {
 	async onload(): Promise<void> {
 		await this.store.init();
 
-		this.plugin.addCommand({
-			id: 'synapse:deep-dive',
+		this.registrar.register('synapse:deep-dive', this.getSettings().deepDive.enabled, {
 			name: 'Deep dive into current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -83,8 +84,7 @@ export class DeepDiveModule {
 			},
 		});
 
-		this.plugin.addCommand({
-			id: 'synapse:clear-deep-dive',
+		this.registrar.register('synapse:clear-deep-dive', this.getSettings().deepDive.enabled, {
 			name: 'Clear deep dive proposals',
 			callback: async () => {
 				await this.clearProposals();

@@ -1,0 +1,49 @@
+/**
+ * Command registry types — the developer-facing source of truth for every
+ * user-invocable command in Synapse.
+ *
+ * The registry sits ABOVE user settings as an authoritative master-control /
+ * deprecation layer. See `registry.ts` for the entries and `registrar.ts` for
+ * how handlers are wired through it.
+ */
+
+/** Developer-level master switch for a command. `active` is the only state that registers/runs. */
+export type CommandStatus = 'active' | 'deprecated' | 'disabled';
+
+/** The flows a command can participate in. */
+export type CommandFlow = 'palette' | 'fire-synapse' | 'startup';
+
+/** The feature module a command belongs to (modules without commands are omitted). */
+export type FeatureKey =
+	| 'main'
+	| 'elaboration'
+	| 'enrichment'
+	| 'organize'
+	| 'deep-dive'
+	| 'summarize'
+	| 'tidy'
+	| 'rem'
+	| 'video';
+
+/** A single declarative command entry. */
+export interface CommandDefinition {
+	/** Obsidian command id, e.g. `synapse:scan-vault`. */
+	id: string;
+	/** Display name shown in the command palette. */
+	name: string;
+	/** Owning feature module. */
+	feature: FeatureKey;
+	/** Master status. Only `active` commands register and run. */
+	status: CommandStatus;
+	/** Flows this command participates in. All palette commands include `'palette'`. */
+	flows: readonly CommandFlow[];
+	/**
+	 * Links a command to a Fire Synapse pipeline phase (matches a `PipelineModuleKey`).
+	 * Typed as `string` deliberately so `src/commands/` never imports from `src/pipeline/`
+	 * (which imports back from here) — avoids a module cycle. The registry test
+	 * cross-checks these values against `SYNAPSE_PIPELINE`.
+	 */
+	pipelineKey?: string;
+	/** Free-form developer note (e.g. why an entry is pipeline-only). */
+	note?: string;
+}
