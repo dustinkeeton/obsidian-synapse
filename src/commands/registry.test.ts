@@ -38,10 +38,25 @@ describe('COMMAND_REGISTRY', () => {
 		expect(new Set(ids).size).toBe(ids.length);
 	});
 
-	it('ships every entry as active (behavior preserving)', () => {
+	it('gives every entry a valid status', () => {
+		const validStatuses = ['active', 'deprecated', 'disabled'];
 		for (const entry of COMMAND_REGISTRY) {
-			expect(entry.status).toBe('active');
+			expect(validStatuses).toContain(entry.status);
 		}
+	});
+
+	it('disables exactly the intentionally-deactivated commands', () => {
+		const disabled = COMMAND_REGISTRY.filter(c => c.status === 'disabled')
+			.map(c => c.id)
+			.sort();
+		expect(disabled).toEqual([
+			'synapse:clear-deep-dive',
+			'synapse:clear-proposals',
+			'synapse:transcribe-media',
+			'synapse:undo-enrichment',
+			'synapse:undo-organize',
+			'synapse:undo-tidy',
+		]);
 	});
 
 	it('gives every real command the palette flow', () => {
