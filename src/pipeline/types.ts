@@ -1,11 +1,22 @@
+import type { TFile } from 'obsidian';
+
 /**
  * Scan function contract that each pipeline module must satisfy.
  * folderPath scopes the scan; skipConfirmation bypasses the
  * user-confirmation dialog (always true when called from Fire Synapse).
+ *
+ * onlyFile narrows an otherwise folder-scoped scan to a single note: when
+ * provided, the module restricts processing to that exact file (filtered
+ * right after getMarkdownFiles) while reusing all of its existing scan
+ * machinery (checkpoints, progress, exclusions). This backs
+ * SynapseRunner.fireOnFile so the intake monitor can target the specific
+ * added note without rescanning the whole intake folder per event. When
+ * omitted, behaviour is identical to the original folder-scoped scan.
  */
 export type PipelineScanFn = (
 	folderPath?: string,
 	skipConfirmation?: boolean,
+	onlyFile?: TFile,
 ) => Promise<number | void>;
 
 export type PipelineModuleKey =

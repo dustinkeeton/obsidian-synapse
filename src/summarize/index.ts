@@ -512,7 +512,7 @@ export class SummarizeModule {
 		return `${folderPrefix}${safeName}.md`;
 	}
 
-	async scanVault(folderPath?: string, skipConfirmation = false): Promise<void> {
+	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<void> {
 		const settings = this.getSettings().summarize;
 
 		// Phase 1: Scan for files with targets
@@ -522,7 +522,9 @@ export class SummarizeModule {
 			'summarize-vault-scan'
 		);
 
-		const allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		// Per-file scoping (#111): narrow to the single requested note.
+		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
 		const filesWithTargets: Array<{ file: TFile; targets: SummarizeTarget[] }> = [];
 
 		try {

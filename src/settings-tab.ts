@@ -199,6 +199,60 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
+		// ── Intake Folder ──
+		new Setting(containerEl).setHeading().setName('Intake Folder');
+
+		new Setting(containerEl)
+			.setName('Enable intake processing')
+			.setDesc('Watch the intake folder and run enabled Synapse features on new notes')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.intake.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.intake.enabled = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Intake folder')
+			.setDesc('Folder to watch for new notes. See docs/intake-folder.md for the mobile capture workflow.')
+			.addText((text) =>
+				text
+					.setPlaceholder('Inbox')
+					.setValue(this.plugin.settings.intake.intakeFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.intake.intakeFolder = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Mark processed in frontmatter')
+			.setDesc('Stamp `synapse-processed: true` on a note once handled so it is not reprocessed')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.intake.markProcessed)
+					.onChange(async (value) => {
+						this.plugin.settings.intake.markProcessed = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Move when done (optional)')
+			.setDesc('Destination folder to move notes into after processing. Leave blank to keep them in the intake folder.')
+			.addText((text) =>
+				text
+					.setPlaceholder('')
+					.setValue(this.plugin.settings.intake.moveWhenDone ?? '')
+					.onChange(async (value) => {
+						const trimmed = value.trim();
+						this.plugin.settings.intake.moveWhenDone = trimmed === '' ? undefined : trimmed;
+						await this.plugin.saveSettings();
+					})
+			);
+
 		// ── Media Transcription ──
 		new Setting(containerEl).setHeading().setName('Media Transcription');
 

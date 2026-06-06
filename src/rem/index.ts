@@ -135,9 +135,11 @@ export class RemModule {
 	/**
 	 * Scan all markdown files in a directory (or vault root) with checkpoint support.
 	 */
-	async remScanDirectory(folderPath?: string): Promise<number> {
+	async remScanDirectory(folderPath?: string, _skipConfirmation = false, onlyFile?: TFile): Promise<number> {
 		const settings = this.getSettings().rem;
-		const allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		// Per-file scoping (#111): narrow to the single requested note.
+		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
 
 		// Filter out excluded files
 		const eligible = allFiles.filter(f => !this.isExcluded(f));
