@@ -49,6 +49,8 @@ export {
 	formatRecipeStructuredData,
 } from './content-fetcher';
 export type { RecipeJsonLd } from './content-fetcher';
+export { classifyUrl, extractUrls } from './url-classifier';
+export type { UrlContentType, UrlClassification } from './url-classifier';
 export { addEnhancedSlider } from './slider-helper';
 export { generateId, isValidCheckpointId } from './id-utils';
 export { CheckpointManager } from './checkpoint-manager';

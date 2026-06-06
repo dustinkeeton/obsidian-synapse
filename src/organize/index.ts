@@ -214,7 +214,7 @@ export class OrganizeModule {
 	 * 2. User confirmation
 	 * 3. Analyze and organize each file (cancellable)
 	 */
-	async scanDirectory(folderPath?: string, skipConfirmation = false): Promise<number> {
+	async scanDirectory(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
 		// Phase 1: Collect eligible files
 		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
@@ -222,7 +222,9 @@ export class OrganizeModule {
 			'organize-scan'
 		);
 
-		const allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		// Per-file scoping (#111): narrow to the single requested note.
+		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
 		const eligible: TFile[] = [];
 
 		try {
