@@ -16,28 +16,28 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 	// --- main (src/main.ts) ---
 	{ id: 'synapse:review-proposals', name: 'Open proposal review sidebar', feature: 'main', status: 'active', flows: ['palette'] },
 	{ id: 'synapse:manage-checkpoints', name: 'Manage interrupted operations', feature: 'main', status: 'active', flows: ['palette'] },
-	{ id: 'synapse:transcribe-media', name: 'Transcribe media', feature: 'main', status: 'active', flows: ['palette'] },
+	{ id: 'synapse:transcribe-media', name: 'Transcribe media', feature: 'main', status: 'disabled', flows: ['palette'] },
 	{ id: 'synapse:transcribe-note-media', name: 'Transcribe media from current note', feature: 'main', status: 'active', flows: ['palette'] },
 	{ id: 'synapse:fire', name: 'Fire Synapse: run all features on a directory', feature: 'main', status: 'active', flows: ['palette'] },
 
 	// --- elaboration (src/elaboration/index.ts) ---
 	{ id: 'synapse:scan-vault', name: 'Scan vault for stub notes', feature: 'elaboration', status: 'active', flows: ['palette', 'fire-synapse', 'startup'], pipelineKey: 'elaboration' },
 	{ id: 'synapse:scan-current-note', name: 'Scan current note for elaboration', feature: 'elaboration', status: 'active', flows: ['palette'] },
-	{ id: 'synapse:clear-proposals', name: 'Clear all pending proposals', feature: 'elaboration', status: 'active', flows: ['palette'] },
+	{ id: 'synapse:clear-proposals', name: 'Clear all pending proposals', feature: 'elaboration', status: 'disabled', flows: ['palette'] },
 
 	// --- enrichment (src/enrichment/index.ts) ---
 	{ id: 'synapse:enrich-current-note', name: 'Enrich current note', feature: 'enrichment', status: 'active', flows: ['palette'] },
 	{ id: 'synapse:scan-vault-enrichment', name: 'Scan vault for enrichment', feature: 'enrichment', status: 'active', flows: ['palette', 'fire-synapse'], pipelineKey: 'enrichment' },
-	{ id: 'synapse:undo-enrichment', name: 'Undo last enrichment on current note', feature: 'enrichment', status: 'active', flows: ['palette'] },
+	{ id: 'synapse:undo-enrichment', name: 'Undo last enrichment on current note', feature: 'enrichment', status: 'disabled', flows: ['palette'] },
 
 	// --- organize (src/organize/index.ts) ---
 	{ id: 'synapse:organize-current-note', name: 'Organize current note', feature: 'organize', status: 'active', flows: ['palette'] },
 	{ id: 'synapse:scan-directory-organize', name: 'Scan directory for organization', feature: 'organize', status: 'active', flows: ['palette', 'fire-synapse'], pipelineKey: 'organize' },
-	{ id: 'synapse:undo-organize', name: 'Undo last organize on current note', feature: 'organize', status: 'active', flows: ['palette'] },
+	{ id: 'synapse:undo-organize', name: 'Undo last organize on current note', feature: 'organize', status: 'disabled', flows: ['palette'] },
 
 	// --- deep-dive (src/deep-dive/index.ts) ---
 	{ id: 'synapse:deep-dive', name: 'Deep dive into current note', feature: 'deep-dive', status: 'active', flows: ['palette'] },
-	{ id: 'synapse:clear-deep-dive', name: 'Clear deep dive proposals', feature: 'deep-dive', status: 'active', flows: ['palette'] },
+	{ id: 'synapse:clear-deep-dive', name: 'Clear deep dive proposals', feature: 'deep-dive', status: 'disabled', flows: ['palette'] },
 
 	// --- summarize (src/summarize/index.ts) ---
 	{ id: 'synapse:summarize-current-note', name: 'Summarize current note', feature: 'summarize', status: 'active', flows: ['palette'] },
@@ -45,7 +45,7 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 
 	// --- tidy (src/tidy/index.ts) ---
 	{ id: 'synapse:tidy-current-note', name: 'Tidy current note', feature: 'tidy', status: 'active', flows: ['palette'] },
-	{ id: 'synapse:undo-tidy', name: 'Undo last tidy on current note', feature: 'tidy', status: 'active', flows: ['palette'] },
+	{ id: 'synapse:undo-tidy', name: 'Undo last tidy on current note', feature: 'tidy', status: 'disabled', flows: ['palette'] },
 
 	// --- rem (src/rem/index.ts) ---
 	{ id: 'synapse:rem-current-note', name: 'REM: Discover links in current note', feature: 'rem', status: 'active', flows: ['palette'] },
