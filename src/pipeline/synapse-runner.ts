@@ -1,5 +1,6 @@
 import type { NotificationManager } from '../shared';
 import type { SynapseSettings } from '../settings';
+import { isPipelineKeyInFlow } from '../commands';
 import { SYNAPSE_PIPELINE, PipelineModuleMap } from './types';
 
 export class SynapseRunner {
@@ -13,7 +14,7 @@ export class SynapseRunner {
 		const settings = this.getSettings();
 		const activePhases = SYNAPSE_PIPELINE.filter(phase => {
 			const section = settings[phase.key] as { enabled: boolean };
-			return section.enabled;
+			return section.enabled && isPipelineKeyInFlow(phase.key, 'fire-synapse');
 		});
 
 		if (activePhases.length === 0) {

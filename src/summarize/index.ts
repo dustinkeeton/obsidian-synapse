@@ -1,5 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
+import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout,
 	CALLOUT_TYPES, CheckpointManager, generateId,
@@ -72,6 +73,7 @@ export class SummarizeModule {
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
+		private registrar: CommandRegistrar,
 		transcribeUrl?: TranscribeUrlFn,
 		transcribeAudio?: TranscribeAudioFn
 	) {
@@ -81,8 +83,7 @@ export class SummarizeModule {
 	}
 
 	async onload(): Promise<void> {
-		this.plugin.addCommand({
-			id: 'synapse:summarize-current-note',
+		this.registrar.register('synapse:summarize-current-note', this.getSettings().summarize.enabled, {
 			name: 'Summarize current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -91,8 +92,7 @@ export class SummarizeModule {
 			},
 		});
 
-		this.plugin.addCommand({
-			id: 'synapse:scan-vault-summarize',
+		this.registrar.register('synapse:scan-vault-summarize', this.getSettings().summarize.enabled, {
 			name: 'Scan vault for notes to summarize',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';

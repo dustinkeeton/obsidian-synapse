@@ -12,6 +12,7 @@ import { OrganizeModule } from './organize';
 import { DeepDiveModule } from './deep-dive';
 import { TitleModule } from './title';
 import { RemModule } from './rem';
+import { CommandRegistrar, auditCommands } from './commands';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
 import { FolderPickerModal, NotificationManager, CheckpointManager, removeNotificationStyles } from './shared';
@@ -63,19 +64,23 @@ export default class SynapsePlugin extends Plugin {
 
 		const getSettings = () => this.settings;
 
+		// Central command registrar — the single wiring point to addCommand, gated
+		// by the command registry (developer source of truth / master control).
+		const registrar = new CommandRegistrar(this);
+
 		// Initialize modules (Audio before Video since Video depends on Audio)
 		// Pass checkpointManager to each module instead of letting them create their own
-		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager);
+		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
 		// Create a shared AudioExtractor on desktop for clipping support
 		const audioExtractor = Platform.isDesktop ? new AudioExtractor(getSettings) : undefined;
 		this.audio = new AudioModule(this, getSettings, this.notifications, this.checkpointManager, audioExtractor);
 		if (Platform.isDesktop) {
-			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager);
+			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager, registrar);
 		}
 		this.image = new ImageModule(this, getSettings, this.notifications, this.checkpointManager);
-		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager);
+		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
 		this.summarize = new SummarizeModule(
-			this, getSettings, this.notifications, this.checkpointManager,
+			this, getSettings, this.notifications, this.checkpointManager, registrar,
 			this.video
 				? (url, parentOp) => this.video!.transcribeUrl(url, parentOp)
 				: async () => { throw new Error('Video transcription is not available on mobile'); },
@@ -85,11 +90,11 @@ export default class SynapsePlugin extends Plugin {
 				return result.processed || result.raw;
 			}
 		);
-		this.tidy = new TidyModule(this, getSettings, this.notifications);
-		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager);
-		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager);
+		this.tidy = new TidyModule(this, getSettings, this.notifications, registrar);
+		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
+		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
 		this.title = new TitleModule(this, getSettings, this.notifications);
-		this.rem = new RemModule(this, getSettings, this.notifications, this.checkpointManager);
+		this.rem = new RemModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
 
 		// Register the unified proposal view
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
@@ -250,14 +255,12 @@ export default class SynapsePlugin extends Plugin {
 			});
 		}
 
-		this.addCommand({
-			id: 'synapse:review-proposals',
+		registrar.register('synapse:review-proposals', true, {
 			name: 'Open proposal review sidebar',
 			callback: () => this.activateUnifiedView(),
 		});
 
-		this.addCommand({
-			id: 'synapse:manage-checkpoints',
+		registrar.register('synapse:manage-checkpoints', true, {
 			name: 'Manage interrupted operations',
 			callback: () => this.manageCheckpoints(),
 		});
@@ -265,25 +268,22 @@ export default class SynapsePlugin extends Plugin {
 		// Startup check for incomplete checkpoints (delayed to avoid blocking load)
 		this.startupTimeout = setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
 
-		// Unified transcription commands (audio on any platform, video on desktop only, image OCR)
+		// Unified transcription commands (audio on any platform, video on desktop only, image OCR).
+		// Always attempted so the registry audit sees them; userEnabled gates actual registration.
 		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video) || this.settings.image.enabled;
-		if (hasTranscription) {
-			this.addCommand({
-				id: 'synapse:transcribe-media',
-				name: 'Transcribe media',
-				callback: () => this.openUnifiedModal(),
-			});
+		registrar.register('synapse:transcribe-media', !!hasTranscription, {
+			name: 'Transcribe media',
+			callback: () => this.openUnifiedModal(),
+		});
 
-			this.addCommand({
-				id: 'synapse:transcribe-note-media',
-				name: 'Transcribe media from current note',
-				editorCallback: async (_editor, ctx) => {
-					if (ctx.file) {
-						await this.transcribeMediaFromNote(ctx.file);
-					}
-				},
-			});
-		}
+		registrar.register('synapse:transcribe-note-media', !!hasTranscription, {
+			name: 'Transcribe media from current note',
+			editorCallback: async (_editor, ctx) => {
+				if (ctx.file) {
+					await this.transcribeMediaFromNote(ctx.file);
+				}
+			},
+		});
 
 		// Fire Synapse: run all enabled features on a directory
 		const moduleMap: PipelineModuleMap = {
@@ -296,8 +296,7 @@ export default class SynapsePlugin extends Plugin {
 		};
 		const synapseRunner = new SynapseRunner(moduleMap, getSettings, this.notifications);
 
-		this.addCommand({
-			id: 'synapse:fire',
+		registrar.register('synapse:fire', true, {
 			name: 'Fire Synapse: run all features on a directory',
 			callback: () => {
 				const defaultPath = this.app.workspace.getActiveFile()?.parent?.path || '';
@@ -308,6 +307,10 @@ export default class SynapsePlugin extends Plugin {
 				).open();
 			},
 		});
+
+		// Surface command-registry drift: active entries with no handler, or
+		// registered handlers missing from the registry. Asserted by a Vitest test too.
+		auditCommands(registrar.getAttempted()).forEach(w => console.warn('[Synapse] ' + w));
 	}
 
 	onunload(): void {
