@@ -187,6 +187,41 @@ describe('TidyModule', () => {
 		});
 	});
 
+	describe('scanVault onlyFile scoping (#111)', () => {
+		it('narrows the scan to a single note when onlyFile is given', async () => {
+			const a = new TFile('Inbox/a.md');
+			const b = new TFile('Inbox/b.md');
+			const c = new TFile('Inbox/c.md');
+			mockPlugin.app.vault.getMarkdownFiles = vi.fn().mockReturnValue([a, b, c]);
+
+			const tidied: string[] = [];
+			vi.spyOn(module, 'tidy').mockImplementation(async (f: any) => {
+				tidied.push(f.path);
+			});
+
+			const count = await module.scanVault('Inbox', true, b as any);
+
+			expect(count).toBe(1);
+			expect(tidied).toEqual(['Inbox/b.md']);
+		});
+
+		it('processes all files in folder when onlyFile is omitted', async () => {
+			const a = new TFile('Inbox/a.md');
+			const b = new TFile('Inbox/b.md');
+			mockPlugin.app.vault.getMarkdownFiles = vi.fn().mockReturnValue([a, b]);
+
+			const tidied: string[] = [];
+			vi.spyOn(module, 'tidy').mockImplementation(async (f: any) => {
+				tidied.push(f.path);
+			});
+
+			const count = await module.scanVault('Inbox', true);
+
+			expect(count).toBe(2);
+			expect(tidied).toEqual(['Inbox/a.md', 'Inbox/b.md']);
+		});
+	});
+
 	describe('undoTidy', () => {
 		it('restores original content from snapshot', async () => {
 			const file = new TFile('notes/test.md') as any;

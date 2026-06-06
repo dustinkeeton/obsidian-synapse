@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SynapseRunner } from './synapse-runner';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { PipelineModuleMap } from './types';
+import { TFile, TFolder } from '../__mocks__/obsidian';
 
 function createMockNotifications() {
 	const handle = {
@@ -205,5 +206,88 @@ describe('SynapseRunner', () => {
 		expect(mockNotifications._handle.finish).toHaveBeenCalledWith(
 			'Fire Synapse complete — 4 phases run',
 		);
+	});
+
+	describe('fireOnFile (per-note scoping, #111)', () => {
+		// Returns `any`: the mock TFile is structurally compatible with the
+		// real obsidian.TFile that fireOnFile expects, but its `vault: unknown`
+		// trips strict assignability — the established pattern is to cast.
+		function fileIn(folder: string, name: string): any {
+			const file = new TFile(`${folder}/${name}`);
+			file.parent = new TFolder(folder);
+			return file;
+		}
+
+		it('runs each active phase exactly once for the file', async () => {
+			const file = fileIn('Inbox', 'note.md');
+
+			await runner.fireOnFile(file);
+
+			for (const key of Object.keys(mockModules) as (keyof PipelineModuleMap)[]) {
+				expect(mockModules[key]).toHaveBeenCalledTimes(1);
+			}
+		});
+
+		it('scopes each phase to the file via parent folder + onlyFile', async () => {
+			const file = fileIn('Inbox', 'note.md');
+
+			await runner.fireOnFile(file);
+
+			for (const key of Object.keys(mockModules) as (keyof PipelineModuleMap)[]) {
+				expect(mockModules[key]).toHaveBeenCalledWith('Inbox', true, file);
+			}
+		});
+
+		it('passes undefined folderPath for a root-level note', async () => {
+			const file: any = new TFile('note.md');
+			file.parent = new TFolder('/'); // root
+
+			await runner.fireOnFile(file);
+
+			expect(mockModules.elaboration).toHaveBeenCalledWith(undefined, true, file);
+		});
+
+		it('respects phase enable filtering', async () => {
+			settings.summarize.enabled = false;
+			settings.tidy.enabled = false;
+			const file = fileIn('Inbox', 'note.md');
+
+			await runner.fireOnFile(file);
+
+			expect(mockModules.elaboration).toHaveBeenCalledTimes(1);
+			expect(mockModules.enrichment).toHaveBeenCalledTimes(1);
+			expect(mockModules.rem).toHaveBeenCalledTimes(1);
+			expect(mockModules.organize).toHaveBeenCalledTimes(1);
+			expect(mockModules.summarize).not.toHaveBeenCalled();
+			expect(mockModules.tidy).not.toHaveBeenCalled();
+		});
+
+		it('reports no features when all phases are disabled', async () => {
+			settings.elaboration.enabled = false;
+			settings.summarize.enabled = false;
+			settings.enrichment.enabled = false;
+			settings.rem.enabled = false;
+			settings.tidy.enabled = false;
+			settings.organize.enabled = false;
+			const file = fileIn('Inbox', 'note.md');
+
+			await runner.fireOnFile(file);
+
+			expect(mockNotifications.info).toHaveBeenCalledWith('No features are enabled');
+			expect(mockModules.elaboration).not.toHaveBeenCalled();
+		});
+
+		it('a phase error does not abort the remaining phases', async () => {
+			(mockModules.enrichment as ReturnType<typeof vi.fn>).mockRejectedValue(
+				new Error('boom'),
+			);
+			const file = fileIn('Inbox', 'note.md');
+
+			await runner.fireOnFile(file);
+
+			expect(mockModules.rem).toHaveBeenCalledTimes(1);
+			expect(mockModules.tidy).toHaveBeenCalledTimes(1);
+			expect(mockModules.organize).toHaveBeenCalledTimes(1);
+		});
 	});
 });

@@ -12,6 +12,7 @@ import { OrganizeModule } from './organize';
 import { DeepDiveModule } from './deep-dive';
 import { TitleModule } from './title';
 import { RemModule } from './rem';
+import { IntakeModule } from './intake';
 import { CommandRegistrar, auditCommands } from './commands';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
@@ -43,6 +44,7 @@ export default class SynapsePlugin extends Plugin {
 	private deepDive!: DeepDiveModule;
 	private title!: TitleModule;
 	private rem!: RemModule;
+	private intake!: IntakeModule;
 	private startupTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	async onload(): Promise<void> {
@@ -285,16 +287,39 @@ export default class SynapsePlugin extends Plugin {
 			},
 		});
 
-		// Fire Synapse: run all enabled features on a directory
+		// Fire Synapse: run all enabled features on a directory.
+		// The third arg (onlyFile) is forwarded so SynapseRunner.fireOnFile
+		// can scope each phase to a single note (intake monitor, #111).
 		const moduleMap: PipelineModuleMap = {
-			elaboration: (fp, sc) => this.elaboration.scanVault(fp, sc),
-			summarize: (fp, sc) => this.summarize.scanVault(fp, sc),
-			enrichment: (fp, sc) => this.enrichment.scanVault(fp, sc),
-			rem: (fp) => this.rem.remScanDirectory(fp),
-			tidy: (fp, sc) => this.tidy.scanVault(fp, sc),
-			organize: (fp, sc) => this.organize.scanDirectory(fp, sc),
+			elaboration: (fp, sc, of) => this.elaboration.scanVault(fp, sc, of),
+			summarize: (fp, sc, of) => this.summarize.scanVault(fp, sc, of),
+			enrichment: (fp, sc, of) => this.enrichment.scanVault(fp, sc, of),
+			rem: (fp, sc, of) => this.rem.remScanDirectory(fp, sc, of),
+			tidy: (fp, sc, of) => this.tidy.scanVault(fp, sc, of),
+			organize: (fp, sc, of) => this.organize.scanDirectory(fp, sc, of),
 		};
 		const synapseRunner = new SynapseRunner(moduleMap, getSettings, this.notifications);
+
+		// Intake monitor (#111): watches the configured intake folder and
+		// auto-processes new notes. Cross-module work is injected as callbacks
+		// (the intake module never imports other feature modules):
+		//   - general notes  -> run the whole pipeline on the one note
+		//   - article URLs    -> elaboration on the one note (after fetch+append)
+		//   - media URLs      -> #112 transcription STUB (notice only)
+		this.intake = new IntakeModule(this, getSettings, this.notifications, {
+			fireOnFile: (file) => synapseRunner.fireOnFile(file),
+			elaborateFile: async (file) => {
+				if (this.settings.elaboration.enabled) {
+					await this.elaboration.scanNote(file, true);
+				}
+			},
+			transcribeUrlToNote: async (_url, _mediaType, _file) => {
+				new Notice('Synapse: URL transcription from intake is coming soon (#112)');
+			},
+		});
+		if (this.settings.intake.enabled) {
+			await this.intake.onload();
+		}
 
 		registrar.register('synapse:fire', true, {
 			name: 'Fire Synapse: run all features on a directory',
@@ -329,6 +354,7 @@ export default class SynapsePlugin extends Plugin {
 		this.deepDive?.onunload();
 		this.title?.onunload();
 		this.rem?.onunload();
+		this.intake?.onunload();
 		removeNotificationStyles();
 		UnifiedProposalView.removeStyles();
 	}
