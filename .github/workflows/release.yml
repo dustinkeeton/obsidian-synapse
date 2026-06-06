@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Tag name (e.g. v0.3.1) passed from tag-on-version-bump'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -13,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -20,6 +28,15 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Determine tag version
+        id: tag
+        run: |
+          # inputs.tag is like "v0.3.1", github.ref_name is like "v0.3.1"
+          RAW_TAG="${{ inputs.tag || github.ref_name }}"
+          TAG_VERSION="${RAW_TAG#v}"
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$RAW_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Verify versions
         run: |
@@ -30,7 +47,7 @@ jobs:
             echo "ERROR: versions.json minAppVersion ($VERSIONS_MIN) does not match manifest.json minAppVersion ($MANIFEST_MIN) for version $MANIFEST_VERSION"
             exit 1
           fi
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG_VERSION="${{ steps.tag.outputs.version }}"
           if [ "$MANIFEST_VERSION" != "$TAG_VERSION" ]; then
             echo "ERROR: manifest.json version ($MANIFEST_VERSION) does not match tag version ($TAG_VERSION)"
             exit 1
@@ -42,6 +59,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.name }}
           files: |
             main.js
             manifest.json
