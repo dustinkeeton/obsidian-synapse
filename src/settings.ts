@@ -192,6 +192,13 @@ export interface TitleSettings {
 	checkAfterOperations: boolean;
 }
 
+export interface IntakeSettings {
+	enabled: boolean;
+	intakeFolder: string;
+	markProcessed: boolean;
+	moveWhenDone?: string;
+}
+
 export interface SynapseSettings {
 	ai: AISettings;
 	elaboration: ElaborationSettings;
@@ -205,6 +212,7 @@ export interface SynapseSettings {
 	deepDive: DeepDiveSettings;
 	title: TitleSettings;
 	rem: RemSettings;
+	intake: IntakeSettings;
 }
 
 export const DEFAULT_SETTINGS: SynapseSettings = {
@@ -344,5 +352,11 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		confidenceThreshold: 0.5,
 		maxLinksPerNote: 20,
 		remFolderPath: '.synapse/rem',
+	},
+	intake: {
+		enabled: true,
+		intakeFolder: 'Inbox',
+		markProcessed: true,
+		moveWhenDone: '',
 	},
 };
