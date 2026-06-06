@@ -1,5 +1,6 @@
 import type { Plugin, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
+import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
@@ -28,7 +29,8 @@ export class RemModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager
+		private checkpointManager: CheckpointManager,
+		private registrar: CommandRegistrar
 	) {}
 
 	async onload(): Promise<void> {
@@ -40,8 +42,7 @@ export class RemModule {
 		await this.store.init();
 
 		// Command: scan current note
-		this.plugin.addCommand({
-			id: 'synapse:rem-current-note',
+		this.registrar.register('synapse:rem-current-note', this.getSettings().rem.enabled, {
 			name: 'REM: Discover links in current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -51,8 +52,7 @@ export class RemModule {
 		});
 
 		// Command: scan directory
-		this.plugin.addCommand({
-			id: 'synapse:rem-directory',
+		this.registrar.register('synapse:rem-directory', this.getSettings().rem.enabled, {
 			name: 'REM: Discover links in directory',
 			callback: () => {
 				new FolderPickerModal(

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TidyModule } from './index';
+import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 
@@ -68,7 +69,8 @@ describe('TidyModule', () => {
 		module = new TidyModule(
 			mockPlugin as any,
 			() => settings,
-			mockNotifications as any
+			mockNotifications as any,
+			new CommandRegistrar(mockPlugin as any)
 		);
 	});
 

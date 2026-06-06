@@ -1,5 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
+import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter,
 	CheckpointManager, generateId, isTwitterUrl, fetchTweetContent,
@@ -42,7 +43,8 @@ export class EnrichmentModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager
+		private checkpointManager: CheckpointManager,
+		private registrar: CommandRegistrar
 	) {
 		this.analyzer = new VaultAnalyzer(plugin.app);
 		this.classifier = new MetadataClassifier(getSettings);
@@ -63,8 +65,7 @@ export class EnrichmentModule {
 			})
 		);
 
-		this.plugin.addCommand({
-			id: 'synapse:enrich-current-note',
+		this.registrar.register('synapse:enrich-current-note', this.getSettings().enrichment.enabled, {
 			name: 'Enrich current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -73,8 +74,7 @@ export class EnrichmentModule {
 			},
 		});
 
-		this.plugin.addCommand({
-			id: 'synapse:scan-vault-enrichment',
+		this.registrar.register('synapse:scan-vault-enrichment', this.getSettings().enrichment.enabled, {
 			name: 'Scan vault for enrichment',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -86,8 +86,7 @@ export class EnrichmentModule {
 			},
 		});
 
-		this.plugin.addCommand({
-			id: 'synapse:undo-enrichment',
+		this.registrar.register('synapse:undo-enrichment', this.getSettings().enrichment.enabled, {
 			name: 'Undo last enrichment on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {

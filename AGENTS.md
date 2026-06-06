@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-19
+last-updated: 2026-06-05
 ---
 
 # Synapse — Agent Reference
@@ -26,6 +26,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | main | `src/main.ts` | Plugin entry, module orchestration, command/view registration, checkpoint dispatch | `SynapsePlugin` (default) |
 | settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `SynapseSettingTab` |
+| commands | `src/commands/` | Command registry: developer source of truth + master control (status/flow gating), central registrar, drift audit | `CommandRegistrar`, `COMMAND_REGISTRY`, `isInFlow`, `isPipelineKeyInFlow`, `auditCommands` |
 | elaboration | `src/elaboration/` | Stub note detection, AI proposal generation, image analysis for proposals | `ElaborationModule`, `ImageAnalyzer`, types |
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, types |
@@ -73,28 +74,35 @@ Key constraints:
 
 ## Command Registry
 
-| ID | Name | Type | Module |
-|----|------|------|--------|
-| `synapse:review-proposals` | Open proposal review sidebar | callback | main |
-| `synapse:manage-checkpoints` | Manage interrupted operations | callback | main |
-| `synapse:transcribe-media` | Transcribe media | callback | main |
-| `synapse:transcribe-note-media` | Transcribe media from current note | editorCallback | main |
-| `synapse:scan-vault` | Scan vault for stub notes | callback | elaboration |
-| `synapse:scan-current-note` | Scan current note for elaboration | editorCallback | elaboration |
-| `synapse:clear-proposals` | Clear all pending proposals | callback | elaboration |
-| `synapse:check-dependencies` | Check external tool availability | callback | video |
-| `synapse:enrich-current-note` | Enrich current note | editorCallback | enrichment |
-| `synapse:scan-vault-enrichment` | Scan vault for enrichment | callback | enrichment |
-| `synapse:undo-enrichment` | Undo last enrichment on current note | editorCallback | enrichment |
-| `synapse:summarize-current-note` | Summarize current note | editorCallback | summarize |
-| `synapse:scan-vault-summarize` | Scan vault for notes to summarize | callback | summarize |
-| `synapse:tidy-current-note` | Tidy current note | editorCallback | tidy |
-| `synapse:undo-tidy` | Undo last tidy on current note | editorCallback | tidy |
-| `synapse:organize-current-note` | Organize current note | editorCallback | organize |
-| `synapse:scan-directory-organize` | Scan directory for organization | callback | organize |
-| `synapse:undo-organize` | Undo last organize on current note | editorCallback | organize |
-| `synapse:deep-dive` | Deep dive into current note | editorCallback | deep-dive |
-| `synapse:clear-deep-dive` | Clear deep dive proposals | callback | deep-dive |
+Source of truth: `src/commands/registry.ts` (mirrored here). 23 user-invocable commands, all `active` on first ship. Flows: `p`=palette, `f`=fire-synapse, `s`=startup. Full detail in `docs/agent/command-registry.md`.
+
+| ID | Name | Type | Module | Flows | Status |
+|----|------|------|--------|-------|--------|
+| `synapse:review-proposals` | Open proposal review sidebar | callback | main | p | active |
+| `synapse:manage-checkpoints` | Manage interrupted operations | callback | main | p | active |
+| `synapse:transcribe-media` | Transcribe media | callback | main | p | active |
+| `synapse:transcribe-note-media` | Transcribe media from current note | editorCallback | main | p | active |
+| `synapse:fire` | Fire Synapse: run all features on a directory | callback | main | p | active |
+| `synapse:scan-vault` | Scan vault for stub notes | callback | elaboration | p, f, s | active |
+| `synapse:scan-current-note` | Scan current note for elaboration | editorCallback | elaboration | p | active |
+| `synapse:clear-proposals` | Clear all pending proposals | callback | elaboration | p | active |
+| `synapse:enrich-current-note` | Enrich current note | editorCallback | enrichment | p | active |
+| `synapse:scan-vault-enrichment` | Scan vault for enrichment | callback | enrichment | p, f | active |
+| `synapse:undo-enrichment` | Undo last enrichment on current note | editorCallback | enrichment | p | active |
+| `synapse:organize-current-note` | Organize current note | editorCallback | organize | p | active |
+| `synapse:scan-directory-organize` | Scan directory for organization | callback | organize | p, f | active |
+| `synapse:undo-organize` | Undo last organize on current note | editorCallback | organize | p | active |
+| `synapse:deep-dive` | Deep dive into current note | editorCallback | deep-dive | p | active |
+| `synapse:clear-deep-dive` | Clear deep dive proposals | callback | deep-dive | p | active |
+| `synapse:summarize-current-note` | Summarize current note | editorCallback | summarize | p | active |
+| `synapse:scan-vault-summarize` | Scan vault for notes to summarize | callback | summarize | p, f | active |
+| `synapse:tidy-current-note` | Tidy current note | editorCallback | tidy | p | active |
+| `synapse:undo-tidy` | Undo last tidy on current note | editorCallback | tidy | p | active |
+| `synapse:rem-current-note` | REM: Discover links in current note | editorCallback | rem | p | active |
+| `synapse:rem-directory` | REM: Discover links in directory | callback | rem | p, f | active |
+| `synapse:check-dependencies` | Check external tool availability | callback | video | p | active |
+
+Plus a synthetic pipeline-only entry `synapse:tidy-vault` (`pipelineKey: tidy`, flows `f`) that gates the tidy Fire Synapse phase independently of any palette command.
 
 ## Ribbon Icons
 

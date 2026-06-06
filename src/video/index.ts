@@ -1,5 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
+import { CommandRegistrar } from '../commands';
 import { AudioModule, TranscriptionResult } from '../audio';
 import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES,
@@ -36,7 +37,8 @@ export class VideoModule {
 		private getSettings: () => SynapseSettings,
 		private audioModule: AudioModule,
 		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager
+		private checkpointManager: CheckpointManager,
+		private registrar: CommandRegistrar
 	) {
 		this.extractor = new AudioExtractor(getSettings);
 	}
@@ -47,8 +49,7 @@ export class VideoModule {
 			this.getSettings().video.tempFolder
 		);
 
-		this.plugin.addCommand({
-			id: 'synapse:check-dependencies',
+		this.registrar.register('synapse:check-dependencies', this.getSettings().video.enabled, {
 			name: 'Check external tool availability',
 			callback: () => this.checkDependencies(),
 		});
