@@ -67,8 +67,10 @@ export class TidyModule {
 
 	onunload(): void {}
 
-	async scanVault(folderPath?: string, skipConfirmation = false): Promise<number> {
-		const allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		// Per-file scoping (#111): narrow to the single requested note.
+		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
 
 		if (allFiles.length === 0) {
 			return 0;

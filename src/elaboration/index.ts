@@ -156,11 +156,13 @@ export class ElaborationModule {
 	 * 2. Confirmation snackbar -- user decides whether to generate proposals
 	 * 3. Heavy proposal generation with cancellation support
 	 */
-	async scanVault(folderPath?: string, skipConfirmation = false): Promise<number> {
+	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
 		// --- Phase 1: Detection (lightweight, local-only) ---
 		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(scopeLabel, 'vault-scan');
-		const files = getMarkdownFiles(this.plugin.app, folderPath);
+		let files = getMarkdownFiles(this.plugin.app, folderPath);
+		// Per-file scoping (#111): narrow to the single requested note.
+		if (onlyFile) files = files.filter(f => f.path === onlyFile.path);
 		const detected: DetectionResult[] = [];
 
 		try {
