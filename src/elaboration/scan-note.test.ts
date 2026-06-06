@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ElaborationModule } from './index';
+import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager } from '../shared';
 import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
@@ -86,7 +87,8 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 			mockPlugin as any,
 			() => settings,
 			notifications,
-			createMockCheckpointManager() as any
+			createMockCheckpointManager() as any,
+			new CommandRegistrar(mockPlugin as any)
 		);
 	});
 

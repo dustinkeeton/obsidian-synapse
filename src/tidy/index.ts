@@ -1,5 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
+import { CommandRegistrar } from '../commands';
 import { AIClient, NotificationManager, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
@@ -35,7 +36,8 @@ export class TidyModule {
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		private registrar: CommandRegistrar
 	) {
 		this.aiClient = new AIClient(getSettings);
 		this.store = new TidyStore(plugin.app, getSettings);
@@ -44,8 +46,7 @@ export class TidyModule {
 	async onload(): Promise<void> {
 		await this.store.init();
 
-		this.plugin.addCommand({
-			id: 'synapse:tidy-current-note',
+		this.registrar.register('synapse:tidy-current-note', this.getSettings().tidy.enabled, {
 			name: 'Tidy current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -54,8 +55,7 @@ export class TidyModule {
 			},
 		});
 
-		this.plugin.addCommand({
-			id: 'synapse:undo-tidy',
+		this.registrar.register('synapse:undo-tidy', this.getSettings().tidy.enabled, {
 			name: 'Undo last tidy on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {

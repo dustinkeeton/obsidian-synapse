@@ -4,6 +4,24 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-05: Central command registry (Issue #215)
+
+**Context**: Synapse registered 23 commands via scattered `addCommand()` calls across 9 files. The only gate was each feature's user-facing `enabled` setting — all-or-nothing per feature — and there was no single place to audit commands or to deprecate/disable one or remove it from a specific flow (palette, Fire Synapse, startup) without hunting through modules. The drift was already real: `AGENTS.md`'s command table was missing 3 of the 23 commands.
+
+**Decision**: Add a developer-facing command registry under `src/commands/` (`types.ts`, `registry.ts`, `registrar.ts`, `audit.ts`, `index.ts`) that sits *above* user settings. `COMMAND_REGISTRY` is the source of truth (id, name, feature, `status`, `flows`, optional `pipelineKey`). Modules keep handlers co-located but call `registrar.register(id, userEnabled, spec)` instead of `plugin.addCommand(...)`; the registrar registers only when `status === 'active' && flows.includes('palette') && userEnabled`. Fire Synapse (`synapse-runner.ts`) and the elaboration startup scan AND-in `isPipelineKeyInFlow`/`isInFlow`. An end-of-onload audit (also a Vitest test) flags drift in both directions. Ships behavior-preserving: all entries `active` with current flows.
+
+**Alternatives considered**:
+- Single centralized wiring file owning all `addCommand` calls (moves handlers away from their modules; loses module-local closures; bigger, riskier migration than a 1:1 call-site swap).
+- Settings-authoritative (extend per-feature settings) — rejected; this is a *developer* kill-switch that must override user settings, not another user toggle.
+- Hang `pipelineKey: 'tidy'` on the `tidy-current-note` palette command — rejected; the pipeline runs `tidy.scanVault()` (vault-wide) while that command runs `tidy()` on one note. Coupling them would let disabling the palette command silently drop tidy from Fire Synapse. Instead a synthetic, pipeline-only `tidy-vault` entry owns `pipelineKey: 'tidy'` (24 registry entries; 23 real commands).
+- Pass an explicit `loadedFeatures` set to the audit — rejected; re-creates the hand-maintained list the registry exists to kill. The audit derives "feature loaded" from the attempted set instead, which also makes the platform-gated `video` module correct for free.
+
+**Rationale**: A 1:1 call-site swap keeps the migration mechanical and low-risk while giving one authoritative control surface. `pipelineKey` is typed `string` (not `PipelineModuleKey`) so `commands/` imports nothing from `pipeline/` — `pipeline/` imports `commands/`, so a back-import would close a cycle; `registry.test.ts` cross-checks the keys against `SYNAPSE_PIPELINE` to recover the type safety. Fail-open choices (unknown id in `register`, unmapped key in `isPipelineKeyInFlow`) preserve behavior under drift and let the audit surface it rather than silently dropping a working command/phase.
+
+**Impact**: All 23 commands now flow through `CommandRegistrar`; 8 module constructors take a registrar (summarize at position 5, before its optional transcribe callbacks). Developers can deprecate/disable a command or remove it from a single flow by editing one registry entry. CI fails on registry↔handler drift. Known limitation: a fully disabled feature can't be drift-checked (its `onload()` never runs). See `docs/agent/command-registry.md`.
+
+---
+
 ## 2026-03-19: Receipt content template for OCR text extraction (Issue #200)
 
 **Context**: The OCR module extracts raw text from images, but receipt images contain structured data (store name, items, prices, totals) that benefits from a specialized extraction format rather than raw text dump.

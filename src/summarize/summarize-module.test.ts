@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SummarizeModule } from './index';
+import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
@@ -106,7 +107,8 @@ describe('SummarizeModule organize scope', () => {
 			mockPlugin as any,
 			() => settings,
 			mockNotifications as any,
-			createMockCheckpointManager() as any
+			createMockCheckpointManager() as any,
+			new CommandRegistrar(mockPlugin as any)
 		);
 	});
 
@@ -236,7 +238,8 @@ describe('SummarizeModule content-aware templates', () => {
 			mockPlugin as any,
 			() => settings,
 			mockNotifications as any,
-			createMockCheckpointManager() as any
+			createMockCheckpointManager() as any,
+			new CommandRegistrar(mockPlugin as any)
 		);
 	});
 

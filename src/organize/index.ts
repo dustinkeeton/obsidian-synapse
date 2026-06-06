@@ -1,5 +1,6 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
+import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder,
 	writeNote, generateOrganizeSummary, CheckpointManager, generateId,
@@ -35,7 +36,8 @@ export class OrganizeModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager
+		private checkpointManager: CheckpointManager,
+		private registrar: CommandRegistrar
 	) {
 		this.analyzer = new ContentAnalyzer(plugin.app, getSettings);
 		this.matcher = new DirectoryMatcher(plugin.app);
@@ -45,8 +47,7 @@ export class OrganizeModule {
 	async onload(): Promise<void> {
 		await this.store.init();
 
-		this.plugin.addCommand({
-			id: 'synapse:organize-current-note',
+		this.registrar.register('synapse:organize-current-note', this.getSettings().organize.enabled, {
 			name: 'Organize current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -55,8 +56,7 @@ export class OrganizeModule {
 			},
 		});
 
-		this.plugin.addCommand({
-			id: 'synapse:scan-directory-organize',
+		this.registrar.register('synapse:scan-directory-organize', this.getSettings().organize.enabled, {
 			name: 'Scan directory for organization',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -68,8 +68,7 @@ export class OrganizeModule {
 			},
 		});
 
-		this.plugin.addCommand({
-			id: 'synapse:undo-organize',
+		this.registrar.register('synapse:undo-organize', this.getSettings().organize.enabled, {
 			name: 'Undo last organize on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
