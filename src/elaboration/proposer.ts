@@ -1,6 +1,6 @@
 import { App } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, fetchArticleContent } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import { DetectionResult, Proposal } from './types';
 
@@ -109,7 +109,11 @@ export class ProposalGenerator {
 		const urlRegex = /https?:\/\/[^\s)\]>]+/g;
 		const urls = [...content.matchAll(urlRegex)]
 			.map(m => m[0])
-			.filter(u => isTwitterUrl(u))
+			// Twitter URLs are fetched as tweets; everything else that isn't a
+			// known video host is treated as an article. Video hosts are skipped
+			// because their pages are JS-rendered and yield no useful text --
+			// proper URL classification is issue #109's job.
+			.filter(u => isTwitterUrl(u) || !isVideoHost(u))
 			.slice(0, 3);
 
 		if (urls.length === 0) return '';
@@ -117,10 +121,12 @@ export class ProposalGenerator {
 		const parts: string[] = [];
 		for (const url of urls) {
 			try {
-				const tweetText = await fetchTweetContent(url, 500);
-				parts.push(tweetText);
+				const text = isTwitterUrl(url)
+					? await fetchTweetContent(url, 500)
+					: await fetchArticleContent(url, 2000);
+				if (text.trim()) parts.push(text);
 			} catch {
-				// Non-fatal — skip tweets that can't be fetched
+				// Non-fatal — skip URLs that can't be fetched
 			}
 		}
 		return parts.join('\n\n---\n\n');
@@ -181,4 +187,23 @@ export class ProposalGenerator {
 			}
 		);
 	}
+}
+
+/**
+ * Hosts whose pages are JS-rendered video and yield no useful article text.
+ * Intentionally a tiny local list rather than importing video/url-detector,
+ * to avoid an elaboration -> video module coupling. Proper URL classification
+ * is tracked in issue #109; this is just a conservative skip guard.
+ */
+const VIDEO_HOST_PATTERN =
+	/(?:^|\.)(?:youtube\.com|youtu\.be|tiktok\.com|instagram\.com|vimeo\.com)$/i;
+
+function isVideoHost(url: string): boolean {
+	let host: string;
+	try {
+		host = new URL(url).hostname;
+	} catch {
+		return false;
+	}
+	return VIDEO_HOST_PATTERN.test(host);
 }

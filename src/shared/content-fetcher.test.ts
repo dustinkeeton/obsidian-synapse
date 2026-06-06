@@ -1,63 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { extractReadableText, fetchPageContent, extractJsonLdRecipes, formatRecipeStructuredData } from './content-fetcher';
-import { isSupportedUrl } from '../video';
+import {
+	extractReadableText,
+	fetchPageContent,
+	fetchArticleContent,
+	extractTitle,
+	extractMetaDescription,
+	extractJsonLdRecipes,
+	formatRecipeStructuredData,
+} from './content-fetcher';
 
 /**
- * Tests for the content fetcher and video URL detection integration.
- * The fetchContentForUrl logic in SummarizeModule delegates to either
- * the video transcription pipeline or fetchPageContent based on
- * isSupportedUrl(). These tests verify that isSupportedUrl correctly
- * identifies video URLs, and that fetchPageContent + extractReadableText
- * work as expected for non-video URLs.
+ * Tests for the shared content fetcher: readable-text extraction,
+ * JSON-LD recipe parsing, page/article fetching, and title/description
+ * extraction. Network access is mocked via the obsidian requestUrl stub.
  */
-
-describe('isSupportedUrl integration with summarize', () => {
-	it('identifies YouTube watch URLs as video', () => {
-		expect(isSupportedUrl('https://youtube.com/watch?v=dQw4w9WgXcQ')).toBe(true);
-		expect(isSupportedUrl('https://www.youtube.com/watch?v=abc123')).toBe(true);
-	});
-
-	it('identifies YouTube short URLs as video', () => {
-		expect(isSupportedUrl('https://youtu.be/dQw4w9WgXcQ')).toBe(true);
-	});
-
-	it('identifies YouTube Shorts as video', () => {
-		expect(isSupportedUrl('https://youtube.com/shorts/dQw4w9WgXcQ')).toBe(true);
-	});
-
-	it('identifies TikTok URLs as video', () => {
-		expect(isSupportedUrl('https://www.tiktok.com/@user/video/1234567890')).toBe(true);
-		expect(isSupportedUrl('https://www.tiktok.com/t/ZThw1txpF/')).toBe(true);
-		expect(isSupportedUrl('https://vm.tiktok.com/ZMxxxxxxx/')).toBe(true);
-	});
-
-	it('identifies TikTok URLs with query params as video', () => {
-		expect(isSupportedUrl('https://www.tiktok.com/@user/video/1234567890?is_from_webapp=1&sender_device=pc')).toBe(true);
-		expect(isSupportedUrl('https://www.tiktok.com/t/ZThw1txpF/?refer=creator&web_id=123')).toBe(true);
-		expect(isSupportedUrl('https://vm.tiktok.com/ZMxxxxxxx/?sender_device=mobile')).toBe(true);
-	});
-
-	it('does not flag regular article URLs as video', () => {
-		expect(isSupportedUrl('https://example.com/article')).toBe(false);
-		expect(isSupportedUrl('https://en.wikipedia.org/wiki/Topic')).toBe(false);
-		expect(isSupportedUrl('https://blog.example.com/post-123')).toBe(false);
-	});
-
-	it('does not flag YouTube channel URLs as video', () => {
-		expect(isSupportedUrl('https://youtube.com/channel/UCxxxx')).toBe(false);
-		expect(isSupportedUrl('https://youtube.com/@username')).toBe(false);
-	});
-
-	it('does not flag empty strings', () => {
-		expect(isSupportedUrl('')).toBe(false);
-	});
-
-	it('does not flag Twitter/X.com URLs as video (text content)', () => {
-		expect(isSupportedUrl('https://twitter.com/user/status/123456789')).toBe(false);
-		expect(isSupportedUrl('https://x.com/user/status/123456789')).toBe(false);
-		expect(isSupportedUrl('https://mobile.twitter.com/user/status/123456789')).toBe(false);
-	});
-});
 
 describe('extractReadableText', () => {
 	it('strips HTML tags', () => {
@@ -327,6 +283,154 @@ describe('fetchPageContent with JSON-LD', () => {
 		const result = await fetchPageContent('https://example.com/blog', 10000);
 		expect(result).not.toContain('STRUCTURED RECIPE DATA');
 		expect(result).toContain('Just a blog post');
+	});
+});
+
+// ── extractTitle ──────────────────────────────────────────────────────
+
+describe('extractTitle', () => {
+	it('extracts the <title> element', () => {
+		const html = '<html><head><title>My Article</title></head><body></body></html>';
+		expect(extractTitle(html)).toBe('My Article');
+	});
+
+	it('normalizes whitespace inside the title', () => {
+		const html = '<title>Spaced   out\n  title</title>';
+		expect(extractTitle(html)).toBe('Spaced out title');
+	});
+
+	it('decodes HTML entities in the title', () => {
+		const html = '<title>Tom &amp; Jerry &lt;3</title>';
+		expect(extractTitle(html)).toBe('Tom & Jerry <3');
+	});
+
+	it('falls back to og:title when <title> is absent', () => {
+		const html = '<head><meta property="og:title" content="OG Headline"></head>';
+		expect(extractTitle(html)).toBe('OG Headline');
+	});
+
+	it('falls back to og:title when <title> is empty', () => {
+		const html = '<head><title>   </title><meta property="og:title" content="OG Headline"></head>';
+		expect(extractTitle(html)).toBe('OG Headline');
+	});
+
+	it('returns empty string when no title is present', () => {
+		expect(extractTitle('<html><body><p>No title here</p></body></html>')).toBe('');
+	});
+});
+
+// ── extractMetaDescription ────────────────────────────────────────────
+
+describe('extractMetaDescription', () => {
+	it('extracts <meta name="description">', () => {
+		const html = '<head><meta name="description" content="A short summary."></head>';
+		expect(extractMetaDescription(html)).toBe('A short summary.');
+	});
+
+	it('handles content attribute before name attribute', () => {
+		const html = '<head><meta content="Reversed order." name="description"></head>';
+		expect(extractMetaDescription(html)).toBe('Reversed order.');
+	});
+
+	it('falls back to og:description', () => {
+		const html = '<head><meta property="og:description" content="Open Graph summary."></head>';
+		expect(extractMetaDescription(html)).toBe('Open Graph summary.');
+	});
+
+	it('prefers name=description over og:description', () => {
+		const html =
+			'<head><meta name="description" content="Primary."><meta property="og:description" content="Secondary."></head>';
+		expect(extractMetaDescription(html)).toBe('Primary.');
+	});
+
+	it('decodes HTML entities in the description', () => {
+		const html = '<meta name="description" content="Rock &amp; Roll">';
+		expect(extractMetaDescription(html)).toBe('Rock & Roll');
+	});
+
+	it('returns empty string when no description is present', () => {
+		expect(extractMetaDescription('<html><body><p>Body</p></body></html>')).toBe('');
+	});
+});
+
+// ── fetchArticleContent ───────────────────────────────────────────────
+
+describe('fetchArticleContent', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('assembles source header, title, description, and body', async () => {
+		const { requestUrl } = await import('obsidian');
+		const html =
+			'<html><head><title>Great Article</title>' +
+			'<meta name="description" content="A summary of the article."></head>' +
+			'<body><article><p>The full article body text.</p></article></body></html>';
+		vi.mocked(requestUrl).mockResolvedValue({ text: html } as never);
+
+		const result = await fetchArticleContent('https://example.com/post', 10000);
+
+		expect(result).toContain('Source: https://example.com/post');
+		expect(result).toContain('Title: Great Article');
+		expect(result).toContain('Description: A summary of the article.');
+		expect(result).toContain('The full article body text.');
+		// Source header must come first
+		expect(result.startsWith('Source: https://example.com/post')).toBe(true);
+	});
+
+	it('omits title and description lines when absent', async () => {
+		const { requestUrl } = await import('obsidian');
+		const html = '<html><body><p>Just body content.</p></body></html>';
+		vi.mocked(requestUrl).mockResolvedValue({ text: html } as never);
+
+		const result = await fetchArticleContent('https://example.com/bare', 10000);
+
+		expect(result).toContain('Source: https://example.com/bare');
+		expect(result).not.toContain('Title:');
+		expect(result).not.toContain('Description:');
+		expect(result).toContain('Just body content.');
+	});
+
+	it('truncates the assembled content to maxLength', async () => {
+		const { requestUrl } = await import('obsidian');
+		const longBody = 'word '.repeat(500);
+		const html = `<html><head><title>Long</title></head><body><p>${longBody}</p></body></html>`;
+		vi.mocked(requestUrl).mockResolvedValue({ text: html } as never);
+
+		const result = await fetchArticleContent('https://example.com/long', 50);
+
+		expect(result.length).toBe(50);
+		expect(result.startsWith('Source: https://example.com/long')).toBe(true);
+	});
+
+	it('sends a browser User-Agent header', async () => {
+		const { requestUrl } = await import('obsidian');
+		const spy = vi
+			.mocked(requestUrl)
+			.mockResolvedValue({ text: '<html><body><p>x</p></body></html>' } as never);
+
+		await fetchArticleContent('https://example.com/ua', 10000);
+
+		const call = spy.mock.calls[0][0] as { headers?: Record<string, string> };
+		expect(call.headers?.['User-Agent']).toBe('Mozilla/5.0 (compatible; ObsidianSynapse/1.0)');
+	});
+
+	it('rejects non-HTTP URLs via sanitizeUrl', async () => {
+		await expect(fetchArticleContent('ftp://evil.example.com/x', 10000)).rejects.toThrow();
+	});
+
+	it('rejects malformed URLs via sanitizeUrl', async () => {
+		await expect(fetchArticleContent('not a url', 10000)).rejects.toThrow();
+	});
+
+	it('uses a sensible default maxLength when omitted', async () => {
+		const { requestUrl } = await import('obsidian');
+		const html = '<html><head><title>Default</title></head><body><p>Body</p></body></html>';
+		vi.mocked(requestUrl).mockResolvedValue({ text: html } as never);
+
+		const result = await fetchArticleContent('https://example.com/default');
+		expect(result).toContain('Source: https://example.com/default');
+		expect(result).toContain('Title: Default');
 	});
 });
 

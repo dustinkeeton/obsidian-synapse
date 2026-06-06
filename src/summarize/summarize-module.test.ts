@@ -3,13 +3,7 @@ import { SummarizeModule } from './index';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
-import { fetchPageContent } from './content-fetcher';
-
-// Mock the content fetcher to avoid real network calls
-vi.mock('./content-fetcher', () => ({
-	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
-	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
-}));
+import { fetchPageContent } from '../shared';
 
 // Mock the summarizer to return a canned summary.
 // Track the last created instance so tests can inspect call args.
@@ -37,7 +31,9 @@ vi.mock('../video', () => ({
 	detectPlatform: vi.fn().mockReturnValue(null),
 }));
 
-// Mock the shared module to avoid folder picker / getMarkdownFiles issues
+// Mock the shared module to avoid folder picker / getMarkdownFiles issues.
+// Content fetchers are stubbed here (they moved from ./content-fetcher into
+// ../shared) to avoid real network calls.
 vi.mock('../shared', () => ({
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
@@ -46,6 +42,9 @@ vi.mock('../shared', () => ({
 	buildCallout: vi.fn((_type: string, _title: string, content: string) => `> ${content}`),
 	ENRICHMENT_START: '%% synapse-enrichment-start %%',
 	ENRICHMENT_END: '%% synapse-enrichment-end %%',
+	generateId: vi.fn().mockReturnValue('id-mock'),
+	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
+	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
 	CheckpointManager: class MockCheckpointManager {
 		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
 		completeItem = vi.fn().mockResolvedValue(null);

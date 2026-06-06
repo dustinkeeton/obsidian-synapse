@@ -1,11 +1,23 @@
 import { requestUrl } from 'obsidian';
-import { sanitizeUrl } from '../shared';
+import { sanitizeUrl } from './validation';
 
 /**
  * Fetch a webpage and extract readable text content.
+ *
+ * Lives in shared/ (alongside tweet-fetcher.ts) so any feature module can
+ * consume web-fetching utilities without creating cross-feature coupling.
  */
 /** Default timeout for page fetch requests (30 seconds). */
 const FETCH_TIMEOUT_MS = 30_000;
+
+/**
+ * Default maximum length for assembled article content (characters).
+ * TODO(#115): make configurable via settings UI.
+ */
+const DEFAULT_ARTICLE_MAX_LENGTH = 8000;
+
+/** User-Agent sent with page fetches so servers return real HTML. */
+const FETCH_USER_AGENT = 'Mozilla/5.0 (compatible; ObsidianSynapse/1.0)';
 
 export interface RecipeJsonLd {
 	name?: string;
@@ -16,6 +28,33 @@ export interface RecipeJsonLd {
 	cookTime?: string;
 	totalTime?: string;
 	recipeYield?: string | string[];
+}
+
+/**
+ * Fetch raw HTML for a URL with sanitization, a browser-like User-Agent,
+ * and a hard timeout. Shared by every fetcher in this module so a given
+ * page is only requested once per call site.
+ */
+async function fetchHtml(url: string): Promise<string> {
+	const validatedUrl = sanitizeUrl(url);
+
+	const timeout = new Promise<never>((_, reject) =>
+		setTimeout(() => reject(new Error('Page fetch timed out')), FETCH_TIMEOUT_MS)
+	);
+
+	const response = await Promise.race([
+		requestUrl({
+			url: validatedUrl,
+			method: 'GET',
+			headers: {
+				'User-Agent': FETCH_USER_AGENT,
+				'Accept': 'text/html,application/xhtml+xml',
+			},
+		}),
+		timeout,
+	]);
+
+	return response.text;
 }
 
 /**
@@ -136,25 +175,7 @@ export function formatRecipeStructuredData(recipes: RecipeJsonLd[]): string {
 }
 
 export async function fetchPageContent(url: string, maxLength: number): Promise<string> {
-	const validatedUrl = sanitizeUrl(url);
-
-	const timeout = new Promise<never>((_, reject) =>
-		setTimeout(() => reject(new Error('Page fetch timed out')), FETCH_TIMEOUT_MS)
-	);
-
-	const response = await Promise.race([
-		requestUrl({
-			url: validatedUrl,
-			method: 'GET',
-			headers: {
-				'User-Agent': 'Mozilla/5.0 (compatible; ObsidianSynapse/1.0)',
-				'Accept': 'text/html,application/xhtml+xml',
-			},
-		}),
-		timeout,
-	]);
-
-	const html = response.text;
+	const html = await fetchHtml(url);
 	const recipes = extractJsonLdRecipes(html);
 	const structuredPreamble = formatRecipeStructuredData(recipes);
 	const readableText = extractReadableText(html);
@@ -207,4 +228,103 @@ export function extractReadableText(html: string): string {
 	return decoded
 		.replace(/\s+/g, ' ')
 		.trim();
+}
+
+/**
+ * Decode the small set of HTML entities that appear in titles and meta tags.
+ */
+function decodeHtmlEntities(value: string): string {
+	return value
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&nbsp;/g, ' ')
+		.trim();
+}
+
+/**
+ * Extract the page title from raw HTML.
+ * Prefers the <title> element, falling back to the og:title meta tag.
+ * Returns an empty string when neither is present.
+ */
+export function extractTitle(html: string): string {
+	const titleMatch = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+	if (titleMatch?.[1]) {
+		const title = decodeHtmlEntities(titleMatch[1].replace(/\s+/g, ' '));
+		if (title) return title;
+	}
+
+	const ogTitle = extractMetaContent(html, 'og:title');
+	return ogTitle ? decodeHtmlEntities(ogTitle) : '';
+}
+
+/**
+ * Extract the page description from raw HTML.
+ * Prefers <meta name="description">, falling back to og:description.
+ * Returns an empty string when neither is present.
+ */
+export function extractMetaDescription(html: string): string {
+	const description = extractMetaContent(html, 'description');
+	if (description) return decodeHtmlEntities(description);
+
+	const ogDescription = extractMetaContent(html, 'og:description');
+	return ogDescription ? decodeHtmlEntities(ogDescription) : '';
+}
+
+/**
+ * Pull the `content` attribute from a <meta> tag matching the given
+ * name or property key. Handles attribute ordering in either direction
+ * (name-before-content and content-before-name).
+ */
+function extractMetaContent(html: string, key: string): string {
+	const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	// name/property attribute appears before content attribute
+	const forward = new RegExp(
+		`<meta\\b[^>]*?(?:name|property)\\s*=\\s*["']${escapedKey}["'][^>]*?\\bcontent\\s*=\\s*["']([^"']*)["']`,
+		'i'
+	);
+	const forwardMatch = html.match(forward);
+	if (forwardMatch?.[1]) return forwardMatch[1];
+
+	// content attribute appears before name/property attribute
+	const backward = new RegExp(
+		`<meta\\b[^>]*?\\bcontent\\s*=\\s*["']([^"']*)["'][^>]*?(?:name|property)\\s*=\\s*["']${escapedKey}["']`,
+		'i'
+	);
+	const backwardMatch = html.match(backward);
+	if (backwardMatch?.[1]) return backwardMatch[1];
+
+	return '';
+}
+
+/**
+ * Fetch an article URL and assemble readable context for elaboration.
+ *
+ * The result is prefixed with a `Source: <url>` header, followed by the
+ * page title and meta description (when present), then the extracted body
+ * text. The whole thing is truncated to `maxLength` characters.
+ *
+ * Uses Obsidian's `requestUrl` (never native fetch) for mobile CSP
+ * compatibility (#88). URL validation is delegated to sanitizeUrl, which
+ * rejects non-HTTP(S) schemes and shell metacharacters.
+ */
+export async function fetchArticleContent(
+	url: string,
+	maxLength: number = DEFAULT_ARTICLE_MAX_LENGTH
+): Promise<string> {
+	const html = await fetchHtml(url);
+
+	const title = extractTitle(html);
+	const description = extractMetaDescription(html);
+	const body = extractReadableText(html);
+
+	const parts: string[] = [`Source: ${url}`];
+	if (title) parts.push(`Title: ${title}`);
+	if (description) parts.push(`Description: ${description}`);
+	if (body) parts.push('', body);
+
+	return parts.join('\n').slice(0, maxLength);
 }
