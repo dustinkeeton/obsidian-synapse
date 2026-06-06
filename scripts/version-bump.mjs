@@ -9,17 +9,18 @@
  *   - versions.json
  *   - src/__mocks__/obsidian.ts
  *
+ * Git tags are created automatically by CI when manifest.json changes
+ * land on main (see .github/workflows/tag-on-version-bump.yml).
+ *
  * Usage:
  *   node scripts/version-bump.mjs patch          # 0.1.0 → 0.1.1
  *   node scripts/version-bump.mjs minor          # 0.1.0 → 0.2.0
  *   node scripts/version-bump.mjs major          # 0.1.0 → 1.0.0
  *   node scripts/version-bump.mjs 2.0.0          # explicit version
- *   node scripts/version-bump.mjs patch --tag    # also creates git tag
  *   node scripts/version-bump.mjs --check        # validate consistency only
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -108,7 +109,6 @@ function checkConsistency() {
 // --- Main -------------------------------------------------------------------
 
 const args = process.argv.slice(2);
-const doTag = args.includes('--tag');
 const doCheck = args.includes('--check');
 const positional = args.filter(a => !a.startsWith('--'));
 
@@ -117,7 +117,7 @@ if (doCheck) {
 }
 
 if (positional.length === 0) {
-  console.error('Usage: version-bump.mjs <patch|minor|major|x.y.z> [--tag] [--check]');
+  console.error('Usage: version-bump.mjs <patch|minor|major|x.y.z> [--check]');
   process.exit(1);
 }
 
@@ -169,10 +169,3 @@ if (!checkConsistency()) {
 }
 
 console.log(`Bumped ${currentVersion} → ${newVersion}`);
-
-// Optional git tag
-if (doTag) {
-  const tag = `v${newVersion}`;
-  execFileSync('git', ['tag', tag], { cwd: root, stdio: 'inherit' });
-  console.log(`Created git tag: ${tag}`);
-}
