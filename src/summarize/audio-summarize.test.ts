@@ -4,11 +4,6 @@ import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
-// Mock the content fetcher to avoid real network calls
-vi.mock('./content-fetcher', () => ({
-	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
-}));
-
 // Mock the summarizer to return a canned summary
 vi.mock('./summarizer', () => ({
 	Summarizer: class MockSummarizer {
@@ -37,7 +32,8 @@ vi.mock('../audio', () => ({
 	findAudioEmbeds: (...args: any[]) => mockFindAudioEmbeds(...args),
 }));
 
-// Mock the shared module
+// Mock the shared module. Content fetchers are stubbed here (they moved from
+// ./content-fetcher into ../shared) to avoid real network calls.
 vi.mock('../shared', () => ({
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
@@ -48,6 +44,9 @@ vi.mock('../shared', () => ({
 	),
 	ENRICHMENT_START: '%% synapse-enrichment-start %%',
 	ENRICHMENT_END: '%% synapse-enrichment-end %%',
+	generateId: vi.fn().mockReturnValue('id-mock'),
+	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
+	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
 	CheckpointManager: class MockCheckpointManager {
 		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
 		completeItem = vi.fn().mockResolvedValue(null);

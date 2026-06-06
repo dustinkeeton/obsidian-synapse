@@ -16,6 +16,21 @@ vi.mock('../shared/ai-client', () => ({
 	},
 }));
 
+// Mock the article fetcher (re-exported by ../shared) so non-Twitter URLs
+// don't make real network calls. Other content-fetcher exports are passed
+// through from the real module via importOriginal. Declared with vi.hoisted
+// so the mock factory (hoisted above imports) can reference it safely.
+const { mockFetchArticleContent } = vi.hoisted(() => ({
+	mockFetchArticleContent: vi.fn().mockResolvedValue('Article body text here.'),
+}));
+vi.mock('../shared/content-fetcher', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../shared/content-fetcher')>();
+	return {
+		...actual,
+		fetchArticleContent: mockFetchArticleContent,
+	};
+});
+
 const mockRequestUrl = vi.mocked(requestUrl);
 
 function makeSettings(): SynapseSettings {
@@ -317,6 +332,90 @@ describe('ProposalGenerator -- Twitter URL external context', () => {
 
 		const proposal = await generator.generate(detection);
 		// Should still produce a proposal — tweet fetch is non-fatal
+		expect(proposal.proposedAdditions).toBeDefined();
+		const [prompt] = mockComplete.mock.calls[0];
+		expect(prompt).not.toContain('External content referenced in this note:');
+	});
+});
+
+describe('ProposalGenerator -- article URL external context', () => {
+	function makeGenerator(noteContent: string): ProposalGenerator {
+		const mockApp = {
+			vault: {
+				adapter: { read: vi.fn().mockResolvedValue(noteContent) },
+				read: vi.fn(),
+				readBinary: vi.fn(),
+			},
+			metadataCache: {
+				getCache: vi.fn().mockReturnValue(null),
+				getFirstLinkpathDest: vi.fn().mockReturnValue(null),
+			},
+		};
+		const settings = makeSettings();
+		settings.elaboration.proposal.includeSourceContext = false;
+		settings.image.enabled = false;
+		return new ProposalGenerator(mockApp as any, () => settings);
+	}
+
+	beforeEach(() => {
+		mockComplete.mockClear();
+		mockChat.mockClear();
+		mockComplete.mockResolvedValue('Expanded content with article context.');
+		mockFetchArticleContent.mockClear();
+		mockFetchArticleContent.mockResolvedValue(
+			'Source: https://example.com/post\nTitle: Example\n\nArticle body text here.'
+		);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('fetches a non-Twitter article URL into external context', async () => {
+		const generator = makeGenerator(
+			'# Notes\n\nSee https://example.com/post for details.'
+		);
+
+		await generator.generate({
+			notePath: 'notes/article.md',
+			reasons: [{ type: 'user-requested' }],
+		});
+
+		expect(mockFetchArticleContent).toHaveBeenCalledOnce();
+		expect(mockFetchArticleContent).toHaveBeenCalledWith('https://example.com/post', 2000);
+
+		const [prompt] = mockComplete.mock.calls[0];
+		expect(prompt).toContain('External content referenced in this note:');
+		expect(prompt).toContain('Article body text here.');
+	});
+
+	it('does not fetch known video hosts as articles', async () => {
+		const generator = makeGenerator(
+			'# Notes\n\nWatch https://www.youtube.com/watch?v=abc123 here.'
+		);
+
+		await generator.generate({
+			notePath: 'notes/video.md',
+			reasons: [{ type: 'user-requested' }],
+		});
+
+		expect(mockFetchArticleContent).not.toHaveBeenCalled();
+		const [prompt] = mockComplete.mock.calls[0];
+		expect(prompt).not.toContain('External content referenced in this note:');
+	});
+
+	it('gracefully handles article fetch failure', async () => {
+		mockFetchArticleContent.mockRejectedValue(new Error('timeout'));
+		const generator = makeGenerator(
+			'# Notes\n\nSee https://example.com/broken here.'
+		);
+
+		const proposal = await generator.generate({
+			notePath: 'notes/broken.md',
+			reasons: [{ type: 'user-requested' }],
+		});
+
+		// Non-fatal: proposal still produced, no external context section
 		expect(proposal.proposedAdditions).toBeDefined();
 		const [prompt] = mockComplete.mock.calls[0];
 		expect(prompt).not.toContain('External content referenced in this note:');

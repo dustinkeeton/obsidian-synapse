@@ -39,6 +39,16 @@ export {
 export type { TreeNode, MoveRecord } from './diagram-generator';
 export { fetchTweetContent, isTwitterUrl } from './tweet-fetcher';
 export type { TweetContent } from './tweet-fetcher';
+export {
+	fetchPageContent,
+	fetchArticleContent,
+	extractReadableText,
+	extractTitle,
+	extractMetaDescription,
+	extractJsonLdRecipes,
+	formatRecipeStructuredData,
+} from './content-fetcher';
+export type { RecipeJsonLd } from './content-fetcher';
 export { addEnhancedSlider } from './slider-helper';
 export { generateId, isValidCheckpointId } from './id-utils';
 export { CheckpointManager } from './checkpoint-manager';
