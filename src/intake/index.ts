@@ -7,6 +7,7 @@ import {
 	fetchArticleContent,
 	parseFrontmatter,
 	serializeFrontmatter,
+	writeNote,
 } from '../shared';
 import { IntakeDispatcher } from './intake-dispatcher';
 import {
@@ -129,13 +130,45 @@ export class IntakeModule {
 	 * getMarkdownFiles' membership rule (`startsWith(normalized + '/')`) so
 	 * subpaths are handled consistently. An empty/whitespace folder matches
 	 * nothing — we never watch the whole vault.
+	 *
+	 * The capture-log subfolder (`‹intakeFolder›/‹captureLogFolder›`, #224) is
+	 * explicitly excluded so our own breadcrumbs — which live under the intake
+	 * folder — are NEVER ingested. Without this the watcher would re-process
+	 * every breadcrumb and, since breadcrumbs contain a link that organize would
+	 * try to move, spin into an infinite ingest loop.
 	 */
 	private isInIntakeFolder(path: string, intakeFolder: string): boolean {
 		if (!intakeFolder || intakeFolder.trim().length === 0) {
 			return false;
 		}
 		const normalized = normalizePath(intakeFolder);
-		return path.startsWith(normalized + '/');
+		if (!path.startsWith(normalized + '/')) {
+			return false;
+		}
+
+		const captureLogPath = this.captureLogPath(normalized);
+		if (
+			captureLogPath !== null &&
+			(path === captureLogPath || path.startsWith(captureLogPath + '/'))
+		) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Absolute vault path of the capture-log subfolder for a given (already
+	 * normalized) intake folder, or null when no capture-log folder is
+	 * configured. Single source of truth for both the listener exclusion
+	 * (above) and where breadcrumbs are written (#224).
+	 */
+	private captureLogPath(normalizedIntakeFolder: string): string | null {
+		const folder = this.getSettings().intake.captureLogFolder;
+		if (!folder || folder.trim().length === 0) {
+			return null;
+		}
+		return normalizePath(`${normalizedIntakeFolder}/${folder.trim()}`);
 	}
 
 	/**
@@ -265,7 +298,14 @@ export class IntakeModule {
 				break;
 		}
 
-		await this.markProcessedAndMaybeMove(file, originalPath);
+		const movedOut = await this.markProcessedAndMaybeMove(file, originalPath);
+
+		// Leave a breadcrumb only when the note actually left the intake folder
+		// (organize, or the moveWhenDone fallback, relocated it). No move → the
+		// note is still browsable in the intake folder, so nothing to log (#224).
+		if (movedOut && this.getSettings().intake.captureLog) {
+			await this.writeCaptureBreadcrumb(originalPath, file.path);
+		}
 	}
 
 	/**
@@ -374,5 +414,79 @@ export class IntakeModule {
 		}
 
 		await this.plugin.app.fileManager.renameFile(file, targetPath);
+	}
+
+	/**
+	 * Drop a dated breadcrumb into the capture-log subfolder linking to a note
+	 * that was just organized out of the intake folder (#224). The file is
+	 * `‹intakeFolder›/‹captureLogFolder›/‹YYYY-MM-DD› — ‹sanitized title›.md`
+	 * and holds a wiki-link to the moved note plus small metadata.
+	 *
+	 * The breadcrumb is stamped `synapse-processed: true` as defense-in-depth:
+	 * the capture-log subfolder is already excluded from the watcher
+	 * (isInIntakeFolder), but the stamp guarantees it is skipped even if that
+	 * exclusion were ever bypassed.
+	 *
+	 * `movedPath` is the note's current (organized) path; `originalPath` its
+	 * pre-processing path inside the intake folder.
+	 */
+	private async writeCaptureBreadcrumb(
+		originalPath: string,
+		movedPath: string,
+	): Promise<void> {
+		const intakeFolder = normalizePath(this.getSettings().intake.intakeFolder);
+		const logFolder = this.captureLogPath(intakeFolder);
+		if (logFolder === null) {
+			return;
+		}
+
+		const date = new Date().toISOString().split('T')[0];
+		const title = this.sanitizeTitle(this.basenameOf(movedPath));
+		const breadcrumbPath = normalizePath(
+			`${logFolder}/${date} — ${title}.md`,
+		);
+
+		const body = [
+			this.wikiLink(movedPath),
+			'',
+			`- captured: ${date}`,
+			`- from: ${originalPath}`,
+			`- moved to: ${movedPath}`,
+			'',
+		].join('\n');
+		const content = serializeFrontmatter(
+			{ [SYNAPSE_PROCESSED_FLAG]: true },
+			body,
+		);
+
+		await ensureFolder(this.plugin.app, logFolder);
+		await writeNote(this.plugin.app, breadcrumbPath, content);
+	}
+
+	/** Basename (no extension) of a vault path, e.g. `A/B/note.md` → `note`. */
+	private basenameOf(path: string): string {
+		return path.replace(/\.md$/, '').split('/').pop() || path;
+	}
+
+	/**
+	 * Build an Obsidian wiki-link to a path (mirrors deep-dive's `wikiLink`:
+	 * `[[basename]]`). Inlined rather than imported to keep the intake module's
+	 * import boundary (only `obsidian` + `src/shared/*`).
+	 */
+	private wikiLink(path: string): string {
+		return `[[${this.basenameOf(path)}]]`;
+	}
+
+	/**
+	 * Sanitize a note title for use in a filename — the same rule used for video
+	 * download filenames (`src/video`): strip to `[a-zA-Z0-9-_ ]`, trim, cap
+	 * length. Falls back to `note` when nothing printable survives.
+	 */
+	private sanitizeTitle(title: string): string {
+		const cleaned = title
+			.replace(/[^a-zA-Z0-9-_ ]/g, '')
+			.trim()
+			.slice(0, 60);
+		return cleaned.length > 0 ? cleaned : 'note';
 	}
 }
