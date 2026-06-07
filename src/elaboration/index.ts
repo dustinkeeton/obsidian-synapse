@@ -26,13 +26,22 @@ export class ElaborationModule {
 	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
+	/**
+	 * Live accessor for the elaboration auto-accept flag (#228). Wired by
+	 * main.ts to `() => this.settings.autoAccept.elaboration` so a settings
+	 * change takes effect without a reload. Defaults to "never auto-accept".
+	 */
+	private shouldAutoAccept: () => boolean = () => false;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar
+		private registrar: CommandRegistrar,
+		shouldAutoAccept?: () => boolean
 	) {
+		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 		this.detector = new PlaceholderDetector(plugin.app, getSettings);
 		this.proposer = new ProposalGenerator(plugin.app, getSettings);
 		this.store = new ProposalStore(plugin.app, getSettings);
@@ -106,6 +115,7 @@ export class ElaborationModule {
 		);
 		const createdProposalIds: string[] = [];
 		let proposalCount = 0;
+		let autoAcceptedCount = 0;
 
 		try {
 			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
@@ -126,6 +136,7 @@ export class ElaborationModule {
 				await this.store.save(proposal);
 				createdProposalIds.push(proposal.id);
 				proposalCount++;
+				if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
 
 				await this.checkpointManager.completeItem(checkpoint.id, item.id);
 			}
@@ -147,6 +158,11 @@ export class ElaborationModule {
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
 		genOp.finish(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		if (autoAcceptedCount > 0) {
+			this.notifications.info(
+				`Auto-accepted ${autoAcceptedCount} elaboration proposal${autoAcceptedCount === 1 ? '' : 's'}`
+			);
+		}
 		await this.refreshView();
 	}
 
@@ -205,6 +221,7 @@ export class ElaborationModule {
 		);
 		const createdProposalIds: string[] = [];
 		let proposalCount = 0;
+		let autoAcceptedCount = 0;
 
 		// Create checkpoint for resumability
 		const checkpointItems: CheckpointWorkItem[] = detected.map((d, i) => ({
@@ -234,6 +251,7 @@ export class ElaborationModule {
 				await this.store.save(proposal);
 				createdProposalIds.push(proposal.id);
 				proposalCount++;
+				if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
 
 				// Save checkpoint progress
 				await this.checkpointManager.completeItem(
@@ -263,6 +281,11 @@ export class ElaborationModule {
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
 		genOp.finish(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		if (autoAcceptedCount > 0) {
+			this.notifications.info(
+				`Auto-accepted ${autoAcceptedCount} elaboration proposal${autoAcceptedCount === 1 ? '' : 's'}`
+			);
+		}
 		await this.refreshView();
 		return proposalCount;
 	}
@@ -288,6 +311,7 @@ export class ElaborationModule {
 				const proposal = await this.proposer.generate(result);
 				await this.store.save(proposal);
 				op.finish('Proposal generated');
+				await this.maybeAutoAccept(proposal);
 				await this.refreshView();
 			} else {
 				op.finish('Note does not appear to be a stub');
@@ -301,10 +325,21 @@ export class ElaborationModule {
 	/**
 	 * Accept a proposal, optionally with edited content from the review panel.
 	 * If editedContent is provided, it's used instead of the stored proposedAdditions.
+	 *
+	 * `options.silent` suppresses the per-proposal success Notice and the view
+	 * refresh; used by batch auto-accept so callers can emit a single summary
+	 * Notice and refresh once.
 	 */
-	async acceptProposal(id: string, editedContent?: string): Promise<void> {
+	async acceptProposal(
+		id: string,
+		editedContent?: string,
+		options?: { silent?: boolean }
+	): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
+		// Guard against double-acceptance (cascade safety): a proposal that is
+		// no longer pending has already been applied — never apply it twice.
+		if (proposal.status !== 'pending') return;
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!(file instanceof TFile)) return;
@@ -321,9 +356,27 @@ export class ElaborationModule {
 		await this.plugin.app.vault.modify(file, newContent);
 
 		await this.store.updateStatus(id, 'accepted');
-		this.notifications.success('Proposal accepted');
-		await this.refreshView();
+		if (!options?.silent) {
+			this.notifications.success('Proposal accepted');
+			await this.refreshView();
+		}
 		this.onProposalAccepted?.(proposal.sourceNotePath);
+	}
+
+	/**
+	 * Auto-accept a freshly generated proposal as the unedited draft (#228),
+	 * if the elaboration auto-accept flag is on. Returns `true` when accepted.
+	 *
+	 * `batch` suppresses the per-proposal Notice (the caller emits one summary
+	 * Notice). Single-note callers get one Notice per auto-accept.
+	 */
+	private async maybeAutoAccept(proposal: Proposal, batch = false): Promise<boolean> {
+		if (!this.shouldAutoAccept()) return false;
+		await this.acceptProposal(proposal.id, proposal.proposedAdditions, { silent: batch });
+		if (!batch) {
+			this.notifications.info(`Auto-accepted elaboration for ${proposal.sourceNotePath}`);
+		}
+		return true;
 	}
 
 	async rejectProposal(id: string): Promise<void> {

@@ -39,13 +39,22 @@ export class EnrichmentModule {
 	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
+	/**
+	 * Live accessor for the enrichment auto-accept flag (#228). Wired by
+	 * main.ts to `() => this.settings.autoAccept.enrichment`. Defaults to
+	 * "never auto-accept".
+	 */
+	private shouldAutoAccept: () => boolean = () => false;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar
+		private registrar: CommandRegistrar,
+		shouldAutoAccept?: () => boolean
 	) {
+		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 		this.analyzer = new VaultAnalyzer(plugin.app);
 		this.classifier = new MetadataClassifier(getSettings);
 		this.topicExtractor = new TopicExtractor(plugin.app, this.analyzer, getSettings);
@@ -155,9 +164,23 @@ export class EnrichmentModule {
 			return;
 		}
 
+		// Auto-accept (#228) the resumed proposals. Resume has no Phase 4 merge,
+		// so each stored proposal is final. Batch mode: one summary Notice.
+		let autoAcceptedCount = 0;
+		if (this.shouldAutoAccept()) {
+			for (const { id } of createdProposals) {
+				if (await this.maybeAutoAccept(id, true)) autoAcceptedCount++;
+			}
+		}
+
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
 		genOp.finish(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		if (autoAcceptedCount > 0) {
+			this.notifications.info(
+				`Auto-accepted ${autoAcceptedCount} enrichment proposal${autoAcceptedCount === 1 ? '' : 's'}`
+			);
+		}
 		await this.refreshView();
 	}
 
@@ -313,12 +336,26 @@ export class EnrichmentModule {
 			}
 		}
 
+		// Auto-accept (#228) AFTER Phase 4 so each accepted proposal includes
+		// the merged cross-note candidates. Batch mode: one summary Notice.
+		let autoAcceptedCount = 0;
+		if (this.shouldAutoAccept()) {
+			for (const { id } of createdProposals) {
+				if (await this.maybeAutoAccept(id, true)) autoAcceptedCount++;
+			}
+		}
+
 		// Mark checkpoint completed and dispatch deferred tasks (I1)
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
 		genOp.finish(
 			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`
 		);
+		if (autoAcceptedCount > 0) {
+			this.notifications.info(
+				`Auto-accepted ${autoAcceptedCount} enrichment proposal${autoAcceptedCount === 1 ? '' : 's'}`
+			);
+		}
 		await this.refreshView();
 		return proposalCount;
 	}
@@ -347,6 +384,9 @@ export class EnrichmentModule {
 			this.topicExtractor.clearPending();
 			if (id) {
 				op.finish('Enrichment proposal created');
+				// Single-note path is final here (no Phase 4 merge), so the
+				// stored proposal is fully formed — safe to auto-accept (#228).
+				await this.maybeAutoAccept(id);
 			} else {
 				op.finish('No enrichments needed');
 			}
@@ -435,8 +475,46 @@ export class EnrichmentModule {
 	}
 
 	/** Accept selected items in a proposal. Called from unified view. */
-	async acceptSelectedFromView(id: string, accepted: AcceptedItems): Promise<void> {
-		await this.acceptSelected(id, accepted);
+	async acceptSelectedFromView(
+		id: string,
+		accepted: AcceptedItems,
+		options?: { silent?: boolean }
+	): Promise<void> {
+		await this.acceptSelected(id, accepted, options);
+	}
+
+	/**
+	 * Build an {@link AcceptedItems} that accepts EVERYTHING the proposal
+	 * suggested — used for auto-accept (#228), which takes the full generated
+	 * result with no manual cherry-picking.
+	 */
+	private buildAcceptAll(result: EnrichmentResult): AcceptedItems {
+		return {
+			tags: result.tags.map(t => t.tag),
+			internalLinks: result.internalLinks.map(l => l.targetPath),
+			externalLinks: result.externalLinks.map(l => l.url),
+			frontmatter: result.frontmatter.map(f => f.key),
+		};
+	}
+
+	/**
+	 * Auto-accept a freshly generated enrichment proposal in full (#228), if the
+	 * enrichment auto-accept flag is on. Returns `true` when accepted.
+	 *
+	 * `batch` suppresses the per-proposal Notice/refresh (the caller emits one
+	 * summary Notice and refreshes once).
+	 */
+	private async maybeAutoAccept(proposalId: string, batch = false): Promise<boolean> {
+		if (!this.shouldAutoAccept()) return false;
+		const proposal = await this.store.load(proposalId);
+		// Guard against double-acceptance (cascade safety).
+		if (!proposal || proposal.status !== 'pending') return false;
+		const acceptAll = this.buildAcceptAll(proposal.result);
+		await this.acceptSelectedFromView(proposalId, acceptAll, { silent: batch });
+		if (!batch) {
+			this.notifications.info(`Auto-accepted enrichment for ${proposal.sourceNotePath}`);
+		}
+		return true;
 	}
 
 	/** Reject a proposal. Called from unified view. */
@@ -448,10 +526,13 @@ export class EnrichmentModule {
 
 	private async acceptSelected(
 		id: string,
-		accepted: AcceptedItems
+		accepted: AcceptedItems,
+		options?: { silent?: boolean }
 	): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
+		// Guard against double-acceptance (cascade safety).
+		if (proposal.status !== 'pending') return;
 
 		const hasItems =
 			accepted.tags.length > 0 ||
@@ -481,8 +562,10 @@ export class EnrichmentModule {
 			totalAccepted < totalAvailable ? 'partially-accepted' : 'accepted';
 
 		await this.store.updateStatus(id, status, accepted);
-		this.notifications.success(`Enrichment ${status}`);
-		await this.refreshView();
+		if (!options?.silent) {
+			this.notifications.success(`Enrichment ${status}`);
+			await this.refreshView();
+		}
 	}
 
 	private async rejectProposalBatch(ids: string[]): Promise<void> {

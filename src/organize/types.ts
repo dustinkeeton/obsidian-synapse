@@ -72,4 +72,9 @@ export interface OrganizeResult {
 	proposalCreated: boolean;
 	/** Whether the note was moved directly (for existing directories) */
 	movedDirectly: boolean;
+	/**
+	 * Whether a created proposal was auto-accepted as generated (#228), moving
+	 * the note. Only meaningful when `proposalCreated` is `true`.
+	 */
+	autoAccepted?: boolean;
 }
