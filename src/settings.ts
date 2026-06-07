@@ -197,6 +197,13 @@ export interface IntakeSettings {
 	intakeFolder: string;
 	markProcessed: boolean;
 	moveWhenDone?: string;
+	/**
+	 * Settle window in seconds: processing fires only after a watched note has
+	 * had no create/modify events for this whole interval. The per-path timer
+	 * resets on every event, so active typing/sync keeps deferring and the
+	 * pipeline runs N seconds after the *last* change (#222).
+	 */
+	settleSeconds: number;
 }
 
 export interface SynapseSettings {
@@ -358,5 +365,6 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		intakeFolder: 'Inbox',
 		markProcessed: true,
 		moveWhenDone: '',
+		settleSeconds: 5,
 	},
 };
