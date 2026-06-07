@@ -45,6 +45,8 @@ export default class SynapsePlugin extends Plugin {
 	private title!: TitleModule;
 	private rem!: RemModule;
 	private intake!: IntakeModule;
+	private audioExtractor: AudioExtractor | undefined;
+	private ffmpegAvailable: boolean | null = null;
 	private startupTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	async onload(): Promise<void> {
@@ -75,6 +77,7 @@ export default class SynapsePlugin extends Plugin {
 		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
 		// Create a shared AudioExtractor on desktop for clipping support
 		const audioExtractor = Platform.isDesktop ? new AudioExtractor(getSettings) : undefined;
+		this.audioExtractor = audioExtractor;
 		this.audio = new AudioModule(this, getSettings, this.notifications, this.checkpointManager, audioExtractor);
 		if (Platform.isDesktop) {
 			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager, registrar);
@@ -90,7 +93,9 @@ export default class SynapsePlugin extends Plugin {
 				const data = await this.app.vault.readBinary(audioFile);
 				const result = await this.audio.transcribe(data, audioFile.name);
 				return result.processed || result.raw;
-			}
+			},
+			(files) => this.audio.transcribeAudioCombined(files),
+			() => this.isFfmpegAvailable()
 		);
 		this.tidy = new TidyModule(this, getSettings, this.notifications, registrar);
 		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
@@ -403,19 +408,40 @@ export default class SynapsePlugin extends Plugin {
 			return;
 		}
 
+		const ffmpegAvailable = await this.isFfmpegAvailable();
+
 		new NoteMediaModal(
 			this.app,
 			audioEmbeds,
 			videoEmbeds,
 			imageEmbeds,
 			{
-				onTranscribeAudio: (selected) => this.audio.transcribeAndInsert(file, selected),
+				onTranscribeAudio: (selected, combine) => combine
+					? this.audio.transcribeAndInsertCombined(file, selected)
+					: this.audio.transcribeAndInsert(file, selected),
 				onTranscribeVideo: this.video
 					? (selected) => this.video!.transcribeAndInsert(file, selected)
 					: async () => { /* unreachable: video hidden on mobile */ },
 				onExtractImages: (selected) => this.image.extractAndInsert(file, selected),
-			}
+			},
+			ffmpegAvailable
 		).open();
+	}
+
+	/**
+	 * Lazily detect (and cache) whether ffmpeg is available for audio
+	 * combining (#214). Mobile has no AudioExtractor, so this is always false.
+	 */
+	private async isFfmpegAvailable(): Promise<boolean> {
+		if (!this.audioExtractor) return false;
+		if (this.ffmpegAvailable === null) {
+			try {
+				this.ffmpegAvailable = (await this.audioExtractor.checkDependencies()).ffmpeg;
+			} catch {
+				this.ffmpegAvailable = false;
+			}
+		}
+		return this.ffmpegAvailable;
 	}
 
 	private async activateUnifiedView(): Promise<void> {
