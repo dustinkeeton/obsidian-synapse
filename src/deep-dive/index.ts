@@ -58,13 +58,23 @@ export class DeepDiveModule {
 	private contentAnalyzer: ContentAnalyzer;
 	private directoryMatcher: DirectoryMatcher;
 
+	/**
+	 * Live accessor for the deep-dive auto-accept flag (#228). Wired by main.ts
+	 * to `() => this.settings.autoAccept['deep-dive']`. Defaults to "never
+	 * auto-accept". Deep dive generates a tree; auto-accept creates every
+	 * generated node's note (in creation order, after the run finishes).
+	 */
+	private shouldAutoAccept: () => boolean = () => false;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar
+		private registrar: CommandRegistrar,
+		shouldAutoAccept?: () => boolean
 	) {
+		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 		this.analyzer = new TopicAnalyzer(plugin.app, getSettings);
 		this.generator = new NoteGenerator(getSettings);
 		this.store = new DeepDiveStore(plugin.app, getSettings);
@@ -116,13 +126,21 @@ export class DeepDiveModule {
 	 * Accept a proposal: create the new note in the vault with navigation,
 	 * generate/update the syllabus index, and update navigation in all
 	 * previously accepted notes in the same run.
+	 *
+	 * `options.silent` suppresses the per-note success Notice and the view
+	 * refresh; used by batch auto-accept so the run emits a single summary
+	 * Notice and refreshes once. The enrichment / organize follow-on hooks
+	 * still fire (they are the intended, acyclic chain).
 	 */
-	async acceptProposal(id: string): Promise<void> {
+	async acceptProposal(id: string, options?: { silent?: boolean }): Promise<void> {
 		const proposal = await this.store.loadProposal(id);
 		if (!proposal) {
 			this.notifications.info('Proposal not found');
 			return;
 		}
+		// Guard against double-acceptance (cascade safety): never create the
+		// note twice for the same proposal.
+		if (proposal.status !== 'pending') return;
 
 		try {
 			await this.store.updateProposalStatus(id, 'accepted');
@@ -130,7 +148,9 @@ export class DeepDiveModule {
 			// Build navigation for all accepted proposals in this run
 			await this.updateRunNavigation(proposal.runId, proposal.proposedPath, proposal.proposedContent);
 
-			this.notifications.success(`Created ${proposal.proposedPath}`);
+			if (!options?.silent) {
+				this.notifications.success(`Created ${proposal.proposedPath}`);
+			}
 
 			// Trigger enrichment on the new note
 			this.onNoteAccepted?.(proposal.proposedPath);
@@ -145,12 +165,40 @@ export class DeepDiveModule {
 				}
 			}
 
-			await this.onViewRefreshNeeded?.();
+			if (!options?.silent) {
+				await this.onViewRefreshNeeded?.();
+			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			this.notifications.notifyError('Failed to accept proposal', error);
 			throw new Error(`Accept proposal failed: ${msg}`);
 		}
+	}
+
+	/**
+	 * Auto-accept all proposals generated in a run (#228), if the deep-dive
+	 * auto-accept flag is on. Accepts in creation order (parents before
+	 * children, per the BFS queue) so navigation resolves correctly, then emits
+	 * a single summary Notice. Returns the number accepted.
+	 *
+	 * Done AFTER the generation loop (not mid-loop) so the recursive queue is
+	 * not disturbed and navigation is not rebuilt on every node mid-flight.
+	 */
+	private async maybeAutoAcceptRun(proposalIds: string[]): Promise<number> {
+		if (!this.shouldAutoAccept()) return 0;
+		let accepted = 0;
+		for (const id of proposalIds) {
+			// acceptProposal re-loads and re-checks pending, so a child whose
+			// parent was already accepted is still safe.
+			await this.acceptProposal(id, { silent: true });
+			accepted++;
+		}
+		if (accepted > 0) {
+			this.notifications.info(
+				`Auto-accepted ${accepted} deep dive note${accepted === 1 ? '' : 's'}`
+			);
+		}
+		return accepted;
 	}
 
 	/**
@@ -438,6 +486,10 @@ export class DeepDiveModule {
 				genOp.finish(
 					`Generated ${run.stats.totalProposals} proposals (${depthSummary})`
 				);
+
+				// Auto-accept the whole generated tree if enabled (#228), in
+				// creation order so navigation resolves. Skipped on cancellation.
+				await this.maybeAutoAcceptRun(run.proposalIds);
 			}
 
 			await this.onViewRefreshNeeded?.();

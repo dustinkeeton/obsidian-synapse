@@ -3,6 +3,40 @@ import type SynapsePlugin from './main';
 import { MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
 import { addCollapsibleSection, addEnhancedSlider } from './shared';
+import { PROPOSAL_KINDS } from './views';
+import type { ProposalKind } from './views';
+
+/**
+ * Per-kind display copy for the Auto-Accept Proposals section (#228). MUTATING
+ * kinds carry a caution note in their description: organize moves notes, title
+ * renames files, rem rewrites body text.
+ */
+const AUTO_ACCEPT_LABELS: Record<ProposalKind, { name: string; desc: string }> = {
+	elaboration: {
+		name: 'Elaboration',
+		desc: 'Automatically accept elaboration proposals as generated (appends an elaboration callout to the note).',
+	},
+	enrichment: {
+		name: 'Enrichment',
+		desc: 'Automatically accept all suggested tags, links, references, and metadata as generated.',
+	},
+	organize: {
+		name: 'Organize',
+		desc: 'Caution: moves notes. Automatically accept organize proposals, relocating notes into the proposed folders without review.',
+	},
+	'deep-dive': {
+		name: 'Deep Dive',
+		desc: 'Automatically accept every generated deep dive note in a run, creating all of them in the vault.',
+	},
+	title: {
+		name: 'Title',
+		desc: 'Caution: renames files. Automatically accept title proposals, renaming notes without review.',
+	},
+	rem: {
+		name: 'REM (Link Discovery)',
+		desc: 'Caution: rewrites note body text. Automatically insert all discovered [[wikilinks]] without review.',
+	},
+};
 
 export class SynapseSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: SynapsePlugin) {
@@ -1154,5 +1188,34 @@ export class SynapseSettingTab extends PluginSettingTab {
 						}
 					})
 			);
+
+		// ── Auto-Accept Proposals (no enable toggle — a group of per-kind toggles) ──
+		// Rendered like the AI Configuration section: a collapsible config
+		// section with no header toggle, persisting its own collapse state.
+		const autoAcceptBody = this.configSection(
+			containerEl,
+			'autoAccept',
+			'Auto-Accept Proposals',
+		);
+
+		autoAcceptBody.createDiv({
+			cls: 'setting-item-description synapse-accordion-empty-note',
+			text: 'When enabled for a proposal type, future proposals of that type are accepted automatically as generated, applied without review. Already-pending proposals are left untouched. Off by default for every type.',
+		});
+
+		for (const kind of PROPOSAL_KINDS) {
+			const { name, desc } = AUTO_ACCEPT_LABELS[kind];
+			new Setting(autoAcceptBody)
+				.setName(name)
+				.setDesc(desc)
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.autoAccept[kind])
+						.onChange(async (value) => {
+							this.plugin.settings.autoAccept[kind] = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
 	}
 }
