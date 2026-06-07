@@ -71,17 +71,98 @@ export class Modal {
 	onClose(): void {}
 }
 
-/** Helper to create a stub DOM element with Obsidian's augmented methods */
-function createStubEl(): any {
+/**
+ * Helper to create a stub DOM element with Obsidian's augmented methods.
+ *
+ * Supports the subset of the HTMLElement + Obsidian DOM API used across the
+ * plugin. Class state, attributes, children, and event listeners are tracked
+ * so tests can introspect structure and dispatch synthetic events.
+ */
+function createStubEl(tag = 'div'): any {
+	const classes = new Set<string>();
+	const attributes: Record<string, string> = {};
+	const listeners: Record<string, Array<(evt: any) => void>> = {};
+	const children: any[] = [];
+
+	const applyInfo = (child: any, info?: any): any => {
+		if (typeof info === 'string') {
+			info.split(/\s+/).filter(Boolean).forEach((c: string) => child.classList.add(c));
+		} else if (info && typeof info === 'object') {
+			if (info.cls) {
+				const clsList = Array.isArray(info.cls) ? info.cls : [info.cls];
+				clsList.forEach((c: string) => child.classList.add(c));
+			}
+			if (info.text != null) child.textContent = String(info.text);
+			if (info.attr) {
+				for (const [k, v] of Object.entries(info.attr)) child.setAttribute(k, String(v));
+			}
+		}
+		return child;
+	};
+
+	const make = (childTag: string) => (info?: any, cb?: (el: any) => void) => {
+		const child = createStubEl(childTag);
+		applyInfo(child, info);
+		children.push(child);
+		if (cb) cb(child);
+		return child;
+	};
+
 	const el: any = {
-		classList: { add: vi.fn(), remove: vi.fn() },
-		className: '',
+		tagName: tag.toUpperCase(),
+		classList: {
+			add: vi.fn((...c: string[]) => c.forEach((x) => classes.add(x))),
+			remove: vi.fn((...c: string[]) => c.forEach((x) => classes.delete(x))),
+			contains: (c: string) => classes.has(c),
+			toggle: vi.fn((c: string) => (classes.has(c) ? classes.delete(c) : classes.add(c))),
+		},
+		get className() {
+			return [...classes].join(' ');
+		},
+		set className(value: string) {
+			classes.clear();
+			String(value)
+				.split(/\s+/)
+				.filter(Boolean)
+				.forEach((c) => classes.add(c));
+		},
 		textContent: '',
-		empty: vi.fn(),
-		createEl: vi.fn().mockImplementation(() => createStubEl()),
-		createDiv: vi.fn().mockImplementation(() => createStubEl()),
-		addEventListener: vi.fn(),
+		children,
+		empty: vi.fn(() => {
+			children.length = 0;
+		}),
+		createEl: vi.fn((t: string, info?: any, cb?: (el: any) => void) =>
+			make(t)(info, cb),
+		),
+		createDiv: vi.fn(make('div')),
+		createSpan: vi.fn(make('span')),
+		addClass: vi.fn((...c: string[]) => c.forEach((x) => classes.add(x))),
+		removeClass: vi.fn((...c: string[]) => c.forEach((x) => classes.delete(x))),
+		toggleClass: vi.fn((c: string, on: boolean) =>
+			on ? classes.add(c) : classes.delete(c),
+		),
+		hasClass: (c: string) => classes.has(c),
+		setText: vi.fn((t: string) => {
+			el.textContent = t;
+		}),
+		setAttribute: vi.fn((k: string, v: string) => {
+			attributes[k] = v;
+		}),
+		getAttribute: vi.fn((k: string) => (k in attributes ? attributes[k] : null)),
+		removeAttribute: vi.fn((k: string) => {
+			delete attributes[k];
+		}),
+		addEventListener: vi.fn((type: string, cb: (evt: any) => void) => {
+			(listeners[type] ??= []).push(cb);
+		}),
+		removeEventListener: vi.fn(),
+		/** Test helper: synchronously invoke registered listeners for an event. */
+		dispatchEvent: (evt: { type: string; [k: string]: unknown }) => {
+			(listeners[evt.type] ?? []).forEach((cb) => cb(evt));
+			return true;
+		},
 		closest: vi.fn().mockReturnValue(null),
+		style: {},
 	};
 	return el;
 }
@@ -148,14 +229,41 @@ export class SuggestModal<T = unknown> {
 	onClose(): void {}
 }
 
+export class ToggleComponent {
+	toggleEl: any = createStubEl();
+	private value = false;
+	private changeCb: ((value: boolean) => unknown) | undefined;
+	getValue = () => this.value;
+	setValue = vi.fn((v: boolean) => {
+		this.value = v;
+		return this;
+	});
+	setTooltip = vi.fn().mockReturnThis();
+	setDisabled = vi.fn().mockReturnThis();
+	onChange = vi.fn((cb: (value: boolean) => unknown) => {
+		this.changeCb = cb;
+		return this;
+	});
+	/** Test helper: simulate a user toggling the control. */
+	_trigger(v: boolean): unknown {
+		this.value = v;
+		return this.changeCb?.(v);
+	}
+}
+
 export class Setting {
+	settingEl: any = createStubEl();
 	constructor(_containerEl: unknown) {}
 	setName = vi.fn().mockReturnThis();
 	setDesc = vi.fn().mockReturnThis();
+	setHeading = vi.fn().mockReturnThis();
 	addText = vi.fn().mockReturnThis();
 	addTextArea = vi.fn().mockReturnThis();
 	addDropdown = vi.fn().mockReturnThis();
-	addToggle = vi.fn().mockReturnThis();
+	addToggle = vi.fn(function (this: Setting, cb?: (t: ToggleComponent) => void) {
+		if (cb) cb(new ToggleComponent());
+		return this;
+	});
 	addSlider = vi.fn().mockReturnThis();
 	addButton = vi.fn().mockReturnThis();
 	setClass = vi.fn().mockReturnThis();
