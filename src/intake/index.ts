@@ -225,22 +225,38 @@ export class IntakeModule {
 	 * Execute a resolved route, then (on success) stamp the processed flag and
 	 * optionally move the note. Throws on processing failure so flush() can
 	 * surface it and skip stamping.
+	 *
+	 * Every content-bearing branch ends in the full `fireOnFile` pipeline whose
+	 * last phase (organize) is the primary, content-aware mover — it relocates
+	 * the note to its proper vault folder (#223). We capture the note's path
+	 * BEFORE running the pipeline so post-processing we can tell whether organize
+	 * moved it out of the intake folder; that signal drives both the
+	 * `moveWhenDone` fallback and (#224) the breadcrumb capture log.
 	 */
 	private async execute(
 		file: TFile,
 		route: IntakeRoute,
 	): Promise<void> {
+		// Organize mutates `file.path` in place on rename, so snapshot it now.
+		const originalPath = file.path;
+
 		switch (route.kind) {
 			case 'transcription':
-				// #112 — STUB. Surfaces a "coming soon" notice and no-ops.
+				// #112 — STUB. Surfaces a "coming soon" notice and no-ops. A
+				// content-less URL note has nothing for organize to analyse; once
+				// #112 produces a transcript this branch should also end in
+				// `await this.deps.fireOnFile(file)` so the note is enriched and
+				// organized like the others.
 				await this.deps.transcribeUrlToNote(route.url, route.mediaType, file);
 				break;
 
 			case 'article': {
 				const articleContent = await fetchArticleContent(route.url);
 				await this.appendArticleContent(file, articleContent);
-				// Elaborate the now-fleshed-out note (single-note scope).
-				await this.deps.elaborateFile(file);
+				// Run the full pipeline on the now-fleshed-out note. fireOnFile
+				// runs elaboration as phase 1 and organize as the last phase, so
+				// there is no separate elaborate-then-stop step anymore (#223).
+				await this.deps.fireOnFile(file);
 				break;
 			}
 
@@ -249,7 +265,7 @@ export class IntakeModule {
 				break;
 		}
 
-		await this.markProcessedAndMaybeMove(file);
+		await this.markProcessedAndMaybeMove(file, originalPath);
 	}
 
 	/**
@@ -274,21 +290,64 @@ export class IntakeModule {
 	}
 
 	/**
-	 * Stamp the processed flag (when enabled) BEFORE any move, then move the
-	 * note to `moveWhenDone` (when set). Stamping first guarantees idempotency
-	 * survives the move and the move's own rename event.
+	 * Stamp the processed flag (when enabled), then apply `moveWhenDone` as a
+	 * FALLBACK mover only. Organize (run inside `fireOnFile`) is now the primary,
+	 * content-aware mover; it may instead keep a note in place or create a
+	 * proposal when confidence is low (< 0.9). So `moveWhenDone` runs only when
+	 * organize did NOT move the note out of the intake folder, guaranteeing a
+	 * note never gets stuck in the intake folder while avoiding a double move
+	 * for notes organize already relocated (#223).
+	 *
+	 * Stamping happens first so idempotency survives any subsequent move and the
+	 * move's own rename echo. Returns whether the note ended up moved out of the
+	 * intake folder, so the caller can drive the breadcrumb capture log (#224).
+	 *
+	 * `originalPath` is the note's path captured BEFORE processing (organize
+	 * mutates `file.path` in place on rename).
 	 */
-	private async markProcessedAndMaybeMove(file: TFile): Promise<void> {
+	private async markProcessedAndMaybeMove(
+		file: TFile,
+		originalPath: string,
+	): Promise<boolean> {
 		const settings = this.getSettings().intake;
 
+		// Stamp first — this lands on the note's *current* path (post-organize).
+		// If organize moved it out of the intake folder, isInIntakeFolder rejects
+		// the resulting modify echo; if it stayed in the folder, the original-path
+		// inFlight guard (keyed on originalPath in flush) suppresses the echo.
 		if (settings.markProcessed) {
 			await this.stampProcessed(file);
 		}
 
-		const destination = settings.moveWhenDone;
-		if (destination && destination.trim().length > 0) {
-			await this.moveNote(file, destination.trim());
+		let movedOut = this.movedOutOfIntake(originalPath, file.path);
+
+		// Fallback mover: only when organize left the note inside the intake
+		// folder (low-confidence proposal / no-op). Skipped entirely when organize
+		// already relocated the note, which also fixes the prior general-branch
+		// double move.
+		if (!movedOut) {
+			const destination = settings.moveWhenDone;
+			if (destination && destination.trim().length > 0) {
+				await this.moveNote(file, destination.trim());
+				movedOut = this.movedOutOfIntake(originalPath, file.path);
+			}
 		}
+
+		return movedOut;
+	}
+
+	/**
+	 * True when a note that started under the intake folder no longer lives
+	 * there — i.e. organize (or the `moveWhenDone` fallback) relocated it out of
+	 * the intake folder. The single source of truth for the "left the inbox?"
+	 * signal, reused by the `moveWhenDone` fallback and the breadcrumb log (#224).
+	 */
+	private movedOutOfIntake(originalPath: string, currentPath: string): boolean {
+		const intakeFolder = this.getSettings().intake.intakeFolder;
+		return (
+			this.isInIntakeFolder(originalPath, intakeFolder) &&
+			!this.isInIntakeFolder(currentPath, intakeFolder)
+		);
 	}
 
 	/** Write `synapse-processed: true` + an ISO timestamp into frontmatter. */
