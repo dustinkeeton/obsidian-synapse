@@ -16,7 +16,11 @@ vi.mock('../shared', async (importOriginal) => {
 
 import { fetchArticleContent } from '../shared';
 
-const DEBOUNCE_MS = 400;
+// The settle window is now driven by `intake.settleSeconds` (#222). Tests seed
+// `settings.intake.settleSeconds = 5` (the default), so the effective debounce
+// is 5000ms; this local constant mirrors that so the timing assertions read
+// clearly. Individual tests override `settleSeconds` to exercise the setting.
+const SETTLE_MS = 5000;
 
 function createMockNotifications() {
 	return {
@@ -74,6 +78,7 @@ describe('IntakeModule', () => {
 		settings.intake.intakeFolder = 'Inbox';
 		settings.intake.markProcessed = true;
 		settings.intake.moveWhenDone = '';
+		settings.intake.settleSeconds = SETTLE_MS / 1000;
 
 		handlers = {};
 		store = new Map();
@@ -223,7 +228,7 @@ describe('IntakeModule', () => {
 			handlers['create'](makeFile(path));
 
 			// Advance partway, then fire again to reset the timer.
-			await vi.advanceTimersByTimeAsync(DEBOUNCE_MS - 100);
+			await vi.advanceTimersByTimeAsync(SETTLE_MS - 100);
 			expect(deps.fireOnFile).not.toHaveBeenCalled();
 			handlers['modify'](makeFile(path));
 
@@ -232,7 +237,7 @@ describe('IntakeModule', () => {
 			expect(deps.fireOnFile).not.toHaveBeenCalled();
 
 			// After the full window from the reset, it flushes exactly once.
-			await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+			await vi.advanceTimersByTimeAsync(SETTLE_MS);
 			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
 		});
 
@@ -243,6 +248,77 @@ describe('IntakeModule', () => {
 			module.onunload();
 			await flushDebounce();
 			expect(deps.fireOnFile).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('settle window (#222)', () => {
+		beforeEach(async () => {
+			await module.onload();
+		});
+
+		it('keeps deferring while edits keep arriving inside the window', async () => {
+			const path = 'Inbox/capture.md';
+			store.set(path, 'draft');
+			handlers['create'](makeFile(path));
+
+			// Five edits, each just before the window would elapse. Every edit
+			// resets the timer, so the note never gets processed mid-write.
+			for (let i = 0; i < 5; i++) {
+				await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+				expect(deps.fireOnFile).not.toHaveBeenCalled();
+				handlers['modify'](makeFile(path));
+			}
+
+			// Still nothing — the last edit just reset the timer again.
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+		});
+
+		it('fires exactly once, settleSeconds after the last edit', async () => {
+			const path = 'Inbox/capture.md';
+			store.set(path, 'hello prose');
+			handlers['create'](makeFile(path));
+
+			// A burst of edits within the window…
+			await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+			handlers['modify'](makeFile(path));
+			await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+			handlers['modify'](makeFile(path));
+
+			// One tick short of the window after the final edit → not yet.
+			await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+
+			// Crossing the window from the last edit fires it once.
+			await vi.advanceTimersByTimeAsync(1);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+
+		it('respects a custom settleSeconds setting', async () => {
+			settings.intake.settleSeconds = 12;
+			const path = 'Inbox/slow.md';
+			store.set(path, 'hello prose');
+			handlers['create'](makeFile(path));
+
+			// The old 5s window elapses with no flush — we now wait 12s.
+			await vi.advanceTimersByTimeAsync(5000);
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+
+			await vi.advanceTimersByTimeAsync(7000);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+
+		it('falls back to a sane window when settleSeconds is invalid', async () => {
+			// A malformed setting (0 / NaN / undefined) must not disable the
+			// watcher — it falls back to DEBOUNCE_MS (5000ms).
+			(settings.intake as any).settleSeconds = 0;
+			const path = 'Inbox/fallback.md';
+			store.set(path, 'hello prose');
+			handlers['create'](makeFile(path));
+
+			await vi.advanceTimersByTimeAsync(4999);
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(1);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
 		});
 	});
 

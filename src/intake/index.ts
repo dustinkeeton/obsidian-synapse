@@ -26,8 +26,13 @@ export {
 	SYNAPSE_PROCESSED_AT_FLAG,
 } from './types';
 
-/** How long to wait after the last change to a path before flushing it. */
-const DEBOUNCE_MS = 400;
+/**
+ * Fallback settle window (ms) used only when `intake.settleSeconds` is missing
+ * or not a positive number. The configured default is 5s (`settleSeconds`, see
+ * `DEFAULT_SETTINGS.intake`); this constant just guards a malformed setting so
+ * the watcher always has a sane debounce. See {@link IntakeModule.scheduleFlush}.
+ */
+const DEBOUNCE_MS = 5000;
 
 /**
  * IntakeModule — watches a configurable intake folder and auto-processes new
@@ -134,8 +139,11 @@ export class IntakeModule {
 	}
 
 	/**
-	 * Debounce a path: (re)start its timer so a create immediately followed by
-	 * a modify (the share-to-vault pattern) coalesces into a single flush.
+	 * Debounce a path against the configured settle window: (re)start its timer
+	 * on every event so processing fires only after the note has been quiet for
+	 * the full window. This coalesces a create immediately followed by a modify
+	 * (the share-to-vault pattern) AND defers a note whose content is still
+	 * arriving (chunked sync, the user still typing) — see #222.
 	 */
 	private scheduleFlush(path: string): void {
 		this.pending.add(path);
@@ -149,9 +157,23 @@ export class IntakeModule {
 			this.timers.delete(path);
 			this.pending.delete(path);
 			void this.flush(path);
-		}, DEBOUNCE_MS);
+		}, this.settleWindowMs());
 
 		this.timers.set(path, handle);
+	}
+
+	/**
+	 * Resolve the settle window in ms from `intake.settleSeconds`, falling back
+	 * to {@link DEBOUNCE_MS} when the setting is missing or not a positive
+	 * number. Read fresh on every schedule so changing the setting takes effect
+	 * immediately, without reloading the watcher.
+	 */
+	private settleWindowMs(): number {
+		const seconds = this.getSettings().intake.settleSeconds;
+		if (typeof seconds === 'number' && seconds > 0) {
+			return seconds * 1000;
+		}
+		return DEBOUNCE_MS;
 	}
 
 	/**

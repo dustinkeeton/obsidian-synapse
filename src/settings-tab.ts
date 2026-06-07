@@ -215,6 +215,26 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName('Settle window (seconds)')
+			.setDesc(
+				'Wait this long after the last change to a note before processing it. ' +
+				'The timer resets on every edit, so active typing or chunked sync keeps ' +
+				'deferring — processing fires only once the note has been quiet for the ' +
+				'full window. Raise it if notes are still arriving when they get processed.'
+			)
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.intake.settleSeconds))
+					.onChange(async (value) => {
+						const num = parseInt(value);
+						if (!isNaN(num) && num > 0) {
+							this.plugin.settings.intake.settleSeconds = num;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
+
+		new Setting(containerEl)
 			.setName('Intake folder')
 			.setDesc('Folder to watch for new notes. See docs/intake-folder.md for the mobile capture workflow.')
 			.addText((text) =>
