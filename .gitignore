@@ -14,3 +14,12 @@ coverage/
 .claude/worktrees
 .claude/settings.local.json
 .obsidian/
+
+# Agent / tooling harness artifacts (Claude Code, Codex, etc.)
+.agents/
+.codex/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
