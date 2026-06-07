@@ -57,7 +57,6 @@ describe('IntakeModule', () => {
 	let settings: SynapseSettings;
 	let deps: {
 		fireOnFile: ReturnType<typeof vi.fn>;
-		elaborateFile: ReturnType<typeof vi.fn>;
 		transcribeUrlToNote: ReturnType<typeof vi.fn>;
 	};
 	/** Captured vault event handlers, keyed by event name. */
@@ -117,7 +116,6 @@ describe('IntakeModule', () => {
 		notifications = createMockNotifications();
 		deps = {
 			fireOnFile: vi.fn().mockResolvedValue(undefined),
-			elaborateFile: vi.fn().mockResolvedValue(undefined),
 			transcribeUrlToNote: vi.fn().mockResolvedValue(undefined),
 		};
 
@@ -143,6 +141,22 @@ describe('IntakeModule', () => {
 	/** Run all pending timers, then drain microtasks so async flush settles. */
 	async function flushDebounce() {
 		await vi.runOnlyPendingTimersAsync();
+	}
+
+	/**
+	 * Make `fireOnFile` simulate organize relocating the note: move its content
+	 * in the store and mutate `file.path` in place, exactly as organize's
+	 * `vault.rename` does. Pass `null` to model organize keeping the note in
+	 * place (low confidence → proposal / no-op) — content/path are untouched.
+	 */
+	function organizeMovesTo(newPath: string | null) {
+		deps.fireOnFile.mockImplementation(async (file: any) => {
+			if (newPath === null || newPath === file.path) return;
+			const content = store.get(file.path);
+			store.delete(file.path);
+			if (content !== undefined) store.set(newPath, content);
+			file.path = newPath;
+		});
 	}
 
 	describe('onload / listener registration', () => {
@@ -401,15 +415,16 @@ describe('IntakeModule', () => {
 			);
 		});
 
-		it('bare article URL → fetch + append + elaborate', async () => {
+		it('bare article URL → fetch + append + full pipeline (#223)', async () => {
 			emit('create', 'Inbox/art.md', 'https://example.com/post');
 			await flushDebounce();
 
 			expect(fetchArticleContent).toHaveBeenCalledWith('https://example.com/post');
 			const written = store.get('Inbox/art.md')!;
 			expect(written).toContain('FETCHED ARTICLE BODY');
-			expect(deps.elaborateFile).toHaveBeenCalledTimes(1);
-			expect(deps.fireOnFile).not.toHaveBeenCalled();
+			// The article branch now runs the whole pipeline (fireOnFile), whose
+			// organize phase relocates the note — there is no elaborate-only path.
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
 		});
 
 		it('bare unknown URL → general pipeline', async () => {
@@ -479,6 +494,84 @@ describe('IntakeModule', () => {
 			emit('create', 'Inbox/note.md', 'hello prose');
 			await flushDebounce();
 			expect(plugin.app.fileManager.renameFile).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('full pipeline + auto-organize (#223)', () => {
+		beforeEach(async () => {
+			await module.onload();
+		});
+
+		it('runs the full pipeline on an article note and organizes it out of Inbox', async () => {
+			// Organize (pipeline phase) relocates the fleshed-out article note.
+			organizeMovesTo('Articles/art.md');
+
+			emit('create', 'Inbox/art.md', 'https://example.com/post');
+			await flushDebounce();
+
+			expect(fetchArticleContent).toHaveBeenCalledWith('https://example.com/post');
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+			// The note left Inbox and landed where organize put it, stamped.
+			expect(store.has('Inbox/art.md')).toBe(false);
+			const moved = store.get('Articles/art.md')!;
+			expect(moved).toContain('FETCHED ARTICLE BODY');
+			expect(moved).toContain('synapse-processed: true');
+		});
+
+		it('does NOT apply moveWhenDone when organize already moved the note out (no double move)', async () => {
+			settings.intake.moveWhenDone = 'Processed';
+			organizeMovesTo('Articles/note.md'); // organize relocates it
+
+			emit('create', 'Inbox/note.md', 'hello prose');
+			await flushDebounce();
+
+			// Fallback mover must not fire — organize already moved it out.
+			expect(plugin.app.fileManager.renameFile).not.toHaveBeenCalled();
+			expect(store.has('Processed/note.md')).toBe(false);
+			expect(store.has('Articles/note.md')).toBe(true);
+		});
+
+		it('applies moveWhenDone as a fallback when organize keeps the note in Inbox', async () => {
+			settings.intake.moveWhenDone = 'Processed';
+			organizeMovesTo(null); // low confidence → organize keeps it in place
+
+			emit('create', 'Inbox/note.md', 'hello prose');
+			await flushDebounce();
+
+			// Note never left Inbox via organize → fallback relocates it.
+			expect(plugin.app.fileManager.renameFile).toHaveBeenCalledWith(
+				expect.anything(),
+				'Processed/note.md'
+			);
+			expect(store.has('Processed/note.md')).toBe(true);
+			expect(store.get('Processed/note.md')).toContain('synapse-processed: true');
+		});
+
+		it('does not re-enter flush after organize moves the note OUT of Inbox', async () => {
+			organizeMovesTo('Articles/note.md');
+
+			emit('create', 'Inbox/note.md', 'hello prose');
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+
+			// The post-organize stamp write lands on the NEW path. Obsidian emits
+			// a modify for it; isInIntakeFolder rejects it (outside Inbox).
+			handlers['modify'](makeFile('Articles/note.md'));
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not re-enter flush when organize keeps the note IN Inbox', async () => {
+			organizeMovesTo(null); // stays at Inbox/note.md
+
+			emit('create', 'Inbox/note.md', 'hello prose');
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+
+			// Stamp echo on the original in-Inbox path → idempotency guard skips it.
+			handlers['modify'](makeFile('Inbox/note.md'));
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
 		});
 	});
 
