@@ -3,12 +3,14 @@ import { SummarizeTarget } from './types';
 
 export class SummarizeSelectionModal extends Modal {
 	private selected: Set<string>;
-	private onSummarize: (targets: SummarizeTarget[]) => Promise<void>;
+	private onSummarize: (targets: SummarizeTarget[], combine: boolean) => Promise<void>;
+	private combineAudio = false;
 
 	constructor(
 		app: App,
 		private targets: SummarizeTarget[],
-		onSummarize: (targets: SummarizeTarget[]) => Promise<void>
+		onSummarize: (targets: SummarizeTarget[], combine: boolean) => Promise<void>,
+		private canCombine = false
 	) {
 		super(app);
 		this.selected = new Set(targets.map(t => `${t.type}:${t.line}:${t.source}`));
@@ -38,6 +40,20 @@ export class SummarizeSelectionModal extends Modal {
 				});
 			});
 
+		// Combine option (#214): shown only with 2+ audio targets and ffmpeg.
+		if (this.canCombine) {
+			new Setting(contentEl)
+				.setName('Combine audio into one summary')
+				.setDesc('Concatenate the selected audio files and produce a single continuous transcription and summary.')
+				.addToggle((toggle) => {
+					toggle
+						.setValue(this.combineAudio)
+						.onChange((val) => {
+							this.combineAudio = val;
+						});
+				});
+		}
+
 		const listEl = contentEl.createDiv({ cls: 'synapse-summarize-list' });
 		this.renderCheckboxes(listEl);
 
@@ -54,7 +70,10 @@ export class SummarizeSelectionModal extends Modal {
 						return;
 					}
 					this.close();
-					await this.onSummarize(chosen);
+					// Only combine when opted in AND 2+ audio targets are selected.
+					const audioSelected = chosen.filter(t => t.type === 'audio').length;
+					const combine = this.combineAudio && audioSelected >= 2;
+					await this.onSummarize(chosen, combine);
 				});
 		});
 	}
