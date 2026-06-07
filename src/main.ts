@@ -94,8 +94,7 @@ export default class SynapsePlugin extends Plugin {
 				const result = await this.audio.transcribe(data, audioFile.name);
 				return result.processed || result.raw;
 			},
-			(files) => this.audio.transcribeAudioCombined(files),
-			() => this.isFfmpegAvailable()
+			(files) => this.audio.transcribeAudioCombined(files)
 		);
 		this.tidy = new TidyModule(this, getSettings, this.notifications, registrar);
 		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar);

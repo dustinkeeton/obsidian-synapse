@@ -67,8 +67,8 @@ describe('NoteMediaModal combine toggle gating (#214)', () => {
 		expect(settingNames).not.toContain(COMBINE_LABEL);
 	});
 
-	it('hides the combine toggle when ffmpeg is unavailable', () => {
+	it('shows the combine toggle without ffmpeg (merges transcribed text instead)', () => {
 		openModal(3, false);
-		expect(settingNames).not.toContain(COMBINE_LABEL);
+		expect(settingNames).toContain(COMBINE_LABEL);
 	});
 });

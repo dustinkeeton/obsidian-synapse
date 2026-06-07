@@ -40,11 +40,11 @@ export class SummarizeSelectionModal extends Modal {
 				});
 			});
 
-		// Combine option (#214): shown only with 2+ audio targets and ffmpeg.
+		// Combine option (#214): shown with 2+ audio targets (ffmpeg optional).
 		if (this.canCombine) {
 			new Setting(contentEl)
 				.setName('Combine audio into one summary')
-				.setDesc('Concatenate the selected audio files and produce a single continuous transcription and summary.')
+				.setDesc('Produce a single combined transcription and summary from the selected audio files.')
 				.addToggle((toggle) => {
 					toggle
 						.setValue(this.combineAudio)

@@ -72,7 +72,6 @@ export class SummarizeModule {
 	private transcribeUrl: TranscribeUrlFn | null;
 	private transcribeAudio: TranscribeAudioFn | null;
 	private transcribeAudioCombined: TranscribeAudioCombinedFn | null;
-	private checkFfmpegAvailable: (() => Promise<boolean>) | null;
 
 	/** Optional callback invoked after summarization completes. Wired by main.ts for enrichment. */
 	onSummaryComplete: ((filePath: string) => void) | null = null;
@@ -88,14 +87,12 @@ export class SummarizeModule {
 		private registrar: CommandRegistrar,
 		transcribeUrl?: TranscribeUrlFn,
 		transcribeAudio?: TranscribeAudioFn,
-		transcribeAudioCombined?: TranscribeAudioCombinedFn,
-		checkFfmpegAvailable?: () => Promise<boolean>
+		transcribeAudioCombined?: TranscribeAudioCombinedFn
 	) {
 		this.summarizer = new Summarizer(getSettings);
 		this.transcribeUrl = transcribeUrl ?? null;
 		this.transcribeAudio = transcribeAudio ?? null;
 		this.transcribeAudioCombined = transcribeAudioCombined ?? null;
-		this.checkFfmpegAvailable = checkFfmpegAvailable ?? null;
 	}
 
 	async onload(): Promise<void> {
@@ -194,13 +191,12 @@ export class SummarizeModule {
 		if (targets.length === 1) {
 			await this.processTargets(file, targets, content);
 		} else {
-			// Combine is only offered with 2+ audio targets, a combined
-			// transcriber, and ffmpeg available (desktop).
+			// Combine is offered whenever there are 2+ audio targets and a
+			// combined transcriber is wired. Without ffmpeg (mobile) the audio
+			// can't be concatenated, so each file is transcribed separately and
+			// the TEXT is merged into one summary.
 			const audioCount = targets.filter(t => t.type === 'audio').length;
-			const ffmpeg = !!this.transcribeAudioCombined && this.checkFfmpegAvailable
-				? await this.checkFfmpegAvailable()
-				: false;
-			const canCombine = audioCount >= 2 && ffmpeg;
+			const canCombine = audioCount >= 2 && !!this.transcribeAudioCombined;
 
 			new SummarizeSelectionModal(
 				this.plugin.app,
