@@ -1,3 +1,7 @@
+// Type-only import (erased at compile time) so settings.ts stays free of a
+// runtime cycle with views/types.ts → feature modules → settings.ts.
+import type { ProposalKind } from './views/types';
+
 export type AIProvider = 'openai' | 'anthropic' | 'ollama';
 
 /** Provider-specific model options. Dropdown values, not free text. */
@@ -235,6 +239,16 @@ export interface UISettings {
 	collapsedSections: Record<string, boolean>;
 }
 
+/**
+ * Per-proposal-type auto-accept flags (#228). When a kind's flag is `true`,
+ * every *future* proposal of that kind is accepted automatically as generated
+ * (the unedited draft), so it lands accepted — not pending — in the unified
+ * view. Already-pending proposals are never touched. Opt-in: default `false`
+ * for every kind. Keyed by {@link ProposalKind} so it stays in sync with the
+ * set of kinds Synapse can produce.
+ */
+export type AutoAcceptSettings = Record<ProposalKind, boolean>;
+
 export interface SynapseSettings {
 	ai: AISettings;
 	elaboration: ElaborationSettings;
@@ -250,6 +264,7 @@ export interface SynapseSettings {
 	rem: RemSettings;
 	intake: IntakeSettings;
 	ui: UISettings;
+	autoAccept: AutoAcceptSettings;
 }
 
 export const DEFAULT_SETTINGS: SynapseSettings = {
@@ -402,5 +417,13 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 	},
 	ui: {
 		collapsedSections: {},
+	},
+	autoAccept: {
+		elaboration: false,
+		enrichment: false,
+		organize: false,
+		'deep-dive': false,
+		title: false,
+		rem: false,
 	},
 };
