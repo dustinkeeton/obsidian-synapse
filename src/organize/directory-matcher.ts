@@ -1,5 +1,6 @@
 import { App, TFolder } from 'obsidian';
 import { ContentAnalysis, DirectoryScore, OrganizeAction } from './types';
+import { canonicalKey, isFuzzyMatch } from './folder-normalize';
 
 /**
  * Matches notes to existing directories by semantic relevance.
@@ -90,31 +91,43 @@ export class DirectoryMatcher {
 		noteDir: string
 	): number {
 		let score = 0;
-		const dirName = this.getDirectoryName(dirPath).toLowerCase();
-		const dirParts = dirPath.toLowerCase().split('/').filter(Boolean);
+		const dirKey = canonicalKey(this.getDirectoryName(dirPath));
+		const partKeys = dirPath
+			.split('/')
+			.filter(Boolean)
+			.map(p => canonicalKey(p))
+			.filter(Boolean);
 
-		// 1. Topic match — strongest signal
+		// 1. Topic match — strongest signal. Compared on canonical (singular,
+		// punctuation-normalized) keys so "model" coalesces with "models" and
+		// "machine learning" with "machine-learning".
 		for (const topic of analysis.topics) {
-			const topicLabel = topic.label.toLowerCase();
+			const topicKey = canonicalKey(topic.label);
+			if (!topicKey) continue;
 
-			// Exact match with directory name
-			if (dirName === topicLabel) {
+			// Exact canonical match with directory name
+			if (dirKey && dirKey === topicKey) {
 				score += 0.6 * topic.confidence;
 			}
-			// Directory name contains the topic
-			else if (dirName.includes(topicLabel) || topicLabel.includes(dirName)) {
+			// Directory name contains the topic (or vice versa)
+			else if (dirKey && (dirKey.includes(topicKey) || topicKey.includes(dirKey))) {
 				score += 0.4 * topic.confidence;
 			}
 			// Any path segment matches
-			else if (dirParts.some(p => p === topicLabel || p.includes(topicLabel) || topicLabel.includes(p))) {
+			else if (partKeys.some(p => p === topicKey || p.includes(topicKey) || topicKey.includes(p))) {
 				score += 0.25 * topic.confidence;
+			}
+			// Conservative near-match (typo tolerance). Weak tier — cannot reach
+			// the move threshold on its own.
+			else if (dirKey && isFuzzyMatch(topicKey, dirKey)) {
+				score += 0.4 * topic.confidence;
 			}
 		}
 
 		// 2. Tag match — directories that share tag names
 		for (const tag of analysis.tags) {
-			const cleanTag = tag.replace(/^#/, '').toLowerCase();
-			if (dirName === cleanTag || dirName.includes(cleanTag)) {
+			const tagKey = canonicalKey(tag.replace(/^#/, ''));
+			if (tagKey && dirKey && (dirKey === tagKey || dirKey.includes(tagKey))) {
 				score += 0.15;
 			}
 		}
@@ -149,21 +162,24 @@ export class DirectoryMatcher {
 	 * Build a human-readable reason for why a directory was scored.
 	 */
 	private buildReason(dirPath: string, analysis: ContentAnalysis): string {
-		const dirName = this.getDirectoryName(dirPath).toLowerCase();
+		const dirKey = canonicalKey(this.getDirectoryName(dirPath));
 		const reasons: string[] = [];
 
 		for (const topic of analysis.topics) {
-			const topicLabel = topic.label.toLowerCase();
-			if (dirName === topicLabel) {
+			const topicKey = canonicalKey(topic.label);
+			if (!topicKey || !dirKey) continue;
+			if (dirKey === topicKey) {
 				reasons.push(`exact topic match: "${topic.label}"`);
-			} else if (dirName.includes(topicLabel) || topicLabel.includes(dirName)) {
+			} else if (dirKey.includes(topicKey) || topicKey.includes(dirKey)) {
 				reasons.push(`partial topic match: "${topic.label}"`);
+			} else if (isFuzzyMatch(topicKey, dirKey)) {
+				reasons.push(`similar topic match: "${topic.label}"`);
 			}
 		}
 
 		for (const tag of analysis.tags) {
-			const cleanTag = tag.replace(/^#/, '').toLowerCase();
-			if (dirName === cleanTag || dirName.includes(cleanTag)) {
+			const tagKey = canonicalKey(tag.replace(/^#/, ''));
+			if (tagKey && dirKey && (dirKey === tagKey || dirKey.includes(tagKey))) {
 				reasons.push(`tag match: ${tag}`);
 			}
 		}
@@ -202,15 +218,10 @@ export class DirectoryMatcher {
 
 	/**
 	 * Build a clean directory path from a topic label.
-	 * Converts to lowercase kebab-case suitable for folder names.
+	 * Converts to lowercase kebab-case and singularizes each word so that
+	 * equivalent topics ("model" / "models") yield an identical folder name.
 	 */
 	buildDirectoryPath(topicLabel: string): string {
-		return topicLabel
-			.toLowerCase()
-			.replace(/[^a-z0-9\s-]/g, '')
-			.replace(/\s+/g, '-')
-			.replace(/-+/g, '-')
-			.replace(/^-|-$/g, '')
-			.slice(0, 50);
+		return canonicalKey(topicLabel).slice(0, 50);
 	}
 }

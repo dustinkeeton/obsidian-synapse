@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-19
+last-updated: 2026-06-07
 ---
 
 # organize module
@@ -34,8 +34,15 @@ Exported types: `OrganizeProposal`, `OrganizeSnapshot`, `OrganizeResult`, `Conte
 |------|---------------|------|
 | `content-analyzer.ts` | `ContentAnalyzer` | AI topic extraction from note content, tags, and links |
 | `directory-matcher.ts` | `DirectoryMatcher` | Matches topics to existing directories or proposes new ones |
+| `folder-normalize.ts` | `singularize`, `canonicalKey`, `editDistance`, `isFuzzyMatch` | Morphology-aware canonical keys for coalescing similar folder names (#172) |
 | `organize-store.ts` | `OrganizeStore` | JSON persistence for proposals and move snapshots |
 | `types.ts` | -- | All organize types |
+
+`folder-normalize` is the single source of truth for folder-name coalescing,
+reused in three places: `DirectoryMatcher.buildDirectoryPath` emits new folders
+in canonical (singular) form; `DirectoryMatcher.scoreDirectory` matches topics to
+existing folders on canonical keys plus a conservative edit-distance tier; and
+`OrganizeModule` deduplicates proposed directories across a batch scan.
 
 ## Data Flow
 
@@ -122,4 +129,7 @@ interface OrganizeResult {
 
 - `content-analyzer.test.ts`
 - `directory-matcher.test.ts`
+- `folder-normalize.test.ts`
 - `organize-store.test.ts`
+- `auto-accept.test.ts`
+- `batch-dedup.test.ts`

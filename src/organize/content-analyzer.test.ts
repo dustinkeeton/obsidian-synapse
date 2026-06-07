@@ -1,7 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ContentAnalyzer } from './content-analyzer';
 import { createMockApp } from '../__test-utils__/mock-factories';
 import { DEFAULT_SETTINGS } from '../settings';
+
+const mockComplete = vi.fn().mockResolvedValue('[{"label": "test", "confidence": 0.5}]');
+
+vi.mock('../shared/ai-client', () => ({
+	AIClient: class MockAIClient {
+		complete = mockComplete;
+	},
+}));
 
 /**
  * Only the pure/parseable methods of ContentAnalyzer are unit-tested here.
@@ -122,6 +130,23 @@ describe('ContentAnalyzer', () => {
 			const analyzer = makeAnalyzer();
 			const result = analyzer.topicsFromTags(['#']);
 			expect(result).toHaveLength(0);
+		});
+	});
+
+	describe('extractTopics — prompt steering (#172)', () => {
+		beforeEach(() => {
+			mockComplete.mockClear();
+			mockComplete.mockResolvedValue('[{"label": "test", "confidence": 0.5}]');
+		});
+
+		it('asks the model for broad, singular category labels', async () => {
+			const analyzer = makeAnalyzer();
+			await analyzer.extractTopics('Some note body about machine learning.', []);
+
+			expect(mockComplete).toHaveBeenCalled();
+			const systemPrompt = mockComplete.mock.calls[0][1] as string;
+			expect(systemPrompt).toContain('singular');
+			expect(systemPrompt).toMatch(/broad|umbrella/i);
 		});
 	});
 });
