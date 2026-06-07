@@ -7,6 +7,7 @@ export class NoteMediaModal extends Modal {
 	private selectedAudio: Set<string>;
 	private selectedVideo: Set<string>;
 	private selectedImage: Set<string>;
+	private combineAudio = false;
 
 	constructor(
 		app: App,
@@ -14,10 +15,11 @@ export class NoteMediaModal extends Modal {
 		private videoEmbeds: VideoUrlEmbed[],
 		private imageEmbeds: ImageEmbed[],
 		private callbacks: {
-			onTranscribeAudio: (embeds: AudioEmbed[]) => Promise<void>;
+			onTranscribeAudio: (embeds: AudioEmbed[], combine: boolean) => Promise<void>;
 			onTranscribeVideo: (embeds: VideoUrlEmbed[]) => Promise<void>;
 			onExtractImages: (embeds: ImageEmbed[]) => Promise<void>;
-		}
+		},
+		private ffmpegAvailable = false
 	) {
 		super(app);
 		this.selectedAudio = new Set(audioEmbeds.map(e => e.fileName));
@@ -61,6 +63,22 @@ export class NoteMediaModal extends Modal {
 				});
 			});
 
+		// Combine option (#214): only meaningful with 2+ audio files and ffmpeg.
+		// Shown when those preconditions hold; the flag is only applied at
+		// process time when 2+ audio files are actually selected.
+		if (this.audioEmbeds.length >= 2 && this.ffmpegAvailable) {
+			new Setting(contentEl)
+				.setName('Combine all selected audio into one transcription')
+				.setDesc('Concatenate the selected audio files and transcribe them as a single continuous recording (one block, one API call).')
+				.addToggle((toggle) => {
+					toggle
+						.setValue(this.combineAudio)
+						.onChange((val) => {
+							this.combineAudio = val;
+						});
+				});
+		}
+
 		const audioListEl = contentEl.createDiv({ cls: 'synapse-audio-list' });
 		const videoListEl = contentEl.createDiv({ cls: 'synapse-video-list' });
 		const imageListEl = contentEl.createDiv({ cls: 'synapse-image-list' });
@@ -83,7 +101,10 @@ export class NoteMediaModal extends Modal {
 					this.close();
 
 					if (chosenAudio.length > 0) {
-						await this.callbacks.onTranscribeAudio(chosenAudio);
+						// Only combine when the user opted in AND 2+ audio files
+							// are actually selected; otherwise fall back to per-file.
+							const combine = this.combineAudio && chosenAudio.length >= 2;
+							await this.callbacks.onTranscribeAudio(chosenAudio, combine);
 					}
 					if (chosenVideo.length > 0) {
 						await this.callbacks.onTranscribeVideo(chosenVideo);
