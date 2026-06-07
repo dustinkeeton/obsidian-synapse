@@ -333,9 +333,8 @@ export class SynapseSettingTab extends PluginSettingTab {
 			'whisper-api': 'OpenAI Whisper API',
 			deepgram: 'Deepgram',
 		};
-		if (Platform.isDesktop) {
-			providerOptions['local-whisper'] = 'Local Whisper';
-		}
+		// 'local-whisper' is intentionally hidden from the dropdown until implemented
+		// (see src/audio/transcriber.ts). The type is kept for forward compatibility.
 
 		new Setting(containerEl)
 			.setName('Transcription provider')
