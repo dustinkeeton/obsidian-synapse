@@ -11,7 +11,8 @@ Return a JSON array of topic objects. Each object has:
 
 Rules:
 - Return 1-3 topics maximum, ordered by confidence (highest first)
-- Use broad, folder-appropriate categories (these will become directory names)
+- Prefer broad, reusable umbrella categories over hyper-specific labels (e.g. "networking", not "tcp-ip-configuration") — these become directory names
+- Use the singular form of nouns (e.g. "model", not "models")
 - Prefer existing common categories over inventing new ones
 - Labels should be suitable as directory names (no special characters)
 - Return ONLY the JSON array, no markdown fences or explanation

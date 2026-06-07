@@ -328,4 +328,86 @@ describe('DirectoryMatcher', () => {
 			}
 		});
 	});
+
+	describe('coalescing similar names (#172)', () => {
+		it('singularizes folder names built from topics', () => {
+			const matcher = new DirectoryMatcher(makeMockApp([]));
+			expect(matcher.buildDirectoryPath('models')).toBe('model');
+			expect(matcher.buildDirectoryPath('meeting notes')).toBe('meeting-note');
+			expect(matcher.buildDirectoryPath('Categories')).toBe('category');
+		});
+
+		it('scores a singular topic highly against a plural directory', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['models', 'other']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'model', confidence: 1.0 }],
+			});
+
+			expect(matcher.scoreDirectory('models', analysis, 'inbox')).toBeCloseTo(0.6, 5);
+			expect(matcher.scoreDirectory('other', analysis, 'inbox')).toBe(0);
+		});
+
+		it('moves a plural topic into an existing singular directory', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['model']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'models', confidence: 1.0 }],
+			});
+
+			const action = matcher.determineAction(analysis);
+			expect(action.type).toBe('move');
+			if (action.type === 'move') {
+				expect(action.targetDirectory).toBe('model');
+			}
+		});
+
+		it('proposes a singular (canonical) directory for a new plural topic', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['unrelated']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'models', confidence: 0.95 }],
+			});
+
+			const action = matcher.determineAction(analysis);
+			expect(action.type).toBe('propose-new-directory');
+			if (action.type === 'propose-new-directory') {
+				expect(action.targetDirectory).toBe('model');
+			}
+		});
+
+		it('applies a conservative fuzzy match for long near-identical names', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['marketing']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'marketng', confidence: 1.0 }],
+			});
+
+			// Weak tier: scores below the exact-match tier, above zero.
+			expect(matcher.scoreDirectory('marketing', analysis, 'inbox')).toBeCloseTo(0.4, 5);
+		});
+
+		it('does not fuzzy-match short, distinct names', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['code']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'node', confidence: 1.0 }],
+			});
+
+			expect(matcher.scoreDirectory('code', analysis, 'inbox')).toBe(0);
+		});
+
+		it('does not let a lone fuzzy match cross the move threshold', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['marketing']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/test.md',
+				topics: [{ label: 'marketng', confidence: 1.0 }],
+			});
+
+			// 0.4 fuzzy score is below the 0.6 move threshold, so a new directory
+			// is proposed rather than hijacking the near-match folder.
+			const action = matcher.determineAction(analysis);
+			expect(action.type).toBe('propose-new-directory');
+		});
+	});
 });

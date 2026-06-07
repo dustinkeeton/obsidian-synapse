@@ -9,8 +9,9 @@ import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import type { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
+import { canonicalKey, isFuzzyMatch } from './folder-normalize';
 import { OrganizeStore } from './organize-store';
-import { OrganizeProposal, OrganizeResult, OrganizeSnapshot } from './types';
+import { OrganizeAction, OrganizeProposal, OrganizeResult, OrganizeSnapshot } from './types';
 
 export type {
 	OrganizeProposal,
@@ -109,6 +110,8 @@ export class OrganizeModule {
 		let autoAcceptedCount = 0;
 		let errorCount = 0;
 		const moveRecords: MoveRecord[] = [];
+		// Coalesce new-directory proposals within this resumed run (#172).
+		const batchProposedDirs = new Map<string, string>();
 
 		try {
 			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
@@ -125,7 +128,7 @@ export class OrganizeModule {
 
 				try {
 					const originalPath = file.path;
-					const result = await this.organizeFile(file, true);
+					const result = await this.organizeFile(file, true, batchProposedDirs);
 
 					if (result) {
 						if (result.movedDirectly && result.action.type === 'move') {
@@ -287,6 +290,10 @@ export class OrganizeModule {
 		let autoAcceptedCount = 0;
 		let errorCount = 0;
 		const moveRecords: MoveRecord[] = [];
+		// Coalesce new-directory proposals within this scan so variants like
+		// "model"/"models" resolve to a single folder (#172). Maps a canonical
+		// key to the representative directory chosen for it.
+		const batchProposedDirs = new Map<string, string>();
 
 		// Create checkpoint for resumability
 		const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
@@ -313,7 +320,7 @@ export class OrganizeModule {
 			genOp.progress(i + 1, eligible.length, 'Organizing notes');
 			try {
 				const originalPath = eligible[i].path;
-				const result = await this.organizeFile(eligible[i], true);
+				const result = await this.organizeFile(eligible[i], true, batchProposedDirs);
 
 				if (result) {
 					if (result.movedDirectly && result.action.type === 'move') {
@@ -517,8 +524,16 @@ export class OrganizeModule {
 	 * When a new-directory proposal is created and organize auto-accept is on
 	 * (#228), the proposal is accepted immediately (the note is moved). `batch`
 	 * suppresses per-proposal Notices so batch callers can summarize.
+	 *
+	 * `batchProposedDirs` (when supplied by a batch caller) coalesces new
+	 * directory proposals across the run so variants like "model"/"models"
+	 * resolve to a single folder (#172).
 	 */
-	private async organizeFile(file: TFile, batch = false): Promise<OrganizeResult | null> {
+	private async organizeFile(
+		file: TFile,
+		batch = false,
+		batchProposedDirs?: Map<string, string>
+	): Promise<OrganizeResult | null> {
 		const analysis = await this.analyzer.analyze(file);
 
 		if (analysis.topics.length === 0) {
@@ -566,11 +581,20 @@ export class OrganizeModule {
 			};
 		}
 
-		// New directory needed -- create a proposal
+		// New directory needed -- create a proposal. Within a batch run, coalesce
+		// near-identical proposed directories to a single representative (#172).
+		const proposedDirectory = batchProposedDirs
+			? this.coalesceProposedDirectory(action.targetDirectory, batchProposedDirs)
+			: action.targetDirectory;
+		const resolvedAction: OrganizeAction =
+			proposedDirectory === action.targetDirectory
+				? action
+				: { ...action, targetDirectory: proposedDirectory };
+
 		const proposal: OrganizeProposal = {
 			id: generateId(),
 			sourceNotePath: file.path,
-			proposedDirectory: action.targetDirectory,
+			proposedDirectory,
 			reasoning: action.reasoning,
 			createdAt: new Date().toISOString(),
 			status: 'pending',
@@ -583,11 +607,34 @@ export class OrganizeModule {
 
 		return {
 			notePath: file.path,
-			action,
+			action: resolvedAction,
 			proposalCreated: true,
 			movedDirectly: false,
 			autoAccepted,
 		};
+	}
+
+	/**
+	 * Resolve a proposed new-directory path against directories already proposed
+	 * in this batch run, coalescing exact canonical matches and conservative
+	 * near-matches to a single representative folder (#172).
+	 */
+	private coalesceProposedDirectory(
+		directory: string,
+		batchProposedDirs: Map<string, string>
+	): string {
+		const key = canonicalKey(directory);
+		if (!key) return directory;
+
+		const exact = batchProposedDirs.get(key);
+		if (exact) return exact;
+
+		for (const [existingKey, existingDir] of batchProposedDirs) {
+			if (isFuzzyMatch(key, existingKey)) return existingDir;
+		}
+
+		batchProposedDirs.set(key, directory);
+		return directory;
 	}
 
 	private isExcluded(file: TFile): boolean {
