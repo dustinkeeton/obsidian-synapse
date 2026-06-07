@@ -32,13 +32,22 @@ export class OrganizeModule {
 	private matcher: DirectoryMatcher;
 	private store: OrganizeStore;
 
+	/**
+	 * Live accessor for the organize auto-accept flag (#228). Wired by main.ts
+	 * to `() => this.settings.autoAccept.organize`. Defaults to "never
+	 * auto-accept". NOTE: organize auto-accept MOVES the note on the filesystem.
+	 */
+	private shouldAutoAccept: () => boolean = () => false;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar
+		private registrar: CommandRegistrar,
+		shouldAutoAccept?: () => boolean
 	) {
+		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 		this.analyzer = new ContentAnalyzer(plugin.app, getSettings);
 		this.matcher = new DirectoryMatcher(plugin.app);
 		this.store = new OrganizeStore(plugin.app, getSettings);
@@ -97,6 +106,7 @@ export class OrganizeModule {
 
 		let movedCount = 0;
 		let proposalCount = 0;
+		let autoAcceptedCount = 0;
 		let errorCount = 0;
 		const moveRecords: MoveRecord[] = [];
 
@@ -115,7 +125,7 @@ export class OrganizeModule {
 
 				try {
 					const originalPath = file.path;
-					const result = await this.organizeFile(file);
+					const result = await this.organizeFile(file, true);
 
 					if (result) {
 						if (result.movedDirectly && result.action.type === 'move') {
@@ -126,6 +136,7 @@ export class OrganizeModule {
 							moveRecords.push({ originalPath, newPath });
 						}
 						if (result.proposalCreated) proposalCount++;
+						if (result.autoAccepted) autoAcceptedCount++;
 					}
 				} catch (error) {
 					errorCount++;
@@ -160,6 +171,12 @@ export class OrganizeModule {
 			if (summaryPath) {
 				this.notifications.info(`Organize summary saved to ${summaryPath}`);
 			}
+		}
+
+		if (autoAcceptedCount > 0) {
+			this.notifications.info(
+				`Auto-accepted ${autoAcceptedCount} organize proposal${autoAcceptedCount === 1 ? '' : 's'} (notes moved)`
+			);
 		}
 
 		if (proposalCount > 0) {
@@ -267,6 +284,7 @@ export class OrganizeModule {
 
 		let movedCount = 0;
 		let proposalCount = 0;
+		let autoAcceptedCount = 0;
 		let errorCount = 0;
 		const moveRecords: MoveRecord[] = [];
 
@@ -295,7 +313,7 @@ export class OrganizeModule {
 			genOp.progress(i + 1, eligible.length, 'Organizing notes');
 			try {
 				const originalPath = eligible[i].path;
-				const result = await this.organizeFile(eligible[i]);
+				const result = await this.organizeFile(eligible[i], true);
 
 				if (result) {
 					if (result.movedDirectly && result.action.type === 'move') {
@@ -306,6 +324,7 @@ export class OrganizeModule {
 						moveRecords.push({ originalPath, newPath });
 					}
 					if (result.proposalCreated) proposalCount++;
+					if (result.autoAccepted) autoAcceptedCount++;
 				}
 			} catch (error) {
 				errorCount++;
@@ -347,6 +366,12 @@ export class OrganizeModule {
 			}
 		}
 
+		if (autoAcceptedCount > 0) {
+			this.notifications.info(
+				`Auto-accepted ${autoAcceptedCount} organize proposal${autoAcceptedCount === 1 ? '' : 's'} (notes moved)`
+			);
+		}
+
 		if (proposalCount > 0) {
 			await this.onViewRefreshNeeded?.();
 		}
@@ -356,13 +381,20 @@ export class OrganizeModule {
 
 	/**
 	 * Accept a proposal: create the new directory and move the note.
+	 *
+	 * `options.silent` suppresses the success / summary-path Notices and the
+	 * view refresh; used by batch auto-accept so callers emit one summary
+	 * Notice and refresh once. (Error and "cannot move" Notices still fire.)
 	 */
-	async acceptProposal(id: string): Promise<void> {
+	async acceptProposal(id: string, options?: { silent?: boolean }): Promise<void> {
 		const proposal = await this.store.loadProposal(id);
 		if (!proposal) {
 			this.notifications.info('Proposal not found');
 			return;
 		}
+		// Guard against double-acceptance (cascade safety): only act on a
+		// still-pending proposal so the note is never moved twice.
+		if (proposal.status !== 'pending') return;
 
 		try {
 			// Create the new directory
@@ -402,25 +434,42 @@ export class OrganizeModule {
 			await this.plugin.app.vault.rename(file, newPath);
 
 			await this.store.updateProposalStatus(id, 'accepted');
-			this.notifications.success(`Moved to ${proposal.proposedDirectory}`);
 
 			// Generate organize summary with move diagram
 			const moveRecords: MoveRecord[] = [
 				{ originalPath: file.path, newPath },
 			];
 			const summaryPath = await this.writeOrganizeSummary(moveRecords);
-			if (summaryPath) {
-				this.notifications.info(
-					`Organize summary saved to ${summaryPath}`
-				);
-			}
 
-			await this.onViewRefreshNeeded?.();
+			if (!options?.silent) {
+				this.notifications.success(`Moved to ${proposal.proposedDirectory}`);
+				if (summaryPath) {
+					this.notifications.info(
+						`Organize summary saved to ${summaryPath}`
+					);
+				}
+				await this.onViewRefreshNeeded?.();
+			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			this.notifications.notifyError('Failed to accept proposal', error);
 			throw new Error(`Accept proposal failed: ${msg}`);
 		}
+	}
+
+	/**
+	 * Auto-accept a freshly created organize proposal (#228), if the organize
+	 * auto-accept flag is on. Returns `true` when accepted. This MOVES the note.
+	 *
+	 * `batch` suppresses the per-proposal Notice (caller emits a summary).
+	 */
+	private async maybeAutoAccept(proposalId: string, batch = false): Promise<boolean> {
+		if (!this.shouldAutoAccept()) return false;
+		await this.acceptProposal(proposalId, { silent: batch });
+		if (!batch) {
+			this.notifications.info('Auto-accepted organize proposal');
+		}
+		return true;
 	}
 
 	/**
@@ -464,8 +513,12 @@ export class OrganizeModule {
 	/**
 	 * Core logic for organizing a single file.
 	 * Returns null if the note is already well-placed.
+	 *
+	 * When a new-directory proposal is created and organize auto-accept is on
+	 * (#228), the proposal is accepted immediately (the note is moved). `batch`
+	 * suppresses per-proposal Notices so batch callers can summarize.
 	 */
-	private async organizeFile(file: TFile): Promise<OrganizeResult | null> {
+	private async organizeFile(file: TFile, batch = false): Promise<OrganizeResult | null> {
 		const analysis = await this.analyzer.analyze(file);
 
 		if (analysis.topics.length === 0) {
@@ -525,11 +578,15 @@ export class OrganizeModule {
 
 		await this.store.saveProposal(proposal);
 
+		// Auto-accept the freshly created proposal if enabled (#228).
+		const autoAccepted = await this.maybeAutoAccept(proposal.id, batch);
+
 		return {
 			notePath: file.path,
 			action,
 			proposalCreated: true,
 			movedDirectly: false,
+			autoAccepted,
 		};
 	}
 

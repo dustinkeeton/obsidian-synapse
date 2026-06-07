@@ -25,13 +25,23 @@ export class RemModule {
 	/** Optional callback to refresh the unified proposal view. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
+	/**
+	 * Live accessor for the REM auto-accept flag (#228). Wired by main.ts to
+	 * `() => this.settings.autoAccept.rem`. Defaults to "never auto-accept".
+	 * NOTE: REM auto-accept REWRITES note body text (inserts [[wikilinks]]).
+	 */
+	private shouldAutoAccept: () => boolean = () => false;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar
-	) {}
+		private registrar: CommandRegistrar,
+		shouldAutoAccept?: () => boolean
+	) {
+		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
+	}
 
 	async onload(): Promise<void> {
 		this.store = new RemStore(this.plugin.app, this.getSettings);
@@ -128,6 +138,9 @@ export class RemModule {
 			`Found ${allCandidates.length} linkable mention${allCandidates.length === 1 ? '' : 's'}`
 		);
 
+		// Single-note path: auto-accept the whole proposal if enabled (#228).
+		await this.maybeAutoAccept(proposal);
+
 		await this.refreshView();
 		return proposal;
 	}
@@ -175,6 +188,7 @@ export class RemModule {
 		});
 
 		let created = 0;
+		let autoAcceptedCount = 0;
 		const createdProposalIds: string[] = [];
 
 		try {
@@ -215,6 +229,7 @@ export class RemModule {
 					await this.store.save(proposal);
 					created++;
 					createdProposalIds.push(proposal.id);
+					if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
 				}
 
 				await this.checkpointManager.completeItem(checkpoint.id, checkpointItems[i].id);
@@ -234,6 +249,11 @@ export class RemModule {
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
 			op.finish(`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions`);
+			if (autoAcceptedCount > 0) {
+				this.notifications.info(
+					`Auto-accepted REM links in ${autoAcceptedCount} note${autoAcceptedCount === 1 ? '' : 's'}`
+				);
+			}
 		}
 
 		return created;
@@ -250,6 +270,7 @@ export class RemModule {
 		);
 
 		const createdProposalIds: string[] = [];
+		let autoAcceptedCount = 0;
 
 		try {
 			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
@@ -279,6 +300,7 @@ export class RemModule {
 					};
 					await this.store.save(proposal);
 					createdProposalIds.push(proposal.id);
+					if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
 				}
 
 				await this.checkpointManager.completeItem(checkpoint.id, item.id);
@@ -297,6 +319,11 @@ export class RemModule {
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
 			op.finish(`Resumed -- generated ${createdProposalIds.length} proposals`);
+			if (autoAcceptedCount > 0) {
+				this.notifications.info(
+					`Auto-accepted REM links in ${autoAcceptedCount} note${autoAcceptedCount === 1 ? '' : 's'}`
+				);
+			}
 		}
 
 		await this.refreshView();
@@ -304,10 +331,20 @@ export class RemModule {
 
 	/**
 	 * Accept a REM proposal: apply selected links to the note.
+	 *
+	 * `options.silent` suppresses the success Notice and view refresh; used by
+	 * batch auto-accept so callers emit one summary Notice and refresh once.
 	 */
-	async acceptProposal(id: string, acceptedMatchTexts: string[]): Promise<void> {
+	async acceptProposal(
+		id: string,
+		acceptedMatchTexts: string[],
+		options?: { silent?: boolean }
+	): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
+		// Guard against double-acceptance (cascade safety): never rewrite the
+		// note's body text twice for the same proposal.
+		if (proposal.status !== 'pending') return;
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!file) {
@@ -344,11 +381,28 @@ export class RemModule {
 			originalContent
 		);
 
-		this.notifications.success(
-			`Inserted ${accepted.length} wikilink${accepted.length === 1 ? '' : 's'}`
-		);
+		if (!options?.silent) {
+			this.notifications.success(
+				`Inserted ${accepted.length} wikilink${accepted.length === 1 ? '' : 's'}`
+			);
+			await this.refreshView();
+		}
+	}
 
-		await this.refreshView();
+	/**
+	 * Auto-accept a freshly generated REM proposal in full (#228) — accepts
+	 * every candidate match text as generated. Returns `true` when accepted.
+	 *
+	 * `batch` suppresses the per-proposal Notice (caller emits one summary).
+	 */
+	private async maybeAutoAccept(proposal: RemProposal, batch = false): Promise<boolean> {
+		if (!this.shouldAutoAccept()) return false;
+		const allMatchTexts = [...new Set(proposal.candidates.map(c => c.matchedText))];
+		await this.acceptProposal(proposal.id, allMatchTexts, { silent: batch });
+		if (!batch) {
+			this.notifications.info(`Auto-accepted REM links for ${proposal.sourceNotePath}`);
+		}
+		return true;
 	}
 
 	/**

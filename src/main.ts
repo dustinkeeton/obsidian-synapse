@@ -72,9 +72,15 @@ export default class SynapsePlugin extends Plugin {
 		// by the command registry (developer source of truth / master control).
 		const registrar = new CommandRegistrar(this);
 
+		// Per-proposal-type auto-accept accessors (#228). Each module receives a
+		// live `() => this.settings.autoAccept[kind]` getter — consistent with the
+		// getSettings accessor pattern — so toggling the setting takes effect
+		// immediately without a reload, and modules never import global settings.
+		// Read through `this.settings` (not a captured reference) so it stays live.
+
 		// Initialize modules (Audio before Video since Video depends on Audio)
 		// Pass checkpointManager to each module instead of letting them create their own
-		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
+		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.elaboration);
 		// Create a shared AudioExtractor on desktop for clipping support
 		const audioExtractor = Platform.isDesktop ? new AudioExtractor(getSettings) : undefined;
 		this.audioExtractor = audioExtractor;
@@ -83,7 +89,7 @@ export default class SynapsePlugin extends Plugin {
 			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager, registrar);
 		}
 		this.image = new ImageModule(this, getSettings, this.notifications, this.checkpointManager);
-		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
+		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.enrichment);
 		this.summarize = new SummarizeModule(
 			this, getSettings, this.notifications, this.checkpointManager, registrar,
 			this.video
@@ -97,10 +103,10 @@ export default class SynapsePlugin extends Plugin {
 			(files) => this.audio.transcribeAudioCombined(files)
 		);
 		this.tidy = new TidyModule(this, getSettings, this.notifications, registrar);
-		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
-		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
-		this.title = new TitleModule(this, getSettings, this.notifications);
-		this.rem = new RemModule(this, getSettings, this.notifications, this.checkpointManager, registrar);
+		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.organize);
+		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept['deep-dive']);
+		this.title = new TitleModule(this, getSettings, this.notifications, () => this.settings.autoAccept.title);
+		this.rem = new RemModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.rem);
 
 		// Register the unified proposal view
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {

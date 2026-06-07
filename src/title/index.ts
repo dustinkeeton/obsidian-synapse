@@ -16,14 +16,36 @@ export class TitleModule {
 	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
+	/**
+	 * Live accessor for the title auto-accept flag (#228). Wired by main.ts to
+	 * `() => this.settings.autoAccept.title`. Defaults to "never auto-accept".
+	 * NOTE: title auto-accept RENAMES the file on the filesystem.
+	 */
+	private shouldAutoAccept: () => boolean = () => false;
+
 	constructor(
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		shouldAutoAccept?: () => boolean
 	) {
 		const aiClient = new AIClient(getSettings);
 		this.store = new TitleProposalStore(plugin.app, getSettings);
 		this.suggester = new TitleSuggester(aiClient);
+		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
+	}
+
+	/**
+	 * Auto-accept a freshly generated title proposal (#228), if the title
+	 * auto-accept flag is on. This RENAMES the file. A single Notice fires
+	 * (title proposals are generated one-at-a-time, never in a tight batch).
+	 */
+	private async maybeAutoAccept(proposal: TitleProposal): Promise<void> {
+		if (!this.shouldAutoAccept()) return;
+		await this.acceptProposal(proposal.id, { silent: true });
+		this.notifications.info(
+			`Auto-accepted title "${proposal.proposedTitle}"`
+		);
 	}
 
 	async onload(): Promise<void> {
@@ -72,6 +94,7 @@ export class TitleModule {
 			};
 
 			await this.store.save(proposal);
+			await this.maybeAutoAccept(proposal);
 			await this.refreshView();
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
@@ -113,6 +136,7 @@ export class TitleModule {
 			};
 
 			await this.store.save(proposal);
+			await this.maybeAutoAccept(proposal);
 			await this.refreshView();
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
@@ -137,10 +161,16 @@ export class TitleModule {
 
 	/**
 	 * Accept a title proposal: rename the file via vault.rename().
+	 *
+	 * `options.silent` suppresses the success Notice and view refresh; used by
+	 * auto-accept, which emits its own distinct Notice. Error and conflict
+	 * Notices still fire.
 	 */
-	async acceptProposal(id: string): Promise<void> {
+	async acceptProposal(id: string, options?: { silent?: boolean }): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
+		// Guard against double-acceptance (cascade safety): never rename twice.
+		if (proposal.status !== 'pending') return;
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!(file instanceof TFile)) {
@@ -166,8 +196,10 @@ export class TitleModule {
 		try {
 			await this.plugin.app.vault.rename(file, newPath);
 			await this.store.updateStatus(id, 'accepted');
-			this.notifications.success(`Renamed to "${proposal.proposedTitle}"`);
-			await this.refreshView();
+			if (!options?.silent) {
+				this.notifications.success(`Renamed to "${proposal.proposedTitle}"`);
+				await this.refreshView();
+			}
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			this.notifications.notifyError('Failed to rename note', error);
