@@ -16,7 +16,11 @@ vi.mock('../shared', async (importOriginal) => {
 
 import { fetchArticleContent } from '../shared';
 
-const DEBOUNCE_MS = 400;
+// The settle window is now driven by `intake.settleSeconds` (#222). Tests seed
+// `settings.intake.settleSeconds = 5` (the default), so the effective debounce
+// is 5000ms; this local constant mirrors that so the timing assertions read
+// clearly. Individual tests override `settleSeconds` to exercise the setting.
+const SETTLE_MS = 5000;
 
 function createMockNotifications() {
 	return {
@@ -53,7 +57,6 @@ describe('IntakeModule', () => {
 	let settings: SynapseSettings;
 	let deps: {
 		fireOnFile: ReturnType<typeof vi.fn>;
-		elaborateFile: ReturnType<typeof vi.fn>;
 		transcribeUrlToNote: ReturnType<typeof vi.fn>;
 	};
 	/** Captured vault event handlers, keyed by event name. */
@@ -74,6 +77,7 @@ describe('IntakeModule', () => {
 		settings.intake.intakeFolder = 'Inbox';
 		settings.intake.markProcessed = true;
 		settings.intake.moveWhenDone = '';
+		settings.intake.settleSeconds = SETTLE_MS / 1000;
 
 		handlers = {};
 		store = new Map();
@@ -87,7 +91,10 @@ describe('IntakeModule', () => {
 			modify: vi.fn(async (file: any, content: string) => {
 				store.set(file.path, content);
 			}),
-			create: vi.fn(),
+			create: vi.fn(async (path: string, content: string) => {
+				store.set(path, content);
+				return makeFile(path);
+			}),
 			createFolder: vi.fn().mockResolvedValue(undefined),
 			getAbstractFileByPath: vi.fn((path: string) => {
 				if (store.has(path)) return makeFile(path);
@@ -112,7 +119,6 @@ describe('IntakeModule', () => {
 		notifications = createMockNotifications();
 		deps = {
 			fireOnFile: vi.fn().mockResolvedValue(undefined),
-			elaborateFile: vi.fn().mockResolvedValue(undefined),
 			transcribeUrlToNote: vi.fn().mockResolvedValue(undefined),
 		};
 
@@ -138,6 +144,22 @@ describe('IntakeModule', () => {
 	/** Run all pending timers, then drain microtasks so async flush settles. */
 	async function flushDebounce() {
 		await vi.runOnlyPendingTimersAsync();
+	}
+
+	/**
+	 * Make `fireOnFile` simulate organize relocating the note: move its content
+	 * in the store and mutate `file.path` in place, exactly as organize's
+	 * `vault.rename` does. Pass `null` to model organize keeping the note in
+	 * place (low confidence → proposal / no-op) — content/path are untouched.
+	 */
+	function organizeMovesTo(newPath: string | null) {
+		deps.fireOnFile.mockImplementation(async (file: any) => {
+			if (newPath === null || newPath === file.path) return;
+			const content = store.get(file.path);
+			store.delete(file.path);
+			if (content !== undefined) store.set(newPath, content);
+			file.path = newPath;
+		});
 	}
 
 	describe('onload / listener registration', () => {
@@ -223,7 +245,7 @@ describe('IntakeModule', () => {
 			handlers['create'](makeFile(path));
 
 			// Advance partway, then fire again to reset the timer.
-			await vi.advanceTimersByTimeAsync(DEBOUNCE_MS - 100);
+			await vi.advanceTimersByTimeAsync(SETTLE_MS - 100);
 			expect(deps.fireOnFile).not.toHaveBeenCalled();
 			handlers['modify'](makeFile(path));
 
@@ -232,7 +254,7 @@ describe('IntakeModule', () => {
 			expect(deps.fireOnFile).not.toHaveBeenCalled();
 
 			// After the full window from the reset, it flushes exactly once.
-			await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+			await vi.advanceTimersByTimeAsync(SETTLE_MS);
 			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
 		});
 
@@ -243,6 +265,77 @@ describe('IntakeModule', () => {
 			module.onunload();
 			await flushDebounce();
 			expect(deps.fireOnFile).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('settle window (#222)', () => {
+		beforeEach(async () => {
+			await module.onload();
+		});
+
+		it('keeps deferring while edits keep arriving inside the window', async () => {
+			const path = 'Inbox/capture.md';
+			store.set(path, 'draft');
+			handlers['create'](makeFile(path));
+
+			// Five edits, each just before the window would elapse. Every edit
+			// resets the timer, so the note never gets processed mid-write.
+			for (let i = 0; i < 5; i++) {
+				await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+				expect(deps.fireOnFile).not.toHaveBeenCalled();
+				handlers['modify'](makeFile(path));
+			}
+
+			// Still nothing — the last edit just reset the timer again.
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+		});
+
+		it('fires exactly once, settleSeconds after the last edit', async () => {
+			const path = 'Inbox/capture.md';
+			store.set(path, 'hello prose');
+			handlers['create'](makeFile(path));
+
+			// A burst of edits within the window…
+			await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+			handlers['modify'](makeFile(path));
+			await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+			handlers['modify'](makeFile(path));
+
+			// One tick short of the window after the final edit → not yet.
+			await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+
+			// Crossing the window from the last edit fires it once.
+			await vi.advanceTimersByTimeAsync(1);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+
+		it('respects a custom settleSeconds setting', async () => {
+			settings.intake.settleSeconds = 12;
+			const path = 'Inbox/slow.md';
+			store.set(path, 'hello prose');
+			handlers['create'](makeFile(path));
+
+			// The old 5s window elapses with no flush — we now wait 12s.
+			await vi.advanceTimersByTimeAsync(5000);
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+
+			await vi.advanceTimersByTimeAsync(7000);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+
+		it('falls back to a sane window when settleSeconds is invalid', async () => {
+			// A malformed setting (0 / NaN / undefined) must not disable the
+			// watcher — it falls back to DEBOUNCE_MS (5000ms).
+			(settings.intake as any).settleSeconds = 0;
+			const path = 'Inbox/fallback.md';
+			store.set(path, 'hello prose');
+			handlers['create'](makeFile(path));
+
+			await vi.advanceTimersByTimeAsync(4999);
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(1);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
 		});
 	});
 
@@ -325,15 +418,16 @@ describe('IntakeModule', () => {
 			);
 		});
 
-		it('bare article URL → fetch + append + elaborate', async () => {
+		it('bare article URL → fetch + append + full pipeline (#223)', async () => {
 			emit('create', 'Inbox/art.md', 'https://example.com/post');
 			await flushDebounce();
 
 			expect(fetchArticleContent).toHaveBeenCalledWith('https://example.com/post');
 			const written = store.get('Inbox/art.md')!;
 			expect(written).toContain('FETCHED ARTICLE BODY');
-			expect(deps.elaborateFile).toHaveBeenCalledTimes(1);
-			expect(deps.fireOnFile).not.toHaveBeenCalled();
+			// The article branch now runs the whole pipeline (fireOnFile), whose
+			// organize phase relocates the note — there is no elaborate-only path.
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
 		});
 
 		it('bare unknown URL → general pipeline', async () => {
@@ -403,6 +497,167 @@ describe('IntakeModule', () => {
 			emit('create', 'Inbox/note.md', 'hello prose');
 			await flushDebounce();
 			expect(plugin.app.fileManager.renameFile).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('full pipeline + auto-organize (#223)', () => {
+		beforeEach(async () => {
+			await module.onload();
+		});
+
+		it('runs the full pipeline on an article note and organizes it out of Inbox', async () => {
+			// Organize (pipeline phase) relocates the fleshed-out article note.
+			organizeMovesTo('Articles/art.md');
+
+			emit('create', 'Inbox/art.md', 'https://example.com/post');
+			await flushDebounce();
+
+			expect(fetchArticleContent).toHaveBeenCalledWith('https://example.com/post');
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+			// The note left Inbox and landed where organize put it, stamped.
+			expect(store.has('Inbox/art.md')).toBe(false);
+			const moved = store.get('Articles/art.md')!;
+			expect(moved).toContain('FETCHED ARTICLE BODY');
+			expect(moved).toContain('synapse-processed: true');
+		});
+
+		it('does NOT apply moveWhenDone when organize already moved the note out (no double move)', async () => {
+			settings.intake.moveWhenDone = 'Processed';
+			organizeMovesTo('Articles/note.md'); // organize relocates it
+
+			emit('create', 'Inbox/note.md', 'hello prose');
+			await flushDebounce();
+
+			// Fallback mover must not fire — organize already moved it out.
+			expect(plugin.app.fileManager.renameFile).not.toHaveBeenCalled();
+			expect(store.has('Processed/note.md')).toBe(false);
+			expect(store.has('Articles/note.md')).toBe(true);
+		});
+
+		it('applies moveWhenDone as a fallback when organize keeps the note in Inbox', async () => {
+			settings.intake.moveWhenDone = 'Processed';
+			organizeMovesTo(null); // low confidence → organize keeps it in place
+
+			emit('create', 'Inbox/note.md', 'hello prose');
+			await flushDebounce();
+
+			// Note never left Inbox via organize → fallback relocates it.
+			expect(plugin.app.fileManager.renameFile).toHaveBeenCalledWith(
+				expect.anything(),
+				'Processed/note.md'
+			);
+			expect(store.has('Processed/note.md')).toBe(true);
+			expect(store.get('Processed/note.md')).toContain('synapse-processed: true');
+		});
+
+		it('does not re-enter flush after organize moves the note OUT of Inbox', async () => {
+			organizeMovesTo('Articles/note.md');
+
+			emit('create', 'Inbox/note.md', 'hello prose');
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+
+			// The post-organize stamp write lands on the NEW path. Obsidian emits
+			// a modify for it; isInIntakeFolder rejects it (outside Inbox).
+			handlers['modify'](makeFile('Articles/note.md'));
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not re-enter flush when organize keeps the note IN Inbox', async () => {
+			organizeMovesTo(null); // stays at Inbox/note.md
+
+			emit('create', 'Inbox/note.md', 'hello prose');
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+
+			// Stamp echo on the original in-Inbox path → idempotency guard skips it.
+			handlers['modify'](makeFile('Inbox/note.md'));
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('capture log breadcrumb (#224)', () => {
+		beforeEach(async () => {
+			await module.onload();
+		});
+
+		it('writes a dated breadcrumb linking to the new path when organized out of Inbox', async () => {
+			organizeMovesTo('Articles/My Note.md');
+
+			emit('create', 'Inbox/My Note.md', 'hello prose');
+			await flushDebounce();
+
+			// setSystemTime is 2026-06-05, so the breadcrumb is date-named for it.
+			const crumbPath = 'Inbox/_captured/2026-06-05 — My Note.md';
+			expect(store.has(crumbPath)).toBe(true);
+			const crumb = store.get(crumbPath)!;
+			// Links to the moved note by basename, and records the trail.
+			expect(crumb).toContain('[[My Note]]');
+			expect(crumb).toContain('from: Inbox/My Note.md');
+			expect(crumb).toContain('moved to: Articles/My Note.md');
+			// Stamped as defense-in-depth so it is never reprocessed.
+			expect(crumb).toContain('synapse-processed: true');
+		});
+
+		it('sanitizes the breadcrumb filename', async () => {
+			organizeMovesTo('Refs/Weird: Title*?.md');
+
+			emit('create', 'Inbox/Weird: Title*?.md', 'hello prose');
+			await flushDebounce();
+
+			// Illegal filename chars are stripped (the video sanitize rule).
+			expect(store.has('Inbox/_captured/2026-06-05 — Weird Title.md')).toBe(true);
+		});
+
+		it('writes no breadcrumb when the note is not moved out of Inbox', async () => {
+			organizeMovesTo(null); // organize keeps it in place
+
+			emit('create', 'Inbox/stay.md', 'hello prose');
+			await flushDebounce();
+
+			const captured = [...store.keys()].filter((p) => p.startsWith('Inbox/_captured/'));
+			expect(captured).toHaveLength(0);
+		});
+
+		it('writes no breadcrumb when captureLog is disabled', async () => {
+			settings.intake.captureLog = false;
+			organizeMovesTo('Articles/off.md');
+
+			emit('create', 'Inbox/off.md', 'hello prose');
+			await flushDebounce();
+
+			expect(store.has('Articles/off.md')).toBe(true); // still organized
+			const captured = [...store.keys()].filter((p) => p.startsWith('Inbox/_captured/'));
+			expect(captured).toHaveLength(0);
+		});
+
+		it('IGNORES a file created in the capture-log subfolder (no reprocessing / no loop)', async () => {
+			// A breadcrumb (or anything) appearing under Inbox/_captured must be
+			// invisible to the watcher — otherwise the watcher would re-ingest its
+			// own breadcrumbs and spin forever.
+			emit('create', 'Inbox/_captured/2026-06-05 — Something.md', '[[Something]]');
+			emit('modify', 'Inbox/_captured/2026-06-05 — Something.md', '[[Something]]');
+			await flushDebounce();
+
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+			expect(deps.transcribeUrlToNote).not.toHaveBeenCalled();
+			expect(fetchArticleContent).not.toHaveBeenCalled();
+		});
+
+		it('respects a custom captureLogFolder for both writing and exclusion', async () => {
+			settings.intake.captureLogFolder = 'log';
+			organizeMovesTo('Articles/custom.md');
+
+			emit('create', 'Inbox/custom.md', 'hello prose');
+			await flushDebounce();
+			expect(store.has('Inbox/log/2026-06-05 — custom.md')).toBe(true);
+
+			// And the custom subfolder is excluded from the watcher.
+			emit('create', 'Inbox/log/2026-06-05 — custom.md', 'x');
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1); // only the original run
 		});
 	});
 

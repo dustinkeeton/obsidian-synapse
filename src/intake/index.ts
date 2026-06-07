@@ -7,6 +7,7 @@ import {
 	fetchArticleContent,
 	parseFrontmatter,
 	serializeFrontmatter,
+	writeNote,
 } from '../shared';
 import { IntakeDispatcher } from './intake-dispatcher';
 import {
@@ -26,8 +27,13 @@ export {
 	SYNAPSE_PROCESSED_AT_FLAG,
 } from './types';
 
-/** How long to wait after the last change to a path before flushing it. */
-const DEBOUNCE_MS = 400;
+/**
+ * Fallback settle window (ms) used only when `intake.settleSeconds` is missing
+ * or not a positive number. The configured default is 5s (`settleSeconds`, see
+ * `DEFAULT_SETTINGS.intake`); this constant just guards a malformed setting so
+ * the watcher always has a sane debounce. See {@link IntakeModule.scheduleFlush}.
+ */
+const DEBOUNCE_MS = 5000;
 
 /**
  * IntakeModule — watches a configurable intake folder and auto-processes new
@@ -124,18 +130,53 @@ export class IntakeModule {
 	 * getMarkdownFiles' membership rule (`startsWith(normalized + '/')`) so
 	 * subpaths are handled consistently. An empty/whitespace folder matches
 	 * nothing — we never watch the whole vault.
+	 *
+	 * The capture-log subfolder (`‹intakeFolder›/‹captureLogFolder›`, #224) is
+	 * explicitly excluded so our own breadcrumbs — which live under the intake
+	 * folder — are NEVER ingested. Without this the watcher would re-process
+	 * every breadcrumb and, since breadcrumbs contain a link that organize would
+	 * try to move, spin into an infinite ingest loop.
 	 */
 	private isInIntakeFolder(path: string, intakeFolder: string): boolean {
 		if (!intakeFolder || intakeFolder.trim().length === 0) {
 			return false;
 		}
 		const normalized = normalizePath(intakeFolder);
-		return path.startsWith(normalized + '/');
+		if (!path.startsWith(normalized + '/')) {
+			return false;
+		}
+
+		const captureLogPath = this.captureLogPath(normalized);
+		if (
+			captureLogPath !== null &&
+			(path === captureLogPath || path.startsWith(captureLogPath + '/'))
+		) {
+			return false;
+		}
+
+		return true;
 	}
 
 	/**
-	 * Debounce a path: (re)start its timer so a create immediately followed by
-	 * a modify (the share-to-vault pattern) coalesces into a single flush.
+	 * Absolute vault path of the capture-log subfolder for a given (already
+	 * normalized) intake folder, or null when no capture-log folder is
+	 * configured. Single source of truth for both the listener exclusion
+	 * (above) and where breadcrumbs are written (#224).
+	 */
+	private captureLogPath(normalizedIntakeFolder: string): string | null {
+		const folder = this.getSettings().intake.captureLogFolder;
+		if (!folder || folder.trim().length === 0) {
+			return null;
+		}
+		return normalizePath(`${normalizedIntakeFolder}/${folder.trim()}`);
+	}
+
+	/**
+	 * Debounce a path against the configured settle window: (re)start its timer
+	 * on every event so processing fires only after the note has been quiet for
+	 * the full window. This coalesces a create immediately followed by a modify
+	 * (the share-to-vault pattern) AND defers a note whose content is still
+	 * arriving (chunked sync, the user still typing) — see #222.
 	 */
 	private scheduleFlush(path: string): void {
 		this.pending.add(path);
@@ -149,9 +190,23 @@ export class IntakeModule {
 			this.timers.delete(path);
 			this.pending.delete(path);
 			void this.flush(path);
-		}, DEBOUNCE_MS);
+		}, this.settleWindowMs());
 
 		this.timers.set(path, handle);
+	}
+
+	/**
+	 * Resolve the settle window in ms from `intake.settleSeconds`, falling back
+	 * to {@link DEBOUNCE_MS} when the setting is missing or not a positive
+	 * number. Read fresh on every schedule so changing the setting takes effect
+	 * immediately, without reloading the watcher.
+	 */
+	private settleWindowMs(): number {
+		const seconds = this.getSettings().intake.settleSeconds;
+		if (typeof seconds === 'number' && seconds > 0) {
+			return seconds * 1000;
+		}
+		return DEBOUNCE_MS;
 	}
 
 	/**
@@ -203,22 +258,38 @@ export class IntakeModule {
 	 * Execute a resolved route, then (on success) stamp the processed flag and
 	 * optionally move the note. Throws on processing failure so flush() can
 	 * surface it and skip stamping.
+	 *
+	 * Every content-bearing branch ends in the full `fireOnFile` pipeline whose
+	 * last phase (organize) is the primary, content-aware mover — it relocates
+	 * the note to its proper vault folder (#223). We capture the note's path
+	 * BEFORE running the pipeline so post-processing we can tell whether organize
+	 * moved it out of the intake folder; that signal drives both the
+	 * `moveWhenDone` fallback and (#224) the breadcrumb capture log.
 	 */
 	private async execute(
 		file: TFile,
 		route: IntakeRoute,
 	): Promise<void> {
+		// Organize mutates `file.path` in place on rename, so snapshot it now.
+		const originalPath = file.path;
+
 		switch (route.kind) {
 			case 'transcription':
-				// #112 — STUB. Surfaces a "coming soon" notice and no-ops.
+				// #112 — STUB. Surfaces a "coming soon" notice and no-ops. A
+				// content-less URL note has nothing for organize to analyse; once
+				// #112 produces a transcript this branch should also end in
+				// `await this.deps.fireOnFile(file)` so the note is enriched and
+				// organized like the others.
 				await this.deps.transcribeUrlToNote(route.url, route.mediaType, file);
 				break;
 
 			case 'article': {
 				const articleContent = await fetchArticleContent(route.url);
 				await this.appendArticleContent(file, articleContent);
-				// Elaborate the now-fleshed-out note (single-note scope).
-				await this.deps.elaborateFile(file);
+				// Run the full pipeline on the now-fleshed-out note. fireOnFile
+				// runs elaboration as phase 1 and organize as the last phase, so
+				// there is no separate elaborate-then-stop step anymore (#223).
+				await this.deps.fireOnFile(file);
 				break;
 			}
 
@@ -227,7 +298,14 @@ export class IntakeModule {
 				break;
 		}
 
-		await this.markProcessedAndMaybeMove(file);
+		const movedOut = await this.markProcessedAndMaybeMove(file, originalPath);
+
+		// Leave a breadcrumb only when the note actually left the intake folder
+		// (organize, or the moveWhenDone fallback, relocated it). No move → the
+		// note is still browsable in the intake folder, so nothing to log (#224).
+		if (movedOut && this.getSettings().intake.captureLog) {
+			await this.writeCaptureBreadcrumb(originalPath, file.path);
+		}
 	}
 
 	/**
@@ -252,21 +330,64 @@ export class IntakeModule {
 	}
 
 	/**
-	 * Stamp the processed flag (when enabled) BEFORE any move, then move the
-	 * note to `moveWhenDone` (when set). Stamping first guarantees idempotency
-	 * survives the move and the move's own rename event.
+	 * Stamp the processed flag (when enabled), then apply `moveWhenDone` as a
+	 * FALLBACK mover only. Organize (run inside `fireOnFile`) is now the primary,
+	 * content-aware mover; it may instead keep a note in place or create a
+	 * proposal when confidence is low (< 0.9). So `moveWhenDone` runs only when
+	 * organize did NOT move the note out of the intake folder, guaranteeing a
+	 * note never gets stuck in the intake folder while avoiding a double move
+	 * for notes organize already relocated (#223).
+	 *
+	 * Stamping happens first so idempotency survives any subsequent move and the
+	 * move's own rename echo. Returns whether the note ended up moved out of the
+	 * intake folder, so the caller can drive the breadcrumb capture log (#224).
+	 *
+	 * `originalPath` is the note's path captured BEFORE processing (organize
+	 * mutates `file.path` in place on rename).
 	 */
-	private async markProcessedAndMaybeMove(file: TFile): Promise<void> {
+	private async markProcessedAndMaybeMove(
+		file: TFile,
+		originalPath: string,
+	): Promise<boolean> {
 		const settings = this.getSettings().intake;
 
+		// Stamp first — this lands on the note's *current* path (post-organize).
+		// If organize moved it out of the intake folder, isInIntakeFolder rejects
+		// the resulting modify echo; if it stayed in the folder, the original-path
+		// inFlight guard (keyed on originalPath in flush) suppresses the echo.
 		if (settings.markProcessed) {
 			await this.stampProcessed(file);
 		}
 
-		const destination = settings.moveWhenDone;
-		if (destination && destination.trim().length > 0) {
-			await this.moveNote(file, destination.trim());
+		let movedOut = this.movedOutOfIntake(originalPath, file.path);
+
+		// Fallback mover: only when organize left the note inside the intake
+		// folder (low-confidence proposal / no-op). Skipped entirely when organize
+		// already relocated the note, which also fixes the prior general-branch
+		// double move.
+		if (!movedOut) {
+			const destination = settings.moveWhenDone;
+			if (destination && destination.trim().length > 0) {
+				await this.moveNote(file, destination.trim());
+				movedOut = this.movedOutOfIntake(originalPath, file.path);
+			}
 		}
+
+		return movedOut;
+	}
+
+	/**
+	 * True when a note that started under the intake folder no longer lives
+	 * there — i.e. organize (or the `moveWhenDone` fallback) relocated it out of
+	 * the intake folder. The single source of truth for the "left the inbox?"
+	 * signal, reused by the `moveWhenDone` fallback and the breadcrumb log (#224).
+	 */
+	private movedOutOfIntake(originalPath: string, currentPath: string): boolean {
+		const intakeFolder = this.getSettings().intake.intakeFolder;
+		return (
+			this.isInIntakeFolder(originalPath, intakeFolder) &&
+			!this.isInIntakeFolder(currentPath, intakeFolder)
+		);
 	}
 
 	/** Write `synapse-processed: true` + an ISO timestamp into frontmatter. */
@@ -293,5 +414,79 @@ export class IntakeModule {
 		}
 
 		await this.plugin.app.fileManager.renameFile(file, targetPath);
+	}
+
+	/**
+	 * Drop a dated breadcrumb into the capture-log subfolder linking to a note
+	 * that was just organized out of the intake folder (#224). The file is
+	 * `‹intakeFolder›/‹captureLogFolder›/‹YYYY-MM-DD› — ‹sanitized title›.md`
+	 * and holds a wiki-link to the moved note plus small metadata.
+	 *
+	 * The breadcrumb is stamped `synapse-processed: true` as defense-in-depth:
+	 * the capture-log subfolder is already excluded from the watcher
+	 * (isInIntakeFolder), but the stamp guarantees it is skipped even if that
+	 * exclusion were ever bypassed.
+	 *
+	 * `movedPath` is the note's current (organized) path; `originalPath` its
+	 * pre-processing path inside the intake folder.
+	 */
+	private async writeCaptureBreadcrumb(
+		originalPath: string,
+		movedPath: string,
+	): Promise<void> {
+		const intakeFolder = normalizePath(this.getSettings().intake.intakeFolder);
+		const logFolder = this.captureLogPath(intakeFolder);
+		if (logFolder === null) {
+			return;
+		}
+
+		const date = new Date().toISOString().split('T')[0];
+		const title = this.sanitizeTitle(this.basenameOf(movedPath));
+		const breadcrumbPath = normalizePath(
+			`${logFolder}/${date} — ${title}.md`,
+		);
+
+		const body = [
+			this.wikiLink(movedPath),
+			'',
+			`- captured: ${date}`,
+			`- from: ${originalPath}`,
+			`- moved to: ${movedPath}`,
+			'',
+		].join('\n');
+		const content = serializeFrontmatter(
+			{ [SYNAPSE_PROCESSED_FLAG]: true },
+			body,
+		);
+
+		await ensureFolder(this.plugin.app, logFolder);
+		await writeNote(this.plugin.app, breadcrumbPath, content);
+	}
+
+	/** Basename (no extension) of a vault path, e.g. `A/B/note.md` → `note`. */
+	private basenameOf(path: string): string {
+		return path.replace(/\.md$/, '').split('/').pop() || path;
+	}
+
+	/**
+	 * Build an Obsidian wiki-link to a path (mirrors deep-dive's `wikiLink`:
+	 * `[[basename]]`). Inlined rather than imported to keep the intake module's
+	 * import boundary (only `obsidian` + `src/shared/*`).
+	 */
+	private wikiLink(path: string): string {
+		return `[[${this.basenameOf(path)}]]`;
+	}
+
+	/**
+	 * Sanitize a note title for use in a filename — the same rule used for video
+	 * download filenames (`src/video`): strip to `[a-zA-Z0-9-_ ]`, trim, cap
+	 * length. Falls back to `note` when nothing printable survives.
+	 */
+	private sanitizeTitle(title: string): string {
+		const cleaned = title
+			.replace(/[^a-zA-Z0-9-_ ]/g, '')
+			.trim()
+			.slice(0, 60);
+		return cleaned.length > 0 ? cleaned : 'note';
 	}
 }

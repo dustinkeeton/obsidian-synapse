@@ -304,15 +304,13 @@ export default class SynapsePlugin extends Plugin {
 		// auto-processes new notes. Cross-module work is injected as callbacks
 		// (the intake module never imports other feature modules):
 		//   - general notes  -> run the whole pipeline on the one note
-		//   - article URLs    -> elaboration on the one note (after fetch+append)
+		//   - article URLs    -> fetch+append, then the whole pipeline (#223);
+		//                        the pipeline's organize phase relocates the note
 		//   - media URLs      -> #112 transcription STUB (notice only)
+		// fireOnFile runs elaboration as its first phase, so no separate
+		// elaborate-only callback is needed anymore (#223).
 		this.intake = new IntakeModule(this, getSettings, this.notifications, {
 			fireOnFile: (file) => synapseRunner.fireOnFile(file),
-			elaborateFile: async (file) => {
-				if (this.settings.elaboration.enabled) {
-					await this.elaboration.scanNote(file, true);
-				}
-			},
 			transcribeUrlToNote: async (_url, _mediaType, _file) => {
 				new Notice('Synapse: URL transcription from intake is coming soon (#112)');
 			},

@@ -215,6 +215,26 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName('Settle window (seconds)')
+			.setDesc(
+				'Wait this long after the last change to a note before processing it. ' +
+				'The timer resets on every edit, so active typing or chunked sync keeps ' +
+				'deferring — processing fires only once the note has been quiet for the ' +
+				'full window. Raise it if notes are still arriving when they get processed.'
+			)
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.intake.settleSeconds))
+					.onChange(async (value) => {
+						const num = parseInt(value);
+						if (!isNaN(num) && num > 0) {
+							this.plugin.settings.intake.settleSeconds = num;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
+
+		new Setting(containerEl)
 			.setName('Intake folder')
 			.setDesc('Folder to watch for new notes. See docs/intake-folder.md for the mobile capture workflow.')
 			.addText((text) =>
@@ -240,8 +260,13 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('Move when done (optional)')
-			.setDesc('Destination folder to move notes into after processing. Leave blank to keep them in the intake folder.')
+			.setName('Move when done (fallback)')
+			.setDesc(
+				'Fallback destination used only when auto-organize keeps a note in ' +
+				'the intake folder (e.g. low confidence). Notes organize relocates ' +
+				'are left where it put them. Leave blank to keep unorganized notes ' +
+				'in the intake folder.'
+			)
 			.addText((text) =>
 				text
 					.setPlaceholder('')
@@ -250,6 +275,40 @@ export class SynapseSettingTab extends PluginSettingTab {
 						const trimmed = value.trim();
 						this.plugin.settings.intake.moveWhenDone = trimmed === '' ? undefined : trimmed;
 						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Capture log')
+			.setDesc(
+				'When a note is auto-organized out of the intake folder, leave a ' +
+				'dated breadcrumb linking to its new home in the capture-log subfolder.'
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.intake.captureLog)
+					.onChange(async (value) => {
+						this.plugin.settings.intake.captureLog = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Capture log folder')
+			.setDesc(
+				'Subfolder of the intake folder for breadcrumbs (relative to it). ' +
+				'This subfolder is ignored by the watcher so breadcrumbs are never reprocessed.'
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder('_captured')
+					.setValue(this.plugin.settings.intake.captureLogFolder)
+					.onChange(async (value) => {
+						const trimmed = value.trim();
+						if (trimmed.length > 0) {
+							this.plugin.settings.intake.captureLogFolder = trimmed;
+							await this.plugin.saveSettings();
+						}
 					})
 			);
 

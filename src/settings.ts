@@ -197,6 +197,25 @@ export interface IntakeSettings {
 	intakeFolder: string;
 	markProcessed: boolean;
 	moveWhenDone?: string;
+	/**
+	 * Settle window in seconds: processing fires only after a watched note has
+	 * had no create/modify events for this whole interval. The per-path timer
+	 * resets on every event, so active typing/sync keeps deferring and the
+	 * pipeline runs N seconds after the *last* change (#222).
+	 */
+	settleSeconds: number;
+	/**
+	 * When true, drop a dated breadcrumb link file each time a processed intake
+	 * note is organized out of the intake folder, so the capture leaves a trace
+	 * (#224). No move → no breadcrumb.
+	 */
+	captureLog: boolean;
+	/**
+	 * Flat subfolder of the intake folder where breadcrumbs are written
+	 * (default `_captured`). This subfolder is excluded from the watcher so
+	 * breadcrumbs are never re-ingested.
+	 */
+	captureLogFolder: string;
 }
 
 export interface SynapseSettings {
@@ -358,5 +377,8 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		intakeFolder: 'Inbox',
 		markProcessed: true,
 		moveWhenDone: '',
+		settleSeconds: 5,
+		captureLog: true,
+		captureLogFolder: '_captured',
 	},
 };
