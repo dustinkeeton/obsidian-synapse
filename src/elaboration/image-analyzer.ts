@@ -1,7 +1,8 @@
-import { App, TFile } from 'obsidian';
+import { App, Notice, TFile } from 'obsidian';
 import { AIClient } from '../shared';
 import type { ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
+import { arrayBufferToBase64, preprocessImage } from '../image/preprocess';
 
 export interface ImageAnalysis {
 	/** Original reference as it appears in the note */
@@ -106,11 +107,20 @@ export class ImageAnalyzer {
 
 		// Read binary data
 		const data = await this.app.vault.readBinary(file);
-		const base64 = this.arrayBufferToBase64(data);
-		const mediaType = this.getMediaType(file.name);
+		const sourceMediaType = this.getMediaType(file.name);
 
 		// Apply vision model override if configured
 		const settings = this.getSettings();
+
+		// Downscale oversized images so they fit under the API's base64 size limit.
+		const maxBytes = (settings.image.maxImageSizeMb || 5) * 1024 * 1024;
+		const processed = await preprocessImage(data, sourceMediaType, maxBytes);
+		if (processed.downscaled) {
+			new Notice('Synapse: large image auto-downscaled to fit the API limit');
+		}
+		const base64 = arrayBufferToBase64(processed.data);
+		const mediaType = processed.mediaType;
+
 		const visionModel = settings.image.visionModel || settings.ai.model;
 		const originalModel = settings.ai.model;
 		if (visionModel !== originalModel) {
@@ -168,15 +178,6 @@ METADATA: Any observable metadata clues (timestamps visible in the image, camera
 			locationHints: locMatch?.[1]?.trim() || '',
 			metadata: metaMatch?.[1]?.trim() || '',
 		};
-	}
-
-	private arrayBufferToBase64(buffer: ArrayBuffer): string {
-		const bytes = new Uint8Array(buffer);
-		let binary = '';
-		for (let i = 0; i < bytes.length; i++) {
-			binary += String.fromCharCode(bytes[i]);
-		}
-		return btoa(binary);
 	}
 
 	private getMediaType(fileName: string): string {

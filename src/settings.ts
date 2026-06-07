@@ -95,6 +95,8 @@ export interface ImageSettings {
 	enabled: boolean;
 	visionModel: string;
 	language: string;
+	/** Maximum base64 image payload size in MB before auto-downscaling (API limit is 5 MB). */
+	maxImageSizeMb: number;
 }
 
 export interface EnrichmentWeightSettings {
@@ -296,6 +298,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		enabled: true,
 		visionModel: '',
 		language: '',
+		maxImageSizeMb: 5,
 	},
 	enrichment: {
 		enabled: true,
