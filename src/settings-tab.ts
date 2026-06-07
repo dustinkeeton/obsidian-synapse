@@ -2,11 +2,82 @@ import { App, Platform, PluginSettingTab, Setting } from 'obsidian';
 import type SynapsePlugin from './main';
 import { MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
-import { addEnhancedSlider } from './shared';
+import { addCollapsibleSection, addEnhancedSlider } from './shared';
 
 export class SynapseSettingTab extends PluginSettingTab {
 	constructor(app: App, private plugin: SynapsePlugin) {
 		super(app, plugin);
+	}
+
+	/**
+	 * Resolve the persisted collapse state for a section, falling back to a
+	 * sensible default: collapsed when the feature is disabled, expanded when
+	 * it is enabled. A `null` `enabled` (config sections with no toggle, e.g.
+	 * AI Configuration) defaults to expanded.
+	 */
+	private isSectionCollapsed(key: string, enabled: boolean | null): boolean {
+		const persisted = this.plugin.settings.ui.collapsedSections[key];
+		if (persisted !== undefined) return persisted;
+		return enabled === false;
+	}
+
+	/** Persist a section's collapse state and save. */
+	private async persistCollapse(key: string, collapsed: boolean): Promise<void> {
+		this.plugin.settings.ui.collapsedSections[key] = collapsed;
+		await this.plugin.saveSettings();
+	}
+
+	/**
+	 * Render a feature accordion with an enable toggle in the header and return
+	 * the body element to populate with the feature's sub-settings.
+	 *
+	 * The toggle is wired to the feature's `enabled` flag: turning it off
+	 * auto-collapses the body, turning it on auto-expands it. Manual header
+	 * clicks fold/unfold independently. All collapse changes persist under
+	 * `ui.collapsedSections[key]`.
+	 */
+	private featureSection(
+		containerEl: HTMLElement,
+		key: string,
+		title: string,
+		getEnabled: () => boolean,
+		setEnabled: (value: boolean) => void,
+		toggleDesc?: string,
+	): HTMLElement {
+		const enabled = getEnabled();
+		const { bodyEl } = addCollapsibleSection(containerEl, {
+			title,
+			enabled,
+			collapsed: this.isSectionCollapsed(key, enabled),
+			toggleAriaLabel: toggleDesc ?? `Enable ${title}`,
+			onToggle: async (value) => {
+				setEnabled(value);
+				await this.plugin.saveSettings();
+			},
+			onCollapseChange: async (collapsed) => {
+				await this.persistCollapse(key, collapsed);
+			},
+		});
+		return bodyEl;
+	}
+
+	/**
+	 * Render a config accordion that has no enable toggle (always-needed
+	 * settings). It is collapsible/persistent but never auto-collapses.
+	 */
+	private configSection(
+		containerEl: HTMLElement,
+		key: string,
+		title: string,
+	): HTMLElement {
+		const { bodyEl } = addCollapsibleSection(containerEl, {
+			title,
+			collapsed: this.isSectionCollapsed(key, null),
+			onCollapseChange: async (collapsed) => {
+				await this.persistCollapse(key, collapsed);
+			},
+		});
+		return bodyEl;
 	}
 
 	display(): void {
@@ -15,10 +86,10 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setHeading().setName(`Synapse v${this.plugin.manifest.version}`);
 
-		// ── AI Configuration ──
-		new Setting(containerEl).setHeading().setName('AI Configuration');
+		// ── AI Configuration (always-needed config — no enable toggle) ──
+		const aiBody = this.configSection(containerEl, 'ai', 'AI Configuration');
 
-		new Setting(containerEl)
+		new Setting(aiBody)
 			.setName('AI Provider')
 			.setDesc('Which AI service to use for elaboration and post-processing')
 			.addDropdown((dd) =>
@@ -40,7 +111,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(aiBody)
 			.setName('API Key')
 			.setDesc('API key for OpenAI or Anthropic')
 			.addText((text) => {
@@ -56,7 +127,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			});
 
 		if (this.plugin.settings.ai.provider === 'ollama') {
-			new Setting(containerEl)
+			new Setting(aiBody)
 				.setName('Ollama Endpoint')
 				.setDesc('URL for local Ollama server (HTTPS required for non-localhost)')
 				.addText((text) =>
@@ -82,7 +153,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		const currentProvider = this.plugin.settings.ai.provider;
 		const models = MODEL_OPTIONS[currentProvider];
 
-		new Setting(containerEl)
+		new Setting(aiBody)
 			.setName('Model')
 			.setDesc('Model to use for AI operations')
 			.addDropdown((dd) => {
@@ -99,7 +170,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			});
 
 		addEnhancedSlider(
-			new Setting(containerEl)
+			new Setting(aiBody)
 				.setName('Temperature')
 				.setDesc('Controls randomness (0-1)'),
 			{
@@ -116,7 +187,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		);
 
 		addEnhancedSlider(
-			new Setting(containerEl)
+			new Setting(aiBody)
 				.setName('Max tokens')
 				.setDesc('Maximum tokens in AI responses (256-8192)'),
 			{
@@ -133,21 +204,16 @@ export class SynapseSettingTab extends PluginSettingTab {
 		);
 
 		// ── Note Elaboration ──
-		new Setting(containerEl).setHeading().setName('Note Elaboration');
+		const elaborationBody = this.featureSection(
+			containerEl,
+			'elaboration',
+			'Note Elaboration',
+			() => this.plugin.settings.elaboration.enabled,
+			(v) => { this.plugin.settings.elaboration.enabled = v; },
+			'Enable stub note detection and proposal generation',
+		);
 
-		new Setting(containerEl)
-			.setName('Enable elaboration')
-			.setDesc('Enable stub note detection and proposal generation')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.elaboration.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.elaboration.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
+		new Setting(elaborationBody)
 			.setName('Minimum word threshold')
 			.setDesc('Notes with fewer words than this are considered stubs')
 			.addText((text) =>
@@ -162,7 +228,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(elaborationBody)
 			.setName('Detect TODO markers')
 			.setDesc('Flag notes containing TODO, TBD, FIXME, PLACEHOLDER')
 			.addToggle((toggle) =>
@@ -174,7 +240,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(elaborationBody)
 			.setName('Detect empty sections')
 			.setDesc('Flag notes with headings but no content beneath them')
 			.addToggle((toggle) =>
@@ -186,7 +252,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(elaborationBody)
 			.setName('Excluded folders')
 			.setDesc('Comma-separated list of folders to skip')
 			.addText((text) =>
@@ -200,21 +266,16 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Intake Folder ──
-		new Setting(containerEl).setHeading().setName('Intake Folder');
+		const intakeBody = this.featureSection(
+			containerEl,
+			'intake',
+			'Intake Folder',
+			() => this.plugin.settings.intake.enabled,
+			(v) => { this.plugin.settings.intake.enabled = v; },
+			'Watch the intake folder and run enabled Synapse features on new notes',
+		);
 
-		new Setting(containerEl)
-			.setName('Enable intake processing')
-			.setDesc('Watch the intake folder and run enabled Synapse features on new notes')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.intake.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.intake.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
+		new Setting(intakeBody)
 			.setName('Settle window (seconds)')
 			.setDesc(
 				'Wait this long after the last change to a note before processing it. ' +
@@ -234,7 +295,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(intakeBody)
 			.setName('Intake folder')
 			.setDesc('Folder to watch for new notes. See docs/intake-folder.md for the mobile capture workflow.')
 			.addText((text) =>
@@ -247,7 +308,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(intakeBody)
 			.setName('Mark processed in frontmatter')
 			.setDesc('Stamp `synapse-processed: true` on a note once handled so it is not reprocessed')
 			.addToggle((toggle) =>
@@ -259,7 +320,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(intakeBody)
 			.setName('Move when done (fallback)')
 			.setDesc(
 				'Fallback destination used only when auto-organize keeps a note in ' +
@@ -278,7 +339,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(intakeBody)
 			.setName('Capture log')
 			.setDesc(
 				'When a note is auto-organized out of the intake folder, leave a ' +
@@ -293,7 +354,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(intakeBody)
 			.setName('Capture log folder')
 			.setDesc(
 				'Subfolder of the intake folder for breadcrumbs (relative to it). ' +
@@ -313,21 +374,16 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Image ──
-		new Setting(containerEl).setHeading().setName('Image');
+		const imageBody = this.featureSection(
+			containerEl,
+			'image',
+			'Image',
+			() => this.plugin.settings.image.enabled,
+			(v) => { this.plugin.settings.image.enabled = v; },
+			'Run OCR and image analysis on images referenced in notes',
+		);
 
-		new Setting(containerEl)
-			.setName('Enable image analysis')
-			.setDesc('Run OCR and image analysis on images referenced in notes')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.image.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.image.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
+		new Setting(imageBody)
 			.setName('Max image size (MB)')
 			.setDesc(
 				'Images whose base64 payload exceeds this size are automatically downscaled ' +
@@ -347,22 +403,18 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── Media Transcription ──
+		// ── Media Transcription (visual grouping header) ──
 		new Setting(containerEl).setHeading().setName('Media Transcription');
 
 		// ── Audio Transcription ──
-		new Setting(containerEl).setHeading().setName('Audio Transcription');
-
-		new Setting(containerEl)
-			.setName('Enable audio transcription')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.audio.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.audio.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		const audioBody = this.featureSection(
+			containerEl,
+			'audio',
+			'Audio Transcription',
+			() => this.plugin.settings.audio.enabled,
+			(v) => { this.plugin.settings.audio.enabled = v; },
+			'Enable audio transcription',
+		);
 
 		const providerOptions: Record<string, string> = {
 			'whisper-api': 'OpenAI Whisper API',
@@ -371,7 +423,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		// 'local-whisper' is intentionally hidden from the dropdown until implemented
 		// (see src/audio/transcriber.ts). The type is kept for forward compatibility.
 
-		new Setting(containerEl)
+		new Setting(audioBody)
 			.setName('Transcription provider')
 			.addDropdown((dd) =>
 				dd
@@ -391,7 +443,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			this.plugin.settings.audio.transcriptionProvider === 'whisper-api' &&
 			this.plugin.settings.ai.provider !== 'openai'
 		) {
-			new Setting(containerEl)
+			new Setting(audioBody)
 				.setName('OpenAI API Key (Whisper)')
 				.setDesc(
 					'Whisper uses the OpenAI API. Provide your OpenAI key here since your AI provider is set to ' +
@@ -412,7 +464,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		}
 
 		if (this.plugin.settings.audio.transcriptionProvider === 'deepgram') {
-			new Setting(containerEl)
+			new Setting(audioBody)
 				.setName('Deepgram API Key')
 				.setDesc('Required for Deepgram transcription provider')
 				.addText((text) => {
@@ -428,7 +480,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 				});
 		}
 
-		new Setting(containerEl)
+		new Setting(audioBody)
 			.setName('Language')
 			.setDesc('Audio language for transcription (auto-detect if empty)')
 			.addDropdown((dd) =>
@@ -459,7 +511,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(audioBody)
 			.setName('Post-processing')
 			.setDesc('Clean up and structure transcriptions with AI')
 			.addToggle((toggle) =>
@@ -471,7 +523,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(audioBody)
 			.setName('Remove filler words')
 			.addToggle((toggle) =>
 				toggle
@@ -484,20 +536,16 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		// ── Video Transcription (desktop only — requires yt-dlp + ffmpeg) ──
 		if (Platform.isDesktop) {
-			new Setting(containerEl).setHeading().setName('Video Transcription');
+			const videoBody = this.featureSection(
+				containerEl,
+				'video',
+				'Video Transcription',
+				() => this.plugin.settings.video.enabled,
+				(v) => { this.plugin.settings.video.enabled = v; },
+				'Enable video transcription',
+			);
 
-			new Setting(containerEl)
-				.setName('Enable video transcription')
-				.addToggle((toggle) =>
-					toggle
-						.setValue(this.plugin.settings.video.enabled)
-						.onChange(async (value) => {
-							this.plugin.settings.video.enabled = value;
-							await this.plugin.saveSettings();
-						})
-				);
-
-			new Setting(containerEl)
+			new Setting(videoBody)
 				.setName('yt-dlp path')
 				.setDesc('Path to yt-dlp binary')
 				.addText((text) =>
@@ -509,7 +557,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 						})
 				);
 
-			new Setting(containerEl)
+			new Setting(videoBody)
 				.setName('ffmpeg path')
 				.setDesc('Path to ffmpeg binary')
 				.addText((text) =>
@@ -521,7 +569,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 						})
 				);
 
-			new Setting(containerEl)
+			new Setting(videoBody)
 				.setName('Video download folder')
 				.setDesc('Where to save downloaded video files in the vault')
 				.addText((text) =>
@@ -533,7 +581,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 						})
 				);
 
-			new Setting(containerEl)
+			new Setting(videoBody)
 				.setName('Embed video in note')
 				.setDesc('Add an embed link to the downloaded video file in the note')
 				.addToggle((toggle) =>
@@ -547,21 +595,16 @@ export class SynapseSettingTab extends PluginSettingTab {
 		}
 
 		// ── Note Enrichment ──
-		new Setting(containerEl).setHeading().setName('Note Enrichment');
+		const enrichmentBody = this.featureSection(
+			containerEl,
+			'enrichment',
+			'Note Enrichment',
+			() => this.plugin.settings.enrichment.enabled,
+			(v) => { this.plugin.settings.enrichment.enabled = v; },
+			'Add tags, links, references, and metadata to notes',
+		);
 
-		new Setting(containerEl)
-			.setName('Enable enrichment')
-			.setDesc('Add tags, links, references, and metadata to notes')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.enrichment.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.enrichment.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
+		new Setting(enrichmentBody)
 			.setName('Auto-enrich')
 			.setDesc('Automatically generate enrichment proposals after elaboration or transcription')
 			.addToggle((toggle) =>
@@ -573,7 +616,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(enrichmentBody)
 			.setName('Max metadata tags')
 			.setDesc('Maximum number of metadata tags (status, type, source) to suggest per note')
 			.addText((text) =>
@@ -588,7 +631,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(enrichmentBody)
 			.setName('Max topic links')
 			.setDesc('Maximum number of AI-extracted topic links to suggest')
 			.addText((text) =>
@@ -603,7 +646,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(enrichmentBody)
 			.setName('Suggest new notes')
 			.setDesc('Suggest links to notes that don\'t exist yet (Obsidian grayed-out links)')
 			.addToggle((toggle) =>
@@ -615,7 +658,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(enrichmentBody)
 			.setName('Max internal links')
 			.setDesc('Maximum number of related note links to suggest')
 			.addText((text) =>
@@ -630,7 +673,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(enrichmentBody)
 			.setName('Max external references')
 			.setDesc('Maximum external links to suggest (stingy — keep this low)')
 			.addText((text) =>
@@ -646,7 +689,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		addEnhancedSlider(
-			new Setting(containerEl)
+			new Setting(enrichmentBody)
 				.setName('Internal link threshold')
 				.setDesc('Minimum relevance score for internal links (0-1, lower = more liberal)'),
 			{
@@ -662,8 +705,8 @@ export class SynapseSettingTab extends PluginSettingTab {
 			},
 		);
 
-		// Weight settings
-		new Setting(containerEl).setHeading().setName('Proximity Weights');
+		// Weight settings (sub-section within enrichment)
+		new Setting(enrichmentBody).setHeading().setName('Proximity Weights');
 
 		type WeightKey = keyof import('./settings').EnrichmentWeightSettings;
 		const weightFields: Array<{ key: WeightKey; name: string; desc: string }> = [
@@ -678,7 +721,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		for (const field of weightFields) {
 			const key = field.key;
 			addEnhancedSlider(
-				new Setting(containerEl)
+				new Setting(enrichmentBody)
 					.setName(field.name)
 					.setDesc(field.desc),
 				{
@@ -695,13 +738,13 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 		}
 
-		// Tag Vocabulary
-		new Setting(containerEl).setHeading().setName('Tag Vocabulary').setDesc('Define metadata tag categories. Tags classify notes (status, type, source) — topics become [[links]] instead.');
+		// Tag Vocabulary (sub-section within enrichment)
+		new Setting(enrichmentBody).setHeading().setName('Tag Vocabulary').setDesc('Define metadata tag categories. Tags classify notes (status, type, source) — topics become [[links]] instead.');
 
 		for (let i = 0; i < this.plugin.settings.enrichment.tagVocabulary.length; i++) {
 			const entry = this.plugin.settings.enrichment.tagVocabulary[i];
 
-			new Setting(containerEl)
+			new Setting(enrichmentBody)
 				.setName(entry.category)
 				.setDesc(entry.description)
 				.addText((text) =>
@@ -716,7 +759,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 				);
 		}
 
-		new Setting(containerEl)
+		new Setting(enrichmentBody)
 			.setName('Excluded folders')
 			.setDesc('Comma-separated list of folders to skip for enrichment')
 			.addText((text) =>
@@ -729,7 +772,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(enrichmentBody)
 			.setName('Excluded tags')
 			.setDesc('Notes with these tags will skip enrichment')
 			.addText((text) =>
@@ -743,21 +786,16 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Summarize ──
-		new Setting(containerEl).setHeading().setName('Summarize');
+		const summarizeBody = this.featureSection(
+			containerEl,
+			'summarize',
+			'Summarize',
+			() => this.plugin.settings.summarize.enabled,
+			(v) => { this.plugin.settings.summarize.enabled = v; },
+			'Summarize URLs and transcriptions in notes',
+		);
 
-		new Setting(containerEl)
-			.setName('Enable summarize')
-			.setDesc('Summarize URLs and transcriptions in notes')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.summarize.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.summarize.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
+		new Setting(summarizeBody)
 			.setName('Summary style')
 			.setDesc('Format for generated summaries')
 			.addDropdown((dd) =>
@@ -775,7 +813,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(summarizeBody)
 			.setName('Auto-detect content templates')
 			.setDesc('Automatically detect content type (e.g. recipes) and use a specialized summary format')
 			.addToggle(toggle => toggle
@@ -786,7 +824,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 				}));
 
 		addEnhancedSlider(
-			new Setting(containerEl)
+			new Setting(summarizeBody)
 				.setName('Max content length')
 				.setDesc('Maximum characters of content to send to AI for summarization'),
 			{
@@ -802,7 +840,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			},
 		);
 
-		new Setting(containerEl)
+		new Setting(summarizeBody)
 			.setName('Custom prompt')
 			.setDesc('Override the default summarization prompt (leave empty for default)')
 			.addTextArea((text) =>
@@ -815,7 +853,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(summarizeBody)
 			.setName('Excluded folders')
 			.setDesc('Comma-separated list of folders to skip for summarization')
 			.addText((text) =>
@@ -828,7 +866,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(summarizeBody)
 			.setName('Excluded tags')
 			.setDesc('Notes with these tags will skip summarization')
 			.addText((text) =>
@@ -841,7 +879,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(summarizeBody)
 			.setName('Auto-organize after summarize')
 			.setDesc('Automatically organize the current note after summarization completes (single-note only, not vault-wide)')
 			.addToggle((toggle) =>
@@ -854,37 +892,32 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Note Tidy ──
-		new Setting(containerEl).setHeading().setName('Note Tidy');
+		const tidyBody = this.featureSection(
+			containerEl,
+			'tidy',
+			'Note Tidy',
+			() => this.plugin.settings.tidy.enabled,
+			(v) => { this.plugin.settings.tidy.enabled = v; },
+			'Spelling correction and markdown formatting (no content changes)',
+		);
 
-		new Setting(containerEl)
-			.setName('Enable tidy')
-			.setDesc('Spelling correction and markdown formatting (no content changes)')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.tidy.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.tidy.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		tidyBody.createDiv({
+			cls: 'setting-item-description synapse-accordion-empty-note',
+			text: 'Tidy applies spelling correction and markdown formatting without changing content. No additional options.',
+		});
 
 		// ── Note Organize ──
-		new Setting(containerEl).setHeading().setName('Note Organize');
-
-		new Setting(containerEl)
-			.setName('Enable organize')
-			.setDesc('AI-powered semantic directory structuring for notes')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.organize.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.organize.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		const organizeBody = this.featureSection(
+			containerEl,
+			'organize',
+			'Note Organize',
+			() => this.plugin.settings.organize.enabled,
+			(v) => { this.plugin.settings.organize.enabled = v; },
+			'AI-powered semantic directory structuring for notes',
+		);
 
 		addEnhancedSlider(
-			new Setting(containerEl)
+			new Setting(organizeBody)
 				.setName('New folder confidence threshold')
 				.setDesc('Minimum topic confidence to propose a new folder (0.5-1.0). Higher = fewer new folders.'),
 			{
@@ -900,7 +933,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			},
 		);
 
-		new Setting(containerEl)
+		new Setting(organizeBody)
 			.setName('Excluded folders')
 			.setDesc('Comma-separated list of folders to skip for organization')
 			.addText((text) =>
@@ -913,7 +946,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(organizeBody)
 			.setName('Excluded tags')
 			.setDesc('Notes with these tags will skip organization')
 			.addText((text) =>
@@ -927,22 +960,17 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── Deep Dive ──
-		new Setting(containerEl).setHeading().setName('Deep Dive');
-
-		new Setting(containerEl)
-			.setName('Enable deep dive')
-			.setDesc('Recursively explore a note into a tree of interlinked child notes')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.deepDive.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.deepDive.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		const deepDiveBody = this.featureSection(
+			containerEl,
+			'deepDive',
+			'Deep Dive',
+			() => this.plugin.settings.deepDive.enabled,
+			(v) => { this.plugin.settings.deepDive.enabled = v; },
+			'Recursively explore a note into a tree of interlinked child notes',
+		);
 
 		addEnhancedSlider(
-			new Setting(containerEl)
+			new Setting(deepDiveBody)
 				.setName('Max depth')
 				.setDesc('Maximum levels of recursion (1-5)'),
 			{
@@ -959,7 +987,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		);
 
 		addEnhancedSlider(
-			new Setting(containerEl)
+			new Setting(deepDiveBody)
 				.setName('Quality threshold')
 				.setDesc('Minimum quality score to continue recursing (0.1-0.9)'),
 			{
@@ -976,7 +1004,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		);
 
 		addEnhancedSlider(
-			new Setting(containerEl)
+			new Setting(deepDiveBody)
 				.setName('Max notes per run')
 				.setDesc('Maximum number of notes to generate in a single deep dive (10-100)'),
 			{
@@ -992,7 +1020,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			},
 		);
 
-		new Setting(containerEl)
+		new Setting(deepDiveBody)
 			.setName('Note output folder')
 			.setDesc('Where to create new notes. Uses a subfolder per root note. (empty = same folder as source)')
 			.addText((text) =>
@@ -1005,7 +1033,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(deepDiveBody)
 			.setName('Folder nesting mode')
 			.setDesc('How child notes are placed: nested under parent topic folders, flat in a single folder, or AI-organized by content semantics')
 			.addDropdown((dd) =>
@@ -1023,7 +1051,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(deepDiveBody)
 			.setName('Auto-enrich on accept')
 			.setDesc('Automatically trigger enrichment when a deep dive note is accepted')
 			.addToggle((toggle) =>
@@ -1035,7 +1063,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(deepDiveBody)
 			.setName('Auto-organize on accept')
 			.setDesc('Automatically trigger organize when a deep dive note is accepted')
 			.addToggle((toggle) =>
@@ -1047,7 +1075,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(deepDiveBody)
 			.setName('Excluded folders')
 			.setDesc('Comma-separated list of folders to skip for deep dive')
 			.addText((text) =>
@@ -1060,7 +1088,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		new Setting(deepDiveBody)
 			.setName('Excluded tags')
 			.setDesc('Notes with these tags will skip deep dive')
 			.addText((text) =>
@@ -1074,21 +1102,16 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		// ── REM (Link Discovery) ──
-		new Setting(containerEl).setHeading().setName('REM (Link Discovery)');
+		const remBody = this.featureSection(
+			containerEl,
+			'rem',
+			'REM (Link Discovery)',
+			() => this.plugin.settings.rem.enabled,
+			(v) => { this.plugin.settings.rem.enabled = v; },
+			'Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions',
+		);
 
-		new Setting(containerEl)
-			.setName('Enable REM')
-			.setDesc('Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.rem.enabled)
-					.onChange(async (value) => {
-						this.plugin.settings.rem.enabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
+		new Setting(remBody)
 			.setName('Semantic matching')
 			.setDesc('Use AI to find conceptual matches beyond literal title/alias matching')
 			.addToggle((toggle) =>
@@ -1101,7 +1124,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			);
 
 		addEnhancedSlider(
-			new Setting(containerEl)
+			new Setting(remBody)
 				.setName('Confidence threshold')
 				.setDesc('Minimum confidence for semantic matches (0-1)'),
 			{
@@ -1117,7 +1140,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			},
 		);
 
-		new Setting(containerEl)
+		new Setting(remBody)
 			.setName('Max links per note')
 			.setDesc('Maximum number of link candidates to suggest per scanned note')
 			.addText((text) =>

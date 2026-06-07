@@ -220,6 +220,21 @@ export interface IntakeSettings {
 	captureLogFolder: string;
 }
 
+/**
+ * Presentation-only UI preferences that persist across sessions but do not
+ * affect plugin behavior. Currently tracks the per-section collapse state of
+ * the settings tab accordions (#235).
+ */
+export interface UISettings {
+	/**
+	 * Maps a settings accordion's section key (e.g. `elaboration`, `audio`) to
+	 * its collapsed state. `true` = collapsed (body hidden), `false` = expanded.
+	 * A missing key means "use the default", which is collapsed when the
+	 * section's feature is disabled and expanded when it is enabled.
+	 */
+	collapsedSections: Record<string, boolean>;
+}
+
 export interface SynapseSettings {
 	ai: AISettings;
 	elaboration: ElaborationSettings;
@@ -234,6 +249,7 @@ export interface SynapseSettings {
 	title: TitleSettings;
 	rem: RemSettings;
 	intake: IntakeSettings;
+	ui: UISettings;
 }
 
 export const DEFAULT_SETTINGS: SynapseSettings = {
@@ -383,5 +399,8 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		settleSeconds: 5,
 		captureLog: true,
 		captureLogFolder: '_captured',
+	},
+	ui: {
+		collapsedSections: {},
 	},
 };
