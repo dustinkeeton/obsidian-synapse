@@ -44,10 +44,13 @@ export type IntakeRoute =
  * like the enrichment/organize callback bundles.
  */
 export interface IntakeDeps {
-	/** General branch: run the whole Synapse pipeline against ONE note. */
+	/**
+	 * Run the whole Synapse pipeline (elaboration → … → organize) against ONE
+	 * note. Used by both the general and article branches; organize, its last
+	 * phase, relocates the note to its proper folder (#223). Elaboration runs as
+	 * pipeline phase 1, so there is no separate elaborate-only callback anymore.
+	 */
 	fireOnFile(file: TFile): Promise<void>;
-	/** Article branch: run elaboration against ONE note. */
-	elaborateFile(file: TFile): Promise<void>;
 	/**
 	 * Transcription branch (#112) — STUB. For now this just surfaces a
 	 * "coming soon" notice and no-ops; real URL transcription is out of scope.
