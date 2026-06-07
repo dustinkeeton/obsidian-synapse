@@ -117,6 +117,39 @@ export class AudioExtractor {
 		return outputPath;
 	}
 
+	/**
+	 * Concatenate multiple audio files into a single mp3 using the ffmpeg
+	 * concat filter. Unlike the `concat` demuxer / `-c copy`, the filter
+	 * re-encodes every input, so mixed formats and codecs
+	 * (mp3/wav/m4a/ogg/flac/webm/aac) combine cleanly into one continuous
+	 * track. Returns the path to the combined temp file; the caller is
+	 * responsible for cleanup.
+	 */
+	async concatAudio(inputPaths: string[]): Promise<string> {
+		if (inputPaths.length === 0) {
+			throw new Error('concatAudio requires at least one input file');
+		}
+		const settings = this.getSettings().video;
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-combined-${Date.now()}.mp3`);
+
+		// Build: -i in1 -i in2 ... -filter_complex "[0:a][1:a]...concat=n=N:v=0:a=1[out]" -map "[out]" -acodec libmp3lame out
+		const args: string[] = [];
+		for (const input of inputPaths) {
+			args.push('-i', sanitizePath(input));
+		}
+		const filterInputs = inputPaths.map((_, i) => `[${i}:a]`).join('');
+		const filter = `${filterInputs}concat=n=${inputPaths.length}:v=0:a=1[out]`;
+		args.push(
+			'-filter_complex', filter,
+			'-map', '[out]',
+			'-acodec', 'libmp3lame',
+			outputPath,
+		);
+
+		await this.runCommand(sanitizePath(settings.ffmpegPath), args);
+		return outputPath;
+	}
+
 	async checkDependencies(): Promise<{
 		ytDlp: boolean;
 		ffmpeg: boolean;
