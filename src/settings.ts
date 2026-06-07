@@ -204,6 +204,18 @@ export interface IntakeSettings {
 	 * pipeline runs N seconds after the *last* change (#222).
 	 */
 	settleSeconds: number;
+	/**
+	 * When true, drop a dated breadcrumb link file each time a processed intake
+	 * note is organized out of the intake folder, so the capture leaves a trace
+	 * (#224). No move → no breadcrumb.
+	 */
+	captureLog: boolean;
+	/**
+	 * Flat subfolder of the intake folder where breadcrumbs are written
+	 * (default `_captured`). This subfolder is excluded from the watcher so
+	 * breadcrumbs are never re-ingested.
+	 */
+	captureLogFolder: string;
 }
 
 export interface SynapseSettings {
@@ -366,5 +378,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		markProcessed: true,
 		moveWhenDone: '',
 		settleSeconds: 5,
+		captureLog: true,
+		captureLogFolder: '_captured',
 	},
 };

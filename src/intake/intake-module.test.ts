@@ -91,7 +91,10 @@ describe('IntakeModule', () => {
 			modify: vi.fn(async (file: any, content: string) => {
 				store.set(file.path, content);
 			}),
-			create: vi.fn(),
+			create: vi.fn(async (path: string, content: string) => {
+				store.set(path, content);
+				return makeFile(path);
+			}),
 			createFolder: vi.fn().mockResolvedValue(undefined),
 			getAbstractFileByPath: vi.fn((path: string) => {
 				if (store.has(path)) return makeFile(path);
@@ -572,6 +575,89 @@ describe('IntakeModule', () => {
 			handlers['modify'](makeFile('Inbox/note.md'));
 			await flushDebounce();
 			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('capture log breadcrumb (#224)', () => {
+		beforeEach(async () => {
+			await module.onload();
+		});
+
+		it('writes a dated breadcrumb linking to the new path when organized out of Inbox', async () => {
+			organizeMovesTo('Articles/My Note.md');
+
+			emit('create', 'Inbox/My Note.md', 'hello prose');
+			await flushDebounce();
+
+			// setSystemTime is 2026-06-05, so the breadcrumb is date-named for it.
+			const crumbPath = 'Inbox/_captured/2026-06-05 — My Note.md';
+			expect(store.has(crumbPath)).toBe(true);
+			const crumb = store.get(crumbPath)!;
+			// Links to the moved note by basename, and records the trail.
+			expect(crumb).toContain('[[My Note]]');
+			expect(crumb).toContain('from: Inbox/My Note.md');
+			expect(crumb).toContain('moved to: Articles/My Note.md');
+			// Stamped as defense-in-depth so it is never reprocessed.
+			expect(crumb).toContain('synapse-processed: true');
+		});
+
+		it('sanitizes the breadcrumb filename', async () => {
+			organizeMovesTo('Refs/Weird: Title*?.md');
+
+			emit('create', 'Inbox/Weird: Title*?.md', 'hello prose');
+			await flushDebounce();
+
+			// Illegal filename chars are stripped (the video sanitize rule).
+			expect(store.has('Inbox/_captured/2026-06-05 — Weird Title.md')).toBe(true);
+		});
+
+		it('writes no breadcrumb when the note is not moved out of Inbox', async () => {
+			organizeMovesTo(null); // organize keeps it in place
+
+			emit('create', 'Inbox/stay.md', 'hello prose');
+			await flushDebounce();
+
+			const captured = [...store.keys()].filter((p) => p.startsWith('Inbox/_captured/'));
+			expect(captured).toHaveLength(0);
+		});
+
+		it('writes no breadcrumb when captureLog is disabled', async () => {
+			settings.intake.captureLog = false;
+			organizeMovesTo('Articles/off.md');
+
+			emit('create', 'Inbox/off.md', 'hello prose');
+			await flushDebounce();
+
+			expect(store.has('Articles/off.md')).toBe(true); // still organized
+			const captured = [...store.keys()].filter((p) => p.startsWith('Inbox/_captured/'));
+			expect(captured).toHaveLength(0);
+		});
+
+		it('IGNORES a file created in the capture-log subfolder (no reprocessing / no loop)', async () => {
+			// A breadcrumb (or anything) appearing under Inbox/_captured must be
+			// invisible to the watcher — otherwise the watcher would re-ingest its
+			// own breadcrumbs and spin forever.
+			emit('create', 'Inbox/_captured/2026-06-05 — Something.md', '[[Something]]');
+			emit('modify', 'Inbox/_captured/2026-06-05 — Something.md', '[[Something]]');
+			await flushDebounce();
+
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+			expect(deps.transcribeUrlToNote).not.toHaveBeenCalled();
+			expect(fetchArticleContent).not.toHaveBeenCalled();
+		});
+
+		it('respects a custom captureLogFolder for both writing and exclusion', async () => {
+			settings.intake.captureLogFolder = 'log';
+			organizeMovesTo('Articles/custom.md');
+
+			emit('create', 'Inbox/custom.md', 'hello prose');
+			await flushDebounce();
+			expect(store.has('Inbox/log/2026-06-05 — custom.md')).toBe(true);
+
+			// And the custom subfolder is excluded from the watcher.
+			emit('create', 'Inbox/log/2026-06-05 — custom.md', 'x');
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1); // only the original run
 		});
 	});
 
