@@ -1,7 +1,9 @@
+import { Notice } from 'obsidian';
 import { AIClient } from '../shared';
 import type { ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
 import { OCRResult } from './types';
+import { arrayBufferToBase64, preprocessImage } from './preprocess';
 
 export class ImageExtractor {
 	private aiClient: AIClient;
@@ -11,9 +13,17 @@ export class ImageExtractor {
 	}
 
 	async extract(imageData: ArrayBuffer, fileName: string): Promise<OCRResult> {
-		const base64 = this.arrayBufferToBase64(imageData);
-		const mediaType = this.getMediaType(fileName);
 		const settings = this.getSettings();
+		const sourceMediaType = this.getMediaType(fileName);
+
+		const maxBytes = (settings.image.maxImageSizeMb || 5) * 1024 * 1024;
+		const processed = await preprocessImage(imageData, sourceMediaType, maxBytes);
+		if (processed.downscaled) {
+			new Notice('Synapse: large image auto-downscaled to fit the API limit');
+		}
+
+		const base64 = arrayBufferToBase64(processed.data);
+		const mediaType = processed.mediaType;
 
 		const contentBlocks: ContentBlock[] = [
 			{
@@ -47,15 +57,6 @@ export class ImageExtractor {
 				settings.ai.model = originalModel;
 			}
 		}
-	}
-
-	private arrayBufferToBase64(buffer: ArrayBuffer): string {
-		const bytes = new Uint8Array(buffer);
-		let binary = '';
-		for (let i = 0; i < bytes.length; i++) {
-			binary += String.fromCharCode(bytes[i]);
-		}
-		return btoa(binary);
 	}
 
 	private getMediaType(fileName: string): string {

@@ -312,6 +312,41 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
+		// ── Image ──
+		new Setting(containerEl).setHeading().setName('Image');
+
+		new Setting(containerEl)
+			.setName('Enable image analysis')
+			.setDesc('Run OCR and image analysis on images referenced in notes')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.image.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.image.enabled = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Max image size (MB)')
+			.setDesc(
+				'Images whose base64 payload exceeds this size are automatically downscaled ' +
+				'before being sent to the API. The Anthropic API limit is 5 MB; lower this only ' +
+				'if your provider enforces a smaller limit.'
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder('5')
+					.setValue(String(this.plugin.settings.image.maxImageSizeMb))
+					.onChange(async (value) => {
+						const num = parseFloat(value);
+						if (!isNaN(num) && num > 0) {
+							this.plugin.settings.image.maxImageSizeMb = num;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
+
 		// ── Media Transcription ──
 		new Setting(containerEl).setHeading().setName('Media Transcription');
 
