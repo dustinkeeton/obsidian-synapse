@@ -16,8 +16,17 @@ export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from './note-sca
 export type { AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
 
 export class AudioModule {
+	/** Approximate Whisper file-size limit (~25 MB) used to warn before a combined transcription. */
+	private static readonly COMBINED_SIZE_WARN_BYTES = 25 * 1024 * 1024;
+
 	private transcriber: Transcriber;
 	private postProcessor: PostProcessor;
+
+	/**
+	 * Delay (ms) between sequential per-file transcriptions in the no-ffmpeg
+	 * combined fallback (#214), to avoid API rate limits. Overridable in tests.
+	 */
+	private interFileDelayMs = 2000;
 
 	/** Optional callback invoked after transcription completes. Wired by main.ts for enrichment. */
 	onTranscriptionComplete: ((filePath: string) => void) | null = null;
@@ -218,6 +227,194 @@ export class AudioModule {
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
 			op.finish(`Done -- ${completed}/${total} transcriptions added`);
+		}
+	}
+
+	/**
+	 * Combined transcription (#214): produce ONE `Combined transcription
+	 * (N files)` callout from the selected audio embeds, inserted after the
+	 * last (highest-line) selected embed.
+	 *
+	 * With ffmpeg the audio is concatenated and transcribed in a SINGLE call.
+	 * Without it (e.g. mobile) each file is transcribed separately and the
+	 * resulting TEXT is merged — the output is still one combined callout. A
+	 * single selected embed short-circuits to a normal per-file transcription;
+	 * an oversized combined file (desktop) offers a per-file fallback.
+	 */
+	async transcribeAndInsertCombined(
+		noteFile: TFile,
+		embeds: AudioEmbed[]
+	): Promise<void> {
+		// A single file + combine is just a normal single transcription.
+		if (embeds.length < 2) {
+			await this.transcribeAndInsert(noteFile, embeds);
+			return;
+		}
+
+		const op = this.notifications.startOperation(
+			`Combining ${embeds.length} audio files...`,
+			`audio-combined-${noteFile.path}`
+		);
+		try {
+			let text: string;
+
+			if (this.extractor) {
+				// Desktop: concatenate the audio and transcribe it in one call.
+				op.update('Concatenating audio');
+				const files = embeds.map(e => e.file);
+				const { data, sizeBytes } = await this.concatEmbedsToBuffer(files);
+
+				if (op.cancelled) {
+					op.finish('Cancelled');
+					return;
+				}
+
+				// Provider size guard: offer per-file fallback rather than a
+				// silent API failure on oversized combined audio.
+				if (sizeBytes > AudioModule.COMBINED_SIZE_WARN_BYTES) {
+					const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
+					const fallback = await this.notifications.confirm(
+						`Combined audio is ${mb} MB, which may exceed the transcription provider limit (~25 MB). Transcribe each file separately instead?`,
+						{ proceedLabel: 'Per-file', cancelLabel: 'Combine anyway', level: 'warning' }
+					);
+					if (fallback) {
+						op.finish('Falling back to per-file transcription');
+						await this.transcribeAndInsert(noteFile, embeds);
+						return;
+					}
+				}
+
+				op.update('Transcribing combined audio');
+				const result = await this.transcribe(data, `combined-${noteFile.basename}.mp3`);
+				text = result.processed || result.raw;
+			} else {
+				// Mobile / no ffmpeg: transcribe each file separately and merge
+				// the TEXT into one block (the audio can't be concatenated).
+				op.update('Transcribing each audio file');
+				text = await this.transcribeEachToText(embeds.map(e => e.file), op);
+				if (op.cancelled) {
+					op.finish('Cancelled');
+					return;
+				}
+			}
+
+			const fileList = embeds.map(e => e.fileName).join(', ');
+			const body = `Source files: ${fileList}\n\n${text}`;
+			const block = buildCallout(
+				CALLOUT_TYPES.transcription,
+				`Combined transcription (${embeds.length} files)`,
+				body,
+				true
+			);
+
+			// Insert after the last (highest-line) selected embed.
+			const content = await this.plugin.app.vault.read(noteFile);
+			const lines = content.split('\n');
+			const insertLine = Math.max(...embeds.map(e => e.line));
+			lines.splice(insertLine + 1, 0, block);
+			await this.plugin.app.vault.modify(noteFile, lines.join('\n'));
+
+			this.onTranscriptionComplete?.(noteFile.path);
+			op.finish(`Combined transcription of ${embeds.length} files added to note`);
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			op.error(`Combined transcription failed -- ${msg}`);
+		}
+	}
+
+	/**
+	 * Combined transcription helper for the summarize path (#214): return ONE
+	 * transcript string for multiple audio files. With ffmpeg the audio is
+	 * concatenated and transcribed once; without it (mobile) each file is
+	 * transcribed separately and the TEXT is merged. A single file
+	 * short-circuits to a normal transcription.
+	 */
+	async transcribeAudioCombined(files: TFile[]): Promise<string> {
+		if (files.length === 1) {
+			const data = await this.plugin.app.vault.readBinary(files[0]);
+			const result = await this.transcribe(data, files[0].name);
+			return result.processed || result.raw;
+		}
+		// Mobile / no ffmpeg: transcribe each file and merge the text.
+		if (!this.extractor) {
+			return this.transcribeEachToText(files);
+		}
+		const { data, sizeBytes } = await this.concatEmbedsToBuffer(files);
+		if (sizeBytes > AudioModule.COMBINED_SIZE_WARN_BYTES) {
+			const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
+			this.notifications.info(
+				`Combined audio is ${mb} MB, which may exceed the transcription provider limit (~25 MB).`
+			);
+		}
+		const result = await this.transcribe(data, 'combined.mp3');
+		return result.processed || result.raw;
+	}
+
+	/**
+	 * Transcribe each file separately and join the transcripts into one
+	 * continuous block. The no-ffmpeg fallback for combined transcription /
+	 * summary (#214): the audio can't be concatenated, but the OUTPUT is still
+	 * combined. Sequential with a small delay to avoid API rate limits;
+	 * respects op cancellation/progress when provided.
+	 */
+	private async transcribeEachToText(
+		files: TFile[],
+		op?: { cancelled: boolean; progress: (done: number, total: number, label: string) => void }
+	): Promise<string> {
+		const parts: string[] = [];
+		for (let i = 0; i < files.length; i++) {
+			if (op?.cancelled) break;
+			if (i > 0 && this.interFileDelayMs > 0) {
+				await new Promise(resolve => setTimeout(resolve, this.interFileDelayMs));
+			}
+			op?.progress(i + 1, files.length, 'Transcribing audio');
+			const data = await this.plugin.app.vault.readBinary(files[i]);
+			const result = await this.transcribe(data, files[i].name);
+			parts.push(result.processed || result.raw);
+		}
+		return parts.join('\n\n');
+	}
+
+	/**
+	 * Read each audio file, write to temp files, concatenate via ffmpeg, and
+	 * return the combined audio data plus its byte size. All temp files
+	 * (inputs and combined output) are cleaned up on success AND failure.
+	 * Requires the AudioExtractor (ffmpeg / desktop).
+	 */
+	private async concatEmbedsToBuffer(
+		files: TFile[]
+	): Promise<{ data: ArrayBuffer; sizeBytes: number }> {
+		if (!this.extractor) {
+			throw new Error('Combining audio requires ffmpeg (desktop only)');
+		}
+		const os = require('os') as typeof import('os');
+		const path = require('path') as typeof import('path');
+		const fs = require('fs') as typeof import('fs');
+
+		const tempInputs: string[] = [];
+		let combinedPath: string | null = null;
+		try {
+			for (let i = 0; i < files.length; i++) {
+				const bin = await this.plugin.app.vault.readBinary(files[i]);
+				const ext = files[i].extension || 'audio';
+				const tempPath = path.join(os.tmpdir(), `synapse-combine-src-${Date.now()}-${i}.${ext}`);
+				fs.writeFileSync(tempPath, Buffer.from(bin));
+				tempInputs.push(tempPath);
+			}
+			combinedPath = await this.extractor.concatAudio(tempInputs);
+			const buf = fs.readFileSync(combinedPath);
+			const data = buf.buffer.slice(
+				buf.byteOffset,
+				buf.byteOffset + buf.byteLength
+			) as ArrayBuffer;
+			return { data, sizeBytes: buf.byteLength };
+		} finally {
+			for (const t of tempInputs) {
+				try { fs.unlinkSync(t); } catch { /* ignore */ }
+			}
+			if (combinedPath) {
+				try { fs.unlinkSync(combinedPath); } catch { /* ignore */ }
+			}
 		}
 	}
 

@@ -36,6 +36,16 @@ export type TranscribeAudioFn = (
 	file: TFile
 ) => Promise<string>;
 
+/**
+ * Function that transcribes MULTIPLE audio files as one continuous recording
+ * and returns the combined transcript text. Injected by main.ts from the
+ * AudioModule (which owns the ffmpeg-backed AudioExtractor). Used by the
+ * combined-summary path (#214).
+ */
+export type TranscribeAudioCombinedFn = (
+	files: TFile[]
+) => Promise<string>;
+
 const COMPREHENSIVE_SUMMARY_PROMPT =
 	'Provide a comprehensive summary of the following content. This summary will be a standalone reference note. ' +
 	'Cover all major points, key arguments, and important details. ' +
@@ -61,6 +71,7 @@ export class SummarizeModule {
 	private summarizer: Summarizer;
 	private transcribeUrl: TranscribeUrlFn | null;
 	private transcribeAudio: TranscribeAudioFn | null;
+	private transcribeAudioCombined: TranscribeAudioCombinedFn | null;
 
 	/** Optional callback invoked after summarization completes. Wired by main.ts for enrichment. */
 	onSummaryComplete: ((filePath: string) => void) | null = null;
@@ -75,11 +86,13 @@ export class SummarizeModule {
 		private checkpointManager: CheckpointManager,
 		private registrar: CommandRegistrar,
 		transcribeUrl?: TranscribeUrlFn,
-		transcribeAudio?: TranscribeAudioFn
+		transcribeAudio?: TranscribeAudioFn,
+		transcribeAudioCombined?: TranscribeAudioCombinedFn
 	) {
 		this.summarizer = new Summarizer(getSettings);
 		this.transcribeUrl = transcribeUrl ?? null;
 		this.transcribeAudio = transcribeAudio ?? null;
+		this.transcribeAudioCombined = transcribeAudioCombined ?? null;
 	}
 
 	async onload(): Promise<void> {
@@ -178,13 +191,144 @@ export class SummarizeModule {
 		if (targets.length === 1) {
 			await this.processTargets(file, targets, content);
 		} else {
+			// Combine is offered whenever there are 2+ audio targets and a
+			// combined transcriber is wired. Without ffmpeg (mobile) the audio
+			// can't be concatenated, so each file is transcribed separately and
+			// the TEXT is merged into one summary.
+			const audioCount = targets.filter(t => t.type === 'audio').length;
+			const canCombine = audioCount >= 2 && !!this.transcribeAudioCombined;
+
 			new SummarizeSelectionModal(
 				this.plugin.app,
 				targets,
-				async (selected) => {
-					await this.processTargets(file, selected, content);
-				}
+				async (selected, combine) => {
+					if (combine) {
+						await this.processTargetsCombined(file, selected, content);
+					} else {
+						await this.processTargets(file, selected, content);
+					}
+				},
+				canCombine
 			).open();
+		}
+	}
+
+	/**
+	 * Combined-summary path (#214): collapse all selected `type:'audio'`
+	 * targets into ONE combined transcription + ONE summary, inserting a
+	 * single `Combined summary (N files)` callout after the last audio embed.
+	 * Non-audio targets (URLs, transcription blocks) are processed normally
+	 * via the shared per-target path. Falls back to per-target processing
+	 * when combining is not applicable.
+	 */
+	private async processTargetsCombined(
+		file: TFile,
+		targets: SummarizeTarget[],
+		content: string
+	): Promise<void> {
+		const audioTargets = targets.filter(t => t.type === 'audio');
+		const otherTargets = targets.filter(t => t.type !== 'audio');
+
+		// Not enough audio (or no combined transcriber) -> normal path.
+		if (audioTargets.length < 2 || !this.transcribeAudioCombined) {
+			await this.processTargets(file, targets, content);
+			return;
+		}
+
+		const settings = this.getSettings().summarize;
+		const op = this.notifications.startOperation(
+			`Summarizing ${otherTargets.length + 1} item(s)`,
+			`summarize-${file.path}`
+		);
+
+		// Phase 1: process non-audio targets first (handles its own write).
+		let result: ProcessResult = {
+			inlineCompleted: 0,
+			enrichmentCompleted: 0,
+			linksUpdated: 0,
+			newNotePaths: [],
+		};
+		if (otherTargets.length > 0 && !op.cancelled) {
+			result = await this.processFileTargets(file, otherTargets, op, content);
+			this.fireEnrichmentCallbacks(file.path, result);
+		}
+
+		// Phase 2: one combined audio summary.
+		if (!op.cancelled) {
+			try {
+				const audioFiles: TFile[] = [];
+				const fileNames: string[] = [];
+				for (const t of audioTargets) {
+					const af = this.plugin.app.metadataCache.getFirstLinkpathDest(
+						t.source, file.path
+					);
+					if (af instanceof TFile) {
+						audioFiles.push(af);
+						fileNames.push(t.source);
+					}
+				}
+
+				if (audioFiles.length < 2) {
+					throw new Error('Could not resolve enough audio files to combine');
+				}
+
+				op.update('Transcribing combined audio');
+				const transcript = (await this.transcribeAudioCombined(audioFiles))
+					.slice(0, settings.maxContentLength);
+
+				if (transcript.trim()) {
+					op.update('Summarizing combined audio');
+
+					let effectivePrompt = settings.customPrompt || undefined;
+					if (!effectivePrompt && settings.autoDetectTemplates) {
+						const template = detectContentTemplate(transcript);
+						if (template) effectivePrompt = template.prompt;
+					}
+
+					const summary = await this.summarizer.summarize(
+						transcript,
+						fileNames.join(', '),
+						settings.summaryStyle,
+						effectivePrompt || COMPREHENSIVE_SUMMARY_PROMPT
+					);
+
+					const callout = buildCallout(
+						CALLOUT_TYPES.summary,
+						`Combined summary (${audioFiles.length} files)`,
+						`Source files: ${fileNames.join(', ')}\n\n${summary}`
+					);
+
+					// Re-read since phase 1 may have shifted line numbers; insert
+					// after the last audio embed in the current file state.
+					const current = await this.plugin.app.vault.read(file);
+					const curLines = current.split('\n');
+					const embeds = findAudioEmbeds(
+						current, file.path, this.plugin.app.metadataCache
+					);
+					const insertLine = embeds.length > 0
+						? Math.max(...embeds.map(e => e.line))
+						: curLines.length - 1;
+					curLines.splice(insertLine + 1, 0, ...callout.split('\n'));
+					await this.plugin.app.vault.modify(file, curLines.join('\n'));
+					this.onSummaryComplete?.(file.path);
+				} else {
+					this.notifications.notifyError(
+						'No content extracted from combined audio',
+						new Error('Empty transcript')
+					);
+				}
+			} catch (error) {
+				this.notifications.notifyError('Combined audio summarization failed', error);
+			}
+		}
+
+		if (!op.cancelled) {
+			op.finish('Done -- combined summary added');
+		}
+
+		// Trigger single-note organize (never vault-wide scan)
+		if (this.getSettings().summarize.autoOrganizeOnSummarize) {
+			this.onOrganizeRequested?.(file);
 		}
 	}
 
