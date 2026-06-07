@@ -120,8 +120,7 @@ describe('SummarizeModule combined audio summarization (#214)', () => {
 			new CommandRegistrar(mockPlugin as any),
 			undefined,
 			transcribeAudio,
-			transcribeAudioCombined,
-			async () => true
+			transcribeAudioCombined
 		);
 	});
 

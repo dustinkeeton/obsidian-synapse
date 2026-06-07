@@ -63,13 +63,16 @@ export class NoteMediaModal extends Modal {
 				});
 			});
 
-		// Combine option (#214): only meaningful with 2+ audio files and ffmpeg.
-		// Shown when those preconditions hold; the flag is only applied at
-		// process time when 2+ audio files are actually selected.
-		if (this.audioEmbeds.length >= 2 && this.ffmpegAvailable) {
+		// Combine option (#214): produce ONE transcription from 2+ audio files.
+		// With ffmpeg the audio is concatenated and transcribed in a single
+		// call; without it (mobile) each file is transcribed and the TEXT is
+		// merged. Shown for 2+ audio files; only applied when 2+ are selected.
+		if (this.audioEmbeds.length >= 2) {
 			new Setting(contentEl)
 				.setName('Combine all selected audio into one transcription')
-				.setDesc('Concatenate the selected audio files and transcribe them as a single continuous recording (one block, one API call).')
+				.setDesc(this.ffmpegAvailable
+					? 'Concatenate the selected audio files and transcribe them as a single continuous recording (one block, one API call).'
+					: 'Transcribe the selected audio files and merge them into one combined transcription block.')
 				.addToggle((toggle) => {
 					toggle
 						.setValue(this.combineAudio)

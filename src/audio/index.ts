@@ -22,6 +22,12 @@ export class AudioModule {
 	private transcriber: Transcriber;
 	private postProcessor: PostProcessor;
 
+	/**
+	 * Delay (ms) between sequential per-file transcriptions in the no-ffmpeg
+	 * combined fallback (#214), to avoid API rate limits. Overridable in tests.
+	 */
+	private interFileDelayMs = 2000;
+
 	/** Optional callback invoked after transcription completes. Wired by main.ts for enrichment. */
 	onTranscriptionComplete: ((filePath: string) => void) | null = null;
 
@@ -225,24 +231,22 @@ export class AudioModule {
 	}
 
 	/**
-	 * Combined transcription (#214): concatenate the selected audio embeds
-	 * into one continuous track and transcribe it with a SINGLE API call,
-	 * inserting one `Combined transcription (N files)` callout after the
+	 * Combined transcription (#214): produce ONE `Combined transcription
+	 * (N files)` callout from the selected audio embeds, inserted after the
 	 * last (highest-line) selected embed.
 	 *
-	 * Falls back to per-file transcription when fewer than two embeds are
-	 * selected, when ffmpeg is unavailable, or when the combined file would
-	 * exceed the provider size limit and the user opts out.
+	 * With ffmpeg the audio is concatenated and transcribed in a SINGLE call.
+	 * Without it (e.g. mobile) each file is transcribed separately and the
+	 * resulting TEXT is merged — the output is still one combined callout. A
+	 * single selected embed short-circuits to a normal per-file transcription;
+	 * an oversized combined file (desktop) offers a per-file fallback.
 	 */
 	async transcribeAndInsertCombined(
 		noteFile: TFile,
 		embeds: AudioEmbed[]
 	): Promise<void> {
-		// Single file + combine == normal single transcription.
-		if (embeds.length < 2 || !this.extractor) {
-			if (embeds.length >= 2 && !this.extractor) {
-				this.notifications.info('Combining audio requires ffmpeg (desktop only). Transcribing per-file.');
-			}
+		// A single file + combine is just a normal single transcription.
+		if (embeds.length < 2) {
 			await this.transcribeAndInsert(noteFile, embeds);
 			return;
 		}
@@ -252,33 +256,47 @@ export class AudioModule {
 			`audio-combined-${noteFile.path}`
 		);
 		try {
-			op.update('Concatenating audio');
-			const files = embeds.map(e => e.file);
-			const { data, sizeBytes } = await this.concatEmbedsToBuffer(files);
+			let text: string;
 
-			if (op.cancelled) {
-				op.finish('Cancelled');
-				return;
-			}
+			if (this.extractor) {
+				// Desktop: concatenate the audio and transcribe it in one call.
+				op.update('Concatenating audio');
+				const files = embeds.map(e => e.file);
+				const { data, sizeBytes } = await this.concatEmbedsToBuffer(files);
 
-			// Provider size guard: offer per-file fallback rather than a
-			// silent API failure on oversized combined audio.
-			if (sizeBytes > AudioModule.COMBINED_SIZE_WARN_BYTES) {
-				const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
-				const fallback = await this.notifications.confirm(
-					`Combined audio is ${mb} MB, which may exceed the transcription provider limit (~25 MB). Transcribe each file separately instead?`,
-					{ proceedLabel: 'Per-file', cancelLabel: 'Combine anyway', level: 'warning' }
-				);
-				if (fallback) {
-					op.finish('Falling back to per-file transcription');
-					await this.transcribeAndInsert(noteFile, embeds);
+				if (op.cancelled) {
+					op.finish('Cancelled');
+					return;
+				}
+
+				// Provider size guard: offer per-file fallback rather than a
+				// silent API failure on oversized combined audio.
+				if (sizeBytes > AudioModule.COMBINED_SIZE_WARN_BYTES) {
+					const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
+					const fallback = await this.notifications.confirm(
+						`Combined audio is ${mb} MB, which may exceed the transcription provider limit (~25 MB). Transcribe each file separately instead?`,
+						{ proceedLabel: 'Per-file', cancelLabel: 'Combine anyway', level: 'warning' }
+					);
+					if (fallback) {
+						op.finish('Falling back to per-file transcription');
+						await this.transcribeAndInsert(noteFile, embeds);
+						return;
+					}
+				}
+
+				op.update('Transcribing combined audio');
+				const result = await this.transcribe(data, `combined-${noteFile.basename}.mp3`);
+				text = result.processed || result.raw;
+			} else {
+				// Mobile / no ffmpeg: transcribe each file separately and merge
+				// the TEXT into one block (the audio can't be concatenated).
+				op.update('Transcribing each audio file');
+				text = await this.transcribeEachToText(embeds.map(e => e.file), op);
+				if (op.cancelled) {
+					op.finish('Cancelled');
 					return;
 				}
 			}
-
-			op.update('Transcribing combined audio');
-			const result = await this.transcribe(data, `combined-${noteFile.basename}.mp3`);
-			const text = result.processed || result.raw;
 
 			const fileList = embeds.map(e => e.fileName).join(', ');
 			const body = `Source files: ${fileList}\n\n${text}`;
@@ -305,9 +323,11 @@ export class AudioModule {
 	}
 
 	/**
-	 * Combined transcription helper for the summarize path (#214): transcribe
-	 * multiple audio files as one continuous recording and return the combined
-	 * transcript text. A single file short-circuits to a normal transcription.
+	 * Combined transcription helper for the summarize path (#214): return ONE
+	 * transcript string for multiple audio files. With ffmpeg the audio is
+	 * concatenated and transcribed once; without it (mobile) each file is
+	 * transcribed separately and the TEXT is merged. A single file
+	 * short-circuits to a normal transcription.
 	 */
 	async transcribeAudioCombined(files: TFile[]): Promise<string> {
 		if (files.length === 1) {
@@ -315,8 +335,9 @@ export class AudioModule {
 			const result = await this.transcribe(data, files[0].name);
 			return result.processed || result.raw;
 		}
+		// Mobile / no ffmpeg: transcribe each file and merge the text.
 		if (!this.extractor) {
-			throw new Error('Combining audio requires ffmpeg (desktop only)');
+			return this.transcribeEachToText(files);
 		}
 		const { data, sizeBytes } = await this.concatEmbedsToBuffer(files);
 		if (sizeBytes > AudioModule.COMBINED_SIZE_WARN_BYTES) {
@@ -327,6 +348,31 @@ export class AudioModule {
 		}
 		const result = await this.transcribe(data, 'combined.mp3');
 		return result.processed || result.raw;
+	}
+
+	/**
+	 * Transcribe each file separately and join the transcripts into one
+	 * continuous block. The no-ffmpeg fallback for combined transcription /
+	 * summary (#214): the audio can't be concatenated, but the OUTPUT is still
+	 * combined. Sequential with a small delay to avoid API rate limits;
+	 * respects op cancellation/progress when provided.
+	 */
+	private async transcribeEachToText(
+		files: TFile[],
+		op?: { cancelled: boolean; progress: (done: number, total: number, label: string) => void }
+	): Promise<string> {
+		const parts: string[] = [];
+		for (let i = 0; i < files.length; i++) {
+			if (op?.cancelled) break;
+			if (i > 0 && this.interFileDelayMs > 0) {
+				await new Promise(resolve => setTimeout(resolve, this.interFileDelayMs));
+			}
+			op?.progress(i + 1, files.length, 'Transcribing audio');
+			const data = await this.plugin.app.vault.readBinary(files[i]);
+			const result = await this.transcribe(data, files[i].name);
+			parts.push(result.processed || result.raw);
+		}
+		return parts.join('\n\n');
 	}
 
 	/**

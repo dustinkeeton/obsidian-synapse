@@ -151,14 +151,21 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		expect(extractor.concatAudio).not.toHaveBeenCalled();
 	});
 
-	it('falls back to per-file when ffmpeg/extractor is unavailable', async () => {
-		const module = makeModule(null);
-		const spy = vi.spyOn(module, 'transcribeAndInsert').mockResolvedValue();
+	it('combines via per-file transcription when ffmpeg/extractor is unavailable', async () => {
+		const module = makeModule(null); // mobile: no ffmpeg
+		(module as any).interFileDelayMs = 0; // skip rate-limit delay in tests
 
 		await module.transcribeAndInsertCombined(tfile('notes/lecture.md'), embeds());
 
-		expect(spy).toHaveBeenCalledTimes(1);
-		expect(notifications.info).toHaveBeenCalled();
+		// No audio concatenation, but still exactly ONE combined callout.
+		expect(extractor.concatAudio).not.toHaveBeenCalled();
+		expect(mockPlugin.app.vault.modify).toHaveBeenCalledTimes(1);
+		const written = mockPlugin.app.vault.modify.mock.calls[0][1] as string;
+		expect(written).toContain('Combined transcription (2 files)');
+		expect((written.match(/Combined transcription/g) || []).length).toBe(1);
+		expect(written).toContain('Source files: part1.mp3, part2.wav');
+		// Each file transcribed separately.
+		expect(mockPlugin.app.vault.readBinary).toHaveBeenCalledTimes(2);
 	});
 });
 
@@ -207,6 +214,20 @@ describe('AudioModule.transcribeAudioCombined', () => {
 
 		expect(extractor.concatAudio).not.toHaveBeenCalled();
 		expect(text).toBe('processed combined transcript');
+	});
+
+	it('merges transcribed text when ffmpeg is unavailable (no concatenation)', async () => {
+		const module = makeModule(null); // mobile: no extractor
+		(module as any).interFileDelayMs = 0;
+
+		const text = await module.transcribeAudioCombined([
+			tfile('audio/a.mp3'),
+			tfile('audio/b.mp3'),
+		]);
+
+		// Two separate transcriptions merged into one string; no concat.
+		expect(mockPlugin.app.vault.readBinary).toHaveBeenCalledTimes(2);
+		expect(text).toBe('processed combined transcript\n\nprocessed combined transcript');
 	});
 
 	it('warns when the combined audio exceeds the provider size limit', async () => {
