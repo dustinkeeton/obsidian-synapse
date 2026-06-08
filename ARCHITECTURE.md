@@ -1,8 +1,17 @@
 # Architecture Overview
 
-Synapse is an Obsidian plugin that provides ten AI-powered features: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, and title proposal. It runs on both desktop and mobile (video features are desktop-only).
+Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, and in-place wikilink discovery (REM). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile (video and media-clipping features are desktop-only).
+
+The codebase has **17 modules under `src/`** (audio, commands, deep-dive, elaboration, enrichment, image, intake, organize, pipeline, rem, shared, summarize, tidy, title, transcription, video, views) plus the top-level `main.ts`, `settings.ts`, and `settings-tab.ts`.
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
+
+### How the pieces fit (plain language)
+
+- **Feature modules** do the actual work (transcribe, enrich, summarize…). Each one is self-contained in `src/<feature>/` and exposes its public surface through a single `index.ts` barrel.
+- **`shared/`** is the foundation everything stands on — the AI client, validation, checkpoints, callouts, and URL detection. It depends on no feature module.
+- **`commands/`** is a developer-level master switch for every command, sitting *above* user settings. It also depends on nothing else in `src/`.
+- **`pipeline/`** runs features in order; **`intake/`** decides what to feed the pipeline. Neither imports a feature module directly — `main.ts` injects the features into them. This is what keeps the dependency graph acyclic.
 
 ---
 
@@ -16,6 +25,11 @@ graph TB
         Sidebar["Unified Proposal View<br/>(sidebar)"]
         CkptMgr["CheckpointManager<br/>(shared, singleton)"]
 
+        subgraph Coord["Coordination Layers"]
+            Pipe["Pipeline<br/>(Fire Synapse runner)"]
+            Intake["Intake<br/>(folder watcher)"]
+        end
+
         subgraph Features["Feature Modules"]
             Elab["Elaboration<br/>(+ ImageAnalyzer)"]
             Audio["Audio"]
@@ -28,9 +42,11 @@ graph TB
             Org["Organize"]
             DD["Deep Dive"]
             Title["Title"]
+            Rem["REM<br/>(wikilinks)"]
         end
 
-        Shared["Shared Layer<br/>AIClient · Notifications · Validation<br/>File Utils · Frontmatter · Callouts"]
+        Commands["Commands<br/>(registry · base layer)"]
+        Shared["Shared Layer<br/>AIClient · Notifications · Validation<br/>File Utils · Frontmatter · Callouts · URL Detection"]
     end
 
     subgraph External["External Services"]
@@ -42,13 +58,19 @@ graph TB
     Main --> Settings
     Main --> Sidebar
     Main --> CkptMgr
+    Main --> Commands
+    Main --> Coord
     Main --> Features
+    Pipe -.->|injected modules| Features
+    Intake -.->|injected fireOnFile| Pipe
     Features --> Shared
+    Features --> Commands
     Features --> CkptMgr
     Shared --> AI
     Audio --> TransAPI
     Video --> Tools
     Video --> Audio
+    Video --> Shared
     Image --> AI
     Elab -.->|image analysis| Image
     Trans --> Audio
@@ -60,9 +82,12 @@ graph TB
     style Trans fill:#f9f,stroke:#333
     style Sidebar fill:#bbf,stroke:#333
     style CkptMgr fill:#ffd,stroke:#333
-    style Title fill:#ffc,stroke:#333
+    style Commands fill:#fde,stroke:#333
+    style Shared fill:#def,stroke:#333
     style Image fill:#e8f5e9,stroke:#333
 ```
+
+Both `shared/` and `commands/` are **base layers**: every feature may depend on them, but they depend on no feature module. `pipeline/` and `intake/` reach the features only through dependencies injected by `main.ts`, never by importing them — that is what keeps the whole graph acyclic.
 
 ---
 
@@ -70,9 +95,32 @@ graph TB
 
 ```
 src/
-├── main.ts                 # Plugin entry, module orchestration, callback wiring
+├── main.ts                 # Plugin entry, module orchestration, callback wiring, dependency injection
 ├── settings.ts             # Type definitions, defaults, model options
 ├── settings-tab.ts         # Obsidian settings UI
+│
+├── commands/               # Command registry (base layer; imports nothing in src/)
+│   ├── registry.ts         #   COMMAND_REGISTRY source of truth + flow gates
+│   ├── registrar.ts        #   Single wiring point to plugin.addCommand
+│   ├── audit.ts            #   Registry <-> handler drift detection
+│   └── index.ts            #   Barrel export
+│
+├── pipeline/               # Fire Synapse: ordered multi-phase runner
+│   ├── synapse-runner.ts   #   Sequential phase executor (fire / fireOnFile)
+│   ├── types.ts            #   SYNAPSE_PIPELINE phase list + scan-fn contract
+│   └── index.ts            #   Barrel export
+│
+├── intake/                 # Inbox watcher: auto-process dropped notes (#111)
+│   ├── intake-dispatcher.ts#   Route a note (article / media / general)
+│   ├── types.ts            #   Route + IntakeDeps types, processed-flag constants
+│   └── index.ts            #   IntakeModule (debounce, idempotency, fireOnFile)
+│
+├── rem/                    # In-place [[wikilink]] discovery
+│   ├── mention-scanner.ts  #   Literal title/alias matches
+│   ├── semantic-matcher.ts #   Optional AI semantic matches
+│   ├── rem-applier.ts      #   Insert wikilinks into note body
+│   ├── rem-store.ts        #   Proposal persistence
+│   └── index.ts            #   RemModule orchestrator
 │
 ├── elaboration/            # Stub note detection + AI content proposals (image-aware)
 │   ├── detector.ts         #   PlaceholderDetector (short notes, TODOs, empty sections)
@@ -88,10 +136,10 @@ src/
 │   └── index.ts            #   AudioModule orchestrator
 │
 ├── video/                  # Video download + transcription
-│   ├── url-detector.ts     #   YouTube/TikTok URL parsing + normalization
 │   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile
-│   ├── note-scanner.ts     #   Find video URLs in note content
+│   ├── note-scanner.ts     #   Find video URLs in note content (uses shared/url-detector)
 │   └── index.ts            #   VideoModule orchestrator (delegates to Audio)
+│                           #   NOTE: url-detector.ts moved to shared/ (decycling, 2026-06-08)
 │
 ├── image/                  # Image OCR via multi-modal AI (vision models)
 │   ├── extractor.ts        #   ImageExtractor (base64 + ContentBlock[] -> AI vision)
@@ -149,8 +197,9 @@ src/
 │   ├── types.ts            #   TitleProposal, trigger/status types
 │   └── index.ts            #   Re-exports module, types, isUntitled
 │
-├── shared/                 # Cross-cutting utilities
+├── shared/                 # Cross-cutting utilities (base layer)
 │   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Ollama)
+│   ├── url-detector.ts     #   YouTube/TikTok/Instagram URL parsing (moved here 2026-06-08)
 │   ├── checkpoint-manager.ts #  Checkpoint/resume for long-running operations
 │   ├── checkpoint-types.ts #   Checkpoint type definitions
 │   ├── id-utils.ts         #   ID generation and validation
@@ -174,63 +223,139 @@ src/
 
 ## Dependency Graph
 
-```mermaid
-graph LR
-    Main["main.ts"] --> Settings["settings.ts"]
-    Main --> SettingsTab["settings-tab.ts"]
-    Main --> Shared["shared/"]
-    Main --> Views["views/"]
-    Main --> Elab["elaboration/"]
-    Main --> Audio["audio/"]
-    Main --> Video["video/"]
-    Main --> Image["image/"]
-    Main --> Trans["transcription/"]
-    Main --> Enrich["enrichment/"]
-    Main --> Summ["summarize/"]
-    Main --> Tidy["tidy/"]
-    Main --> Org["organize/"]
-    Main --> DD["deep-dive/"]
-    Main --> Title["title/"]
+The graph is **acyclic**. `shared/` and `commands/` form the base layer (bottom); feature modules depend down onto them; the coordination layers (`pipeline/`, `intake/`) sit on top and receive features only by injection from `main.ts`.
 
-    Elab --> Shared
-    Audio --> Shared
-    Video --> Shared
+```mermaid
+graph TD
+    Main["main.ts"]
+
+    subgraph Coordination["Coordination (top — features injected, never imported)"]
+        Pipe["pipeline/"]
+        Intake["intake/"]
+    end
+
+    subgraph FeatureLayer["Feature Modules"]
+        Elab["elaboration/"]
+        Audio["audio/"]
+        Video["video/"]
+        Image["image/"]
+        Trans["transcription/"]
+        Enrich["enrichment/"]
+        Summ["summarize/"]
+        Tidy["tidy/"]
+        Org["organize/"]
+        DD["deep-dive/"]
+        Title["title/"]
+        Rem["rem/"]
+        Views["views/"]
+    end
+
+    subgraph BaseLayer["Base Layer (depends on no feature module)"]
+        Shared["shared/"]
+        Commands["commands/"]
+    end
+
+    Main --> Pipe
+    Main --> Intake
+    Main --> FeatureLayer
+    Main --> BaseLayer
+
+    Pipe --> Commands
+    Pipe -. injected modules .-> FeatureLayer
+    Intake --> Shared
+    Intake -. injected fireOnFile .-> Pipe
+
     Video --> Audio
-    Image --> Shared
-    Elab -.->|ImageAnalyzer| Image
+    Video --> Shared
+    Elab -. ImageAnalyzer .-> Image
     Trans --> Audio
     Trans --> Video
     Trans --> Image
+    Summ -. transcribeUrl .-> Video
+    Summ --> Audio
+    DD --> Org
+
+    Elab --> Shared
+    Audio --> Shared
+    Image --> Shared
     Enrich --> Shared
     Summ --> Shared
-    Summ -.-> Video
     Tidy --> Shared
     Org --> Shared
     DD --> Shared
-    DD --> Org
     Title --> Shared
-    Views --> Elab
-    Views --> Enrich
-    Views --> Org
-    Views --> DD
-    Views --> Title
+    Rem --> Shared
+    Views -. types only .-> FeatureLayer
 
-    style Trans fill:#f9f,stroke:#333
-    style Title fill:#ffc,stroke:#333
-    style Image fill:#e8f5e9,stroke:#333
+    Elab --> Commands
+    Audio --> Commands
+    Video --> Commands
+    Image --> Commands
+    Enrich --> Commands
+    Summ --> Commands
+    Tidy --> Commands
+    Org --> Commands
+    DD --> Commands
+    Rem --> Commands
+
+    style Shared fill:#def,stroke:#333
+    style Commands fill:#fde,stroke:#333
+    style Pipe fill:#ffd,stroke:#333
+    style Intake fill:#ffd,stroke:#333
 ```
 
 Key constraints:
-- **Video depends on Audio** -- reuses transcription pipeline
-- **Transcription is UI-only** -- delegates all work to Audio, Video, and Image via callbacks
-- **Elaboration uses ImageAnalyzer** -- analyzes embedded images during proposal generation (dotted line to Image)
-- **Image module uses multi-modal AIClient** -- `ContentBlock[]` with vision model override
-- **Summarize receives `video.transcribeUrl`** via constructor injection (dotted line)
-- **Deep Dive reuses Organize** for `auto-organize` nesting mode
-- **All feature modules depend on Shared** -- no circular dependencies
-- **Views imports types only** from feature modules
-- **CheckpointManager is a singleton** -- created in `main.ts`, injected into all modules that need it
-- **Title has no CheckpointManager** -- operates on single notes, not vault scans
+- **Acyclic graph.** `shared` and `commands` are base layers depending on no feature module. The former `shared ⇄ video` cycle was removed on 2026-06-08 by moving `url-detector.ts` into `shared` — the edge is now one-directional `video → shared`.
+- **`commands` imports nothing in `src/`.** `pipeline` imports `commands` (for flow gating) but never the feature modules — `main.ts` injects them via `PipelineModuleMap`.
+- **`intake` imports only `obsidian` + `shared`.** All cross-module work routes through an injected `IntakeDeps` (notably `fireOnFile`).
+- **Video depends on Audio** — reuses the transcription pipeline.
+- **Transcription is UI-only** — delegates all work to Audio, Video, and Image via callbacks.
+- **Elaboration uses ImageAnalyzer** — analyzes embedded images during proposal generation (dotted line to Image).
+- **Summarize receives `video.transcribeUrl`** via constructor injection; also calls `audio.findAudioEmbeds`.
+- **Deep Dive reuses Organize** for `auto-organize` nesting mode.
+- **Views imports types only** from feature modules (including REM).
+- **CheckpointManager is a singleton** — created in `main.ts`, injected into modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem). `tidy`, `title`, `transcription`, and `intake` do not use it.
+
+---
+
+## Fire Synapse Pipeline
+
+"Fire Synapse" runs the AI features over a folder (or a single note) in a fixed, deliberate order. The `pipeline/` module owns a `SynapseRunner` that executes each phase sequentially, isolating failures so one bad phase doesn't abort the run.
+
+```mermaid
+graph LR
+    Elab["1. Elaboration"] --> Summ["2. Summarize"] --> Enrich["3. Enrichment"] --> Rem["4. REM"] --> Tidy["5. Tidy"] --> Org["6. Organize"]
+    style Org fill:#e8f5e9,stroke:#333
+```
+
+- **Order matters.** Content-generating phases run first; **organize runs last** because it is the content-aware mover — it should only relocate a note after all its content exists.
+- **Gating.** A phase runs only if its feature is `enabled` *and* the command registry lists it in the `fire-synapse` flow.
+- **Decoupling.** The runner never imports the feature modules. `main.ts` builds a `PipelineModuleMap` (phase key → scan function) and injects it, so the runner stays independent of concrete features.
+- **Two entry points.** `fire(folder?)` scans a whole folder; `fireOnFile(file)` scopes every phase to a single note (this is what the intake watcher calls).
+
+---
+
+## Intake: Auto-Processing Inbox (Issue #111)
+
+The `intake/` module turns a watched folder into a hands-off inbox. Drop a note — or a note containing an article/media URL — and Synapse processes it automatically.
+
+```mermaid
+graph TB
+    Event["Vault create/modify in intake folder"] --> Guard["Cheap guards:<br/>is .md? enabled? in folder? not in-flight?"]
+    Guard --> Debounce["Per-path debounce<br/>(wait for note to settle)"]
+    Debounce --> Idem{"Already has<br/>synapse-processed flag?"}
+    Idem -->|Yes| Skip["Skip (idempotent)"]
+    Idem -->|No| Route["Route: article URL / media URL / general"]
+    Route --> Fire["deps.fireOnFile(note)<br/>(full pipeline on one note)"]
+    Fire --> Stamp["Stamp synapse-processed<br/>(before any move)"]
+    Stamp --> Move["Organize moved it?<br/>else optional fallback move"]
+    Move --> Log["If it left the inbox:<br/>write dated capture-log breadcrumb (#224)"]
+```
+
+- **Settle-then-process.** A per-path debounce waits until the note stops changing, so notes aren't reprocessed mid-edit.
+- **Idempotency.** A `synapse-processed` frontmatter flag is stamped *before* any relocation, so the move's rename echo can't trigger reprocessing.
+- **Leaf of the graph.** Intake imports only `obsidian` + `shared`; the pipeline call arrives via an injected `IntakeDeps.fireOnFile`.
+- **Stubbed branch.** The media-transcription route (#112) currently no-ops with a notice.
 
 ---
 
@@ -240,8 +365,9 @@ Key constraints:
 sequenceDiagram
     participant O as Obsidian
     participant M as main.ts
-    participant Mod as Modules (x10)
-    participant CB as Callbacks
+    participant Reg as CommandRegistrar
+    participant Mod as Feature Modules
+    participant Coord as Pipeline + Intake
     participant CK as CheckpointManager
 
     O->>M: onload()
@@ -250,14 +376,14 @@ sequenceDiagram
     M->>M: addSettingTab()
     M->>M: NotificationManager()
     M->>CK: new CheckpointManager(app)
-    M->>Mod: Initialize 10 modules<br/>(Audio before Video, inject CheckpointManager)
+    M->>Reg: new CommandRegistrar(plugin)
+    M->>Mod: Initialize feature modules<br/>(Audio before Video; inject CheckpointManager, registrar, shouldAutoAccept)
+    M->>Coord: Build SynapseRunner (inject PipelineModuleMap)<br/>+ IntakeModule (inject IntakeDeps.fireOnFile)
     M->>M: registerView(UnifiedProposalView)
-    M->>CB: Wire refresh callbacks (5 modules)
-    M->>Mod: Conditional module.onload()<br/>(if enabled in settings)
-    M->>CB: Wire enrichment + title callbacks<br/>(if autoEnrich / title.checkAfterOperations)
-    M->>CB: Wire organize callbacks<br/>(if autoOrganizeOnAccept)
+    M->>Mod: Conditional module.onload()<br/>(registers commands via registrar if enabled)
+    M->>M: Wire cross-module callbacks<br/>(enrichment, title, organize, view refresh)
     M->>M: addRibbonIcon (sparkles, mic)
-    M->>M: addCommand (review, checkpoints, transcribe)
+    M->>Reg: auditCommands(attempted) — warn on drift
     M->>CK: checkForIncompleteCheckpoints() (delayed 3s)
 ```
 
@@ -347,7 +473,7 @@ File/URL selected --> detectDuration() --> duration >= 10s?
 
 ### Supported Platforms
 
-URL detection (`video/url-detector.ts`) recognizes:
+URL detection (`shared/url-detector.ts`) recognizes:
 - **YouTube**: `youtube.com/watch`, `youtu.be`, `youtube.com/shorts`, `music.youtube.com`
 - **TikTok**: `tiktok.com/@user/video/id`, `tiktok.com/t/...`, `vm.tiktok.com`, `vt.tiktok.com`
 - **Instagram**: `instagram.com/reel/{id}`, `instagram.com/p/{id}` (Reels)
@@ -396,7 +522,7 @@ graph LR
 
 ## Proposal System Architecture
 
-Five modules generate proposals that appear in the unified sidebar. Each has a different review workflow:
+Six modules generate proposals that appear in the unified sidebar. Each has a different review workflow:
 
 | Module | Proposal Type | Review UX | Accept Behavior |
 |--------|--------------|-----------|-----------------|
@@ -405,16 +531,21 @@ Five modules generate proposals that appear in the unified sidebar. Each has a d
 | Organize | New directory suggestion | Directory path + AI reasoning | Create directory, move file |
 | Deep Dive | Generated child note | Read-only content preview | Create note at proposed path |
 | Title | Rename suggestion | Current vs proposed title + reasoning | Rename file |
+| REM | `[[wikilink]]` insertions | Per-match checkboxes | **Rewrites note body** (snapshot kept for undo) |
 
 ### Proposal States
 
 ```
 Generated --> Pending --+--> Accepted
                         +--> Rejected
-                        +--> Partially Accepted (enrichment only)
+                        +--> Partially Accepted (enrichment, REM)
 ```
 
-Tidy, Summarize, and Image do NOT use proposals -- they apply changes immediately (tidy has undo via snapshots; image OCR inserts callouts inline).
+### Auto-Accept (Issue #228)
+
+Each proposal kind has an `autoAccept.{kind}` setting (all default `false`). When on, a freshly generated proposal is accepted in full as generated, skipping the sidebar. **REM is the cautionary case**: its accept rewrites note prose (inserting wikilinks), whereas the others only add a separate section — so enabling REM auto-accept is a more consequential choice.
+
+Tidy, Summarize, and Image do NOT use proposals — they apply changes immediately (tidy has undo via snapshots; image OCR inserts callouts inline).
 
 ### Deep Dive: Cascade Rejection
 
@@ -537,6 +668,8 @@ All module data is stored as individual JSON files under `.synapse/`:
 |   +-- runs/{id}.json            # Run metadata (stats, depth breakdown)
 +-- title-proposals/              # Title
 |   +-- {id}.json                 # Title rename proposals
++-- rem/                          # REM
+|   +-- {id}.json                 # Wikilink proposals (+ pre-apply body snapshot for undo)
 +-- checkpoints/                  # Checkpoint/resume
 |   +-- {id}.json                 # Operation state (completed + remaining items)
 +-- temp/                         # Temporary video/audio (auto-cleaned)
@@ -624,6 +757,12 @@ SynapseSettings
 +-- deepDive        -> Max depth, quality threshold, max notes, output folder,
 |                     nesting mode, auto-enrich/organize on accept, excludes
 +-- title           -> Enabled, proposal folder path, check after operations
++-- rem             -> Enabled, semantic matching, confidence threshold,
+|                     max links per note, proposal folder path
++-- intake          -> Enabled, watched folder, mark-processed, move-when-done,
+|                     settle seconds, capture log + capture-log folder
++-- autoAccept      -> Per-kind booleans (elaboration, enrichment, organize,
+                      deep-dive, title, rem) — all default false (#228)
 ```
 
 Modules access settings via `getSettings()` closure -- always reads latest values, no event subscriptions needed.
@@ -634,14 +773,21 @@ Modules access settings via `getSettings()` closure -- always reads latest value
 
 | Layer | Protection | Location |
 |-------|-----------|----------|
-| Input validation | `sanitizeUrl()`, `sanitizePath()`, `ensureWithinVault()` | `shared/validation.ts` |
+| Input validation | `sanitizeUrl()`, `sanitizePath()` | `shared/validation.ts` |
 | Output sanitization | `sanitizeAIResponse()` strips scripts, event handlers, dangerous URIs | `shared/validation.ts` |
-| Subprocess security | `execFile` with argument arrays (no shell) | `video/audio-extractor.ts` |
-| API key protection | `redactSecrets()` in error messages, password-masked inputs | `shared/ai-client.ts` |
+| Subprocess security | `execFile` with argument arrays (no shell) | `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
+| Temp-path hardening | Vault-derived basenames sanitized before composing temp paths (2026-06-08) | `transcription/duration-detector.ts` |
+| API key protection | `redactSecrets()` in error messages, password-masked inputs; keys live only in gitignored `data.json` | `shared/ai-client.ts` |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
 | Idempotent updates | `%% synapse-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
 | Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
+
+**Audit status (2026-06-08):** No critical or high vulnerabilities. `data.json` (live API keys) is gitignored and never committed.
+
+**Known posture / not-yet-enforced:**
+- `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths** — there is no active vault-boundary enforcement on writes today.
+- `sanitizeUrl` permits arbitrary hosts (an SSRF surface on user-supplied URLs). This is an **accepted risk**: URLs are author-supplied within the user's own vault.
 
 ---
 

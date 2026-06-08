@@ -4,26 +4,24 @@ import { CommandRegistrar } from '../commands';
 import { AudioModule, TranscriptionResult } from '../audio';
 import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES,
-	CheckpointManager, generateId, formatTimeRange,
+	CheckpointManager, generateId, formatTimeRange, detectPlatform,
 } from '../shared';
 import type { TimeRange } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { AudioExtractor } from './audio-extractor';
 import { findVideoUrls } from './note-scanner';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
-import { detectPlatform } from './url-detector';
 
 export type {
 	ExtractionResult,
-	Platform,
-	UrlDetectionResult,
 	VideoMetadata,
 	VideoProcessOptions,
 	VideoSource,
 	VideoUrlEmbed,
 } from './types';
+export type { Platform, UrlDetectionResult } from '../shared';
 export { AudioExtractor } from './audio-extractor';
-export { detectPlatform, isSupportedUrl } from './url-detector';
+export { detectPlatform, isSupportedUrl } from '../shared';
 export { findVideoUrls } from './note-scanner';
 
 export class VideoModule {

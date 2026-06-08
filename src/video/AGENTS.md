@@ -1,10 +1,14 @@
 ---
-last-updated: 2026-03-19
+last-updated: 2026-06-08
 ---
 
 # Video Module
 
 Downloads videos from YouTube/TikTok via yt-dlp, extracts audio, delegates transcription to Audio module, optionally saves video to vault. Exposes public methods for unified transcription UI.
+
+URL platform detection now lives in `src/shared/url-detector.ts` (moved out of this module to break the old
+shared⇄video cycle). Video re-exports `detectPlatform`, `isSupportedUrl`, `Platform`, and `UrlDetectionResult`
+from `../shared` for back-compat; new code should import them directly from `shared`.
 
 ## Public API
 
@@ -12,7 +16,7 @@ Exported from `index.ts`:
 
 ```ts
 class VideoModule {
-  constructor(plugin: Plugin, getSettings: () => SynapseSettings, audioModule: AudioModule, notifications: NotificationManager, checkpointManager: CheckpointManager)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, audioModule: AudioModule, notifications: NotificationManager, checkpointManager: CheckpointManager, registrar: CommandRegistrar)
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
@@ -23,12 +27,14 @@ class VideoModule {
   onTranscriptionComplete: ((filePath: string) => void) | null
 }
 
+// Re-exported from ../shared (canonical home is shared/url-detector.ts)
 function detectPlatform(url: string): UrlDetectionResult | null
 function isSupportedUrl(url: string): boolean
-function findVideoUrls(content: string): VideoUrlEmbed[]
-
-type Platform = 'youtube' | 'tiktok' | 'unknown'
+type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown'
 interface UrlDetectionResult { platform: Platform; videoId: string; url: string }
+
+// Owned by this module
+function findVideoUrls(content: string): VideoUrlEmbed[]
 interface VideoProcessOptions { postProcess?: boolean; extractFrames?: boolean; outputPath?: string; insertMode?: boolean; timeRange?: TimeRange }
 interface ExtractionResult { audioPath: string; metadata: VideoMetadata }
 interface VideoMetadata { title: string; channel?: string; duration?: number; uploadDate?: string; description?: string; platform?: string; url?: string }
@@ -40,8 +46,6 @@ interface VideoUrlEmbed { url: string; platform: Platform; line: number }
 | File | Class/Export | Purpose |
 |------|-------------|---------|
 | `types.ts` | All type interfaces | Type definitions |
-| `url-detector.ts` | `detectPlatform`, `isSupportedUrl` | Regex URL platform detection |
-| `url-detector.test.ts` | Tests | URL detection tests |
 | `note-scanner.ts` | `findVideoUrls`, `hasTranscriptionBelow` | Scan note content for video URLs |
 | `note-scanner.test.ts` | Tests | Note scanner tests |
 | `audio-extractor.ts` | `AudioExtractor` | yt-dlp/ffmpeg via `execFile` (no shell) |
@@ -66,9 +70,11 @@ interface VideoUrlEmbed { url: string; platform: Platform; line: number }
    |
 3. sanitizeUrl(url) -- validates HTTP(S), rejects shell chars
    |
-4. detectPlatform(url)
-   |  YouTube: youtube.com/watch, youtu.be, youtube.com/shorts
+4. detectPlatform(url)  [from shared/url-detector.ts]
+   |  YouTube: youtube.com/watch, youtu.be, youtube.com/shorts|embed|live
    |  TikTok: tiktok.com/@user/video/id, tiktok.com/t/..., vm/vt.tiktok.com
+   |  Instagram: instagram.com/reel|reels|p/CODE ; Twitter/X: (mobile.)twitter.com|x.com/.../status/id
+   |  isSupportedUrl() returns true for all detected platforms EXCEPT twitter
    |
 5. AudioExtractor.extractFromUrl(url)
    |  getMetadata() --> yt-dlp --dump-json --no-download
@@ -101,8 +107,8 @@ Only one command registered directly:
 - `synapse:check-dependencies` -- checks yt-dlp and ffmpeg availability
 
 Transcription commands registered in `main.ts` (unified):
-- `synapse:transcribe-media` -> `VideoModule.transcribeUrlToActiveNote(url)`
-- `synapse:transcribe-note-media` -> `VideoModule.transcribeAndInsert(file, embeds)`
+- `synapse:transcribe-media` -> `VideoModule.transcribeUrlToActiveNote(url)` (registry status: `disabled`)
+- `synapse:transcribe-note-media` -> `VideoModule.transcribeAndInsert(file, embeds)` (active)
 
 ## External Dependencies
 
@@ -123,4 +129,4 @@ Transcription commands registered in `main.ts` (unified):
 ## Unimplemented
 
 - `FrameExtractor`: placeholder, throws on use
-- `supportedPlatforms` settings: defined but not enforced
+- The `supportedPlatforms` setting was removed from `VideoSettings`; platform support is determined by `isSupportedUrl()` in `shared/url-detector.ts`
