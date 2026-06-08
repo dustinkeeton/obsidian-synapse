@@ -437,9 +437,6 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── Media Transcription (visual grouping header) ──
-		new Setting(containerEl).setHeading().setName('Media Transcription');
-
 		// ── Audio Transcription ──
 		const audioBody = this.featureSection(
 			containerEl,
