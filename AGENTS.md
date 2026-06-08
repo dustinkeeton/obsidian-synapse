@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-06-05
+last-updated: 2026-06-08
 ---
 
 # Synapse — Agent Reference
 
-AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, image OCR, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, and checkpoint-based operation resumability.
+AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, image OCR, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, REM wikilink discovery, intake-folder auto-processing, Fire Synapse multi-phase pipeline, and checkpoint-based operation resumability.
 
 ## Build and Test
 
@@ -27,6 +27,9 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `SynapseSettingTab` |
 | commands | `src/commands/` | Command registry: developer source of truth + master control (status/flow gating), central registrar, drift audit | `CommandRegistrar`, `COMMAND_REGISTRY`, `isInFlow`, `isPipelineKeyInFlow`, `auditCommands` |
+| pipeline | `src/pipeline/` | Fire Synapse orchestration: ordered multi-phase run over a folder or single note | `SynapseRunner`, `SYNAPSE_PIPELINE`, `PipelineModuleKey`, `PipelineModuleMap`, `PipelineScanFn` |
+| intake | `src/intake/` | Watches intake folder, auto-routes + pipeline-processes new notes (#111) | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute` |
+| rem | `src/rem/` | REM: discover linkable references, propose in-place `[[wikilink]]` insertions | `RemModule`, types |
 | elaboration | `src/elaboration/` | Stub note detection, AI proposal generation, image analysis for proposals | `ElaborationModule`, `ImageAnalyzer`, types |
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, types |
@@ -45,23 +48,34 @@ Output: `main.js` (single bundle, Obsidian loads this)
 
 ```
 main.ts
-  |-- settings.ts
+  |-- settings.ts  (type-only import of views/types for ProposalKind; no runtime cycle)
   |-- settings-tab.ts
-  |-- shared/ (CheckpointManager, NotificationManager)
-  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types, title/types, shared/checkpoint-types
-  |-- elaboration/ --> shared/ (CheckpointManager), image/ (ImageAnalyzer uses shared/AIClient)
-  |-- audio/ --> shared/ (CheckpointManager)
-  |-- video/ --> shared/ (CheckpointManager), audio/ (reuses transcription pipeline)
-  |-- image/ --> shared/ (CheckpointManager, AIClient, callouts, validation)
-  |-- transcription/ --> audio/ (types), video/ (detectPlatform), image/ (types), shared/ (TimeRange, validation)
-  |-- enrichment/ --> shared/ (CheckpointManager)
-  |-- summarize/ --> shared/ (CheckpointManager), video/ (transcribeUrl injection), audio/ (findAudioEmbeds)
-  |-- tidy/ --> shared/
-  |-- organize/ --> shared/ (CheckpointManager)
-  +-- deep-dive/ --> shared/ (CheckpointManager), organize/ (ContentAnalyzer, DirectoryMatcher)
+  |-- commands/   (depends on NOTHING in src/ — never in a cycle)
+  |-- shared/     (base layer: depends on NO feature module; owns url-detector)
+  |-- pipeline/ --> commands/ (isPipelineKeyInFlow); modules injected via PipelineModuleMap
+  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types, title/types, rem/types, shared/checkpoint-types
+  |-- elaboration/ --> shared/, commands/, image/ (ImageAnalyzer uses shared/AIClient)
+  |-- audio/ --> shared/, commands/
+  |-- video/ --> shared/ (CheckpointManager, url-detector), commands/, audio/ (reuses transcription pipeline)
+  |-- image/ --> shared/ (CheckpointManager, AIClient, callouts, validation), commands/
+  |-- transcription/ --> audio/ (types), video/ (types), image/ (types), shared/ (detectPlatform, TimeRange, validation)
+  |-- enrichment/ --> shared/, commands/
+  |-- summarize/ --> shared/, commands/, video/ (transcribeUrl injection), audio/ (findAudioEmbeds)
+  |-- tidy/ --> shared/, commands/
+  |-- organize/ --> shared/, commands/
+  |-- deep-dive/ --> shared/, commands/, organize/ (ContentAnalyzer, DirectoryMatcher)
+  |-- title/ --> shared/
+  |-- rem/ --> shared/, commands/
+  +-- intake/ --> shared/ ONLY (cross-module work via injected IntakeDeps.fireOnFile)
 ```
 
 Key constraints:
+- ACYCLIC. `shared` and `commands` are base layers depending on no feature module. The former
+  `shared ⇄ video` cycle was eliminated by moving `url-detector.ts` into `shared`; the edge is now
+  one-directional `video → shared` (correct layering).
+- `commands` imports nothing in `src/`; `pipeline` imports `commands` but never the feature modules
+  (they are injected via `PipelineModuleMap` in main.ts).
+- `intake` imports only `obsidian` + `src/shared/*`; all cross-module work goes through `IntakeDeps`.
 - `video` depends on `audio` (reuses transcription pipeline)
 - `transcription` is UI-only; delegates work to `audio`, `video`, and `image` modules
 - `summarize` receives `video.transcribeUrl` and audio transcribe callback via constructor injection
@@ -69,40 +83,41 @@ Key constraints:
 - `image` module uses multi-modal `AIClient.chat()` with `ContentBlock[]` for vision
 - `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
 - All feature modules depend on `shared`; no circular dependencies
-- All feature modules except `tidy`, `title`, and `transcription` receive `CheckpointManager` for resumable operations
-- `views` imports types only from feature modules and `Checkpoint` from shared
+- Modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) receive `CheckpointManager`; `tidy`, `title`, `transcription`, `intake` do not
+- `views` imports types only from feature modules (incl. `rem`) and `Checkpoint` from shared
 
 ## Command Registry
 
-Source of truth: `src/commands/registry.ts` (mirrored here). 23 user-invocable commands, all `active` on first ship. Flows: `p`=palette, `f`=fire-synapse, `s`=startup. Full detail in `docs/agent/command-registry.md`.
+Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries + 1 synthetic pipeline-only entry. Only `status: active` entries register/run; 6 ship `disabled` as a developer master switch (gated out of registration). Flows: `p`=palette, `f`=fire-synapse, `s`=startup. `pipelineKey` links an entry to a Fire Synapse phase.
 
-| ID | Name | Type | Module | Flows | Status |
-|----|------|------|--------|-------|--------|
-| `synapse:review-proposals` | Open proposal review sidebar | callback | main | p | active |
-| `synapse:manage-checkpoints` | Manage interrupted operations | callback | main | p | active |
-| `synapse:transcribe-media` | Transcribe media | callback | main | p | active |
-| `synapse:transcribe-note-media` | Transcribe media from current note | editorCallback | main | p | active |
-| `synapse:fire` | Fire Synapse: run all features on a directory | callback | main | p | active |
-| `synapse:scan-vault` | Scan vault for stub notes | callback | elaboration | p, f, s | active |
-| `synapse:scan-current-note` | Scan current note for elaboration | editorCallback | elaboration | p | active |
-| `synapse:clear-proposals` | Clear all pending proposals | callback | elaboration | p | active |
-| `synapse:enrich-current-note` | Enrich current note | editorCallback | enrichment | p | active |
-| `synapse:scan-vault-enrichment` | Scan vault for enrichment | callback | enrichment | p, f | active |
-| `synapse:undo-enrichment` | Undo last enrichment on current note | editorCallback | enrichment | p | active |
-| `synapse:organize-current-note` | Organize current note | editorCallback | organize | p | active |
-| `synapse:scan-directory-organize` | Scan directory for organization | callback | organize | p, f | active |
-| `synapse:undo-organize` | Undo last organize on current note | editorCallback | organize | p | active |
-| `synapse:deep-dive` | Deep dive into current note | editorCallback | deep-dive | p | active |
-| `synapse:clear-deep-dive` | Clear deep dive proposals | callback | deep-dive | p | active |
-| `synapse:summarize-current-note` | Summarize current note | editorCallback | summarize | p | active |
-| `synapse:scan-vault-summarize` | Scan vault for notes to summarize | callback | summarize | p, f | active |
-| `synapse:tidy-current-note` | Tidy current note | editorCallback | tidy | p | active |
-| `synapse:undo-tidy` | Undo last tidy on current note | editorCallback | tidy | p | active |
-| `synapse:rem-current-note` | REM: Discover links in current note | editorCallback | rem | p | active |
-| `synapse:rem-directory` | REM: Discover links in directory | callback | rem | p, f | active |
-| `synapse:check-dependencies` | Check external tool availability | callback | video | p | active |
+| ID | Name | Type | Module | Flows | Status | pipelineKey |
+|----|------|------|--------|-------|--------|-------------|
+| `synapse:review-proposals` | Open proposal review sidebar | callback | main | p | active | |
+| `synapse:manage-checkpoints` | Manage interrupted operations | callback | main | p | active | |
+| `synapse:transcribe-media` | Transcribe media | callback | main | p | disabled | |
+| `synapse:transcribe-note-media` | Transcribe media from current note | editorCallback | main | p | active | |
+| `synapse:fire` | Fire Synapse: run all features on a directory | callback | main | p | active | |
+| `synapse:scan-vault` | Scan vault for stub notes | callback | elaboration | p, f, s | active | elaboration |
+| `synapse:scan-current-note` | Scan current note for elaboration | editorCallback | elaboration | p | active | |
+| `synapse:clear-proposals` | Clear all pending proposals | callback | elaboration | p | disabled | |
+| `synapse:enrich-current-note` | Enrich current note | editorCallback | enrichment | p | active | |
+| `synapse:scan-vault-enrichment` | Scan vault for enrichment | callback | enrichment | p, f | active | enrichment |
+| `synapse:undo-enrichment` | Undo last enrichment on current note | editorCallback | enrichment | p | disabled | |
+| `synapse:organize-current-note` | Organize current note | editorCallback | organize | p | active | |
+| `synapse:scan-directory-organize` | Scan directory for organization | callback | organize | p, f | active | organize |
+| `synapse:undo-organize` | Undo last organize on current note | editorCallback | organize | p | disabled | |
+| `synapse:deep-dive` | Deep dive into current note | editorCallback | deep-dive | p | active | |
+| `synapse:clear-deep-dive` | Clear deep dive proposals | callback | deep-dive | p | disabled | |
+| `synapse:summarize-current-note` | Summarize current note | editorCallback | summarize | p | active | |
+| `synapse:scan-vault-summarize` | Scan vault for notes to summarize | callback | summarize | p, f | active | summarize |
+| `synapse:tidy-current-note` | Tidy current note | editorCallback | tidy | p | active | |
+| `synapse:undo-tidy` | Undo last tidy on current note | editorCallback | tidy | p | disabled | |
+| `synapse:rem-current-note` | REM: Discover links in current note | editorCallback | rem | p | active | |
+| `synapse:rem-directory` | REM: Discover links in directory | callback | rem | p, f | active | rem |
+| `synapse:check-dependencies` | Check external tool availability | callback | video | p | active | |
+| `synapse:tidy-vault` | Tidy vault (Fire Synapse) | (synthetic) | tidy | f | active | tidy |
 
-Plus a synthetic pipeline-only entry `synapse:tidy-vault` (`pipelineKey: tidy`, flows `f`) that gates the tidy Fire Synapse phase independently of any palette command.
+`synapse:tidy-vault` is synthetic and pipeline-only: it gates the tidy Fire Synapse phase independently of any palette command and is never passed to `registrar.register()`. Fire Synapse phase order: elaboration → summarize → enrichment → rem → tidy → organize.
 
 ## Ribbon Icons
 
@@ -187,7 +202,6 @@ SynapseSettings {
     tempFolder: string                              // default: '.synapse/temp'
     downloadFolder: string                          // default: 'Media'
     embedInNote: boolean                            // default: true
-    supportedPlatforms: { youtube: boolean, tiktok: boolean }
     frameExtraction: FrameExtractionSettings {
       enabled: boolean                              // default: false
       intervalSeconds: number                       // default: 30
@@ -199,6 +213,7 @@ SynapseSettings {
     enabled: boolean                                // default: true
     visionModel: string                             // default: '' (falls back to ai.model)
     language: string                                // default: ''
+    maxImageSizeMb: number                          // default: 5 (auto-downscale threshold)
   }
   enrichment: EnrichmentSettings {
     enabled: boolean                                // default: true
@@ -257,8 +272,39 @@ SynapseSettings {
     proposalFolderPath: string                      // default: '.synapse/title-proposals'
     checkAfterOperations: boolean                   // default: true
   }
+  rem: RemSettings {
+    enabled: boolean                                // default: true
+    semanticMatching: boolean                       // default: false (AI conceptual matches)
+    confidenceThreshold: number                     // default: 0.5 (semantic matches only)
+    maxLinksPerNote: number                         // default: 20
+    remFolderPath: string                           // default: '.synapse/rem'
+  }
+  intake: IntakeSettings {
+    enabled: boolean                                // default: true
+    intakeFolder: string                            // default: 'Inbox'
+    markProcessed: boolean                          // default: true
+    moveWhenDone?: string                           // default: '' (fallback mover)
+    settleSeconds: number                           // default: 5 (debounce settle window)
+    captureLog: boolean                             // default: true
+    captureLogFolder: string                        // default: '_captured'
+  }
+  ui: UISettings {
+    collapsedSections: Record<string, boolean>      // default: {} (settings accordion state)
+  }
+  autoAccept: AutoAcceptSettings {                  // Record<ProposalKind, boolean>, all default false
+    elaboration: boolean                            // default: false
+    enrichment: boolean                             // default: false
+    organize: boolean                               // default: false
+    'deep-dive': boolean                            // default: false
+    title: boolean                                  // default: false
+    rem: boolean                                    // default: false (NOTE: rewrites note body)
+  }
 }
 ```
+
+`ProposalKind` (`src/views/types.ts`) is the single source of truth for `PROPOSAL_KINDS` and keys of `autoAccept`:
+`'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem'`. A compile-time guard asserts it
+matches the `UnifiedItem` union exactly.
 
 ## Data Storage
 
@@ -273,6 +319,8 @@ SynapseSettings {
 | Deep dive proposals | `.synapse/deep-dive/*.json` | `DeepDiveProposal` JSON |
 | Deep dive runs | `.synapse/deep-dive/runs/*.json` | `DeepDiveRun` JSON |
 | Title proposals | `.synapse/title-proposals/*.json` | `TitleProposal` JSON |
+| REM proposals | `.synapse/rem/*.json` | `RemProposal` JSON |
+| Intake breadcrumbs | `‹intakeFolder›/_captured/*.md` (configurable) | Dated wiki-link breadcrumb notes |
 | Checkpoints | `.synapse/checkpoints/*.json` | `Checkpoint` JSON |
 | Temp video/audio | `.synapse/temp/` | Binary (auto-cleaned) |
 | Downloaded videos | `Media/` (configurable) | Video files |
@@ -302,6 +350,14 @@ enrichment.onViewRefreshNeeded()         --> main.refreshUnifiedView()
 organize.onViewRefreshNeeded()           --> main.refreshUnifiedView()
 deepDive.onViewRefreshNeeded()           --> main.refreshUnifiedView()
 title.onViewRefreshNeeded()              --> main.refreshUnifiedView()
+rem.onViewRefreshNeeded()                --> main.refreshUnifiedView()
+
+// Intake (IntakeDeps injected into IntakeModule)
+intake.deps.fireOnFile(file)             --> SynapseRunner.fireOnFile(file)   // whole pipeline on one note
+intake.deps.transcribeUrlToNote(...)     --> STUB (#112), no-op notice
+
+// Per-proposal-type auto-accept (#228): each module gets a live getter
+<module>.shouldAutoAccept()              --> () => settings.autoAccept[kind]
 ```
 
 Enrichment callbacks wired when `enrichment.enabled && enrichment.autoEnrich`.
@@ -309,10 +365,11 @@ Deep-dive enrichment wired when `deepDive.autoEnrichOnAccept`.
 Deep-dive organize wired when `deepDive.autoOrganizeOnAccept && organize.enabled`.
 Summarize organize wired when `summarize.autoOrganizeOnSummarize && organize.enabled`.
 Title checks wired when `title.enabled && title.checkAfterOperations`.
+Auto-accept getters wired for elaboration, enrichment, organize, deep-dive, title, rem (default `false`).
 
 ## Checkpoint System
 
-All vault-scan operations (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive) use `CheckpointManager` for resumable operations:
+All vault-scan operations (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) use `CheckpointManager` for resumable operations:
 
 ```
 main.ts creates single CheckpointManager, injected into all modules

@@ -1,4 +1,10 @@
-import { UrlDetectionResult } from './types';
+export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown';
+
+export interface UrlDetectionResult {
+	platform: Platform;
+	videoId: string;
+	url: string;
+}
 
 const YOUTUBE_REGEX =
 	/(?:youtube\.com\/watch\?(?:[^#\s]*?&)?v=|youtu\.be\/|youtube\.com\/(?:shorts|embed|live)\/)([a-zA-Z0-9_-]+)/;

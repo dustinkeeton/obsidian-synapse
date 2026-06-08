@@ -7,7 +7,7 @@ import {
 	isInFlow,
 	isPipelineKeyInFlow,
 } from './registry';
-import { SYNAPSE_PIPELINE } from '../pipeline/types';
+import { SYNAPSE_PIPELINE } from '../pipeline';
 import type { CommandDefinition } from './types';
 
 /** The 23 real, user-invocable command ids (excludes the synthetic pipeline entry). */

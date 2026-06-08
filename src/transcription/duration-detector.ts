@@ -33,7 +33,11 @@ export async function detectLocalFileDuration(
 		const { execFile } = require('child_process') as typeof import('child_process');
 
 		const data = await readBinary(file);
-		const tempPath = path.join(os.tmpdir(), `synapse-probe-${Date.now()}-${file.name}`);
+		// Defense-in-depth: file.name is vault-derived; strip any path-unsafe
+		// characters before interpolating it into a filesystem temp path so a
+		// crafted basename can never escape os.tmpdir().
+		const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, '_');
+		const tempPath = path.join(os.tmpdir(), `synapse-probe-${Date.now()}-${safeName}`);
 		fs.writeFileSync(tempPath, Buffer.from(data));
 
 		const ffmpegPath = sanitizePath(getSettings().video.ffmpegPath);

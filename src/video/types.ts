@@ -1,10 +1,6 @@
-export type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown';
+import type { Platform } from '../shared';
 
-export interface UrlDetectionResult {
-	platform: Platform;
-	videoId: string;
-	url: string;
-}
+export type { Platform };
 
 export interface VideoSource {
 	type: 'url' | 'file';
