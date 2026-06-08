@@ -1,6 +1,5 @@
-import { CALLOUT_TYPES } from '../shared';
+import { CALLOUT_TYPES, detectPlatform } from '../shared';
 import { VideoUrlEmbed } from './types';
-import { detectPlatform } from './url-detector';
 
 const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
 const CALLOUT_TRANSCRIPTION_PREFIX = `[!${CALLOUT_TYPES.transcription}]`;

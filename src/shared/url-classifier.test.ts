@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { classifyUrl, extractUrls } from './url-classifier';
-import { detectPlatform } from '../video/url-detector';
+import { detectPlatform } from './url-detector';
 
 describe('classifyUrl', () => {
 	describe('video URLs (delegated to video detector)', () => {

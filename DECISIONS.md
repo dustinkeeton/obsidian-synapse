@@ -4,6 +4,106 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-08: Eliminate the `shared ⇄ video` circular dependency
+
+**Context**: `shared/` is the base layer of the codebase — every feature module depends on it, and by design it must depend on *no* feature module. An audit found that `url-detector.ts` lived in `video/`, yet `shared/` code reached back into it for URL parsing. That inverted the layering and created a genuine import cycle: `shared → video → shared`. Cycles make the dependency graph non-deterministic to reason about, complicate testing in isolation, and risk subtle load-order bugs.
+
+**Decision**: Relocate `url-detector.ts` (and its tests) from `src/video/` into `src/shared/`. The URL detector is a pure parsing utility with no video-specific dependencies, so it belongs in the base layer. After the move, the only edge between the two modules is the correct, one-directional `video → shared`.
+
+**Alternatives considered**:
+- **Document the cycle as an accepted exception** — rejected. It leaves the cycle in place; the graph stays non-acyclic and the layering rule stays violated.
+- **Dependency-inject the detector into `shared`** — rejected. Same outcome: the runtime cycle still exists, just hidden behind an injection seam, at the cost of extra wiring.
+
+**Rationale**: Moving the file is the only option that actually removes the cycle rather than masking it. The detector is base-layer-appropriate code, so the move also improves conceptual placement. `shared` now depends on no feature module, and the whole dependency graph is acyclic.
+
+**Impact**: `src/video/url-detector.ts` → `src/shared/url-detector.ts`; `src/video/url-detector.test.ts` → `src/shared/url-detector.test.ts`. `video/` now imports `findVideoUrls`/`detectPlatform`/`isSupportedUrl` from `shared`. No behavior change; all tests still pass. The dependency graph is now provably acyclic with `shared` and `commands` as base layers.
+
+---
+
+## 2026-06-08: Sanitize vault-derived basename before building temp paths (security hardening)
+
+**Context**: A security pass reviewed `transcription/duration-detector.ts`, which builds a temporary file path from a note's `basename` before invoking `ffprobe`. A crafted basename (e.g. one containing path separators) could in principle influence where the temp file lands.
+
+**Decision**: Sanitize the basename to a safe character set (`[^A-Za-z0-9._-]` → `_`) before composing the temp path, so a crafted name can never escape `os.tmpdir()`.
+
+**Alternatives considered**:
+- **Leave as-is** — rejected; cheap to harden, and defense-in-depth on any vault-derived string that feeds a filesystem path is worth it.
+- **Hash the basename** — rejected; loses human-readability of temp files for negligible extra safety.
+
+**Rationale**: One-line, zero-behavior-change hardening that closes a low-severity path-traversal surface. This was the only code change the security pass required — the rest of the codebase was already security-mature.
+
+**Impact**: `duration-detector.ts` only. No user-visible change.
+
+---
+
+## 2026-06-08: Per-proposal-type auto-accept (Issue #228)
+
+**Context**: Every proposal kind (elaboration, enrichment, organize, deep-dive, title, REM) routed through the same manual review sidebar. Users who trust one feature still had to click through its proposals one by one, with no way to opt a single feature into hands-off operation.
+
+**Decision**: Add an `autoAccept` settings group with one boolean per proposal kind (`autoAccept.{elaboration|enrichment|organize|deep-dive|title|rem}`), all defaulting to `false`. Each module receives a `shouldAutoAccept` predicate, wired in `main.ts` to its setting. When true, a freshly generated proposal is accepted in full as generated.
+
+**Alternatives considered**:
+- **One global auto-accept switch** — rejected; users trust features unevenly (e.g. happy to auto-tidy, but want to eyeball folder moves).
+- **Confidence-threshold auto-accept** — rejected as a larger feature; deferred. A per-kind boolean is the minimal honest control.
+
+**Rationale**: Per-kind granularity matches how users actually build trust in the tool — incrementally, one feature at a time. All-false defaults preserve the existing review-everything behavior.
+
+**Impact**: New `AutoAcceptSettings` group. **Safety note:** REM auto-accept is unlike the others — it *rewrites the note body* (inserting `[[wikilinks]]`) rather than appending a separate section. This is called out in the REM module docs so users understand the difference before enabling it.
+
+---
+
+## 2026-06-08: Coalesce similar organize folder names (Issue #172)
+
+**Context**: When the organize module proposes new directories for a batch of notes, the AI sometimes produced near-duplicate folder names for the same concept (e.g. `Recipes`, `Recipe`, `Cooking Recipes`), fragmenting what should be one folder.
+
+**Decision**: Add a coalescing step that detects similar proposed folder names within a run and merges them to a single canonical name before presenting proposals.
+
+**Rationale**: Reduces folder sprawl and keeps the vault's directory structure coherent without requiring the user to manually reconcile near-duplicates after the fact.
+
+**Impact**: Organize proposals for a batch now converge on shared folders. Single-note organize is unaffected.
+
+---
+
+## 2026-06-08: Intake folder auto-processing (Issue #111)
+
+**Context**: Users wanted a "drop it and forget it" inbox — add a note (or a media/article URL) to a watched folder and have Synapse process it automatically, rather than running commands by hand.
+
+**Decision**: Add an `intake/` module that watches a configurable folder, debounces until a note settles, routes it (article URL / media URL / general), runs the full Fire Synapse pipeline on that single note via an injected `fireOnFile`, stamps a `synapse-processed` frontmatter flag for idempotency, and optionally relocates the note. The module imports **only** `obsidian` and `shared/` — all cross-module work flows through an injected `IntakeDeps` object, so intake never depends on a feature module.
+
+**Alternatives considered**:
+- **Let intake import the pipeline/feature modules directly** — rejected; would couple the watcher to concrete features and risk cycles. Dependency injection keeps intake at the leaf of the graph.
+- **Process on every file event** — rejected; notes are saved many times while being edited. A per-path debounce (settle window) avoids reprocessing mid-edit.
+
+**Rationale**: A settle-then-process loop with a frontmatter idempotency flag gives reliable, exactly-once auto-processing that survives reloads. Routing through `IntakeDeps` preserves the architecture rule that intake (and the pipeline) never reach into feature modules.
+
+**Impact**: New `settings.intake` group (watched folder, settle seconds, move-when-done, capture log). The media-transcription branch is a documented stub (#112). A capture-log breadcrumb (#224) records when a note is organized out of the inbox, with guards to prevent an infinite ingest loop.
+
+---
+
+## 2026-06-08: Fire Synapse multi-phase pipeline (`pipeline/` module)
+
+**Context**: Several features each had their own "scan a folder" command. Running a full pass over a directory meant invoking each one separately, in no enforced order. Organize in particular *must* run last (it moves notes), but nothing guaranteed that.
+
+**Decision**: Add a `pipeline/` module with a `SynapseRunner` that runs an ordered, fixed sequence of phases over a folder or a single note: **elaboration → summarize → enrichment → REM → tidy → organize**. Each phase is one feature module's scan function, injected via a `PipelineModuleMap` in `main.ts`; the pipeline imports `commands/` (for flow gating) but never the feature modules themselves. Phases are gated by both the feature's `enabled` setting and command-registry flow membership, and each phase is wrapped in try/catch so one failure doesn't abort the run.
+
+**Rationale**: A single ordered runner makes "do everything to this folder" one action with deterministic ordering. Organize runs last by construction — as the content-aware mover, it relocates notes only after all content has been generated. Dependency injection keeps the runner decoupled from concrete features (same rule intake follows).
+
+**Impact**: `synapse:fire` command + the synthetic `tidy-vault` pipeline phase. `SynapseRunner.fireOnFile` is the single-note entry point reused by the intake module.
+
+---
+
+## 2026-06-08: REM module — in-place wikilink discovery (`rem/`)
+
+**Context**: Enrichment suggests links as a separate section, but users also wanted Synapse to find places in the *existing prose* where a phrase matches another note's title/alias and turn it into a `[[wikilink]]` in place.
+
+**Decision**: Add a `rem/` module (Re-link & Enrich Mappings) that scans note text for literal title/alias matches (plus optional AI semantic matches above a confidence threshold) and proposes in-place `[[wikilink]]` insertions. Accepting a proposal rewrites the note body; the pre-edit content is snapshotted for undo. REM is phase 4 of the Fire Synapse pipeline and appears in the unified proposal view.
+
+**Rationale**: Literal title/alias matching is high-precision and cheap; semantic matching is opt-in behind a confidence gate. Snapshotting before the body rewrite makes the destructive edit safely reversible. Exclusion rules reuse the existing enrichment `excludeFolders`/`excludeTags` rather than inventing a parallel set.
+
+**Impact**: Two new commands (`rem-current-note`, `rem-directory`). REM is the one proposal kind whose accept rewrites prose rather than appending a section — important context for the auto-accept feature (#228).
+
+---
+
 ## 2026-06-05: Central command registry (Issue #215)
 
 **Context**: Synapse registered 23 commands via scattered `addCommand()` calls across 9 files. The only gate was each feature's user-facing `enabled` setting — all-or-nothing per feature — and there was no single place to audit commands or to deprecate/disable one or remove it from a specific flow (palette, Fire Synapse, startup) without hunting through modules. The drift was already real: `AGENTS.md`'s command table was missing 3 of the 23 commands.
