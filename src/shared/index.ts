@@ -51,6 +51,8 @@ export {
 export type { RecipeJsonLd } from './content-fetcher';
 export { classifyUrl, extractUrls } from './url-classifier';
 export type { UrlContentType, UrlClassification } from './url-classifier';
+export { detectPlatform, isSupportedUrl } from './url-detector';
+export type { Platform, UrlDetectionResult } from './url-detector';
 export { addEnhancedSlider } from './slider-helper';
 export { addCollapsibleSection } from './collapsible-section';
 export type {

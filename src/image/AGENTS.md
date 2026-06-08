@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-19
+last-updated: 2026-06-08
 ---
 
 # Image Module
@@ -23,6 +23,10 @@ class ImageModule {
 
 function findImageEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): ImageEmbed[]
 
+// preprocess.ts (also exported from index.ts)
+function arrayBufferToBase64(buffer: ArrayBuffer): string
+function preprocessImage(data: ArrayBuffer, mediaType: string, maxSizeMb: number): Promise<{ data: string; mediaType: string }>
+
 const IMAGE_EXTENSIONS: RegExp   // /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i
 const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi
 
@@ -44,9 +48,9 @@ interface OCRResult {
 |------|-------------|---------|
 | `types.ts` | `ImageEmbed`, `OCRResult` | Type definitions |
 | `extractor.ts` | `ImageExtractor` | Multi-modal AI OCR via `AIClient.chat()` with `ContentBlock[]` |
+| `preprocess.ts` | `arrayBufferToBase64`, `preprocessImage` | Base64 encoding + auto-downscale when payload exceeds `maxImageSizeMb` |
 | `note-scanner.ts` | `findImageEmbeds`, `hasExtractionBelow`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX` | Scan note content for image embeds |
-| `note-scanner.test.ts` | Tests | Note scanner tests |
-| `extractor.test.ts` | Tests | ImageExtractor tests |
+| `note-scanner.test.ts`, `extractor.test.ts`, `preprocess.test.ts` | Tests | |
 | `index.ts` | `ImageModule` | Orchestrator, public extraction methods, checkpoint management |
 
 ## Data Flow
@@ -102,6 +106,7 @@ All under `settings.image`:
 | `enabled` | boolean | true | Module activation |
 | `visionModel` | string | '' | Override AI model for vision (empty = use `ai.model`) |
 | `language` | string | '' | Language hint (reserved for future use) |
+| `maxImageSizeMb` | number | 5 | Max base64 payload (MB) before `preprocessImage` auto-downscales (API limit is 5 MB) |
 
 ## Commands
 

@@ -1,4 +1,4 @@
-import { detectPlatform, isSupportedUrl } from '../video/url-detector';
+import { detectPlatform, isSupportedUrl } from './url-detector';
 import { sanitizeUrl } from './validation';
 
 /**

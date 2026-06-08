@@ -1,10 +1,14 @@
 ---
-last-updated: 2026-03-19
+last-updated: 2026-06-08
 ---
 
 # Shared Module
 
-Cross-cutting utilities used by all feature modules: AI client, file operations, notifications, validation, frontmatter parsing, checkpoint management, and ID generation.
+Cross-cutting base layer used by all feature modules: AI client, file operations, notifications, validation, frontmatter parsing, checkpoint management, ID generation, URL platform detection / classification, and web content fetching. Depends on NO feature module — this is the bottom of the dependency graph.
+
+Note: `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) was moved here
+from `src/video/` to break the former shared⇄video import cycle. The canonical home for these symbols and the
+`Platform`/`UrlDetectionResult` types is now `shared`; `video` re-exports them for back-compat.
 
 ## Public API
 
@@ -57,9 +61,38 @@ function notifyError(context: string, error: unknown): void
 // validation.ts
 function sanitizeUrl(url: string): string
 function sanitizePath(filePath: string): string
-function ensureWithinVault(filePath: string, vaultBasePath: string): string
+function ensureWithinVault(filePath: string, vaultBasePath: string): string  // EXISTS but not yet wired into write paths
 function sanitizeAIResponse(text: string): string
+function stripCodeFences(text: string): string
 function blockquoteOriginal(content: string): string
+function parseTimestamp(input: string): number                 // 'mm:ss' / 'hh:mm:ss' / seconds -> seconds
+function validateTimeRange(start: string, end: string, duration?: number): TimeRange
+function formatTimeRange(range: TimeRange): string
+interface TimeRange { startSeconds: number; endSeconds: number }
+
+// url-detector.ts (moved here from video/)
+function detectPlatform(url: string): UrlDetectionResult | null
+function isSupportedUrl(url: string): boolean                   // true for all detected platforms except 'twitter'
+type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown'
+interface UrlDetectionResult { platform: Platform; videoId: string; url: string }
+
+// url-classifier.ts
+function classifyUrl(url: string): UrlClassification
+function extractUrls(text: string): string[]
+type UrlContentType = string
+interface UrlClassification { /* url, contentType, ... */ }
+
+// content-fetcher.ts
+function fetchPageContent(url: string): Promise<string>
+function fetchArticleContent(url: string): Promise<string>
+function extractReadableText(html: string): string
+function extractTitle(html: string): string
+function extractMetaDescription(html: string): string
+function extractJsonLdRecipes(html: string): RecipeJsonLd[]
+function formatRecipeStructuredData(recipes: RecipeJsonLd[]): string
+
+// collapsible-section.ts
+function addCollapsibleSection(opts: CollapsibleSectionOptions): CollapsibleSection
 
 // frontmatter-utils.ts
 interface ParsedNote { frontmatter: Record<string, unknown>; body: string; hasFrontmatter: boolean }
@@ -73,8 +106,11 @@ function isTwitterUrl(url: string): boolean
 interface TweetContent { author: string; text: string; url: string }
 
 // callouts.ts
-const CALLOUT_TYPES: { summary, transcription, enrichment, elaboration, deepDive, nav }
-type CalloutType = 'synapse-summary' | 'synapse-transcription' | ...
+const CALLOUT_TYPES: { summary, transcription, enrichment, elaboration, deepDive, nav, ocr }
+type CalloutType = 'synapse-summary' | 'synapse-transcription' | 'synapse-enrichment'
+                 | 'synapse-elaboration' | 'synapse-deep-dive' | 'synapse-nav' | 'synapse-ocr'
+const ENRICHMENT_START: string   // '%% synapse-enrichment-start %%' marker
+const ENRICHMENT_END: string     // '%% synapse-enrichment-end %%' marker
 function buildCallout(type: CalloutType, title: string, body: string, collapsed?: boolean): string
 
 // diagram-generator.ts
@@ -110,7 +146,7 @@ class CheckpointManager {
 }
 
 // checkpoint-types.ts
-type CheckpointModule = 'deep-dive' | 'elaboration' | 'enrichment' | 'audio' | 'video' | 'image' | 'summarize' | 'organize'
+type CheckpointModule = 'deep-dive' | 'elaboration' | 'enrichment' | 'audio' | 'video' | 'image' | 'summarize' | 'organize' | 'rem'
 type CheckpointStatus = 'active' | 'completed' | 'discarded'
 interface CheckpointWorkItem { id: string; label: string; payload: Record<string, unknown> }
 interface DeferredTask { id: string; type: string; data: Record<string, unknown> }
@@ -138,8 +174,16 @@ interface Checkpoint {
 | `notifications.test.ts` | Tests | NotificationManager tests |
 | `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `wordCount` | Vault file operations |
 | `api-utils.ts` | `withRetry`, `sleep`, `notifyError` | Retry with exponential backoff, error display |
-| `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse`, `blockquoteOriginal` | Input validation and output sanitization |
+| `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
 | `validation.test.ts` | Tests | Validation tests |
+| `url-detector.ts` | `detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult` | Regex platform detection (moved here from video/) |
+| `url-detector.test.ts` | Tests | URL detection tests (moved here from video/) |
+| `url-classifier.ts` | `classifyUrl`, `extractUrls`, `UrlContentType`, `UrlClassification` | Classify URL content type, extract URLs from text |
+| `url-classifier.test.ts` | Tests | URL classifier tests |
+| `content-fetcher.ts` | `fetchPageContent`, `fetchArticleContent`, `extractReadableText`, `extractTitle`, `extractMetaDescription`, `extractJsonLdRecipes`, `formatRecipeStructuredData`, `RecipeJsonLd` | Fetch + extract readable web/article/recipe content |
+| `content-fetcher.test.ts` | Tests | Content fetcher tests |
+| `collapsible-section.ts` | `addCollapsibleSection`, `CollapsibleSection`, `CollapsibleSectionOptions` | Reusable collapsible UI section (settings accordions) |
+| `collapsible-section.test.ts` | Tests | Collapsible section tests |
 | `frontmatter-utils.ts` | `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `ParsedNote` | YAML frontmatter parsing and serialization |
 | `frontmatter-utils.test.ts` | Tests | Frontmatter tests |
 | `callouts.ts` | `CALLOUT_TYPES`, `buildCallout`, `CalloutType` | Unified callout registry and builder for AI content |
@@ -222,7 +266,7 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 |----------|---------|
 | `sanitizeUrl` | null bytes, non-HTTP(S), shell metacharacters |
 | `sanitizePath` | empty, null bytes, `..` traversal, shell metacharacters |
-| `ensureWithinVault` | paths resolving outside vault base |
+| `ensureWithinVault` | paths resolving outside vault base (helper EXISTS but is not yet wired into write paths — no active write-boundary enforcement) |
 | `sanitizeAIResponse` | script tags, event handlers, javascript/data/vbscript URIs, iframe/embed/object |
 | `blockquoteOriginal` | (transforms) wraps body in blockquote, preserves frontmatter |
 | `isValidCheckpointId` | anything not matching `/^[a-z0-9]+$/` |
@@ -233,7 +277,10 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 |---------|---------|
 | `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `NotificationManager` | all feature modules (injected via constructor) |
-| `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive (all injected via constructor) |
+| `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive, rem (all injected via constructor) |
+| `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
+| `classifyUrl` / `extractUrls` | summarize, enrichment, intake (URL routing) |
+| `detectPlatform` / `isSupportedUrl` | video/index, transcription/, summarize (platform gating) |
 | `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index, organize/index, deep-dive/index, checkpoint-manager |
 | `wordCount` | elaboration/detector, deep-dive/index |
 | `readNote` | deep-dive/index |

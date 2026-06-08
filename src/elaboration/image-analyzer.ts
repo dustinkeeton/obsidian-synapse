@@ -2,7 +2,7 @@ import { App, Notice, TFile } from 'obsidian';
 import { AIClient } from '../shared';
 import type { ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
-import { arrayBufferToBase64, preprocessImage } from '../image/preprocess';
+import { arrayBufferToBase64, preprocessImage } from '../image';
 
 export interface ImageAnalysis {
 	/** Original reference as it appears in the note */

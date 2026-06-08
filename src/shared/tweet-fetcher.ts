@@ -1,7 +1,7 @@
 import { requestUrl } from 'obsidian';
 import { sanitizeUrl } from './validation';
 import { withRetry } from './api-utils';
-import { detectPlatform } from '../video/url-detector';
+import { detectPlatform } from './url-detector';
 
 const FETCH_TIMEOUT_MS = 30_000;
 
