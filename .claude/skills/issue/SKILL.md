@@ -123,7 +123,7 @@ PROJECT_ID=$(gh api graphql -f query='
       }
     }
   }
-' -f owner="$OWNER" --jq '.data.user.projectsV2.nodes[0].id')
+' -f owner="$OWNER" --jq '.data.user.projectsV2.nodes[] | select(.title == "Obsidian Synapse Roadmap") | .id')
 
 # Get Status field ID and Backlog option ID
 gh api graphql -f query='
