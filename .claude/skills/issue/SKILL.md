@@ -114,7 +114,8 @@ ISSUE_NODE_ID=$(gh api graphql -f query='
 **6c. Discover project and field IDs:**
 
 ```bash
-# Get project ID
+# Get project ID — select the board by title (an account may own several
+# projects, so don't assume the first result is the right one).
 PROJECT_ID=$(gh api graphql -f query='
   query($owner: String!) {
     user(login: $owner) {
@@ -123,7 +124,7 @@ PROJECT_ID=$(gh api graphql -f query='
       }
     }
   }
-' -f owner="$OWNER" --jq '.data.user.projectsV2.nodes[] | select(.title == "Obsidian Synapse Roadmap") | .id')
+' -f owner="$OWNER" --jq 'first(.data.user.projectsV2.nodes[] | select(.title | test("Synapse"; "i")) | .id) // empty')
 
 # Get Status field ID and Backlog option ID
 gh api graphql -f query='
