@@ -124,4 +124,23 @@ describe('AudioExtractor.runCommand error classification', () => {
 		await expect(rejection).rejects.toThrow(/not found/i);
 		await expect(rejection).rejects.toThrow(/yt-dlp/);
 	});
+
+	it('reports a timeout when execFile kills the child via signal (no ETIMEDOUT code)', async () => {
+		// execFile's `timeout` option SIGTERMs the child: killed=true, signal set,
+		// code null. This must be detected before stderr classification.
+		const error = Object.assign(new Error('Command failed'), {
+			killed: true,
+			signal: 'SIGTERM',
+			code: null,
+		});
+		execFileMock.mockImplementation(
+			(_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) =>
+				cb(error, '', '')
+		);
+
+		const ex = makeExtractor();
+		const rejection = ex.extractFromUrl('https://www.tiktok.com/@user/video/123');
+		await expect(rejection).rejects.toThrow(/timed out after 5 minutes/);
+		await expect(rejection).rejects.toThrow(/yt-dlp/);
+	});
 });
