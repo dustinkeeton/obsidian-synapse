@@ -206,6 +206,46 @@ describe('Transcriber', () => {
 			const result = await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
 			expect(result.timestamps).toBeUndefined();
 		});
+
+		describe('network failures', () => {
+			it('classifies a persistent connection-refused failure and names the Whisper API', async () => {
+				mockRequestUrl.mockRejectedValue(new Error('net::ERR_CONNECTION_REFUSED'));
+
+				const rejection = transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+				await expect(rejection).rejects.toThrow(/Whisper transcription API/);
+				await expect(rejection).rejects.toThrow(/connection refused/i);
+			});
+
+			it('retries a transient connection failure and succeeds on the second attempt', async () => {
+				mockRequestUrl
+					.mockRejectedValueOnce(new Error('net::ERR_CONNECTION_REFUSED'))
+					.mockResolvedValueOnce({
+						status: 200,
+						json: { text: 'Recovered', language: 'en', duration: 1 },
+						text: '',
+						headers: {},
+					});
+
+				const result = await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+				expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+				expect(result.raw).toBe('Recovered');
+			});
+
+			it('does not reclassify a 503 HTTP response as a network error', async () => {
+				mockRequestUrl.mockResolvedValue({
+					status: 503,
+					json: { error: { message: 'Service unavailable' } },
+					text: '',
+					headers: {},
+				});
+
+				await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
+					.rejects.toThrow('Whisper API request failed (status 503)');
+				// A real HTTP response is not retried — single call.
+				expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+			});
+		});
 	});
 
 	describe('Deepgram API (requestUrl)', () => {
@@ -287,6 +327,52 @@ describe('Transcriber', () => {
 
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
 				.rejects.toThrow('Deepgram API request failed (status 401)');
+		});
+
+		describe('network failures', () => {
+			it('classifies a persistent connection-refused failure and names the Deepgram API', async () => {
+				mockRequestUrl.mockRejectedValue(new Error('net::ERR_CONNECTION_REFUSED'));
+
+				const rejection = transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+				await expect(rejection).rejects.toThrow(/Deepgram transcription API/);
+				await expect(rejection).rejects.toThrow(/connection refused/i);
+			});
+
+			it('retries a transient connection failure and succeeds on the second attempt', async () => {
+				mockRequestUrl
+					.mockRejectedValueOnce(new Error('net::ERR_CONNECTION_REFUSED'))
+					.mockResolvedValueOnce({
+						status: 200,
+						json: {
+							results: {
+								channels: [{
+									alternatives: [{ transcript: 'recovered text' }],
+									detected_language: 'en',
+								}],
+							},
+						},
+						text: '',
+						headers: {},
+					});
+
+				const result = await transcriber.transcribe(new ArrayBuffer(8), 'audio.wav');
+
+				expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+				expect(result.raw).toBe('recovered text');
+			});
+
+			it('does not reclassify a 503 HTTP response as a network error', async () => {
+				mockRequestUrl.mockResolvedValue({
+					status: 503,
+					json: { error: 'Service unavailable' },
+					text: '',
+					headers: {},
+				});
+
+				await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
+					.rejects.toThrow('Deepgram API request failed (status 503)');
+				expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+			});
 		});
 	});
 });
