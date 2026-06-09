@@ -707,3 +707,6 @@ export function buildDeepDivePath(
 	const path = folder ? `${folder}/${safeName}.md` : `${safeName}.md`;
 	return normalizePath(path);
 }
+
+// Settings section renderer (#243)
+export { renderDeepDiveSettings } from './settings-section';

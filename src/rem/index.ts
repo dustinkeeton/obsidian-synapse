@@ -493,3 +493,6 @@ export class RemModule {
 		}
 	}
 }
+
+// Settings section renderer (#243)
+export { renderRemSettings } from './settings-section';
