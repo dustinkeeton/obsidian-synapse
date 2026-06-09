@@ -59,6 +59,15 @@ export type {
 	CollapsibleSection,
 	CollapsibleSectionOptions,
 } from './collapsible-section';
+export {
+	createSettingsSectionContext,
+	isSectionCollapsed,
+	persistCollapse,
+} from './settings-section';
+export type {
+	SettingsSectionContext,
+	SettingsSectionContextOptions,
+} from './settings-section';
 export { generateId, isValidCheckpointId } from './id-utils';
 export { CheckpointManager } from './checkpoint-manager';
 export type {

@@ -652,3 +652,6 @@ export class EnrichmentModule {
 		}
 	}
 }
+
+// Settings section renderer (#243)
+export { renderEnrichmentSettings } from './settings-section';

@@ -177,3 +177,6 @@ export class TidyModule {
 	}
 
 }
+
+// Settings section renderer (#243)
+export { renderTidySettings } from './settings-section';

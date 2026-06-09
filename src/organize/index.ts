@@ -722,3 +722,6 @@ export function buildSummaryPath(timestamp: string): string {
 	const date = timestamp.split('T')[0] || timestamp;
 	return normalizePath(`.synapse/organize/summaries/${date}-organize-summary.md`);
 }
+
+// Settings section renderer (#243)
+export { renderOrganizeSettings } from './settings-section';

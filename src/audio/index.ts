@@ -432,3 +432,6 @@ export class AudioModule {
 		}
 	}
 }
+
+// Settings section renderer (#243)
+export { renderAudioSettings } from './settings-section';
