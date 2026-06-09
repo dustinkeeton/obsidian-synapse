@@ -345,3 +345,6 @@ export class VideoModule {
 		}
 	}
 }
+
+// Settings section renderer (#243)
+export { renderVideoSettings } from './settings-section';

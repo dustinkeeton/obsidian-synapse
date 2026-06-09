@@ -180,3 +180,6 @@ export class ImageModule {
 		}
 	}
 }
+
+// Settings section renderer (#243)
+export { renderImageSettings } from './settings-section';
