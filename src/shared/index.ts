@@ -1,6 +1,13 @@
 export { AIClient } from './ai-client';
 export type { ChatMessage, ContentBlock, TextContentBlock, ImageContentBlock } from './types';
-export { withRetry, sleep, notifyError } from './api-utils';
+export {
+	withRetry,
+	sleep,
+	notifyError,
+	classifyNetworkError,
+	isTransientNetworkError,
+	describeNetworkError,
+} from './api-utils';
 export {
 	ensureFolder,
 	readNote,

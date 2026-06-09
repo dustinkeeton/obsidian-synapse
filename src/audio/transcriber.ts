@@ -20,8 +20,9 @@
 //
 // Migration: native fetch -> requestUrl (completed in issue #88)
 
-import { requestUrl } from 'obsidian';
+import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SynapseSettings } from '../settings';
+import { withRetry, classifyNetworkError, describeNetworkError } from '../shared';
 import { TranscriptionResult } from './types';
 
 /** Timeout for transcription API requests (5 minutes for large audio files). */
@@ -84,6 +85,26 @@ export function buildMultipartBody(
 export class Transcriber {
 	constructor(private getSettings: () => SynapseSettings) {}
 
+	// Retry connection-level failures only — NOT the 5-min app timeout (would mean up to 15 min).
+	private static readonly retryableNetwork = (e: unknown) => {
+		const k = classifyNetworkError(e);
+		return k === 'connection-refused' || k === 'dns' || k === 'offline';
+	};
+
+	private async requestTranscription(resource: string, params: RequestUrlParam): Promise<RequestUrlResponse> {
+		const send = () => Promise.race([
+			requestUrl(params),
+			new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error(`${resource} request timed out`)), TRANSCRIPTION_TIMEOUT_MS)),
+		]);
+		try {
+			return await withRetry(send, 2, 1000, Transcriber.retryableNetwork); // 2 attempts, 1s→2s backoff
+		} catch (error) {
+			const networkMsg = describeNetworkError(error, resource);
+			throw networkMsg ? new Error(networkMsg) : error;
+		}
+	}
+
 	async transcribe(
 		audioData: ArrayBuffer,
 		fileName: string
@@ -138,23 +159,16 @@ export class Transcriber {
 			data: audioData,
 		});
 
-		const timeout = new Promise<never>((_, reject) =>
-			setTimeout(() => reject(new Error('Whisper API request timed out')), TRANSCRIPTION_TIMEOUT_MS)
-		);
-
-		const response = await Promise.race([
-			requestUrl({
-				url: 'https://api.openai.com/v1/audio/transcriptions',
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${apiKey}`,
-					'Content-Type': contentType,
-				},
-				body,
-				throw: false,
-			}),
-			timeout,
-		]);
+		const response = await this.requestTranscription('the Whisper transcription API', {
+			url: 'https://api.openai.com/v1/audio/transcriptions',
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${apiKey}`,
+				'Content-Type': contentType,
+			},
+			body,
+			throw: false,
+		});
 
 		if (response.status >= 400) {
 			throw new Error(`Whisper API request failed (status ${response.status})`);
@@ -197,23 +211,16 @@ export class Transcriber {
 			params.set('language', settings.language);
 		}
 
-		const timeout = new Promise<never>((_, reject) =>
-			setTimeout(() => reject(new Error('Deepgram API request timed out')), TRANSCRIPTION_TIMEOUT_MS)
-		);
-
-		const response = await Promise.race([
-			requestUrl({
-				url: `https://api.deepgram.com/v1/listen?${params}`,
-				method: 'POST',
-				headers: {
-					'Authorization': `Token ${settings.deepgramApiKey}`,
-					'Content-Type': 'audio/*',
-				},
-				body: audioData,
-				throw: false,
-			}),
-			timeout,
-		]);
+		const response = await this.requestTranscription('the Deepgram transcription API', {
+			url: `https://api.deepgram.com/v1/listen?${params}`,
+			method: 'POST',
+			headers: {
+				'Authorization': `Token ${settings.deepgramApiKey}`,
+				'Content-Type': 'audio/*',
+			},
+			body: audioData,
+			throw: false,
+		});
 
 		if (response.status >= 400) {
 			throw new Error(`Deepgram API request failed (status ${response.status})`);
