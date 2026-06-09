@@ -81,7 +81,12 @@ export class VideoModule {
 		const update = parentOp?.update ?? (() => { /* no-op */ });
 
 		update(`Downloading ${platform} video...`);
-		const extraction = await this.extractor.extractFromUrl(validatedUrl);
+		let extraction;
+		try {
+			extraction = await this.extractor.extractFromUrl(validatedUrl);
+		} catch (e) {
+			throw new Error(`Download/audio extraction failed: ${e instanceof Error ? e.message : String(e)}`);
+		}
 
 		// Download the actual video file into the vault
 		let videoVaultPath: string | undefined;
@@ -114,11 +119,16 @@ export class VideoModule {
 		const audioData = fs.readFileSync(audioPath);
 
 		update('Transcribing...');
-		const result = await this.audioModule.transcribe(
-			audioData.buffer as ArrayBuffer,
-			extraction.metadata.title + '.mp3',
-			{ sourceName: extraction.metadata.title }
-		);
+		let result;
+		try {
+			result = await this.audioModule.transcribe(
+				audioData.buffer as ArrayBuffer,
+				extraction.metadata.title + '.mp3',
+				{ sourceName: extraction.metadata.title }
+			);
+		} catch (e) {
+			throw new Error(`Transcription failed: ${e instanceof Error ? e.message : String(e)}`);
+		}
 
 		// Clean up temp audio file
 		try {

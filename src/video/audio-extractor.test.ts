@@ -78,3 +78,69 @@ describe('AudioExtractor.concatAudio', () => {
 		expect(execFileMock).not.toHaveBeenCalled();
 	});
 });
+
+describe('AudioExtractor.runCommand error classification', () => {
+	beforeEach(() => {
+		execFileMock.mockReset();
+	});
+
+	function makeExtractor(): AudioExtractor {
+		const ex = new AudioExtractor(() => structuredClone(DEFAULT_SETTINGS));
+		// Inject node deps so no real process is spawned.
+		(ex as unknown as { _node: unknown })._node = { os, path, execFile: execFileMock };
+		return ex;
+	}
+
+	it('classifies a yt-dlp connection-refused failure from full stderr and names the tool', async () => {
+		// yt-dlp surfaces the network failure on a stderr line that is NOT the last line.
+		const stderr = [
+			'ERROR: unable to download video data: <urlopen error [Errno 61] Connection refused>',
+			'(Some trailing yt-dlp diagnostic line)',
+		].join('\n');
+		const error = Object.assign(new Error('Command failed'), { code: 1 });
+		execFileMock.mockImplementation(
+			(_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) =>
+				cb(error, '', stderr)
+		);
+
+		const ex = makeExtractor();
+		await expect(ex.extractFromUrl('https://www.tiktok.com/@user/video/123')).rejects.toThrow(
+			/connection refused/i
+		);
+		await expect(ex.extractFromUrl('https://www.tiktok.com/@user/video/123')).rejects.toThrow(
+			/yt-dlp/
+		);
+	});
+
+	it('reports a not-found message when the binary is missing (ENOENT)', async () => {
+		const error = Object.assign(new Error('spawn yt-dlp ENOENT'), { code: 'ENOENT' });
+		execFileMock.mockImplementation(
+			(_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) =>
+				cb(error, '', '')
+		);
+
+		const ex = makeExtractor();
+		const rejection = ex.extractFromUrl('https://www.tiktok.com/@user/video/123');
+		await expect(rejection).rejects.toThrow(/not found/i);
+		await expect(rejection).rejects.toThrow(/yt-dlp/);
+	});
+
+	it('reports a timeout when execFile kills the child via signal (no ETIMEDOUT code)', async () => {
+		// execFile's `timeout` option SIGTERMs the child: killed=true, signal set,
+		// code null. This must be detected before stderr classification.
+		const error = Object.assign(new Error('Command failed'), {
+			killed: true,
+			signal: 'SIGTERM',
+			code: null,
+		});
+		execFileMock.mockImplementation(
+			(_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) =>
+				cb(error, '', '')
+		);
+
+		const ex = makeExtractor();
+		const rejection = ex.extractFromUrl('https://www.tiktok.com/@user/video/123');
+		await expect(rejection).rejects.toThrow(/timed out after 5 minutes/);
+		await expect(rejection).rejects.toThrow(/yt-dlp/);
+	});
+});

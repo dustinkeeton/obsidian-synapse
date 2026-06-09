@@ -1,6 +1,6 @@
 import { SynapseSettings } from '../settings';
 import { ExtractionResult, VideoMetadata } from './types';
-import { sanitizePath, sanitizeUrl } from '../shared';
+import { sanitizePath, sanitizeUrl, describeNetworkError } from '../shared';
 
 /**
  * Obsidian's Electron process has a minimal PATH that often excludes
@@ -59,7 +59,7 @@ export class AudioExtractor {
 			'-x', '--audio-format', 'mp3',
 			'-o', outputPath,
 			sanitizedUrl,
-		]);
+		], 'yt-dlp');
 
 		return { audioPath: outputPath, metadata };
 	}
@@ -73,7 +73,7 @@ export class AudioExtractor {
 			'-i', sanitizedPath,
 			'-vn', '-acodec', 'libmp3lame',
 			outputPath,
-		]);
+		], 'ffmpeg');
 
 		const fileName = sanitizedPath.split('/').pop() || 'video';
 		return {
@@ -95,7 +95,7 @@ export class AudioExtractor {
 			'-f', 'mp4/best',
 			'-o', outputPath,
 			sanitizedUrl,
-		]);
+		], 'yt-dlp');
 
 		return outputPath;
 	}
@@ -113,7 +113,7 @@ export class AudioExtractor {
 			'-to', String(endSeconds),
 			'-vn', '-acodec', 'libmp3lame',
 			outputPath,
-		]);
+		], 'ffmpeg');
 		return outputPath;
 	}
 
@@ -146,7 +146,7 @@ export class AudioExtractor {
 			outputPath,
 		);
 
-		await this.runCommand(sanitizePath(settings.ffmpegPath), args);
+		await this.runCommand(sanitizePath(settings.ffmpegPath), args, 'ffmpeg');
 		return outputPath;
 	}
 
@@ -167,7 +167,7 @@ export class AudioExtractor {
 		try {
 			const output = await this.runCommand(sanitizePath(settings.ytDlpPath), [
 				'--dump-json', '--no-download', url,
-			]);
+			], 'yt-dlp');
 			const data = JSON.parse(output);
 			return {
 				title: data.title || 'Untitled',
@@ -183,7 +183,7 @@ export class AudioExtractor {
 		}
 	}
 
-	private runCommand(cmd: string, args: string[]): Promise<string> {
+	private runCommand(cmd: string, args: string[], label = cmd): Promise<string> {
 		return new Promise((resolve, reject) => {
 			this.node.execFile(cmd, args, {
 				env: shellEnv(),
@@ -191,12 +191,32 @@ export class AudioExtractor {
 				timeout: 300_000, // 5 minute timeout for long downloads/conversions
 			}, (error, stdout, stderr) => {
 				if (error) {
-					const code = error.code || 'unknown';
-					const detail = stderr?.trim().split('\n').pop() || '';
-					const msg = code === 'ENOENT'
-						? `"${cmd}" not found — install it or set the full path in settings`
-						: `Command failed (exit code ${code})${detail ? ': ' + detail : ''}`;
-					reject(new Error(msg));
+					if (error.code === 'ENOENT') {
+						reject(new Error(`${label} not found — install it or set the full path in settings`));
+						return;
+					}
+					// execFile's `timeout` kills the child with a signal (SIGTERM),
+					// leaving error.code null — so detect the kill via `killed`/`signal`
+					// rather than an ETIMEDOUT code. Check this BEFORE classifying
+					// stderr, so a genuine timeout is labeled as such instead of being
+					// misclassified from leftover output.
+					const errno = error as NodeJS.ErrnoException & { killed?: boolean; signal?: string | null };
+					if (errno.killed && !!errno.signal) {
+						reject(new Error(`${label} timed out after 5 minutes`));
+						return;
+					}
+					// Classify against the FULL stderr (not just the last line) so
+					// yt-dlp's "Connection refused"/"Failed to resolve host" lines are caught.
+					const stderrText = stderr?.trim() || '';
+					const networkMsg = describeNetworkError(error, label) ?? describeNetworkError(stderrText, label);
+					if (networkMsg) {
+						reject(new Error(networkMsg));
+						return;
+					}
+					const detail = stderrText.split('\n').pop() || '';
+					reject(new Error(
+						`${label} failed (exit code ${error.code || 'unknown'})${detail ? ': ' + detail : ''}`
+					));
 				} else {
 					resolve(stdout);
 				}
