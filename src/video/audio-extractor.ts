@@ -195,17 +195,22 @@ export class AudioExtractor {
 						reject(new Error(`${label} not found — install it or set the full path in settings`));
 						return;
 					}
+					// execFile's `timeout` kills the child with a signal (SIGTERM),
+					// leaving error.code null — so detect the kill via `killed`/`signal`
+					// rather than an ETIMEDOUT code. Check this BEFORE classifying
+					// stderr, so a genuine timeout is labeled as such instead of being
+					// misclassified from leftover output.
+					const errno = error as NodeJS.ErrnoException & { killed?: boolean; signal?: string | null };
+					if (errno.killed && !!errno.signal) {
+						reject(new Error(`${label} timed out after 5 minutes`));
+						return;
+					}
 					// Classify against the FULL stderr (not just the last line) so
 					// yt-dlp's "Connection refused"/"Failed to resolve host" lines are caught.
 					const stderrText = stderr?.trim() || '';
 					const networkMsg = describeNetworkError(error, label) ?? describeNetworkError(stderrText, label);
 					if (networkMsg) {
 						reject(new Error(networkMsg));
-						return;
-					}
-					const errno = error as NodeJS.ErrnoException & { killed?: boolean };
-					if (errno.killed && errno.code === 'ETIMEDOUT') {
-						reject(new Error(`${label} timed out after 5 minutes`));
 						return;
 					}
 					const detail = stderrText.split('\n').pop() || '';
