@@ -490,3 +490,6 @@ export class IntakeModule {
 		return cleaned.length > 0 ? cleaned : 'note';
 	}
 }
+
+// Settings section renderer (#243)
+export { renderIntakeSettings } from './settings-section';

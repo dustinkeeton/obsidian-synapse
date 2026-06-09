@@ -421,3 +421,6 @@ export class ElaborationModule {
 		}
 	}
 }
+
+// Settings section renderer (#243)
+export { renderElaborationSettings } from './settings-section';

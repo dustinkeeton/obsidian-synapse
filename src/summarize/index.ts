@@ -819,3 +819,6 @@ export class SummarizeModule {
 		}
 	}
 }
+
+// Settings section renderer (#243)
+export { renderSummarizeSettings } from './settings-section';
