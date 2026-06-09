@@ -167,6 +167,15 @@ function createStubEl(tag = 'div'): any {
 	return el;
 }
 
+/**
+ * Test helper: build a detached stub element that supports the Obsidian DOM
+ * helpers (createDiv/createSpan/createEl/empty/classList/…). Useful for
+ * rendering components that expect a real `containerEl`.
+ */
+export function createEl(tag = 'div'): any {
+	return createStubEl(tag);
+}
+
 export class Notice {
 	noticeEl: any;
 	constructor(_message: string | DocumentFragment, _duration?: number) {
@@ -230,15 +239,24 @@ export class SuggestModal<T = unknown> {
 }
 
 export class ToggleComponent {
+	/** Test helper: every instance ever constructed (clear between tests). */
+	static instances: ToggleComponent[] = [];
 	toggleEl: any = createStubEl();
+	tooltip = '';
 	private value = false;
 	private changeCb: ((value: boolean) => unknown) | undefined;
+	constructor() {
+		ToggleComponent.instances.push(this);
+	}
 	getValue = () => this.value;
 	setValue = vi.fn((v: boolean) => {
 		this.value = v;
 		return this;
 	});
-	setTooltip = vi.fn().mockReturnThis();
+	setTooltip = vi.fn((t: string) => {
+		this.tooltip = t;
+		return this;
+	});
 	setDisabled = vi.fn().mockReturnThis();
 	onChange = vi.fn((cb: (value: boolean) => unknown) => {
 		this.changeCb = cb;
@@ -253,6 +271,8 @@ export class ToggleComponent {
 
 export class Setting {
 	settingEl: any = createStubEl();
+	/** Child components created via add*, mirroring Obsidian's `components`. */
+	components: ToggleComponent[] = [];
 	constructor(_containerEl: unknown) {}
 	setName = vi.fn().mockReturnThis();
 	setDesc = vi.fn().mockReturnThis();
@@ -261,7 +281,9 @@ export class Setting {
 	addTextArea = vi.fn().mockReturnThis();
 	addDropdown = vi.fn().mockReturnThis();
 	addToggle = vi.fn(function (this: Setting, cb?: (t: ToggleComponent) => void) {
-		if (cb) cb(new ToggleComponent());
+		const toggle = new ToggleComponent();
+		this.components.push(toggle);
+		if (cb) cb(toggle);
 		return this;
 	});
 	addSlider = vi.fn().mockReturnThis();

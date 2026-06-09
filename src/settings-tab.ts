@@ -44,6 +44,59 @@ export class SynapseSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * Live references to the per-kind Auto-Accept rows, keyed by ProposalKind.
+	 * Rebuilt on every {@link display}. Lets a feature enable/disable toggle grey
+	 * out the matching row in place (see {@link refreshAutoAcceptDisabledState}).
+	 */
+	private autoAcceptSettings: Partial<Record<ProposalKind, Setting>> = {};
+
+	/**
+	 * Whether the feature that produces a given proposal kind is enabled. When a
+	 * feature is off, its Auto-Accept row is greyed out — but its stored value is
+	 * never touched, so re-enabling restores the toggle exactly as left. Note the
+	 * keys are not 1:1: `deep-dive` maps to the `deepDive` settings group.
+	 */
+	private isFeatureEnabled(kind: ProposalKind): boolean {
+		const s = this.plugin.settings;
+		switch (kind) {
+			case 'elaboration':
+				return s.elaboration.enabled;
+			case 'enrichment':
+				return s.enrichment.enabled;
+			case 'organize':
+				return s.organize.enabled;
+			case 'deep-dive':
+				return s.deepDive.enabled;
+			case 'title':
+				return s.title.enabled;
+			case 'rem':
+				return s.rem.enabled;
+		}
+	}
+
+	/** Description for an Auto-Accept row, with a hint appended when disabled. */
+	private autoAcceptDesc(kind: ProposalKind): string {
+		const { name, desc } = AUTO_ACCEPT_LABELS[kind];
+		return this.isFeatureEnabled(kind)
+			? desc
+			: `${desc} (Enable ${name} to configure auto-accept.)`;
+	}
+
+	/**
+	 * Sync every rendered Auto-Accept row's disabled state (and hint) to its
+	 * feature's enabled flag. Called after a feature enable toggle so the change
+	 * propagates live, without re-rendering the whole settings tab.
+	 */
+	private refreshAutoAcceptDisabledState(): void {
+		for (const kind of PROPOSAL_KINDS) {
+			const setting = this.autoAcceptSettings[kind];
+			if (!setting) continue;
+			setting.setDisabled(!this.isFeatureEnabled(kind));
+			setting.setDesc(this.autoAcceptDesc(kind));
+		}
+	}
+
+	/**
 	 * Resolve the persisted collapse state for a section, falling back to a
 	 * sensible default: collapsed when the feature is disabled, expanded when
 	 * it is enabled. A `null` `enabled` (config sections with no toggle, e.g.
@@ -87,6 +140,10 @@ export class SynapseSettingTab extends PluginSettingTab {
 			onToggle: async (value) => {
 				setEnabled(value);
 				await this.plugin.saveSettings();
+				// Greying out a feature must propagate to its Auto-Accept row in
+				// place — flip the stored Setting's disabled state directly rather
+				// than re-rendering (which would jump scroll and collapse accordions).
+				this.refreshAutoAcceptDisabledState();
 			},
 			onCollapseChange: async (collapsed) => {
 				await this.persistCollapse(key, collapsed);
@@ -1200,19 +1257,27 @@ export class SynapseSettingTab extends PluginSettingTab {
 			text: 'When enabled for a proposal type, future proposals of that type are accepted automatically as generated, applied without review. Already-pending proposals are left untouched. Off by default for every type.',
 		});
 
+		// Rebuilt each render; feature toggles flip these rows' disabled state live.
+		this.autoAcceptSettings = {};
 		for (const kind of PROPOSAL_KINDS) {
-			const { name, desc } = AUTO_ACCEPT_LABELS[kind];
-			new Setting(autoAcceptBody)
+			const { name } = AUTO_ACCEPT_LABELS[kind];
+			const setting = new Setting(autoAcceptBody)
 				.setName(name)
-				.setDesc(desc)
+				.setDesc(this.autoAcceptDesc(kind))
 				.addToggle((toggle) =>
 					toggle
+						// The stored value is shown verbatim even while disabled, and
+						// onChange never fires on a disabled toggle — so a disable →
+						// re-enable cycle preserves the user's setting for free.
 						.setValue(this.plugin.settings.autoAccept[kind])
 						.onChange(async (value) => {
 							this.plugin.settings.autoAccept[kind] = value;
 							await this.plugin.saveSettings();
 						})
 				);
+			// Grey out (and disable child toggle) when the feature is off.
+			setting.setDisabled(!this.isFeatureEnabled(kind));
+			this.autoAcceptSettings[kind] = setting;
 		}
 	}
 }
