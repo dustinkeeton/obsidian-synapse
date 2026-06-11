@@ -73,6 +73,7 @@ Canonical assets live in `assets/brand/` (see its README for inventory and regen
 
 - `icon.svg` — the canonical mark, transparent background, works on dark and white. Use for plugin icon contexts, avatars, favicons, and any render **above ~24px**. Do not recolor, rotate, add glow, or detach the spark.
 - `icon-small.svg` — optical-size cut of the S-Signal for renders **at or below ~24px** (16px favicons, 16–24px list/UI icons). Same palette and silhouette, but the cleft is widened, the volt bead enlarged with a thinned Gap Black chip so the lime survives on white, and the receptor is a plain open terminal (the ring detail closes up at small sizes, so it is dropped). Do not use it above ~24px — its sacrificed letterform polish only pays off small.
+- `icon-mono.svg` — single-color **`currentColor`** silhouette of the S-Signal for surfaces that strip color: the Obsidian ribbon and UI (registered as the `synapse` icon via `addIcon` in `src/main.ts`), and any monochrome context. Authored on a `0 0 100 100` viewBox (Obsidian's `addIcon` convention) so the asset body doubles as the registered icon string. **Never assign it palette colors** — its color comes from the host UI via `currentColor`; and never use it where full color is available (use `icon.svg` / `icon-small.svg` there). This is the one variant where the cleft is *tightened*, not widened: in monochrome the spark bead bridges the cleft and completes the S spine, so the one-color silhouette stays whole down to 16px. It keeps the weighted asymmetry (filled source ball, plain open receptor terminal) but the spark is no longer a distinct accent — by design, it becomes the connective tissue of the spine.
 - `banner.svg` — README hero, self-contained dark background; safe on both GitHub themes. Do not place text over it or crop it.
 - **Size cutover:** at ~24px and below, use `icon-small.svg`; above ~24px, use canonical `icon.svg`. The cut exists because the canonical spark merges into the spine below ~24px while the small cut keeps one visible lime point in the gap.
 - Clear space around the mark: at least the diameter of the open receptor ring.
@@ -80,6 +81,5 @@ Canonical assets live in `assets/brand/` (see its README for inventory and regen
 
 ## Known gaps (future work)
 
-- A monochrome `currentColor` ribbon-icon variant for Obsidian's UI.
 - Accept-state variant (receptor ring closes) for animations and UI states.
 - Run a confusion screen against existing S-arc marks (e.g. legacy Skype, Sketch-class letterforms) before community-directory launch.
