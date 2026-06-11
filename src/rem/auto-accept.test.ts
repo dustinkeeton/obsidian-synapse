@@ -73,21 +73,27 @@ describe('RemModule auto-accept (#228)', () => {
 	let mockPlugin: { app: Record<string, unknown>; addCommand: ReturnType<typeof vi.fn>; registerEvent: ReturnType<typeof vi.fn> };
 	let settings: SynapseSettings;
 	let notifications: NotificationManager;
-	let modifySpy: ReturnType<typeof vi.fn>;
+	let processSpy: ReturnType<typeof vi.fn>;
 	let sourceFile: TFile;
 
 	beforeEach(() => {
 		adapter = createMemoryAdapter();
 		settings = structuredClone(DEFAULT_SETTINGS);
 		notifications = new NotificationManager();
-		modifySpy = vi.fn().mockResolvedValue(undefined);
+		const readSpy = vi.fn().mockResolvedValue('# ML\n\nThis note is about backpropagation in depth.');
+		// Atomic read -> transform -> write; the callback's return value is the
+		// written content (mirrors Obsidian's Vault.process).
+		processSpy = vi.fn(async (file: any, fn: (data: string) => string) =>
+			fn(await readSpy(file))
+		);
 		sourceFile = new TFile('notes/ml.md');
 
 		mockPlugin = {
 			app: {
 				vault: {
-					read: vi.fn().mockResolvedValue('# ML\n\nThis note is about backpropagation in depth.'),
-					modify: modifySpy,
+					read: readSpy,
+					modify: vi.fn().mockResolvedValue(undefined),
+					process: processSpy,
 					createFolder: vi.fn().mockResolvedValue(undefined),
 					getAbstractFileByPath: vi.fn((path: string) =>
 						path === 'notes/ml.md' ? sourceFile : null
@@ -126,8 +132,8 @@ describe('RemModule auto-accept (#228)', () => {
 		await mod.remScanNote('notes/ml.md');
 
 		// The note body was rewritten with the applied links.
-		expect(modifySpy).toHaveBeenCalledTimes(1);
-		expect(modifySpy.mock.calls[0][1]).toBe('CONTENT WITH [[Backpropagation]] LINK');
+		expect(processSpy).toHaveBeenCalledTimes(1);
+		expect(await processSpy.mock.results[0].value).toBe('CONTENT WITH [[Backpropagation]] LINK');
 
 		// Nothing left pending.
 		expect(await mod.getPendingProposals()).toHaveLength(0);
@@ -140,7 +146,7 @@ describe('RemModule auto-accept (#228)', () => {
 
 		await mod.remScanNote('notes/ml.md');
 
-		expect(modifySpy).not.toHaveBeenCalled();
+		expect(processSpy).not.toHaveBeenCalled();
 		const pending = await mod.getPendingProposals();
 		expect(pending).toHaveLength(1);
 		expect(pending[0].status).toBe('pending');

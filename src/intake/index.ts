@@ -321,12 +321,11 @@ export class IntakeModule {
 			return;
 		}
 
-		const current = await this.plugin.app.vault.read(file);
-		const parsed = parseFrontmatter(current);
-
-		const newBody = `${parsed.body.trimEnd()}\n\n${articleContent.trim()}\n`;
-		const updated = serializeFrontmatter(parsed.frontmatter, newBody);
-		await this.plugin.app.vault.modify(file, updated);
+		await this.plugin.app.vault.process(file, (current) => {
+			const parsed = parseFrontmatter(current);
+			const newBody = `${parsed.body.trimEnd()}\n\n${articleContent.trim()}\n`;
+			return serializeFrontmatter(parsed.frontmatter, newBody);
+		});
 	}
 
 	/**
@@ -392,12 +391,12 @@ export class IntakeModule {
 
 	/** Write `synapse-processed: true` + an ISO timestamp into frontmatter. */
 	private async stampProcessed(file: TFile): Promise<void> {
-		const content = await this.plugin.app.vault.read(file);
-		const parsed = parseFrontmatter(content);
-		parsed.frontmatter[SYNAPSE_PROCESSED_FLAG] = true;
-		parsed.frontmatter[SYNAPSE_PROCESSED_AT_FLAG] = new Date().toISOString();
-		const stamped = serializeFrontmatter(parsed.frontmatter, parsed.body);
-		await this.plugin.app.vault.modify(file, stamped);
+		await this.plugin.app.vault.process(file, (content) => {
+			const parsed = parseFrontmatter(content);
+			parsed.frontmatter[SYNAPSE_PROCESSED_FLAG] = true;
+			parsed.frontmatter[SYNAPSE_PROCESSED_AT_FLAG] = new Date().toISOString();
+			return serializeFrontmatter(parsed.frontmatter, parsed.body);
+		});
 	}
 
 	/**

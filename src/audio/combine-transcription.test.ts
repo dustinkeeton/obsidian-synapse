@@ -68,6 +68,11 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 				vault: {
 					read: vi.fn().mockResolvedValue(noteContent),
 					modify: vi.fn().mockResolvedValue(undefined),
+					// Atomic read -> transform -> write; the callback's return
+					// value is the written content (mirrors Vault.process).
+					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+						fn(await mockPlugin.app.vault.read(file))
+					),
 					readBinary: vi.fn().mockResolvedValue(new ArrayBuffer(64)),
 				},
 				workspace: { getActiveFile: vi.fn().mockReturnValue(null) },
@@ -100,8 +105,8 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		// Both audio files were read and concatenated.
 		expect(extractor.concatAudio.mock.calls[0][0]).toHaveLength(2);
 
-		expect(mockPlugin.app.vault.modify).toHaveBeenCalledTimes(1);
-		const written = mockPlugin.app.vault.modify.mock.calls[0][1] as string;
+		expect(mockPlugin.app.vault.process).toHaveBeenCalledTimes(1);
+		const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
 
 		// Exactly one combined callout, no per-file callouts.
 		expect(written).toContain('Combined transcription (2 files)');
@@ -114,7 +119,7 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		const module = makeModule();
 		await module.transcribeAndInsertCombined(tfile('notes/lecture.md'), embeds());
 
-		const written = mockPlugin.app.vault.modify.mock.calls[0][1] as string;
+		const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
 		// Callout comes after the part2 embed and before the trailing line.
 		expect(written.indexOf('Combined transcription')).toBeGreaterThan(written.indexOf('![[part2.wav]]'));
 		expect(written.indexOf('tail')).toBeGreaterThan(written.indexOf('Combined transcription'));
@@ -159,8 +164,8 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 
 		// No audio concatenation, but still exactly ONE combined callout.
 		expect(extractor.concatAudio).not.toHaveBeenCalled();
-		expect(mockPlugin.app.vault.modify).toHaveBeenCalledTimes(1);
-		const written = mockPlugin.app.vault.modify.mock.calls[0][1] as string;
+		expect(mockPlugin.app.vault.process).toHaveBeenCalledTimes(1);
+		const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
 		expect(written).toContain('Combined transcription (2 files)');
 		expect((written.match(/Combined transcription/g) || []).length).toBe(1);
 		expect(written).toContain('Source files: part1.mp3, part2.wav');

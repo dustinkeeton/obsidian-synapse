@@ -344,7 +344,6 @@ export class ElaborationModule {
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!(file instanceof TFile)) return;
 
-		const content = await this.plugin.app.vault.read(file);
 		const additions = editedContent ?? proposal.proposedAdditions;
 		const sanitizedAdditions = stripCodeFences(sanitizeAIResponse(additions));
 		const callout = buildCallout(
@@ -352,8 +351,7 @@ export class ElaborationModule {
 			'Elaboration',
 			sanitizedAdditions
 		);
-		const newContent = content.trimEnd() + '\n' + callout;
-		await this.plugin.app.vault.modify(file, newContent);
+		await this.plugin.app.vault.process(file, (data) => data.trimEnd() + '\n' + callout);
 
 		await this.store.updateStatus(id, 'accepted');
 		if (!options?.silent) {

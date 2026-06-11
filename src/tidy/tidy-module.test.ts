@@ -49,18 +49,23 @@ describe('TidyModule', () => {
 			exists: vi.fn().mockResolvedValue(true),
 		};
 
+		const vault: any = {
+			read: vi.fn().mockResolvedValue('# Test\n\nSome contnt with typos.'),
+			modify: vi.fn().mockResolvedValue(undefined),
+			// Atomic read -> transform -> write; the callback's return value is
+			// the written content (mirrors Obsidian's Vault.process).
+			process: vi.fn(async (file: any, fn: (data: string) => string) =>
+				fn(await vault.read(file))
+			),
+			create: vi.fn().mockResolvedValue(new TFile()),
+			createFolder: vi.fn().mockResolvedValue(undefined),
+			getAbstractFileByPath: vi.fn().mockReturnValue(null),
+			delete: vi.fn().mockResolvedValue(undefined),
+			adapter: mockAdapter,
+		};
+
 		mockPlugin = {
-			app: {
-				vault: {
-					read: vi.fn().mockResolvedValue('# Test\n\nSome contnt with typos.'),
-					modify: vi.fn().mockResolvedValue(undefined),
-					create: vi.fn().mockResolvedValue(new TFile()),
-					createFolder: vi.fn().mockResolvedValue(undefined),
-					getAbstractFileByPath: vi.fn().mockReturnValue(null),
-					delete: vi.fn().mockResolvedValue(undefined),
-					adapter: mockAdapter,
-				},
-			},
+			app: { vault },
 			addCommand: vi.fn(),
 			registerEvent: vi.fn(),
 		};
@@ -92,11 +97,12 @@ describe('TidyModule', () => {
 			const file = new TFile('notes/test.md') as any;
 			await module.tidy(file);
 
-			expect(mockPlugin.app.vault.read).toHaveBeenCalledWith(file);
-			expect(mockPlugin.app.vault.modify).toHaveBeenCalledWith(
+			expect(mockPlugin.app.vault.process).toHaveBeenCalledWith(
 				file,
-				expect.stringContaining('Some content with no typos.')
+				expect.any(Function)
 			);
+			const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
+			expect(written).toContain('Some content with no typos.');
 		});
 
 		it('saves a snapshot before modifying', async () => {
@@ -107,7 +113,7 @@ describe('TidyModule', () => {
 				writeOrder.push('snapshot-saved');
 				return Promise.resolve();
 			});
-			mockPlugin.app.vault.modify.mockImplementation(() => {
+			mockPlugin.app.vault.process.mockImplementation(() => {
 				writeOrder.push('note-modified');
 				return Promise.resolve();
 			});
@@ -125,7 +131,7 @@ describe('TidyModule', () => {
 			const file = new TFile('notes/test.md') as any;
 			await module.tidy(file);
 
-			const written = mockPlugin.app.vault.modify.mock.calls[0][1] as string;
+			const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
 			expect(written).toContain('title: My Note');
 			expect(written).toContain('tags:');
 		});
@@ -139,7 +145,7 @@ describe('TidyModule', () => {
 			expect(mockNotifications._handle.finish).toHaveBeenCalledWith(
 				'Nothing to tidy — note is empty'
 			);
-			expect(mockPlugin.app.vault.modify).not.toHaveBeenCalled();
+			expect(mockPlugin.app.vault.process).not.toHaveBeenCalled();
 		});
 
 		it('strips code fences from AI response', async () => {
@@ -154,7 +160,7 @@ describe('TidyModule', () => {
 
 			await module.tidy(file);
 
-			const written = mockPlugin.app.vault.modify.mock.calls[0][1] as string;
+			const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
 			expect(written).not.toContain('```');
 			expect(written).toContain('# Clean content');
 		});
@@ -244,10 +250,12 @@ describe('TidyModule', () => {
 			await module.onload();
 			await (module as any).undoTidy(file);
 
-			expect(mockPlugin.app.vault.modify).toHaveBeenCalledWith(
+			expect(mockPlugin.app.vault.process).toHaveBeenCalledWith(
 				file,
-				snapshot.originalContent
+				expect.any(Function)
 			);
+			expect(await mockPlugin.app.vault.process.mock.results[0].value)
+				.toBe(snapshot.originalContent);
 			expect(mockNotifications.success).toHaveBeenCalledWith('Tidy undone');
 		});
 
@@ -261,7 +269,7 @@ describe('TidyModule', () => {
 			expect(mockNotifications.info).toHaveBeenCalledWith(
 				'No tidy to undo for this note'
 			);
-			expect(mockPlugin.app.vault.modify).not.toHaveBeenCalled();
+			expect(mockPlugin.app.vault.process).not.toHaveBeenCalled();
 		});
 
 		it('removes snapshot after undo', async () => {
