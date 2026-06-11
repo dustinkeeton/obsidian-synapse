@@ -32,7 +32,9 @@ export class ProposalReviewView extends ItemView {
 	}
 
 	getIcon(): string {
-		return 'sparkles';
+		// Brand S-Signal mark (registered via addIcon in main.ts), not the
+		// banned 'sparkles' Lucide glyph.
+		return 'synapse';
 	}
 
 	async onOpen(): Promise<void> {

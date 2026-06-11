@@ -57,7 +57,10 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	getIcon(): string {
-		return 'sparkles';
+		// Brand S-Signal mark (registered via addIcon in main.ts), matching the
+		// "Review proposals" ribbon that opens this view. Not 'sparkles' — that
+		// Lucide glyph is on the brand's banned inventory.
+		return 'synapse';
 	}
 
 	async onOpen(): Promise<void> {
