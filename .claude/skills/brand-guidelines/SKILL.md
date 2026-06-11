@@ -92,6 +92,58 @@ The brand's center of gravity is the accept moment, so it gets one sanctioned an
 - **Undo is as visible as accept** (voice rule 3): the un-accept plays the same timeline **reversed at the same duration** (never faster) — the bead un-seats, re-tapers into the comet, travels back into the cleft, and the violet bridge wipes back out, restoring `icon.svg`.
 - **Reduced motion:** honor `prefers-reduced-motion` with an instant hard swap `icon.svg` → `icon-accepted.svg` (no tween). A cross-fade would momentarily show two lime shapes, breaking the one-volt rule — so cut, don't dissolve.
 
+## Confusion screen (2026-06-11)
+
+A pre-launch visual confusion screen on the S-Signal, run before the Obsidian community-directory listing. **This is brand/visual diligence, not legal advice** — a formal trademark search is a separate step, required only if the project ever pursues registration (and one that would have to weigh the established non-PKM "Synapse" software marks noted below).
+
+**Scope & method.** Icon-size visual screen at the sizes where confusion actually happens — 16 / 24 / 32 / 48 px, on Gap Black and on white, with a 4× magnified cell per mark. 37 marks captured, ~30 documented, 17 sheet-compared across five vectors: stroke-built S letterforms, PKM/note peers, AI-spark/✦ accents, neural/synapse stock motifs, and Obsidian-directory naming collisions. Each mark was judged against the three claimed distinguishing features: the **cleft-cut spine**, the **chipped volt spark**, and the **filled-ball / open-ring asymmetric terminals**.
+
+**Verdict: clear.** No mark reproduces the full combination — violet stroke-built S + waist cleft + lime chip-spark + asymmetric ball/open-ring terminals. Every element has a neighbour (color → Scrintal/Stripe; construction → Simplenote; terminal vocabulary → Capacities; spark → Gemini), but the combination is singular, and the lime spark — unique in the entire captured set — stays legible to 16px in every color cut. Two same-genre neighbours go on the watch-list; none rises to a conflict, so no design refinement is required.
+
+### Comparison set
+
+| Mark | Category | Source | Verdict | Reason |
+|------|----------|--------|---------|--------|
+| Scrintal | S-letterform | scrintal.com | **watch** | Closest neighbour — same violet family + fat-rounded-stroke build with a ball terminal, but a single open swoosh: no cleft, spark, or terminal asymmetry. |
+| Simplenote | S-letterform | simplenote.com | **watch** | Closest on construction (S from two rounded strokes); separated by blue-not-violet, the lime spark, the waist cleft, and ball/ring asymmetry. |
+| Supernotes | S-letterform | supernotes.app | clear | Coral "Sn" monogram; the "n" and coral hue disambiguate. |
+| Saga | S-letterform | saga.so | clear | Solid black brush "S" on yellow — filled and continuous, the opposite of our hollow gapped spine. |
+| Surge | S-letterform | surge.sh | clear | Solid black serif "S"; dev-hosting category, no shared color or construction. |
+| SiYuan | PKM peer | b3log.org/siyuan | clear | Red twin-peak / open-books glyph, not an S. |
+| Obsidian | Host platform | obsidian.md | clear | Faceted purple gem — shares the violet family and is guaranteed to co-occur in-directory, but the shape is unrelated and it is the host, not a rival. |
+| Gemini | AI-spark | gemini.google.com | clear | Four-point concave AI-sparkle, blue→purple gradient; our spark is a lime teardrop chipped into the cleft — different shape, color, and placement. |
+| Capacities | Terminal motif | capacities.io | clear | Open broken ring around a centre dot — a real echo of our open-ring/filled-ball vocabulary, but concentric and monochrome, never reads as an S. Echo noted; no action. |
+| Stripe | Color-only | stripe.com | clear | Blurple wordmark/card tile; `#635BFF` sits next to our violet — color adjacency only, no S. |
+| Strapi | Color-only | strapi.io | clear | Purple rounded square + white folded cube; color family only. |
+| Gatsby | AI-spark | gatsbyjs.com | clear | Purple disc + white "G"; purple-disc convention, different letter, lightning by name only. |
+| Reflect | PKM peer | reflect.app | clear | Purple disc + wireframe globe; purple PKM disc, no S. |
+| Logseq | PKM peer | logseq.com | clear | Three linked node-circles — a "connected nodes" kin in concept, but no S and no spark. |
+| Smart Connections | Neural theme | smartconnections.app | clear | Half-organic / half-circuit-board brain. Same neural theme and the same launch directory, but it is the exact brain-on-circuit cliché our mark principles ban — visually our opposite, not our twin. |
+| Spark Assistant | Name (see below) | github.com/crossgen-ai-public/crossgen-spark-obsidian-plugin | clear | Node-and-line constellation avatar; the "Spark" overlap is a *naming* collision, not a visual one. |
+| Bolt | AI-spark | bolt.new | clear | Lightning by name only; the mark is a lowercase "b". |
+
+### Distinguishing features — do they survive?
+
+Yes, with one honest qualification.
+
+- **Cleft-cut spine** — survives. No competitor uses a gapped/interrupted S; Simplenote and Saga are continuous. This is the construction-level break from Simplenote, our closest build-alike. Holds to ~24px; below that the gap narrows but the spark fills it.
+- **Chipped volt spark** — survives, and is the single strongest differentiator. `#CCFF00` is unique in the entire captured set — nothing else is lime, and Gemini's spark is a blue→purple four-point star (different color, shape, and placement). Reads as a distinct bead down to 16px in every color cut.
+- **Filled-ball / open-ring asymmetric terminals** — survive at ≥24px. The asymmetry is what separates us from Capacities' concentric ring-and-dot, and it is the *only* differentiator that survives into monochrome.
+
+**The one qualification — monochrome at ≤16px.** `icon-mono.svg` deliberately drops color and folds the spark into the spine, so in the ribbon at 16px the mark leans entirely on terminal asymmetry + silhouette — two of the three features are gone. This is acceptable: the monochrome cut only appears among neutral host-UI glyphs (the Obsidian ribbon), never beside a competitor's color mark, so the confusion regime there is "distinct from other ribbon icons," which it is. Recorded, not a conflict.
+
+### Naming collisions (listing copy / SEO — not the mark)
+
+Distinct from the visual screen: the Obsidian directory and the broader software namespace already hold **"Synaptic View"**, **"Synaptic Bridge"**, **"Spark Assistant"**, **"Neural Composer"**, and the theme-adjacent **"Smart Connections"**, plus established non-PKM software named **Synapse** (Razer Synapse, peripherals; Matrix Synapse, homeserver). These affect discoverability and listing copy, not the mark. Guidance: in directory/listing copy, pair "Synapse" with distinctive, mechanism-specific descriptors (per the voice rules) so the listing separates cleanly from the "Synaptic" / "Spark" / "Smart" neighbours — do not rely on the name alone to disambiguate.
+
+### Watch-list & usage rules
+
+- **Scrintal & Simplenote — watch.** Re-screen at 16–24px if either rebrands, or before any context that ships the S-Signal as a flat monochrome **violet** lockup next to them (with the lime gone, color alone carries less of the distinction).
+- **The spark is load-bearing.** Keep it a lime (`#CCFF00`) teardrop chipped into the cleft. Never reissue it as a free-floating star or four-point glyph — that collapses the distinction from the Gemini/✦ "AI-sparkle" cliché the brand already bans.
+- **Don't simplify the mono terminals.** Where the mark renders monochrome at ≤16px, the filled-ball / open-terminal asymmetry is the sole remaining differentiator — preserve it; reduce other detail first.
+- **Extra clearance.** Any new lockup that places the mark beside a same-genre violet S, or any flat color-stripped treatment, gets a fresh 16–24px screen before it ships.
+
 ## Known gaps (future work)
 
-- Run a confusion screen against existing S-arc marks (e.g. legacy Skype, Sketch-class letterforms) before community-directory launch.
+- ~~Run a confusion screen against existing S-arc marks (e.g. legacy Skype, Sketch-class letterforms) before community-directory launch.~~ **Done 2026-06-11** — see "Confusion screen" above. Verdict: clear; Scrintal and Simplenote on watch; no refinement required.
+- **Formal trademark search** — still open. A registrability/legal clearance search (distinct from this visual screen) is required only if the project pursues registration; it would need to weigh the established non-PKM "Synapse" software marks (Razer, Matrix).
