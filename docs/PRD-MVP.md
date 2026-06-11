@@ -193,7 +193,7 @@ Reference: [Obsidian Plugin Guidelines](https://docs.obsidian.md/Plugins/Releasi
   - Settings are saved when changed (currently saves on every individual setting change -- this is correct)
   - Plugin cleans up after itself on unload (each module has `onunload()`)
 - [x] **versions.json exists** -- `versions.json` maps `"0.1.0"` to `"0.15.0"` (minimum Obsidian version). This file is required for the plugin auto-update system.
-- [ ] **Plugin description is compelling** -- Current description is functional but could be more appealing. **Next step**: Revise to highlight key user benefits (e.g., "Automatically elaborate, transcribe, enrich, summarize, and organize your notes with AI").
+- [x] **Plugin description is compelling** -- Revised to "Automatically elaborate, transcribe, enrich, summarize, organize, and connect your notes with AI." Action-oriented, under 250 characters, ends with a period, and drops the redundant "for Obsidian" per submission requirements.
 
 ---
 
