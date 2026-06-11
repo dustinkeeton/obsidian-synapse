@@ -126,6 +126,6 @@ Refreshed via `main.refreshUnifiedView()` which gathers items from all five modu
 
 - Clickable note headings open the source note in main editor
 - Auto-exits review mode if reviewed proposal is no longer in pending list
-- Injects scoped CSS on first open (id: `synapse-unified-view-styles`)
+- Styles live in `styles.css` (section "Unified Proposal View"), loaded/unloaded by Obsidian automatically
 - Color-coded cards: blue for elaboration, green for enrichment, orange for organize, purple for deep-dive, yellow for title
 - Checkpoint banner with progress display and Resume/Discard actions
