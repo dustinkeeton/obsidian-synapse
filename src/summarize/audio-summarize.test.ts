@@ -100,6 +100,10 @@ describe('SummarizeModule audio target detection', () => {
 				vault: {
 					read: vi.fn().mockResolvedValue('# Note\n\n![[recording.mp3]]\n'),
 					modify: vi.fn().mockResolvedValue(undefined),
+					// Atomic read -> transform -> write (mirrors Vault.process).
+					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+						fn(await mockPlugin.app.vault.read(file))
+					),
 					create: vi.fn().mockResolvedValue(new TFile()),
 					getAbstractFileByPath: vi.fn().mockReturnValue(null),
 					readBinary: vi.fn().mockResolvedValue(new ArrayBuffer(100)),
@@ -161,10 +165,10 @@ describe('SummarizeModule audio target detection', () => {
 		await summarizeCmd.editorCallback({}, { file });
 
 		// The vault should have been modified with the summary
-		expect(mockPlugin.app.vault.modify).toHaveBeenCalled();
+		expect(mockPlugin.app.vault.process).toHaveBeenCalled();
 
 		// The content written should contain the summary callout
-		const modifiedContent = mockPlugin.app.vault.modify.mock.calls[0][1];
+		const modifiedContent = await mockPlugin.app.vault.process.mock.results[0].value;
 		expect(modifiedContent).toContain('Summary of recording.mp3');
 	});
 

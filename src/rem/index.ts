@@ -353,7 +353,6 @@ export class RemModule {
 		}
 
 		const tFile = file as TFile;
-		const originalContent = await this.plugin.app.vault.read(tFile);
 
 		// Filter candidates to only accepted ones
 		const accepted = proposal.candidates.filter(
@@ -366,9 +365,13 @@ export class RemModule {
 			return;
 		}
 
-		// Apply the links
-		const modifiedContent = this.applier.apply(originalContent, accepted);
-		await this.plugin.app.vault.modify(tFile, modifiedContent);
+		// Apply the links atomically: re-derive against the FRESH content inside
+		// the callback, and capture that same content as the undo snapshot.
+		let originalContent = '';
+		await this.plugin.app.vault.process(tFile, (data) => {
+			originalContent = data;
+			return this.applier.apply(data, accepted);
+		});
 
 		// Update proposal status with undo data
 		const status = accepted.length === proposal.candidates.length
@@ -422,6 +425,9 @@ export class RemModule {
 			this.notifications.info('Cannot undo — no original content snapshot');
 			return;
 		}
+		// Capture the narrowed value: TS widens proposal.originalContent back to
+		// `string | undefined` inside the process() closure.
+		const originalContent = proposal.originalContent;
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!file) {
@@ -430,7 +436,7 @@ export class RemModule {
 		}
 
 		const tFile = file as TFile;
-		await this.plugin.app.vault.modify(tFile, proposal.originalContent);
+		await this.plugin.app.vault.process(tFile, () => originalContent);
 
 		// Reset proposal to pending
 		await this.store.updateStatus(id, 'pending', undefined, undefined);

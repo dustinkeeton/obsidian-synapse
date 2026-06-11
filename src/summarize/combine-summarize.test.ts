@@ -93,6 +93,10 @@ describe('SummarizeModule combined audio summarization (#214)', () => {
 				vault: {
 					read: vi.fn().mockResolvedValue('# Lecture\n\n![[part1.mp3]]\n\n![[part2.wav]]\n'),
 					modify: vi.fn().mockResolvedValue(undefined),
+					// Atomic read -> transform -> write (mirrors Vault.process).
+					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+						fn(await mockPlugin.app.vault.read(file))
+					),
 					create: vi.fn().mockResolvedValue(new TFile()),
 					getAbstractFileByPath: vi.fn().mockReturnValue(null),
 					readBinary: vi.fn().mockResolvedValue(new ArrayBuffer(64)),
@@ -144,8 +148,8 @@ describe('SummarizeModule combined audio summarization (#214)', () => {
 	it('inserts a single Combined summary callout listing source files', async () => {
 		await (module as any).processTargetsCombined(file(), audioTargets(), '# Lecture\n\n![[part1.mp3]]\n\n![[part2.wav]]\n');
 
-		expect(mockPlugin.app.vault.modify).toHaveBeenCalledTimes(1);
-		const written = mockPlugin.app.vault.modify.mock.calls[0][1] as string;
+		expect(mockPlugin.app.vault.process).toHaveBeenCalledTimes(1);
+		const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
 		expect(written).toContain('Combined summary (2 files)');
 		expect((written.match(/Combined summary/g) || []).length).toBe(1);
 		expect(written).toContain('Source files: part1.mp3, part2.wav');
@@ -171,6 +175,6 @@ describe('SummarizeModule combined audio summarization (#214)', () => {
 			'No content extracted from combined audio',
 			expect.any(Error)
 		);
-		expect(mockPlugin.app.vault.modify).not.toHaveBeenCalled();
+		expect(mockPlugin.app.vault.process).not.toHaveBeenCalled();
 	});
 });

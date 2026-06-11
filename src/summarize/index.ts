@@ -298,18 +298,20 @@ export class SummarizeModule {
 						`Source files: ${fileNames.join(', ')}\n\n${summary}`
 					);
 
-					// Re-read since phase 1 may have shifted line numbers; insert
-					// after the last audio embed in the current file state.
-					const current = await this.plugin.app.vault.read(file);
-					const curLines = current.split('\n');
-					const embeds = findAudioEmbeds(
-						current, file.path, this.plugin.app.metadataCache
-					);
-					const insertLine = embeds.length > 0
-						? Math.max(...embeds.map(e => e.line))
-						: curLines.length - 1;
-					curLines.splice(insertLine + 1, 0, ...callout.split('\n'));
-					await this.plugin.app.vault.modify(file, curLines.join('\n'));
+					// Insert after the last audio embed in the current file state.
+					// Re-derive the insert point from the FRESH content inside the
+					// atomic callback, since phase 1 may have shifted line numbers.
+					await this.plugin.app.vault.process(file, (current) => {
+						const curLines = current.split('\n');
+						const embeds = findAudioEmbeds(
+							current, file.path, this.plugin.app.metadataCache
+						);
+						const insertLine = embeds.length > 0
+							? Math.max(...embeds.map(e => e.line))
+							: curLines.length - 1;
+						curLines.splice(insertLine + 1, 0, ...callout.split('\n'));
+						return curLines.join('\n');
+					});
 					this.onSummaryComplete?.(file.path);
 				} else {
 					this.notifications.notifyError(
@@ -421,7 +423,7 @@ export class SummarizeModule {
 	 * Core per-file processing shared by single-note and vault-scan flows.
 	 * Handles both inline summaries and enrichment-ref note creation.
 	 *
-	 * IMPORTANT: new notes are created AFTER vault.modify() on the source
+	 * IMPORTANT: new notes are created AFTER vault.process() on the source
 	 * file to avoid Obsidian metadata-resolution events flushing the
 	 * editor's stale buffer back to disk over our changes.
 	 */
@@ -580,8 +582,13 @@ export class SummarizeModule {
 		// vault.create() triggers Obsidian metadata resolution which can
 		// cause the editor to flush its pre-modification buffer to disk,
 		// overwriting our changes.
+		// `lines` is the accumulation of many async-interleaved splices and
+		// in-place edits computed across the loop above, so it can't be cleanly
+		// re-derived from fresh content; wrap the computed result in process()
+		// to keep the atomic write + the create()-ordering guarantee intact.
 		if (inlineCompleted > 0 || enrichmentCompleted > 0 || linksUpdated > 0) {
-			await this.plugin.app.vault.modify(file, lines.join('\n'));
+			const finalContent = lines.join('\n');
+			await this.plugin.app.vault.process(file, () => finalContent);
 		}
 
 		// NOW create the new summary notes

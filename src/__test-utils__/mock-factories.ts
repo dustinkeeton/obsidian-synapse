@@ -24,6 +24,13 @@ export function createMockApp() {
 	const vault = {
 		read: vi.fn().mockResolvedValue(''),
 		modify: vi.fn().mockResolvedValue(undefined),
+		// Mimics Obsidian's atomic read -> transform -> write. The callback is
+		// synchronous and receives the file's fresh content; its return value is
+		// the new content. Returns the new content like the real API.
+		process: vi.fn(async (file: TFile, fn: (data: string) => string) => {
+			const data = await vault.read(file);
+			return fn(data);
+		}),
 		create: vi.fn().mockResolvedValue(new TFile()),
 		createFolder: vi.fn().mockResolvedValue(new TFolder()),
 		getAbstractFileByPath: vi.fn().mockReturnValue(null),
