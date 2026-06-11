@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#131019"/>
+      <stop offset="1" stop-color="#1D1630"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1280" height="320" rx="16" fill="url(#bg)"/>
+
+  <!-- faint synaptic-edge motif: filled sender dot, gapped edge, open receptor ring -->
+  <g stroke="#8b5cf6" fill="none" opacity="0.16">
+    <circle cx="898" cy="104" r="5" fill="#8b5cf6" stroke="none"/>
+    <path d="M906 103 Q990 84 1066 88" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M1088 90 Q1110 92 1128 96" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="1148" cy="99" r="8.5" stroke-width="3"/>
+  </g>
+  <g stroke="#8b5cf6" fill="none" opacity="0.10">
+    <circle cx="964" cy="232" r="4" fill="#8b5cf6" stroke="none"/>
+    <path d="M972 231 Q1040 222 1102 226" stroke-width="2" stroke-linecap="round"/>
+    <path d="M1120 227 Q1136 229 1148 231" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="1166" cy="234" r="7" stroke-width="3"/>
+  </g>
+
+  <!-- the mark -->
+  <g transform="translate(72,56) scale(0.8125)">
+    <path d="M179.3 64.4 A42 42 0 1 0 108.3 108.2" fill="none" stroke="#8b5cf6" stroke-width="26" stroke-linecap="round"/>
+    <circle cx="179.3" cy="64.4" r="20" fill="#8b5cf6"/>
+    <path d="M177.4 141.9 A46 46 0 0 1 107.0 200.9" fill="none" stroke="#8b5cf6" stroke-width="26" stroke-linecap="round"/>
+    <circle cx="85.7" cy="177.8" r="22.5" fill="none" stroke="#8b5cf6" stroke-width="14"/>
+    <path d="M124.0 120.1 L143.1 113.9 A14 14 0 1 1 136.4 135.9 Z" fill="#CCFF00" stroke="#131019" stroke-width="5" stroke-linejoin="round"/>
+  </g>
+
+  <!-- wordmark: all-lowercase, Space Grotesk 500, -0.02em tracking, engineered n-a cleft -->
+  <text x="336" y="168" font-family="'Space Grotesk', 'Helvetica Neue', Arial, sans-serif" font-size="88" font-weight="500" letter-spacing="-1.76" fill="#F4F2FB">syn<tspan dx="6">apse</tspan></text>
+
+  <!-- tagline -->
+  <text x="340" y="220" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="26" font-weight="500" fill="#A78BFA">More connections. Brighter thoughts.</text>
+</svg>
