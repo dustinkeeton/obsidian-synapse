@@ -37,6 +37,8 @@ For each issue, determine the best specialist agent using content-based matching
 | AGENTS.md, machine docs, module registry | `docs-agent` |
 | DECISIONS.md, STATUS.md, ARCHITECTURE.md | `docs-human` |
 | architecture, structure, naming, dependency, circular | `architect` |
+| `assets/brand/`, logo, icon, banner, visual asset, SVG | `designer` |
+| brand, branding, voice, tone, name treatment, brand audit | `brand-manager` |
 
 **Label fallback** — if no keyword match:
 

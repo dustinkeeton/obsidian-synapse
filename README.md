@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/banner.svg" alt="Synapse — More connections. Brighter thoughts." width="100%">
+</p>
+
 # Synapse
 
 Automatically elaborate, transcribe, enrich, summarize, organize, and connect your notes with AI in [Obsidian](https://obsidian.md).
