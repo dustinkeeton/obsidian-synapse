@@ -174,8 +174,8 @@ export class VideoModule {
 			);
 			blockLines.push(callout);
 
-			const content = await this.plugin.app.vault.read(activeFile);
-			await this.plugin.app.vault.modify(activeFile, content + blockLines.join('\n'));
+			const block = blockLines.join('\n');
+			await this.plugin.app.vault.process(activeFile, (data) => data + block);
 			this.onTranscriptionComplete?.(activeFile.path);
 			op.finish('Video transcription added to note');
 		} catch (error) {
@@ -230,7 +230,9 @@ export class VideoModule {
 		// Process in reverse line order so insertions don't shift line numbers
 		const sorted = [...embeds].sort((a, b) => b.line - a.line);
 
-		let content = await this.plugin.app.vault.read(noteFile);
+		// Queue insertions (keyed by original line) and apply them atomically
+		// against fresh content after all transcription completes.
+		const inserts: Array<{ line: number; block: string }> = [];
 
 		for (let i = 0; i < sorted.length; i++) {
 			if (op.cancelled) break;
@@ -243,7 +245,6 @@ export class VideoModule {
 				const result = await this.processUrl(embed.url, { insertMode: true }, op);
 				const text = result.processed || result.raw;
 
-				const lines = content.split('\n');
 				const blockLines: string[] = [''];
 
 				// Embed the downloaded video if setting is on
@@ -261,8 +262,7 @@ export class VideoModule {
 				);
 				blockLines.push(callout);
 
-				lines.splice(embed.line + 1, 0, blockLines.join('\n'));
-				content = lines.join('\n');
+				inserts.push({ line: embed.line, block: blockLines.join('\n') });
 
 				completed++;
 
@@ -279,7 +279,15 @@ export class VideoModule {
 		}
 
 		if (completed > 0) {
-			await this.plugin.app.vault.modify(noteFile, content);
+			// Apply all inserts atomically against fresh content; reverse-line
+			// ordering means later splices are unaffected by earlier ones.
+			await this.plugin.app.vault.process(noteFile, (data) => {
+				const lines = data.split('\n');
+				for (const ins of inserts) {
+					lines.splice(ins.line + 1, 0, ins.block);
+				}
+				return lines.join('\n');
+			});
 			this.onTranscriptionComplete?.(noteFile.path);
 		}
 		if (op.cancelled) {

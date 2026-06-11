@@ -56,9 +56,14 @@ function createMemoryAdapter() {
 
 function createMockPlugin(noteContent: string, adapter: ReturnType<typeof createMemoryAdapter>) {
 	const noteFile = mockFile('notes/topic.md');
-	const vault = {
+	const vault: any = {
 		read: vi.fn().mockResolvedValue(noteContent),
 		modify: vi.fn().mockResolvedValue(undefined),
+		// Atomic read -> transform -> write; the callback's return value is the
+		// written content (mirrors Obsidian's Vault.process).
+		process: vi.fn(async (file: any, fn: (data: string) => string) =>
+			fn(await vault.read(file))
+		),
 		create: vi.fn(),
 		createFolder: vi.fn().mockResolvedValue(undefined),
 		getAbstractFileByPath: vi.fn((path: string) =>
@@ -135,7 +140,7 @@ describe('ElaborationModule auto-accept (#228)', () => {
 		expect(pending).toHaveLength(0);
 
 		// The note was modified (the elaboration callout was appended on accept).
-		expect(mockPlugin.app.vault.modify).toHaveBeenCalledTimes(1);
+		expect(mockPlugin.app.vault.process).toHaveBeenCalledTimes(1);
 	});
 
 	it('leaves the proposal pending when the flag is off', async () => {
@@ -149,7 +154,7 @@ describe('ElaborationModule auto-accept (#228)', () => {
 		expect(pending[0].status).toBe('pending');
 
 		// The note is untouched while the proposal awaits review.
-		expect(mockPlugin.app.vault.modify).not.toHaveBeenCalled();
+		expect(mockPlugin.app.vault.process).not.toHaveBeenCalled();
 	});
 
 	it('reads the flag live, so toggling after construction takes effect', async () => {

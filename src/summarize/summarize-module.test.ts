@@ -88,6 +88,10 @@ describe('SummarizeModule organize scope', () => {
 				vault: {
 					read: vi.fn().mockResolvedValue('# Note\n\nhttps://example.com\n'),
 					modify: vi.fn().mockResolvedValue(undefined),
+					// Atomic read -> transform -> write (mirrors Vault.process).
+					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+						fn(await mockPlugin.app.vault.read(file))
+					),
 					create: vi.fn().mockResolvedValue(new TFile()),
 					getAbstractFileByPath: vi.fn().mockReturnValue(null),
 				},
@@ -219,6 +223,10 @@ describe('SummarizeModule content-aware templates', () => {
 				vault: {
 					read: vi.fn().mockResolvedValue('# Note\n\nhttps://example.com\n'),
 					modify: vi.fn().mockResolvedValue(undefined),
+					// Atomic read -> transform -> write (mirrors Vault.process).
+					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+						fn(await mockPlugin.app.vault.read(file))
+					),
 					create: vi.fn().mockResolvedValue(new TFile()),
 					getAbstractFileByPath: vi.fn().mockReturnValue(null),
 				},
