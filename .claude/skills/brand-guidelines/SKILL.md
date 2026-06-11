@@ -71,14 +71,15 @@ The mark is the path of a single impulse. Two Synapse Violet arc segments — th
 
 Canonical assets live in `assets/brand/` (see its README for inventory and regeneration). Quick rules:
 
-- `icon.svg` — the mark, transparent background, works on dark and white. Use for plugin icon contexts, avatars, favicons. Do not recolor, rotate, add glow, or detach the spark.
+- `icon.svg` — the canonical mark, transparent background, works on dark and white. Use for plugin icon contexts, avatars, favicons, and any render **above ~24px**. Do not recolor, rotate, add glow, or detach the spark.
+- `icon-small.svg` — optical-size cut of the S-Signal for renders **at or below ~24px** (16px favicons, 16–24px list/UI icons). Same palette and silhouette, but the cleft is widened, the volt bead enlarged with a thinned Gap Black chip so the lime survives on white, and the receptor is a plain open terminal (the ring detail closes up at small sizes, so it is dropped). Do not use it above ~24px — its sacrificed letterform polish only pays off small.
 - `banner.svg` — README hero, self-contained dark background; safe on both GitHub themes. Do not place text over it or crop it.
+- **Size cutover:** at ~24px and below, use `icon-small.svg`; above ~24px, use canonical `icon.svg`. The cut exists because the canonical spark merges into the spine below ~24px while the small cut keeps one visible lime point in the gap.
 - Clear space around the mark: at least the diameter of the open receptor ring.
-- On white at small sizes the spark reads as a dark dot — acceptable; never remove the chip outline to "fix" it.
+- On white at small sizes the spark reads as a dark dot — acceptable; never remove the chip outline to "fix" it. (`icon-small.svg` thins, but never removes, that chip.)
 
 ## Known gaps (future work)
 
-- A dedicated ≤24px optical-size variant that enlarges the cleft and spark (at 16px the S is crisp but the spark merges into the spine).
 - A monochrome `currentColor` ribbon-icon variant for Obsidian's UI.
 - Accept-state variant (receptor ring closes) for animations and UI states.
 - Run a confusion screen against existing S-arc marks (e.g. legacy Skype, Sketch-class letterforms) before community-directory launch.

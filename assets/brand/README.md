@@ -6,8 +6,13 @@ Canonical visual assets for Synapse. The full brand guidelines — palette, typo
 
 | Asset | Description | Use for |
 |-------|-------------|---------|
-| `icon.svg` | "The S-Signal" mark — 256×256 viewBox, transparent background, flat palette colors only | Plugin icon contexts, avatars, favicons, anywhere square |
+| `icon.svg` | "The S-Signal" mark — 256×256 viewBox, transparent background, flat palette colors only | Plugin icon contexts, avatars, favicons, anywhere square **above ~24px** |
+| `icon-small.svg` | Optical-size cut of the S-Signal — 256×256 viewBox, transparent, flat palette only. Widened cleft, enlarged volt bead on a thinned Gap Black chip, plain open receptor terminal (ring dropped) | Renders **at or below ~24px**: 16px favicons, 16–24px list/UI icons |
 | `banner.svg` | README hero — 1280×320, self-contained dark background, mark + wordmark + tagline | Top of README; safe on both GitHub light and dark themes |
+
+### Size cutover: canonical vs small cut
+
+Use **`icon.svg`** above ~24px and **`icon-small.svg`** at ~24px and below. Below ~24px the canonical spark — the firing moment that carries the whole brand story — merges into the S spine and disappears. `icon-small.svg` deliberately sacrifices letterform polish (wider cleft, fatter bead, plainer receptor) to keep one clearly visible lime point in the gap down to 16px. Above ~24px that trade is unnecessary and the canonical mark's full directional comet and open receptor ring read cleanly — use it there.
 
 ## The mark in one sentence
 
@@ -33,6 +38,5 @@ Check dark (`#131019`) and white backgrounds, plus a ~48px copy for small-size l
 
 ## Wanted (not yet produced)
 
-- ≤24px optical-size icon variant (larger cleft + spark)
 - Monochrome `currentColor` variant for the Obsidian ribbon
 - Accept-state variant (receptor ring closed) for UI states and animation
