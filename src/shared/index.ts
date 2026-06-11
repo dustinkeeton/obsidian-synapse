@@ -15,7 +15,7 @@ export {
 	getMarkdownFiles,
 	wordCount,
 } from './file-utils';
-export { NotificationManager, removeNotificationStyles } from './notifications';
+export { NotificationManager } from './notifications';
 export type { OperationHandle } from './notifications';
 export { FolderPickerModal } from './folder-picker-modal';
 export {

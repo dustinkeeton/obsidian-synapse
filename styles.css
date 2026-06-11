@@ -377,3 +377,602 @@
     width: 100%;
   }
 }
+
+/* ── Notification toasts (severity + tracked operations) ── */
+
+.synapse-notice {
+  border-left: 3px solid var(--text-muted);
+  padding-left: 10px !important;
+  transition: border-color 0.3s ease;
+}
+.synapse-notice--info     { border-left-color: var(--text-muted); }
+.synapse-notice--progress { border-left-color: var(--interactive-accent); }
+.synapse-notice--success  { border-left-color: var(--color-green); }
+.synapse-notice--warning  { border-left-color: var(--color-yellow); }
+.synapse-notice--error    { border-left-color: var(--color-red); }
+
+/* Running operation layout */
+.synapse-notice-op {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.synapse-notice-op-text {
+  flex: 1;
+}
+.synapse-notice-op-dots {
+  display: inline-block;
+  min-width: 1.5ch;
+  text-align: left;
+}
+.synapse-notice-op-cancel {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  border: 1px solid var(--text-muted);
+  background: transparent;
+  color: var(--text-muted);
+  transition: color 0.15s, border-color 0.15s;
+}
+.synapse-notice-op-cancel:hover {
+  color: var(--text-normal);
+  border-color: var(--text-normal);
+}
+
+/* Prevent click-to-dismiss on running operations */
+.synapse-notice--no-dismiss {
+  cursor: default;
+}
+
+/* Confirmation snackbar buttons */
+.synapse-notice-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.synapse-notice-actions button {
+  padding: 2px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  border: 1px solid var(--background-modifier-border);
+}
+.synapse-notice-actions button.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.synapse-notice-actions button.mod-cancel {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Unified Proposal View (sidebar)
+ * ══════════════════════════════════════════════════════════════ */
+
+/* ── Layout ── */
+.synapse-view-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.synapse-view-root > h3 {
+  flex-shrink: 0;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+/* ── List Mode ── */
+.synapse-proposal-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.synapse-proposal-card {
+  border-left: 3px solid var(--text-muted);
+  padding: 8px 12px;
+  margin: 6px 0;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  min-height: 100px;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.synapse-proposal-card .synapse-preview {
+  flex: 1;
+}
+.synapse-proposal-card .synapse-actions {
+  margin-top: auto;
+}
+.synapse-card--elaboration {
+  border-left-color: var(--interactive-accent);
+}
+.synapse-card--enrichment {
+  border-left-color: var(--color-green);
+}
+.synapse-card--organize {
+  border-left-color: var(--color-orange);
+}
+.synapse-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+  width: min-content;
+  white-space: nowrap;
+}
+.synapse-badge--elaboration {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.synapse-badge--enrichment {
+  background: var(--color-green);
+  color: var(--text-on-accent);
+}
+.synapse-badge--organize {
+  background: var(--color-orange);
+  color: var(--text-on-accent);
+}
+.synapse-reasons {
+  display: block;
+  color: var(--text-muted);
+  margin: 4px 0;
+}
+.synapse-preview {
+  font-size: 13px;
+  color: var(--text-normal);
+  margin: 4px 0;
+}
+.synapse-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.synapse-actions button {
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+.synapse-actions button:hover {
+  background: var(--background-modifier-hover);
+}
+.synapse-proposal-group h4 {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.synapse-note-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s, color 0.15s;
+}
+.synapse-note-link:hover {
+  color: var(--text-accent);
+  text-decoration-color: var(--text-accent);
+}
+.synapse-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Review Mode (shared) ── */
+.synapse-review-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.synapse-review-back {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.synapse-review-back:hover {
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+}
+.synapse-review-title {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.synapse-review-reasons {
+  flex-shrink: 0;
+  display: block;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+.synapse-review-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 8px;
+}
+.synapse-review-actions button {
+  padding: 4px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+.synapse-review-actions button.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.synapse-review-actions button:hover {
+  opacity: 0.9;
+}
+
+/* ── Elaboration Review ── */
+.synapse-review-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.synapse-review-pane-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 8px;
+  border-radius: 4px 4px 0 0;
+}
+.synapse-review-pane-label--elaboration {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.synapse-review-editor {
+  flex: 1;
+  padding: 8px;
+  font-size: 13px;
+  font-family: var(--font-monospace);
+  line-height: 1.5;
+  background: var(--background-primary);
+  border: 1px solid var(--interactive-accent);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  resize: none;
+  color: var(--text-normal);
+  min-height: 120px;
+}
+.synapse-review-editor:focus {
+  outline: none;
+  border-color: var(--interactive-accent-hover);
+}
+
+/* ── Enrichment Review (checklist) ── */
+.synapse-enrichment-checklist {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.synapse-checklist-section {
+  margin-bottom: 12px;
+}
+.synapse-checklist-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--color-green);
+  color: var(--text-on-accent);
+  margin-bottom: 4px;
+}
+.synapse-checklist-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.synapse-checklist-row:hover {
+  background: var(--background-modifier-hover);
+}
+.synapse-checklist-row input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.synapse-checklist-row span {
+  color: var(--text-normal);
+  word-break: break-word;
+}
+
+/* ── Deep Dive ── */
+.synapse-card--deep-dive {
+  border-left-color: var(--color-purple);
+}
+.synapse-badge--deep-dive {
+  background: var(--color-purple);
+  color: var(--text-on-accent);
+}
+.synapse-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.synapse-depth-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+.synapse-quality-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+.synapse-deep-dive-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.synapse-review-pane-label--deep-dive {
+  background: var(--color-purple);
+  color: var(--text-on-accent);
+}
+.synapse-review-editor--deep-dive {
+  border-color: var(--color-purple);
+}
+
+/* ── Title ── */
+.synapse-card--title {
+  border-left-color: var(--color-cyan);
+}
+.synapse-badge--title {
+  background: var(--color-cyan);
+  color: var(--text-on-accent);
+}
+.synapse-review-pane-label--title {
+  background: var(--color-cyan);
+  color: var(--text-on-accent);
+}
+
+/* ── REM ── */
+.synapse-card--rem {
+  border-left-color: var(--color-pink);
+}
+.synapse-badge--rem {
+  background: var(--color-pink);
+  color: var(--text-on-accent);
+}
+.synapse-badge--rem-title {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 2px;
+}
+.synapse-badge--rem-alias {
+  background: var(--color-green);
+  color: var(--text-on-accent);
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 2px;
+}
+.synapse-badge--rem-semantic {
+  background: var(--color-purple);
+  color: var(--text-on-accent);
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 2px;
+}
+.synapse-rem-candidate-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-bottom: 2px;
+}
+.synapse-rem-target {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-accent);
+}
+.synapse-rem-context {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 8px 4px 32px;
+  font-family: var(--font-monospace);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.synapse-rem-context mark {
+  background: var(--text-highlight-bg);
+  color: var(--text-normal);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* ── Organize Review ── */
+.synapse-review-pane-label--organize {
+  background: var(--color-orange);
+  color: var(--text-on-accent);
+}
+.synapse-organize-detail {
+  margin-bottom: 12px;
+}
+.synapse-organize-directory {
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-monospace);
+  color: var(--text-normal);
+  padding: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--color-orange);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  margin: 0;
+}
+.synapse-organize-reasoning {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-normal);
+  padding: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--color-orange);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  margin: 0;
+}
+
+/* ── Checkpoint Banner ── */
+.synapse-checkpoint-banner {
+  margin-bottom: 12px;
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  border-left: 3px solid var(--color-yellow);
+}
+.synapse-checkpoint-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-yellow);
+  margin-bottom: 6px;
+}
+.synapse-checkpoint-card {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.synapse-checkpoint-card:last-child {
+  border-bottom: none;
+}
+.synapse-checkpoint-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.synapse-checkpoint-info strong {
+  font-size: 13px;
+}
+.synapse-checkpoint-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.synapse-checkpoint-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-yellow);
+  transition: width 0.2s ease;
+}
+
+/* ── Accept All / Reject All ── */
+.synapse-accept-all-bar {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.synapse-accept-all-btn {
+  flex: 1;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.synapse-accept-all-btn:hover {
+  opacity: 0.9;
+}
+.synapse-accept-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.synapse-reject-all-btn {
+  flex: 1;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+.synapse-reject-all-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.synapse-reject-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.synapse-accept-all-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+}
+.synapse-accept-all-progress-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+  margin: 0;
+}
+.synapse-accept-all-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+.synapse-accept-all-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--interactive-accent);
+  transition: width 0.2s ease;
+}

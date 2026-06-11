@@ -16,7 +16,7 @@ import { IntakeModule } from './intake';
 import { CommandRegistrar, auditCommands } from './commands';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
-import { FolderPickerModal, NotificationManager, CheckpointManager, removeNotificationStyles } from './shared';
+import { FolderPickerModal, NotificationManager, CheckpointManager } from './shared';
 import type { DeferredTask, Checkpoint } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
@@ -363,8 +363,6 @@ export default class SynapsePlugin extends Plugin {
 		this.title?.onunload();
 		this.rem?.onunload();
 		this.intake?.onunload();
-		removeNotificationStyles();
-		UnifiedProposalView.removeStyles();
 	}
 
 	async loadSettings(): Promise<void> {
