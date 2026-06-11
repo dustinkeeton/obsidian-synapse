@@ -1,7 +1,7 @@
 {
 	"name": "synapse",
 	"version": "0.9.0",
-	"description": "AI-powered note elaboration, audio transcription, and video transcription for Obsidian",
+	"description": "Automatically elaborate, transcribe, enrich, summarize, organize, and connect your notes with AI.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
