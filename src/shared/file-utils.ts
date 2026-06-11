@@ -31,7 +31,7 @@ export async function writeNote(
 	const normalized = normalizePath(path);
 	const existing = app.vault.getAbstractFileByPath(normalized);
 	if (existing instanceof TFile) {
-		await app.vault.modify(existing, content);
+		await app.vault.process(existing, () => content);
 		return existing;
 	}
 	// Ensure parent folder exists

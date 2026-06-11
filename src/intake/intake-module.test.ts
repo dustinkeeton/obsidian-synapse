@@ -91,6 +91,13 @@ describe('IntakeModule', () => {
 			modify: vi.fn(async (file: any, content: string) => {
 				store.set(file.path, content);
 			}),
+			// Atomic read -> transform -> write against the in-memory store
+			// (mirrors Obsidian's Vault.process).
+			process: vi.fn(async (file: any, fn: (data: string) => string) => {
+				const result = fn(store.get(file.path) ?? '');
+				store.set(file.path, result);
+				return result;
+			}),
 			create: vi.fn(async (path: string, content: string) => {
 				store.set(path, content);
 				return makeFile(path);
@@ -461,9 +468,11 @@ describe('IntakeModule', () => {
 			settings.intake.moveWhenDone = 'Processed';
 			const order: string[] = [];
 
-			plugin.app.vault.modify.mockImplementation(async (file: any, content: string) => {
+			plugin.app.vault.process.mockImplementation(async (file: any, fn: (data: string) => string) => {
+				const content = fn(store.get(file.path) ?? '');
 				if (content.includes('synapse-processed: true')) order.push('stamp');
 				store.set(file.path, content);
+				return content;
 			});
 			plugin.app.fileManager.renameFile.mockImplementation(async (file: any, newPath: string) => {
 				order.push('move');

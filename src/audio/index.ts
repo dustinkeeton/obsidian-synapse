@@ -117,8 +117,7 @@ export class AudioModule {
 				true
 			);
 
-			const content = await this.plugin.app.vault.read(activeFile);
-			await this.plugin.app.vault.modify(activeFile, content + transcriptionBlock);
+			await this.plugin.app.vault.process(activeFile, (data) => data + transcriptionBlock);
 			this.onTranscriptionComplete?.(activeFile.path);
 			op.finish(`Transcription of ${file.name} added to note`);
 		} catch (error) {
@@ -173,7 +172,9 @@ export class AudioModule {
 		// Process in reverse line order so insertions don't shift line numbers
 		const sorted = [...embeds].sort((a, b) => b.line - a.line);
 
-		let content = await this.plugin.app.vault.read(noteFile);
+		// Queue insertions (keyed by original line) and apply them atomically
+		// against fresh content after all transcription completes.
+		const inserts: Array<{ line: number; block: string }> = [];
 
 		for (let i = 0; i < sorted.length; i++) {
 			if (op.cancelled) break;
@@ -188,7 +189,6 @@ export class AudioModule {
 				const result = await this.transcribe(data, embed.fileName);
 				const text = result.processed || result.raw;
 
-				const lines = content.split('\n');
 				const transcriptionBlock = buildCallout(
 					CALLOUT_TYPES.transcription,
 					`Transcription of ${embed.fileName}`,
@@ -197,8 +197,7 @@ export class AudioModule {
 				);
 
 				// Insert after the embed line
-				lines.splice(embed.line + 1, 0, transcriptionBlock);
-				content = lines.join('\n');
+				inserts.push({ line: embed.line, block: transcriptionBlock });
 
 				completed++;
 
@@ -214,9 +213,17 @@ export class AudioModule {
 			}
 		}
 
-		// Write whatever we completed, even if cancelled partway
+		// Write whatever we completed, even if cancelled partway. Apply all
+		// inserts atomically against fresh content; reverse-line ordering means
+		// later (lower-line) splices are unaffected by earlier (higher-line) ones.
 		if (completed > 0) {
-			await this.plugin.app.vault.modify(noteFile, content);
+			await this.plugin.app.vault.process(noteFile, (data) => {
+				const lines = data.split('\n');
+				for (const ins of inserts) {
+					lines.splice(ins.line + 1, 0, ins.block);
+				}
+				return lines.join('\n');
+			});
 			this.onTranscriptionComplete?.(noteFile.path);
 		}
 		if (op.cancelled) {
@@ -308,11 +315,12 @@ export class AudioModule {
 			);
 
 			// Insert after the last (highest-line) selected embed.
-			const content = await this.plugin.app.vault.read(noteFile);
-			const lines = content.split('\n');
 			const insertLine = Math.max(...embeds.map(e => e.line));
-			lines.splice(insertLine + 1, 0, block);
-			await this.plugin.app.vault.modify(noteFile, lines.join('\n'));
+			await this.plugin.app.vault.process(noteFile, (data) => {
+				const lines = data.split('\n');
+				lines.splice(insertLine + 1, 0, block);
+				return lines.join('\n');
+			});
 
 			this.onTranscriptionComplete?.(noteFile.path);
 			op.finish(`Combined transcription of ${embeds.length} files added to note`);

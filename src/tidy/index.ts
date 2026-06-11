@@ -150,12 +150,13 @@ export class TidyModule {
 			const sanitized = sanitizeAIResponse(tidiedBody);
 			const cleaned = stripCodeFences(sanitized);
 
-			// Reassemble with original frontmatter
-			const finalContent = parsed.frontmatter
-				? serializeFrontmatter(parsed.frontmatter, cleaned)
-				: cleaned;
-
-			await this.plugin.app.vault.modify(file, finalContent);
+			// Reassemble with the note's current frontmatter, re-parsed from the
+			// fresh content inside the atomic callback (the AI-cleaned body can't
+			// be re-derived, but the frontmatter reattachment can).
+			await this.plugin.app.vault.process(file, (data) => {
+				const fm = parseFrontmatter(data).frontmatter;
+				return fm ? serializeFrontmatter(fm, cleaned) : cleaned;
+			});
 			op.finish('Note tidied');
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
@@ -171,7 +172,7 @@ export class TidyModule {
 			return;
 		}
 
-		await this.plugin.app.vault.modify(file, snapshot.originalContent);
+		await this.plugin.app.vault.process(file, () => snapshot.originalContent);
 		await this.store.remove(file.path);
 		this.notifications.success('Tidy undone');
 	}

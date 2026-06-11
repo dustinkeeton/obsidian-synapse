@@ -29,8 +29,22 @@ export class EnrichmentApplier {
 		const file = this.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!(file instanceof TFile)) return;
 
-		const content = await this.app.vault.read(file);
 		const settings = this.getSettings().enrichment;
+
+		// The transform is fully synchronous, so re-derive the enriched content
+		// from the FRESH note content inside the atomic process() callback.
+		await this.app.vault.process(file, (content) =>
+			this.buildEnrichedContent(content, proposal, accepted, settings)
+		);
+	}
+
+	/** Pure transform: apply accepted enrichments to the note content. */
+	private buildEnrichedContent(
+		content: string,
+		proposal: EnrichmentProposal,
+		accepted: AcceptedItems,
+		settings: SynapseSettings['enrichment']
+	): string {
 		const parsed = parseFrontmatter(content);
 
 		// 1. Merge tags into frontmatter
@@ -94,9 +108,8 @@ export class EnrichmentApplier {
 			body = body.trimEnd() + '\n\n' + refsSection;
 		}
 
-		// Serialize and write
-		const newContent = serializeFrontmatter(parsed.frontmatter, body);
-		await this.app.vault.modify(file, newContent);
+		// Serialize and return the enriched content
+		return serializeFrontmatter(parsed.frontmatter, body);
 	}
 
 	/**
@@ -108,7 +121,19 @@ export class EnrichmentApplier {
 		const file = this.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!(file instanceof TFile)) return;
 
-		const content = await this.app.vault.read(file);
+		// The transform is fully synchronous, so re-derive the reverted content
+		// from the FRESH note content inside the atomic process() callback.
+		await this.app.vault.process(file, (content) =>
+			this.buildRevertedContent(content, proposal)
+		);
+	}
+
+	/** Pure transform: remove accepted enrichments from the note content. */
+	private buildRevertedContent(
+		content: string,
+		proposal: EnrichmentProposal
+	): string {
+		if (!proposal.acceptedItems) return content;
 		const parsed = parseFrontmatter(content);
 
 		// Remove accepted tags
@@ -135,8 +160,7 @@ export class EnrichmentApplier {
 		let body = parsed.body;
 		body = this.removeEnrichmentSections(body);
 
-		const newContent = serializeFrontmatter(parsed.frontmatter, body);
-		await this.app.vault.modify(file, newContent);
+		return serializeFrontmatter(parsed.frontmatter, body);
 	}
 
 	private buildLinksSection(
