@@ -1,6 +1,6 @@
 # Synapse
 
-AI-powered note elaboration, audio transcription, video transcription, and more for [Obsidian](https://obsidian.md).
+Automatically elaborate, transcribe, enrich, summarize, organize, and connect your notes with AI in [Obsidian](https://obsidian.md).
 
 ## Overview
 
