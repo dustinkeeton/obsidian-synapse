@@ -30,97 +30,12 @@ interface TrackedOperation {
 	ellipsisInterval: ReturnType<typeof setInterval> | null;
 }
 
-/** CSS class prefix */
+/**
+ * CSS class prefix. Styles for these classes live in styles.css
+ * (section "Notification toasts"), which Obsidian loads and unloads
+ * automatically with the plugin.
+ */
 const CLS = 'synapse-notice';
-
-let stylesInjected = false;
-
-function injectStyles(): void {
-	if (stylesInjected) return;
-	stylesInjected = true;
-
-	if (typeof document === 'undefined') return;
-
-	const style = document.createElement('style');
-	style.id = 'synapse-notification-styles';
-	style.textContent = `
-		.${CLS} {
-			border-left: 3px solid var(--text-muted);
-			padding-left: 10px !important;
-			transition: border-color 0.3s ease;
-		}
-		.${CLS}--info     { border-left-color: var(--text-muted); }
-		.${CLS}--progress { border-left-color: var(--interactive-accent); }
-		.${CLS}--success  { border-left-color: var(--color-green); }
-		.${CLS}--warning  { border-left-color: var(--color-yellow); }
-		.${CLS}--error    { border-left-color: var(--color-red); }
-
-		/* Running operation layout */
-		.${CLS}-op {
-			display: flex;
-			align-items: center;
-			gap: 10px;
-		}
-		.${CLS}-op-text {
-			flex: 1;
-		}
-		.${CLS}-op-dots {
-			display: inline-block;
-			min-width: 1.5ch;
-			text-align: left;
-		}
-		.${CLS}-op-cancel {
-			flex-shrink: 0;
-			padding: 2px 10px;
-			border-radius: 4px;
-			cursor: pointer;
-			font-size: 11px;
-			border: 1px solid var(--text-muted);
-			background: transparent;
-			color: var(--text-muted);
-			transition: color 0.15s, border-color 0.15s;
-		}
-		.${CLS}-op-cancel:hover {
-			color: var(--text-normal);
-			border-color: var(--text-normal);
-		}
-
-		/* Prevent click-to-dismiss on running operations */
-		.${CLS}--no-dismiss {
-			cursor: default;
-		}
-
-		/* Confirmation snackbar buttons */
-		.${CLS}-actions {
-			display: flex;
-			gap: 8px;
-			margin-top: 8px;
-		}
-		.${CLS}-actions button {
-			padding: 2px 12px;
-			border-radius: 4px;
-			cursor: pointer;
-			font-size: 12px;
-			border: 1px solid var(--background-modifier-border);
-		}
-		.${CLS}-actions button.mod-cta {
-			background: var(--interactive-accent);
-			color: var(--text-on-accent);
-			border-color: var(--interactive-accent);
-		}
-		.${CLS}-actions button.mod-cancel {
-			background: transparent;
-			color: var(--text-muted);
-		}
-	`;
-	document.head.appendChild(style);
-}
-
-export function removeNotificationStyles(): void {
-	if (!stylesInjected) return;
-	document.getElementById('synapse-notification-styles')?.remove();
-	stylesInjected = false;
-}
 
 /** Get the underlying DOM element from a Notice */
 function getNoticeEl(notice: Notice): HTMLElement {
@@ -189,10 +104,6 @@ export class NotificationManager {
 	private operations = new Map<string, TrackedOperation>();
 	private statusBarEl: HTMLElement | null = null;
 	private idCounter = 0;
-
-	constructor() {
-		injectStyles();
-	}
 
 	setStatusBarEl(el: HTMLElement): void {
 		this.statusBarEl = el;
