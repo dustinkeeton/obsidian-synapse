@@ -375,6 +375,9 @@ export class SliderComponent {
 
 // --- Utility functions ---
 
+/** Registers a custom icon by id (real Obsidian: addIcon(id, svgContent)). */
+export const addIcon = vi.fn();
+
 export function normalizePath(path: string): string {
 	return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
