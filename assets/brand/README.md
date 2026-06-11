@@ -9,6 +9,7 @@ Canonical visual assets for Synapse. The full brand guidelines — palette, typo
 | `icon.svg` | "The S-Signal" mark — 256×256 viewBox, transparent background, flat palette colors only | Plugin icon contexts, avatars, favicons, anywhere square **above ~24px** |
 | `icon-small.svg` | Optical-size cut of the S-Signal — 256×256 viewBox, transparent, flat palette only. Widened cleft, enlarged volt bead on a thinned Gap Black chip, plain open receptor terminal (ring dropped) | Renders **at or below ~24px**: 16px favicons, 16–24px list/UI icons |
 | `icon-mono.svg` | Single-color `currentColor` silhouette of the S-Signal — **`0 0 100 100` viewBox**, transparent, no palette colors. Tightened cleft; the spark bead bridges the cleft so the one-color spine stays whole at 16px | Color-stripping surfaces: Obsidian ribbon/UI (registered as the `synapse` icon), and any monochrome context |
+| `icon-accepted.svg` | **Accept-state** cut of the S-Signal — 256×256, transparent, flat palette only. The cleft is bridged in violet (gap jumped) and the single Impulse Volt spark has **landed in the receptor**, now closed/filled instead of an open ring | The **accepted** outcome of a proposal: accept-button confirmation, accepted-link badges, the end frame of the accept-flash. Pairs with `icon.svg` (open) — not the default identity. Use **above ~24px** |
 | `banner.svg` | README hero — 1280×320, self-contained dark background, mark + wordmark + tagline | Top of README; safe on both GitHub light and dark themes |
 
 ### Size cutover: canonical vs small cut
@@ -22,6 +23,14 @@ Both color variants are for surfaces that **keep** color. For surfaces that stri
 Obsidian's ribbon and UI render icons as a single `currentColor` silhouette — gradients and palette colors are discarded. `icon-mono.svg` is the S-Signal built for exactly that: every stroke and fill is `currentColor`, so the host UI's text color drives it (Ion White on dark, Gap Black on white — verified on both). Where the colored cuts *widen* the cleft to keep the lime spark distinct, the mono cut *tightens* it: in one color the spark bead bridges the cleft and completes the S spine, so the silhouette stays whole down to 16px.
 
 It is authored on a **`0 0 100 100`** viewBox (not the family's 256) because that is Obsidian's `addIcon` convention — the body of this file is the literal string registered as the `synapse` icon in `src/main.ts` (`SYNAPSE_ICON_SVG`). **Keep the two in sync:** if you edit the asset, update the constant (and vice-versa). Use it only on color-stripping or monochrome surfaces; anywhere color survives, use `icon.svg` / `icon-small.svg`.
+
+### Accept-state variant (`icon-accepted.svg`)
+
+The canonical mark encodes the proposal-approval safety model as geometry: the impulse jumps toward an **open, unfilled receptor ring** — a proposed connection, not yet accepted. `icon-accepted.svg` is that mark resolved to the moment of **accept**: the charged cleft is bridged in Synapse Violet (the gap has been jumped — the connection is made) and the single Impulse Volt spark has **landed in the receptor**, which is now **closed/filled** instead of an open ring. The spark sheds its directional comet taper and settles into a round bead at rest, seated in the receptor with its Gap Black chip intact so the lime survives on white.
+
+It is still **one volt element** — the landed bead is the only lime in the composition. Use it only to show the **accepted** outcome (accept-button confirmation, accepted-link badge, the end frame of the accept-flash); it is a state *pair* with `icon.svg` (open/proposed), **not** a replacement default identity. Size it like the canonical mark — **above ~24px**; it has no dedicated small cut.
+
+The **open → closed motion spec** (the accept-flash) lives in the brand guidelines under *Accept-flash motion spec*: timing, what the single volt element does frame-to-frame, how the receptor fills, the explicit one-volt-rule compliance, and the no-glow/no-blur rule. It is spec only — not wired into any UI.
 
 ## The mark in one sentence
 
@@ -47,4 +56,4 @@ Check dark (`#131019`) and white backgrounds, plus a ~48px copy for small-size l
 
 ## Wanted (not yet produced)
 
-- Accept-state variant (receptor ring closed) for UI states and animation
+- _Nothing currently open. The accept-state variant (`icon-accepted.svg`) and its accept-flash motion spec are done; see above._
