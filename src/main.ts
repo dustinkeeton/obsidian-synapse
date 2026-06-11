@@ -1,4 +1,4 @@
-import { Notice, Platform, Plugin } from 'obsidian';
+import { Notice, Platform, Plugin, addIcon } from 'obsidian';
 import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
 import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
@@ -28,6 +28,22 @@ import {
 } from './views';
 import type { UnifiedItem } from './views';
 
+/**
+ * Monochrome `currentColor` silhouette of the S-Signal mark, registered as the
+ * `synapse` icon for ribbon/UI surfaces (which strip color to a single
+ * currentColor fill). This is the inner body of `assets/brand/icon-mono.svg`,
+ * authored on the 0 0 100 100 viewBox Obsidian's `addIcon` expects. In
+ * monochrome the spark bead bridges the synaptic cleft and completes the S
+ * spine, so the silhouette stays whole down to 16px. Keep this in sync with the
+ * canonical asset; do not recolor (the brand mark only ever uses palette colors
+ * in its full-color variants — this variant is intentionally color-agnostic).
+ */
+const SYNAPSE_ICON_SVG =
+	'<path d="M70 25.2 A16.4 16.4 0 1 0 42.3 42.3" fill="none" stroke="currentColor" stroke-width="10.5" stroke-linecap="round"/>' +
+	'<circle cx="70" cy="25.2" r="7.8" fill="currentColor"/>' +
+	'<path d="M69.3 55.4 A18 18 0 0 1 41.8 78.5" fill="none" stroke="currentColor" stroke-width="10.5" stroke-linecap="round"/>' +
+	'<ellipse cx="55.8" cy="48.9" rx="16.5" ry="7.2" fill="currentColor" transform="rotate(26 55.8 48.9)"/>';
+
 export default class SynapsePlugin extends Plugin {
 	settings!: SynapseSettings;
 	notifications!: NotificationManager;
@@ -51,6 +67,10 @@ export default class SynapsePlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+
+		// Register the brand mark as a custom icon so ribbon/UI surfaces can use
+		// it. Must run before any addRibbonIcon('synapse', …) call below.
+		addIcon('synapse', SYNAPSE_ICON_SVG);
 
 		// Migrate legacy .auto-notes folder to .synapse (one-time, backward compat)
 		await this.migrateDataFolder();
@@ -255,12 +275,17 @@ export default class SynapsePlugin extends Plugin {
 			};
 		}
 
-		// Single ribbon icon + command for the unified view
-		this.addRibbonIcon('sparkles', 'Review proposals', () => {
+		// Single ribbon icon + command for the unified view. Uses the brand
+		// S-Signal mark (registered above) rather than a stock Lucide glyph —
+		// the previous 'sparkles' icon is on the brand's banned inventory.
+		this.addRibbonIcon('synapse', 'Review proposals', () => {
 			this.activateUnifiedView();
 		});
 
-		// Unified transcription ribbon icon (desktop only — mic icon implies video support)
+		// Unified transcription ribbon icon (desktop only — mic icon implies video
+		// support). 'mic' stays a functional Lucide glyph: it communicates the
+		// transcribe action better than the brand mark, and only sparkle glyphs
+		// are banned, not all Lucide icons.
 		if (Platform.isDesktop) {
 			this.addRibbonIcon('mic', 'Transcribe media', () => {
 				this.openUnifiedModal();
