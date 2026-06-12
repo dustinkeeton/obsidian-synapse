@@ -28,7 +28,7 @@ export class DepthSelectorModal extends Modal {
 
 		addEnhancedSlider(
 			new Setting(sliderContainer)
-				.setName('Recursion Depth')
+				.setName('Recursion depth')
 				.setDesc('How many generations of topics to explore'),
 				{
 					min: MIN_DEPTH,

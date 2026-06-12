@@ -85,7 +85,7 @@ export class EnrichmentDetailModal extends Modal {
 		const actions = contentEl.createDiv({ cls: 'synapse-modal-actions' });
 
 		const acceptBtn = actions.createEl('button', {
-			text: 'Accept Selected',
+			text: 'Accept selected',
 			cls: 'mod-cta',
 		});
 		acceptBtn.addEventListener('click', () => {
@@ -98,19 +98,19 @@ export class EnrichmentDetailModal extends Modal {
 			this.close();
 		});
 
-		const selectAllBtn = actions.createEl('button', { text: 'Select All' });
+		const selectAllBtn = actions.createEl('button', { text: 'Select all' });
 		selectAllBtn.addEventListener('click', () => {
 			this.selectAll();
 			this.onOpen(); // Re-render
 		});
 
-		const deselectBtn = actions.createEl('button', { text: 'Deselect All' });
+		const deselectBtn = actions.createEl('button', { text: 'Deselect all' });
 		deselectBtn.addEventListener('click', () => {
 			this.deselectAll();
 			this.onOpen(); // Re-render
 		});
 
-		const rejectBtn = actions.createEl('button', { text: 'Reject All' });
+		const rejectBtn = actions.createEl('button', { text: 'Reject all' });
 		rejectBtn.addEventListener('click', () => {
 			this.onReject();
 			this.close();

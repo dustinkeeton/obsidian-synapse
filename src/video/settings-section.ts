@@ -13,7 +13,7 @@ export function renderVideoSettings(ctx: SettingsSectionContext): void {
 
 	const videoBody = ctx.featureSection(
 		'video',
-		'Video Transcription',
+		'Video transcription',
 		() => plugin.settings.video.enabled,
 		(v) => { plugin.settings.video.enabled = v; },
 		'Enable video transcription',
