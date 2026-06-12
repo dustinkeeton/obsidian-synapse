@@ -4,10 +4,13 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 // Mock the transcriber + post-processor so no network/API calls happen.
+// The size-cap constant must ride along: the module mock replaces ALL exports,
+// and AudioModule's provider-aware size guard reads it.
 vi.mock('./transcriber', () => ({
 	Transcriber: class {
 		transcribe = vi.fn().mockResolvedValue({ raw: 'raw combined transcript', sourceName: 'combined' });
 	},
+	GEMINI_MAX_INLINE_AUDIO_BYTES: 15 * 1024 * 1024,
 }));
 vi.mock('./post-processor', () => ({
 	PostProcessor: class {
@@ -80,10 +83,13 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		};
 	});
 
-	function makeModule(ex: any = extractor) {
+	function makeModule(ex: any = extractor, provider = 'whisper-api') {
 		return new AudioModule(
 			mockPlugin,
-			() => ({ video: { ffmpegPath: 'ffmpeg' } }) as any,
+			() => ({
+				video: { ffmpegPath: 'ffmpeg' },
+				audio: { transcriptionProvider: provider },
+			}) as any,
 			notifications as any,
 			createMockCheckpointManager() as any,
 			ex
@@ -156,6 +162,32 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		expect(extractor.concatAudio).not.toHaveBeenCalled();
 	});
 
+	it('offers the per-file fallback at the lower Gemini cap when provider is gemini', async () => {
+		// 16 MB: above the 15 MB Gemini inline cap, below the generic 25 MB heuristic.
+		extractor = createFakeExtractor(16 * 1024 * 1024);
+		const module = makeModule(extractor, 'gemini');
+		const spy = vi.spyOn(module, 'transcribeAndInsert').mockResolvedValue();
+		notifications.confirm.mockResolvedValue(true); // user picks per-file
+
+		await module.transcribeAndInsertCombined(tfile('notes/lecture.md'), embeds());
+
+		expect(notifications.confirm).toHaveBeenCalledWith(
+			expect.stringMatching(/Gemini/),
+			expect.anything()
+		);
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not warn at 16 MB for non-Gemini providers (generic ~25 MB threshold)', async () => {
+		extractor = createFakeExtractor(16 * 1024 * 1024);
+		const module = makeModule(extractor, 'whisper-api');
+
+		await module.transcribeAndInsertCombined(tfile('notes/lecture.md'), embeds());
+
+		expect(notifications.confirm).not.toHaveBeenCalled();
+		expect(mockPlugin.app.vault.process).toHaveBeenCalledTimes(1);
+	});
+
 	it('combines via per-file transcription when ffmpeg/extractor is unavailable', async () => {
 		const module = makeModule(null); // mobile: no ffmpeg
 		(module as any).interFileDelayMs = 0; // skip rate-limit delay in tests
@@ -188,10 +220,13 @@ describe('AudioModule.transcribeAudioCombined', () => {
 		};
 	});
 
-	function makeModule(ex: any) {
+	function makeModule(ex: any, provider = 'whisper-api') {
 		return new AudioModule(
 			mockPlugin,
-			() => ({ video: { ffmpegPath: 'ffmpeg' } }) as any,
+			() => ({
+				video: { ffmpegPath: 'ffmpeg' },
+				audio: { transcriptionProvider: provider },
+			}) as any,
 			notifications as any,
 			createMockCheckpointManager() as any,
 			ex
@@ -245,5 +280,30 @@ describe('AudioModule.transcribeAudioCombined', () => {
 		]);
 
 		expect(notifications.info).toHaveBeenCalledWith(expect.stringMatching(/exceed the transcription provider limit/i));
+	});
+
+	it('warns at the lower Gemini inline cap when provider is gemini', async () => {
+		// 16 MB: above the 15 MB Gemini cap, below the generic 25 MB heuristic.
+		const big = createFakeExtractor(16 * 1024 * 1024);
+		const module = makeModule(big, 'gemini');
+
+		await module.transcribeAudioCombined([
+			tfile('audio/a.mp3'),
+			tfile('audio/b.mp3'),
+		]);
+
+		expect(notifications.info).toHaveBeenCalledWith(expect.stringMatching(/Gemini/));
+	});
+
+	it('does not warn at 16 MB for non-Gemini providers', async () => {
+		const big = createFakeExtractor(16 * 1024 * 1024);
+		const module = makeModule(big, 'whisper-api');
+
+		await module.transcribeAudioCombined([
+			tfile('audio/a.mp3'),
+			tfile('audio/b.mp3'),
+		]);
+
+		expect(notifications.info).not.toHaveBeenCalled();
 	});
 });

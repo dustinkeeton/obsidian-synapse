@@ -165,6 +165,42 @@ describe('AIClient — Gemini provider', () => {
 		expect(result).toBe('Hello world');
 	});
 
+	it('throws a descriptive error when the prompt is blocked (no candidates)', async () => {
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			json: { promptFeedback: { blockReason: 'SAFETY' } },
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.complete('Hello')).rejects.toThrow(/blocked \(SAFETY\)/);
+	});
+
+	it('throws a descriptive error when the token budget is exhausted before any text (MAX_TOKENS, no parts)', async () => {
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			json: { candidates: [{ content: { role: 'model' }, finishReason: 'MAX_TOKENS' }] },
+			text: '',
+			headers: {},
+		});
+
+		const err: Error = await client.complete('Hello').catch((e) => e);
+		expect(err).toBeInstanceOf(Error);
+		expect(err.message).toContain('MAX_TOKENS');
+		expect(err.message).toMatch(/max tokens/i);
+	});
+
+	it('reports the finish reason when a candidate is stopped without parts for other reasons', async () => {
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			json: { candidates: [{ finishReason: 'SAFETY' }] },
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.complete('Hello')).rejects.toThrow(/SAFETY/);
+	});
+
 	it('redacts Google API keys echoed in error responses', async () => {
 		mockRequestUrl.mockResolvedValue({
 			status: 400,

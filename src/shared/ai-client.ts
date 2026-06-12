@@ -94,6 +94,46 @@ function toAnthropicContent(blocks: ContentBlock[]): unknown[] {
 	});
 }
 
+/** The subset of a Gemini generateContent response needed to extract text. */
+interface GeminiResponseJson {
+	candidates?: Array<{
+		content?: { parts?: Array<{ text?: string }> };
+		finishReason?: string;
+	}>;
+	promptFeedback?: { blockReason?: string };
+}
+
+/**
+ * Extract the concatenated text parts from a Gemini generateContent response.
+ *
+ * Gemini returns HTTP 200 for blocked prompts (no `candidates`, only
+ * `promptFeedback.blockReason`) and for candidates stopped before any text
+ * (`finishReason: MAX_TOKENS` / `SAFETY` with no `parts`) — both previously
+ * crashed unguarded `candidates[0].content.parts` access. Throws a descriptive
+ * error for those shapes instead. Shared by the AI client and the audio
+ * transcriber (which must not return a silently empty transcript).
+ */
+export function extractGeminiResponseText(json: GeminiResponseJson): string {
+	const candidate = json?.candidates?.[0];
+	const parts = candidate?.content?.parts;
+	if (!parts || parts.length === 0) {
+		const blockReason = json?.promptFeedback?.blockReason;
+		if (blockReason) {
+			throw new Error(`Gemini response blocked (${blockReason})`);
+		}
+		const finishReason = candidate?.finishReason;
+		if (finishReason === 'MAX_TOKENS') {
+			throw new Error(
+				'Gemini returned no text: token limit reached (MAX_TOKENS) — consider raising max tokens in AI settings'
+			);
+		}
+		throw new Error(
+			`Gemini returned no text${finishReason ? ` (finish reason: ${finishReason})` : ''}`
+		);
+	}
+	return parts.map(p => p.text ?? '').join('');
+}
+
 /**
  * Convert ContentBlock[] to Gemini's multimodal `parts` format
  * (REST field names are snake_case: `inline_data`, `mime_type`).
@@ -262,8 +302,7 @@ export class AIClient {
 			},
 			body: JSON.stringify(body),
 		});
-		const parts: Array<{ text?: string }> = response.json.candidates[0].content.parts;
-		return parts.map(p => p.text ?? '').join('');
+		return extractGeminiResponseText(response.json);
 	}
 
 	private async callOllama(messages: ChatMessage[]): Promise<string> {
