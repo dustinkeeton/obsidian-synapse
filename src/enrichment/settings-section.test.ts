@@ -43,7 +43,7 @@ describe('renderEnrichmentSettings', () => {
 		expect(saveSettings).toHaveBeenCalled();
 	});
 
-	it('renders the Proximity Weights and Tag Vocabulary sub-sections without throwing', () => {
+	it('renders the Proximity weights and Tag vocabulary sub-sections without throwing', () => {
 		const { ctx } = makeCtx();
 		expect(() => renderEnrichmentSettings(ctx)).not.toThrow();
 	});

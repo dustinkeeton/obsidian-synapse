@@ -14,7 +14,7 @@ export function renderDeepDiveSettings(ctx: SettingsSectionContext): void {
 
 	const deepDiveBody = ctx.featureSection(
 		'deepDive',
-		'Deep Dive',
+		'Deep dive',
 		() => plugin.settings.deepDive.enabled,
 		(v) => { plugin.settings.deepDive.enabled = v; },
 		'Recursively explore a note into a tree of interlinked child notes',

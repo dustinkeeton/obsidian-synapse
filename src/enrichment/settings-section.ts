@@ -12,7 +12,7 @@ export function renderEnrichmentSettings(ctx: SettingsSectionContext): void {
 
 	const enrichmentBody = ctx.featureSection(
 		'enrichment',
-		'Note Enrichment',
+		'Note enrichment',
 		() => plugin.settings.enrichment.enabled,
 		(v) => { plugin.settings.enrichment.enabled = v; },
 		'Add tags, links, references, and metadata to notes',
@@ -120,7 +120,7 @@ export function renderEnrichmentSettings(ctx: SettingsSectionContext): void {
 	);
 
 	// Weight settings (sub-section within enrichment)
-	new Setting(enrichmentBody).setHeading().setName('Proximity Weights');
+	new Setting(enrichmentBody).setHeading().setName('Proximity weights');
 
 	type WeightKey = keyof EnrichmentWeightSettings;
 	const weightFields: Array<{ key: WeightKey; name: string; desc: string }> = [
@@ -153,7 +153,7 @@ export function renderEnrichmentSettings(ctx: SettingsSectionContext): void {
 	}
 
 	// Tag Vocabulary (sub-section within enrichment)
-	new Setting(enrichmentBody).setHeading().setName('Tag Vocabulary').setDesc('Define metadata tag categories. Tags classify notes (status, type, source) — topics become [[links]] instead.');
+	new Setting(enrichmentBody).setHeading().setName('Tag vocabulary').setDesc('Define metadata tag categories. Tags classify notes (status, type, source) — topics become [[links]] instead.');
 
 	for (let i = 0; i < plugin.settings.enrichment.tagVocabulary.length; i++) {
 		const entry = plugin.settings.enrichment.tagVocabulary[i];

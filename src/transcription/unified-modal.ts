@@ -31,7 +31,7 @@ export class UnifiedTranscriptionModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl('h2', { text: 'Transcribe Media' });
+		contentEl.createEl('h2', { text: 'Transcribe media' });
 
 		// Local File section
 		if (this.enabledModules.audio || this.enabledModules.video) {
@@ -244,7 +244,7 @@ export class UnifiedTranscriptionModal extends Modal {
 			const actions = el.createDiv({ cls: 'synapse-notice-actions' });
 
 			const clipBtn = actions.createEl('button', {
-				text: 'Transcribe Selection',
+				text: 'Transcribe selection',
 				cls: 'mod-cta',
 			});
 			clipBtn.addEventListener('click', (e) => {
@@ -265,7 +265,7 @@ export class UnifiedTranscriptionModal extends Modal {
 			});
 
 			const fullBtn = actions.createEl('button', {
-				text: 'Full File',
+				text: 'Full file',
 				cls: 'mod-cancel',
 			});
 			fullBtn.addEventListener('click', (e) => {

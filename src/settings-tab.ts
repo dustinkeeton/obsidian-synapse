@@ -41,7 +41,7 @@ const AUTO_ACCEPT_LABELS: Record<ProposalKind, { name: string; desc: string }> =
 		desc: 'Caution: moves notes. Automatically accept organize proposals, relocating notes into the proposed folders without review.',
 	},
 	'deep-dive': {
-		name: 'Deep Dive',
+		name: 'Deep dive',
 		desc: 'Automatically accept every generated deep dive note in a run, creating all of them in the vault.',
 	},
 	title: {
@@ -49,7 +49,7 @@ const AUTO_ACCEPT_LABELS: Record<ProposalKind, { name: string; desc: string }> =
 		desc: 'Caution: renames files. Automatically accept title proposals, renaming notes without review.',
 	},
 	rem: {
-		name: 'REM (Link Discovery)',
+		name: 'REM (link discovery)',
 		desc: 'Caution: rewrites note body text. Automatically insert all discovered [[wikilinks]] without review.',
 	},
 };
@@ -145,8 +145,6 @@ export class SynapseSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setHeading().setName(`Synapse v${this.plugin.manifest.version}`);
-
 		// Rebuilt each render; feature toggles flip Auto-Accept rows' disabled
 		// state live via the context's onFeatureToggle hook.
 		this.autoAcceptSettings = {};
@@ -176,6 +174,14 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		// ── About (static support links, always last) ──
 		this.renderAbout(ctx);
+
+		// Version as a muted footer line. The settings tab must not carry a
+		// top-level plugin-name heading (Obsidian community guidelines), so the
+		// version moves here, below everything else.
+		containerEl.createDiv({
+			cls: 'setting-item-description synapse-settings-footer',
+			text: `Synapse v${this.plugin.manifest.version}`,
+		});
 	}
 
 	/**
@@ -184,10 +190,10 @@ export class SynapseSettingTab extends PluginSettingTab {
 	 * not tied to any single feature.
 	 */
 	private renderAIConfiguration(ctx: SettingsSectionContext): void {
-		const aiBody = ctx.configSection('ai', 'AI Configuration');
+		const aiBody = ctx.configSection('ai', 'AI configuration');
 
 		new Setting(aiBody)
-			.setName('AI Provider')
+			.setName('AI provider')
 			.setDesc('Which AI service to use for elaboration and post-processing')
 			.addDropdown((dd) =>
 				dd
@@ -214,7 +220,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		// every AI feature highlighted until they fill it (#89). Toggled live as
 		// they type — no full re-render, so the field keeps focus.
 		const apiKeySetting = new Setting(aiBody)
-			.setName('API Key')
+			.setName('API key')
 			.addText((text) => {
 				text
 					.setPlaceholder('sk-...')
@@ -231,7 +237,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		if (this.plugin.settings.ai.provider === 'ollama') {
 			new Setting(aiBody)
-				.setName('Ollama Endpoint')
+				.setName('Ollama endpoint')
 				.setDesc('URL for local Ollama server (HTTPS required for non-localhost)')
 				.addText((text) =>
 					text
@@ -316,7 +322,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 	private renderAutoAccept(ctx: SettingsSectionContext): void {
 		// Rendered like the AI Configuration section: a collapsible config
 		// section with no header toggle, persisting its own collapse state.
-		const autoAcceptBody = ctx.configSection('autoAccept', 'Auto-Accept Proposals');
+		const autoAcceptBody = ctx.configSection('autoAccept', 'Auto-accept proposals');
 
 		autoAcceptBody.createDiv({
 			cls: 'setting-item-description synapse-accordion-empty-note',

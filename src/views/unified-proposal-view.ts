@@ -337,7 +337,7 @@ export class UnifiedProposalView extends ItemView {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('synapse-view-root');
-		contentEl.createEl('h3', { text: 'Pending Proposals' });
+		contentEl.createEl('h3', { text: 'Pending proposals' });
 
 		const progressBar = contentEl.createDiv({ cls: 'synapse-accept-all-progress' });
 		progressBar.createEl('p', {
@@ -356,7 +356,7 @@ export class UnifiedProposalView extends ItemView {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('synapse-view-root');
-		contentEl.createEl('h3', { text: 'Pending Proposals' });
+		contentEl.createEl('h3', { text: 'Pending proposals' });
 
 		// Render incomplete checkpoints banner
 		if (this.incompleteCheckpoints.length > 0) {
@@ -381,7 +381,7 @@ export class UnifiedProposalView extends ItemView {
 			const bulkInProgress = this.acceptAllInProgress || this.rejectAllInProgress;
 
 			const acceptAllBtn = bulkBar.createEl('button', {
-				text: 'Accept All',
+				text: 'Accept all',
 				cls: 'synapse-accept-all-btn mod-cta',
 			});
 			if (bulkInProgress) {
@@ -390,7 +390,7 @@ export class UnifiedProposalView extends ItemView {
 			acceptAllBtn.addEventListener('click', () => this.acceptAll());
 
 			const rejectAllBtn = bulkBar.createEl('button', {
-				text: 'Reject All',
+				text: 'Reject all',
 				cls: 'synapse-reject-all-btn',
 			});
 			if (bulkInProgress) {
@@ -510,7 +510,7 @@ export class UnifiedProposalView extends ItemView {
 			this.enterEnrichmentReview(proposal);
 		});
 
-		const acceptBtn = actions.createEl('button', { text: 'Accept All' });
+		const acceptBtn = actions.createEl('button', { text: 'Accept all' });
 		acceptBtn.addEventListener('click', () => {
 			const all: AcceptedItems = {
 				tags: result.tags.map(t => t.tag),
@@ -594,7 +594,7 @@ export class UnifiedProposalView extends ItemView {
 
 		const editorPane = contentEl.createDiv({ cls: 'synapse-review-pane' });
 		editorPane.createEl('div', {
-			text: 'Proposed Additions',
+			text: 'Proposed additions',
 			cls: 'synapse-review-pane-label synapse-review-pane-label--elaboration',
 		});
 		const textarea = editorPane.createEl('textarea', { cls: 'synapse-review-editor' });
@@ -686,7 +686,7 @@ export class UnifiedProposalView extends ItemView {
 		// Action bar
 		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
 
-		const acceptBtn = actionBar.createEl('button', { text: 'Accept Selected', cls: 'mod-cta' });
+		const acceptBtn = actionBar.createEl('button', { text: 'Accept selected', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			const accepted: AcceptedItems = {
 				tags: [...this.selectedTags],
@@ -748,7 +748,7 @@ export class UnifiedProposalView extends ItemView {
 		// Proposed directory
 		const dirPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		dirPane.createEl('div', {
-			text: 'Proposed Directory',
+			text: 'Proposed directory',
 			cls: 'synapse-review-pane-label synapse-review-pane-label--organize',
 		});
 		dirPane.createEl('p', {
@@ -787,7 +787,7 @@ export class UnifiedProposalView extends ItemView {
 		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--deep-dive' });
 
 		const badgeRow = card.createDiv({ cls: 'synapse-badge-row' });
-		badgeRow.createEl('span', { text: 'Deep Dive', cls: 'synapse-badge synapse-badge--deep-dive' });
+		badgeRow.createEl('span', { text: 'Deep dive', cls: 'synapse-badge synapse-badge--deep-dive' });
 		badgeRow.createEl('span', {
 			text: `D${proposal.depth}`,
 			cls: 'synapse-depth-badge',
@@ -866,7 +866,7 @@ export class UnifiedProposalView extends ItemView {
 		// Proposed path
 		const pathPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		pathPane.createEl('div', {
-			text: 'Proposed Path',
+			text: 'Proposed path',
 			cls: 'synapse-review-pane-label synapse-review-pane-label--deep-dive',
 		});
 		pathPane.createEl('p', {
@@ -877,7 +877,7 @@ export class UnifiedProposalView extends ItemView {
 		// Content preview
 		const editorPane = contentEl.createDiv({ cls: 'synapse-review-pane' });
 		editorPane.createEl('div', {
-			text: 'Proposed Content',
+			text: 'Proposed content',
 			cls: 'synapse-review-pane-label synapse-review-pane-label--deep-dive',
 		});
 		const textarea = editorPane.createEl('textarea', { cls: 'synapse-review-editor synapse-review-editor--deep-dive' });
@@ -969,7 +969,7 @@ export class UnifiedProposalView extends ItemView {
 		// Current title
 		const currentPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		currentPane.createEl('div', {
-			text: 'Current Title',
+			text: 'Current title',
 			cls: 'synapse-review-pane-label synapse-review-pane-label--title',
 		});
 		currentPane.createEl('p', {
@@ -980,7 +980,7 @@ export class UnifiedProposalView extends ItemView {
 		// Proposed title
 		const proposedPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		proposedPane.createEl('div', {
-			text: 'Proposed Title',
+			text: 'Proposed title',
 			cls: 'synapse-review-pane-label synapse-review-pane-label--title',
 		});
 		proposedPane.createEl('p', {
@@ -1051,7 +1051,7 @@ export class UnifiedProposalView extends ItemView {
 			this.enterRemReview(proposal);
 		});
 
-		const acceptBtn = actions.createEl('button', { text: 'Accept All' });
+		const acceptBtn = actions.createEl('button', { text: 'Accept all' });
 		acceptBtn.addEventListener('click', () => {
 			const allTexts = candidates.map(c => c.matchedText);
 			this.callbacks.onRemAcceptSelected(proposal.id, allTexts);
@@ -1149,7 +1149,7 @@ export class UnifiedProposalView extends ItemView {
 		// Action bar
 		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
 
-		const acceptBtn = actionBar.createEl('button', { text: 'Accept Selected', cls: 'mod-cta' });
+		const acceptBtn = actionBar.createEl('button', { text: 'Accept selected', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			const accepted = [...this.selectedRemLinks];
 			this.reviewingRem = null;
@@ -1180,7 +1180,7 @@ export class UnifiedProposalView extends ItemView {
 	private renderCheckpointBanner(container: HTMLElement): void {
 		const section = container.createDiv({ cls: 'synapse-checkpoint-banner' });
 		section.createEl('div', {
-			text: 'Interrupted Operations',
+			text: 'Interrupted operations',
 			cls: 'synapse-checkpoint-heading',
 		});
 
