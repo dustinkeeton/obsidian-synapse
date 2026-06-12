@@ -5,6 +5,15 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-06-12
+
+### Fixed
+
+- Declare the correct minimum Obsidian version (`minAppVersion` 1.7.2) — the plugin uses APIs (`Workspace.revealLeaf`, `Setting.setDisabled`, `ToggleComponent.setTooltip`, `Vault.createFolder`) introduced after the previously declared 1.1.0 minimum
+- Pin the `obsidian` typings to 1.7.2 so future API drift beyond the declared minimum is caught at compile time
+- Replace the `any`-typed settings merge in `loadSettings` with fully typed deep merging, so malformed persisted settings are caught by the type checker
+- Document and correctly scope the lazy Node-builtin loading in the video audio extractor (mobile-safe bundle loading)
+
 ## [1.0.0] - 2026-06-12
 
 ### Added
