@@ -1,11 +1,15 @@
 import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { ChatMessage, ContentBlock } from './types';
+import { ChatMessage, ContentBlock, TextContentBlock } from './types';
 
-/** Redact API keys/tokens that may appear in API error response bodies. */
-function redactSecrets(text: string): string {
+/**
+ * Redact API keys/tokens that may appear in API error response bodies.
+ * Covers OpenAI/Deepgram-style prefixed keys, bearer tokens, Anthropic keys,
+ * and Google `AIza…` API keys. Exported for tests.
+ */
+export function redactSecrets(text: string): string {
 	return text.replace(
-		/(?:sk-|key-|dg-|Bearer\s+|Token\s+|anthropic-)[A-Za-z0-9_-]{8,}/g,
+		/(?:sk-|key-|dg-|Bearer\s+|Token\s+|anthropic-|AIza)[A-Za-z0-9_-]{8,}/g,
 		'[REDACTED]'
 	);
 }
@@ -91,6 +95,24 @@ function toAnthropicContent(blocks: ContentBlock[]): unknown[] {
 }
 
 /**
+ * Convert ContentBlock[] to Gemini's multimodal `parts` format
+ * (REST field names are snake_case: `inline_data`, `mime_type`).
+ */
+function toGeminiContent(blocks: ContentBlock[]): unknown[] {
+	return blocks.map(block => {
+		if (block.type === 'text') {
+			return { text: block.text };
+		}
+		return {
+			inline_data: {
+				mime_type: block.mediaType,
+				data: block.data,
+			},
+		};
+	});
+}
+
+/**
  * Convert ContentBlock[] to Ollama format: text goes into `content`,
  * images go into a separate `images` array.
  */
@@ -131,6 +153,8 @@ export class AIClient {
 				return this.callOpenAI(messages);
 			case 'anthropic':
 				return this.callAnthropic(messages);
+			case 'gemini':
+				return this.callGemini(messages);
 			case 'ollama':
 				return this.callOllama(messages);
 			default:
@@ -197,6 +221,49 @@ export class AIClient {
 			body: JSON.stringify(body),
 		});
 		return response.json.content[0].text;
+	}
+
+	private async callGemini(messages: ChatMessage[]): Promise<string> {
+		const { ai } = this.getSettings();
+		const model = resolveModelId(ai.provider, ai.model);
+		const systemMsg = messages.find(m => m.role === 'system');
+		const nonSystemMsgs = messages.filter(m => m.role !== 'system');
+
+		const body: Record<string, unknown> = {
+			contents: nonSystemMsgs.map(m => ({
+				// Gemini has no 'assistant' role — model turns use 'model'.
+				role: m.role === 'assistant' ? 'model' : 'user',
+				parts: typeof m.content === 'string'
+					? [{ text: m.content }]
+					: toGeminiContent(m.content),
+			})),
+			generationConfig: {
+				maxOutputTokens: ai.maxTokens,
+				temperature: ai.temperature,
+			},
+		};
+		if (systemMsg) {
+			// Gemini has no 'system' message role; route it into system_instruction.
+			const text = typeof systemMsg.content === 'string'
+				? systemMsg.content
+				: systemMsg.content
+					.filter((b): b is TextContentBlock => b.type === 'text')
+					.map(b => b.text)
+					.join('\n');
+			body.system_instruction = { parts: [{ text }] };
+		}
+
+		const response = await safeRequest({
+			url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+			method: 'POST',
+			headers: {
+				'x-goog-api-key': ai.apiKey,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(body),
+		});
+		const parts: Array<{ text?: string }> = response.json.candidates[0].content.parts;
+		return parts.map(p => p.text ?? '').join('');
 	}
 
 	private async callOllama(messages: ChatMessage[]): Promise<string> {

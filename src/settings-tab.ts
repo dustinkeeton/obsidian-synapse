@@ -190,6 +190,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 					.addOptions({
 						openai: 'OpenAI',
 						anthropic: 'Anthropic',
+						gemini: 'Google Gemini',
 						ollama: 'Ollama (Local)',
 					})
 					.setValue(this.plugin.settings.ai.provider)
@@ -206,7 +207,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		new Setting(aiBody)
 			.setName('API Key')
-			.setDesc('API key for OpenAI or Anthropic')
+			.setDesc('API key for OpenAI, Anthropic, or Google Gemini')
 			.addText((text) => {
 				text
 					.setPlaceholder('sk-...')

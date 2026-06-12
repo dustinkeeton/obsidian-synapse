@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { requestUrl } from '../__mocks__/obsidian';
-import { Transcriber, buildMultipartBody } from './transcriber';
+import { Transcriber, buildMultipartBody, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 
 function makeSettings(overrides?: Partial<SynapseSettings>): SynapseSettings {
@@ -372,6 +372,138 @@ describe('Transcriber', () => {
 				await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
 					.rejects.toThrow('Deepgram API request failed (status 503)');
 				expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+			});
+		});
+	});
+
+	describe('Gemini API (requestUrl)', () => {
+		/** A minimal successful Gemini generateContent response. */
+		function geminiResponse(text: string) {
+			return {
+				status: 200,
+				json: { candidates: [{ content: { role: 'model', parts: [{ text }] } }] },
+				text: '',
+				headers: {},
+			};
+		}
+
+		beforeEach(() => {
+			settings.audio.transcriptionProvider = 'gemini';
+			settings.audio.geminiApiKey = 'AIza-test-key';
+		});
+
+		it('throws when no API key is configured', async () => {
+			settings.audio.geminiApiKey = '';
+			settings.ai.apiKey = '';
+			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
+				.rejects.toThrow('No Gemini API key configured');
+		});
+
+		it('falls back to shared AI key when geminiApiKey is empty', async () => {
+			settings.audio.geminiApiKey = '';
+			settings.ai.apiKey = 'AIza-shared-key';
+
+			mockRequestUrl.mockResolvedValue(geminiResponse('hello'));
+
+			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+			const callArgs = mockRequestUrl.mock.calls[0][0] as any;
+			expect(callArgs.headers['x-goog-api-key']).toBe('AIza-shared-key');
+		});
+
+		it('sends base64 inline audio in a JSON body to generateContent', async () => {
+			mockRequestUrl.mockResolvedValue(geminiResponse('transcribed words'));
+
+			const audioData = new Uint8Array([0x01, 0x02, 0x03]).buffer as ArrayBuffer;
+			const result = await transcriber.transcribe(audioData, 'recording.mp3');
+
+			expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+
+			const callArgs = mockRequestUrl.mock.calls[0][0] as any;
+			expect(callArgs.url).toMatch(
+				/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/[\w.-]+:generateContent$/
+			);
+			expect(callArgs.method).toBe('POST');
+			expect(callArgs.headers['x-goog-api-key']).toBe('AIza-test-key');
+			expect(callArgs.headers['Content-Type']).toBe('application/json');
+			expect(callArgs.throw).toBe(false);
+
+			const body = JSON.parse(callArgs.body);
+			expect(body.contents).toHaveLength(1);
+			expect(body.contents[0].role).toBe('user');
+			// First part carries the transcription prompt, second the inline audio
+			expect(body.contents[0].parts[0].text).toMatch(/transcribe/i);
+			expect(body.contents[0].parts[1]).toEqual({
+				inline_data: {
+					mime_type: 'audio/mp3',
+					data: 'AQID', // base64 of [0x01, 0x02, 0x03]
+				},
+			});
+
+			// Verify response mapping
+			expect(result.raw).toBe('transcribed words');
+			expect(result.language).toBeUndefined();
+			expect(result.sourceName).toBe('recording.mp3');
+		});
+
+		it('maps the file extension to the audio MIME type', async () => {
+			mockRequestUrl.mockResolvedValue(geminiResponse('ok'));
+
+			await transcriber.transcribe(new ArrayBuffer(8), 'meeting.wav');
+
+			const body = JSON.parse((mockRequestUrl.mock.calls[0][0] as any).body);
+			expect(body.contents[0].parts[1].inline_data.mime_type).toBe('audio/wav');
+		});
+
+		it('includes a language hint and reports the language when configured', async () => {
+			settings.audio.language = 'fr';
+			mockRequestUrl.mockResolvedValue(geminiResponse('Bonjour'));
+
+			const result = await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+			const body = JSON.parse((mockRequestUrl.mock.calls[0][0] as any).body);
+			expect(body.contents[0].parts[0].text).toContain('"fr"');
+			expect(result.language).toBe('fr');
+		});
+
+		it('rejects audio above the inline size cap before any request is sent', async () => {
+			const oversized = new ArrayBuffer(GEMINI_MAX_INLINE_AUDIO_BYTES + 1);
+
+			await expect(transcriber.transcribe(oversized, 'huge.mp3'))
+				.rejects.toThrow(/too large for Gemini inline transcription/);
+			expect(mockRequestUrl).not.toHaveBeenCalled();
+		});
+
+		it('throws on HTTP error status', async () => {
+			mockRequestUrl.mockResolvedValue({
+				status: 401,
+				json: { error: { message: 'API key not valid' } },
+				text: '',
+				headers: {},
+			});
+
+			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
+				.rejects.toThrow('Gemini API request failed (status 401)');
+		});
+
+		describe('network failures', () => {
+			it('classifies a persistent connection-refused failure and names the Gemini API', async () => {
+				mockRequestUrl.mockRejectedValue(new Error('net::ERR_CONNECTION_REFUSED'));
+
+				const rejection = transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+				await expect(rejection).rejects.toThrow(/Gemini transcription API/);
+				await expect(rejection).rejects.toThrow(/connection refused/i);
+			});
+
+			it('retries a transient connection failure and succeeds on the second attempt', async () => {
+				mockRequestUrl
+					.mockRejectedValueOnce(new Error('net::ERR_CONNECTION_REFUSED'))
+					.mockResolvedValueOnce(geminiResponse('recovered text'));
+
+				const result = await transcriber.transcribe(new ArrayBuffer(8), 'audio.wav');
+
+				expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+				expect(result.raw).toBe('recovered text');
 			});
 		});
 	});

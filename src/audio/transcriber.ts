@@ -22,11 +22,46 @@
 
 import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { withRetry, classifyNetworkError, describeNetworkError } from '../shared';
+import { withRetry, classifyNetworkError, describeNetworkError, arrayBufferToBase64 } from '../shared';
 import { TranscriptionResult } from './types';
 
 /** Timeout for transcription API requests (5 minutes for large audio files). */
 const TRANSCRIPTION_TIMEOUT_MS = 300_000;
+
+/**
+ * Gemini model used for audio transcription. Flash-class: fast, low-cost,
+ * native audio understanding. Verified stable on
+ * ai.google.dev/gemini-api/docs/models (2026-06).
+ */
+const GEMINI_TRANSCRIPTION_MODEL = 'gemini-3.5-flash';
+
+/**
+ * Maximum raw audio size for Gemini inline transcription. Gemini caps the
+ * whole generateContent request at 20 MB, and base64 inflates audio by ~4/3,
+ * so ~15 MB of raw audio is the practical ceiling. Larger files must be
+ * clipped or sent to another provider (the Files API upload path is not
+ * implemented — see #251). Exported for the settings UI and tests.
+ */
+export const GEMINI_MAX_INLINE_AUDIO_BYTES = 15 * 1024 * 1024;
+
+/** Map an audio file extension to the MIME type Gemini expects. */
+function geminiMimeType(fileName: string): string {
+	const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+	const map: Record<string, string> = {
+		mp3: 'audio/mp3',
+		wav: 'audio/wav',
+		m4a: 'audio/mp4',
+		mp4: 'audio/mp4',
+		ogg: 'audio/ogg',
+		oga: 'audio/ogg',
+		flac: 'audio/flac',
+		aac: 'audio/aac',
+		aiff: 'audio/aiff',
+		aif: 'audio/aiff',
+		webm: 'audio/webm',
+	};
+	return map[ext] ?? 'audio/mp3';
+}
 
 /**
  * Build a multipart/form-data body manually from field definitions.
@@ -116,6 +151,8 @@ export class Transcriber {
 				return this.transcribeWhisperAPI(audioData, fileName);
 			case 'deepgram':
 				return this.transcribeDeepgram(audioData, fileName);
+			case 'gemini':
+				return this.transcribeGemini(audioData, fileName);
 			case 'local-whisper':
 				return this.transcribeLocalWhisper(audioData, fileName);
 			default:
@@ -233,6 +270,89 @@ export class Transcriber {
 		return {
 			raw: result.transcript,
 			language: data.results.channels[0].detected_language,
+			sourceName: fileName,
+		};
+	}
+
+	/** Resolve the API key for Gemini: use dedicated geminiApiKey if set, otherwise fall back to shared AI key */
+	private getGeminiApiKey(): string {
+		const settings = this.getSettings();
+		return settings.audio.geminiApiKey || settings.ai.apiKey;
+	}
+
+	private async transcribeGemini(
+		audioData: ArrayBuffer,
+		fileName: string
+	): Promise<TranscriptionResult> {
+		const settings = this.getSettings();
+		const apiKey = this.getGeminiApiKey();
+		if (!apiKey) {
+			throw new Error(
+				'No Gemini API key configured. ' +
+				'Set one in Audio Transcription settings or use Google Gemini as your AI provider.'
+			);
+		}
+
+		// Inline audio rides in the JSON request body, which Gemini caps at 20 MB
+		// total. Reject oversized files up front with a clear error instead of a
+		// cryptic API failure (Files API upload is intentionally not implemented).
+		if (audioData.byteLength > GEMINI_MAX_INLINE_AUDIO_BYTES) {
+			const sizeMb = (audioData.byteLength / (1024 * 1024)).toFixed(1);
+			const limitMb = GEMINI_MAX_INLINE_AUDIO_BYTES / (1024 * 1024);
+			throw new Error(
+				`Audio file is too large for Gemini inline transcription ` +
+				`(${sizeMb} MB, limit ${limitMb} MB). ` +
+				'Clip the audio or switch to the Whisper or Deepgram provider for large files.'
+			);
+		}
+
+		let prompt =
+			'Transcribe this audio recording verbatim. ' +
+			'Output only the transcript text with sensible punctuation and paragraph breaks — ' +
+			'no preamble, commentary, or markdown formatting.';
+		if (settings.audio.language) {
+			prompt += ` The audio language is "${settings.audio.language}".`;
+		}
+
+		const body = JSON.stringify({
+			contents: [{
+				role: 'user',
+				parts: [
+					{ text: prompt },
+					{
+						inline_data: {
+							mime_type: geminiMimeType(fileName),
+							data: arrayBufferToBase64(audioData),
+						},
+					},
+				],
+			}],
+			// Deterministic output is preferable for transcription.
+			generationConfig: { temperature: 0 },
+		});
+
+		const response = await this.requestTranscription('the Gemini transcription API', {
+			url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TRANSCRIPTION_MODEL}:generateContent`,
+			method: 'POST',
+			headers: {
+				'x-goog-api-key': apiKey,
+				'Content-Type': 'application/json',
+			},
+			body,
+			throw: false,
+		});
+
+		if (response.status >= 400) {
+			throw new Error(`Gemini API request failed (status ${response.status})`);
+		}
+
+		const data = typeof response.json === 'string'
+			? JSON.parse(response.json)
+			: response.json;
+		const parts: Array<{ text?: string }> = data.candidates?.[0]?.content?.parts ?? [];
+		return {
+			raw: parts.map(p => p.text ?? '').join('').trim(),
+			language: settings.audio.language || undefined,
 			sourceName: fileName,
 		};
 	}
