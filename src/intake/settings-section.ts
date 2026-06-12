@@ -9,7 +9,7 @@ export function renderIntakeSettings(ctx: SettingsSectionContext): void {
 
 	const intakeBody = ctx.featureSection(
 		'intake',
-		'Intake Folder',
+		'Intake folder',
 		() => plugin.settings.intake.enabled,
 		(v) => { plugin.settings.intake.enabled = v; },
 		'Watch the intake folder and run enabled Synapse features on new notes',

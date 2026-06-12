@@ -9,7 +9,7 @@ export function renderTidySettings(ctx: SettingsSectionContext): void {
 
 	const tidyBody = ctx.featureSection(
 		'tidy',
-		'Note Tidy',
+		'Note tidy',
 		() => plugin.settings.tidy.enabled,
 		(v) => { plugin.settings.tidy.enabled = v; },
 		'Spelling correction and markdown formatting (no content changes)',

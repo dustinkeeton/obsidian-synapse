@@ -37,7 +37,7 @@ export class ProposalDetailModal extends Modal {
 
 		contentEl.createEl('p', { text: `Detected: ${reasons}`, cls: 'synapse-detection-info' });
 
-		contentEl.createEl('h3', { text: 'Proposed Additions' });
+		contentEl.createEl('h3', { text: 'Proposed additions' });
 		contentEl.createEl('p', { text: 'Edit the content below before accepting:' });
 
 		const textarea = contentEl.createEl('textarea', {
@@ -45,8 +45,6 @@ export class ProposalDetailModal extends Modal {
 		});
 		textarea.value = this.proposal.proposedAdditions;
 		textarea.rows = 12;
-		textarea.style.width = '100%';
-		textarea.style.fontFamily = 'monospace';
 
 		const actions = contentEl.createDiv({ cls: 'synapse-modal-actions' });
 

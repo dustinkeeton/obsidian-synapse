@@ -31,7 +31,7 @@ export class NoteMediaModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl('h2', { text: 'Process Media from Note' });
+		contentEl.createEl('h2', { text: 'Process media from note' });
 
 		const audioCount = this.audioEmbeds.length;
 		const videoCount = this.videoEmbeds.length;
@@ -47,7 +47,7 @@ export class NoteMediaModal extends Modal {
 		// Select all / none
 		new Setting(contentEl)
 			.addButton((btn) => {
-				btn.setButtonText('Select All').onClick(() => {
+				btn.setButtonText('Select all').onClick(() => {
 					this.selectedAudio = new Set(this.audioEmbeds.map(e => e.fileName));
 					this.selectedVideo = new Set(this.videoEmbeds.map(e => e.url));
 					this.selectedImage = new Set(this.imageEmbeds.map(e => e.fileName));
@@ -55,7 +55,7 @@ export class NoteMediaModal extends Modal {
 				});
 			})
 			.addButton((btn) => {
-				btn.setButtonText('Select None').onClick(() => {
+				btn.setButtonText('Select none').onClick(() => {
 					this.selectedAudio.clear();
 					this.selectedVideo.clear();
 					this.selectedImage.clear();
@@ -89,7 +89,7 @@ export class NoteMediaModal extends Modal {
 
 		// Process button
 		new Setting(contentEl).addButton((btn) => {
-			btn.setButtonText('Process Selected')
+			btn.setButtonText('Process selected')
 				.setCta()
 				.onClick(async () => {
 					const chosenAudio = this.audioEmbeds.filter(e => this.selectedAudio.has(e.fileName));
@@ -129,7 +129,7 @@ export class NoteMediaModal extends Modal {
 		imageContainer.empty();
 
 		if (this.audioEmbeds.length > 0) {
-			audioContainer.createEl('h4', { text: 'Audio Files' });
+			audioContainer.createEl('h4', { text: 'Audio files' });
 			for (const embed of this.audioEmbeds) {
 				new Setting(audioContainer)
 					.setName(embed.fileName)

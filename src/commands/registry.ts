@@ -18,7 +18,7 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 	{ id: 'manage-checkpoints', name: 'Manage interrupted operations', feature: 'main', status: 'active', flows: ['palette'] },
 	{ id: 'transcribe-media', name: 'Transcribe media', feature: 'main', status: 'disabled', flows: ['palette'] },
 	{ id: 'transcribe-note-media', name: 'Transcribe media from current note', feature: 'main', status: 'active', flows: ['palette'] },
-	{ id: 'fire', name: 'Fire Synapse: run all features on a directory', feature: 'main', status: 'active', flows: ['palette'] },
+	{ id: 'fire', name: 'Run all features on a directory', feature: 'main', status: 'active', flows: ['palette'] },
 
 	// --- elaboration (src/elaboration/index.ts) ---
 	{ id: 'scan-vault', name: 'Scan vault for stub notes', feature: 'elaboration', status: 'active', flows: ['palette', 'fire-synapse', 'startup'], pipelineKey: 'elaboration' },
@@ -60,7 +60,7 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 	// palette command runs `tidy()` on a single note — a different operation. This
 	// entry carries `pipelineKey: 'tidy'` so the tidy pipeline phase is controlled
 	// independently of the palette command. It is never passed to registrar.register().
-	{ id: 'tidy-vault', name: 'Tidy vault (Fire Synapse)', feature: 'tidy', status: 'active', flows: ['fire-synapse'], pipelineKey: 'tidy', note: 'vault scan run only by Fire Synapse; no palette command' },
+	{ id: 'tidy-vault', name: 'Tidy vault', feature: 'tidy', status: 'active', flows: ['fire-synapse'], pipelineKey: 'tidy', note: 'vault scan run only by Fire Synapse; no palette command' },
 ];
 
 /** Lookup by command id. */

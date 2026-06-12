@@ -54,7 +54,7 @@ export class ProposalReviewView extends ItemView {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl('h3', { text: 'Pending Proposals' });
+		contentEl.createEl('h3', { text: 'Pending proposals' });
 
 		const pending = this.proposals.filter(p => p.status === 'pending');
 		if (pending.length === 0) {

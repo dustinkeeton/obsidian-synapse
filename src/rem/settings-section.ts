@@ -10,7 +10,7 @@ export function renderRemSettings(ctx: SettingsSectionContext): void {
 
 	const remBody = ctx.featureSection(
 		'rem',
-		'REM (Link Discovery)',
+		'REM (link discovery)',
 		() => plugin.settings.rem.enabled,
 		(v) => { plugin.settings.rem.enabled = v; },
 		'Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions',
