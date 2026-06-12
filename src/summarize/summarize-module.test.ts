@@ -39,6 +39,10 @@ vi.mock('../shared', () => ({
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
+	// URL detection helpers live in shared/url-detector; the summarize module
+	// imports them from the shared barrel (not via the video module's re-export).
+	isSupportedUrl: vi.fn().mockReturnValue(false),
+	detectPlatform: vi.fn().mockReturnValue(null),
 	CALLOUT_TYPES: { transcription: 'synapse-transcription', summary: 'synapse-summary' },
 	buildCallout: vi.fn((_type: string, _title: string, content: string) => `> ${content}`),
 	ENRICHMENT_START: '%% synapse-enrichment-start %%',

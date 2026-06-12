@@ -68,6 +68,44 @@ describe('buildMultipartBody', () => {
 		const b2 = r2.contentType.split('boundary=')[1];
 		expect(b1).not.toBe(b2);
 	});
+
+	// Core security invariant for header/multipart injection: untrusted input
+	// (vault-derived file names, settings-derived field values) must contribute
+	// ZERO CR/LF characters to the assembled body. A CRLF is the only way to
+	// terminate a header line early and forge a new header or multipart part, so
+	// if the attacker payload adds no CRLFs versus a benign build, it is inert.
+	const crlfCount = (body: ArrayBuffer): number =>
+		(new TextDecoder().decode(body).match(/\r\n/g) || []).length;
+
+	it('neutralizes CRLF/quote injection in a vault-derived file name', () => {
+		const fileData = new Uint8Array([0x01]).buffer as ArrayBuffer;
+		// A maliciously named note/audio file trying to break out of the quoted
+		// filename param and inject an extra multipart header/part.
+		const evilName =
+			'a.mp3"\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-evil\r\n--x--';
+
+		const benign = buildMultipartBody([], { name: 'clean.mp3', fieldName: 'file', data: fileData });
+		const evil = buildMultipartBody([], { name: evilName, fieldName: 'file', data: fileData });
+
+		// The crafted name adds no structural CRLFs and cannot break out of the quote.
+		expect(crlfCount(evil.body)).toBe(crlfCount(benign.body));
+		const decoded = new TextDecoder().decode(evil.body);
+		expect(decoded).not.toContain('filename="a.mp3"');
+	});
+
+	it('strips CRLF from field values so they cannot start a new part', () => {
+		const fileData = new Uint8Array([0x02]).buffer as ArrayBuffer;
+		const benign = buildMultipartBody(
+			[{ name: 'language', value: 'en' }],
+			{ name: 'a.mp3', fieldName: 'file', data: fileData }
+		);
+		const evil = buildMultipartBody(
+			[{ name: 'language', value: 'en\r\n--injected\r\nContent-Disposition: x' }],
+			{ name: 'a.mp3', fieldName: 'file', data: fileData }
+		);
+		// Same number of structural CRLFs → the value's embedded CRLFs were stripped.
+		expect(crlfCount(evil.body)).toBe(crlfCount(benign.body));
+	});
 });
 
 describe('Transcriber', () => {

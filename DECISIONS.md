@@ -4,6 +4,56 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-11: Canonical secret-redaction module (`shared/redact.ts`)
+
+**Context**: Two code paths scrubbed API keys/tokens out of strings before they could reach a user-facing Notice, an error message, an echoed-back upstream error body, or the console: the AI client (`ai-client.ts`) and `notifyError` (`api-utils.ts`). Each kept its *own* inline copy of the redaction regex, and the two had drifted — the `notifyError` copy was missing the Google `AIza…` (Gemini) pattern. A leaked Gemini key surfaced through `notifyError` would have been shown to the user verbatim.
+
+**Decision**: Extract one canonical `redactSecrets()` into a new `shared/redact.ts` and make it the single source of truth. Both `ai-client.ts` (upstream error bodies) and `api-utils.ts:notifyError` (any error shown to the user/console) now route through it. It is re-exported from `ai-client.ts` and the `shared` barrel for back-compat. Covered shapes: `sk-`/`sk-ant-`, generic `key-`, Deepgram `dg-`, `Bearer `/`Token ` header values, `anthropic-` identifiers, and Google `AIza` keys.
+
+**Alternatives considered**:
+- **Keep two copies, just add the missing pattern to `notifyError`** — rejected. Fixes today's drift but not the cause; two regexes will drift again the next time a provider is added.
+- **A lint rule that bans raw key patterns in strings** — rejected as heavier and orthogonal; it doesn't give us one tested redactor to call.
+
+**Rationale**: One function, one regex, one place to extend when a new provider key shape appears — and one set of regression tests instead of two partial ones. The drift that exposed Gemini keys becomes structurally impossible once both callers share the module.
+
+**Impact**: New `src/shared/redact.ts`. Redaction is now consistent across both surfaces and covers Gemini `AIza` keys everywhere. Behavior-preserving except that `notifyError` now also redacts Gemini keys. Regression tests added (`ai-client.test.ts`, `api-utils.test.ts`).
+
+---
+
+## 2026-06-11: Harden multipart transcription bodies against header injection
+
+**Context**: Obsidian's `requestUrl` has no `FormData`, so `audio/transcriber.ts` hand-builds the `multipart/form-data` body for Whisper uploads (`buildMultipartBody`). The part field names and the uploaded file name are **vault-/settings-derived** — i.e. influenceable via a crafted note or embed file name — and were interpolated straight into `Content-Disposition` header lines. A file name containing CRLF or a quote (e.g. `x"\r\nContent-Disposition: ...`) could break out of the quoted parameter to inject extra headers or forge new multipart parts.
+
+**Decision**: Sanitize every untrusted value before it reaches a header line. A new internal `sanitizeMultipartHeaderValue()` strips all CR/LF and replaces `"` and `\` (the only characters that can escape a quoted header parameter) with `_`; field *values* additionally collapse CR/LF to spaces so they cannot start a new part. The binary file payload is appended raw and never interpreted as text.
+
+**Alternatives considered**:
+- **Reject file names containing suspicious characters** — rejected; would fail legitimate transcriptions for benign-but-unusual names. Sanitizing is non-destructive to the actual audio upload.
+- **Percent-encode header values (RFC 6266)** — rejected as overkill for a controlled internal body; strip-and-replace provably closes the break-out characters with less code.
+
+**Rationale**: Defense-in-depth on any vault-derived string that crosses into a wire-format header. The fix is local, has no effect on normal file names, and removes the only injection-capable characters.
+
+**Impact**: `audio/transcriber.ts` only (`buildMultipartBody` + new `sanitizeMultipartHeaderValue`). No user-visible change for normal transcriptions. Regression tests added.
+
+---
+
+## 2026-06-11: Shared utilities are imported through the `shared` barrel only
+
+**Context**: An architecture audit found shared utilities being reached inconsistently — through a *sibling feature module* or through an *internal `shared/` file* rather than the `shared` barrel. Concretely: base64 helpers pulled via `image/preprocess`, and an **undocumented static `summarize → video` import** had crept in even though `video.transcribeUrl` is supposed to arrive only by constructor injection. The static edge contradicted both the docs and the acyclic-graph rule.
+
+**Decision**: Establish and enforce one rule — **shared utilities are imported from the `../shared` barrel, never from a sibling feature module and never from an internal `shared/` file.** Normalize the offending imports (`image/preprocess.ts`, `summarize/index.ts`, `elaboration/image-analyzer.ts`) to the barrel, and remove the static `summarize → video` import (summarize keeps `video.transcribeUrl` strictly as an injected dependency; the URL-platform helpers `isSupportedUrl`/`detectPlatform` resolve from `shared`). Canonical homes (`url-detector.ts`, `redact.ts`, `encoding.ts`) live in `shared/` and may be re-exported elsewhere for back-compat, but consumers import the barrel.
+
+**Alternatives considered**:
+- **Allow re-export "convenience" imports through whichever module is nearest** — rejected; that is exactly what let the static `summarize → video` edge appear, and it makes the dependency graph ambiguous.
+- **Deep-import internal `shared/` files directly (e.g. `shared/encoding`)** — rejected; couples callers to `shared`'s internal file layout. The barrel is the stable contract.
+
+**Rationale**: A single import convention keeps the dependency graph legible and acyclic, prevents accidental feature-to-feature coupling, and lets `shared` reorganize its internals freely behind the barrel.
+
+**Impact**: Imports normalized in `image/preprocess.ts`, `summarize/index.ts`, `elaboration/image-analyzer.ts`; the static `summarize → video` edge is removed (now injection-only).
+
+**Known exception (flagged for cleanup)**: `audio/index.ts` keeps a **type-only** `import type { AudioExtractor } from '../video'` for time-range clipping. Because the type is erased at compile time it creates **no runtime cycle** (the runtime edge remains the correct `video → audio`), but it is a structural back-edge against the layering. A future cleanup could move `AudioExtractor` into `shared/` or pass it through a structural interface.
+
+---
+
 ## 2026-06-08: Eliminate the `shared ⇄ video` circular dependency
 
 **Context**: `shared/` is the base layer of the codebase — every feature module depends on it, and by design it must depend on *no* feature module. An audit found that `url-detector.ts` lived in `video/`, yet `shared/` code reached back into it for URL parsing. That inverted the layering and created a genuine import cycle: `shared → video → shared`. Cycles make the dependency graph non-deterministic to reason about, complicate testing in isolation, and risk subtle load-order bugs.

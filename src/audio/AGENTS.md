@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-03-19
+last-updated: 2026-06-11
 ---
 
 # Audio Module
 
-Transcribes audio files from the vault using configurable providers, with optional AI post-processing. Exposes public methods for unified transcription UI.
+Transcribes audio files from the vault using configurable providers (Whisper API, Deepgram, Gemini, local Whisper stub), with optional AI post-processing. Exposes public methods for unified transcription UI. All HTTP goes through Obsidian `requestUrl` (CSP-safe on mobile), not native `fetch`.
 
 ## Public API
 
@@ -23,6 +23,17 @@ class AudioModule {
 }
 
 function findAudioEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): AudioEmbed[]
+
+// transcriber.ts (exported for reuse + tests)
+function buildMultipartBody(
+  fields: { name: string; value: string }[],
+  file: { name: string; fieldName: string; data: ArrayBuffer }
+): { contentType: string; body: ArrayBuffer }   // manual multipart/form-data (requestUrl has no FormData); header values sanitized
+const GEMINI_MAX_INLINE_AUDIO_BYTES: number      // 15 MB raw ceiling for Gemini inline transcription (20 MB request cap / ~4/3 base64 inflation)
+class Transcriber {
+  constructor(getSettings: () => SynapseSettings)
+  transcribe(audioData: ArrayBuffer, fileName: string): Promise<TranscriptionResult>   // routes by audio.transcriptionProvider
+}
 
 const AUDIO_EXTENSIONS: RegExp   // /\.(mp3|wav|m4a|ogg|flac|webm|aac)$/i
 const AUDIO_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:mp3|wav|m4a|ogg|flac|webm|aac))\]\]/gi
@@ -46,8 +57,10 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 | File | Class/Export | Purpose |
 |------|-------------|---------|
 | `types.ts` | `TranscriptionResult`, `TimestampEntry`, `TranscribeOptions`, `AudioEmbed` | Types |
-| `transcriber.ts` | `Transcriber` | Provider-routed transcription (Whisper, Deepgram, local) |
+| `transcriber.ts` | `Transcriber`, `buildMultipartBody`, `GEMINI_MAX_INLINE_AUDIO_BYTES` | Provider-routed transcription (Whisper, Deepgram, Gemini, local stub) over `requestUrl`; manual multipart with sanitized headers (internal `sanitizeMultipartHeaderValue`, `geminiMimeType`); Gemini text via shared `extractGeminiResponseText` |
+| `transcriber.test.ts` | Tests | Transcriber + multipart + provider routing tests |
 | `post-processor.ts` | `PostProcessor` | AI transcript cleanup via `AIClient` |
+| `settings-section.ts` | `renderAudioSettings` | Audio settings UI section |
 | `note-scanner.ts` | `findAudioEmbeds`, `hasTranscriptionBelow`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` | Scan note content for audio embeds |
 | `note-scanner.test.ts` | Tests | Note scanner tests |
 | `index.ts` | `AudioModule` | Orchestrator, public transcription methods |
@@ -66,10 +79,16 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
    |  Cancellable via NotificationManager operation handle
    |
 3. Transcriber.transcribe(audioData, fileName)
-   |  Routes by transcriptionProvider:
-   |  'whisper-api' --> OpenAI /v1/audio/transcriptions (fetch + FormData, 5min timeout)
+   |  Routes by transcriptionProvider (all via requestUrl, 5min timeout, retry on connection/dns/offline only):
+   |  'whisper-api' --> OpenAI /v1/audio/transcriptions
+   |       Body: buildMultipartBody() manual multipart/form-data (requestUrl has no FormData)
    |       Key: audio.whisperApiKey || ai.apiKey
-   |  'deepgram' --> Deepgram /v1/listen (fetch, 5min timeout)
+   |  'deepgram' --> Deepgram /v1/listen (raw ArrayBuffer body)
+   |       Key: audio.deepgramApiKey
+   |  'gemini' --> generativelanguage /v1beta/models/gemini-3.5-flash:generateContent
+   |       Inline base64 audio (rejects > GEMINI_MAX_INLINE_AUDIO_BYTES = 15 MB)
+   |       Instruction in system_instruction (prompt-injection hardening); text via extractGeminiResponseText()
+   |       Key: audio.geminiApiKey || ai.apiKey
    |  'local-whisper' --> throws (not implemented)
    |
 4. PostProcessor.process(rawTranscript)  [if postProcess !== false]
@@ -95,9 +114,10 @@ All under `settings.audio`:
 
 | Key | Controls |
 |-----|----------|
-| `transcriptionProvider` | Backend selection |
+| `transcriptionProvider` | Backend: `whisper-api` \| `deepgram` \| `gemini` \| `local-whisper` |
 | `whisperApiKey` | Dedicated OpenAI key (fallback: `ai.apiKey`) |
 | `deepgramApiKey` | Deepgram API key |
+| `geminiApiKey` | Dedicated Gemini key (fallback: `ai.apiKey`) |
 | `whisperModel` | Whisper model name |
 | `language` | Language hint |
 | `postProcessing.*` | AI cleanup flags |
@@ -110,6 +130,18 @@ When `timeRange` is provided to `transcribeFileToActiveNote()`:
 3. Clipped audio data passed to `transcribe()`
 4. Callout title includes time range: "Transcription of file.mp3 [01:30 - 05:00]"
 5. Falls back to full-file transcription on mobile (no AudioExtractor)
+
+## Multipart Construction & Hardening
+
+`buildMultipartBody(fields, file)` assembles a `multipart/form-data` body as an `ArrayBuffer` (Obsidian
+`requestUrl` does not accept `FormData`). Random boundary: `----SynapseFormBoundary{base36}`.
+
+Untrusted input safety: field names and the file name are vault-/settings-derived, so they pass through
+`sanitizeMultipartHeaderValue()` before interpolation into `Content-Disposition` header lines — it strips
+all CR/LF and replaces `"`/`\` with `_`, the only characters that can break out of a quoted header
+parameter. Field values strip CR/LF to ` ` so they cannot start a new part. This blocks header/multipart
+injection from filenames like `x"\r\nContent-Disposition: ...`. The binary file payload is appended raw and
+never interpreted as text.
 
 ## Video Module Integration
 
