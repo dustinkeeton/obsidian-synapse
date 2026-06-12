@@ -98,9 +98,9 @@ Open **Settings > Synapse** to configure the plugin. All features can be individ
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| AI Provider | OpenAI, Anthropic, or Ollama (local) | OpenAI |
-| API Key | Your API key for the selected provider | -- |
-| Ollama Endpoint | URL for local Ollama server (shown when Ollama selected) | `http://localhost:11434` |
+| AI provider | OpenAI, Anthropic, or Ollama (local) | OpenAI |
+| API key | Your API key for the selected provider | -- |
+| Ollama endpoint | URL for local Ollama server (shown when Ollama selected) | `http://localhost:11434` |
 | Model | AI model for the selected provider | GPT-4o |
 | Temperature | Controls randomness (0 = deterministic, 1 = creative) | 0.7 |
 

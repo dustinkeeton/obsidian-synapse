@@ -93,7 +93,7 @@ export function showTimeRangeToast(
 		const actions = el.createDiv({ cls: `${CLS}-actions` });
 
 		const selectionBtn = actions.createEl('button', {
-			text: 'Transcribe Selection',
+			text: 'Transcribe selection',
 			cls: 'mod-cta',
 		});
 		selectionBtn.addEventListener('click', (e) => {
@@ -111,7 +111,7 @@ export function showTimeRangeToast(
 		});
 
 		const fullBtn = actions.createEl('button', {
-			text: 'Full File',
+			text: 'Full file',
 			cls: 'mod-cancel',
 		});
 		fullBtn.addEventListener('click', (e) => {

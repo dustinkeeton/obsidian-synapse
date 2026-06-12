@@ -362,7 +362,7 @@ export default class SynapsePlugin extends Plugin {
 		}
 
 		registrar.register('fire', true, {
-			name: 'Fire Synapse: run all features on a directory',
+			name: 'Run all features on a directory',
 			callback: () => {
 				const defaultPath = this.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(

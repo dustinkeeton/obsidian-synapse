@@ -21,20 +21,20 @@ export class SummarizeSelectionModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl('h2', { text: 'Summarize Content' });
+		contentEl.createEl('h2', { text: 'Summarize content' });
 		contentEl.createEl('p', {
 			text: `Found ${this.targets.length} item(s) to summarize. Select which to process:`,
 		});
 
 		new Setting(contentEl)
 			.addButton((btn) => {
-				btn.setButtonText('Select All').onClick(() => {
+				btn.setButtonText('Select all').onClick(() => {
 					this.selected = new Set(this.targets.map(t => `${t.type}:${t.line}:${t.source}`));
 					this.renderCheckboxes(listEl);
 				});
 			})
 			.addButton((btn) => {
-				btn.setButtonText('Select None').onClick(() => {
+				btn.setButtonText('Select none').onClick(() => {
 					this.selected.clear();
 					this.renderCheckboxes(listEl);
 				});
@@ -58,7 +58,7 @@ export class SummarizeSelectionModal extends Modal {
 		this.renderCheckboxes(listEl);
 
 		new Setting(contentEl).addButton((btn) => {
-			btn.setButtonText('Summarize Selected')
+			btn.setButtonText('Summarize selected')
 				.setCta()
 				.onClick(async () => {
 					const keys = this.selected;

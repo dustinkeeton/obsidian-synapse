@@ -10,7 +10,7 @@ export function renderOrganizeSettings(ctx: SettingsSectionContext): void {
 
 	const organizeBody = ctx.featureSection(
 		'organize',
-		'Note Organize',
+		'Note organize',
 		() => plugin.settings.organize.enabled,
 		(v) => { plugin.settings.organize.enabled = v; },
 		'AI-powered semantic directory structuring for notes',

@@ -14,7 +14,7 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 
 	const audioBody = ctx.featureSection(
 		'audio',
-		'Audio Transcription',
+		'Audio transcription',
 		() => plugin.settings.audio.enabled,
 		(v) => { plugin.settings.audio.enabled = v; },
 		'Enable audio transcription',
@@ -58,7 +58,7 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 		plugin.settings.ai.provider !== 'openai'
 	) {
 		new Setting(audioBody)
-			.setName('OpenAI API Key (Whisper)')
+			.setName('OpenAI API key (Whisper)')
 			.setDesc(
 				'Whisper uses the OpenAI API. Provide your OpenAI key here since your AI provider is set to ' +
 				plugin.settings.ai.provider.charAt(0).toUpperCase() +
@@ -84,7 +84,7 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 		plugin.settings.ai.provider !== 'gemini'
 	) {
 		new Setting(audioBody)
-			.setName('Google Gemini API Key')
+			.setName('Google Gemini API key')
 			.setDesc(
 				'Gemini transcription uses the Google AI API. Provide your Gemini key here since your AI provider is set to ' +
 				plugin.settings.ai.provider.charAt(0).toUpperCase() +
@@ -105,7 +105,7 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 
 	if (plugin.settings.audio.transcriptionProvider === 'deepgram') {
 		new Setting(audioBody)
-			.setName('Deepgram API Key')
+			.setName('Deepgram API key')
 			.setDesc('Required for Deepgram transcription provider')
 			.addText((text) => {
 				text

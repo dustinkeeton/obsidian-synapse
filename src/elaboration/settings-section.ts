@@ -10,7 +10,7 @@ export function renderElaborationSettings(ctx: SettingsSectionContext): void {
 
 	const elaborationBody = ctx.featureSection(
 		'elaboration',
-		'Note Elaboration',
+		'Note elaboration',
 		() => plugin.settings.elaboration.enabled,
 		(v) => { plugin.settings.elaboration.enabled = v; },
 		'Enable stub note detection and proposal generation',
