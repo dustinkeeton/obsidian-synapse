@@ -431,14 +431,18 @@ describe('Transcriber', () => {
 			const body = JSON.parse(callArgs.body);
 			expect(body.contents).toHaveLength(1);
 			expect(body.contents[0].role).toBe('user');
-			// First part carries the transcription prompt, second the inline audio
-			expect(body.contents[0].parts[0].text).toMatch(/transcribe/i);
-			expect(body.contents[0].parts[1]).toEqual({
-				inline_data: {
-					mime_type: 'audio/mp3',
-					data: 'AQID', // base64 of [0x01, 0x02, 0x03]
+			// The transcription instruction rides in system_instruction (not the
+			// user turn) so spoken instructions inside untrusted audio can't
+			// override it; the user turn carries ONLY the inline audio.
+			expect(body.system_instruction.parts[0].text).toMatch(/transcribe/i);
+			expect(body.contents[0].parts).toEqual([
+				{
+					inline_data: {
+						mime_type: 'audio/mp3',
+						data: 'AQID', // base64 of [0x01, 0x02, 0x03]
+					},
 				},
-			});
+			]);
 
 			// Verify response mapping
 			expect(result.raw).toBe('transcribed words');
@@ -452,7 +456,7 @@ describe('Transcriber', () => {
 			await transcriber.transcribe(new ArrayBuffer(8), 'meeting.wav');
 
 			const body = JSON.parse((mockRequestUrl.mock.calls[0][0] as any).body);
-			expect(body.contents[0].parts[1].inline_data.mime_type).toBe('audio/wav');
+			expect(body.contents[0].parts[0].inline_data.mime_type).toBe('audio/wav');
 		});
 
 		it('includes a language hint and reports the language when configured', async () => {
@@ -462,8 +466,32 @@ describe('Transcriber', () => {
 			const result = await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
 
 			const body = JSON.parse((mockRequestUrl.mock.calls[0][0] as any).body);
-			expect(body.contents[0].parts[0].text).toContain('"fr"');
+			expect(body.system_instruction.parts[0].text).toContain('"fr"');
 			expect(result.language).toBe('fr');
+		});
+
+		it('throws instead of returning an empty transcript when the prompt is blocked', async () => {
+			mockRequestUrl.mockResolvedValue({
+				status: 200,
+				json: { promptFeedback: { blockReason: 'SAFETY' } },
+				text: '',
+				headers: {},
+			});
+
+			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
+				.rejects.toThrow(/blocked \(SAFETY\)/);
+		});
+
+		it('throws instead of returning an empty transcript when the candidate has no parts', async () => {
+			mockRequestUrl.mockResolvedValue({
+				status: 200,
+				json: { candidates: [{ content: { role: 'model' }, finishReason: 'MAX_TOKENS' }] },
+				text: '',
+				headers: {},
+			});
+
+			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
+				.rejects.toThrow(/MAX_TOKENS/);
 		});
 
 		it('rejects audio above the inline size cap before any request is sent', async () => {

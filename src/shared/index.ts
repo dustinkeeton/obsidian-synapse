@@ -1,4 +1,4 @@
-export { AIClient } from './ai-client';
+export { AIClient, extractGeminiResponseText } from './ai-client';
 export type { ChatMessage, ContentBlock, TextContentBlock, ImageContentBlock } from './types';
 export {
 	withRetry,
