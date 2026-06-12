@@ -45,6 +45,15 @@ const SYNAPSE_ICON_SVG =
 	'<path d="M69.3 55.4 A18 18 0 0 1 41.8 78.5" fill="none" stroke="currentColor" stroke-width="10.5" stroke-linecap="round"/>' +
 	'<ellipse cx="55.8" cy="48.9" rx="16.5" ry="7.2" fill="currentColor" transform="rotate(26 55.8 48.9)"/>';
 
+/**
+ * Narrows a value to a plain object record (a non-null, non-array object) so
+ * `deepMerge` can recurse into nested settings groups without falling back to
+ * `any` casts. Arrays and primitives are treated as leaf values to overwrite.
+ */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export default class SynapsePlugin extends Plugin {
 	settings!: SynapseSettings;
 	notifications!: NotificationManager;
@@ -755,28 +764,19 @@ export default class SynapsePlugin extends Plugin {
 		}
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private deepMerge<T>(target: T, source: any): T {
-		const output: any = { ...target };
+	private deepMerge<T extends object>(target: T, source: Record<string, unknown>): T {
+		const output: Record<string, unknown> = { ...(target as Record<string, unknown>) };
 		for (const key of Object.keys(source)) {
 			// Guard against prototype pollution
 			if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
 				continue;
 			}
-			if (
-				source[key] &&
-				typeof source[key] === 'object' &&
-				!Array.isArray(source[key]) &&
-				key in (target as any) &&
-				typeof (target as any)[key] === 'object' &&
-				!Array.isArray((target as any)[key])
-			) {
-				output[key] = this.deepMerge(
-					(target as any)[key],
-					source[key]
-				);
+			const sourceValue = source[key];
+			const targetValue = output[key];
+			if (isPlainRecord(sourceValue) && isPlainRecord(targetValue)) {
+				output[key] = this.deepMerge(targetValue, sourceValue);
 			} else {
-				output[key] = source[key];
+				output[key] = sourceValue;
 			}
 		}
 		return output as T;
