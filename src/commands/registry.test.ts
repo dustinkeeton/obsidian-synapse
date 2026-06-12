@@ -12,16 +12,16 @@ import type { CommandDefinition } from './types';
 
 /** The 23 real, user-invocable command ids (excludes the synthetic pipeline entry). */
 const EXPECTED_COMMAND_IDS = [
-	'synapse:review-proposals', 'synapse:manage-checkpoints', 'synapse:transcribe-media',
-	'synapse:transcribe-note-media', 'synapse:fire',
-	'synapse:scan-vault', 'synapse:scan-current-note', 'synapse:clear-proposals',
-	'synapse:enrich-current-note', 'synapse:scan-vault-enrichment', 'synapse:undo-enrichment',
-	'synapse:organize-current-note', 'synapse:scan-directory-organize', 'synapse:undo-organize',
-	'synapse:deep-dive', 'synapse:clear-deep-dive',
-	'synapse:summarize-current-note', 'synapse:scan-vault-summarize',
-	'synapse:tidy-current-note', 'synapse:undo-tidy',
-	'synapse:rem-current-note', 'synapse:rem-directory',
-	'synapse:check-dependencies',
+	'review-proposals', 'manage-checkpoints', 'transcribe-media',
+	'transcribe-note-media', 'fire',
+	'scan-vault', 'scan-current-note', 'clear-proposals',
+	'enrich-current-note', 'scan-vault-enrichment', 'undo-enrichment',
+	'organize-current-note', 'scan-directory-organize', 'undo-organize',
+	'deep-dive', 'clear-deep-dive',
+	'summarize-current-note', 'scan-vault-summarize',
+	'tidy-current-note', 'undo-tidy',
+	'rem-current-note', 'rem-directory',
+	'check-dependencies',
 ];
 
 describe('COMMAND_REGISTRY', () => {
@@ -30,7 +30,7 @@ describe('COMMAND_REGISTRY', () => {
 		for (const id of EXPECTED_COMMAND_IDS) {
 			expect(REGISTRY_BY_ID.has(id)).toBe(true);
 		}
-		expect(REGISTRY_BY_ID.has('synapse:tidy-vault')).toBe(true);
+		expect(REGISTRY_BY_ID.has('tidy-vault')).toBe(true);
 	});
 
 	it('has no duplicate ids', () => {
@@ -50,12 +50,12 @@ describe('COMMAND_REGISTRY', () => {
 			.map(c => c.id)
 			.sort();
 		expect(disabled).toEqual([
-			'synapse:clear-deep-dive',
-			'synapse:clear-proposals',
-			'synapse:transcribe-media',
-			'synapse:undo-enrichment',
-			'synapse:undo-organize',
-			'synapse:undo-tidy',
+			'clear-deep-dive',
+			'clear-proposals',
+			'transcribe-media',
+			'undo-enrichment',
+			'undo-organize',
+			'undo-tidy',
 		]);
 	});
 
@@ -66,14 +66,14 @@ describe('COMMAND_REGISTRY', () => {
 	});
 
 	it('keeps the synthetic tidy-vault entry out of the palette', () => {
-		const tidyVault = REGISTRY_BY_ID.get('synapse:tidy-vault')!;
+		const tidyVault = REGISTRY_BY_ID.get('tidy-vault')!;
 		expect(tidyVault.flows).not.toContain('palette');
 		expect(tidyVault.flows).toContain('fire-synapse');
 	});
 
 	it('marks exactly scan-vault as a startup flow command', () => {
 		const startupCommands = COMMAND_REGISTRY.filter(c => c.flows.includes('startup'));
-		expect(startupCommands.map(c => c.id)).toEqual(['synapse:scan-vault']);
+		expect(startupCommands.map(c => c.id)).toEqual(['scan-vault']);
 	});
 
 	it('gives every entry a non-empty name', () => {
@@ -110,18 +110,18 @@ describe('pipeline mapping', () => {
 
 describe('isInFlow', () => {
 	it('is true for an active command in the requested flow', () => {
-		expect(isInFlow('synapse:scan-vault', 'palette')).toBe(true);
-		expect(isInFlow('synapse:scan-vault', 'fire-synapse')).toBe(true);
-		expect(isInFlow('synapse:scan-vault', 'startup')).toBe(true);
+		expect(isInFlow('scan-vault', 'palette')).toBe(true);
+		expect(isInFlow('scan-vault', 'fire-synapse')).toBe(true);
+		expect(isInFlow('scan-vault', 'startup')).toBe(true);
 	});
 
 	it('is false for a flow the command does not participate in', () => {
-		expect(isInFlow('synapse:scan-current-note', 'fire-synapse')).toBe(false);
-		expect(isInFlow('synapse:scan-current-note', 'startup')).toBe(false);
+		expect(isInFlow('scan-current-note', 'fire-synapse')).toBe(false);
+		expect(isInFlow('scan-current-note', 'startup')).toBe(false);
 	});
 
 	it('is false for an unknown id', () => {
-		expect(isInFlow('synapse:does-not-exist', 'palette')).toBe(false);
+		expect(isInFlow('does-not-exist', 'palette')).toBe(false);
 	});
 });
 

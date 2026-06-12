@@ -64,6 +64,6 @@ describe('ElaborationModule — startup flow gate', () => {
 		await makeModule().onload();
 		expect(setTimeoutFn).not.toHaveBeenCalled();
 		expect(setIntervalFn).not.toHaveBeenCalled();
-		expect(isInFlowMock).toHaveBeenCalledWith('synapse:scan-vault', 'startup');
+		expect(isInFlowMock).toHaveBeenCalledWith('scan-vault', 'startup');
 	});
 });

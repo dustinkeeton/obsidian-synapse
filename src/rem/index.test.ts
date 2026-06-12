@@ -93,8 +93,8 @@ describe('RemModule', () => {
 			await loadedModule();
 			expect(initSpy).toHaveBeenCalled();
 			const ids = registrar.register.mock.calls.map((c: any[]) => c[0]);
-			expect(ids).toContain('synapse:rem-current-note');
-			expect(ids).toContain('synapse:rem-directory');
+			expect(ids).toContain('rem-current-note');
+			expect(ids).toContain('rem-directory');
 		});
 	});
 

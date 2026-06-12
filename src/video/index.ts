@@ -47,7 +47,7 @@ export class VideoModule {
 			this.getSettings().video.tempFolder
 		);
 
-		this.registrar.register('synapse:check-dependencies', this.getSettings().video.enabled, {
+		this.registrar.register('check-dependencies', this.getSettings().video.enabled, {
 			name: 'Check external tool availability',
 			callback: () => this.checkDependencies(),
 		});

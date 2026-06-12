@@ -74,7 +74,7 @@ export class EnrichmentModule {
 			})
 		);
 
-		this.registrar.register('synapse:enrich-current-note', this.getSettings().enrichment.enabled, {
+		this.registrar.register('enrich-current-note', this.getSettings().enrichment.enabled, {
 			name: 'Enrich current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -83,7 +83,7 @@ export class EnrichmentModule {
 			},
 		});
 
-		this.registrar.register('synapse:scan-vault-enrichment', this.getSettings().enrichment.enabled, {
+		this.registrar.register('scan-vault-enrichment', this.getSettings().enrichment.enabled, {
 			name: 'Scan vault for enrichment',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -95,7 +95,7 @@ export class EnrichmentModule {
 			},
 		});
 
-		this.registrar.register('synapse:undo-enrichment', this.getSettings().enrichment.enabled, {
+		this.registrar.register('undo-enrichment', this.getSettings().enrichment.enabled, {
 			name: 'Undo last enrichment on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {

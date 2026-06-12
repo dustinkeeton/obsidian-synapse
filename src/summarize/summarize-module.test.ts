@@ -123,7 +123,7 @@ describe('SummarizeModule organize scope', () => {
 		// Register commands so we can invoke the summarize command
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'synapse:summarize-current-note'
+			(c: any) => c[0].id === 'summarize-current-note'
 		)[0];
 
 		const file = new TFile('notes/test.md') as any;
@@ -141,7 +141,7 @@ describe('SummarizeModule organize scope', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'synapse:summarize-current-note'
+			(c: any) => c[0].id === 'summarize-current-note'
 		)[0];
 
 		const file = new TFile('notes/test.md') as any;
@@ -157,7 +157,7 @@ describe('SummarizeModule organize scope', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'synapse:summarize-current-note'
+			(c: any) => c[0].id === 'summarize-current-note'
 		)[0];
 
 		const file = new TFile('notes/test.md') as any;
@@ -176,7 +176,7 @@ describe('SummarizeModule organize scope', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'synapse:summarize-current-note'
+			(c: any) => c[0].id === 'summarize-current-note'
 		)[0];
 
 		const specificFile = new TFile('projects/research/my-note.md') as any;
@@ -254,7 +254,7 @@ describe('SummarizeModule content-aware templates', () => {
 	async function invokeCommand(file: any): Promise<void> {
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'synapse:summarize-current-note'
+			(c: any) => c[0].id === 'summarize-current-note'
 		)[0];
 		await summarizeCmd.editorCallback({}, { file });
 	}
