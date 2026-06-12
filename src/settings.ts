@@ -2,7 +2,7 @@
 // runtime cycle with views/types.ts → feature modules → settings.ts.
 import type { ProposalKind } from './views/types';
 
-export type AIProvider = 'openai' | 'anthropic' | 'ollama';
+export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
 /** Provider-specific model options. Dropdown values, not free text. */
 export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
@@ -17,6 +17,13 @@ export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
 		'opus': 'Claude Opus',
 		'sonnet': 'Claude Sonnet',
 		'haiku': 'Claude Haiku',
+	},
+	// Stable Gemini model IDs verified against ai.google.dev/gemini-api/docs/models (2026-06).
+	gemini: {
+		'gemini-3.5-flash': 'Gemini 3.5 Flash',
+		'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
+		'gemini-2.5-pro': 'Gemini 2.5 Pro',
+		'gemini-2.5-flash': 'Gemini 2.5 Flash',
 	},
 	ollama: {
 		'llama3': 'Llama 3',
@@ -69,9 +76,10 @@ export interface PostProcessingSettings {
 
 export interface AudioSettings {
 	enabled: boolean;
-	transcriptionProvider: 'whisper-api' | 'deepgram' | 'local-whisper';
+	transcriptionProvider: 'whisper-api' | 'deepgram' | 'gemini' | 'local-whisper';
 	whisperApiKey: string;
 	deepgramApiKey: string;
+	geminiApiKey: string;
 	whisperModel: string;
 	localWhisperPath: string;
 	language: string;
@@ -300,6 +308,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		transcriptionProvider: 'whisper-api',
 		whisperApiKey: '',
 		deepgramApiKey: '',
+		geminiApiKey: '',
 		whisperModel: 'whisper-1',
 		localWhisperPath: '',
 		language: '',
