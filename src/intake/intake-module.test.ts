@@ -670,6 +670,93 @@ describe('IntakeModule', () => {
 		});
 	});
 
+	// #227 — two DIFFERENT notes that sanitize to the same dated breadcrumb
+	// title must never clobber each other; the same note re-processed must
+	// overwrite its own breadcrumb rather than spawn suffixed duplicates.
+	describe('capture log breadcrumb collisions (#227)', () => {
+		beforeEach(async () => {
+			await module.onload();
+		});
+
+		it('disambiguates two distinct notes that sanitize to the same dated title', async () => {
+			// "Meeting (Q1)" and "Meeting [Q1]" both sanitize to "Meeting Q1".
+			organizeMovesTo('Articles/Meeting (Q1).md');
+			emit('create', 'Inbox/Meeting (Q1).md', 'first note');
+			await flushDebounce();
+
+			organizeMovesTo('Refs/Meeting [Q1].md');
+			emit('create', 'Inbox/Meeting [Q1].md', 'second note');
+			await flushDebounce();
+
+			const first = 'Inbox/_captured/2026-06-05 — Meeting Q1.md';
+			const second = 'Inbox/_captured/2026-06-05 — Meeting Q1 (2).md';
+
+			// BOTH breadcrumbs survive — neither was overwritten.
+			expect(store.has(first)).toBe(true);
+			expect(store.has(second)).toBe(true);
+
+			// Each points at its own moved note (no clobber).
+			expect(store.get(first)).toContain('moved to: Articles/Meeting (Q1).md');
+			expect(store.get(first)).toContain('[[Meeting (Q1)]]');
+			expect(store.get(second)).toContain('moved to: Refs/Meeting [Q1].md');
+			expect(store.get(second)).toContain('[[Meeting [Q1]]]');
+
+			const captured = [...store.keys()].filter((p) =>
+				p.startsWith('Inbox/_captured/'),
+			);
+			expect(captured).toHaveLength(2);
+		});
+
+		it('escalates the suffix for a third same-titled collision', async () => {
+			organizeMovesTo('A/Report.md');
+			emit('create', 'Inbox/Report.md', 'one');
+			await flushDebounce();
+
+			organizeMovesTo('B/Report!.md');
+			emit('create', 'Inbox/Report!.md', 'two');
+			await flushDebounce();
+
+			organizeMovesTo('C/Report?.md');
+			emit('create', 'Inbox/Report?.md', 'three');
+			await flushDebounce();
+
+			expect(store.has('Inbox/_captured/2026-06-05 — Report.md')).toBe(true);
+			expect(store.has('Inbox/_captured/2026-06-05 — Report (2).md')).toBe(true);
+			expect(store.has('Inbox/_captured/2026-06-05 — Report (3).md')).toBe(true);
+
+			const captured = [...store.keys()].filter((p) =>
+				p.startsWith('Inbox/_captured/'),
+			);
+			expect(captured).toHaveLength(3);
+		});
+
+		it('overwrites a note\'s OWN breadcrumb on re-process (no suffix spam)', async () => {
+			// markProcessed off so the same logical note can be re-ingested and
+			// re-organized to the same destination, exercising the same-note path.
+			settings.intake.markProcessed = false;
+
+			organizeMovesTo('Articles/Recurring.md');
+			emit('create', 'Inbox/Recurring.md', 'v1');
+			await flushDebounce();
+
+			const crumb = 'Inbox/_captured/2026-06-05 — Recurring.md';
+			expect(store.has(crumb)).toBe(true);
+
+			// Re-ingest the same note → same destination → same breadcrumb. It is
+			// the note's OWN breadcrumb (matching `moved to:`), so it is reused.
+			organizeMovesTo('Articles/Recurring.md');
+			emit('create', 'Inbox/Recurring.md', 'v2');
+			await flushDebounce();
+
+			// No "(2)" duplicate — exactly one breadcrumb for this note.
+			expect(store.has('Inbox/_captured/2026-06-05 — Recurring.md (2).md')).toBe(false);
+			const captured = [...store.keys()].filter((p) =>
+				p.startsWith('Inbox/_captured/'),
+			);
+			expect(captured).toHaveLength(1);
+		});
+	});
+
 	describe('flush resilience', () => {
 		beforeEach(async () => {
 			await module.onload();
