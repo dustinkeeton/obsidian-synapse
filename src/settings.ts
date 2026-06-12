@@ -248,6 +248,20 @@ export interface UISettings {
 }
 
 /**
+ * First-run onboarding state (#89). Persisted so the welcome experience fires
+ * exactly once. Nested as its own group (rather than a bare top-level flag) so
+ * future onboarding signals can join it without widening the settings root.
+ */
+export interface OnboardingSettings {
+	/**
+	 * Set once the first-run welcome notice has been shown (or silently marked
+	 * for an upgrading user who already has saved data). Gates the notice so it
+	 * never appears twice.
+	 */
+	hasSeenWelcome: boolean;
+}
+
+/**
  * Per-proposal-type auto-accept flags (#228). When a kind's flag is `true`,
  * every *future* proposal of that kind is accepted automatically as generated
  * (the unedited draft), so it lands accepted — not pending — in the unified
@@ -273,6 +287,7 @@ export interface SynapseSettings {
 	intake: IntakeSettings;
 	ui: UISettings;
 	autoAccept: AutoAcceptSettings;
+	onboarding: OnboardingSettings;
 }
 
 export const DEFAULT_SETTINGS: SynapseSettings = {
@@ -434,5 +449,8 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		'deep-dive': false,
 		title: false,
 		rem: false,
+	},
+	onboarding: {
+		hasSeenWelcome: false,
 	},
 };

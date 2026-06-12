@@ -976,3 +976,17 @@
   background: var(--interactive-accent);
   transition: width 0.2s ease;
 }
+
+/* ── First-run: required-field emphasis (API key, #89) ──
+ * Marks the one field that gates every AI feature while it is still unset.
+ * The accent is drawn with an inset box-shadow (not a border) so it adds no
+ * layout box and never reflows the row; it clears live the moment a key is
+ * entered. Uses the user's accent (violet by default — bridges the brand). */
+.synapse-setting-required {
+  box-shadow: inset 3px 0 0 0 var(--interactive-accent);
+  padding-left: 12px;
+  border-radius: 2px;
+}
+.synapse-setting-required .setting-item-name {
+  font-weight: var(--font-semibold);
+}

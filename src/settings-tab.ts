@@ -20,6 +20,7 @@ import { renderTidySettings } from './tidy';
 import { renderOrganizeSettings } from './organize';
 import { renderDeepDiveSettings } from './deep-dive';
 import { renderRemSettings } from './rem';
+import { applyApiKeyEmphasis } from './onboarding';
 
 /**
  * Per-kind display copy for the Auto-Accept Proposals section (#228). MUTATING
@@ -205,9 +206,12 @@ export class SynapseSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(aiBody)
+		// The description and a violet "required" accent are driven by
+		// applyApiKeyEmphasis so a brand-new user sees the one field that gates
+		// every AI feature highlighted until they fill it (#89). Toggled live as
+		// they type — no full re-render, so the field keeps focus.
+		const apiKeySetting = new Setting(aiBody)
 			.setName('API Key')
-			.setDesc('API key for OpenAI, Anthropic, or Google Gemini')
 			.addText((text) => {
 				text
 					.setPlaceholder('sk-...')
@@ -215,10 +219,12 @@ export class SynapseSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.ai.apiKey = value;
 						await this.plugin.saveSettings();
+						applyApiKeyEmphasis(apiKeySetting, this.plugin.settings);
 					});
 				text.inputEl.type = 'password';
 				text.inputEl.autocomplete = 'off';
 			});
+		applyApiKeyEmphasis(apiKeySetting, this.plugin.settings);
 
 		if (this.plugin.settings.ai.provider === 'ollama') {
 			new Setting(aiBody)
