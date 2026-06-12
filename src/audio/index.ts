@@ -109,17 +109,17 @@ export class AudioModule {
 				const fs = require('fs') as typeof import('fs');
 
 				const tempPath = path.join(os.tmpdir(), `synapse-clip-src-${Date.now()}.mp3`);
-				fs.writeFileSync(tempPath, Buffer.from(data));
+				await fs.promises.writeFile(tempPath, Buffer.from(data));
 
 				const clippedPath = await this.extractor.clipAudio(
 					tempPath, timeRange.startSeconds, timeRange.endSeconds
 				);
 
-				data = fs.readFileSync(clippedPath).buffer as ArrayBuffer;
+				data = (await fs.promises.readFile(clippedPath)).buffer as ArrayBuffer;
 
 				// Clean up temp files
-				try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
-				try { fs.unlinkSync(clippedPath); } catch { /* ignore */ }
+				try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
+				try { await fs.promises.unlink(clippedPath); } catch { /* ignore */ }
 			} else if (timeRange && !this.extractor) {
 				this.notifications.info('Time-range clipping requires ffmpeg (desktop only). Transcribing full file.');
 			}
@@ -428,11 +428,11 @@ export class AudioModule {
 				const bin = await this.plugin.app.vault.readBinary(files[i]);
 				const ext = files[i].extension || 'audio';
 				const tempPath = path.join(os.tmpdir(), `synapse-combine-src-${Date.now()}-${i}.${ext}`);
-				fs.writeFileSync(tempPath, Buffer.from(bin));
+				await fs.promises.writeFile(tempPath, Buffer.from(bin));
 				tempInputs.push(tempPath);
 			}
 			combinedPath = await this.extractor.concatAudio(tempInputs);
-			const buf = fs.readFileSync(combinedPath);
+			const buf = await fs.promises.readFile(combinedPath);
 			const data = buf.buffer.slice(
 				buf.byteOffset,
 				buf.byteOffset + buf.byteLength
@@ -440,10 +440,10 @@ export class AudioModule {
 			return { data, sizeBytes: buf.byteLength };
 		} finally {
 			for (const t of tempInputs) {
-				try { fs.unlinkSync(t); } catch { /* ignore */ }
+				try { await fs.promises.unlink(t); } catch { /* ignore */ }
 			}
 			if (combinedPath) {
-				try { fs.unlinkSync(combinedPath); } catch { /* ignore */ }
+				try { await fs.promises.unlink(combinedPath); } catch { /* ignore */ }
 			}
 		}
 	}

@@ -112,11 +112,11 @@ export class VideoModule {
 			update('Clipping audio to time range...');
 			const clippedPath = await this.extractor.clipAudio(audioPath, startSeconds, endSeconds);
 			// Clean up the original unclipped audio
-			try { fs.unlinkSync(audioPath); } catch { /* ignore */ }
+			try { await fs.promises.unlink(audioPath); } catch { /* ignore */ }
 			audioPath = clippedPath;
 		}
 
-		const audioData = fs.readFileSync(audioPath);
+		const audioData = await fs.promises.readFile(audioPath);
 
 		update('Transcribing...');
 		let result;
@@ -132,7 +132,7 @@ export class VideoModule {
 
 		// Clean up temp audio file
 		try {
-			fs.unlinkSync(audioPath);
+			await fs.promises.unlink(audioPath);
 		} catch {
 			// Ignore cleanup errors
 		}
@@ -322,12 +322,12 @@ export class VideoModule {
 		const tempPath = await this.extractor.downloadVideo(url);
 
 		// Read the downloaded file and write it into the vault
-		const videoData = fs.readFileSync(tempPath);
+		const videoData = await fs.promises.readFile(tempPath);
 		const vaultPath = `${settings.downloadFolder}/${fileName}`;
 		await this.plugin.app.vault.adapter.writeBinary(vaultPath, videoData.buffer as ArrayBuffer);
 
 		// Clean up temp video file
-		try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+		try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
 
 		return vaultPath;
 	}
