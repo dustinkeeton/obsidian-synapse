@@ -15,6 +15,7 @@ export {
 	getMarkdownFiles,
 	wordCount,
 } from './file-utils';
+export { arrayBufferToBase64, base64EncodedLength } from './encoding';
 export { NotificationManager } from './notifications';
 export type { OperationHandle } from './notifications';
 export { FolderPickerModal } from './folder-picker-modal';
