@@ -11,6 +11,7 @@ Canonical visual assets for Synapse. The full brand guidelines — palette, typo
 | `icon-mono.svg` | Single-color `currentColor` silhouette of the S-Signal — **`0 0 100 100` viewBox**, transparent, no palette colors. Tightened cleft; the spark bead bridges the cleft so the one-color spine stays whole at 16px | Color-stripping surfaces: Obsidian ribbon/UI (registered as the `synapse` icon), and any monochrome context |
 | `icon-accepted.svg` | **Accept-state** cut of the S-Signal — 256×256, transparent, flat palette only. The cleft is bridged in violet (gap jumped) and the single Impulse Volt spark has **landed in the receptor**, now closed/filled instead of an open ring | The **accepted** outcome of a proposal: accept-button confirmation, accepted-link badges, the end frame of the accept-flash. Pairs with `icon.svg` (open) — not the default identity. Use **above ~24px** |
 | `banner.svg` | README hero — 1280×320, self-contained dark background, mark + wordmark + tagline | Top of README; safe on both GitHub light and dark themes |
+| `social-preview.svg` / `social-preview.png` | GitHub social preview (og:image) — 1280×640 full-bleed dark, hero-scale mark + wordmark + "for Obsidian" + standing tagline; PNG is the uploadable render (<1 MB) | Repo Settings → Social preview; link unfurls (Slack/Discord/X). Critical ink stays ≥64px from edges (client crops/rounding). Not for the README (that is `banner.svg`); don't crop or overlay text |
 
 ### Size cutover: canonical vs small cut
 
