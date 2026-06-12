@@ -33,12 +33,13 @@ export class AudioExtractor {
 
 	private get node() {
 		if (!this._node) {
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			/* eslint-disable @typescript-eslint/no-var-requires -- lazy-load Node builtins at first use so the bundle can load on mobile (isDesktopOnly: false) */
 			this._node = {
 				os: require('os'),
 				path: require('path'),
 				execFile: require('child_process').execFile,
 			};
+			/* eslint-enable @typescript-eslint/no-var-requires -- re-enable the rule now that the lazy Node-builtin loads are done */
 		}
 		return this._node;
 	}
