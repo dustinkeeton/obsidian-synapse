@@ -242,6 +242,14 @@ ln -s /path/to/obsidian-synapse .obsidian/plugins/synapse
 
 Then run `npm run dev` to rebuild automatically on changes. Reload Obsidian (Cmd+R / Ctrl+R) to pick up changes.
 
+## Support
+
+Synapse is free and open source. If it has earned a place in your workflow,
+you can support continued development:
+
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-8b5cf6?logo=github)](https://github.com/sponsors/dustinkeeton)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-5b21b6?logo=buymeacoffee&logoColor=white)](https://www.buymeacoffee.com/dustinkeeton)
+
 ## License
 
 [AGPL-3.0](LICENSE)
