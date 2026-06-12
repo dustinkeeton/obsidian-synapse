@@ -47,9 +47,8 @@ describe('ProposalGenerator -- image embed preservation (no images)', () => {
 
 		const mockApp = {
 			vault: {
-				adapter: {
-					read: vi.fn().mockResolvedValue('# Note\n\nSome content with ![photo](https://example.com/img.png)'),
-				},
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue('# Note\n\nSome content with ![photo](https://example.com/img.png)'),
 				read: vi.fn(),
 				readBinary: vi.fn(),
 			},
@@ -119,9 +118,8 @@ describe('ProposalGenerator -- image analysis integration', () => {
 
 		const mockApp = {
 			vault: {
-				adapter: {
-					read: vi.fn().mockResolvedValue('# Trip Notes\n![[photo.png]]\nGreat view!'),
-				},
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue('# Trip Notes\n![[photo.png]]\nGreat view!'),
 				read: vi.fn(),
 				readBinary: vi.fn().mockResolvedValue(new Uint8Array([137, 80]).buffer),
 			},
@@ -188,9 +186,8 @@ describe('ProposalGenerator -- image analysis integration', () => {
 	it('omits imageAnalysis field when no images found', async () => {
 		const mockApp = {
 			vault: {
-				adapter: {
-					read: vi.fn().mockResolvedValue('# Plain Note\nNo images here'),
-				},
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue('# Plain Note\nNo images here'),
 				read: vi.fn(),
 				readBinary: vi.fn(),
 			},
@@ -278,9 +275,8 @@ describe('ProposalGenerator -- Twitter URL external context', () => {
 
 		const mockApp = {
 			vault: {
-				adapter: {
-					read: vi.fn().mockResolvedValue(noteContent),
-				},
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue(noteContent),
 				read: vi.fn(),
 				readBinary: vi.fn(),
 			},
@@ -342,7 +338,8 @@ describe('ProposalGenerator -- article URL external context', () => {
 	function makeGenerator(noteContent: string): ProposalGenerator {
 		const mockApp = {
 			vault: {
-				adapter: { read: vi.fn().mockResolvedValue(noteContent) },
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue(noteContent),
 				read: vi.fn(),
 				readBinary: vi.fn(),
 			},
