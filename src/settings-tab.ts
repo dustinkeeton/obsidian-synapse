@@ -173,6 +173,9 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		// ── Auto-Accept Proposals (global, non-feature) ──
 		this.renderAutoAccept(ctx);
+
+		// ── About (static support links, always last) ──
+		this.renderAbout(ctx);
 	}
 
 	/**
@@ -340,5 +343,28 @@ export class SynapseSettingTab extends PluginSettingTab {
 			setting.setDisabled(!this.isFeatureEnabled(kind));
 			this.autoAcceptSettings[kind] = setting;
 		}
+	}
+
+	/**
+	 * About — one static support line below all functional settings (#274).
+	 * Set once, never animated, never usage-triggered. Obsidian also renders the
+	 * manifest `fundingUrl` links natively; this row is the in-tab mirror, and
+	 * its links must stay in sync with `manifest.json` and `.github/FUNDING.yml`.
+	 */
+	private renderAbout(ctx: SettingsSectionContext): void {
+		const aboutBody = ctx.configSection('about', 'About');
+		const line = aboutBody.createDiv({ cls: 'setting-item-description' });
+		line.createSpan({
+			text: 'Synapse is free and open source. Support development → ',
+		});
+		line.createEl('a', {
+			text: 'GitHub Sponsors',
+			attr: { href: 'https://github.com/sponsors/dustinkeeton' },
+		});
+		line.createSpan({ text: ' · ' });
+		line.createEl('a', {
+			text: 'Buy Me a Coffee',
+			attr: { href: 'https://www.buymeacoffee.com/dustinkeeton' },
+		});
 	}
 }

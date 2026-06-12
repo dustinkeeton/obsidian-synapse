@@ -6,5 +6,9 @@
   "description": "Automatically elaborate, transcribe, enrich, summarize, organize, and connect your notes with AI.",
   "author": "Dustin Keeton",
   "authorUrl": "https://github.com/dustinkeeton",
+  "fundingUrl": {
+    "GitHub Sponsors": "https://github.com/sponsors/dustinkeeton",
+    "Buy Me a Coffee": "https://www.buymeacoffee.com/dustinkeeton"
+  },
   "isDesktopOnly": false
 }

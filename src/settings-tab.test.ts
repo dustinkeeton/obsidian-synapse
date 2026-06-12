@@ -50,6 +50,15 @@ function lastSetDisabledArg(row: Setting): boolean {
 	return calls[calls.length - 1][0] as boolean;
 }
 
+/** Recursively collect all anchor elements rendered into a stub element tree. */
+function findAnchors(el: any, out: any[] = []): any[] {
+	for (const child of el?.children ?? []) {
+		if (child.tagName === 'A') out.push(child);
+		findAnchors(child, out);
+	}
+	return out;
+}
+
 describe('SynapseSettingTab — Auto-Accept disabled state', () => {
 	beforeEach(() => {
 		ToggleComponent.instances.length = 0;
@@ -130,5 +139,24 @@ describe('SynapseSettingTab — Auto-Accept disabled state', () => {
 
 		// A disable→re-enable cycle must not flip the stored OFF value to ON.
 		expect(plugin.settings.autoAccept.rem).toBe(false);
+	});
+});
+
+describe('SynapseSettingTab — About support links (#274)', () => {
+	it('renders static GitHub Sponsors and Buy Me a Coffee links', () => {
+		const { tab } = makeTab();
+		tab.display();
+
+		const containerEl = (tab as unknown as { containerEl: any }).containerEl;
+		const anchors = findAnchors(containerEl);
+		const byHref = new Map(
+			anchors.map((a) => [a.getAttribute('href'), a.textContent]),
+		);
+		expect(byHref.get('https://github.com/sponsors/dustinkeeton')).toBe(
+			'GitHub Sponsors',
+		);
+		expect(byHref.get('https://www.buymeacoffee.com/dustinkeeton')).toBe(
+			'Buy Me a Coffee',
+		);
 	});
 });
