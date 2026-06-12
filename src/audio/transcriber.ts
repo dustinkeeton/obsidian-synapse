@@ -70,10 +70,29 @@ function geminiMimeType(fileName: string): string {
 }
 
 /**
+ * Sanitize a value before it is interpolated into a multipart header line.
+ *
+ * The file name is vault-derived (and field values can be settings-derived), so
+ * a CR/LF or a stray double-quote in one of them could otherwise terminate the
+ * `Content-Disposition` line early and inject arbitrary multipart headers or
+ * extra body parts (header/multipart injection). Strip CR/LF entirely and
+ * replace double-quotes/backslashes, which are the only characters that can
+ * break out of a quoted header parameter.
+ */
+function sanitizeMultipartHeaderValue(value: string): string {
+	return value.replace(/[\r\n]/g, '').replace(/["\\]/g, '_');
+}
+
+/**
  * Build a multipart/form-data body manually from field definitions.
  *
  * Obsidian's requestUrl does not support FormData, so we construct the
  * multipart body as an ArrayBuffer with a random boundary string.
+ *
+ * Field names, field values, and the file name are sanitized before being
+ * interpolated into header lines so untrusted (vault- or settings-derived)
+ * input cannot inject multipart headers. The binary file payload itself is
+ * never interpreted as text.
  *
  * @returns An object with the Content-Type header (including boundary) and the body ArrayBuffer.
  */
@@ -89,17 +108,24 @@ export function buildMultipartBody(
 
 	// Add text fields
 	for (const field of fields) {
+		const safeName = sanitizeMultipartHeaderValue(field.name);
+		// CR/LF in a value would also break the body framing; strip it. (Values
+		// are emitted in the body, not a header, but a bare CRLF here could still
+		// be read as the start of a new part.)
+		const safeValue = field.value.replace(/[\r\n]/g, ' ');
 		const header =
 			`--${boundary}${crlf}` +
-			`Content-Disposition: form-data; name="${field.name}"${crlf}${crlf}` +
-			`${field.value}${crlf}`;
+			`Content-Disposition: form-data; name="${safeName}"${crlf}${crlf}` +
+			`${safeValue}${crlf}`;
 		parts.push(encoder.encode(header));
 	}
 
 	// Add file field
+	const safeFieldName = sanitizeMultipartHeaderValue(file.fieldName);
+	const safeFileName = sanitizeMultipartHeaderValue(file.name);
 	const fileHeader =
 		`--${boundary}${crlf}` +
-		`Content-Disposition: form-data; name="${file.fieldName}"; filename="${file.name}"${crlf}` +
+		`Content-Disposition: form-data; name="${safeFieldName}"; filename="${safeFileName}"${crlf}` +
 		`Content-Type: application/octet-stream${crlf}${crlf}`;
 	parts.push(encoder.encode(fileHeader));
 	parts.push(new Uint8Array(file.data));

@@ -7,7 +7,7 @@ import {
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { OperationHandle } from '../shared';
-import { isSupportedUrl, detectPlatform } from '../video';
+import { isSupportedUrl, detectPlatform } from '../shared';
 import { findAudioEmbeds } from '../audio';
 import { fetchPageContent, fetchTweetContent } from '../shared';
 import { findSummarizeTargets } from './note-scanner';

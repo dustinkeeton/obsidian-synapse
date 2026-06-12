@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-19
+last-updated: 2026-06-11
 ---
 
 # Summarize Module
@@ -42,8 +42,7 @@ Exported types: `SummarizeTarget`, `SummarizeSettings`, `TranscribeUrlFn`, `Tran
 |------|---------------|------|
 | `summarizer.ts` | `Summarizer` | AI summarization with style (bullets/paragraph/key-points) |
 | `summarizer.test.ts` | Tests | Summarizer tests |
-| `content-fetcher.ts` | `fetchPageContent` | HTTP fetch + HTML-to-text extraction for URLs |
-| `content-fetcher.test.ts` | Tests | Content fetcher tests |
+| `settings-section.ts` | `renderSummarizeSettings` | Summarize settings UI section |
 | `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow` | Finds URLs, transcription blocks, and audio embed summary gaps in note content |
 | `note-scanner.test.ts` | Tests | Note scanner tests |
 | `summarize-modal.ts` | `SummarizeSelectionModal` | Selection modal when multiple targets found |
@@ -123,9 +122,9 @@ interface SummarizeTarget {
 ## Video URL Auto-Transcription
 
 When `transcribeUrl` is injected (from `VideoModule.transcribeUrl`):
-- `fetchContentForUrl()` checks `isSupportedUrl(url)` first
-- If video URL detected, transcribes via video pipeline instead of HTTP fetch
-- Falls back to `fetchPageContent()` for non-video URLs
+- `fetchContentForUrl()` checks `isSupportedUrl(url)` first (`isSupportedUrl` from `shared/url-detector`)
+- If video URL detected, transcribes via the injected `transcribeUrl` callback instead of HTTP fetch
+- Falls back to `fetchPageContent()` (from `shared/content-fetcher`) for non-video URLs
 
 ## Audio Embed Summarization
 
@@ -150,10 +149,10 @@ this.summarize = new SummarizeModule(
 
 ## Dependencies
 
-- `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, OperationHandle, buildCallout, CALLOUT_TYPES, CheckpointManager, generateId, Checkpoint, CheckpointWorkItem, DeferredTask)
-- `video/` (isSupportedUrl -- used in fetchContentForUrl)
+- `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, OperationHandle, buildCallout, CALLOUT_TYPES, CheckpointManager, generateId, Checkpoint, CheckpointWorkItem, DeferredTask, fetchPageContent, fetchTweetContent, isSupportedUrl, detectPlatform)
 - `audio/` (findAudioEmbeds -- used in collectTargets)
 - `settings.ts` (SynapseSettings, SummarizeSettings)
+- NO static `video/` import. URL-platform helpers (`isSupportedUrl`/`detectPlatform`) and content fetchers (`fetchPageContent`/`fetchTweetContent`) resolve from `shared`. Video transcription happens only through the injected `transcribeUrl` callback (`TranscribeUrlFn`).
 
 ## Content-Aware Templates
 
@@ -179,7 +178,6 @@ Enrichment targets (standalone notes) always use `COMPREHENSIVE_SUMMARY_PROMPT` 
 ## Tests
 
 - `summarizer.test.ts`
-- `content-fetcher.test.ts`
 - `note-scanner.test.ts`
 - `summarize-module.test.ts`
 - `templates.test.ts`

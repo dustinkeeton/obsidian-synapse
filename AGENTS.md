@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-08
+last-updated: 2026-06-11
 ---
 
 # Synapse — Agent Reference
@@ -54,13 +54,13 @@ main.ts
   |-- shared/     (base layer: depends on NO feature module; owns url-detector)
   |-- pipeline/ --> commands/ (isPipelineKeyInFlow); modules injected via PipelineModuleMap
   |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types, title/types, rem/types, shared/checkpoint-types
-  |-- elaboration/ --> shared/, commands/, image/ (ImageAnalyzer uses shared/AIClient)
+  |-- elaboration/ --> shared/, commands/, image/ (ImageAnalyzer uses shared AIClient + image/preprocessImage)
   |-- audio/ --> shared/, commands/
   |-- video/ --> shared/ (CheckpointManager, url-detector), commands/, audio/ (reuses transcription pipeline)
   |-- image/ --> shared/ (CheckpointManager, AIClient, callouts, validation), commands/
   |-- transcription/ --> audio/ (types), video/ (types), image/ (types), shared/ (detectPlatform, TimeRange, validation)
   |-- enrichment/ --> shared/, commands/
-  |-- summarize/ --> shared/, commands/, video/ (transcribeUrl injection), audio/ (findAudioEmbeds)
+  |-- summarize/ --> shared/ (incl. isSupportedUrl/detectPlatform), commands/, audio/ (findAudioEmbeds); video.transcribeUrl injected at runtime (NO static video import edge)
   |-- tidy/ --> shared/, commands/
   |-- organize/ --> shared/, commands/
   |-- deep-dive/ --> shared/, commands/, organize/ (ContentAnalyzer, DirectoryMatcher)
@@ -78,7 +78,7 @@ Key constraints:
 - `intake` imports only `obsidian` + `src/shared/*`; all cross-module work goes through `IntakeDeps`.
 - `video` depends on `audio` (reuses transcription pipeline)
 - `transcription` is UI-only; delegates work to `audio`, `video`, and `image` modules
-- `summarize` receives `video.transcribeUrl` and audio transcribe callback via constructor injection
+- `summarize` has NO static import of `video`; URL-platform helpers (`isSupportedUrl`/`detectPlatform`) resolve from `shared/url-detector`. It receives `video.transcribeUrl` and an audio transcribe callback via constructor injection
 - `deep-dive` reuses `organize` for auto-organize nesting mode
 - `image` module uses multi-modal `AIClient.chat()` with `ContentBlock[]` for vision
 - `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
@@ -153,10 +153,10 @@ All AI-generated content uses Obsidian callouts. Registry in `src/shared/callout
 ```ts
 SynapseSettings {
   ai: AISettings {
-    provider: 'openai' | 'anthropic' | 'ollama'   // default: 'openai'
+    provider: 'openai' | 'anthropic' | 'gemini' | 'ollama'   // AIProvider, default: 'openai'
     apiKey: string                                  // default: ''
     ollamaEndpoint: string                          // default: 'http://localhost:11434'
-    model: string                                   // default: 'gpt-4o'
+    model: string                                   // default: 'gpt-4o' (dropdown values per provider in MODEL_OPTIONS)
     maxTokens: number                               // default: 2048
     temperature: number                             // default: 0.7
   }
@@ -181,9 +181,10 @@ SynapseSettings {
   }
   audio: AudioSettings {
     enabled: boolean                                // default: true
-    transcriptionProvider: 'whisper-api' | 'deepgram' | 'local-whisper'
+    transcriptionProvider: 'whisper-api' | 'deepgram' | 'gemini' | 'local-whisper'  // default: 'whisper-api'
     whisperApiKey: string                           // default: '' (fallback: ai.apiKey)
     deepgramApiKey: string                          // default: ''
+    geminiApiKey: string                            // default: '' (fallback: ai.apiKey)
     whisperModel: string                            // default: 'whisper-1'
     localWhisperPath: string                        // default: ''
     language: string                                // default: ''
@@ -299,8 +300,16 @@ SynapseSettings {
     title: boolean                                  // default: false
     rem: boolean                                    // default: false (NOTE: rewrites note body)
   }
+  onboarding: OnboardingSettings {
+    hasSeenWelcome: boolean                         // default: false (first-run welcome gate, #89)
+  }
 }
 ```
+
+Provider model dropdowns: `MODEL_OPTIONS: Record<AIProvider, Record<id, label>>` in `src/settings.ts`.
+openai: gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini. anthropic: opus, sonnet, haiku (resolved to full
+IDs in `ai-client.ts`). gemini: gemini-3.5-flash, gemini-3.1-flash-lite, gemini-2.5-pro, gemini-2.5-flash.
+ollama: llama3, mistral, codellama, gemma.
 
 `ProposalKind` (`src/views/types.ts`) is the single source of truth for `PROPOSAL_KINDS` and keys of `autoAccept`:
 `'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem'`. A compile-time guard asserts it
@@ -404,9 +413,15 @@ interface ImageContentBlock { type: 'image'; data: string; mediaType: string }
 Provider-specific format conversion:
 - OpenAI: `image_url` with `data:` URI
 - Anthropic: `image` source with `base64` type
+- Gemini: `inline_data` with `mime_type` + base64 `data` (REST snake_case); system role routed to `system_instruction`
 - Ollama: separate `images` array on the message
 
 Used by: `image/extractor.ts` (OCR), `elaboration/image-analyzer.ts` (image analysis for proposals)
+
+Gemini responses are parsed via `extractGeminiResponseText()` (exported from `shared/ai-client.ts`),
+which throws descriptive errors for blocked/empty HTTP-200 shapes (`promptFeedback.blockReason`,
+`finishReason: MAX_TOKENS`) instead of crashing. Shared by `AIClient.callGemini()` and
+`audio/transcriber.ts` (Gemini transcription provider).
 
 ## External Dependencies (Runtime)
 
@@ -434,7 +449,9 @@ Framework: Vitest, globals enabled, node environment.
 - URLs validated via `sanitizeUrl()` before external tool invocation
 - Paths validated via `sanitizePath()` (rejects `..`, null bytes, shell metacharacters)
 - AI output sanitized via `sanitizeAIResponse()` before vault writes
-- API keys redacted from all error messages
+- Secret redaction centralized in `shared/redact.ts` (`redactSecrets`); both `ai-client.ts` (upstream error bodies) and `api-utils.ts:notifyError` (user/console errors) route through it — single source of truth, re-exported from `ai-client` and the `shared` barrel. Covers `sk-`/`sk-ant-`, `key-`, Deepgram `dg-`, `Bearer `/`Token ` headers, `anthropic-`, and Google `AIza` keys
+- Multipart transcription bodies (`audio/transcriber.ts:buildMultipartBody`) sanitize vault-/settings-derived field names and file names via `sanitizeMultipartHeaderValue` (strips CR/LF, replaces `"`/`\` with `_`) to block `Content-Disposition` header / multipart injection
+- Gemini audio transcription places its instruction in `system_instruction` (not the user turn beside the audio) so speech inside untrusted audio cannot override the prompt (prompt-injection hardening)
 - Ollama endpoint: HTTPS required (HTTP for localhost only)
 - External commands use `execFile` with argument arrays (no shell interpolation)
 - Frontmatter keys validated against allowlist pattern + forbidden keys blocklist

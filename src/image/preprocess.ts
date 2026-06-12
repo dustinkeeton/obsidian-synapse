@@ -8,11 +8,13 @@
  * they fit under the limit before they ever reach the API.
  */
 
-import { base64EncodedLength } from '../shared/encoding';
+import { base64EncodedLength } from '../shared';
 
 // Canonical home of the encoding helpers is now shared/encoding.ts (#251) so
-// the audio module can reuse them; re-exported here for back-compat.
-export { arrayBufferToBase64, base64EncodedLength } from '../shared/encoding';
+// the audio module can reuse them; re-exported here for back-compat. Imported
+// through the shared barrel (not shared/encoding directly) so this module obeys
+// the "import from a module's index, never its internal files" rule.
+export { arrayBufferToBase64, base64EncodedLength } from '../shared';
 
 /** Lossless source formats that benefit from JPEG re-encoding when downscaling. */
 const LOSSLESS_MEDIA_TYPES = new Set(['image/png', 'image/bmp', 'image/tiff']);
