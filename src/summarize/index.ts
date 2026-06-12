@@ -96,7 +96,7 @@ export class SummarizeModule {
 	}
 
 	async onload(): Promise<void> {
-		this.registrar.register('synapse:summarize-current-note', this.getSettings().summarize.enabled, {
+		this.registrar.register('summarize-current-note', this.getSettings().summarize.enabled, {
 			name: 'Summarize current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -105,7 +105,7 @@ export class SummarizeModule {
 			},
 		});
 
-		this.registrar.register('synapse:scan-vault-summarize', this.getSettings().summarize.enabled, {
+		this.registrar.register('scan-vault-summarize', this.getSettings().summarize.enabled, {
 			name: 'Scan vault for notes to summarize',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
