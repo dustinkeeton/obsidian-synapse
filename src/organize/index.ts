@@ -57,7 +57,7 @@ export class OrganizeModule {
 	async onload(): Promise<void> {
 		await this.store.init();
 
-		this.registrar.register('synapse:organize-current-note', this.getSettings().organize.enabled, {
+		this.registrar.register('organize-current-note', this.getSettings().organize.enabled, {
 			name: 'Organize current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -66,7 +66,7 @@ export class OrganizeModule {
 			},
 		});
 
-		this.registrar.register('synapse:scan-directory-organize', this.getSettings().organize.enabled, {
+		this.registrar.register('scan-directory-organize', this.getSettings().organize.enabled, {
 			name: 'Scan directory for organization',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -78,7 +78,7 @@ export class OrganizeModule {
 			},
 		});
 
-		this.registrar.register('synapse:undo-organize', this.getSettings().organize.enabled, {
+		this.registrar.register('undo-organize', this.getSettings().organize.enabled, {
 			name: 'Undo last organize on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {

@@ -27,7 +27,11 @@ export type FeatureKey =
 
 /** A single declarative command entry. */
 export interface CommandDefinition {
-	/** Obsidian command id, e.g. `synapse:scan-vault`. */
+	/**
+	 * Command id WITHOUT the plugin-id prefix, e.g. `scan-vault`. Obsidian prepends
+	 * the manifest id automatically, so the user-facing id becomes `synapse:scan-vault`.
+	 * Including `synapse:` here would double-prefix it (`synapse:synapse:scan-vault`).
+	 */
 	id: string;
 	/** Display name shown in the command palette. */
 	name: string;

@@ -299,12 +299,12 @@ export default class SynapsePlugin extends Plugin {
 			});
 		}
 
-		registrar.register('synapse:review-proposals', true, {
+		registrar.register('review-proposals', true, {
 			name: 'Open proposal review sidebar',
 			callback: () => this.activateUnifiedView(),
 		});
 
-		registrar.register('synapse:manage-checkpoints', true, {
+		registrar.register('manage-checkpoints', true, {
 			name: 'Manage interrupted operations',
 			callback: () => this.manageCheckpoints(),
 		});
@@ -315,12 +315,12 @@ export default class SynapsePlugin extends Plugin {
 		// Unified transcription commands (audio on any platform, video on desktop only, image OCR).
 		// Always attempted so the registry audit sees them; userEnabled gates actual registration.
 		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video) || this.settings.image.enabled;
-		registrar.register('synapse:transcribe-media', !!hasTranscription, {
+		registrar.register('transcribe-media', !!hasTranscription, {
 			name: 'Transcribe media',
 			callback: () => this.openUnifiedModal(),
 		});
 
-		registrar.register('synapse:transcribe-note-media', !!hasTranscription, {
+		registrar.register('transcribe-note-media', !!hasTranscription, {
 			name: 'Transcribe media from current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -361,7 +361,7 @@ export default class SynapsePlugin extends Plugin {
 			await this.intake.onload();
 		}
 
-		registrar.register('synapse:fire', true, {
+		registrar.register('fire', true, {
 			name: 'Fire Synapse: run all features on a directory',
 			callback: () => {
 				const defaultPath = this.app.workspace.getActiveFile()?.parent?.path || '';

@@ -83,12 +83,12 @@ describe('TidyModule', () => {
 		it('registers the tidy command (undo-tidy is gated off by the registry)', async () => {
 			await module.onload();
 
-			// `synapse:undo-tidy` ships as `status: 'disabled'` in COMMAND_REGISTRY, so
+			// `undo-tidy` ships as `status: 'disabled'` in COMMAND_REGISTRY, so
 			// the registrar gates it out — only the active tidy command registers.
 			expect(mockPlugin.addCommand).toHaveBeenCalledTimes(1);
 			const commands = mockPlugin.addCommand.mock.calls.map((c: any) => c[0].id);
-			expect(commands).toContain('synapse:tidy-current-note');
-			expect(commands).not.toContain('synapse:undo-tidy');
+			expect(commands).toContain('tidy-current-note');
+			expect(commands).not.toContain('undo-tidy');
 		});
 	});
 
