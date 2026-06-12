@@ -12,7 +12,7 @@ Synapse is an Obsidian plugin that uses AI to help you build, maintain, and conn
 
 Every AI-generated change goes through a proposal review system. You see what the plugin wants to do, accept or reject each suggestion, and undo any change with built-in checkpoint support. Nothing is written to your vault without your approval.
 
-**Supported AI providers**: OpenAI, Anthropic, and Ollama (local).
+**Supported AI providers**: OpenAI, Anthropic, Google Gemini, and Ollama (local).
 
 ## Features
 
@@ -45,6 +45,35 @@ Recursively explores a note's topics into a tree of interlinked child notes. Use
 - **Unified Proposal View** -- a sidebar panel where you review and accept/reject proposals from all modules in one place.
 - **Checkpoint/Undo System** -- every vault-wide operation creates checkpoints so you can resume interrupted operations or roll back changes.
 - **Notification Manager** -- centralized notifications with status bar integration on desktop.
+
+## Privacy and network use
+
+Synapse runs inside your vault. It contacts a remote service only when you configure one and then trigger a feature that needs it. Every request goes through Obsidian's `requestUrl` API, and every request is one you set up (your provider and API key) or started yourself (running a command).
+
+Synapse ships with **no telemetry, no analytics, and no auto-update or update-check traffic of its own** -- it never contacts a server on its own, and nothing about how you use it is collected or sent anywhere. If you never set an API key and never enable a cloud provider, Synapse sends nothing out.
+
+### Remote services
+
+These are the only services Synapse contacts, what each one is used for, and what is sent:
+
+| Service | Used for | What is sent | Account |
+|---------|----------|--------------|---------|
+| OpenAI -- `api.openai.com` | AI provider; Whisper audio transcription | The note content you act on, or the audio you transcribe | API key required |
+| Anthropic -- `api.anthropic.com` | AI provider | The note content you act on | API key required |
+| Google Gemini -- `generativelanguage.googleapis.com` | AI provider; audio transcription | The note content you act on, or the audio you transcribe | API key required |
+| Deepgram -- `api.deepgram.com` | Audio transcription | The audio you transcribe | API key required |
+| Twitter / X -- `publish.twitter.com` (fxtwitter, vxtwitter as fallbacks) | Tweet context during enrichment and summarize | The tweet URL found in your note | None |
+| Web pages -- any `http(s)` URL in your notes | Article context during elaboration, enrichment, and summarize | A request to that URL, to read the page | None |
+| YouTube / TikTok and others -- via `yt-dlp` (desktop) | Video transcription | The video URL you transcribe | None |
+
+### What this means for you
+
+- **Cloud AI and transcription require an account.** OpenAI, Anthropic, Google Gemini, and Deepgram each need an API key you supply in **Settings > Synapse**. The note content or audio you act on is sent to the one provider you selected so it can do the work, and to no one else.
+- **Two paths stay offline.** Selected as your AI provider, **Ollama** sends note content only to the local endpoint you set (default `http://localhost:11434`) -- no account, no key, nothing leaving your machine. For transcription, the **local Whisper** option is designed to run entirely on-device for the same reason. Use these if you want Synapse to work without sending anything out.
+- **Content you link is fetched from third-party sites.** When a note references a tweet or a web page and you run elaboration, enrichment, or summarize, Synapse requests that URL to read its content -- from Twitter/X (falling back to the fxtwitter and vxtwitter mirrors) or from the site itself. To avoid this, don't run those features on notes whose links you would rather not request, or turn the feature off in settings.
+- **Video transcription downloads the video.** On desktop, video transcription invokes `yt-dlp` to download the source from YouTube, TikTok, or another platform, then extracts and transcribes the audio locally.
+
+Synapse proposes, you decide -- and that holds for the network too: nothing is requested until you ask for it.
 
 ## Installation
 
