@@ -38,7 +38,7 @@ export async function detectLocalFileDuration(
 		// crafted basename can never escape os.tmpdir().
 		const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, '_');
 		const tempPath = path.join(os.tmpdir(), `synapse-probe-${Date.now()}-${safeName}`);
-		fs.writeFileSync(tempPath, Buffer.from(data));
+		await fs.promises.writeFile(tempPath, Buffer.from(data));
 
 		const ffmpegPath = sanitizePath(getSettings().video.ffmpegPath);
 		// Derive ffprobe path from ffmpeg path: replace "ffmpeg" with "ffprobe"
@@ -55,7 +55,10 @@ export async function detectLocalFileDuration(
 				],
 				{ env: shellEnv(), timeout: 15_000 },
 				(error, stdout) => {
-					try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+					// Fire-and-forget cleanup: the execFile callback is sync, so we
+					// can't await here; unlink is a cheap metadata op and its result
+					// doesn't affect duration detection.
+					void fs.promises.unlink(tempPath).catch(() => { /* ignore */ });
 					if (error) {
 						resolve(undefined);
 						return;
