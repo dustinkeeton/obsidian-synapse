@@ -218,3 +218,264 @@ describe('AIClient — Gemini provider', () => {
 		expect(err.message).not.toContain('AIzaSyBadKey');
 	});
 });
+
+/** A minimal successful OpenAI chat-completions response. */
+function openAIResponse(content: string) {
+	return {
+		status: 200,
+		json: { choices: [{ message: { role: 'assistant', content } }] },
+		text: '',
+		headers: {},
+	};
+}
+
+/** A minimal successful Anthropic messages response. */
+function anthropicResponse(text: string) {
+	return {
+		status: 200,
+		json: { content: [{ type: 'text', text }] },
+		text: '',
+		headers: {},
+	};
+}
+
+/** A minimal successful Ollama chat response. */
+function ollamaResponse(content: string) {
+	return {
+		status: 200,
+		json: { message: { role: 'assistant', content } },
+		text: '',
+		headers: {},
+	};
+}
+
+describe('AIClient — OpenAI provider', () => {
+	let settings: SynapseSettings;
+	let client: AIClient;
+
+	beforeEach(() => {
+		settings = makeSettings((s) => {
+			s.ai.provider = 'openai';
+			s.ai.model = 'gpt-4o';
+			s.ai.apiKey = 'sk-test123456789012345';
+			s.ai.maxTokens = 512;
+			s.ai.temperature = 0.5;
+		});
+		client = new AIClient(() => settings);
+		mockRequestUrl.mockReset();
+	});
+
+	afterEach(() => vi.restoreAllMocks());
+
+	it('POSTs to the chat completions endpoint with a Bearer auth header', async () => {
+		mockRequestUrl.mockResolvedValue(openAIResponse('hello'));
+
+		const result = await client.complete('Hi', 'Be brief.');
+
+		const call = mockRequestUrl.mock.calls[0][0] as any;
+		expect(call.url).toBe('https://api.openai.com/v1/chat/completions');
+		expect(call.method).toBe('POST');
+		expect(call.headers['Authorization']).toBe('Bearer sk-test123456789012345');
+		const body = lastRequestBody();
+		expect(body.model).toBe('gpt-4o');
+		expect(body.max_tokens).toBe(512);
+		expect(body.temperature).toBe(0.5);
+		// system prompt is preserved as a system-role message for OpenAI
+		expect(body.messages[0]).toEqual({ role: 'system', content: 'Be brief.' });
+		expect(body.messages[1]).toEqual({ role: 'user', content: 'Hi' });
+		expect(result).toBe('hello');
+	});
+
+	it('serializes vision content blocks into image_url parts', async () => {
+		mockRequestUrl.mockResolvedValue(openAIResponse('a dog'));
+		const blocks: ContentBlock[] = [
+			{ type: 'text', text: 'describe' },
+			{ type: 'image', mediaType: 'image/jpeg', data: 'Zm9v' },
+		];
+
+		await client.chat([{ role: 'user', content: blocks }]);
+
+		const body = lastRequestBody();
+		expect(body.messages[0].content).toEqual([
+			{ type: 'text', text: 'describe' },
+			{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,Zm9v' } },
+		]);
+	});
+});
+
+describe('AIClient — Anthropic provider', () => {
+	let settings: SynapseSettings;
+	let client: AIClient;
+
+	beforeEach(() => {
+		settings = makeSettings((s) => {
+			s.ai.provider = 'anthropic';
+			s.ai.model = 'sonnet';
+			s.ai.apiKey = 'anthropic-key-1234567890';
+			s.ai.maxTokens = 2048;
+			s.ai.temperature = 0.2;
+		});
+		client = new AIClient(() => settings);
+		mockRequestUrl.mockReset();
+	});
+
+	afterEach(() => vi.restoreAllMocks());
+
+	it('resolves the short model name to a full Anthropic model id and sets version headers', async () => {
+		mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
+
+		const result = await client.complete('Hello', 'You are terse.');
+
+		const call = mockRequestUrl.mock.calls[0][0] as any;
+		expect(call.url).toBe('https://api.anthropic.com/v1/messages');
+		expect(call.headers['x-api-key']).toBe('anthropic-key-1234567890');
+		expect(call.headers['anthropic-version']).toBe('2023-06-01');
+		const body = lastRequestBody();
+		expect(body.model).toBe('claude-sonnet-4-6');
+		// system message is lifted out of messages into the top-level system field
+		expect(body.system).toBe('You are terse.');
+		expect(body.messages).toEqual([{ role: 'user', content: 'Hello' }]);
+		expect(result).toBe('hi');
+	});
+
+	it('omits the system field when no system message is supplied', async () => {
+		mockRequestUrl.mockResolvedValue(anthropicResponse('ok'));
+
+		await client.chat([{ role: 'user', content: 'Hi' }]);
+
+		const body = lastRequestBody();
+		expect(body.system).toBeUndefined();
+	});
+
+	it('serializes vision content blocks into base64 image source parts', async () => {
+		mockRequestUrl.mockResolvedValue(anthropicResponse('seen'));
+		const blocks: ContentBlock[] = [
+			{ type: 'text', text: 'look' },
+			{ type: 'image', mediaType: 'image/png', data: 'YmFy' },
+		];
+
+		await client.chat([{ role: 'user', content: blocks }]);
+
+		const body = lastRequestBody();
+		expect(body.messages[0].content).toEqual([
+			{ type: 'text', text: 'look' },
+			{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'YmFy' } },
+		]);
+	});
+});
+
+describe('AIClient — Ollama provider', () => {
+	let settings: SynapseSettings;
+	let client: AIClient;
+
+	beforeEach(() => {
+		settings = makeSettings((s) => {
+			s.ai.provider = 'ollama';
+			s.ai.model = 'llama3';
+			s.ai.ollamaEndpoint = 'http://localhost:11434';
+		});
+		client = new AIClient(() => settings);
+		mockRequestUrl.mockReset();
+	});
+
+	afterEach(() => vi.restoreAllMocks());
+
+	it('POSTs to the {endpoint}/api/chat path with streaming disabled', async () => {
+		mockRequestUrl.mockResolvedValue(ollamaResponse('local reply'));
+
+		const result = await client.complete('Hi');
+
+		const call = mockRequestUrl.mock.calls[0][0] as any;
+		expect(call.url).toBe('http://localhost:11434/api/chat');
+		const body = lastRequestBody();
+		expect(body.model).toBe('llama3');
+		expect(body.stream).toBe(false);
+		expect(result).toBe('local reply');
+	});
+
+	it('splits vision content blocks into content text and an images array', async () => {
+		mockRequestUrl.mockResolvedValue(ollamaResponse('ok'));
+		const blocks: ContentBlock[] = [
+			{ type: 'text', text: 'first' },
+			{ type: 'text', text: 'second' },
+			{ type: 'image', mediaType: 'image/png', data: 'aW1n' },
+		];
+
+		await client.chat([{ role: 'user', content: blocks }]);
+
+		const body = lastRequestBody();
+		expect(body.messages[0]).toEqual({
+			role: 'user',
+			content: 'first\nsecond',
+			images: ['aW1n'],
+		});
+	});
+
+	it('rejects an unparseable endpoint URL without making a request', async () => {
+		settings.ai.ollamaEndpoint = 'not a url';
+		await expect(client.complete('Hi')).rejects.toThrow(/Invalid Ollama endpoint/);
+		expect(mockRequestUrl).not.toHaveBeenCalled();
+	});
+
+	it('rejects a non-localhost HTTP endpoint (requires HTTPS off-localhost)', async () => {
+		settings.ai.ollamaEndpoint = 'http://example.com:11434';
+		await expect(client.complete('Hi')).rejects.toThrow(/must use HTTPS/);
+		expect(mockRequestUrl).not.toHaveBeenCalled();
+	});
+
+	it('allows an HTTPS endpoint on a remote host', async () => {
+		settings.ai.ollamaEndpoint = 'https://ollama.example.com';
+		mockRequestUrl.mockResolvedValue(ollamaResponse('secure'));
+
+		const result = await client.complete('Hi');
+		expect(result).toBe('secure');
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('AIClient — shared error handling and routing', () => {
+	let settings: SynapseSettings;
+	let client: AIClient;
+
+	beforeEach(() => {
+		settings = makeSettings((s) => {
+			s.ai.provider = 'openai';
+			s.ai.model = 'gpt-4o';
+			s.ai.apiKey = 'sk-test';
+		});
+		client = new AIClient(() => settings);
+		mockRequestUrl.mockReset();
+	});
+
+	afterEach(() => vi.restoreAllMocks());
+
+	it('throws on a >= 400 status, surfacing the structured error message', async () => {
+		mockRequestUrl.mockResolvedValue({
+			status: 429,
+			json: { error: { message: 'rate limited' } },
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.complete('Hi')).rejects.toThrow('API error (429): rate limited');
+	});
+
+	it('falls back to the response text when the error body has no structured message', async () => {
+		mockRequestUrl.mockResolvedValue({
+			status: 500,
+			get json(): unknown {
+				throw new Error('no body');
+			},
+			text: 'upstream exploded',
+			headers: {},
+		});
+
+		await expect(client.complete('Hi')).rejects.toThrow('API error (500): upstream exploded');
+	});
+
+	it('throws for an unsupported provider', async () => {
+		settings.ai.provider = 'mystery' as SynapseSettings['ai']['provider'];
+		await expect(client.complete('Hi')).rejects.toThrow(/Unsupported AI provider: mystery/);
+		expect(mockRequestUrl).not.toHaveBeenCalled();
+	});
+});
