@@ -29,10 +29,12 @@ jobs:
           VERSION=$(jq -r .version manifest.json)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      # Obsidian requires the release tag to exactly match manifest.json's
+      # version, so the tag has no "v" prefix (e.g. "1.0.0", not "v1.0.0").
       - name: Check if tag exists
         id: check
         run: |
-          TAG="v${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.version }}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists — skipping"

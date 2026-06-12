@@ -1,6 +1,6 @@
 {
 	"name": "synapse",
-	"version": "0.9.0",
+	"version": "1.0.0",
 	"description": "Automatically elaborate, transcribe, enrich, summarize, organize, and connect your notes with AI.",
 	"main": "main.js",
 	"scripts": {
