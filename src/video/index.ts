@@ -1,4 +1,4 @@
-import { Plugin, TFile } from 'obsidian';
+import { Plugin, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import { AudioModule, TranscriptionResult } from '../audio';
@@ -321,15 +321,57 @@ export class VideoModule {
 		// Download via extractor (uses correct PATH and ytDlpPath setting)
 		const tempPath = await this.extractor.downloadVideo(url);
 
-		// Read the downloaded file and write it into the vault
+		// Read the downloaded file and write it into the vault. Use the Vault
+		// API (createBinary) rather than the Adapter API so the file is a
+		// first-class vault citizen -- cached, indexed, and immediately visible
+		// to other plugins. createBinary() throws if the path is taken, so pick
+		// a non-colliding name first (same-day re-downloads share a name).
 		const videoData = await fs.promises.readFile(tempPath);
-		const vaultPath = `${settings.downloadFolder}/${fileName}`;
-		await this.plugin.app.vault.adapter.writeBinary(vaultPath, videoData.buffer as ArrayBuffer);
+		// Slice to the exact bytes: fs.readFile may return a Buffer backed by a
+		// shared pool whose underlying ArrayBuffer is larger than the file.
+		const data = videoData.buffer.slice(
+			videoData.byteOffset,
+			videoData.byteOffset + videoData.byteLength
+		) as ArrayBuffer;
+		const vaultPath = this.findAvailableVaultPath(
+			normalizePath(`${settings.downloadFolder}/${fileName}`)
+		);
+		await this.plugin.app.vault.createBinary(vaultPath, data);
 
 		// Clean up temp video file
 		try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
 
 		return vaultPath;
+	}
+
+	/**
+	 * Resolve a vault path that does not collide with an existing file.
+	 * Mirrors Obsidian's de-duplication: append `-1`, `-2`, ... before the
+	 * extension until an unused path is found. Unlike the Adapter API (which
+	 * silently overwrites), vault.createBinary() throws on an existing file,
+	 * and the generated `<date>-<title>.mp4` name can collide on same-day
+	 * re-downloads -- so suffix rather than clobber the user's existing file.
+	 */
+	private findAvailableVaultPath(desiredPath: string): string {
+		const vault = this.plugin.app.vault;
+		if (!vault.getAbstractFileByPath(desiredPath)) {
+			return desiredPath;
+		}
+
+		const slashIndex = desiredPath.lastIndexOf('/');
+		const dotIndex = desiredPath.lastIndexOf('.');
+		// Only treat a dot as an extension separator if it sits in the basename.
+		const hasExt = dotIndex > slashIndex;
+		const stem = hasExt ? desiredPath.slice(0, dotIndex) : desiredPath;
+		const ext = hasExt ? desiredPath.slice(dotIndex) : '';
+
+		let counter = 1;
+		let candidate = `${stem}-${counter}${ext}`;
+		while (vault.getAbstractFileByPath(candidate)) {
+			counter++;
+			candidate = `${stem}-${counter}${ext}`;
+		}
+		return candidate;
 	}
 
 	private async checkDependencies(): Promise<void> {
