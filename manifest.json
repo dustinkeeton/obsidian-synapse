@@ -2,7 +2,7 @@
   "id": "synapse",
   "name": "Synapse",
   "version": "1.0.0",
-  "minAppVersion": "1.1.0",
+  "minAppVersion": "1.7.2",
   "description": "Automatically elaborate, transcribe, enrich, summarize, organize, and connect your notes with AI.",
   "author": "Dustin Keeton",
   "authorUrl": "https://github.com/dustinkeeton",
