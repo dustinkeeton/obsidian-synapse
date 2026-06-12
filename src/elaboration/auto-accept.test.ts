@@ -58,6 +58,7 @@ function createMockPlugin(noteContent: string, adapter: ReturnType<typeof create
 	const noteFile = mockFile('notes/topic.md');
 	const vault: any = {
 		read: vi.fn().mockResolvedValue(noteContent),
+		cachedRead: vi.fn().mockResolvedValue(noteContent),
 		modify: vi.fn().mockResolvedValue(undefined),
 		// Atomic read -> transform -> write; the callback's return value is the
 		// written content (mirrors Obsidian's Vault.process).
@@ -106,9 +107,6 @@ describe('ElaborationModule auto-accept (#228)', () => {
 	beforeEach(() => {
 		sharedCompleteMock.mockClear();
 		adapter = createMemoryAdapter();
-		// The proposer reads the source note via adapter.read(notePath), so the
-		// note content must live in the in-memory adapter, not just vault.read.
-		adapter._files.set('notes/topic.md', longContent);
 		settings = structuredClone(DEFAULT_SETTINGS);
 		mockPlugin = createMockPlugin(longContent, adapter);
 		notifications = new NotificationManager();
