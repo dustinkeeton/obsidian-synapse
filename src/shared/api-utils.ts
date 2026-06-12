@@ -1,4 +1,5 @@
 import { Notice } from 'obsidian';
+import { redactSecrets } from './redact';
 
 export type NetworkErrorKind = 'connection-refused' | 'dns' | 'timeout' | 'offline' | null;
 
@@ -52,11 +53,11 @@ export function sleep(ms: number): Promise<void> {
 
 export function notifyError(context: string, error: unknown): void {
 	const message = error instanceof Error ? error.message : String(error);
-	// Redact potential API keys/tokens from error messages shown to users
-	const redacted = message.replace(
-		/(?:sk-|key-|dg-|anthropic-|Bearer\s+|Token\s+)[A-Za-z0-9_-]{8,}/g,
-		'[REDACTED]'
-	);
+	// Redact potential API keys/tokens before showing the error to the user or
+	// logging it. Uses the shared canonical redactor (./redact) so this stays in
+	// sync with the AI client — an earlier inline copy here omitted the Google
+	// `AIza…` pattern and would have leaked Gemini keys.
+	const redacted = redactSecrets(message);
 	new Notice(`Synapse: ${context} - ${redacted}`);
 	console.error(`[Synapse] ${context}:`, redacted);
 }

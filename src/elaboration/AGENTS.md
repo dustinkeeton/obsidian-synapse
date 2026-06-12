@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-03-19
+last-updated: 2026-06-11
 ---
 
 # Elaboration Module
@@ -134,6 +134,7 @@ const MAX_IMAGES_PER_NOTE = 5
 - Caps at 5 images per note to avoid token overflow
 - Uses `image.visionModel` override if configured (same pattern as `ImageExtractor`)
 - Graceful degradation: skips individual image failures
+- Imports `AIClient` and `arrayBufferToBase64` from the `shared` barrel and reuses `image/preprocessImage` (from the `image` barrel) to downscale oversized images before they reach the API — no duplicate base64/encoding logic
 
 ## Error Handling
 

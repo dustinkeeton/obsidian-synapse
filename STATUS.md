@@ -1,9 +1,9 @@
 # Project Status
 
-**Last updated**: 2026-06-08
+**Last updated**: 2026-06-11
 **Version**: 0.3.2
 **Branch**: `main`
-**Health**: Green — `tsc` clean, 1030/1030 tests passing, dependency graph acyclic, no critical/high security findings.
+**Health**: Green — `tsc` clean, 1256/1256 tests passing (98 files), dependency graph acyclic, no critical/high security findings.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
@@ -23,7 +23,7 @@
 | Module | Path | Role | Status |
 |--------|------|------|--------|
 | elaboration | `src/elaboration/` | Detect stub notes, propose content (image-aware) | Working |
-| audio | `src/audio/` | Transcribe audio (Whisper / Deepgram) | Working (local-whisper not impl.) |
+| audio | `src/audio/` | Transcribe audio (Whisper / Deepgram / Gemini) | Working (local-whisper not impl.) |
 | video | `src/video/` | Download + transcribe YouTube/TikTok/Instagram | Working (local file + frames not impl.) |
 | image | `src/image/` | OCR via vision models, batch + checkpoints | Working |
 | transcription | `src/transcription/` | Unified transcription/OCR UI + time-range clipping | Working (desktop-only clipping) |
@@ -44,8 +44,8 @@
 
 ## Current Focus
 
-- **Codebase audit (in progress)** — architecture, machine + human docs, and security re-audit refreshed for the current tree.
-- **Decycling** — `shared ⇄ video` cycle eliminated; graph is now acyclic (see DECISIONS.md, 2026-06-08).
+- **Codebase audit (2026-06-11)** — architecture, machine + human docs refreshed; security re-audit in final pass. Changes: secret redaction consolidated into one canonical `shared/redact.ts` (now covers Gemini `AIza` keys); multipart transcription bodies hardened against header injection from vault-derived file names; shared-utility imports normalized to the `../shared` barrel and the stale static `summarize → video` import removed (injection-only now).
+- **Decycling** — `shared ⇄ video` cycle eliminated; graph is acyclic. One **type-only** `audio → video` back-edge remains (no runtime cycle; flagged for cleanup).
 
 ---
 
@@ -54,7 +54,9 @@
 - Full audit found **no critical or high vulnerabilities**; the codebase is security-mature.
 - API keys live in `data.json`, which is **gitignored and never committed** — no secrets in the repo.
 - Subprocess calls use `execFile` with argument arrays (no shell); API auth is header-based and HTTPS-only; AI responses are sanitized before being written to notes.
-- One low-severity hardening applied: sanitize a vault-derived basename before a temp path in `duration-detector.ts`.
+- Secret redaction now has a single source of truth (`shared/redact.ts`), used by both the AI client and `notifyError` — closes a drift where Gemini `AIza` keys could surface unredacted.
+- Multipart Whisper upload bodies sanitize vault-derived field/file names (`sanitizeMultipartHeaderValue`) to block header/multipart injection.
+- One low-severity hardening applied earlier: sanitize a vault-derived basename before a temp path in `duration-detector.ts`.
 - **Accepted risk**: `sanitizeUrl` permits arbitrary hosts (an SSRF surface on user-supplied URLs) — accepted because URLs are author-supplied within the user's own vault.
 - **Not yet wired**: an `ensureWithinVault` helper exists but is **not** yet enforced on write paths — there is no active vault-boundary check on writes today.
 
@@ -82,6 +84,7 @@
 | ffmpeg / ffprobe | Audio extraction, duration, clipping | User-installed; PATH auto-resolved |
 | OpenAI API key | Whisper, GPT models (incl. vision) | User-configured |
 | Anthropic API key | Claude models (incl. vision) | User-configured |
+| Gemini API key | Gemini models + Gemini audio transcription (optional) | User-configured |
 | Deepgram API key | Deepgram transcription (optional) | User-configured |
 
 ---
@@ -92,5 +95,5 @@
 |---------|---------|
 | `npm run dev` | esbuild watch (development) |
 | `npm run build` | `tsc -noEmit -skipLibCheck` + esbuild production bundle |
-| `npm test` | Vitest — **1030/1030 passing** |
+| `npm test` | Vitest — **1256/1256 passing** (98 files) |
 | `npm run test:coverage` | Vitest with coverage |

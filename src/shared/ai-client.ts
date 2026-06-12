@@ -1,18 +1,12 @@
 import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { ChatMessage, ContentBlock, TextContentBlock } from './types';
+import { redactSecrets } from './redact';
 
-/**
- * Redact API keys/tokens that may appear in API error response bodies.
- * Covers OpenAI/Deepgram-style prefixed keys, bearer tokens, Anthropic keys,
- * and Google `AIza…` API keys. Exported for tests.
- */
-export function redactSecrets(text: string): string {
-	return text.replace(
-		/(?:sk-|key-|dg-|Bearer\s+|Token\s+|anthropic-|AIza)[A-Za-z0-9_-]{8,}/g,
-		'[REDACTED]'
-	);
-}
+// Re-exported for back-compat: existing callers and tests import `redactSecrets`
+// from this module. The implementation now lives in ./redact (single source of
+// truth) so the AI client and `notifyError` can't drift apart.
+export { redactSecrets };
 
 /** Default timeout for AI API requests (2 minutes). */
 const AI_REQUEST_TIMEOUT_MS = 120_000;

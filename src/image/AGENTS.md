@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-08
+last-updated: 2026-06-11
 ---
 
 # Image Module
@@ -24,8 +24,10 @@ class ImageModule {
 function findImageEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): ImageEmbed[]
 
 // preprocess.ts (also exported from index.ts)
-function arrayBufferToBase64(buffer: ArrayBuffer): string
 function preprocessImage(data: ArrayBuffer, mediaType: string, maxSizeMb: number): Promise<{ data: string; mediaType: string }>
+// re-exported from shared/encoding.ts for back-compat (canonical home is shared):
+function arrayBufferToBase64(buffer: ArrayBuffer): string
+function base64EncodedLength(byteLength: number): number
 
 const IMAGE_EXTENSIONS: RegExp   // /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i
 const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi
@@ -48,7 +50,7 @@ interface OCRResult {
 |------|-------------|---------|
 | `types.ts` | `ImageEmbed`, `OCRResult` | Type definitions |
 | `extractor.ts` | `ImageExtractor` | Multi-modal AI OCR via `AIClient.chat()` with `ContentBlock[]` |
-| `preprocess.ts` | `arrayBufferToBase64`, `preprocessImage` | Base64 encoding + auto-downscale when payload exceeds `maxImageSizeMb` |
+| `preprocess.ts` | `preprocessImage`; re-exports `arrayBufferToBase64`, `base64EncodedLength` | Auto-downscale/re-encode when payload exceeds `maxImageSizeMb`. Base64 helpers now live in `shared/encoding.ts` (imported via the `shared` barrel, not `shared/encoding` directly) and are re-exported here for back-compat |
 | `note-scanner.ts` | `findImageEmbeds`, `hasExtractionBelow`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX` | Scan note content for image embeds |
 | `note-scanner.test.ts`, `extractor.test.ts`, `preprocess.test.ts` | Tests | |
 | `index.ts` | `ImageModule` | Orchestrator, public extraction methods, checkpoint management |
@@ -116,14 +118,17 @@ No commands registered directly. Image OCR is accessible via:
 
 ## Dependencies
 
+All imports resolve through the `shared` barrel (`../shared`), never an internal `shared/*` file.
+
 | Import | From |
 |--------|------|
-| `AIClient`, `ContentBlock` | `shared/` |
-| `NotificationManager` | `shared/notifications` |
-| `CheckpointManager`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `shared/checkpoint-*` |
-| `buildCallout`, `CALLOUT_TYPES` | `shared/callouts` |
-| `sanitizeAIResponse` | `shared/validation` |
-| `generateId` | `shared/id-utils` |
+| `AIClient`, `ContentBlock` | `shared` |
+| `base64EncodedLength` (preprocess) | `shared` (canonical: `shared/encoding`) |
+| `NotificationManager` | `shared` |
+| `CheckpointManager`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `shared` |
+| `buildCallout`, `CALLOUT_TYPES` | `shared` |
+| `sanitizeAIResponse` | `shared` |
+| `generateId` | `shared` |
 
 ## Supported Image Formats
 

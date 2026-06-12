@@ -1,14 +1,15 @@
 ---
-last-updated: 2026-06-08
+last-updated: 2026-06-11
 ---
 
 # Shared Module
 
-Cross-cutting base layer used by all feature modules: AI client, file operations, notifications, validation, frontmatter parsing, checkpoint management, ID generation, URL platform detection / classification, and web content fetching. Depends on NO feature module — this is the bottom of the dependency graph.
+Cross-cutting base layer used by all feature modules: AI client, secret redaction, file operations, base64 encoding, notifications, validation, frontmatter parsing, checkpoint management, ID generation, URL platform detection / classification, and web content fetching. Depends on NO feature module — this is the bottom of the dependency graph.
 
-Note: `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) was moved here
-from `src/video/` to break the former shared⇄video import cycle. The canonical home for these symbols and the
-`Platform`/`UrlDetectionResult` types is now `shared`; `video` re-exports them for back-compat.
+Canonical homes (re-exported elsewhere for back-compat — import from the `shared` barrel, never an internal file):
+- `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) — moved here from `src/video/` to break the former shared⇄video import cycle; `video` re-exports for back-compat.
+- `redact.ts` (`redactSecrets`) — single source of truth for API-key/token redaction; `ai-client.ts` re-exports it. Previously `ai-client` and `notifyError` each kept inline copies that drifted (the `notifyError` copy lacked the Google `AIza` pattern).
+- `encoding.ts` (`arrayBufferToBase64`, `base64EncodedLength`) — base64 helpers; `image/preprocess.ts` re-exports them so audio + image + elaboration share one implementation.
 
 ## Public API
 
@@ -19,8 +20,17 @@ Exported from `index.ts`:
 class AIClient {
   constructor(getSettings: () => SynapseSettings)
   complete(prompt: string, systemPrompt?: string): Promise<string>
-  chat(messages: ChatMessage[]): Promise<string>
+  chat(messages: ChatMessage[]): Promise<string>   // providers: openai | anthropic | gemini | ollama
 }
+function extractGeminiResponseText(json: GeminiResponseJson): string  // throws on blocked/empty 200 shapes
+export { redactSecrets }                              // re-export of redact.ts (back-compat)
+
+// redact.ts (single source of truth for secret redaction)
+function redactSecrets(text: string): string         // replaces sk-/key-/dg-/Bearer/Token/anthropic-/AIza secrets with [REDACTED]
+
+// encoding.ts
+function arrayBufferToBase64(buffer: ArrayBuffer): string
+function base64EncodedLength(byteLength: number): number   // exact base64 char count for a byte length
 
 // types.ts
 interface TextContentBlock { type: 'text'; text: string }
@@ -54,9 +64,12 @@ function getMarkdownFiles(app: App, folder?: string): TFile[]
 function wordCount(text: string): number
 
 // api-utils.ts
-function withRetry<T>(fn: () => Promise<T>, maxRetries?: number, delayMs?: number): Promise<T>
+function withRetry<T>(fn: () => Promise<T>, maxRetries?: number, delayMs?: number, shouldRetry?: (error: unknown) => boolean): Promise<T>
 function sleep(ms: number): Promise<void>
-function notifyError(context: string, error: unknown): void
+function notifyError(context: string, error: unknown): void   // redacts secrets via redactSecrets() before Notice/console
+function classifyNetworkError(error: unknown): NetworkErrorKind   // 'connection-refused' | 'dns' | 'timeout' | 'offline' | null
+function isTransientNetworkError(error: unknown): boolean
+function describeNetworkError(error: unknown, resource: string): string | null   // user-facing explanation, null for non-network
 
 // validation.ts
 function sanitizeUrl(url: string): string
@@ -168,12 +181,15 @@ interface Checkpoint {
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `ai-client.ts` | `AIClient` | Multi-provider AI completion with multi-modal support; `safeRequest`, `redactSecrets`, `resolveModelId`, `toOpenAIContent`, `toAnthropicContent`, `toOllamaMessage` (internal) |
+| `ai-client.ts` | `AIClient`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support; `safeRequest`, `resolveModelId`, `toOpenAIContent`, `toAnthropicContent`, `toGeminiContent`, `toOllamaMessage` (internal). Imports `redactSecrets` from `redact.ts` |
+| `redact.ts` | `redactSecrets` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). Consumed by `ai-client.ts` + `api-utils.ts`; redaction behavior covered by `ai-client.test.ts` + `api-utils.test.ts` |
+| `encoding.ts` | `arrayBufferToBase64`, `base64EncodedLength` | Base64 encode + exact encoded-length calc; canonical home reused by audio/image/elaboration |
+| `encoding.test.ts` | Tests | Encoding tests |
 | `types.ts` | `ChatMessage`, `ContentBlock`, `TextContentBlock`, `ImageContentBlock` | Shared types including multi-modal content blocks |
 | `notifications.ts` | `NotificationManager`, `OperationHandle`, `NoticeLevel` | Centralized notifications with cancellation, progress, confirmation snackbars |
 | `notifications.test.ts` | Tests | NotificationManager tests |
 | `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `wordCount` | Vault file operations |
-| `api-utils.ts` | `withRetry`, `sleep`, `notifyError` | Retry with exponential backoff, error display |
+| `api-utils.ts` | `withRetry`, `sleep`, `notifyError`, `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError` | Retry with exponential backoff, network-error classification/disclosure, redacted error display (via `redactSecrets`) |
 | `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
 | `validation.test.ts` | Tests | Validation tests |
 | `url-detector.ts` | `detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult` | Regex platform detection (moved here from video/) |
@@ -213,10 +229,13 @@ AIClient.chat(messages)
 |                   Auth: Bearer {ai.apiKey}
 |-- 'anthropic' --> POST api.anthropic.com/v1/messages
 |                   Auth: x-api-key, system message extracted to top-level field
+|-- 'gemini'    --> POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+|                   Auth: x-goog-api-key; system routed to system_instruction; 'assistant'->'model';
+|                   response parsed via extractGeminiResponseText() (throws on blocked/empty 200)
 |-- 'ollama'    --> POST {ollamaEndpoint}/api/chat
 |                   HTTPS required (HTTP for localhost only)
 |
-All use Obsidian requestUrl via safeRequest() (handles errors, redacts secrets)
+All use Obsidian requestUrl via safeRequest() (120s timeout, redacts secrets in error bodies via redactSecrets)
 ```
 
 ## CheckpointManager Lifecycle
@@ -276,6 +295,10 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 | Utility | Used By |
 |---------|---------|
 | `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
+| `redactSecrets` | ai-client (safeRequest error bodies), api-utils/notifyError (user/console errors) |
+| `extractGeminiResponseText` | ai-client (callGemini), audio/transcriber (Gemini provider) |
+| `arrayBufferToBase64` / `base64EncodedLength` | image/preprocess (re-exports), audio/transcriber (Gemini inline audio), elaboration/image-analyzer |
+| `classifyNetworkError` / `describeNetworkError` | audio/transcriber (retry gating + failure disclosure) |
 | `NotificationManager` | all feature modules (injected via constructor) |
 | `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive, rem (all injected via constructor) |
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |

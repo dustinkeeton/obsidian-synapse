@@ -50,8 +50,8 @@ graph TB
     end
 
     subgraph External["External Services"]
-        AI["AI Providers<br/>OpenAI · Anthropic · Ollama"]
-        TransAPI["Transcription APIs<br/>Whisper · Deepgram"]
+        AI["AI Providers<br/>OpenAI · Anthropic · Gemini · Ollama"]
+        TransAPI["Transcription APIs<br/>Whisper · Deepgram · Gemini"]
         Tools["CLI Tools<br/>yt-dlp · ffmpeg"]
     end
 
@@ -130,10 +130,11 @@ src/
 │   └── index.ts            #   ElaborationModule orchestrator
 │
 ├── audio/                  # Audio transcription
-│   ├── transcriber.ts      #   Whisper API / Deepgram / local routing
+│   ├── transcriber.ts      #   Whisper / Deepgram / Gemini / local routing; manual multipart w/ sanitized headers
 │   ├── post-processor.ts   #   AI transcript cleanup
 │   ├── note-scanner.ts     #   Find audio embeds in note content
 │   └── index.ts            #   AudioModule orchestrator
+│                           #   NOTE: type-only `import type { AudioExtractor }` from video/ (no runtime cycle)
 │
 ├── video/                  # Video download + transcription
 │   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile
@@ -198,7 +199,9 @@ src/
 │   └── index.ts            #   Re-exports module, types, isUntitled
 │
 ├── shared/                 # Cross-cutting utilities (base layer)
-│   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Ollama)
+│   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); re-exports redactSecrets
+│   ├── redact.ts           #   redactSecrets() — single source of truth for API-key/token redaction
+│   ├── encoding.ts         #   arrayBufferToBase64 / base64EncodedLength (shared by audio/image/elaboration)
 │   ├── url-detector.ts     #   YouTube/TikTok/Instagram URL parsing (moved here 2026-06-08)
 │   ├── checkpoint-manager.ts #  Checkpoint/resume for long-running operations
 │   ├── checkpoint-types.ts #   Checkpoint type definitions
@@ -266,12 +269,13 @@ graph TD
     Intake -. injected fireOnFile .-> Pipe
 
     Video --> Audio
+    Audio -. type only .-> Video
     Video --> Shared
     Elab -. ImageAnalyzer .-> Image
     Trans --> Audio
     Trans --> Video
     Trans --> Image
-    Summ -. transcribeUrl .-> Video
+    Summ -. transcribeUrl injected .-> Video
     Summ --> Audio
     DD --> Org
 
@@ -308,10 +312,12 @@ Key constraints:
 - **Acyclic graph.** `shared` and `commands` are base layers depending on no feature module. The former `shared ⇄ video` cycle was removed on 2026-06-08 by moving `url-detector.ts` into `shared` — the edge is now one-directional `video → shared`.
 - **`commands` imports nothing in `src/`.** `pipeline` imports `commands` (for flow gating) but never the feature modules — `main.ts` injects them via `PipelineModuleMap`.
 - **`intake` imports only `obsidian` + `shared`.** All cross-module work routes through an injected `IntakeDeps` (notably `fireOnFile`).
-- **Video depends on Audio** — reuses the transcription pipeline.
+- **Video depends on Audio** — reuses the transcription pipeline (runtime edge `video → audio`).
+- **Audio has a type-only back-edge to Video** — `audio/index.ts` does `import type { AudioExtractor } from '../video'` for time-range clipping. The type is erased at compile time, so there is **no runtime cycle**; it is a structural exception flagged for a future cleanup (move `AudioExtractor` to `shared/` or pass a structural interface).
 - **Transcription is UI-only** — delegates all work to Audio, Video, and Image via callbacks.
 - **Elaboration uses ImageAnalyzer** — analyzes embedded images during proposal generation (dotted line to Image).
-- **Summarize receives `video.transcribeUrl`** via constructor injection; also calls `audio.findAudioEmbeds`.
+- **Summarize receives `video.transcribeUrl`** via constructor injection **only** (no static `summarize → video` import); URL-platform helpers resolve from `shared`; also calls `audio.findAudioEmbeds`.
+- **Shared utilities are imported via the `../shared` barrel** — never through a sibling feature module or an internal `shared/` file. Canonical homes (`url-detector`, `redact`, `encoding`) live in `shared/` and re-export elsewhere only for back-compat.
 - **Deep Dive reuses Organize** for `auto-organize` nesting mode.
 - **Views imports types only** from feature modules (including REM).
 - **CheckpointManager is a singleton** — created in `main.ts`, injected into modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem). `tidy`, `title`, `transcription`, and `intake` do not use it.
@@ -692,9 +698,10 @@ graph TB
 
     AIC -->|"'openai'"| OAI["POST api.openai.com/v1/chat/completions<br/>Auth: Bearer {ai.apiKey}"]
     AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>Models: opus->claude-opus-4-6, etc."]
+    AIC -->|"'gemini'"| GEM["POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent<br/>Auth: x-goog-api-key · system -> system_instruction"]
     AIC -->|"'ollama'"| OLL["POST {ollamaEndpoint}/api/chat<br/>HTTPS required (HTTP localhost only)"]
 
-    AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout<br/>Error extraction · Key redaction"]
+    AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout<br/>Error extraction · Secret redaction (shared/redact.ts)"]
 ```
 
 ### Multi-Modal Vision Support
@@ -709,13 +716,15 @@ ContentBlock = TextContentBlock { type: 'text', text: string }
 Provider-specific format conversion:
 - **OpenAI**: `image_url` with `data:` URI
 - **Anthropic**: `image` source with `base64` type
+- **Gemini**: `inline_data` with `mime_type` + base64 `data` (system role routed to `system_instruction`)
 - **Ollama**: separate `images` array on the message
 
 Used by: `image/extractor.ts` (OCR), `elaboration/image-analyzer.ts` (image analysis for proposals)
 
-Audio transcription uses separate APIs (not AIClient):
-- **Whisper**: OpenAI `/v1/audio/transcriptions` via native `fetch` + `FormData`
-- **Deepgram**: `/v1/listen` via native `fetch`
+Audio transcription uses provider-specific APIs over Obsidian `requestUrl` (not `AIClient`, not native `fetch`):
+- **Whisper**: OpenAI `/v1/audio/transcriptions` — manual `multipart/form-data` via `buildMultipartBody()` (sanitized headers; `requestUrl` has no `FormData`)
+- **Deepgram**: `/v1/listen` — raw `ArrayBuffer` body
+- **Gemini**: `…:generateContent` — inline base64 audio (≤ 15 MB); instruction in `system_instruction` (prompt-injection hardening)
 
 ---
 
@@ -777,13 +786,14 @@ Modules access settings via `getSettings()` closure -- always reads latest value
 | Output sanitization | `sanitizeAIResponse()` strips scripts, event handlers, dangerous URIs | `shared/validation.ts` |
 | Subprocess security | `execFile` with argument arrays (no shell) | `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
 | Temp-path hardening | Vault-derived basenames sanitized before composing temp paths (2026-06-08) | `transcription/duration-detector.ts` |
-| API key protection | `redactSecrets()` in error messages, password-masked inputs; keys live only in gitignored `data.json` | `shared/ai-client.ts` |
+| Multipart header hardening | Vault-/settings-derived field + file names sanitized (`sanitizeMultipartHeaderValue`: strip CR/LF, replace `"`/`\`) before `Content-Disposition` lines — blocks multipart/header injection (2026-06-11) | `audio/transcriber.ts` |
+| API key protection | `redactSecrets()` — **single source of truth** scrubbing keys from error messages/console; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts` + `api-utils.ts`) |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
 | Idempotent updates | `%% synapse-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
 | Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
 
-**Audit status (2026-06-08):** No critical or high vulnerabilities. `data.json` (live API keys) is gitignored and never committed.
+**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. `data.json` (live API keys) is gitignored and never committed.
 
 **Known posture / not-yet-enforced:**
 - `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths** — there is no active vault-boundary enforcement on writes today.
