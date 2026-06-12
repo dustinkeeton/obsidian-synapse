@@ -36,10 +36,13 @@ function createMockPluginForElaboration(appOverrides: Record<string, unknown> = 
 
 	const vault = {
 		read: vi.fn().mockResolvedValue('# My Note\n\nThis is a fully fleshed-out note with enough content to avoid stub detection.'),
+		cachedRead: vi.fn().mockResolvedValue('# My Note\n\nThis is a fully fleshed-out note with enough content to avoid stub detection.'),
 		modify: vi.fn().mockResolvedValue(undefined),
 		create: vi.fn(),
 		createFolder: vi.fn().mockResolvedValue(undefined),
-		getAbstractFileByPath: vi.fn().mockReturnValue(null),
+		// Markdown notes resolve to a TFile (the proposer looks them up before
+		// cachedRead); non-note paths (e.g. the .synapse data folder) stay null.
+		getAbstractFileByPath: vi.fn((path: string) => (path.endsWith('.md') ? mockFile(path) : null)),
 		getMarkdownFiles: vi.fn().mockReturnValue([]),
 		adapter,
 	};
@@ -100,13 +103,15 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		// The note has 50+ words so the detector will NOT flag it as a stub.
 		const longContent = '# Architecture\n\n' + 'This is a detailed note about software architecture. '.repeat(20);
 		mockPlugin.app.vault.read.mockResolvedValue(longContent);
-		mockPlugin.app.vault.adapter.read.mockResolvedValue(longContent);
+		mockPlugin.app.vault.cachedRead.mockResolvedValue(longContent);
 
 		const file = mockFile('notes/architecture.md');
 		await module.scanNote(file as any);
 
-		// The proposer should have been called (adapter.read is called by proposer.generate)
-		expect(mockPlugin.app.vault.adapter.read).toHaveBeenCalledWith('notes/architecture.md');
+		// The proposer should have been called (cachedRead is called by proposer.generate)
+		expect(mockPlugin.app.vault.cachedRead).toHaveBeenCalledWith(
+			expect.objectContaining({ path: 'notes/architecture.md' })
+		);
 	});
 
 	it('creates a synthetic detection result with user-requested reason', async () => {
@@ -118,7 +123,7 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 
 		const longContent = '# Well-Written Note\n\n' + 'Comprehensive content here. '.repeat(20);
 		mockPlugin.app.vault.read.mockResolvedValue(longContent);
-		mockPlugin.app.vault.adapter.read.mockResolvedValue(longContent);
+		mockPlugin.app.vault.cachedRead.mockResolvedValue(longContent);
 
 		const file = mockFile('notes/complete.md');
 		await module.scanNote(file as any);
@@ -133,7 +138,7 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		// Short note — detector will flag it
 		const shortContent = '# Stub\n\nTODO';
 		mockPlugin.app.vault.read.mockResolvedValue(shortContent);
-		mockPlugin.app.vault.adapter.read.mockResolvedValue(shortContent);
+		mockPlugin.app.vault.cachedRead.mockResolvedValue(shortContent);
 
 		const savedProposals: any[] = [];
 		mockPlugin.app.vault.adapter.write.mockImplementation(async (_path: string, content: string) => {
@@ -155,7 +160,7 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 	it('does NOT proceed when userInvoked is false and no stubs found', async () => {
 		const longContent = '# Complete Note\n\n' + 'This note has plenty of content and no stubs. '.repeat(20);
 		mockPlugin.app.vault.read.mockResolvedValue(longContent);
-		mockPlugin.app.vault.adapter.read.mockResolvedValue(longContent);
+		mockPlugin.app.vault.cachedRead.mockResolvedValue(longContent);
 
 		const file = mockFile('notes/complete.md');
 		// Explicitly pass userInvoked = false (simulating auto-scan behavior)
@@ -163,20 +168,22 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 
 		// The proposer should NOT have been called since detector found nothing
 		// and userInvoked is false
-		expect(mockPlugin.app.vault.adapter.read).not.toHaveBeenCalled();
+		expect(mockPlugin.app.vault.cachedRead).not.toHaveBeenCalled();
 	});
 
 	it('defaults userInvoked to true when not specified', async () => {
 		const longContent = '# Full Note\n\n' + 'Enough content to pass detection. '.repeat(20);
 		mockPlugin.app.vault.read.mockResolvedValue(longContent);
-		mockPlugin.app.vault.adapter.read.mockResolvedValue(longContent);
+		mockPlugin.app.vault.cachedRead.mockResolvedValue(longContent);
 
 		const file = mockFile('notes/full.md');
 		// Call without second argument — should default to userInvoked=true
 		await module.scanNote(file as any);
 
 		// Should still generate because userInvoked defaults to true
-		expect(mockPlugin.app.vault.adapter.read).toHaveBeenCalledWith('notes/full.md');
+		expect(mockPlugin.app.vault.cachedRead).toHaveBeenCalledWith(
+			expect.objectContaining({ path: 'notes/full.md' })
+		);
 	});
 });
 
@@ -194,12 +201,10 @@ describe('ProposalGenerator — user-requested reason handling', () => {
 	});
 
 	it('generates a proposal for user-requested detection result', async () => {
-		const mockAdapter = {
-			read: vi.fn().mockResolvedValue('# My Note\n\nDetailed content about a topic.'),
-		};
 		const mockApp = {
 			vault: {
-				adapter: mockAdapter,
+				getAbstractFileByPath: vi.fn((path: string) => mockFile(path)),
+				cachedRead: vi.fn().mockResolvedValue('# My Note\n\nDetailed content about a topic.'),
 				read: vi.fn(),
 			},
 			metadataCache: {
@@ -225,12 +230,10 @@ describe('ProposalGenerator — user-requested reason handling', () => {
 	});
 
 	it('builds a user-requested prompt that differs from stub prompt', async () => {
-		const mockAdapter = {
-			read: vi.fn().mockResolvedValue('# Test Note\n\nSome content.'),
-		};
 		const mockApp = {
 			vault: {
-				adapter: mockAdapter,
+				getAbstractFileByPath: vi.fn((path: string) => mockFile(path)),
+				cachedRead: vi.fn().mockResolvedValue('# Test Note\n\nSome content.'),
 				read: vi.fn(),
 			},
 			metadataCache: {
