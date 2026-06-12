@@ -426,6 +426,15 @@ export class IntakeModule {
 	 * (isInIntakeFolder), but the stamp guarantees it is skipped even if that
 	 * exclusion were ever bypassed.
 	 *
+	 * Collision policy (#227): the breadcrumb filename is `<date> — <sanitized
+	 * title>.md`, so two DIFFERENT notes that sanitize to the same title and are
+	 * organized on the same day would otherwise resolve to the same path — and
+	 * `writeNote` overwrites, silently losing one capture-log entry. To avoid
+	 * that data loss we disambiguate cross-note collisions with a uniqueness
+	 * suffix (` (2)`, ` (3)`, …) — see {@link resolveBreadcrumbPath}.
+	 * Re-processing the SAME note (same destination) deliberately reuses and
+	 * overwrites its own breadcrumb rather than suffix-spamming.
+	 *
 	 * `movedPath` is the note's current (organized) path; `originalPath` its
 	 * pre-processing path inside the intake folder.
 	 */
@@ -441,9 +450,6 @@ export class IntakeModule {
 
 		const date = new Date().toISOString().split('T')[0];
 		const title = this.sanitizeTitle(this.basenameOf(movedPath));
-		const breadcrumbPath = normalizePath(
-			`${logFolder}/${date} — ${title}.md`,
-		);
 
 		const body = [
 			this.wikiLink(movedPath),
@@ -459,7 +465,67 @@ export class IntakeModule {
 		);
 
 		await ensureFolder(this.plugin.app, logFolder);
+		const breadcrumbPath = await this.resolveBreadcrumbPath(
+			logFolder,
+			date,
+			title,
+			movedPath,
+		);
 		await writeNote(this.plugin.app, breadcrumbPath, content);
+	}
+
+	/**
+	 * Resolve a non-clobbering path for a breadcrumb (#227). The base path is
+	 * `‹logFolder›/‹date› — ‹title›.md`; if that is free we use it. If a file
+	 * already lives there we keep it ONLY when it is this same note's breadcrumb
+	 * (its `moved to:` trail equals `movedPath`), so re-processing a note
+	 * overwrites its own breadcrumb idempotently. Otherwise a DIFFERENT note
+	 * sanitized to the same dated title — we bump a uniqueness suffix (` (2)`,
+	 * ` (3)`, …) until we find a free slot or this note's own breadcrumb, so two
+	 * distinct captures never clobber each other.
+	 */
+	private async resolveBreadcrumbPath(
+		logFolder: string,
+		date: string,
+		title: string,
+		movedPath: string,
+	): Promise<string> {
+		const base = `${logFolder}/${date} — ${title}`;
+		for (let n = 1; ; n++) {
+			const candidate = normalizePath(
+				n === 1 ? `${base}.md` : `${base} (${n}).md`,
+			);
+			const existing =
+				this.plugin.app.vault.getAbstractFileByPath(candidate);
+			if (!(existing instanceof TFile)) {
+				return candidate; // free slot
+			}
+			if (await this.breadcrumbTargets(existing, movedPath)) {
+				return candidate; // this note's own breadcrumb → overwrite in place
+			}
+			// A different note collided on the same dated title — try the next
+			// suffix so its capture-log entry is never lost.
+		}
+	}
+
+	/**
+	 * True when an existing breadcrumb file points at `movedPath` — i.e. it is
+	 * the breadcrumb for this same moved note (its `- moved to:` trail matches).
+	 * Used to distinguish an idempotent re-process of the same note (overwrite)
+	 * from a genuine cross-note title collision (suffix). Reads defensively:
+	 * any read failure is treated as "not ours" so we fall through to a suffix
+	 * rather than risk clobbering another note's breadcrumb.
+	 */
+	private async breadcrumbTargets(
+		file: TFile,
+		movedPath: string,
+	): Promise<boolean> {
+		try {
+			const content = await this.plugin.app.vault.read(file);
+			return content.includes(`- moved to: ${movedPath}\n`);
+		} catch {
+			return false;
+		}
 	}
 
 	/** Basename (no extension) of a vault path, e.g. `A/B/note.md` → `note`. */
