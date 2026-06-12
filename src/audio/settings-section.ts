@@ -45,7 +45,9 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 		const limitMb = GEMINI_MAX_INLINE_AUDIO_BYTES / (1024 * 1024);
 		providerSetting.setDesc(
 			`Gemini sends audio inline with the request, so files are limited to ${limitMb} MB ` +
-			'(the API caps requests at 20 MB). Use Whisper or Deepgram for larger files.'
+			'(the API caps requests at 20 MB). Use Whisper or Deepgram for larger files. ' +
+			'Note: Gemini transcribes with an LLM, so spoken instructions inside untrusted ' +
+			'audio could still influence the transcript — review output before trusting it.'
 		);
 	}
 
