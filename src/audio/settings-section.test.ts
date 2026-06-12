@@ -50,4 +50,11 @@ describe('renderAudioSettings', () => {
 		const anthropic = makeCtx((s) => { s.audio.transcriptionProvider = 'whisper-api'; s.ai.provider = 'anthropic'; });
 		expect(() => renderAudioSettings(anthropic.ctx)).not.toThrow();
 	});
+
+	it('renders without throwing for the Gemini provider (key visibility branch)', () => {
+		const geminiAI = makeCtx((s) => { s.audio.transcriptionProvider = 'gemini'; s.ai.provider = 'gemini'; });
+		expect(() => renderAudioSettings(geminiAI.ctx)).not.toThrow();
+		const openaiAI = makeCtx((s) => { s.audio.transcriptionProvider = 'gemini'; s.ai.provider = 'openai'; });
+		expect(() => renderAudioSettings(openaiAI.ctx)).not.toThrow();
+	});
 });

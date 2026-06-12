@@ -1,5 +1,6 @@
 import { Setting } from 'obsidian';
 import type { SettingsSectionContext } from '../shared';
+import { GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 
 /**
  * Render the Audio Transcription settings accordion (#243).
@@ -22,11 +23,12 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 	const providerOptions: Record<string, string> = {
 		'whisper-api': 'OpenAI Whisper API',
 		deepgram: 'Deepgram',
+		gemini: 'Google Gemini',
 	};
 	// 'local-whisper' is intentionally hidden from the dropdown until implemented
 	// (see src/audio/transcriber.ts). The type is kept for forward compatibility.
 
-	new Setting(audioBody)
+	const providerSetting = new Setting(audioBody)
 		.setName('Transcription provider')
 		.addDropdown((dd) =>
 			dd
@@ -34,11 +36,18 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 				.setValue(plugin.settings.audio.transcriptionProvider)
 				.onChange(async (value) => {
 					plugin.settings.audio.transcriptionProvider =
-						value as 'whisper-api' | 'deepgram' | 'local-whisper';
+						value as 'whisper-api' | 'deepgram' | 'gemini' | 'local-whisper';
 					await plugin.saveSettings();
 					ctx.rerender(); // Re-render to show/hide provider-specific fields
 				})
 		);
+	if (plugin.settings.audio.transcriptionProvider === 'gemini') {
+		const limitMb = GEMINI_MAX_INLINE_AUDIO_BYTES / (1024 * 1024);
+		providerSetting.setDesc(
+			`Gemini sends audio inline with the request, so files are limited to ${limitMb} MB ` +
+			'(the API caps requests at 20 MB). Use Whisper or Deepgram for larger files.'
+		);
+	}
 
 	// Show Whisper API key field when provider is whisper-api and AI provider isn't OpenAI
 	// (if AI provider is OpenAI, the shared API key is already an OpenAI key)
@@ -59,6 +68,32 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 					.setValue(plugin.settings.audio.whisperApiKey)
 					.onChange(async (value) => {
 						plugin.settings.audio.whisperApiKey = value;
+						await plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+				text.inputEl.autocomplete = 'off';
+			});
+	}
+
+	// Show Gemini API key field when provider is gemini and AI provider isn't Gemini
+	// (if AI provider is Gemini, the shared API key is already a Google key)
+	if (
+		plugin.settings.audio.transcriptionProvider === 'gemini' &&
+		plugin.settings.ai.provider !== 'gemini'
+	) {
+		new Setting(audioBody)
+			.setName('Google Gemini API Key')
+			.setDesc(
+				'Gemini transcription uses the Google AI API. Provide your Gemini key here since your AI provider is set to ' +
+				plugin.settings.ai.provider.charAt(0).toUpperCase() +
+				plugin.settings.ai.provider.slice(1) + '.'
+			)
+			.addText((text) => {
+				text
+					.setPlaceholder('AIza...')
+					.setValue(plugin.settings.audio.geminiApiKey)
+					.onChange(async (value) => {
+						plugin.settings.audio.geminiApiKey = value;
 						await plugin.saveSettings();
 					});
 				text.inputEl.type = 'password';
