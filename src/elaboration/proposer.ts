@@ -1,4 +1,4 @@
-import { App } from 'obsidian';
+import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, fetchArticleContent } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
@@ -17,7 +17,14 @@ export class ProposalGenerator {
 	}
 
 	async generate(detection: DetectionResult): Promise<Proposal> {
-		const content = await this.app.vault.adapter.read(detection.notePath);
+		// Vault API (not adapter) — vault notes must go through vault.cachedRead
+		// per the Obsidian plugin guidelines; the adapter is reserved for the
+		// plugin's own .synapse/ storage.
+		const noteFile = this.app.vault.getAbstractFileByPath(detection.notePath);
+		if (!(noteFile instanceof TFile)) {
+			throw new Error(`Note not found: ${detection.notePath}`);
+		}
+		const content = await this.app.vault.cachedRead(noteFile);
 		const settings = this.getSettings();
 
 		let contextNotes = '';
