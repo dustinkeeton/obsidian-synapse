@@ -8,7 +8,7 @@ import type { Checkpoint, CheckpointWorkItem, DeferredTask, TimeRange } from '..
 import { findAudioEmbeds } from './note-scanner';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
-import { Transcriber } from './transcriber';
+import { Transcriber, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 import { TranscribeOptions, TranscriptionResult } from './types';
 import type { AudioExtractor } from '../video';
 
@@ -44,6 +44,26 @@ export class AudioModule {
 
 	async onload(): Promise<void> {
 		// Commands are now registered in main.ts (unified transcription)
+	}
+
+	/**
+	 * Provider-aware combined-audio size guard (#251 review): Gemini hard-caps
+	 * inline audio at 15 MB, well below the generic ~25 MB Whisper/Deepgram
+	 * heuristic, so both the warning threshold and the message wording must
+	 * follow the active transcription provider.
+	 */
+	private combinedSizeGuard(): { bytes: number; limitText: string } {
+		if (this.getSettings().audio.transcriptionProvider === 'gemini') {
+			const mb = GEMINI_MAX_INLINE_AUDIO_BYTES / (1024 * 1024);
+			return {
+				bytes: GEMINI_MAX_INLINE_AUDIO_BYTES,
+				limitText: `exceeds the ${mb} MB Gemini inline audio limit`,
+			};
+		}
+		return {
+			bytes: AudioModule.COMBINED_SIZE_WARN_BYTES,
+			limitText: 'may exceed the transcription provider limit (~25 MB)',
+		};
 	}
 
 	onunload(): void {}
@@ -278,10 +298,11 @@ export class AudioModule {
 
 				// Provider size guard: offer per-file fallback rather than a
 				// silent API failure on oversized combined audio.
-				if (sizeBytes > AudioModule.COMBINED_SIZE_WARN_BYTES) {
+				const guard = this.combinedSizeGuard();
+				if (sizeBytes > guard.bytes) {
 					const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
 					const fallback = await this.notifications.confirm(
-						`Combined audio is ${mb} MB, which may exceed the transcription provider limit (~25 MB). Transcribe each file separately instead?`,
+						`Combined audio is ${mb} MB, which ${guard.limitText}. Transcribe each file separately instead?`,
 						{ proceedLabel: 'Per-file', cancelLabel: 'Combine anyway', level: 'warning' }
 					);
 					if (fallback) {
@@ -348,10 +369,11 @@ export class AudioModule {
 			return this.transcribeEachToText(files);
 		}
 		const { data, sizeBytes } = await this.concatEmbedsToBuffer(files);
-		if (sizeBytes > AudioModule.COMBINED_SIZE_WARN_BYTES) {
+		const guard = this.combinedSizeGuard();
+		if (sizeBytes > guard.bytes) {
 			const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
 			this.notifications.info(
-				`Combined audio is ${mb} MB, which may exceed the transcription provider limit (~25 MB).`
+				`Combined audio is ${mb} MB, which ${guard.limitText}.`
 			);
 		}
 		const result = await this.transcribe(data, 'combined.mp3');
