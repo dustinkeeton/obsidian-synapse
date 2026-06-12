@@ -50,7 +50,7 @@ export class ElaborationModule {
 	async onload(): Promise<void> {
 		await this.store.init();
 
-		this.registrar.register('synapse:scan-vault', this.getSettings().elaboration.enabled, {
+		this.registrar.register('scan-vault', this.getSettings().elaboration.enabled, {
 			name: 'Scan vault for stub notes',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
@@ -62,7 +62,7 @@ export class ElaborationModule {
 			},
 		});
 
-		this.registrar.register('synapse:scan-current-note', this.getSettings().elaboration.enabled, {
+		this.registrar.register('scan-current-note', this.getSettings().elaboration.enabled, {
 			name: 'Scan current note for elaboration',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -71,17 +71,17 @@ export class ElaborationModule {
 			},
 		});
 
-		this.registrar.register('synapse:clear-proposals', this.getSettings().elaboration.enabled, {
+		this.registrar.register('clear-proposals', this.getSettings().elaboration.enabled, {
 			name: 'Clear all pending proposals',
 			callback: () => this.clearProposals(),
 		});
 
 		const settings = this.getSettings().elaboration;
-		if (settings.scanOnStartup && isInFlow('synapse:scan-vault', 'startup')) {
+		if (settings.scanOnStartup && isInFlow('scan-vault', 'startup')) {
 			this.startupTimeout = window.setTimeout(() => this.scanVault(), 5000);
 		}
 
-		if (settings.autoScanInterval > 0 && isInFlow('synapse:scan-vault', 'startup')) {
+		if (settings.autoScanInterval > 0 && isInFlow('scan-vault', 'startup')) {
 			this.scanInterval = window.setInterval(
 				() => this.scanVault(),
 				settings.autoScanInterval * 60 * 1000

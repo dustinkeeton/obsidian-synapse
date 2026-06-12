@@ -52,7 +52,7 @@ export class RemModule {
 		await this.store.init();
 
 		// Command: scan current note
-		this.registrar.register('synapse:rem-current-note', this.getSettings().rem.enabled, {
+		this.registrar.register('rem-current-note', this.getSettings().rem.enabled, {
 			name: 'REM: Discover links in current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -62,7 +62,7 @@ export class RemModule {
 		});
 
 		// Command: scan directory
-		this.registrar.register('synapse:rem-directory', this.getSettings().rem.enabled, {
+		this.registrar.register('rem-directory', this.getSettings().rem.enabled, {
 			name: 'REM: Discover links in directory',
 			callback: () => {
 				new FolderPickerModal(

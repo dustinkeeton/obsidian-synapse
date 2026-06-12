@@ -46,7 +46,7 @@ export class TidyModule {
 	async onload(): Promise<void> {
 		await this.store.init();
 
-		this.registrar.register('synapse:tidy-current-note', this.getSettings().tidy.enabled, {
+		this.registrar.register('tidy-current-note', this.getSettings().tidy.enabled, {
 			name: 'Tidy current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -55,7 +55,7 @@ export class TidyModule {
 			},
 		});
 
-		this.registrar.register('synapse:undo-tidy', this.getSettings().tidy.enabled, {
+		this.registrar.register('undo-tidy', this.getSettings().tidy.enabled, {
 			name: 'Undo last tidy on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
