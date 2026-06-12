@@ -11,11 +11,19 @@ data.json
 *.tmp
 .DS_Store
 coverage/
-.claude/worktrees
-.claude/settings.local.json
 .obsidian/
 
 # Agent / tooling harness artifacts (Claude Code, Codex, etc.)
+.claude/worktrees
+.claude/settings.local.json
+.claude/agents/brand-manager.md
+.claude/agents/designer.md
+.claude/agents/product-manager.md
+.claude/agents/project-manager.md
+.claude/skills/brand-guidelines
+.claude/skills/delegate/
+.claude/skills/git-workflow/
+.claude/skills/github-project-management/
 .agents/
 .codex/
 
