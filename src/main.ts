@@ -14,6 +14,7 @@ import { TitleModule } from './title';
 import { RemModule } from './rem';
 import { IntakeModule } from './intake';
 import { CommandRegistrar, auditCommands } from './commands';
+import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
 import { FolderPickerModal, NotificationManager, CheckpointManager } from './shared';
@@ -64,6 +65,12 @@ export default class SynapsePlugin extends Plugin {
 	private audioExtractor: AudioExtractor | undefined;
 	private ffmpegAvailable: boolean | null = null;
 	private startupTimeout: ReturnType<typeof setTimeout> | null = null;
+	/**
+	 * True when `loadData()` returned no persisted settings — i.e. a genuine
+	 * fresh install rather than an existing user upgrading. Drives first-run
+	 * onboarding (#89): only fresh installs are greeted with the welcome notice.
+	 */
+	private isFreshInstall = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -369,6 +376,11 @@ export default class SynapsePlugin extends Plugin {
 		// Surface command-registry drift: active entries with no handler, or
 		// registered handlers missing from the registry. Asserted by a Vitest test too.
 		auditCommands(registrar.getAttempted()).forEach(w => console.warn('[Synapse] ' + w));
+
+		// First-run onboarding (#89): a one-time welcome notice for fresh installs.
+		// Runs last so it never delays core setup, and after the notification
+		// manager is ready. Non-blocking — failure here must not break load.
+		await this.runFirstRunOnboarding();
 	}
 
 	onunload(): void {
@@ -391,14 +403,38 @@ export default class SynapsePlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = this.deepMerge(
-			DEFAULT_SETTINGS,
-			(await this.loadData()) || {}
-		);
+		const data = await this.loadData();
+		// No persisted data (null) or an empty object means this is the plugin's
+		// first run in this vault — used to gate the first-run welcome (#89).
+		this.isFreshInstall = !data || Object.keys(data).length === 0;
+		this.settings = this.deepMerge(DEFAULT_SETTINGS, data || {});
 	}
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	/**
+	 * First-run onboarding (#89). Greets a genuine fresh install once with a
+	 * welcome notice pointing at the settings tab to configure an API key, then
+	 * persists `onboarding.hasSeenWelcome` so it never fires again. An existing
+	 * user upgrading into this version is marked seen silently (no notice). Any
+	 * failure is swallowed — onboarding must never break plugin load.
+	 */
+	private async runFirstRunOnboarding(): Promise<void> {
+		try {
+			const plan = planFirstRun(this.settings, this.isFreshInstall);
+			if (!plan.markSeen) return;
+
+			this.settings.onboarding.hasSeenWelcome = true;
+			await this.saveSettings();
+
+			if (plan.showWelcome) {
+				this.notifications.info(WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS);
+			}
+		} catch (error) {
+			console.warn('[Synapse] First-run onboarding failed:', error);
+		}
 	}
 
 	private openUnifiedModal(): void {
