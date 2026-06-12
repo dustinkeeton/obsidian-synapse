@@ -50,3 +50,9 @@ describe('Gemini provider settings (#251)', () => {
 		expect(DEFAULT_SETTINGS.audio.geminiApiKey).toBe('');
 	});
 });
+
+describe('onboarding settings (#89)', () => {
+	it('defaults hasSeenWelcome to false so the first run is greeted', () => {
+		expect(DEFAULT_SETTINGS.onboarding.hasSeenWelcome).toBe(false);
+	});
+});
