@@ -9,7 +9,6 @@ import {
 import type { TimeRange } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { AudioExtractor } from './audio-extractor';
-import { findVideoUrls } from './note-scanner';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
 
 export type {

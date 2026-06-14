@@ -81,7 +81,7 @@ export function showTimeRangeToast(
 		let selectedStart = 0;
 		let selectedEnd = options.duration;
 
-		const slider = new TimeRangeSlider(sliderContainer, {
+		new TimeRangeSlider(sliderContainer, {
 			duration: options.duration,
 			onChange: (start, end) => {
 				selectedStart = start;

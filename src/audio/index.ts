@@ -5,7 +5,6 @@ import {
 	CheckpointManager, generateId, formatTimeRange,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask, TimeRange } from '../shared';
-import { findAudioEmbeds } from './note-scanner';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
 import { Transcriber, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';

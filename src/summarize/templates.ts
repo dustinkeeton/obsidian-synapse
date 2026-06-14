@@ -109,9 +109,7 @@ const CURRENCY_PATTERN = /(?:\$\d+\.\d{2}|[€£]\d+(?:\.\d{2})?)/;
 const TOTAL_HEADERS = /\b(?:total|subtotal|sub-total|tax|grand\s*total)\b/i;
 const LINE_ITEM_QTY_PRICE = /\d+\s*[x×]\s*\$?\d+/i;
 const LINE_ITEM_DOLLAR = /.+\$\d+\.\d{2}/;
-const PAYMENT_TERMS = /\b(?:cash|credit|debit|visa|mastercard|amex|payment|change\s*due|amount\s*tendered)\b/i;
-const RECEIPT_IDENTIFIERS = /\b(?:store\s*#|register|cashier|receipt|transaction\s*#?|order\s*#?)\b/i;
-const RECEIPT_DATETIME = /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\s+\d{1,2}:\d{2}/;
+const RECEIPT_DATETIME = /\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+\d{1,2}:\d{2}/;
 
 /**
  * Compute a numeric receipt score for content. Exported for testing.

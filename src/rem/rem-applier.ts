@@ -1,4 +1,4 @@
-import type { RemLinkCandidate, RemOccurrence } from './types';
+import type { RemLinkCandidate } from './types';
 
 /**
  * Applies accepted wikilink insertions to note content.
