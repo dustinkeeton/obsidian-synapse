@@ -109,13 +109,15 @@ describe('RemModule', () => {
 		});
 
 		it('returns null when the note is in an excluded folder', async () => {
-			settings.enrichment.excludeFolders = ['Archive'];
+			settings.exclusions = [{ pattern: 'Archive/**', features: ['rem'] }];
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('Archive/Old.md'));
 			const module = await loadedModule();
 
 			const result = await module.remScanNote('Archive/Old.md');
 			expect(result).toBeNull();
-			expect(notifications.info).toHaveBeenCalledWith('Note is excluded from REM scanning');
+			expect(notifications.info).toHaveBeenCalledWith(
+				'Skipped — "Archive/Old.md" is excluded by rule "Archive/**"'
+			);
 		});
 
 		it('saves a proposal built from literal mention candidates', async () => {
@@ -372,7 +374,9 @@ describe('RemModule', () => {
 
 			const result = await module.remScanNote('notes/Secret.md');
 			expect(result).toBeNull();
-			expect(notifications.info).toHaveBeenCalledWith('Note is excluded from REM scanning');
+			expect(notifications.info).toHaveBeenCalledWith(
+				'Note is excluded from REM scanning (excluded tag)'
+			);
 		});
 	});
 });

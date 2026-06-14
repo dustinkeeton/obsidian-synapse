@@ -1,7 +1,7 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
-import { AIClient, NotificationManager, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId } from '../shared';
+import { AIClient, NotificationManager, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId, isPathExcluded, findMatchingRule } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
 
@@ -49,9 +49,17 @@ export class TidyModule {
 		this.registrar.register('tidy-current-note', this.getSettings().tidy.enabled, {
 			name: 'Tidy current note',
 			editorCallback: async (_editor, ctx) => {
-				if (ctx.file) {
-					await this.tidy(ctx.file);
+				if (!ctx.file) return;
+				// Path exclusion (#307): explicit single-note command → Notice
+				// naming the rule. The batch loop in scanVault skips silently.
+				const rule = findMatchingRule(ctx.file.path, 'tidy', this.getSettings());
+				if (rule) {
+					this.notifications.info(
+						`Skipped — "${ctx.file.path}" is excluded by rule "${rule.pattern}"`
+					);
+					return;
 				}
+				await this.tidy(ctx.file);
 			},
 		});
 
@@ -96,6 +104,9 @@ export class TidyModule {
 		for (let i = 0; i < allFiles.length; i++) {
 			if (op.cancelled) break;
 			op.progress(i + 1, allFiles.length, 'Tidying notes');
+
+			// Path exclusion (#307): batch scan → silently skip excluded notes.
+			if (isPathExcluded(allFiles[i].path, 'tidy', this.getSettings())) continue;
 
 			try {
 				await this.tidy(allFiles[i]);

@@ -269,6 +269,29 @@ export class ToggleComponent {
 	}
 }
 
+/**
+ * Minimal stand-in for Obsidian's ButtonComponent / ExtraButtonComponent —
+ * just the chainable builder surface (`setIcon`, `setButtonText`, `setTooltip`,
+ * `onClick`) the settings UI uses. `_click()` is a test helper to fire onClick.
+ */
+export class ButtonComponent {
+	private clickCb: (() => unknown) | undefined;
+	setIcon = vi.fn().mockReturnThis();
+	setButtonText = vi.fn().mockReturnThis();
+	setTooltip = vi.fn().mockReturnThis();
+	setCta = vi.fn().mockReturnThis();
+	setWarning = vi.fn().mockReturnThis();
+	setDisabled = vi.fn().mockReturnThis();
+	onClick = vi.fn((cb: () => unknown) => {
+		this.clickCb = cb;
+		return this;
+	});
+	/** Test helper: simulate a user clicking the button. */
+	_click(): unknown {
+		return this.clickCb?.();
+	}
+}
+
 export class Setting {
 	settingEl: any = createStubEl();
 	/** Child components created via add*, mirroring Obsidian's `components`. */
@@ -287,7 +310,14 @@ export class Setting {
 		return this;
 	});
 	addSlider = vi.fn().mockReturnThis();
-	addButton = vi.fn().mockReturnThis();
+	addButton = vi.fn(function (this: Setting, cb?: (b: ButtonComponent) => void) {
+		if (cb) cb(new ButtonComponent());
+		return this;
+	});
+	addExtraButton = vi.fn(function (this: Setting, cb?: (b: ButtonComponent) => void) {
+		if (cb) cb(new ButtonComponent());
+		return this;
+	});
 	setClass = vi.fn().mockReturnThis();
 	setDisabled = vi.fn().mockReturnThis();
 }

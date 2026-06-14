@@ -1,6 +1,6 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, NotificationManager, generateId, readNote } from '../shared';
+import { AIClient, NotificationManager, generateId, readNote, isPathExcluded } from '../shared';
 import { TitleProposalStore } from './title-store';
 import { TitleSuggester } from './title-suggester';
 import { isUntitled } from './title-detector';
@@ -151,6 +151,10 @@ export class TitleModule {
 	async checkTitle(filePath: string): Promise<void> {
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) return;
+
+		// Path exclusion (#307). checkTitle is a silent post-op callback (no user
+		// command), so skip quietly when the note is excluded from `title`.
+		if (isPathExcluded(file.path, 'title', this.getSettings())) return;
 
 		if (isUntitled(file.basename)) {
 			await this.checkUntitled(filePath);

@@ -5,8 +5,10 @@ import type { AIProvider } from './settings';
 import {
 	addEnhancedSlider,
 	createSettingsSectionContext,
+	FolderPickerModal,
+	ALL_FEATURE_IDS,
 } from './shared';
-import type { SettingsSectionContext } from './shared';
+import type { SettingsSectionContext, FeatureId, ExclusionRule } from './shared';
 import { PROPOSAL_KINDS } from './views';
 import type { ProposalKind } from './views';
 import { renderElaborationSettings } from './elaboration';
@@ -53,6 +55,30 @@ const AUTO_ACCEPT_LABELS: Record<ProposalKind, { name: string; desc: string }> =
 		desc: 'Caution: rewrites note body text. Automatically insert all discovered [[wikilinks]] without review.',
 	},
 };
+
+/**
+ * Display labels for every {@link FeatureId}, shown as the per-feature checkbox
+ * labels in the Exclusions section (#307). Keyed by the canonical feature set so
+ * a new {@link FeatureId} forces an entry here. The render order is
+ * {@link FEATURE_ORDER}.
+ */
+const FEATURE_LABELS: Record<FeatureId, string> = {
+	elaboration: 'Elaboration',
+	enrichment: 'Enrichment',
+	summarize: 'Summarize',
+	tidy: 'Tidy',
+	organize: 'Organize',
+	'deep-dive': 'Deep dive',
+	audio: 'Audio transcription',
+	video: 'Video transcription',
+	title: 'Title',
+	image: 'Image OCR',
+	rem: 'REM (link discovery)',
+	intake: 'Intake watcher',
+};
+
+/** Stable display order for the per-feature exclusion checkboxes. */
+const FEATURE_ORDER = Object.keys(ALL_FEATURE_IDS) as FeatureId[];
 
 /**
  * The ordered list of per-feature section renderers (#243). Video is gated
@@ -175,6 +201,9 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		// ── Auto-Accept Proposals (global, non-feature) ──
 		this.renderAutoAccept(ctx);
+
+		// ── Exclusions (global, cross-cutting path exclusion list) ──
+		this.renderExclusions(ctx);
 
 		// ── About (static support links, always last) ──
 		this.renderAbout(ctx);
@@ -353,6 +382,154 @@ export class SynapseSettingTab extends PluginSettingTab {
 			setting.setDisabled(!this.isFeatureEnabled(kind));
 			this.autoAcceptSettings[kind] = setting;
 		}
+	}
+
+	/**
+	 * Exclusions — a cross-cutting list of vault paths hidden from some or all
+	 * Synapse flows (#307). Top-level (not per-feature): the single source of
+	 * truth for path-based exclusion. Each rule shows its glob pattern, an "All
+	 * features" toggle that reveals 12 per-feature checkboxes when off, and a
+	 * remove button. New rules are added via a folder picker (canonicalized to
+	 * `<folder>/**`) or a free-text pattern (exact paths, `dir/*`). Layout
+	 * changes re-render the whole tab via `ctx.rerender`.
+	 */
+	private renderExclusions(ctx: SettingsSectionContext): void {
+		const body = ctx.configSection('exclusions', 'Exclusions');
+
+		body.createDiv({
+			cls: 'setting-item-description synapse-accordion-empty-note',
+			text:
+				'Paths listed here are skipped by the selected features. Patterns are vault-relative globs: ' +
+				'"folder/**" (folder and everything under it), "folder/*" (direct children only), ' +
+				'or an exact note path. ".synapse" (plugin data) and "templates" are excluded from every feature by default.',
+		});
+
+		const rules = this.plugin.settings.exclusions;
+
+		if (rules.length === 0) {
+			body.createDiv({
+				cls: 'setting-item-description',
+				text: 'No exclusions configured.',
+			});
+		}
+
+		rules.forEach((rule, index) => {
+			this.renderExclusionRule(ctx, body, rule, index);
+		});
+
+		// ── Add controls ──
+		new Setting(body)
+			.setName('Add a folder')
+			.setDesc('Pick a folder to exclude (saved as "folder/**").')
+			.addButton((btn) =>
+				btn
+					.setButtonText('Choose folder')
+					.onClick(() => {
+						new FolderPickerModal(this.app, (folder) => {
+							const pattern = folder.isRoot() ? '/**' : `${folder.path}/**`;
+							// Skip exact duplicates so a re-pick doesn't stack rules.
+							if (!this.plugin.settings.exclusions.some((r) => r.pattern === pattern)) {
+								this.plugin.settings.exclusions.push({ pattern, features: 'all' });
+							}
+							void this.plugin.saveSettings().then(() => ctx.rerender());
+						}).open();
+					})
+			);
+
+		let pendingPattern = '';
+		new Setting(body)
+			.setName('Add a pattern')
+			.setDesc('For exact note paths or direct-children globs (e.g. "Inbox/*").')
+			.addText((text) =>
+				text
+					.setPlaceholder('path/to/note.md or folder/*')
+					.onChange((value) => {
+						pendingPattern = value;
+					})
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText('Add')
+					.onClick(() => {
+						const pattern = pendingPattern.trim();
+						if (!pattern) return;
+						if (!this.plugin.settings.exclusions.some((r) => r.pattern === pattern)) {
+							this.plugin.settings.exclusions.push({ pattern, features: 'all' });
+						}
+						void this.plugin.saveSettings().then(() => ctx.rerender());
+					})
+			);
+	}
+
+	/**
+	 * Render a single exclusion rule row plus, when it is feature-scoped, the
+	 * grid of per-feature checkboxes. Toggling "All features" or removing the
+	 * rule mutates settings, persists, and re-renders the tab.
+	 */
+	private renderExclusionRule(
+		ctx: SettingsSectionContext,
+		body: HTMLElement,
+		rule: ExclusionRule,
+		index: number,
+	): void {
+		const features = rule.features;
+		const isAll = features === 'all';
+		const setting = new Setting(body)
+			.setName(rule.pattern || '(empty pattern)')
+			.setDesc(
+				features === 'all'
+					? 'Excluded from all features'
+					: `Excluded from: ${this.describeScopedFeatures(features)}`,
+			);
+
+		setting.addToggle((toggle) =>
+			toggle
+				.setTooltip('All features')
+				.setValue(isAll)
+				.onChange((value) => {
+					// Switching to scoped seeds an empty list (user then ticks the
+					// features); switching to all collapses to the literal 'all'.
+					this.plugin.settings.exclusions[index].features = value ? 'all' : [];
+					void this.plugin.saveSettings().then(() => ctx.rerender());
+				}),
+		);
+
+		setting.addExtraButton((btn) =>
+			btn
+				.setIcon('trash')
+				.setTooltip('Remove exclusion')
+				.onClick(() => {
+					this.plugin.settings.exclusions.splice(index, 1);
+					void this.plugin.saveSettings().then(() => ctx.rerender());
+				}),
+		);
+
+		if (isAll) return;
+
+		// Per-feature checkboxes (rendered only for a scoped rule).
+		const scoped = rule.features as FeatureId[];
+		for (const feature of FEATURE_ORDER) {
+			new Setting(body)
+				.setClass('synapse-exclusion-feature-row')
+				.setName(FEATURE_LABELS[feature])
+				.addToggle((toggle) =>
+					toggle.setValue(scoped.includes(feature)).onChange((value) => {
+						const current = this.plugin.settings.exclusions[index].features;
+						if (current === 'all') return; // defensive: shape changed underneath
+						const next = new Set(current);
+						if (value) next.add(feature);
+						else next.delete(feature);
+						this.plugin.settings.exclusions[index].features = [...next];
+						void this.plugin.saveSettings().then(() => ctx.rerender());
+					}),
+				);
+		}
+	}
+
+	/** Human-readable list of the features a scoped rule blocks. */
+	private describeScopedFeatures(features: FeatureId[]): string {
+		if (features.length === 0) return 'no features (rule inactive)';
+		return features.map((f) => FEATURE_LABELS[f]).join(', ');
 	}
 
 	/**

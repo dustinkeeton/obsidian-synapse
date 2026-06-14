@@ -152,7 +152,11 @@ export function findMatchingRule(
 	feature: FeatureId,
 	settings: ExclusionSettings,
 ): ExclusionRule | null {
-	for (const rule of settings.exclusions) {
+	// Defensive: tolerate a missing/undefined list (partial settings) as "no
+	// rules" rather than throwing. Real settings always carry it via defaults.
+	const rules = settings?.exclusions;
+	if (!Array.isArray(rules)) return null;
+	for (const rule of rules) {
 		if (!ruleAppliesToFeature(rule, feature)) continue;
 		const regex = patternToRegExp(rule.pattern);
 		if (regex && regex.test(path)) return rule;
@@ -199,4 +203,101 @@ export function matchesExcludeTag(
 /** Strip a single leading `#` so tag comparisons are hash-insensitive. */
 function stripHash(tag: string): string {
 	return tag.startsWith('#') ? tag.slice(1) : tag;
+}
+
+/**
+ * Read-only shape of the legacy persisted settings the #307 migration inspects.
+ * Only the per-module `excludeFolders` lists matter; everything else is ignored.
+ * Deliberately a narrow read type (not `any`) so the migration stays type-safe.
+ * Every field is optional — older/partial data may omit any of these.
+ */
+export interface LegacyModuleExclusions {
+	elaboration?: { detection?: { excludeFolders?: unknown } };
+	enrichment?: { excludeFolders?: unknown };
+	summarize?: { excludeFolders?: unknown };
+	organize?: { excludeFolders?: unknown };
+	deepDive?: { excludeFolders?: unknown };
+}
+
+/**
+ * The features that carried a legacy per-module `excludeFolders` list. `rem`
+ * mirrored `enrichment`'s list at runtime, so it joins the set. When a single
+ * folder appeared in EVERY one of these, the migrated rule collapses to
+ * `features: 'all'` (this is how the shared `templates`/`.synapse` folders
+ * broaden to all flows on upgrade); otherwise it stays scoped to exactly the
+ * features that listed it.
+ */
+const LEGACY_FOLDER_FEATURES: FeatureId[] = [
+	'elaboration',
+	'enrichment',
+	'summarize',
+	'organize',
+	'deep-dive',
+	'rem',
+];
+
+/** Coerce an unknown legacy `excludeFolders` value to a clean `string[]`. */
+function readLegacyFolders(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+}
+
+/**
+ * Canonicalize a legacy folder name into the stored `<folder>/**` form (strip a
+ * trailing slash first). The legacy matcher was `startsWith(folder + '/')` — a
+ * recursive descendant match — which `<folder>/**` reproduces exactly.
+ */
+function canonicalizeLegacyFolder(folder: string): string {
+	const trimmed = folder.trim().replace(/\/+$/, '');
+	return `${trimmed}/**`;
+}
+
+/**
+ * Build the migrated {@link ExclusionRule}[] from legacy per-module
+ * `excludeFolders` data (#307). For each module's folders (with `rem` mirroring
+ * `enrichment`), record which features listed each folder; canonicalize the
+ * folder to `<name>/**`; then emit one rule per distinct pattern —
+ * `features: 'all'` when the pattern was listed by ALL
+ * {@link LEGACY_FOLDER_FEATURES}, otherwise the specific sorted feature list.
+ * Pattern order is first-seen across the module scan, which is deterministic.
+ */
+export function buildMigratedExclusions(data: LegacyModuleExclusions): ExclusionRule[] {
+	// Preserve first-seen pattern order with a Map; track the feature set per
+	// canonical pattern.
+	const byPattern = new Map<string, Set<FeatureId>>();
+
+	const record = (folders: string[], feature: FeatureId): void => {
+		for (const folder of folders) {
+			const pattern = canonicalizeLegacyFolder(folder);
+			let set = byPattern.get(pattern);
+			if (!set) {
+				set = new Set<FeatureId>();
+				byPattern.set(pattern, set);
+			}
+			set.add(feature);
+		}
+	};
+
+	const enrichmentFolders = readLegacyFolders(data.enrichment?.excludeFolders);
+
+	record(readLegacyFolders(data.elaboration?.detection?.excludeFolders), 'elaboration');
+	record(enrichmentFolders, 'enrichment');
+	record(readLegacyFolders(data.summarize?.excludeFolders), 'summarize');
+	record(readLegacyFolders(data.organize?.excludeFolders), 'organize');
+	record(readLegacyFolders(data.deepDive?.excludeFolders), 'deep-dive');
+	// rem reused enrichment's folder list at runtime (no list of its own).
+	record(enrichmentFolders, 'rem');
+
+	const totalLegacyFeatures = LEGACY_FOLDER_FEATURES.length;
+	const rules: ExclusionRule[] = [];
+	for (const [pattern, features] of byPattern) {
+		if (features.size === totalLegacyFeatures) {
+			rules.push({ pattern, features: 'all' });
+		} else {
+			// Emit in canonical feature order for stable, comparable output.
+			const ordered = LEGACY_FOLDER_FEATURES.filter((f) => features.has(f));
+			rules.push({ pattern, features: ordered });
+		}
+	}
+	return rules;
 }

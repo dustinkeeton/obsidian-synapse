@@ -2,7 +2,7 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
-	CheckpointManager, generateId,
+	CheckpointManager, generateId, isPathExcluded, findMatchingRule,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { ImageEmbed } from './types';
@@ -34,6 +34,16 @@ export class ImageModule {
 		const activeFile = this.plugin.app.workspace.getActiveFile();
 		if (!activeFile) {
 			this.notifications.info('Open a note first to insert the OCR result');
+			return;
+		}
+
+		// Path exclusion (#307): OCR lands in the ACTIVE note. Explicit command
+		// → Notice naming the rule.
+		const rule = findMatchingRule(activeFile.path, 'image', this.getSettings());
+		if (rule) {
+			this.notifications.info(
+				`Skipped — "${activeFile.path}" is excluded by rule "${rule.pattern}"`
+			);
 			return;
 		}
 
@@ -77,6 +87,10 @@ export class ImageModule {
 		noteFile: TFile,
 		embeds: ImageEmbed[]
 	): Promise<void> {
+		// Path exclusion (#307): batch OCR into the note → silent skip, checked
+		// once for the whole note (not per embed).
+		if (isPathExcluded(noteFile.path, 'image', this.getSettings())) return;
+
 		const total = embeds.length;
 		let completed = 0;
 

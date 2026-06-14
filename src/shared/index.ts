@@ -86,8 +86,9 @@ export {
 	isPathExcluded,
 	matchesExcludeTag,
 	ALL_FEATURE_IDS,
+	buildMigratedExclusions,
 } from './exclusions';
-export type { FeatureId, ExclusionRule } from './exclusions';
+export type { FeatureId, ExclusionRule, LegacyModuleExclusions } from './exclusions';
 export { generateId, isValidCheckpointId } from './id-utils';
 export {
 	loadNodeModules,

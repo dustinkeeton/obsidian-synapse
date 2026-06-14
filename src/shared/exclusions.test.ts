@@ -3,8 +3,10 @@ import {
 	findMatchingRule,
 	isPathExcluded,
 	matchesExcludeTag,
+	buildMigratedExclusions,
 	type ExclusionRule,
 	type FeatureId,
+	type LegacyModuleExclusions,
 } from './exclusions';
 import { TFile } from '../__mocks__/obsidian';
 
@@ -217,6 +219,12 @@ describe('findMatchingRule — determinism (first match wins)', () => {
 		expect(findMatchingRule('dir/a.md', 'enrichment', settingsWith([]))).toBeNull();
 		expect(isPathExcluded('dir/a.md', 'enrichment', settingsWith([]))).toBe(false);
 	});
+
+	it('tolerates a missing/undefined exclusions list (partial settings) without throwing', () => {
+		const partial = {} as unknown as { exclusions: ExclusionRule[] };
+		expect(findMatchingRule('dir/a.md', 'enrichment', partial)).toBeNull();
+		expect(isPathExcluded('dir/a.md', 'enrichment', partial)).toBe(false);
+	});
 });
 
 describe('matchesExcludeTag', () => {
@@ -269,5 +277,105 @@ describe('matchesExcludeTag', () => {
 	it('handles a comma-separated frontmatter tags string', () => {
 		const { file, metadataCache } = fileWithTags('keep, no-enrich');
 		expect(matchesExcludeTag(file, ['no-enrich'], metadataCache as never)).toBe(true);
+	});
+});
+
+describe('buildMigratedExclusions', () => {
+	it('returns [] for empty / missing legacy data (idempotent: already-migrated data has no folders)', () => {
+		expect(buildMigratedExclusions({})).toEqual([]);
+		expect(buildMigratedExclusions({ enrichment: {} })).toEqual([]);
+		expect(buildMigratedExclusions({ enrichment: { excludeFolders: [] } })).toEqual([]);
+	});
+
+	it('collapses to features: "all" when a folder is in EVERY legacy module', () => {
+		const legacy: LegacyModuleExclusions = {
+			elaboration: { detection: { excludeFolders: ['.synapse'] } },
+			enrichment: { excludeFolders: ['.synapse'] },
+			summarize: { excludeFolders: ['.synapse'] },
+			organize: { excludeFolders: ['.synapse'] },
+			deepDive: { excludeFolders: ['.synapse'] },
+		};
+		// enrichment list also feeds rem → all 6 legacy features present.
+		expect(buildMigratedExclusions(legacy)).toEqual([
+			{ pattern: '.synapse/**', features: 'all' },
+		]);
+	});
+
+	it('canonicalizes a bare folder name to "<name>/**"', () => {
+		const legacy: LegacyModuleExclusions = {
+			summarize: { excludeFolders: ['Archive'] },
+		};
+		expect(buildMigratedExclusions(legacy)).toEqual([
+			{ pattern: 'Archive/**', features: ['summarize'] },
+		]);
+	});
+
+	it('strips a trailing slash before appending /**', () => {
+		const legacy: LegacyModuleExclusions = {
+			organize: { excludeFolders: ['Archive/'] },
+		};
+		expect(buildMigratedExclusions(legacy)).toEqual([
+			{ pattern: 'Archive/**', features: ['organize'] },
+		]);
+	});
+
+	it('keeps a custom single-module folder scoped to that feature', () => {
+		const legacy: LegacyModuleExclusions = {
+			organize: { excludeFolders: ['Personal'] },
+		};
+		expect(buildMigratedExclusions(legacy)).toEqual([
+			{ pattern: 'Personal/**', features: ['organize'] },
+		]);
+	});
+
+	it("includes 'rem' wherever enrichment listed a folder (rem mirrors enrichment)", () => {
+		const legacy: LegacyModuleExclusions = {
+			enrichment: { excludeFolders: ['Drafts'] },
+		};
+		expect(buildMigratedExclusions(legacy)).toEqual([
+			{ pattern: 'Drafts/**', features: ['enrichment', 'rem'] },
+		]);
+	});
+
+	it('merges the same folder across a partial set of modules into one scoped rule', () => {
+		const legacy: LegacyModuleExclusions = {
+			summarize: { excludeFolders: ['Notes'] },
+			organize: { excludeFolders: ['Notes'] },
+		};
+		expect(buildMigratedExclusions(legacy)).toEqual([
+			{ pattern: 'Notes/**', features: ['summarize', 'organize'] },
+		]);
+	});
+
+	it('emits one rule per distinct folder, mixing all-scope and feature-scope', () => {
+		const legacy: LegacyModuleExclusions = {
+			elaboration: { detection: { excludeFolders: ['templates'] } },
+			enrichment: { excludeFolders: ['templates'] },
+			summarize: { excludeFolders: ['templates'] },
+			organize: { excludeFolders: ['templates', 'Personal'] },
+			deepDive: { excludeFolders: ['templates'] },
+		};
+		const result = buildMigratedExclusions(legacy);
+		// `templates` is in all → 'all'; `Personal` only in organize → scoped.
+		expect(result).toContainEqual({ pattern: 'templates/**', features: 'all' });
+		expect(result).toContainEqual({ pattern: 'Personal/**', features: ['organize'] });
+		expect(result).toHaveLength(2);
+	});
+
+	it('is deterministic — same input yields equal output across calls', () => {
+		const legacy: LegacyModuleExclusions = {
+			enrichment: { excludeFolders: ['A', 'B'] },
+			organize: { excludeFolders: ['B', 'C'] },
+		};
+		expect(buildMigratedExclusions(legacy)).toEqual(buildMigratedExclusions(legacy));
+	});
+
+	it('ignores non-string / blank legacy folder entries', () => {
+		const legacy = {
+			summarize: { excludeFolders: ['Real', '', '   ', 42, null] },
+		} as unknown as LegacyModuleExclusions;
+		expect(buildMigratedExclusions(legacy)).toEqual([
+			{ pattern: 'Real/**', features: ['summarize'] },
+		]);
 	});
 });

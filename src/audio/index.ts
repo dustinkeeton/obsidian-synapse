@@ -3,6 +3,7 @@ import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
 	CheckpointManager, generateId, formatTimeRange, loadNodeModules,
+	isPathExcluded, findMatchingRule,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask, TimeRange } from '../shared';
 import { AudioEmbed } from './types';
@@ -94,6 +95,16 @@ export class AudioModule {
 			return;
 		}
 
+		// Path exclusion (#307): the transcription lands in the ACTIVE note, so
+		// check that note's path. Explicit command → Notice naming the rule.
+		const rule = findMatchingRule(activeFile.path, 'audio', this.getSettings());
+		if (rule) {
+			this.notifications.info(
+				`Skipped — "${activeFile.path}" is excluded by rule "${rule.pattern}"`
+			);
+			return;
+		}
+
 		const op = this.notifications.startOperation(
 			`Transcribing ${file.name}...`,
 			`audio-${file.path}`
@@ -161,6 +172,9 @@ export class AudioModule {
 		noteFile: TFile,
 		embeds: AudioEmbed[]
 	): Promise<void> {
+		// Path exclusion (#307): batch insert into the note → silent skip.
+		if (isPathExcluded(noteFile.path, 'audio', this.getSettings())) return;
+
 		const total = embeds.length;
 		let completed = 0;
 
@@ -271,6 +285,9 @@ export class AudioModule {
 		noteFile: TFile,
 		embeds: AudioEmbed[]
 	): Promise<void> {
+		// Path exclusion (#307): batch insert into the note → silent skip.
+		if (isPathExcluded(noteFile.path, 'audio', this.getSettings())) return;
+
 		// A single file + combine is just a normal single transcription.
 		if (embeds.length < 2) {
 			await this.transcribeAndInsert(noteFile, embeds);

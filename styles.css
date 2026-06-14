@@ -1019,3 +1019,18 @@
 .synapse-setting-required .setting-item-name {
   font-weight: var(--font-semibold);
 }
+
+/* ── Exclusions: per-feature checkbox rows (#307) ──
+ * Indents and de-emphasizes the 12 per-feature toggles revealed under a
+ * feature-scoped exclusion rule, so they read as children of the rule above
+ * rather than as top-level settings. */
+.setting-item.synapse-exclusion-feature-row {
+  padding-left: 24px;
+  border-top: none;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.synapse-exclusion-feature-row .setting-item-name {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}

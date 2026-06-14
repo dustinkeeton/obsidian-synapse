@@ -54,17 +54,4 @@ export function renderElaborationSettings(ctx: SettingsSectionContext): void {
 					await plugin.saveSettings();
 				})
 		);
-
-	new Setting(elaborationBody)
-		.setName('Excluded folders')
-		.setDesc('Comma-separated list of folders to skip')
-		.addText((text) =>
-			text
-				.setValue(plugin.settings.elaboration.detection.excludeFolders.join(', '))
-				.onChange(async (value) => {
-					plugin.settings.elaboration.detection.excludeFolders =
-						value.split(',').map((s) => s.trim()).filter(Boolean);
-					await plugin.saveSettings();
-				})
-		);
 }
