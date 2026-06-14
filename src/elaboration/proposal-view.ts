@@ -1,4 +1,5 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { fireAndForget } from '../shared';
 import { Proposal } from './types';
 
 export const PROPOSAL_VIEW_TYPE = 'synapse-proposal-review';
@@ -50,6 +51,19 @@ export class ProposalReviewView extends ItemView {
 		this.render();
 	}
 
+	/**
+	 * Register a synchronous click listener that wraps an async callback in
+	 * {@link fireAndForget}, so a failed accept/reject no longer fails silently.
+	 * The listener returns void (never the callback's promise), which satisfies
+	 * `no-misused-promises`. Mirrors the helper added to the unified view in
+	 * PR3 for the same #297 promise-handling pass.
+	 */
+	private onClick(el: HTMLElement, fn: () => Promise<unknown>, label: string): void {
+		el.addEventListener('click', () => {
+			fireAndForget(fn(), label);
+		});
+	}
+
 	private render(): void {
 		const { contentEl } = this;
 		contentEl.empty();
@@ -97,10 +111,10 @@ export class ProposalReviewView extends ItemView {
 				viewBtn.addEventListener('click', () => this.onDetail(proposal.id));
 
 				const acceptBtn = actions.createEl('button', { text: 'Accept' });
-				acceptBtn.addEventListener('click', () => this.onAccept(proposal.id));
+				this.onClick(acceptBtn, () => this.onAccept(proposal.id), 'Accept proposal');
 
 				const rejectBtn = actions.createEl('button', { text: 'Reject' });
-				rejectBtn.addEventListener('click', () => this.onReject(proposal.id));
+				this.onClick(rejectBtn, () => this.onReject(proposal.id), 'Reject proposal');
 			}
 		}
 	}

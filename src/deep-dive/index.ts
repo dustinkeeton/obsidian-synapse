@@ -3,7 +3,7 @@ import { SynapseSettings, DeepDiveNestingMode } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	NotificationManager, readNote, writeNote, wordCount,
-	CheckpointManager, generateId,
+	CheckpointManager, generateId, fireAndForget,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { ContentAnalyzer, DirectoryMatcher } from '../organize';
@@ -650,7 +650,11 @@ export class DeepDiveModule {
 		for (const task of tasks) {
 			switch (task.type) {
 				case 'refresh-sidebar-view':
-					this.onViewRefreshNeeded?.();
+					if (this.onViewRefreshNeeded) {
+						fireAndForget(this.onViewRefreshNeeded(), 'Refresh proposal view', {
+							background: true,
+						});
+					}
 					break;
 				default:
 					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);

@@ -3,7 +3,7 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder,
-	writeNote, generateOrganizeSummary, CheckpointManager, generateId,
+	writeNote, generateOrganizeSummary, CheckpointManager, generateId, fireAndForget,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import type { MoveRecord } from '../shared';
@@ -72,7 +72,13 @@ export class OrganizeModule {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
 					this.plugin.app,
-					(folder) => this.scanDirectory(folder.isRoot() ? undefined : folder.path),
+					(folder) => {
+						fireAndForget(
+							this.scanDirectory(folder.isRoot() ? undefined : folder.path),
+							'Scan directory for organization',
+							{ notifications: this.notifications },
+						);
+					},
 					defaultPath
 				).open();
 			},
@@ -704,7 +710,11 @@ export class OrganizeModule {
 		for (const task of tasks) {
 			switch (task.type) {
 				case 'refresh-sidebar-view':
-					this.onViewRefreshNeeded?.();
+					if (this.onViewRefreshNeeded) {
+						fireAndForget(this.onViewRefreshNeeded(), 'Refresh proposal view', {
+							background: true,
+						});
+					}
 					break;
 				default:
 					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
