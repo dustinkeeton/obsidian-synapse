@@ -2,6 +2,7 @@ import { requestUrl } from 'obsidian';
 import { sanitizeUrl } from './validation';
 import { withRetry } from './api-utils';
 import { detectPlatform } from './url-detector';
+import { isRecord, parseJson } from './json-utils';
 
 const FETCH_TIMEOUT_MS = 30_000;
 
@@ -9,6 +10,49 @@ export interface TweetContent {
 	author: string;
 	text: string;
 	url: string;
+}
+
+/**
+ * Twitter / fxtwitter oEmbed response — an HTML blockquote plus author handle.
+ * Both fields are best-effort: a missing `html` yields empty tweet text and a
+ * missing `author_name` falls back to "Unknown" (see {@link fetchViaOEmbed}),
+ * so neither is required.
+ */
+interface OEmbedResponse {
+	html?: string;
+	author_name?: string;
+}
+
+/**
+ * vxtwitter JSON response — structured `{ user_name, text }`. Both are
+ * best-effort: a missing `user_name` falls back to "Unknown" and a missing
+ * `text` to an empty string (see {@link fetchViaVxTwitter}).
+ */
+interface VxTwitterResponse {
+	user_name?: string;
+	text?: string;
+}
+
+/** Narrow unknown oEmbed JSON, coercing each consumed field to a string. */
+function asOEmbedResponse(value: unknown): OEmbedResponse {
+	if (!isRecord(value)) {
+		return {};
+	}
+	return {
+		html: typeof value.html === 'string' ? value.html : undefined,
+		author_name: typeof value.author_name === 'string' ? value.author_name : undefined,
+	};
+}
+
+/** Narrow unknown vxtwitter JSON, coercing each consumed field to a string. */
+function asVxTwitterResponse(value: unknown): VxTwitterResponse {
+	if (!isRecord(value)) {
+		return {};
+	}
+	return {
+		user_name: typeof value.user_name === 'string' ? value.user_name : undefined,
+		text: typeof value.text === 'string' ? value.text : undefined,
+	};
 }
 
 /**
@@ -80,9 +124,11 @@ async function fetchViaOEmbed(url: string, endpoint: string): Promise<TweetConte
 		timeout,
 	]);
 
-	const data = JSON.parse(response.text);
+	const data = asOEmbedResponse(parseJson(response.text));
 
-	const blockquoteMatch = (data.html as string).match(/<blockquote[^>]*><p[^>]*>([\s\S]*?)<\/p>/);
+	// A missing/non-string `html` yields no match → empty tweet text, instead of
+	// throwing on `.match` of undefined (preserves graceful degradation).
+	const blockquoteMatch = data.html?.match(/<blockquote[^>]*><p[^>]*>([\s\S]*?)<\/p>/);
 	const tweetText = blockquoteMatch
 		? blockquoteMatch[1]
 			.replace(/<br\s*\/?>/g, '\n')
@@ -129,7 +175,7 @@ async function fetchViaVxTwitter(url: string): Promise<TweetContent> {
 		timeout,
 	]);
 
-	const data = JSON.parse(response.text);
+	const data = asVxTwitterResponse(parseJson(response.text));
 
 	const author = data.user_name ? `@${data.user_name}` : 'Unknown';
 	const text = data.text ?? '';
