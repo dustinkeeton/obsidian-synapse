@@ -4,12 +4,20 @@ import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 
 const mockComplete = vi.fn();
 
-vi.mock('../shared', () => ({
-	AIClient: class MockAIClient {
-		complete = mockComplete;
-	},
-	sanitizeAIResponse: (text: string) => text,
-}));
+vi.mock('../shared', async () => {
+	// Re-export the real parseJson — getTopicsFromAI now parses via parseJson
+	// (returning unknown) before narrowing, so the stub must provide it.
+	const { parseJson } = await vi.importActual<typeof import('../shared/json-utils')>(
+		'../shared/json-utils'
+	);
+	return {
+		AIClient: class MockAIClient {
+			complete = mockComplete;
+		},
+		sanitizeAIResponse: (text: string) => text,
+		parseJson,
+	};
+});
 
 vi.mock('./weight-calculator', () => ({
 	computeProximityWeight: () => 0.8,

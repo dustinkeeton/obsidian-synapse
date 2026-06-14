@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse } from '../shared';
+import { AIClient, isRecord, parseJson, sanitizeAIResponse } from '../shared';
 import { ExtractedTopic } from './types';
 
 /**
@@ -57,17 +57,18 @@ ${content.slice(0, 4000)}`;
 			const sanitized = sanitizeAIResponse(response);
 			// Strip markdown code fences if present
 			const cleaned = sanitized.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
-			const parsed = JSON.parse(cleaned);
+			const parsed = parseJson(cleaned);
 
 			if (!Array.isArray(parsed)) return [];
 
 			return parsed
-				.filter((t: Record<string, unknown>) =>
+				.filter((t: unknown): t is Record<string, unknown> =>
+					isRecord(t) &&
 					typeof t.title === 'string' &&
 					typeof t.description === 'string' &&
 					typeof t.relevance === 'number'
 				)
-				.map((t: Record<string, unknown>) => ({
+				.map(t => ({
 					title: String(t.title).replace(/[<>]/g, ''),
 					description: String(t.description).replace(/[<>]/g, ''),
 					relevance: Math.max(0, Math.min(1, Number(t.relevance))),

@@ -1,5 +1,5 @@
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse } from '../shared';
+import { AIClient, isRecord, parseJson, sanitizeAIResponse } from '../shared';
 import { ExternalLinkCandidate, FrontmatterEnrichment } from './types';
 
 /** Allowlisted frontmatter key pattern: lowercase alphanumeric, hyphens, underscores. Rejects __proto__, constructor, etc. */
@@ -76,12 +76,12 @@ ${existingLinks.length > 0 ? existingLinks.join('\n') : '(none)'}
 			const response = await this.aiClient.complete(prompt, systemPrompt);
 			const sanitized = sanitizeAIResponse(response);
 			const cleaned = sanitized.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
-			const parsed = JSON.parse(cleaned);
+			const parsed = parseJson(cleaned);
 			if (Array.isArray(parsed)) {
 				return parsed
 					.filter(
-						(item): item is ExternalLinkCandidate =>
-							typeof item === 'object' &&
+						(item: unknown): item is ExternalLinkCandidate =>
+							isRecord(item) &&
 							typeof item.url === 'string' &&
 							typeof item.title === 'string' &&
 							typeof item.reason === 'string' &&
@@ -134,12 +134,12 @@ ${existingKeys.length > 0 ? existingKeys.join(', ') : '(none)'}
 			const response = await this.aiClient.complete(prompt, systemPrompt);
 			const sanitized = sanitizeAIResponse(response);
 			const cleaned = sanitized.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
-			const parsed = JSON.parse(cleaned);
+			const parsed = parseJson(cleaned);
 			if (Array.isArray(parsed)) {
 				return parsed
 					.filter(
-						(item): item is FrontmatterEnrichment =>
-							typeof item === 'object' &&
+						(item: unknown): item is FrontmatterEnrichment =>
+							isRecord(item) &&
 							typeof item.key === 'string' &&
 							item.value !== undefined &&
 							(item.action === 'add' || item.action === 'merge')

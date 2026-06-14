@@ -2,6 +2,7 @@ import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { ChatMessage, ContentBlock, TextContentBlock } from './types';
 import { redactSecrets } from './redact';
+import { isRecord } from './json-utils';
 
 // Re-exported for back-compat: existing callers and tests import `redactSecrets`
 // from this module. The implementation now lives in ./redact (single source of
@@ -25,8 +26,12 @@ async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse
 	if (response.status >= 400) {
 		let detail: string;
 		try {
-			const body = response.json;
-			detail = body?.error?.message ?? JSON.stringify(body);
+			// response.json is `any` (Obsidian) and the error envelope shape
+			// varies by provider; narrow before reaching for `.error.message`
+			// so a non-standard body falls back to a stringified dump instead
+			// of throwing while we build the error message.
+			const body: unknown = response.json;
+			detail = extractErrorMessage(body) ?? JSON.stringify(body);
 		} catch {
 			detail = response.text || `status ${response.status}`;
 		}
@@ -34,6 +39,21 @@ async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse
 		throw new Error(`API error (${response.status}): ${redactSecrets(detail)}`);
 	}
 	return response;
+}
+
+/**
+ * Pull a human-readable message out of an error envelope of unknown shape.
+ *
+ * OpenAI/Anthropic/Gemini all wrap errors as `{ error: { message: string } }`.
+ * Returns the message when present, otherwise `null` so the caller can fall
+ * back to a stringified body. Tolerant by design — error responses are exactly
+ * where shapes are least predictable.
+ */
+function extractErrorMessage(body: unknown): string | null {
+	if (isRecord(body) && isRecord(body.error) && typeof body.error.message === 'string') {
+		return body.error.message;
+	}
+	return null;
 }
 
 /**
@@ -107,11 +127,17 @@ interface GeminiResponseJson {
  * error for those shapes instead. Shared by the AI client and the audio
  * transcriber (which must not return a silently empty transcript).
  */
-export function extractGeminiResponseText(json: GeminiResponseJson): string {
-	const candidate = json?.candidates?.[0];
+export function extractGeminiResponseText(json: unknown): string {
+	// `requestUrl().json` is `any`; narrow to the known optional shape before
+	// access. A non-object body simply has no candidates and falls through to
+	// the descriptive "returned no text" error below. The cast is sound: every
+	// field is optional and read via optional chaining, so a mismatch surfaces
+	// as a thrown error rather than an unchecked access.
+	const response: GeminiResponseJson = isRecord(json) ? (json as GeminiResponseJson) : {};
+	const candidate = response.candidates?.[0];
 	const parts = candidate?.content?.parts;
 	if (!parts || parts.length === 0) {
-		const blockReason = json?.promptFeedback?.blockReason;
+		const blockReason = response.promptFeedback?.blockReason;
 		if (blockReason) {
 			throw new Error(`Gemini response blocked (${blockReason})`);
 		}
@@ -126,6 +152,82 @@ export function extractGeminiResponseText(json: GeminiResponseJson): string {
 		);
 	}
 	return parts.map(p => p.text ?? '').join('');
+}
+
+/** The subset of an OpenAI chat-completions response needed to extract text. */
+interface OpenAIChatResponse {
+	choices?: Array<{ message?: { content?: string } }>;
+}
+
+/** The subset of an Anthropic messages response needed to extract text. */
+interface AnthropicMessageResponse {
+	content?: Array<{ type?: string; text?: string }>;
+}
+
+/** The subset of an Ollama chat response needed to extract text. */
+interface OllamaChatResponse {
+	message?: { content?: string };
+}
+
+/**
+ * Render an unknown response shape into a short, redacted string for error
+ * messages. Truncated so a large/binary body can't bloat the thrown error.
+ */
+function briefShape(json: unknown): string {
+	let s: string;
+	try {
+		s = typeof json === 'string' ? json : JSON.stringify(json);
+	} catch {
+		s = String(json);
+	}
+	s = redactSecrets(s ?? 'undefined');
+	return s.length > 200 ? `${s.slice(0, 200)}…` : s;
+}
+
+/**
+ * Extract the assistant text from an OpenAI chat-completions response.
+ * `requestUrl().json` is `any`, so an error-shaped or malformed body would
+ * otherwise throw an opaque `TypeError` on `choices[0].message.content`.
+ * Throw a descriptive error instead.
+ */
+export function extractOpenAIResponseText(json: unknown): string {
+	const content = (json as OpenAIChatResponse | null)?.choices?.[0]?.message?.content;
+	if (typeof content !== 'string') {
+		throw new Error(`Unexpected OpenAI response: ${briefShape(json)}`);
+	}
+	return content;
+}
+
+/**
+ * Extract the text from an Anthropic messages response. Concatenates the text
+ * of every `text` block (Anthropic may return multiple content blocks). Throws
+ * a descriptive error when no text block is present instead of letting an
+ * opaque `TypeError` escape from `content[0].text`.
+ */
+export function extractAnthropicResponseText(json: unknown): string {
+	const blocks = (json as AnthropicMessageResponse | null)?.content;
+	if (Array.isArray(blocks)) {
+		const text = blocks
+			.filter(b => b?.type === 'text' && typeof b.text === 'string')
+			.map(b => b.text)
+			.join('');
+		if (text.length > 0) {
+			return text;
+		}
+	}
+	throw new Error(`Unexpected Anthropic response: ${briefShape(json)}`);
+}
+
+/**
+ * Extract the assistant text from an Ollama chat response. Throws a descriptive
+ * error instead of an opaque `TypeError` on `message.content` for a bad shape.
+ */
+export function extractOllamaResponseText(json: unknown): string {
+	const content = (json as OllamaChatResponse | null)?.message?.content;
+	if (typeof content !== 'string') {
+		throw new Error(`Unexpected Ollama response: ${briefShape(json)}`);
+	}
+	return content;
 }
 
 /**
@@ -218,7 +320,7 @@ export class AIClient {
 				temperature: ai.temperature,
 			}),
 		});
-		return response.json.choices[0].message.content;
+		return extractOpenAIResponseText(response.json);
 	}
 
 	private async callAnthropic(messages: ChatMessage[]): Promise<string> {
@@ -254,7 +356,7 @@ export class AIClient {
 			},
 			body: JSON.stringify(body),
 		});
-		return response.json.content[0].text;
+		return extractAnthropicResponseText(response.json);
 	}
 
 	private async callGemini(messages: ChatMessage[]): Promise<string> {
@@ -330,6 +432,6 @@ export class AIClient {
 				stream: false,
 			}),
 		});
-		return response.json.message.content;
+		return extractOllamaResponseText(response.json);
 	}
 }

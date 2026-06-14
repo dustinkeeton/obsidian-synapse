@@ -1,6 +1,6 @@
 import { App, TFile, getAllTags } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, parseFrontmatter, sanitizeAIResponse, withRetry } from '../shared';
+import { AIClient, isRecord, parseFrontmatter, parseJson, sanitizeAIResponse, withRetry } from '../shared';
 import { ContentAnalysis, NoteTopic } from './types';
 
 const SYSTEM_PROMPT = `You are a note organization assistant. Given the content of a note, determine its primary topics/categories.
@@ -114,16 +114,15 @@ export class ContentAnalyzer {
 		}
 
 		try {
-			const parsed = JSON.parse(cleaned.slice(arrayStart, arrayEnd + 1));
+			const parsed = parseJson(cleaned.slice(arrayStart, arrayEnd + 1));
 			if (!Array.isArray(parsed)) return [];
 
 			return parsed
 				.filter(
 					(t: unknown): t is { label: string; confidence: number } =>
-						typeof t === 'object' &&
-						t !== null &&
-						typeof (t as Record<string, unknown>).label === 'string' &&
-						typeof (t as Record<string, unknown>).confidence === 'number'
+						isRecord(t) &&
+						typeof t.label === 'string' &&
+						typeof t.confidence === 'number'
 				)
 				.map(t => ({
 					label: t.label.toLowerCase().trim(),

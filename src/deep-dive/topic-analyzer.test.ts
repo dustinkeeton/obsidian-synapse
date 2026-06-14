@@ -3,12 +3,21 @@ import { TopicAnalyzer } from './topic-analyzer';
 
 // ── Mock AI Client ──
 const mockComplete = vi.fn();
-vi.mock('../shared', () => ({
-	AIClient: class {
-		complete = mockComplete;
-	},
-	sanitizeAIResponse: (text: string) => text,
-}));
+vi.mock('../shared', async () => {
+	// Re-export the real JSON helpers — parseTopics now narrows the parsed
+	// response via parseJson/isRecord, so the stub must provide them.
+	const { parseJson, isRecord } = await vi.importActual<typeof import('../shared/json-utils')>(
+		'../shared/json-utils'
+	);
+	return {
+		AIClient: class {
+			complete = mockComplete;
+		},
+		sanitizeAIResponse: (text: string) => text,
+		parseJson,
+		isRecord,
+	};
+});
 
 // ── Mock Obsidian App ──
 const mockFiles = [
