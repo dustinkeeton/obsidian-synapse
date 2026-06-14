@@ -2,7 +2,7 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
-	CheckpointManager, generateId, formatTimeRange,
+	CheckpointManager, generateId, formatTimeRange, loadNodeModules,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask, TimeRange } from '../shared';
 import { AudioEmbed } from './types';
@@ -103,9 +103,9 @@ export class AudioModule {
 
 			// Clip audio to time range if specified (requires ffmpeg via AudioExtractor)
 			if (timeRange && this.extractor) {
-				const os = require('os') as typeof import('os');
-				const path = require('path') as typeof import('path');
-				const fs = require('fs') as typeof import('fs');
+				// Explicit desktop assertion: loadNodeModules throws off-desktop
+				// rather than relying solely on this.extractor being set.
+				const { os, path, fs } = loadNodeModules();
 
 				const tempPath = path.join(os.tmpdir(), `synapse-clip-src-${Date.now()}.mp3`);
 				await fs.promises.writeFile(tempPath, Buffer.from(data));
@@ -416,9 +416,8 @@ export class AudioModule {
 		if (!this.extractor) {
 			throw new Error('Combining audio requires ffmpeg (desktop only)');
 		}
-		const os = require('os') as typeof import('os');
-		const path = require('path') as typeof import('path');
-		const fs = require('fs') as typeof import('fs');
+		// Explicit desktop assertion: loadNodeModules throws off-desktop.
+		const { os, path, fs } = loadNodeModules();
 
 		const tempInputs: string[] = [];
 		let combinedPath: string | null = null;

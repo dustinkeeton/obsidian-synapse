@@ -21,7 +21,6 @@
 		"@eslint/js": "^9.39.4",
 		"@types/node": "^22.0.0",
 		"@vitest/coverage-v8": "^4.1.8",
-		"builtin-modules": "^4.0.0",
 		"esbuild": "^0.28.1",
 		"eslint": "^9.39.4",
 		"obsidian": "1.7.2",

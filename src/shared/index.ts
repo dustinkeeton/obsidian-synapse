@@ -82,6 +82,13 @@ export type {
 	SettingsSectionContextOptions,
 } from './settings-section';
 export { generateId, isValidCheckpointId } from './id-utils';
+export {
+	loadNodeModules,
+	assertDesktop,
+	shellEnv,
+	DesktopOnlyError,
+} from './node-loader';
+export type { NodeModules } from './node-loader';
 export { CheckpointManager } from './checkpoint-manager';
 export type {
 	Checkpoint,
