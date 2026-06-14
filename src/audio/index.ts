@@ -114,7 +114,7 @@ export class AudioModule {
 					tempPath, timeRange.startSeconds, timeRange.endSeconds
 				);
 
-				data = (await fs.promises.readFile(clippedPath)).buffer as ArrayBuffer;
+				data = (await fs.promises.readFile(clippedPath)).buffer;
 
 				// Clean up temp files
 				try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
@@ -173,7 +173,7 @@ export class AudioModule {
 		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({
 			id: `audio-${i}-${e.fileName}`,
 			label: e.fileName,
-			payload: { fileName: e.fileName, line: e.line } as Record<string, unknown>,
+			payload: { fileName: e.fileName, line: e.line },
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'audio',
@@ -435,7 +435,7 @@ export class AudioModule {
 			const data = buf.buffer.slice(
 				buf.byteOffset,
 				buf.byteOffset + buf.byteLength
-			) as ArrayBuffer;
+			);
 			return { data, sizeBytes: buf.byteLength };
 		} finally {
 			for (const t of tempInputs) {

@@ -737,7 +737,7 @@ export class SummarizeModule {
 		const checkpointItems: CheckpointWorkItem[] = filesWithTargets.map((ft, i) => ({
 			id: `sum-${i}-${ft.file.path}`,
 			label: ft.file.path,
-			payload: { filePath: ft.file.path } as Record<string, unknown>,
+			payload: { filePath: ft.file.path },
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'summarize',

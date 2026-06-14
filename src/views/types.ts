@@ -35,11 +35,17 @@ export type UnifiedItem =
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 
 // Compile-time guard: PROPOSAL_KINDS must cover exactly UnifiedItem['kind'].
-// Both assignments must type-check; if the two ever diverge, this errors.
+// Two separate, distinct assertions (not an intersection — that would make the
+// constituents duplicate, since both conditionals resolve to `true`). Each
+// `const ... : true = ...` fails to type-check if its direction diverges: the
+// first if a UnifiedItem kind is missing from PROPOSAL_KINDS, the second if
+// PROPOSAL_KINDS lists a kind not in UnifiedItem.
 type _AssertKindsCoverUnion = UnifiedItem['kind'] extends ProposalKind ? true : never;
 type _AssertUnionCoversKinds = ProposalKind extends UnifiedItem['kind'] ? true : never;
-const _kindsMatchUnion: _AssertKindsCoverUnion & _AssertUnionCoversKinds = true;
-void _kindsMatchUnion;
+const _kindsCoverUnion: _AssertKindsCoverUnion = true;
+const _unionCoversKinds: _AssertUnionCoversKinds = true;
+void _kindsCoverUnion;
+void _unionCoversKinds;
 
 export interface UnifiedViewCallbacks {
 	// Elaboration

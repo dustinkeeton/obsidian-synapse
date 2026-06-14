@@ -139,7 +139,7 @@ export class EnrichmentDetailModal extends Modal {
 			const label = config.getLabel(item);
 
 			const row = section.createDiv({ cls: 'synapse-enrichment-item' });
-			const checkbox = row.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
+			const checkbox = row.createEl('input', { type: 'checkbox' });
 			checkbox.checked = config.selectedSet.has(id);
 			checkbox.addEventListener('change', () => {
 				if (checkbox.checked) {

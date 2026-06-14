@@ -89,7 +89,7 @@ export class ImageModule {
 		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({
 			id: `image-${i}-${e.fileName}`,
 			label: e.fileName,
-			payload: { fileName: e.fileName, line: e.line } as Record<string, unknown>,
+			payload: { fileName: e.fileName, line: e.line },
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'image',

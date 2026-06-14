@@ -320,7 +320,7 @@ export class DeepDiveModule {
 					topic,
 					depth: 0,
 					ancestorTopics: [file.basename],
-				} as Record<string, unknown>,
+				},
 			}));
 
 		const checkpoint = await this.checkpointManager.create({

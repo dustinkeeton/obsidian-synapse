@@ -242,7 +242,7 @@ export class ElaborationModule {
 		const checkpointItems: CheckpointWorkItem[] = detected.map((d, i) => ({
 			id: `elab-${i}-${d.notePath}`,
 			label: d.notePath,
-			payload: { notePath: d.notePath } as Record<string, unknown>,
+			payload: { notePath: d.notePath },
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'elaboration',

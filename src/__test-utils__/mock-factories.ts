@@ -10,9 +10,22 @@ export function mockFile(path: string): TFile {
 }
 
 /**
- * Create a mock Obsidian App with spy functions on vault, metadataCache, workspace.
+ * Shape returned by {@link createMockApp}. Naming it (rather than leaning on
+ * inference alone) pins the factory's public contract and gives consumers a
+ * stable, non-`any` type to reference. The members are the spy-backed mock
+ * sub-objects; see the factory body for the concrete spy set.
  */
-export function createMockApp() {
+export interface MockApp {
+	vault: MockVault;
+	metadataCache: MockMetadataCache;
+	workspace: MockWorkspace;
+}
+
+type MockVault = ReturnType<typeof buildMockVault>;
+type MockMetadataCache = ReturnType<typeof buildMockMetadataCache>;
+type MockWorkspace = ReturnType<typeof buildMockWorkspace>;
+
+function buildMockVault() {
 	const adapter = {
 		read: vi.fn().mockResolvedValue(''),
 		write: vi.fn().mockResolvedValue(undefined),
@@ -21,14 +34,20 @@ export function createMockApp() {
 		list: vi.fn().mockResolvedValue({ files: [], folders: [] }),
 	};
 
-	const vault = {
-		read: vi.fn().mockResolvedValue(''),
+	// Hoist `read` so `process` can call it WITHOUT referencing the vault object
+	// inside its own initializer. That self-reference made the vault const infer
+	// as implicit `any` (its type depended on itself); reading through the
+	// hoisted spy breaks the cycle so the vault infers a concrete type.
+	const read = vi.fn<(file: TFile) => Promise<string>>().mockResolvedValue('');
+
+	return {
+		read,
 		modify: vi.fn().mockResolvedValue(undefined),
 		// Mimics Obsidian's atomic read -> transform -> write. The callback is
 		// synchronous and receives the file's fresh content; its return value is
 		// the new content. Returns the new content like the real API.
 		process: vi.fn(async (file: TFile, fn: (data: string) => string) => {
-			const data = await vault.read(file);
+			const data = await read(file);
 			return fn(data);
 		}),
 		create: vi.fn().mockResolvedValue(new TFile()),
@@ -39,20 +58,33 @@ export function createMockApp() {
 		readBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
 		adapter,
 	};
+}
 
-	const metadataCache = {
+function buildMockMetadataCache() {
+	return {
 		getFileCache: vi.fn().mockReturnValue(null),
 		getCache: vi.fn().mockReturnValue(null),
 		getFirstLinkpathDest: vi.fn().mockReturnValue(null),
 	};
+}
 
-	const workspace = {
+function buildMockWorkspace() {
+	return {
 		getLeavesOfType: vi.fn().mockReturnValue([]),
 		getRightLeaf: vi.fn().mockReturnValue(null),
 		revealLeaf: vi.fn(),
 	};
+}
 
-	return { vault, metadataCache, workspace };
+/**
+ * Create a mock Obsidian App with spy functions on vault, metadataCache, workspace.
+ */
+export function createMockApp(): MockApp {
+	return {
+		vault: buildMockVault(),
+		metadataCache: buildMockMetadataCache(),
+		workspace: buildMockWorkspace(),
+	};
 }
 
 /**
