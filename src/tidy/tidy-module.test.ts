@@ -60,12 +60,17 @@ describe('TidyModule', () => {
 			create: vi.fn().mockResolvedValue(new TFile()),
 			createFolder: vi.fn().mockResolvedValue(undefined),
 			getAbstractFileByPath: vi.fn().mockReturnValue(null),
-			delete: vi.fn().mockResolvedValue(undefined),
 			adapter: mockAdapter,
 		};
 
+		// Snapshot cleanup goes through FileManager.trashFile (recoverable),
+		// not vault.delete (permanent).
+		const fileManager: any = {
+			trashFile: vi.fn().mockResolvedValue(undefined),
+		};
+
 		mockPlugin = {
-			app: { vault },
+			app: { vault, fileManager },
 			addCommand: vi.fn(),
 			registerEvent: vi.fn(),
 		};
@@ -288,7 +293,7 @@ describe('TidyModule', () => {
 			await module.onload();
 			await (module as any).undoTidy(file);
 
-			expect(mockPlugin.app.vault.delete).toHaveBeenCalled();
+			expect(mockPlugin.app.fileManager.trashFile).toHaveBeenCalled();
 		});
 	});
 });

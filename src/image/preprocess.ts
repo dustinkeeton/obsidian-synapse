@@ -81,9 +81,11 @@ export async function preprocessImage(
 }
 
 function canUseCanvas(): boolean {
+	// `createEl` is Obsidian's global element factory (creates on the active
+	// document). The image decode path additionally needs createImageBitmap or
+	// the Image constructor; in non-DOM test envs lacking both, degrade.
 	return (
-		typeof activeDocument !== 'undefined' &&
-		typeof activeDocument.createElement === 'function' &&
+		typeof createEl === 'function' &&
 		(typeof createImageBitmap === 'function' || typeof Image !== 'undefined')
 	);
 }
@@ -195,7 +197,10 @@ async function rasterizeToBuffer(
 	outputType: string,
 	quality: number
 ): Promise<ArrayBuffer | null> {
-	const canvas = activeDocument.createElement('canvas');
+	// Obsidian's global createEl returns a typed HTMLCanvasElement. The canvas
+	// is offscreen (never appended), so popout/activeDocument handling (#298) is
+	// unaffected.
+	const canvas = createEl('canvas');
 	canvas.width = width;
 	canvas.height = height;
 

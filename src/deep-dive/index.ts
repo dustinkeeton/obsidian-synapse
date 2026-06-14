@@ -527,7 +527,9 @@ export class DeepDiveModule {
 			const sPath = syllabusPath(run.rootNotePath, this.getSettings().deepDive.noteOutputFolder);
 			const existingSyllabus = this.plugin.app.vault.getAbstractFileByPath(normalizePath(sPath));
 			if (existingSyllabus instanceof TFile) {
-				await this.plugin.app.vault.delete(existingSyllabus);
+				// trashFile honors the user's "Deleted files" preference so the
+				// syllabus is recoverable rather than permanently deleted.
+				await this.plugin.app.fileManager.trashFile(existingSyllabus);
 			}
 			return;
 		}

@@ -39,8 +39,9 @@ export function defaultFormatValue(value: number): string {
  * Adds an enhanced slider to an Obsidian Setting with min/max labels,
  * a live current-value display, and optional tick marks.
  *
- * This wraps Obsidian's native `addSlider` with extra DOM elements since
- * the built-in SliderComponent only supports `setDynamicTooltip()`.
+ * This wraps Obsidian's native `addSlider` with extra DOM elements. The live
+ * value is shown in an always-visible inline badge (rendered below), so the
+ * built-in hover-only `setDynamicTooltip()` is intentionally not used.
  *
  * @param setting - The Obsidian Setting instance to augment.
  * @param options - Configuration for the slider.
@@ -61,7 +62,7 @@ export function addEnhancedSlider(
 	} = options;
 
 	setting.addSlider((slider: SliderComponent) => {
-		slider.setLimits(min, max, step).setValue(value).setDynamicTooltip();
+		slider.setLimits(min, max, step).setValue(value);
 
 		// Build enhanced wrapper inside the Setting's controlEl.
 		// The slider's sliderEl lives inside controlEl; we wrap it

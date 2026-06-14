@@ -326,9 +326,14 @@
  * ToggleComponent. Strip the Setting's default block layout/border/padding so
  * it sits inline in the header next to the title.
  */
-.synapse-accordion-toggle-setting {
-  border-top: none !important;
-  padding: 0 !important;
+/*
+ * Compound `.setting-item.synapse-accordion-toggle-setting` selector wins on
+ * specificity over Obsidian's `.setting-item` defaults without needing
+ * `!important` (both classes co-occur on the Setting's settingEl).
+ */
+.setting-item.synapse-accordion-toggle-setting {
+  border-top: none;
+  padding: 0;
   margin: 0;
 }
 
@@ -390,16 +395,25 @@
 
 /* ── Notification toasts (severity + tracked operations) ── */
 
-.synapse-notice {
+/*
+ * Compound `.notice.synapse-notice` selector beats core `.notice` padding on
+ * specificity without `!important` (both classes co-occur on the toast el).
+ */
+.notice.synapse-notice {
   border-left: 3px solid var(--text-muted);
-  padding-left: 10px !important;
+  padding-left: 10px;
   transition: border-color 0.3s ease;
 }
-.synapse-notice--info     { border-left-color: var(--text-muted); }
-.synapse-notice--progress { border-left-color: var(--interactive-accent); }
-.synapse-notice--success  { border-left-color: var(--color-green); }
-.synapse-notice--warning  { border-left-color: var(--color-yellow); }
-.synapse-notice--error    { border-left-color: var(--color-red); }
+/*
+ * Severity colors. Compounded with `.notice` so they match the base
+ * `.notice.synapse-notice` specificity (0,2,0) and win on source order —
+ * otherwise the base `border-left` shorthand would override the accent color.
+ */
+.notice.synapse-notice--info     { border-left-color: var(--text-muted); }
+.notice.synapse-notice--progress { border-left-color: var(--interactive-accent); }
+.notice.synapse-notice--success  { border-left-color: var(--color-green); }
+.notice.synapse-notice--warning  { border-left-color: var(--color-yellow); }
+.notice.synapse-notice--error    { border-left-color: var(--color-red); }
 
 /* Running operation layout */
 .synapse-notice-op {
@@ -566,15 +580,20 @@
   font-size: 13px;
   color: var(--text-muted);
 }
+/*
+ * No underline at rest; underline + accent color on hover. We transition only
+ * `color` (text-decoration-color animation has partial support on older
+ * Obsidian/Electron, flagged by the community CSS lint). Loses just the
+ * underline fade-in animation.
+ */
 .synapse-note-link {
   cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: transparent;
-  transition: text-decoration-color 0.15s, color 0.15s;
+  text-decoration: none;
+  transition: color 0.15s;
 }
 .synapse-note-link:hover {
   color: var(--text-accent);
-  text-decoration-color: var(--text-accent);
+  text-decoration: underline;
 }
 .synapse-empty {
   color: var(--text-muted);
