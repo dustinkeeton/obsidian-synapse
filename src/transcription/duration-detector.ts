@@ -1,6 +1,27 @@
 import { Platform, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
-import { sanitizePath, sanitizeUrl } from '../shared';
+import { sanitizePath, sanitizeUrl, isRecord, parseJson } from '../shared';
+
+/**
+ * The subset of yt-dlp `--dump-json` output this detector consumes. Both fields
+ * are optional and best-effort: a missing/non-numeric `duration` yields
+ * `undefined` and a missing `title` falls back to the URL — neither is an error.
+ */
+interface YtDlpDurationJson {
+	duration?: number;
+	title?: string;
+}
+
+/** Narrow unknown yt-dlp output to the duration/title subset (non-object → `null`). */
+function asYtDlpDurationJson(value: unknown): YtDlpDurationJson | null {
+	if (!isRecord(value)) {
+		return null;
+	}
+	return {
+		duration: typeof value.duration === 'number' ? value.duration : undefined,
+		title: typeof value.title === 'string' ? value.title : undefined,
+	};
+}
 
 /**
  * Result of a duration detection attempt.
@@ -138,7 +159,12 @@ export async function detectUrlDuration(
 			);
 		});
 
-		const data = JSON.parse(output);
+		// Parse to `unknown` and narrow before reading. Malformed JSON throws and is
+		// caught below into the `{ durationSeconds: undefined, title: url }`
+		// fallback; a non-object payload yields all-fallback fields — both match the
+		// prior untyped behavior. The guard also drops a non-numeric `duration`
+		// (e.g. "N/A") to undefined while preserving any title.
+		const data = asYtDlpDurationJson(parseJson(output)) ?? {};
 		return {
 			durationSeconds: typeof data.duration === 'number' ? data.duration : undefined,
 			title: data.title || url,

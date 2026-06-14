@@ -1,6 +1,45 @@
 import { SynapseSettings } from '../settings';
 import { ExtractionResult, VideoMetadata } from './types';
-import { sanitizePath, sanitizeUrl, describeNetworkError } from '../shared';
+import { sanitizePath, sanitizeUrl, describeNetworkError, isRecord, parseJson } from '../shared';
+
+/**
+ * The subset of yt-dlp's `--dump-json` output that {@link AudioExtractor}
+ * reads. yt-dlp emits a large, format-dependent object; every field below is
+ * optional and best-effort — a missing field falls back (see
+ * {@link AudioExtractor.getMetadata}), it is never a hard error. Validated with
+ * {@link isRecord} + per-field `typeof` checks before access, so a malformed or
+ * partial payload degrades to the URL/`Untitled` fallback instead of throwing.
+ */
+interface YtDlpDumpJson {
+	title?: string;
+	channel?: string;
+	uploader?: string;
+	duration?: number;
+	upload_date?: string;
+	description?: string;
+	extractor_key?: string;
+}
+
+/**
+ * Narrow unknown yt-dlp output to {@link YtDlpDumpJson}, coercing each consumed
+ * field to its expected primitive type (anything else is dropped to the field's
+ * fallback). Returns `null` only when the top level is not an object, so the
+ * caller can fall back wholesale on malformed output.
+ */
+function asYtDlpDumpJson(value: unknown): YtDlpDumpJson | null {
+	if (!isRecord(value)) {
+		return null;
+	}
+	return {
+		title: typeof value.title === 'string' ? value.title : undefined,
+		channel: typeof value.channel === 'string' ? value.channel : undefined,
+		uploader: typeof value.uploader === 'string' ? value.uploader : undefined,
+		duration: typeof value.duration === 'number' ? value.duration : undefined,
+		upload_date: typeof value.upload_date === 'string' ? value.upload_date : undefined,
+		description: typeof value.description === 'string' ? value.description : undefined,
+		extractor_key: typeof value.extractor_key === 'string' ? value.extractor_key : undefined,
+	};
+}
 
 /**
  * Obsidian's Electron process has a minimal PATH that often excludes
@@ -31,13 +70,17 @@ export class AudioExtractor {
 		execFile: typeof import('child_process')['execFile'];
 	} | null = null;
 
-	private get node() {
+	private get node(): NonNullable<AudioExtractor['_node']> {
 		if (!this._node) {
 			/* eslint-disable @typescript-eslint/no-var-requires -- lazy-load Node builtins at first use so the bundle can load on mobile (isDesktopOnly: false) */
+			// `require` is untyped (returns `any`); cast each module to its
+			// `typeof import(...)` form so member access below (e.g. `.execFile`)
+			// is typed rather than unsafe-any. The require() imports themselves are
+			// deliberately left as-is.
 			this._node = {
-				os: require('os'),
-				path: require('path'),
-				execFile: require('child_process').execFile,
+				os: require('os') as typeof import('os'),
+				path: require('path') as typeof import('path'),
+				execFile: (require('child_process') as typeof import('child_process')).execFile,
 			};
 			/* eslint-enable @typescript-eslint/no-var-requires -- re-enable the rule now that the lazy Node-builtin loads are done */
 		}
@@ -169,7 +212,12 @@ export class AudioExtractor {
 			const output = await this.runCommand(sanitizePath(settings.ytDlpPath), [
 				'--dump-json', '--no-download', url,
 			], 'yt-dlp');
-			const data = JSON.parse(output);
+			// Parse to `unknown` and narrow. A non-object payload yields all-fallback
+			// fields (matching the prior untyped `data.x` reads on a non-object,
+			// which were `undefined`); a thrown SyntaxError on malformed JSON is
+			// swallowed by the surrounding catch into the `{ title: 'Untitled' }`
+			// fallback, exactly as before.
+			const data = asYtDlpDumpJson(parseJson(output)) ?? {};
 			return {
 				title: data.title || 'Untitled',
 				channel: data.channel || data.uploader,

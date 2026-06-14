@@ -1,5 +1,6 @@
 import { requestUrl } from 'obsidian';
 import { sanitizeUrl } from './validation';
+import { isRecord, parseJson } from './json-utils';
 
 /**
  * Fetch a webpage and extract readable text content.
@@ -69,7 +70,7 @@ export function extractJsonLdRecipes(html: string): RecipeJsonLd[] {
 	while ((match = scriptRegex.exec(html)) !== null) {
 		let parsed: unknown;
 		try {
-			parsed = JSON.parse(match[1]);
+			parsed = parseJson(match[1]);
 		} catch {
 			continue;
 		}
@@ -78,19 +79,18 @@ export function extractJsonLdRecipes(html: string): RecipeJsonLd[] {
 
 		if (Array.isArray(parsed)) {
 			candidates.push(...parsed);
-		} else if (parsed && typeof parsed === 'object') {
-			const obj = parsed as Record<string, unknown>;
-			if (Array.isArray(obj['@graph'])) {
-				candidates.push(...obj['@graph']);
+		} else if (isRecord(parsed)) {
+			const graph = parsed['@graph'];
+			if (Array.isArray(graph)) {
+				candidates.push(...graph);
 			} else {
-				candidates.push(obj);
+				candidates.push(parsed);
 			}
 		}
 
 		for (const candidate of candidates) {
-			if (candidate && typeof candidate === 'object') {
-				const c = candidate as Record<string, unknown>;
-				const type = c['@type'];
+			if (isRecord(candidate)) {
+				const type = candidate['@type'];
 				const isRecipe =
 					type === 'Recipe' ||
 					(Array.isArray(type) && type.includes('Recipe'));
