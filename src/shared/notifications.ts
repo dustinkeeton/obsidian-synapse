@@ -27,7 +27,7 @@ interface TrackedOperation {
 	/** Fixed-width span that holds the animated dots, preventing layout reflow */
 	dotsEl: HTMLElement;
 	state: 'running' | 'done' | 'error' | 'cancelled';
-	ellipsisInterval: ReturnType<typeof setInterval> | null;
+	ellipsisInterval: number | null;
 }
 
 /**
@@ -81,17 +81,17 @@ function stripTrailingDots(msg: string): string {
  * so that changing dot count does not cause the parent to reflow.
  * Returns an interval handle for cleanup.
  */
-function startEllipsisOnEl(dotsEl: HTMLElement): ReturnType<typeof setInterval> {
+function startEllipsisOnEl(dotsEl: HTMLElement): number {
 	let dotCount = 1;
-	return globalThis.setInterval(() => {
+	return window.setInterval(() => {
 		dotCount = (dotCount % 3) + 1;
 		dotsEl.textContent = '.'.repeat(dotCount);
 	}, 400);
 }
 
-function stopEllipsis(intervalId: ReturnType<typeof setInterval> | null): void {
+function stopEllipsis(intervalId: number | null): void {
 	if (intervalId !== null) {
-		globalThis.clearInterval(intervalId);
+		window.clearInterval(intervalId);
 	}
 }
 

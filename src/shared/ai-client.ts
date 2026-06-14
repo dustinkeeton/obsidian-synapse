@@ -14,7 +14,7 @@ const AI_REQUEST_TIMEOUT_MS = 120_000;
 async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse> {
 	// Race the request against a timeout to prevent indefinite hangs
 	const timeout = new Promise<never>((_, reject) =>
-		setTimeout(() => reject(new Error('AI request timed out')), AI_REQUEST_TIMEOUT_MS)
+		window.setTimeout(() => reject(new Error('AI request timed out')), AI_REQUEST_TIMEOUT_MS)
 	);
 
 	// Don't use throw mode — Obsidian strips the response body on error

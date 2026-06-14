@@ -48,7 +48,7 @@ export async function withRetry<T>(
 }
 
 export function sleep(ms: number): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, ms));
+	return new Promise(resolve => window.setTimeout(resolve, ms));
 }
 
 export function notifyError(context: string, error: unknown): void {

@@ -201,7 +201,7 @@ export class AudioModule {
 			const embed = sorted[i];
 			// Delay between requests to avoid API rate limits
 			if (i > 0) {
-				await new Promise(resolve => setTimeout(resolve, 2000));
+				await new Promise(resolve => window.setTimeout(resolve, 2000));
 			}
 			try {
 				op.progress(completed + 1, total, 'Transcribing audio');
@@ -395,7 +395,7 @@ export class AudioModule {
 		for (let i = 0; i < files.length; i++) {
 			if (op?.cancelled) break;
 			if (i > 0 && this.interFileDelayMs > 0) {
-				await new Promise(resolve => setTimeout(resolve, this.interFileDelayMs));
+				await new Promise(resolve => window.setTimeout(resolve, this.interFileDelayMs));
 			}
 			op?.progress(i + 1, files.length, 'Transcribing audio');
 			const data = await this.plugin.app.vault.readBinary(files[i]);

@@ -82,8 +82,8 @@ export async function preprocessImage(
 
 function canUseCanvas(): boolean {
 	return (
-		typeof document !== 'undefined' &&
-		typeof document.createElement === 'function' &&
+		typeof activeDocument !== 'undefined' &&
+		typeof activeDocument.createElement === 'function' &&
 		(typeof createImageBitmap === 'function' || typeof Image !== 'undefined')
 	);
 }
@@ -195,7 +195,7 @@ async function rasterizeToBuffer(
 	outputType: string,
 	quality: number
 ): Promise<ArrayBuffer | null> {
-	const canvas = document.createElement('canvas');
+	const canvas = activeDocument.createElement('canvas');
 	canvas.width = width;
 	canvas.height = height;
 
