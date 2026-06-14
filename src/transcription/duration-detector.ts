@@ -1,6 +1,9 @@
 import { Platform, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
-import { sanitizePath, sanitizeUrl, isRecord, parseJson } from '../shared';
+import {
+	sanitizePath, sanitizeUrl, isRecord, parseJson,
+	loadNodeModules, shellEnv, type NodeModules,
+} from '../shared';
 
 /**
  * The subset of yt-dlp `--dump-json` output this detector consumes. Both fields
@@ -36,33 +39,22 @@ export interface DurationResult {
  * Node builtins used by the subprocess orchestration. Injected so tests can
  * stub them (a runtime `require` of these inside the function body is not
  * intercepted by `vi.mock`). Defaults to {@link buildRealNodeDeps}.
+ *
+ * Aliased to the shared {@link NodeModules} so the injection seam stays
+ * type-compatible with the centralized loader.
  */
-export interface NodeDeps {
-	os: typeof import('os');
-	path: typeof import('path');
-	fs: typeof import('fs');
-	execFile: typeof import('child_process')['execFile'];
-}
+export type NodeDeps = NodeModules;
 
 /**
- * Lazily resolve the real Node builtins via `require`.
+ * Resolve the real Node builtins via the centralized, desktop-guarded loader.
  *
- * MUST only be called AFTER the `Platform.isDesktop` guard: on mobile these
- * modules do not exist, so requiring them eagerly (e.g. in a parameter
- * default) would crash. Keeping the requires here preserves the mobile
- * early-return as a require-free path.
+ * MUST only be called AFTER the `Platform.isDesktop` guard below: the loader
+ * throws off-desktop, and keeping the require behind that guard preserves the
+ * mobile early-return as a require-free path. Retained as the injection seam so
+ * tests can substitute stubbed deps without spawning a process.
  */
 function buildRealNodeDeps(): NodeDeps {
-	/* eslint-disable @typescript-eslint/no-var-requires -- lazy-load Node builtins so the bundle can load on mobile (isDesktopOnly: false) */
-	// Cast each require() value to its module type (matching audio-extractor) so
-	// the untyped `require()` result doesn't leak `any` into NodeDeps.
-	return {
-		os: require('os') as typeof import('os'),
-		path: require('path') as typeof import('path'),
-		fs: require('fs') as typeof import('fs'),
-		execFile: (require('child_process') as typeof import('child_process')).execFile,
-	};
-	/* eslint-enable @typescript-eslint/no-var-requires -- re-enable now that the lazy Node-builtin loads are done */
+	return loadNodeModules();
 }
 
 /**
@@ -196,23 +188,4 @@ export function formatTimestamp(totalSeconds: number): string {
 		return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 	}
 	return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-/**
- * Obsidian's Electron process has a minimal PATH that often excludes
- * user-installed tools. Append common install locations.
- */
-function shellEnv(): NodeJS.ProcessEnv {
-	const env = { ...process.env };
-	const extra = [
-		'/usr/local/bin',
-		'/opt/homebrew/bin',
-		`${process.env.HOME}/.local/bin`,
-	];
-	const current = env.PATH || '';
-	const missing = extra.filter(p => !current.includes(p));
-	if (missing.length) {
-		env.PATH = missing.join(':') + ':' + current;
-	}
-	return env;
 }

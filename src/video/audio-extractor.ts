@@ -1,6 +1,9 @@
 import { SynapseSettings } from '../settings';
 import { ExtractionResult, VideoMetadata } from './types';
-import { sanitizePath, sanitizeUrl, describeNetworkError, isRecord, parseJson } from '../shared';
+import {
+	sanitizePath, sanitizeUrl, describeNetworkError, isRecord, parseJson,
+	loadNodeModules, shellEnv, type NodeModules,
+} from '../shared';
 
 /**
  * The subset of yt-dlp's `--dump-json` output that {@link AudioExtractor}
@@ -41,48 +44,18 @@ function asYtDlpDumpJson(value: unknown): YtDlpDumpJson | null {
 	};
 }
 
-/**
- * Obsidian's Electron process has a minimal PATH that often excludes
- * user-installed tools. Append common install locations so yt-dlp/ffmpeg
- * can be found when configured with bare command names.
- */
-function shellEnv(): NodeJS.ProcessEnv {
-	const env = { ...process.env };
-	const extra = [
-		'/usr/local/bin',
-		'/opt/homebrew/bin',
-		`${process.env.HOME}/.local/bin`,
-	];
-	const current = env.PATH || '';
-	const missing = extra.filter(p => !current.includes(p));
-	if (missing.length) {
-		// Prepend so Homebrew tools (with proper Python) take priority
-		// over ~/.local/bin or system versions
-		env.PATH = missing.join(':') + ':' + current;
-	}
-	return env;
-}
-
 export class AudioExtractor {
-	private _node: {
-		os: typeof import('os');
-		path: typeof import('path');
-		execFile: typeof import('child_process')['execFile'];
-	} | null = null;
+	private _node: NodeModules | null = null;
 
-	private get node(): NonNullable<AudioExtractor['_node']> {
+	/**
+	 * Lazily resolve Node builtins through the centralized, desktop-guarded
+	 * loader (cached after first use). The loader throws {@link DesktopOnlyError}
+	 * off-desktop, so every method that touches `this.node` carries an explicit
+	 * desktop assertion at its first filesystem/subprocess access.
+	 */
+	private get node(): NodeModules {
 		if (!this._node) {
-			/* eslint-disable @typescript-eslint/no-var-requires -- lazy-load Node builtins at first use so the bundle can load on mobile (isDesktopOnly: false) */
-			// `require` is untyped (returns `any`); cast each module to its
-			// `typeof import(...)` form so member access below (e.g. `.execFile`)
-			// is typed rather than unsafe-any. The require() imports themselves are
-			// deliberately left as-is.
-			this._node = {
-				os: require('os') as typeof import('os'),
-				path: require('path') as typeof import('path'),
-				execFile: (require('child_process') as typeof import('child_process')).execFile,
-			};
-			/* eslint-enable @typescript-eslint/no-var-requires -- re-enable the rule now that the lazy Node-builtin loads are done */
+			this._node = loadNodeModules();
 		}
 		return this._node;
 	}

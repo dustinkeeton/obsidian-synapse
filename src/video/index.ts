@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { AudioModule, TranscriptionResult } from '../audio';
 import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES,
-	CheckpointManager, generateId, formatTimeRange, detectPlatform,
+	CheckpointManager, generateId, formatTimeRange, detectPlatform, loadNodeModules,
 } from '../shared';
 import type { TimeRange } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
@@ -96,7 +96,10 @@ export class VideoModule {
 		}
 
 		update('Extracting audio...');
-		const fs = require('fs') as typeof import('fs');
+		// Explicit desktop assertion: loadNodeModules throws off-desktop. VideoModule
+		// is only constructed on desktop, but assert at the filesystem entry point
+		// rather than relying solely on construction-time gating.
+		const { fs } = loadNodeModules();
 
 		let audioPath = extraction.audioPath;
 
@@ -306,7 +309,8 @@ export class VideoModule {
 	 */
 	private async downloadVideoToVault(url: string, metadata: VideoMetadata): Promise<string> {
 		const settings = this.getSettings().video;
-		const fs = require('fs') as typeof import('fs');
+		// Explicit desktop assertion: loadNodeModules throws off-desktop.
+		const { fs } = loadNodeModules();
 
 		await ensureFolder(this.plugin.app, settings.downloadFolder);
 
