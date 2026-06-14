@@ -12,13 +12,45 @@ export interface DurationResult {
 }
 
 /**
+ * Node builtins used by the subprocess orchestration. Injected so tests can
+ * stub them (a runtime `require` of these inside the function body is not
+ * intercepted by `vi.mock`). Defaults to {@link buildRealNodeDeps}.
+ */
+export interface NodeDeps {
+	os: typeof import('os');
+	path: typeof import('path');
+	fs: typeof import('fs');
+	execFile: typeof import('child_process')['execFile'];
+}
+
+/**
+ * Lazily resolve the real Node builtins via `require`.
+ *
+ * MUST only be called AFTER the `Platform.isDesktop` guard: on mobile these
+ * modules do not exist, so requiring them eagerly (e.g. in a parameter
+ * default) would crash. Keeping the requires here preserves the mobile
+ * early-return as a require-free path.
+ */
+function buildRealNodeDeps(): NodeDeps {
+	/* eslint-disable @typescript-eslint/no-var-requires -- lazy-load Node builtins so the bundle can load on mobile (isDesktopOnly: false) */
+	return {
+		os: require('os'),
+		path: require('path'),
+		fs: require('fs'),
+		execFile: require('child_process').execFile,
+	};
+	/* eslint-enable @typescript-eslint/no-var-requires -- re-enable now that the lazy Node-builtin loads are done */
+}
+
+/**
  * Detect the duration of a local audio file using ffprobe.
  * Returns undefined duration on failure (mobile, missing ffprobe, corrupt file).
  */
 export async function detectLocalFileDuration(
 	file: TFile,
 	readBinary: (file: TFile) => Promise<ArrayBuffer>,
-	getSettings: () => SynapseSettings
+	getSettings: () => SynapseSettings,
+	deps?: NodeDeps
 ): Promise<DurationResult> {
 	const title = file.basename;
 
@@ -27,10 +59,9 @@ export async function detectLocalFileDuration(
 	}
 
 	try {
-		const os = require('os') as typeof import('os');
-		const path = require('path') as typeof import('path');
-		const fs = require('fs') as typeof import('fs');
-		const { execFile } = require('child_process') as typeof import('child_process');
+		// Resolve real Node builtins only AFTER the mobile guard above, so the
+		// mobile early-return never triggers a require().
+		const { os, path, fs, execFile } = deps ?? buildRealNodeDeps();
 
 		const data = await readBinary(file);
 		// Defense-in-depth: file.name is vault-derived; strip any path-unsafe
@@ -81,7 +112,8 @@ export async function detectLocalFileDuration(
  */
 export async function detectUrlDuration(
 	url: string,
-	getSettings: () => SynapseSettings
+	getSettings: () => SynapseSettings,
+	deps?: NodeDeps
 ): Promise<DurationResult> {
 	if (!Platform.isDesktop) {
 		return { durationSeconds: undefined, title: url };
@@ -89,7 +121,9 @@ export async function detectUrlDuration(
 
 	try {
 		const validatedUrl = sanitizeUrl(url);
-		const { execFile } = require('child_process') as typeof import('child_process');
+		// Resolve real Node builtins only AFTER the mobile guard above, so the
+		// mobile early-return never triggers a require().
+		const { execFile } = deps ?? buildRealNodeDeps();
 		const ytDlpPath = sanitizePath(getSettings().video.ytDlpPath);
 
 		const output = await new Promise<string>((resolve, reject) => {
