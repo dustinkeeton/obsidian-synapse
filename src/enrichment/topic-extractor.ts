@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse } from '../shared';
+import { AIClient, parseJson, sanitizeAIResponse } from '../shared';
 import { InternalLinkCandidate } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
 import { computeProximityWeight } from './weight-calculator';
@@ -176,10 +176,10 @@ ${truncatedContent}
 			const response = await this.aiClient.complete(prompt, systemPrompt);
 			const sanitized = sanitizeAIResponse(response);
 			const cleaned = sanitized.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
-			const parsed = JSON.parse(cleaned);
+			const parsed = parseJson(cleaned);
 			if (Array.isArray(parsed)) {
 				return parsed.filter(
-					(t): t is string =>
+					(t: unknown): t is string =>
 						typeof t === 'string' &&
 						t.length > 0 &&
 						t.length <= 100

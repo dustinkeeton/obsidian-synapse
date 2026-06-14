@@ -28,6 +28,8 @@ import {
 	describeNetworkError,
 	arrayBufferToBase64,
 	extractGeminiResponseText,
+	isRecord,
+	parseJson,
 } from '../shared';
 import { TranscriptionResult } from './types';
 
@@ -149,6 +151,93 @@ export function buildMultipartBody(
 	};
 }
 
+/** A single Whisper `verbose_json` segment (timestamps). */
+interface WhisperSegment {
+	start: number;
+	end: number;
+	text: string;
+}
+
+/** The subset of a Deepgram `/v1/listen` response this module consumes. */
+interface DeepgramResponse {
+	results?: {
+		channels?: Array<{
+			detected_language?: string;
+			alternatives?: Array<{ transcript?: string }>;
+		}>;
+	};
+}
+
+/**
+ * Normalize a transcription `response.json` to `unknown`.
+ *
+ * Obsidian's `requestUrl().json` is `any` and, for these endpoints, may surface
+ * either a parsed object or the raw JSON string. Re-parse the string form and
+ * otherwise return the value as `unknown` so callers must narrow before access.
+ */
+function parseResponseJson(json: unknown): unknown {
+	return typeof json === 'string' ? parseJson(json) : json;
+}
+
+/** Type guard: a Whisper segment with the numeric/string fields we read. */
+function isWhisperSegment(v: unknown): v is WhisperSegment {
+	return (
+		isRecord(v) &&
+		typeof v.start === 'number' &&
+		typeof v.end === 'number' &&
+		typeof v.text === 'string'
+	);
+}
+
+/** The transcript fields pulled from a validated Whisper response. */
+interface WhisperResult {
+	text: string;
+	language?: string;
+	duration?: number;
+	segments?: WhisperSegment[];
+}
+
+/**
+ * Narrow an unknown Whisper response and pull out the transcript fields.
+ * Throws a descriptive error (instead of an opaque `TypeError` on `.text` /
+ * `.segments.map`) when the body is missing the required `text`.
+ */
+function extractWhisperResult(json: unknown): WhisperResult {
+	if (!isRecord(json) || typeof json.text !== 'string') {
+		throw new Error('Unexpected Whisper response: missing transcript text');
+	}
+	const segments = Array.isArray(json.segments)
+		? json.segments.filter(isWhisperSegment)
+		: undefined;
+	return {
+		text: json.text,
+		language: typeof json.language === 'string' ? json.language : undefined,
+		duration: typeof json.duration === 'number' ? json.duration : undefined,
+		segments,
+	};
+}
+
+/**
+ * Narrow an unknown Deepgram response down to the first alternative's
+ * transcript and detected language. Throws a descriptive error (instead of an
+ * opaque `TypeError` walking `results.channels[0].alternatives[0]`) when the
+ * transcript is absent.
+ */
+function extractDeepgramResult(json: unknown): { transcript: string; language?: string } {
+	const response = json as DeepgramResponse | null;
+	const channel = response?.results?.channels?.[0];
+	const transcript = channel?.alternatives?.[0]?.transcript;
+	if (typeof transcript !== 'string') {
+		throw new Error('Unexpected Deepgram response: missing transcript');
+	}
+	return {
+		transcript,
+		language: typeof channel?.detected_language === 'string'
+			? channel.detected_language
+			: undefined,
+	};
+}
+
 export class Transcriber {
 	constructor(private getSettings: () => SynapseSettings) {}
 
@@ -243,21 +332,17 @@ export class Transcriber {
 			throw new Error(`Whisper API request failed (status ${response.status})`);
 		}
 
-		const data = typeof response.json === 'string'
-			? JSON.parse(response.json)
-			: response.json;
+		const data = extractWhisperResult(parseResponseJson(response.json));
 		return {
 			raw: data.text,
 			language: data.language,
 			duration: data.duration,
 			sourceName: fileName,
-			timestamps: data.segments?.map(
-				(s: { start: number; end: number; text: string }) => ({
-					start: s.start,
-					end: s.end,
-					text: s.text,
-				})
-			),
+			timestamps: data.segments?.map(s => ({
+				start: s.start,
+				end: s.end,
+				text: s.text,
+			})),
 		};
 	}
 
@@ -295,13 +380,10 @@ export class Transcriber {
 			throw new Error(`Deepgram API request failed (status ${response.status})`);
 		}
 
-		const data = typeof response.json === 'string'
-			? JSON.parse(response.json)
-			: response.json;
-		const result = data.results.channels[0].alternatives[0];
+		const result = extractDeepgramResult(parseResponseJson(response.json));
 		return {
 			raw: result.transcript,
-			language: data.results.channels[0].detected_language,
+			language: result.language,
 			sourceName: fileName,
 		};
 	}
@@ -384,13 +466,10 @@ export class Transcriber {
 			throw new Error(`Gemini API request failed (status ${response.status})`);
 		}
 
-		const data = typeof response.json === 'string'
-			? JSON.parse(response.json)
-			: response.json;
 		// Blocked / token-exhausted 200 responses carry no parts — surface a
 		// descriptive error instead of silently returning an empty transcript.
 		return {
-			raw: extractGeminiResponseText(data).trim(),
+			raw: extractGeminiResponseText(parseResponseJson(response.json)).trim(),
 			language: settings.audio.language || undefined,
 			sourceName: fileName,
 		};

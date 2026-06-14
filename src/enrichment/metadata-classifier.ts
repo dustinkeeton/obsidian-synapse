@@ -1,5 +1,5 @@
 import { SynapseSettings, TagVocabularyEntry } from '../settings';
-import { AIClient, sanitizeAIResponse } from '../shared';
+import { AIClient, isRecord, parseJson, sanitizeAIResponse } from '../shared';
 import { TagCandidate } from './types';
 
 const TAG_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_/-]{0,49}$/;
@@ -112,12 +112,11 @@ ${vocabDescription}
 			const response = await this.aiClient.complete(prompt, systemPrompt);
 			const sanitized = sanitizeAIResponse(response);
 			const cleaned = sanitized.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
-			const parsed = JSON.parse(cleaned);
+			const parsed = parseJson(cleaned);
 			if (Array.isArray(parsed)) {
 				return parsed.filter(
-					(item): item is { tag: string; confidence: number } =>
-						typeof item === 'object' &&
-						item !== null &&
+					(item: unknown): item is { tag: string; confidence: number } =>
+						isRecord(item) &&
 						typeof item.tag === 'string' &&
 						typeof item.confidence === 'number' &&
 						item.confidence >= 0 &&

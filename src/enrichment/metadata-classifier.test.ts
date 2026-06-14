@@ -4,12 +4,21 @@ import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 
 const mockComplete = vi.fn();
 
-vi.mock('../shared', () => ({
-	AIClient: class MockAIClient {
-		complete = mockComplete;
-	},
-	sanitizeAIResponse: (text: string) => text,
-}));
+vi.mock('../shared', async () => {
+	// Re-export the real JSON helpers — the classifier now narrows parsed
+	// responses via parseJson/isRecord, so the stub must provide them.
+	const { parseJson, isRecord } = await vi.importActual<typeof import('../shared/json-utils')>(
+		'../shared/json-utils'
+	);
+	return {
+		AIClient: class MockAIClient {
+			complete = mockComplete;
+		},
+		sanitizeAIResponse: (text: string) => text,
+		parseJson,
+		isRecord,
+	};
+});
 
 function makeSettings(overrides?: Partial<SynapseSettings['enrichment']>): () => SynapseSettings {
 	return () => ({

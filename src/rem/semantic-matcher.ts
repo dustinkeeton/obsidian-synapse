@@ -1,7 +1,24 @@
 import type { App, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { RemLinkCandidate, RemOccurrence } from './types';
-import { AIClient } from '../shared';
+import { AIClient, isRecord, parseJson } from '../shared';
+
+/** One conceptual match the AI is expected to return, after validation. */
+interface SemanticMatch {
+	title: string;
+	matchedConcept: string;
+	confidence: number;
+}
+
+/** Type guard: narrows an unknown array element to a {@link SemanticMatch}. */
+function isSemanticMatch(v: unknown): v is SemanticMatch {
+	return (
+		isRecord(v) &&
+		typeof v.title === 'string' &&
+		typeof v.matchedConcept === 'string' &&
+		typeof v.confidence === 'number'
+	);
+}
 
 /**
  * Uses AI to discover conceptual matches between a note's content
@@ -77,12 +94,15 @@ export class SemanticMatcher {
 		}
 
 		// Parse AI response
-		let parsed: Array<{ title: string; matchedConcept: string; confidence: number }>;
+		let parsed: SemanticMatch[];
 		try {
 			// Strip code fences if present
 			const cleaned = rawResponse.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '');
-			parsed = JSON.parse(cleaned);
-			if (!Array.isArray(parsed)) return [];
+			const raw = parseJson(cleaned);
+			if (!Array.isArray(raw)) return [];
+			// Narrow each element from `unknown` — drop any item that lacks the
+			// expected fields rather than letting it crash the loop below.
+			parsed = raw.filter(isSemanticMatch);
 		} catch {
 			console.warn('[Synapse REM] Failed to parse semantic match response');
 			return [];
