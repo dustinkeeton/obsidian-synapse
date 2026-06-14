@@ -119,6 +119,16 @@ For video transcription, you need these tools installed and available on your PA
 
 Use the command **Synapse: Check dependencies** to verify these are available.
 
+### Verifying releases
+
+Release assets are signed with [GitHub artifact attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds), letting you cryptographically confirm they were built from this repository. After downloading a release, verify an asset with the [GitHub CLI](https://cli.github.com/):
+
+```sh
+gh attestation verify main.js --repo dustinkeeton/obsidian-synapse
+```
+
+Repeat for `manifest.json` and `styles.css` as needed.
+
 ## Configuration
 
 Open **Settings > Synapse** to configure the plugin. All features can be individually enabled or disabled.
