@@ -238,7 +238,7 @@ export class VideoModule {
 			if (op.cancelled) break;
 			const embed = sorted[i];
 			if (i > 0) {
-				await new Promise(resolve => setTimeout(resolve, 2000));
+				await new Promise(resolve => window.setTimeout(resolve, 2000));
 			}
 			try {
 				op.progress(completed + 1, total, 'Transcribing video');

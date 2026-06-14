@@ -162,7 +162,7 @@ export class Transcriber {
 		const send = () => Promise.race([
 			requestUrl(params),
 			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error(`${resource} request timed out`)), TRANSCRIPTION_TIMEOUT_MS)),
+				window.setTimeout(() => reject(new Error(`${resource} request timed out`)), TRANSCRIPTION_TIMEOUT_MS)),
 		]);
 		try {
 			return await withRetry(send, 2, 1000, Transcriber.retryableNetwork); // 2 attempts, 1s→2s backoff

@@ -117,7 +117,7 @@ export class ImageModule {
 			const embed = sorted[i];
 			// Delay between requests to avoid API rate limits
 			if (i > 0) {
-				await new Promise(resolve => setTimeout(resolve, 2000));
+				await new Promise(resolve => window.setTimeout(resolve, 2000));
 			}
 			try {
 				op.progress(completed + 1, total, 'Extracting text from image');

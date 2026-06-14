@@ -72,7 +72,7 @@ async function fetchViaOEmbed(url: string, endpoint: string): Promise<TweetConte
 	const oembedUrl = `${endpoint}?url=${encodeURIComponent(url)}`;
 
 	const timeout = new Promise<never>((_, reject) =>
-		setTimeout(() => reject(new Error('Tweet fetch timed out')), FETCH_TIMEOUT_MS)
+		window.setTimeout(() => reject(new Error('Tweet fetch timed out')), FETCH_TIMEOUT_MS)
 	);
 
 	const response = await Promise.race([
@@ -121,7 +121,7 @@ async function fetchViaVxTwitter(url: string): Promise<TweetContent> {
 	const apiUrl = `https://api.vxtwitter.com/Twitter/status/${idMatch[1]}`;
 
 	const timeout = new Promise<never>((_, reject) =>
-		setTimeout(() => reject(new Error('Tweet fetch timed out')), FETCH_TIMEOUT_MS)
+		window.setTimeout(() => reject(new Error('Tweet fetch timed out')), FETCH_TIMEOUT_MS)
 	);
 
 	const response = await Promise.race([

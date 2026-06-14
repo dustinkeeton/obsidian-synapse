@@ -73,7 +73,7 @@ export default class SynapsePlugin extends Plugin {
 	private intake!: IntakeModule;
 	private audioExtractor: AudioExtractor | undefined;
 	private ffmpegAvailable: boolean | null = null;
-	private startupTimeout: ReturnType<typeof setTimeout> | null = null;
+	private startupTimeout: number | null = null;
 	/**
 	 * True when `loadData()` returned no persisted settings — i.e. a genuine
 	 * fresh install rather than an existing user upgrading. Drives first-run
@@ -319,7 +319,7 @@ export default class SynapsePlugin extends Plugin {
 		});
 
 		// Startup check for incomplete checkpoints (delayed to avoid blocking load)
-		this.startupTimeout = setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
+		this.startupTimeout = window.setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
 
 		// Unified transcription commands (audio on any platform, video on desktop only, image OCR).
 		// Always attempted so the registry audit sees them; userEnabled gates actual registration.
@@ -394,7 +394,7 @@ export default class SynapsePlugin extends Plugin {
 
 	onunload(): void {
 		if (this.startupTimeout !== null) {
-			clearTimeout(this.startupTimeout);
+			window.clearTimeout(this.startupTimeout);
 			this.startupTimeout = null;
 		}
 		this.elaboration?.onunload();

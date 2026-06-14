@@ -39,7 +39,7 @@ async function fetchHtml(url: string): Promise<string> {
 	const validatedUrl = sanitizeUrl(url);
 
 	const timeout = new Promise<never>((_, reject) =>
-		setTimeout(() => reject(new Error('Page fetch timed out')), FETCH_TIMEOUT_MS)
+		window.setTimeout(() => reject(new Error('Page fetch timed out')), FETCH_TIMEOUT_MS)
 	);
 
 	const response = await Promise.race([
