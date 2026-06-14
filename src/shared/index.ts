@@ -19,6 +19,8 @@ export { arrayBufferToBase64, base64EncodedLength } from './encoding';
 export { redactSecrets } from './redact';
 export { NotificationManager } from './notifications';
 export type { OperationHandle } from './notifications';
+export { fireAndForget } from './fire-and-forget';
+export type { FireAndForgetOptions } from './fire-and-forget';
 export { FolderPickerModal } from './folder-picker-modal';
 export {
 	sanitizeUrl,
