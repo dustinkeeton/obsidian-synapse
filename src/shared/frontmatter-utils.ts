@@ -52,7 +52,7 @@ export function mergeTags(
 	frontmatter: Record<string, unknown>,
 	newTags: string[]
 ): void {
-	const existing = normalizeTags(frontmatter.tags);
+	const existing = normalizeFrontmatterTags(frontmatter.tags);
 	const merged = [...existing];
 	for (const tag of newTags) {
 		const clean = tag.startsWith('#') ? tag.slice(1) : tag;
@@ -63,8 +63,20 @@ export function mergeTags(
 	frontmatter.tags = merged;
 }
 
-/** Normalize the `tags` field to a string array. */
-function normalizeTags(value: unknown): string[] {
+/**
+ * Normalize a frontmatter list value (e.g. `tags` or `aliases`) to a string
+ * array.
+ *
+ * Real-vault frontmatter values are untyped: a list field may be an array of
+ * strings/numbers/objects, a single comma-separated string, or absent. This
+ * coerces all of those to `string[]`, replacing the copy-pasted
+ * `Array.isArray(x) ? x : [x]` ternaries scattered across the feature modules.
+ *
+ * - Array: each element is stringified via `String(...)`.
+ * - String: split on commas and trimmed (so `"a, b"` → `['a', 'b']`).
+ * - Anything else (undefined/null/object): `[]`.
+ */
+export function normalizeFrontmatterTags(value: unknown): string[] {
 	if (Array.isArray(value)) {
 		return value.map(String);
 	}

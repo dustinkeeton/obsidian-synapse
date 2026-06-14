@@ -1,7 +1,22 @@
 import { App, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { ensureFolder } from '../shared';
+import { ensureFolder, isRecord, readJsonFile } from '../shared';
 import { Proposal } from './types';
+
+/**
+ * Structural guard for a persisted {@link Proposal}. Permissive enough to
+ * accept every currently-valid proposal (optional fields are not required),
+ * strict enough to reject corrupt/foreign JSON: requires the identity and
+ * status fields the store keys off of.
+ */
+function isProposal(v: unknown): v is Proposal {
+	return (
+		isRecord(v) &&
+		typeof v.id === 'string' &&
+		typeof v.sourceNotePath === 'string' &&
+		typeof v.status === 'string'
+	);
+}
 
 export class ProposalStore {
 	constructor(
@@ -28,9 +43,12 @@ export class ProposalStore {
 	async load(id: string): Promise<Proposal | null> {
 		const files = await this.listProposalFiles();
 		for (const filePath of files) {
-			const content = await this.app.vault.adapter.read(filePath);
-			const proposal: Proposal = JSON.parse(content);
-			if (proposal.id === id) return proposal;
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isProposal
+			);
+			if (proposal && proposal.id === id) return proposal;
 		}
 		return null;
 	}
@@ -39,12 +57,13 @@ export class ProposalStore {
 		const files = await this.listProposalFiles();
 		const proposals: Proposal[] = [];
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				proposals.push(JSON.parse(content));
-			} catch {
-				// Skip invalid proposal files
-			}
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isProposal
+			);
+			// Skip missing/invalid proposal files
+			if (proposal) proposals.push(proposal);
 		}
 		return proposals;
 	}
@@ -57,9 +76,12 @@ export class ProposalStore {
 	async delete(id: string): Promise<void> {
 		const files = await this.listProposalFiles();
 		for (const filePath of files) {
-			const content = await this.app.vault.adapter.read(filePath);
-			const proposal: Proposal = JSON.parse(content);
-			if (proposal.id === id) {
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isProposal
+			);
+			if (proposal && proposal.id === id) {
 				await this.app.vault.adapter.remove(filePath);
 				return;
 			}

@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { wordCount } from '../shared';
+import { wordCount, normalizeFrontmatterTags } from '../shared';
 import { DetectionReason, DetectionResult } from './types';
 
 export class PlaceholderDetector {
@@ -57,9 +57,7 @@ export class PlaceholderDetector {
 		}
 		const cache = this.app.metadataCache.getFileCache(file);
 		if (cache?.frontmatter?.tags) {
-			const tags: string[] = Array.isArray(cache.frontmatter.tags)
-				? cache.frontmatter.tags
-				: [cache.frontmatter.tags];
+			const tags = normalizeFrontmatterTags(cache.frontmatter.tags);
 			for (const tag of settings.detection.excludeTags) {
 				if (tags.includes(tag)) return true;
 			}

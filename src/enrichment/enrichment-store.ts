@@ -1,7 +1,21 @@
 import { App, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { ensureFolder } from '../shared';
+import { ensureFolder, isRecord, readJsonFile } from '../shared';
 import { EnrichmentProposal, EnrichmentStatus } from './types';
+
+/**
+ * Structural guard for a persisted {@link EnrichmentProposal}. Requires the
+ * identity, source, and status fields the store keys off of; the nested
+ * `result` payload is not re-validated here.
+ */
+function isEnrichmentProposal(v: unknown): v is EnrichmentProposal {
+	return (
+		isRecord(v) &&
+		typeof v.id === 'string' &&
+		typeof v.sourceNotePath === 'string' &&
+		typeof v.status === 'string'
+	);
+}
 
 /**
  * Persists enrichment proposals as JSON files in .synapse/enrichments/.
@@ -32,9 +46,12 @@ export class EnrichmentStore {
 	async load(id: string): Promise<EnrichmentProposal | null> {
 		const files = await this.listFiles();
 		for (const filePath of files) {
-			const content = await this.app.vault.adapter.read(filePath);
-			const proposal: EnrichmentProposal = JSON.parse(content);
-			if (proposal.id === id) return proposal;
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isEnrichmentProposal
+			);
+			if (proposal && proposal.id === id) return proposal;
 		}
 		return null;
 	}
@@ -43,12 +60,13 @@ export class EnrichmentStore {
 		const files = await this.listFiles();
 		const proposals: EnrichmentProposal[] = [];
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				proposals.push(JSON.parse(content));
-			} catch {
-				// Skip invalid files
-			}
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isEnrichmentProposal
+			);
+			// Skip missing/invalid files
+			if (proposal) proposals.push(proposal);
 		}
 		return proposals;
 	}
@@ -80,15 +98,14 @@ export class EnrichmentStore {
 	async delete(id: string): Promise<void> {
 		const files = await this.listFiles();
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				const proposal: EnrichmentProposal = JSON.parse(content);
-				if (proposal.id === id) {
-					await this.app.vault.adapter.remove(filePath);
-					return;
-				}
-			} catch {
-				// Skip
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isEnrichmentProposal
+			);
+			if (proposal && proposal.id === id) {
+				await this.app.vault.adapter.remove(filePath);
+				return;
 			}
 		}
 	}

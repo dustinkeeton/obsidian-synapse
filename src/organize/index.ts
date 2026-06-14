@@ -4,6 +4,7 @@ import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder,
 	writeNote, generateOrganizeSummary, CheckpointManager, generateId, fireAndForget,
+	normalizeFrontmatterTags,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import type { MoveRecord } from '../shared';
@@ -652,9 +653,7 @@ export class OrganizeModule {
 
 		const cache = this.plugin.app.metadataCache.getFileCache(file);
 		if (cache?.frontmatter?.tags) {
-			const fileTags: string[] = Array.isArray(cache.frontmatter.tags)
-				? cache.frontmatter.tags
-				: [cache.frontmatter.tags];
+			const fileTags = normalizeFrontmatterTags(cache.frontmatter.tags);
 			for (const excludeTag of settings.excludeTags) {
 				const normalized = excludeTag.startsWith('#')
 					? excludeTag.slice(1)

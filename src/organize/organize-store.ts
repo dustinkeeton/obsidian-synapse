@@ -1,7 +1,31 @@
 import { App, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { ensureFolder } from '../shared';
+import { ensureFolder, isRecord, readJsonFile } from '../shared';
 import { OrganizeProposal, OrganizeProposalStatus, OrganizeSnapshot } from './types';
+
+/** Structural guard for a persisted {@link OrganizeProposal}. */
+function isOrganizeProposal(v: unknown): v is OrganizeProposal {
+	return (
+		isRecord(v) &&
+		typeof v.id === 'string' &&
+		typeof v.sourceNotePath === 'string' &&
+		typeof v.status === 'string'
+	);
+}
+
+/**
+ * Structural guard for a persisted {@link OrganizeSnapshot}. Requires the
+ * path-pair fields used for undo; replaces the previous unchecked
+ * `as OrganizeSnapshot` cast.
+ */
+function isOrganizeSnapshot(v: unknown): v is OrganizeSnapshot {
+	return (
+		isRecord(v) &&
+		typeof v.id === 'string' &&
+		typeof v.currentPath === 'string' &&
+		typeof v.originalPath === 'string'
+	);
+}
 
 /**
  * Persists organize proposals and undo snapshots as JSON files.
@@ -40,9 +64,12 @@ export class OrganizeStore {
 	async loadProposal(id: string): Promise<OrganizeProposal | null> {
 		const files = await this.listFiles(this.proposalFolder);
 		for (const filePath of files) {
-			const content = await this.app.vault.adapter.read(filePath);
-			const proposal: OrganizeProposal = JSON.parse(content);
-			if (proposal.id === id) return proposal;
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isOrganizeProposal
+			);
+			if (proposal && proposal.id === id) return proposal;
 		}
 		return null;
 	}
@@ -51,12 +78,13 @@ export class OrganizeStore {
 		const files = await this.listFiles(this.proposalFolder);
 		const proposals: OrganizeProposal[] = [];
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				proposals.push(JSON.parse(content));
-			} catch {
-				// Skip invalid files
-			}
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isOrganizeProposal
+			);
+			// Skip missing/invalid files
+			if (proposal) proposals.push(proposal);
 		}
 		return proposals;
 	}
@@ -76,15 +104,14 @@ export class OrganizeStore {
 	async deleteProposal(id: string): Promise<void> {
 		const files = await this.listFiles(this.proposalFolder);
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				const proposal: OrganizeProposal = JSON.parse(content);
-				if (proposal.id === id) {
-					await this.app.vault.adapter.remove(filePath);
-					return;
-				}
-			} catch {
-				// Skip
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isOrganizeProposal
+			);
+			if (proposal && proposal.id === id) {
+				await this.app.vault.adapter.remove(filePath);
+				return;
 			}
 		}
 	}
@@ -100,14 +127,7 @@ export class OrganizeStore {
 
 	async loadSnapshot(currentPath: string): Promise<OrganizeSnapshot | null> {
 		const path = this.snapshotPath(currentPath);
-		try {
-			const exists = await this.app.vault.adapter.exists(path);
-			if (!exists) return null;
-			const content = await this.app.vault.adapter.read(path);
-			return JSON.parse(content) as OrganizeSnapshot;
-		} catch {
-			return null;
-		}
+		return readJsonFile(this.app.vault.adapter, path, isOrganizeSnapshot);
 	}
 
 	async removeSnapshot(currentPath: string): Promise<void> {

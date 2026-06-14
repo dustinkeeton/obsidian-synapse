@@ -1,7 +1,17 @@
 import { App, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { ensureFolder } from '../shared';
+import { ensureFolder, isRecord, readJsonFile } from '../shared';
 import { TitleProposal, TitleProposalStatus } from './types';
+
+/** Structural guard for a persisted {@link TitleProposal}. */
+function isTitleProposal(v: unknown): v is TitleProposal {
+	return (
+		isRecord(v) &&
+		typeof v.id === 'string' &&
+		typeof v.sourceNotePath === 'string' &&
+		typeof v.status === 'string'
+	);
+}
 
 export class TitleProposalStore {
 	constructor(
@@ -28,9 +38,12 @@ export class TitleProposalStore {
 	async load(id: string): Promise<TitleProposal | null> {
 		const files = await this.listProposalFiles();
 		for (const filePath of files) {
-			const content = await this.app.vault.adapter.read(filePath);
-			const proposal: TitleProposal = JSON.parse(content);
-			if (proposal.id === id) return proposal;
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isTitleProposal
+			);
+			if (proposal && proposal.id === id) return proposal;
 		}
 		return null;
 	}
@@ -39,12 +52,13 @@ export class TitleProposalStore {
 		const files = await this.listProposalFiles();
 		const proposals: TitleProposal[] = [];
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				proposals.push(JSON.parse(content));
-			} catch {
-				// Skip invalid proposal files
-			}
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isTitleProposal
+			);
+			// Skip missing/invalid proposal files
+			if (proposal) proposals.push(proposal);
 		}
 		return proposals;
 	}
@@ -70,9 +84,12 @@ export class TitleProposalStore {
 	async delete(id: string): Promise<void> {
 		const files = await this.listProposalFiles();
 		for (const filePath of files) {
-			const content = await this.app.vault.adapter.read(filePath);
-			const proposal: TitleProposal = JSON.parse(content);
-			if (proposal.id === id) {
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isTitleProposal
+			);
+			if (proposal && proposal.id === id) {
 				await this.app.vault.adapter.remove(filePath);
 				return;
 			}
