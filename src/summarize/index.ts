@@ -664,8 +664,6 @@ export class SummarizeModule {
 	}
 
 	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<void> {
-		const settings = this.getSettings().summarize;
-
 		// Phase 1: Scan for files with targets
 		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(

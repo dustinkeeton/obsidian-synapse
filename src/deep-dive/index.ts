@@ -2,7 +2,7 @@ import { Plugin, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings, DeepDiveNestingMode } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
-	NotificationManager, ensureFolder, readNote, writeNote, wordCount,
+	NotificationManager, readNote, writeNote, wordCount,
 	CheckpointManager, generateId,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';

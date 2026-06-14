@@ -18,7 +18,7 @@ import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onb
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
 import { FolderPickerModal, NotificationManager, CheckpointManager } from './shared';
-import type { DeferredTask, Checkpoint } from './shared';
+import type { DeferredTask } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
 import { findVideoUrls } from './video';

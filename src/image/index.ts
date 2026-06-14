@@ -5,7 +5,6 @@ import {
 	CheckpointManager, generateId,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
-import { findImageEmbeds } from './note-scanner';
 import { ImageEmbed } from './types';
 import { ImageExtractor } from './extractor';
 

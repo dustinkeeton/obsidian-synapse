@@ -2,7 +2,7 @@ import { SynapseSettings, TagVocabularyEntry } from '../settings';
 import { AIClient, sanitizeAIResponse } from '../shared';
 import { TagCandidate } from './types';
 
-const TAG_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_/\-]{0,49}$/;
+const TAG_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_/-]{0,49}$/;
 
 /**
  * Classifies notes using a user-defined metadata tag vocabulary.
