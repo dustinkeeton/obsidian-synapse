@@ -266,7 +266,7 @@ export class EnrichmentModule {
 		const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
 			id: `enrich-${i}-${f.path}`,
 			label: f.path,
-			payload: { filePath: f.path } as Record<string, unknown>,
+			payload: { filePath: f.path },
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'enrichment',

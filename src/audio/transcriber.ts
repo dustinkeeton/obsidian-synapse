@@ -147,7 +147,7 @@ export function buildMultipartBody(
 
 	return {
 		contentType: `multipart/form-data; boundary=${boundary}`,
-		body: body.buffer as ArrayBuffer,
+		body: body.buffer,
 	};
 }
 

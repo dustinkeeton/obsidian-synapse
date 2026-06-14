@@ -121,7 +121,7 @@ export class VideoModule {
 		let result;
 		try {
 			result = await this.audioModule.transcribe(
-				audioData.buffer as ArrayBuffer,
+				audioData.buffer,
 				extraction.metadata.title + '.mp3',
 				{ sourceName: extraction.metadata.title }
 			);
@@ -211,7 +211,7 @@ export class VideoModule {
 		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({
 			id: `video-${i}-${e.url}`,
 			label: e.url,
-			payload: { url: e.url, line: e.line } as Record<string, unknown>,
+			payload: { url: e.url, line: e.line },
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'video',
@@ -331,7 +331,7 @@ export class VideoModule {
 		const data = videoData.buffer.slice(
 			videoData.byteOffset,
 			videoData.byteOffset + videoData.byteLength
-		) as ArrayBuffer;
+		);
 		const vaultPath = this.findAvailableVaultPath(
 			normalizePath(`${settings.downloadFolder}/${fileName}`)
 		);

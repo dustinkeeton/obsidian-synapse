@@ -127,7 +127,7 @@ export function addCollapsibleSection(
 		toggleSetting.settingEl.addClass('synapse-accordion-toggle-setting');
 		toggleSetting.addToggle((t) => {
 			toggle = t;
-			t.setValue(enabled as boolean);
+			t.setValue(enabled);
 			t.setTooltip(toggleAriaLabel ?? title);
 			t.onChange(async (value) => {
 				// Toggle drives collapse: ON expands, OFF collapses. Do this

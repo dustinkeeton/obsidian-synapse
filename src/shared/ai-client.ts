@@ -130,10 +130,10 @@ interface GeminiResponseJson {
 export function extractGeminiResponseText(json: unknown): string {
 	// `requestUrl().json` is `any`; narrow to the known optional shape before
 	// access. A non-object body simply has no candidates and falls through to
-	// the descriptive "returned no text" error below. The cast is sound: every
-	// field is optional and read via optional chaining, so a mismatch surfaces
-	// as a thrown error rather than an unchecked access.
-	const response: GeminiResponseJson = isRecord(json) ? (json as GeminiResponseJson) : {};
+	// the descriptive "returned no text" error below. The narrowing is sound:
+	// every field is optional and read via optional chaining, so a mismatch
+	// surfaces as a thrown error rather than an unchecked access.
+	const response: GeminiResponseJson = isRecord(json) ? json : {};
 	const candidate = response.candidates?.[0];
 	const parts = candidate?.content?.parts;
 	if (!parts || parts.length === 0) {

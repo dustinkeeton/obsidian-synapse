@@ -54,11 +54,13 @@ export interface NodeDeps {
  */
 function buildRealNodeDeps(): NodeDeps {
 	/* eslint-disable @typescript-eslint/no-var-requires -- lazy-load Node builtins so the bundle can load on mobile (isDesktopOnly: false) */
+	// Cast each require() value to its module type (matching audio-extractor) so
+	// the untyped `require()` result doesn't leak `any` into NodeDeps.
 	return {
-		os: require('os'),
-		path: require('path'),
-		fs: require('fs'),
-		execFile: require('child_process').execFile,
+		os: require('os') as typeof import('os'),
+		path: require('path') as typeof import('path'),
+		fs: require('fs') as typeof import('fs'),
+		execFile: (require('child_process') as typeof import('child_process')).execFile,
 	};
 	/* eslint-enable @typescript-eslint/no-var-requires -- re-enable now that the lazy Node-builtin loads are done */
 }

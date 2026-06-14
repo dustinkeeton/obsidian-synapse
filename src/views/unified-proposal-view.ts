@@ -266,7 +266,7 @@ export class UnifiedProposalView extends ItemView {
 			case 'organize':
 				return `Organize: ${item.data.sourceNotePath}`;
 			case 'deep-dive':
-				return `Deep Dive: ${(item.data as DeepDiveProposal).topic.title}`;
+				return `Deep Dive: ${item.data.topic.title}`;
 			case 'title':
 				return `Title: ${item.data.sourceNotePath}`;
 			case 'rem':
@@ -1131,7 +1131,7 @@ export class UnifiedProposalView extends ItemView {
 
 			// Checkbox row for this candidate
 			const row = section.createEl('label', { cls: 'synapse-checklist-row' });
-			const checkbox = row.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
+			const checkbox = row.createEl('input', { type: 'checkbox' });
 			checkbox.checked = this.selectedRemLinks.has(candidate.matchedText);
 			checkbox.addEventListener('change', () => {
 				if (checkbox.checked) {
@@ -1249,7 +1249,7 @@ export class UnifiedProposalView extends ItemView {
 			const label = config.getLabel(item);
 
 			const row = section.createEl('label', { cls: 'synapse-checklist-row' });
-			const checkbox = row.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
+			const checkbox = row.createEl('input', { type: 'checkbox' });
 			checkbox.checked = config.selectedSet.has(id);
 			checkbox.addEventListener('change', () => {
 				if (checkbox.checked) {

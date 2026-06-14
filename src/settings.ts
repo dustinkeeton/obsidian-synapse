@@ -298,7 +298,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		model: 'gpt-4o',
 		maxTokens: 2048,
 		temperature: 0.7,
-	} as AISettings,
+	},
 	elaboration: {
 		enabled: true,
 		proposalFolderPath: '.synapse/proposals',

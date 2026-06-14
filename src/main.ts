@@ -418,11 +418,17 @@ export default class SynapsePlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const data = await this.loadData();
+		// `loadData()` returns `any`; narrow it to the persisted-settings shape so
+		// the fresh-install check and merge are type-safe. Persisted data is a
+		// (possibly partial / older-schema) settings object, or null on first run.
+		const data = (await this.loadData()) as Partial<SynapseSettings> | null;
 		// No persisted data (null) or an empty object means this is the plugin's
 		// first run in this vault — used to gate the first-run welcome (#89).
 		this.isFreshInstall = !data || Object.keys(data).length === 0;
-		this.settings = this.deepMerge(DEFAULT_SETTINGS, data || {});
+		// A partial settings object satisfies deepMerge's `Record<string, unknown>`
+		// source param directly — no boundary cast needed. deepMerge itself is
+		// left untouched (its prototype-pollution-safe recursion is out of scope).
+		this.settings = this.deepMerge(DEFAULT_SETTINGS, data ?? {});
 	}
 
 	async saveSettings(): Promise<void> {

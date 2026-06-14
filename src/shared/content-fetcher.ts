@@ -77,12 +77,17 @@ export function extractJsonLdRecipes(html: string): RecipeJsonLd[] {
 
 		const candidates: unknown[] = [];
 
+		// `Array.isArray` narrows `unknown` to `any[]`, so spreading the result
+		// directly would leak `any` into `candidates`. Type the arrays as
+		// `unknown[]` first; each element is structurally guarded below anyway.
 		if (Array.isArray(parsed)) {
-			candidates.push(...parsed);
+			const arr: unknown[] = parsed;
+			candidates.push(...arr);
 		} else if (isRecord(parsed)) {
 			const graph = parsed['@graph'];
 			if (Array.isArray(graph)) {
-				candidates.push(...graph);
+				const arr: unknown[] = graph;
+				candidates.push(...arr);
 			} else {
 				candidates.push(parsed);
 			}
@@ -95,7 +100,7 @@ export function extractJsonLdRecipes(html: string): RecipeJsonLd[] {
 					type === 'Recipe' ||
 					(Array.isArray(type) && type.includes('Recipe'));
 				if (isRecipe) {
-					recipes.push(candidate as RecipeJsonLd);
+					recipes.push(candidate);
 				}
 			}
 		}
