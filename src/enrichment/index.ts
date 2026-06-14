@@ -3,7 +3,7 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter,
-	CheckpointManager, generateId, isTwitterUrl, fetchTweetContent,
+	CheckpointManager, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
@@ -89,7 +89,13 @@ export class EnrichmentModule {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
 					this.plugin.app,
-					(folder) => this.scanVault(folder.isRoot() ? undefined : folder.path),
+					(folder) => {
+						fireAndForget(
+							this.scanVault(folder.isRoot() ? undefined : folder.path),
+							'Scan vault for enrichment',
+							{ notifications: this.notifications },
+						);
+					},
 					defaultPath
 				).open();
 			},
@@ -644,7 +650,11 @@ export class EnrichmentModule {
 		for (const task of tasks) {
 			switch (task.type) {
 				case 'refresh-sidebar-view':
-					this.onViewRefreshNeeded?.();
+					if (this.onViewRefreshNeeded) {
+						fireAndForget(this.onViewRefreshNeeded(), 'Refresh proposal view', {
+							background: true,
+						});
+					}
 					break;
 				default:
 					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);

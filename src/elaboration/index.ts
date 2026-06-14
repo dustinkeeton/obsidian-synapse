@@ -4,6 +4,7 @@ import { CommandRegistrar, isInFlow } from '../commands';
 import {
 	buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles,
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager, generateId,
+	fireAndForget,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { PlaceholderDetector } from './detector';
@@ -56,7 +57,13 @@ export class ElaborationModule {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
 					this.plugin.app,
-					(folder) => this.scanVault(folder.isRoot() ? undefined : folder.path),
+					(folder) => {
+						fireAndForget(
+							this.scanVault(folder.isRoot() ? undefined : folder.path),
+							'Scan vault for stub notes',
+							{ notifications: this.notifications },
+						);
+					},
 					defaultPath
 				).open();
 			},
@@ -78,12 +85,20 @@ export class ElaborationModule {
 
 		const settings = this.getSettings().elaboration;
 		if (settings.scanOnStartup && isInFlow('scan-vault', 'startup')) {
-			this.startupTimeout = window.setTimeout(() => this.scanVault(), 5000);
+			this.startupTimeout = window.setTimeout(() => {
+				fireAndForget(this.scanVault(), 'Scan vault for stub notes', {
+					notifications: this.notifications,
+				});
+			}, 5000);
 		}
 
 		if (settings.autoScanInterval > 0 && isInFlow('scan-vault', 'startup')) {
 			this.scanInterval = window.setInterval(
-				() => this.scanVault(),
+				() => {
+					fireAndForget(this.scanVault(), 'Scan vault for stub notes', {
+						notifications: this.notifications,
+					});
+				},
 				settings.autoScanInterval * 60 * 1000
 			);
 		}
@@ -411,7 +426,11 @@ export class ElaborationModule {
 		for (const task of tasks) {
 			switch (task.type) {
 				case 'refresh-sidebar-view':
-					this.onViewRefreshNeeded?.();
+					if (this.onViewRefreshNeeded) {
+						fireAndForget(this.onViewRefreshNeeded(), 'Refresh proposal view', {
+							background: true,
+						});
+					}
 					break;
 				default:
 					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);

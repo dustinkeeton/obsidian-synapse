@@ -4,7 +4,7 @@ import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, FolderPickerModal } from '../shared';
+import { generateId, getMarkdownFiles, FolderPickerModal, fireAndForget } from '../shared';
 import { MentionScanner } from './mention-scanner';
 import { SemanticMatcher } from './semantic-matcher';
 import { RemApplier } from './rem-applier';
@@ -69,7 +69,9 @@ export class RemModule {
 					this.plugin.app,
 					(folder) => {
 						const path = folder.isRoot() ? undefined : folder.path;
-						this.remScanDirectory(path);
+						fireAndForget(this.remScanDirectory(path), 'Discover REM links in directory', {
+							notifications: this.notifications,
+						});
 					}
 				).open();
 			},
@@ -485,7 +487,11 @@ export class RemModule {
 		for (const task of tasks) {
 			switch (task.type) {
 				case 'refresh-sidebar-view':
-					this.onViewRefreshNeeded?.();
+					if (this.onViewRefreshNeeded) {
+						fireAndForget(this.onViewRefreshNeeded(), 'Refresh proposal view', {
+							background: true,
+						});
+					}
 					break;
 				default:
 					console.warn(`[Synapse REM] Unknown deferred task type: ${task.type}`);

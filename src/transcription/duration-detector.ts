@@ -132,7 +132,7 @@ export async function detectUrlDuration(
 				['--dump-json', '--no-download', validatedUrl],
 				{ env: shellEnv(), maxBuffer: 10 * 1024 * 1024, timeout: 30_000 },
 				(error, stdout) => {
-					if (error) reject(error);
+					if (error) reject(error instanceof Error ? error : new Error(String(error)));
 					else resolve(stdout);
 				}
 			);

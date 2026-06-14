@@ -3,7 +3,7 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout,
-	CALLOUT_TYPES, CheckpointManager, generateId,
+	CALLOUT_TYPES, CheckpointManager, generateId, fireAndForget,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { OperationHandle } from '../shared';
@@ -111,7 +111,13 @@ export class SummarizeModule {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
 					this.plugin.app,
-					(folder) => this.scanVault(folder.isRoot() ? undefined : folder.path),
+					(folder) => {
+						fireAndForget(
+							this.scanVault(folder.isRoot() ? undefined : folder.path),
+							'Scan vault for notes to summarize',
+							{ notifications: this.notifications },
+						);
+					},
 					defaultPath
 				).open();
 			},
