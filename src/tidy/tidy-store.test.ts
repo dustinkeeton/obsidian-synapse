@@ -18,6 +18,7 @@ describe('TidyStore', () => {
 	let store: TidyStore;
 	let mockAdapter: any;
 	let mockVault: any;
+	let mockFileManager: any;
 
 	beforeEach(() => {
 		mockAdapter = {
@@ -30,10 +31,15 @@ describe('TidyStore', () => {
 			createFolder: vi.fn().mockResolvedValue(undefined),
 			getAbstractFileByPath: vi.fn().mockReturnValue(null),
 			read: vi.fn().mockResolvedValue(''),
-			delete: vi.fn().mockResolvedValue(undefined),
 		};
 
-		const app = { vault: mockVault } as any;
+		// remove() trashes via FileManager.trashFile (recoverable) rather than
+		// vault.delete (permanent).
+		mockFileManager = {
+			trashFile: vi.fn().mockResolvedValue(undefined),
+		};
+
+		const app = { vault: mockVault, fileManager: mockFileManager } as any;
 		const getSettings = () => ({ ...DEFAULT_SETTINGS });
 		store = new TidyStore(app, getSettings);
 	});
@@ -103,18 +109,18 @@ describe('TidyStore', () => {
 		expect(loaded).toBeNull();
 	});
 
-	it('removes a snapshot when file exists', async () => {
+	it('trashes a snapshot when file exists', async () => {
 		const mockFile = new TFile('snap.json');
 		mockVault.getAbstractFileByPath.mockReturnValue(mockFile);
 
 		await store.remove('notes/test.md');
-		expect(mockVault.delete).toHaveBeenCalledWith(mockFile);
+		expect(mockFileManager.trashFile).toHaveBeenCalledWith(mockFile);
 	});
 
 	it('does nothing when removing a nonexistent snapshot', async () => {
 		mockVault.getAbstractFileByPath.mockReturnValue(null);
 		await store.remove('notes/nonexistent.md');
-		expect(mockVault.delete).not.toHaveBeenCalled();
+		expect(mockFileManager.trashFile).not.toHaveBeenCalled();
 	});
 
 	it('sanitizes slashes in file paths for snapshot filename', async () => {

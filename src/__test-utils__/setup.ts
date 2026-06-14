@@ -29,3 +29,11 @@ if (!Object.getOwnPropertyDescriptor(globalThis, 'activeDocument')) {
 		},
 	});
 }
+
+// `createEl` is Obsidian's global element factory; in the renderer it creates
+// elements on the active document. Mirror that here by delegating to
+// `activeDocument.createElement`, so tests that stub `document.createElement`
+// (e.g. the image-preprocess canvas mocks) continue to intercept transparently.
+if (typeof g.createEl === 'undefined') {
+	g.createEl = (tag: string) => (g.document as Document)?.createElement(tag);
+}

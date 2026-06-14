@@ -1,4 +1,4 @@
-import { App } from 'obsidian';
+import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { ensureFolder } from '../shared';
 import { TidySnapshot } from './types';
@@ -28,16 +28,20 @@ export class TidyStore {
 	async load(filePath: string): Promise<TidySnapshot | null> {
 		const path = this.snapshotPath(filePath);
 		const file = this.app.vault.getAbstractFileByPath(path);
-		if (!file) return null;
-		const content = await this.app.vault.read(file as import('obsidian').TFile);
+		// Bail out if the path resolves to a folder or nothing.
+		if (!(file instanceof TFile)) return null;
+		const content = await this.app.vault.read(file);
 		return JSON.parse(content) as TidySnapshot;
 	}
 
 	async remove(filePath: string): Promise<void> {
 		const path = this.snapshotPath(filePath);
 		const file = this.app.vault.getAbstractFileByPath(path);
-		if (file) {
-			await this.app.vault.delete(file);
+		// Only trash actual files; ignore folders / missing paths. trashFile
+		// respects the user's "Deleted files" preference, so snapshots are
+		// recoverable rather than permanently destroyed.
+		if (file instanceof TFile) {
+			await this.app.fileManager.trashFile(file);
 		}
 	}
 

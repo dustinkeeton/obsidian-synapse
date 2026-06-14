@@ -141,6 +141,10 @@ export class SynapseSettingTab extends PluginSettingTab {
 		}
 	}
 
+	// NOTE: Migrating this imperative display() to the declarative
+	// getSettingDefinitions() API is deferred until minAppVersion >= 1.13.0.
+	// The project builds against obsidian 1.7.2, where display() is not
+	// deprecated and getSettingDefinitions does not yet exist.
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();

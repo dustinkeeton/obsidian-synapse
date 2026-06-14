@@ -1,4 +1,5 @@
-import type { Plugin, TFile } from 'obsidian';
+import type { Plugin } from 'obsidian';
+import { TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager } from '../shared';
@@ -88,12 +89,12 @@ export class RemModule {
 	async remScanNote(filePath: string): Promise<RemProposal | null> {
 		const settings = this.getSettings().rem;
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
-		if (!file || !('extension' in file)) {
+		if (!(file instanceof TFile)) {
 			this.notifications.info('File not found');
 			return null;
 		}
 
-		const tFile = file as TFile;
+		const tFile = file;
 		if (this.isExcluded(tFile)) {
 			this.notifications.info('Note is excluded from REM scanning');
 			return null;
@@ -282,9 +283,9 @@ export class RemModule {
 				op.progress(i + 1, checkpoint.remainingItems.length, 'Resuming');
 
 				const filePath = item.payload.filePath as string;
-				const file = this.plugin.app.vault.getAbstractFileByPath(filePath) as TFile | null;
+				const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 
-				if (!file) {
+				if (!(file instanceof TFile)) {
 					await this.checkpointManager.completeItem(checkpoint.id, item.id);
 					continue;
 				}
@@ -349,12 +350,12 @@ export class RemModule {
 		if (proposal.status !== 'pending') return;
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
-		if (!file) {
+		if (!(file instanceof TFile)) {
 			this.notifications.info('Source note no longer exists');
 			return;
 		}
 
-		const tFile = file as TFile;
+		const tFile = file;
 
 		// Filter candidates to only accepted ones
 		const accepted = proposal.candidates.filter(
@@ -432,12 +433,12 @@ export class RemModule {
 		const originalContent = proposal.originalContent;
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
-		if (!file) {
+		if (!(file instanceof TFile)) {
 			this.notifications.info('Source note no longer exists');
 			return;
 		}
 
-		const tFile = file as TFile;
+		const tFile = file;
 		await this.plugin.app.vault.process(tFile, () => originalContent);
 
 		// Reset proposal to pending
