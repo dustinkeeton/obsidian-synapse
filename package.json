@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"lint": "eslint src",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
@@ -17,13 +18,16 @@
 	"devDependencies": {
 		"@emnapi/core": "^1.7.1",
 		"@emnapi/runtime": "^1.7.1",
+		"@eslint/js": "^9.39.4",
 		"@types/node": "^22.0.0",
 		"@vitest/coverage-v8": "^4.1.8",
 		"builtin-modules": "^4.0.0",
 		"esbuild": "^0.28.1",
+		"eslint": "^9.39.4",
 		"obsidian": "1.7.2",
 		"tslib": "^2.7.0",
 		"typescript": "^5.6.0",
+		"typescript-eslint": "^8.61.0",
 		"vitest": "^4.1.0"
 	}
 }
