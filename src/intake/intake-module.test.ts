@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { IntakeModule } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile, TFolder } from '../__mocks__/obsidian';
@@ -56,8 +56,13 @@ describe('IntakeModule', () => {
 	let notifications: ReturnType<typeof createMockNotifications>;
 	let settings: SynapseSettings;
 	let deps: {
-		fireOnFile: ReturnType<typeof vi.fn>;
-		transcribeUrlToNote: ReturnType<typeof vi.fn>;
+		// Typed with their real Promise-returning signatures (mirroring IntakeDeps)
+		// so `mockImplementation` accepts async bodies — an untyped `vi.fn()` infers
+		// a `void` return, which trips `@typescript-eslint/no-misused-promises`.
+		fireOnFile: Mock<(file: any) => Promise<void>>;
+		transcribeUrlToNote: Mock<
+			(url: string, mediaType: 'video' | 'audio', file: any) => Promise<void>
+		>;
 	};
 	/** Captured vault event handlers, keyed by event name. */
 	let handlers: Record<string, (file: any) => void>;

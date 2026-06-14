@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { SynapseRunner } from './synapse-runner';
 import { DEFAULT_SETTINGS } from '../settings';
-import type { PipelineModuleMap } from './types';
+import type { PipelineModuleMap, PipelineScanFn } from './types';
 import { TFile, TFolder } from '../__mocks__/obsidian';
 
 function createMockNotifications() {
@@ -59,27 +59,27 @@ describe('SynapseRunner', () => {
 
 	it('runs all enabled phases in correct order', async () => {
 		const callOrder: string[] = [];
-		(mockModules.elaboration as ReturnType<typeof vi.fn>).mockImplementation(() => {
+		(mockModules.elaboration as Mock<PipelineScanFn>).mockImplementation(() => {
 			callOrder.push('elaboration');
 			return Promise.resolve(0);
 		});
-		(mockModules.summarize as ReturnType<typeof vi.fn>).mockImplementation(() => {
+		(mockModules.summarize as Mock<PipelineScanFn>).mockImplementation(() => {
 			callOrder.push('summarize');
 			return Promise.resolve();
 		});
-		(mockModules.enrichment as ReturnType<typeof vi.fn>).mockImplementation(() => {
+		(mockModules.enrichment as Mock<PipelineScanFn>).mockImplementation(() => {
 			callOrder.push('enrichment');
 			return Promise.resolve(0);
 		});
-		(mockModules.rem as ReturnType<typeof vi.fn>).mockImplementation(() => {
+		(mockModules.rem as Mock<PipelineScanFn>).mockImplementation(() => {
 			callOrder.push('rem');
 			return Promise.resolve(0);
 		});
-		(mockModules.tidy as ReturnType<typeof vi.fn>).mockImplementation(() => {
+		(mockModules.tidy as Mock<PipelineScanFn>).mockImplementation(() => {
 			callOrder.push('tidy');
 			return Promise.resolve(0);
 		});
-		(mockModules.organize as ReturnType<typeof vi.fn>).mockImplementation(() => {
+		(mockModules.organize as Mock<PipelineScanFn>).mockImplementation(() => {
 			callOrder.push('organize');
 			return Promise.resolve(0);
 		});
@@ -146,11 +146,11 @@ describe('SynapseRunner', () => {
 
 	it('pipeline cancellation stops at next phase boundary', async () => {
 		let phaseCount = 0;
-		(mockModules.elaboration as ReturnType<typeof vi.fn>).mockImplementation(() => {
+		(mockModules.elaboration as Mock<PipelineScanFn>).mockImplementation(() => {
 			phaseCount++;
 			return Promise.resolve(0);
 		});
-		(mockModules.summarize as ReturnType<typeof vi.fn>).mockImplementation(() => {
+		(mockModules.summarize as Mock<PipelineScanFn>).mockImplementation(() => {
 			phaseCount++;
 			// Simulate cancellation after summarize completes
 			mockNotifications._handle.cancelled = true;
@@ -169,7 +169,7 @@ describe('SynapseRunner', () => {
 	});
 
 	it('phase error does not abort pipeline', async () => {
-		(mockModules.enrichment as ReturnType<typeof vi.fn>).mockRejectedValue(
+		(mockModules.enrichment as Mock<PipelineScanFn>).mockRejectedValue(
 			new Error('Enrichment exploded'),
 		);
 
@@ -278,7 +278,7 @@ describe('SynapseRunner', () => {
 		});
 
 		it('a phase error does not abort the remaining phases', async () => {
-			(mockModules.enrichment as ReturnType<typeof vi.fn>).mockRejectedValue(
+			(mockModules.enrichment as Mock<PipelineScanFn>).mockRejectedValue(
 				new Error('boom'),
 			);
 			const file = fileIn('Inbox', 'note.md');
