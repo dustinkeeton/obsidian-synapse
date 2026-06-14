@@ -6,6 +6,7 @@ import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
 import type { RemProposal } from '../rem';
 import type { Checkpoint } from '../shared';
+import { fireAndForget } from '../shared';
 import type { UnifiedItem, UnifiedViewCallbacks } from './types';
 
 export { type UnifiedItem, type UnifiedViewCallbacks } from './types';
@@ -136,12 +137,29 @@ export class UnifiedProposalView extends ItemView {
 		}
 	}
 
+	/**
+	 * Register a click handler that invokes a promise-returning callback as
+	 * fire-and-forget. The listener receives a synchronous arrow (returning
+	 * `void`, never a promise) and any rejection is surfaced to the user via
+	 * {@link fireAndForget}, so a failed accept/reject no longer fails silently.
+	 *
+	 * Use this for click handlers whose entire body is a single async callback
+	 * (e.g. Accept/Reject buttons on proposal cards). For handlers that also run
+	 * synchronous work before the async call (e.g. clearing review state), call
+	 * {@link fireAndForget} directly inside a sync arrow instead.
+	 */
+	private onClick(el: HTMLElement, fn: () => Promise<unknown>, label: string): void {
+		el.addEventListener('click', () => {
+			fireAndForget(fn(), label);
+		});
+	}
+
 	/** Open a note in Obsidian's main editor pane. */
 	private openNote(path: string): void {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (file) {
 			const leaf = this.app.workspace.getLeaf(false);
-			leaf.openFile(file as import('obsidian').TFile);
+			fireAndForget(leaf.openFile(file as import('obsidian').TFile), 'Open note');
 		}
 	}
 
@@ -387,7 +405,7 @@ export class UnifiedProposalView extends ItemView {
 			if (bulkInProgress) {
 				acceptAllBtn.disabled = true;
 			}
-			acceptAllBtn.addEventListener('click', () => this.acceptAll());
+			this.onClick(acceptAllBtn, () => this.acceptAll(), 'Accept all proposals');
 
 			const rejectAllBtn = bulkBar.createEl('button', {
 				text: 'Reject all',
@@ -396,7 +414,7 @@ export class UnifiedProposalView extends ItemView {
 			if (bulkInProgress) {
 				rejectAllBtn.disabled = true;
 			}
-			rejectAllBtn.addEventListener('click', () => this.rejectAll());
+			this.onClick(rejectAllBtn, () => this.rejectAll(), 'Reject all proposals');
 		}
 
 		const list = contentEl.createDiv({ cls: 'synapse-proposal-list' });
@@ -458,14 +476,14 @@ export class UnifiedProposalView extends ItemView {
 		});
 
 		const acceptBtn = actions.createEl('button', { text: 'Accept' });
-		acceptBtn.addEventListener('click', () =>
-			this.callbacks.onElaborationAccept(proposal.id, proposal.proposedAdditions)
+		this.onClick(
+			acceptBtn,
+			() => this.callbacks.onElaborationAccept(proposal.id, proposal.proposedAdditions),
+			'Accept elaboration'
 		);
 
 		const rejectBtn = actions.createEl('button', { text: 'Reject' });
-		rejectBtn.addEventListener('click', () =>
-			this.callbacks.onElaborationReject(proposal.id)
-		);
+		this.onClick(rejectBtn, () => this.callbacks.onElaborationReject(proposal.id), 'Reject elaboration');
 	}
 
 	private renderEnrichmentCard(container: HTMLElement, proposal: EnrichmentProposal): void {
@@ -518,13 +536,14 @@ export class UnifiedProposalView extends ItemView {
 				externalLinks: result.externalLinks.map(r => r.url),
 				frontmatter: result.frontmatter.map(f => f.key),
 			};
-			this.callbacks.onEnrichmentAcceptSelected(proposal.id, all);
+			fireAndForget(
+				this.callbacks.onEnrichmentAcceptSelected(proposal.id, all),
+				'Accept enrichment'
+			);
 		});
 
 		const rejectBtn = actions.createEl('button', { text: 'Reject' });
-		rejectBtn.addEventListener('click', () =>
-			this.callbacks.onEnrichmentReject(proposal.id)
-		);
+		this.onClick(rejectBtn, () => this.callbacks.onEnrichmentReject(proposal.id), 'Reject enrichment');
 	}
 
 	private renderOrganizeCard(container: HTMLElement, proposal: OrganizeProposal): void {
@@ -552,14 +571,10 @@ export class UnifiedProposalView extends ItemView {
 		});
 
 		const acceptBtn = actions.createEl('button', { text: 'Accept' });
-		acceptBtn.addEventListener('click', () =>
-			this.callbacks.onOrganizeAccept(proposal.id)
-		);
+		this.onClick(acceptBtn, () => this.callbacks.onOrganizeAccept(proposal.id), 'Accept organize');
 
 		const rejectBtn = actions.createEl('button', { text: 'Reject' });
-		rejectBtn.addEventListener('click', () =>
-			this.callbacks.onOrganizeReject(proposal.id)
-		);
+		this.onClick(rejectBtn, () => this.callbacks.onOrganizeReject(proposal.id), 'Reject organize');
 	}
 
 	// ── Elaboration Review ─────────────────────────────────────
@@ -604,12 +619,15 @@ export class UnifiedProposalView extends ItemView {
 		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			this.reviewingElaboration = null;
-			this.callbacks.onElaborationAccept(proposal.id, textarea.value);
+			fireAndForget(
+				this.callbacks.onElaborationAccept(proposal.id, textarea.value),
+				'Accept elaboration'
+			);
 		});
 		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
 		rejectBtn.addEventListener('click', () => {
 			this.reviewingElaboration = null;
-			this.callbacks.onElaborationReject(proposal.id);
+			fireAndForget(this.callbacks.onElaborationReject(proposal.id), 'Reject elaboration');
 		});
 	}
 
@@ -695,7 +713,10 @@ export class UnifiedProposalView extends ItemView {
 				frontmatter: [...this.selectedFrontmatter],
 			};
 			this.reviewingEnrichment = null;
-			this.callbacks.onEnrichmentAcceptSelected(proposal.id, accepted);
+			fireAndForget(
+				this.callbacks.onEnrichmentAcceptSelected(proposal.id, accepted),
+				'Accept enrichment'
+			);
 		});
 
 		const selectAllBtn = actionBar.createEl('button', { text: 'All' });
@@ -719,7 +740,7 @@ export class UnifiedProposalView extends ItemView {
 		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
 		rejectBtn.addEventListener('click', () => {
 			this.reviewingEnrichment = null;
-			this.callbacks.onEnrichmentReject(proposal.id);
+			fireAndForget(this.callbacks.onEnrichmentReject(proposal.id), 'Reject enrichment');
 		});
 	}
 
@@ -772,12 +793,12 @@ export class UnifiedProposalView extends ItemView {
 		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			this.reviewingOrganize = null;
-			this.callbacks.onOrganizeAccept(proposal.id);
+			fireAndForget(this.callbacks.onOrganizeAccept(proposal.id), 'Accept organize');
 		});
 		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
 		rejectBtn.addEventListener('click', () => {
 			this.reviewingOrganize = null;
-			this.callbacks.onOrganizeReject(proposal.id);
+			fireAndForget(this.callbacks.onOrganizeReject(proposal.id), 'Reject organize');
 		});
 	}
 
@@ -819,14 +840,10 @@ export class UnifiedProposalView extends ItemView {
 		});
 
 		const acceptBtn = actions.createEl('button', { text: 'Accept' });
-		acceptBtn.addEventListener('click', () =>
-			this.callbacks.onDeepDiveAccept(proposal.id)
-		);
+		this.onClick(acceptBtn, () => this.callbacks.onDeepDiveAccept(proposal.id), 'Accept deep dive');
 
 		const rejectBtn = actions.createEl('button', { text: 'Reject' });
-		rejectBtn.addEventListener('click', () =>
-			this.callbacks.onDeepDiveReject(proposal.id)
-		);
+		this.onClick(rejectBtn, () => this.callbacks.onDeepDiveReject(proposal.id), 'Reject deep dive');
 	}
 
 	// ── Deep Dive Review ──────────────────────────────────────
@@ -897,12 +914,12 @@ export class UnifiedProposalView extends ItemView {
 		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			this.reviewingDeepDive = null;
-			this.callbacks.onDeepDiveAccept(proposal.id);
+			fireAndForget(this.callbacks.onDeepDiveAccept(proposal.id), 'Accept deep dive');
 		});
 		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
 		rejectBtn.addEventListener('click', () => {
 			this.reviewingDeepDive = null;
-			this.callbacks.onDeepDiveReject(proposal.id);
+			fireAndForget(this.callbacks.onDeepDiveReject(proposal.id), 'Reject deep dive');
 		});
 	}
 
@@ -933,14 +950,10 @@ export class UnifiedProposalView extends ItemView {
 		});
 
 		const acceptBtn = actions.createEl('button', { text: 'Accept' });
-		acceptBtn.addEventListener('click', () =>
-			this.callbacks.onTitleAccept(proposal.id)
-		);
+		this.onClick(acceptBtn, () => this.callbacks.onTitleAccept(proposal.id), 'Accept title');
 
 		const rejectBtn = actions.createEl('button', { text: 'Reject' });
-		rejectBtn.addEventListener('click', () =>
-			this.callbacks.onTitleReject(proposal.id)
-		);
+		this.onClick(rejectBtn, () => this.callbacks.onTitleReject(proposal.id), 'Reject title');
 	}
 
 	// ── Title Review ─────────────────────────────────────────
@@ -1004,12 +1017,12 @@ export class UnifiedProposalView extends ItemView {
 		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			this.reviewingTitle = null;
-			this.callbacks.onTitleAccept(proposal.id);
+			fireAndForget(this.callbacks.onTitleAccept(proposal.id), 'Accept title');
 		});
 		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
 		rejectBtn.addEventListener('click', () => {
 			this.reviewingTitle = null;
-			this.callbacks.onTitleReject(proposal.id);
+			fireAndForget(this.callbacks.onTitleReject(proposal.id), 'Reject title');
 		});
 	}
 
@@ -1054,13 +1067,14 @@ export class UnifiedProposalView extends ItemView {
 		const acceptBtn = actions.createEl('button', { text: 'Accept all' });
 		acceptBtn.addEventListener('click', () => {
 			const allTexts = candidates.map(c => c.matchedText);
-			this.callbacks.onRemAcceptSelected(proposal.id, allTexts);
+			fireAndForget(
+				this.callbacks.onRemAcceptSelected(proposal.id, allTexts),
+				'Accept REM links'
+			);
 		});
 
 		const rejectBtn = actions.createEl('button', { text: 'Reject' });
-		rejectBtn.addEventListener('click', () =>
-			this.callbacks.onRemReject(proposal.id)
-		);
+		this.onClick(rejectBtn, () => this.callbacks.onRemReject(proposal.id), 'Reject REM links');
 	}
 
 	// ── REM Review ───────────────────────────────────────────
@@ -1153,7 +1167,10 @@ export class UnifiedProposalView extends ItemView {
 		acceptBtn.addEventListener('click', () => {
 			const accepted = [...this.selectedRemLinks];
 			this.reviewingRem = null;
-			this.callbacks.onRemAcceptSelected(proposal.id, accepted);
+			fireAndForget(
+				this.callbacks.onRemAcceptSelected(proposal.id, accepted),
+				'Accept REM links'
+			);
 		});
 
 		const selectAllBtn = actionBar.createEl('button', { text: 'All' });
@@ -1171,7 +1188,7 @@ export class UnifiedProposalView extends ItemView {
 		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
 		rejectBtn.addEventListener('click', () => {
 			this.reviewingRem = null;
-			this.callbacks.onRemReject(proposal.id);
+			fireAndForget(this.callbacks.onRemReject(proposal.id), 'Reject REM links');
 		});
 	}
 
@@ -1205,14 +1222,10 @@ export class UnifiedProposalView extends ItemView {
 			const actions = card.createDiv({ cls: 'synapse-actions' });
 
 			const resumeBtn = actions.createEl('button', { text: 'Resume', cls: 'mod-cta' });
-			resumeBtn.addEventListener('click', () => {
-				this.callbacks.onCheckpointResume(cp.id);
-			});
+			this.onClick(resumeBtn, () => this.callbacks.onCheckpointResume(cp.id), 'Resume operation');
 
 			const discardBtn = actions.createEl('button', { text: 'Discard' });
-			discardBtn.addEventListener('click', () => {
-				this.callbacks.onCheckpointDiscard(cp.id);
-			});
+			this.onClick(discardBtn, () => this.callbacks.onCheckpointDiscard(cp.id), 'Discard operation');
 		}
 	}
 
