@@ -6,11 +6,15 @@ on:
     paths: ['manifest.json']
 
 # Required so the `tag` job can push the tag, and so the reusable `release`
-# workflow call can be granted `contents: write`. A called workflow cannot have
-# more permissions than its caller; without this the run fails at startup when
-# the repo default workflow permission is read-only.
+# workflow call can be granted the permissions it needs. A called workflow
+# cannot have more permissions than its caller, so the `id-token`/`attestations`
+# scopes the release uses to attest build provenance must be granted here too;
+# without this the run fails at startup when the repo default workflow
+# permission is read-only.
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   tag:
