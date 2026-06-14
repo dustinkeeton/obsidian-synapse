@@ -278,6 +278,37 @@ describe('matchesExcludeTag', () => {
 		const { file, metadataCache } = fileWithTags('keep, no-enrich');
 		expect(matchesExcludeTag(file, ['no-enrich'], metadataCache as never)).toBe(true);
 	});
+
+	// Build a file whose metadata cache is an arbitrary object, so inline-tag and
+	// combined frontmatter+inline scenarios can be exercised.
+	function fileWithCache(cache: unknown) {
+		const file = new TFile('note.md') as never;
+		const metadataCache = { getFileCache: () => cache };
+		return { file, metadataCache };
+	}
+
+	it('matches an inline body `#tag` (cache.tags), not just frontmatter', () => {
+		const { file, metadataCache } = fileWithCache({ tags: [{ tag: '#no-enrich' }] });
+		expect(matchesExcludeTag(file, ['no-enrich'], metadataCache as never)).toBe(true);
+	});
+
+	it('matches case-insensitively when the frontmatter tag differs in case', () => {
+		const { file, metadataCache } = fileWithTags(['No-Enrich']);
+		expect(matchesExcludeTag(file, ['no-enrich'], metadataCache as never)).toBe(true);
+	});
+
+	it('matches case-insensitively when the configured tag differs in case', () => {
+		const { file, metadataCache } = fileWithTags(['no-enrich']);
+		expect(matchesExcludeTag(file, ['NO-ENRICH'], metadataCache as never)).toBe(true);
+	});
+
+	it('combines frontmatter and inline tags', () => {
+		const { file, metadataCache } = fileWithCache({
+			frontmatter: { tags: ['keep'] },
+			tags: [{ tag: '#also-inline' }],
+		});
+		expect(matchesExcludeTag(file, ['also-inline'], metadataCache as never)).toBe(true);
+	});
 });
 
 describe('buildMigratedExclusions', () => {

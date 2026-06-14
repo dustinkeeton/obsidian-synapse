@@ -192,19 +192,27 @@ export function matchesExcludeTag(
 ): boolean {
 	if (excludeTags.length === 0) return false;
 	const cache = metadataCache.getFileCache(file);
-	// frontmatter is loosely typed (index signature → `any`); treat the tags
-	// field as `unknown` and let normalizeFrontmatterTags coerce it safely.
-	const raw: unknown = cache?.frontmatter?.tags;
-	if (raw === undefined || raw === null) return false;
+	if (!cache) return false;
 
-	const fileTags = normalizeFrontmatterTags(raw).map(stripHash);
-	const wanted = excludeTags.map(stripHash);
+	// Collect tags from BOTH sources, matching the most inclusive legacy behavior
+	// (enrichment read Obsidian's getAllTags): frontmatter `tags` (array or
+	// comma/space-separated string, coerced by normalizeFrontmatterTags) AND inline
+	// body `#tags` (cache.tags). Compare with a leading `#` stripped and case
+	// folded — Obsidian treats tags case-insensitively.
+	const frontmatterTags = normalizeFrontmatterTags(cache.frontmatter?.tags);
+	const inlineTags = cache.tags?.map((t) => t.tag) ?? [];
+	const fileTags = [...frontmatterTags, ...inlineTags].map(foldTag);
+	const wanted = excludeTags.map(foldTag);
 	return wanted.some((tag) => fileTags.includes(tag));
 }
 
-/** Strip a single leading `#` so tag comparisons are hash-insensitive. */
-function stripHash(tag: string): string {
-	return tag.startsWith('#') ? tag.slice(1) : tag;
+/**
+ * Normalize a tag for comparison: strip a single leading `#` and case-fold, so
+ * `no-enrich`, `#no-enrich`, and `#No-Enrich` all compare equal.
+ */
+function foldTag(tag: string): string {
+	const stripped = tag.startsWith('#') ? tag.slice(1) : tag;
+	return stripped.toLowerCase();
 }
 
 /**
