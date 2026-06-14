@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parseFrontmatter, serializeFrontmatter, mergeTags } from './frontmatter-utils';
+import {
+	parseFrontmatter,
+	serializeFrontmatter,
+	mergeTags,
+	normalizeFrontmatterTags,
+} from './frontmatter-utils';
 
 describe('parseFrontmatter', () => {
 	it('parses frontmatter and body', () => {
@@ -81,5 +86,39 @@ describe('mergeTags', () => {
 		const fm: Record<string, unknown> = { title: 'Test' };
 		mergeTags(fm, ['first']);
 		expect(fm.tags).toEqual(['first']);
+	});
+});
+
+describe('normalizeFrontmatterTags', () => {
+	it('returns a string array unchanged', () => {
+		expect(normalizeFrontmatterTags(['a', 'b'])).toEqual(['a', 'b']);
+	});
+
+	it('stringifies non-string array elements', () => {
+		expect(normalizeFrontmatterTags([1, 2, 3])).toEqual(['1', '2', '3']);
+	});
+
+	it('splits a comma-separated string', () => {
+		expect(normalizeFrontmatterTags('one, two,three')).toEqual([
+			'one',
+			'two',
+			'three',
+		]);
+	});
+
+	it('wraps a single string tag into an array', () => {
+		expect(normalizeFrontmatterTags('project')).toEqual(['project']);
+	});
+
+	it('returns empty array for undefined', () => {
+		expect(normalizeFrontmatterTags(undefined)).toEqual([]);
+	});
+
+	it('returns empty array for null', () => {
+		expect(normalizeFrontmatterTags(null)).toEqual([]);
+	});
+
+	it('returns empty array for an object', () => {
+		expect(normalizeFrontmatterTags({ nested: true })).toEqual([]);
 	});
 });

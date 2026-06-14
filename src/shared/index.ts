@@ -40,8 +40,10 @@ export {
 	parseFrontmatter,
 	serializeFrontmatter,
 	mergeTags,
+	normalizeFrontmatterTags,
 } from './frontmatter-utils';
 export type { ParsedNote } from './frontmatter-utils';
+export { parseJson, isRecord, asStringArray, readJsonFile } from './json-utils';
 export {
 	generateTreeDiagram,
 	generateMoveDiagram,

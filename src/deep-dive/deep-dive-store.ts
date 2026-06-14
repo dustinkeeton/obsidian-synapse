@@ -1,7 +1,32 @@
 import { App, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { ensureFolder } from '../shared';
+import { ensureFolder, isRecord, readJsonFile } from '../shared';
 import { DeepDiveProposal, DeepDiveProposalStatus, DeepDiveRun } from './types';
+
+/**
+ * Structural guard for a persisted {@link DeepDiveProposal}. Requires the
+ * identity, lineage, and status fields the store relies on; tolerant of the
+ * rich nested `topic`/`qualityScore` shapes (not re-validated here).
+ */
+function isDeepDiveProposal(v: unknown): v is DeepDiveProposal {
+	return (
+		isRecord(v) &&
+		typeof v.id === 'string' &&
+		typeof v.runId === 'string' &&
+		typeof v.sourceNotePath === 'string' &&
+		typeof v.status === 'string'
+	);
+}
+
+/** Structural guard for a persisted {@link DeepDiveRun}. */
+function isDeepDiveRun(v: unknown): v is DeepDiveRun {
+	return (
+		isRecord(v) &&
+		typeof v.id === 'string' &&
+		typeof v.rootNotePath === 'string' &&
+		typeof v.status === 'string'
+	);
+}
 
 /**
  * Persists deep dive proposals and run metadata as JSON files.
@@ -43,13 +68,12 @@ export class DeepDiveStore {
 	async loadProposal(id: string): Promise<DeepDiveProposal | null> {
 		const files = await this.listFiles(this.proposalFolder);
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				const proposal: DeepDiveProposal = JSON.parse(content);
-				if (proposal.id === id) return proposal;
-			} catch {
-				// Skip invalid files
-			}
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isDeepDiveProposal
+			);
+			if (proposal && proposal.id === id) return proposal;
 		}
 		return null;
 	}
@@ -58,12 +82,13 @@ export class DeepDiveStore {
 		const files = await this.listFiles(this.proposalFolder);
 		const proposals: DeepDiveProposal[] = [];
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				proposals.push(JSON.parse(content));
-			} catch {
-				// Skip invalid files
-			}
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isDeepDiveProposal
+			);
+			// Skip missing/invalid files
+			if (proposal) proposals.push(proposal);
 		}
 		return proposals;
 	}
@@ -88,15 +113,14 @@ export class DeepDiveStore {
 	async deleteProposal(id: string): Promise<void> {
 		const files = await this.listFiles(this.proposalFolder);
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				const proposal: DeepDiveProposal = JSON.parse(content);
-				if (proposal.id === id) {
-					await this.app.vault.adapter.remove(filePath);
-					return;
-				}
-			} catch {
-				// Skip
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isDeepDiveProposal
+			);
+			if (proposal && proposal.id === id) {
+				await this.app.vault.adapter.remove(filePath);
+				return;
 			}
 		}
 	}
@@ -142,14 +166,7 @@ export class DeepDiveStore {
 
 	async loadRun(id: string): Promise<DeepDiveRun | null> {
 		const path = normalizePath(`${this.runFolder}/${id}.json`);
-		try {
-			const exists = await this.app.vault.adapter.exists(path);
-			if (!exists) return null;
-			const content = await this.app.vault.adapter.read(path);
-			return JSON.parse(content);
-		} catch {
-			return null;
-		}
+		return readJsonFile(this.app.vault.adapter, path, isDeepDiveRun);
 	}
 
 	// ── Helpers ──

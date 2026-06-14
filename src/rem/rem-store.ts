@@ -1,7 +1,21 @@
 import { App, normalizePath } from 'obsidian';
 import type { SynapseSettings } from '../settings';
-import { ensureFolder } from '../shared';
+import { ensureFolder, isRecord, readJsonFile } from '../shared';
 import type { RemProposal, RemProposalStatus } from './types';
+
+/**
+ * Structural guard for a persisted {@link RemProposal}. Requires the identity,
+ * source, and status fields the store keys off of; the `candidates` array is
+ * not re-validated here.
+ */
+function isRemProposal(v: unknown): v is RemProposal {
+	return (
+		isRecord(v) &&
+		typeof v.id === 'string' &&
+		typeof v.sourceNotePath === 'string' &&
+		typeof v.status === 'string'
+	);
+}
 
 /**
  * Persists REM proposals as JSON files.
@@ -32,9 +46,12 @@ export class RemStore {
 	async load(id: string): Promise<RemProposal | null> {
 		const files = await this.listFiles();
 		for (const filePath of files) {
-			const content = await this.app.vault.adapter.read(filePath);
-			const proposal: RemProposal = JSON.parse(content);
-			if (proposal.id === id) return proposal;
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isRemProposal
+			);
+			if (proposal && proposal.id === id) return proposal;
 		}
 		return null;
 	}
@@ -43,12 +60,13 @@ export class RemStore {
 		const files = await this.listFiles();
 		const proposals: RemProposal[] = [];
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				proposals.push(JSON.parse(content));
-			} catch {
-				// Skip invalid files
-			}
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isRemProposal
+			);
+			// Skip missing/invalid files
+			if (proposal) proposals.push(proposal);
 		}
 		return proposals;
 	}
@@ -84,15 +102,14 @@ export class RemStore {
 	async delete(id: string): Promise<void> {
 		const files = await this.listFiles();
 		for (const filePath of files) {
-			try {
-				const content = await this.app.vault.adapter.read(filePath);
-				const proposal: RemProposal = JSON.parse(content);
-				if (proposal.id === id) {
-					await this.app.vault.adapter.remove(filePath);
-					return;
-				}
-			} catch {
-				// Skip
+			const proposal = await readJsonFile(
+				this.app.vault.adapter,
+				filePath,
+				isRemProposal
+			);
+			if (proposal && proposal.id === id) {
+				await this.app.vault.adapter.remove(filePath);
+				return;
 			}
 		}
 	}

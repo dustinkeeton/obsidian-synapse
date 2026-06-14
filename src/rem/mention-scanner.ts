@@ -1,4 +1,5 @@
 import type { App, CachedMetadata, TFile } from 'obsidian';
+import { normalizeFrontmatterTags } from '../shared';
 import type { RemLinkCandidate, RemOccurrence } from './types';
 
 /** Entry in the lookup table: a term and the note it maps to. */
@@ -109,9 +110,7 @@ export class MentionScanner {
 			// Add alias entries
 			const cache: CachedMetadata | null = this.app.metadataCache.getFileCache(file);
 			if (cache?.frontmatter?.aliases) {
-				const aliases: string[] = Array.isArray(cache.frontmatter.aliases)
-					? cache.frontmatter.aliases
-					: [cache.frontmatter.aliases];
+				const aliases = normalizeFrontmatterTags(cache.frontmatter.aliases);
 
 				for (const alias of aliases) {
 					if (typeof alias !== 'string' || alias.length < 3) continue;

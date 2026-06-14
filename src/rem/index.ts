@@ -4,7 +4,7 @@ import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, FolderPickerModal, fireAndForget } from '../shared';
+import { generateId, getMarkdownFiles, FolderPickerModal, fireAndForget, normalizeFrontmatterTags } from '../shared';
 import { MentionScanner } from './mention-scanner';
 import { SemanticMatcher } from './semantic-matcher';
 import { RemApplier } from './rem-applier';
@@ -467,9 +467,7 @@ export class RemModule {
 
 		const cache = this.plugin.app.metadataCache.getFileCache(file);
 		if (cache?.frontmatter?.tags) {
-			const tags: string[] = Array.isArray(cache.frontmatter.tags)
-				? cache.frontmatter.tags
-				: [cache.frontmatter.tags];
+			const tags = normalizeFrontmatterTags(cache.frontmatter.tags);
 			for (const excludeTag of enrichmentSettings.excludeTags) {
 				const normalized = excludeTag.replace(/^#/, '');
 				if (tags.some(t => t.replace(/^#/, '') === normalized)) return true;

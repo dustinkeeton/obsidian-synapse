@@ -2,7 +2,7 @@ import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
 	mergeTags, parseFrontmatter, serializeFrontmatter, buildCallout, CALLOUT_TYPES,
-	ENRICHMENT_START, ENRICHMENT_END,
+	ENRICHMENT_START, ENRICHMENT_END, asStringArray,
 } from '../shared';
 import { EnrichmentProposal, AcceptedItems } from './types';
 
@@ -57,8 +57,11 @@ export class EnrichmentApplier {
 		for (const fm of proposal.result.frontmatter) {
 			if (!acceptedFmKeys.has(fm.key)) continue;
 			if (fm.action === 'merge' && Array.isArray(fm.value)) {
-				const existing = parsed.frontmatter[fm.key];
-				if (Array.isArray(existing)) {
+				const raw = parsed.frontmatter[fm.key];
+				if (Array.isArray(raw)) {
+					// `raw` is an untyped on-disk array; coerce to string[] so the
+					// merge/dedup is type-safe rather than spreading `any`.
+					const existing = asStringArray(raw);
 					parsed.frontmatter[fm.key] = [
 						...existing,
 						...fm.value.filter(v => !existing.includes(v)),
