@@ -1,6 +1,9 @@
 // Type-only import (erased at compile time) so settings.ts stays free of a
 // runtime cycle with views/types.ts → feature modules → settings.ts.
 import type { ProposalKind } from './views/types';
+// Type-only import of the exclusion model (centralized in shared/exclusions.ts).
+// Erased at compile time; the DEFAULT_SETTINGS values below are plain literals.
+import type { ExclusionRule } from './shared/exclusions';
 
 export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
@@ -47,7 +50,6 @@ export interface DetectionSettings {
 	detectTodoMarkers: boolean;
 	detectEmptySections: boolean;
 	detectSparseLinks: boolean;
-	excludeFolders: string[];
 	excludeTags: string[];
 }
 
@@ -138,7 +140,6 @@ export interface EnrichmentSettings {
 	internalLinkThreshold: number;
 	weights: EnrichmentWeightSettings;
 	enrichmentFolderPath: string;
-	excludeFolders: string[];
 	excludeTags: string[];
 	relatedNotesHeading: string;
 	referencesHeading: string;
@@ -150,7 +151,6 @@ export interface SummarizeSettings {
 	summaryStyle: 'bullets' | 'paragraph' | 'key-points';
 	customPrompt: string;
 	autoDetectTemplates: boolean;
-	excludeFolders: string[];
 	excludeTags: string[];
 	autoOrganizeOnSummarize: boolean;
 }
@@ -164,7 +164,6 @@ export interface OrganizeSettings {
 	enabled: boolean;
 	proposalFolderPath: string;
 	snapshotFolderPath: string;
-	excludeFolders: string[];
 	excludeTags: string[];
 	/** Minimum topic confidence required to propose a new directory (0-1). */
 	organizeConfidenceThreshold: number;
@@ -182,7 +181,6 @@ export interface DeepDiveSettings {
 	noteOutputFolder: string;
 	/** How child notes are placed: nested under parent, flat in root subfolder, or AI-organized. */
 	nestingMode: DeepDiveNestingMode;
-	excludeFolders: string[];
 	excludeTags: string[];
 	autoEnrichOnAccept: boolean;
 	autoOrganizeOnAccept: boolean;
@@ -288,6 +286,14 @@ export interface SynapseSettings {
 	ui: UISettings;
 	autoAccept: AutoAcceptSettings;
 	onboarding: OnboardingSettings;
+	/**
+	 * Centralized per-path exclusion list (#307). Each rule names a vault-relative
+	 * glob and the features it blocks (or `'all'`). This is the single source of
+	 * truth for path-based exclusion across every flow — the legacy per-module
+	 * `excludeFolders` fields were folded into this on upgrade. Tag-based
+	 * exclusion (`excludeTags`) remains per-module.
+	 */
+	exclusions: ExclusionRule[];
 }
 
 export const DEFAULT_SETTINGS: SynapseSettings = {
@@ -309,7 +315,6 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 			detectTodoMarkers: true,
 			detectEmptySections: true,
 			detectSparseLinks: true,
-			excludeFolders: ['templates', '.synapse'],
 			excludeTags: ['no-elaborate'],
 		},
 		proposal: {
@@ -378,7 +383,6 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 			minWeight: 0.1,
 		},
 		enrichmentFolderPath: '.synapse/enrichments',
-		excludeFolders: ['templates', '.synapse'],
 		excludeTags: ['no-enrich'],
 		relatedNotesHeading: 'Related Notes',
 		referencesHeading: 'References',
@@ -389,7 +393,6 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		summaryStyle: 'bullets',
 		customPrompt: '',
 		autoDetectTemplates: true,
-		excludeFolders: ['templates', '.synapse'],
 		excludeTags: ['no-summarize'],
 		autoOrganizeOnSummarize: false,
 	},
@@ -401,7 +404,6 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		enabled: true,
 		proposalFolderPath: '.synapse/organize/proposals',
 		snapshotFolderPath: '.synapse/organize/snapshots',
-		excludeFolders: ['templates', '.synapse'],
 		excludeTags: ['no-organize'],
 		organizeConfidenceThreshold: 0.9,
 	},
@@ -413,7 +415,6 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		maxNotesPerRun: 50,
 		noteOutputFolder: 'Deep Dives',
 		nestingMode: 'nested',
-		excludeFolders: ['templates', '.synapse'],
 		excludeTags: ['no-deep-dive'],
 		autoEnrichOnAccept: true,
 		autoOrganizeOnAccept: false,
@@ -453,4 +454,12 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 	onboarding: {
 		hasSeenWelcome: false,
 	},
+	// Centralized path exclusions (#307). `.synapse` (plugin data) and
+	// `templates` are protected from EVERY flow out of the box; users add their
+	// own rules (optionally scoped to specific features) via the Exclusions
+	// settings section. Stored in canonical `/**` form.
+	exclusions: [
+		{ pattern: '.synapse/**', features: 'all' },
+		{ pattern: 'templates/**', features: 'all' },
+	],
 };

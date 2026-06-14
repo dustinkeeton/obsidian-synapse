@@ -81,6 +81,13 @@ export type {
 	SettingsSectionContext,
 	SettingsSectionContextOptions,
 } from './settings-section';
+export {
+	findMatchingRule,
+	isPathExcluded,
+	matchesExcludeTag,
+	ALL_FEATURE_IDS,
+} from './exclusions';
+export type { FeatureId, ExclusionRule } from './exclusions';
 export { generateId, isValidCheckpointId } from './id-utils';
 export {
 	loadNodeModules,
