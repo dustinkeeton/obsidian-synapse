@@ -17,7 +17,7 @@ import { CommandRegistrar, auditCommands } from './commands';
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
-import { FolderPickerModal, NotificationManager, CheckpointManager } from './shared';
+import { FolderPickerModal, NotificationManager, CheckpointManager, fireAndForget } from './shared';
 import type { DeferredTask } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
@@ -211,42 +211,42 @@ export default class SynapsePlugin extends Plugin {
 		// Wire enrichment callbacks -- triggers after other processes complete
 		if (this.settings.enrichment.enabled && this.settings.enrichment.autoEnrich) {
 			this.elaboration.onProposalAccepted = (filePath: string) => {
-				this.enrichment.enrich(filePath, 'elaboration');
+				fireAndForget(this.enrichment.enrich(filePath, 'elaboration'), 'Enrich note', { notifications: this.notifications });
 				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-					this.title.checkTitle(filePath);
+					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 				}
 			};
 			this.audio.onTranscriptionComplete = (filePath: string) => {
-				this.enrichment.enrich(filePath, 'transcription');
+				fireAndForget(this.enrichment.enrich(filePath, 'transcription'), 'Enrich note', { notifications: this.notifications });
 				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-					this.title.checkTitle(filePath);
+					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 				}
 			};
 			if (this.video) {
 				this.video.onTranscriptionComplete = (filePath: string) => {
-					this.enrichment.enrich(filePath, 'transcription');
+					fireAndForget(this.enrichment.enrich(filePath, 'transcription'), 'Enrich note', { notifications: this.notifications });
 					if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-						this.title.checkTitle(filePath);
+						fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 					}
 				};
 			}
 			this.image.onExtractionComplete = (filePath: string) => {
-				this.enrichment.enrich(filePath, 'transcription');
+				fireAndForget(this.enrichment.enrich(filePath, 'transcription'), 'Enrich note', { notifications: this.notifications });
 				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-					this.title.checkTitle(filePath);
+					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 				}
 			};
 			this.summarize.onSummaryComplete = (filePath: string) => {
-				this.enrichment.enrich(filePath, 'summarization');
+				fireAndForget(this.enrichment.enrich(filePath, 'summarization'), 'Enrich note', { notifications: this.notifications });
 				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-					this.title.checkTitle(filePath);
+					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 				}
 			};
 			if (this.settings.deepDive.autoEnrichOnAccept) {
 				this.deepDive.onNoteAccepted = (filePath: string) => {
-					this.enrichment.enrich(filePath, 'deep-dive');
+					fireAndForget(this.enrichment.enrich(filePath, 'deep-dive'), 'Enrich note', { notifications: this.notifications });
 					if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-						this.title.checkTitle(filePath);
+						fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 					}
 				};
 			}
@@ -256,38 +256,38 @@ export default class SynapsePlugin extends Plugin {
 		if (this.settings.title.enabled && this.settings.title.checkAfterOperations &&
 			!(this.settings.enrichment.enabled && this.settings.enrichment.autoEnrich)) {
 			this.elaboration.onProposalAccepted = (filePath: string) => {
-				this.title.checkTitle(filePath);
+				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 			};
 			this.audio.onTranscriptionComplete = (filePath: string) => {
-				this.title.checkTitle(filePath);
+				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 			};
 			if (this.video) {
 				this.video.onTranscriptionComplete = (filePath: string) => {
-					this.title.checkTitle(filePath);
+					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 				};
 			}
 			this.image.onExtractionComplete = (filePath: string) => {
-				this.title.checkTitle(filePath);
+				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 			};
 			this.summarize.onSummaryComplete = (filePath: string) => {
-				this.title.checkTitle(filePath);
+				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 			};
 			this.deepDive.onNoteAccepted = (filePath: string) => {
-				this.title.checkTitle(filePath);
+				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
 			};
 		}
 
 		// Wire deep-dive auto-organize callback
 		if (this.settings.deepDive.autoOrganizeOnAccept && this.settings.organize.enabled) {
 			this.deepDive.onOrganizeRequested = (file) => {
-				this.organize.organizeNote(file);
+				fireAndForget(this.organize.organizeNote(file), 'Organize note', { notifications: this.notifications });
 			};
 		}
 
 		// Wire summarize auto-organize callback (single-note only, never vault-wide)
 		if (this.settings.summarize.autoOrganizeOnSummarize && this.settings.organize.enabled) {
 			this.summarize.onOrganizeRequested = (file) => {
-				this.organize.organizeNote(file);
+				fireAndForget(this.organize.organizeNote(file), 'Organize note', { notifications: this.notifications });
 			};
 		}
 
@@ -295,7 +295,7 @@ export default class SynapsePlugin extends Plugin {
 		// S-Signal mark (registered above) rather than a stock Lucide glyph —
 		// the previous 'sparkles' icon is on the brand's banned inventory.
 		this.addRibbonIcon('synapse', 'Review proposals', () => {
-			this.activateUnifiedView();
+			fireAndForget(this.activateUnifiedView(), 'Open proposal review', { notifications: this.notifications });
 		});
 
 		// Unified transcription ribbon icon (desktop only — mic icon implies video
@@ -319,7 +319,7 @@ export default class SynapsePlugin extends Plugin {
 		});
 
 		// Startup check for incomplete checkpoints (delayed to avoid blocking load)
-		this.startupTimeout = window.setTimeout(() => this.checkForIncompleteCheckpoints(), 3000);
+		this.startupTimeout = window.setTimeout(() => { void this.checkForIncompleteCheckpoints(); }, 3000);
 
 		// Unified transcription commands (audio on any platform, video on desktop only, image OCR).
 		// Always attempted so the registry audit sees them; userEnabled gates actual registration.
@@ -376,7 +376,13 @@ export default class SynapsePlugin extends Plugin {
 				const defaultPath = this.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
 					this.app,
-					(folder) => synapseRunner.fire(folder.isRoot() ? undefined : folder.path),
+					(folder) => {
+						fireAndForget(
+							synapseRunner.fire(folder.isRoot() ? undefined : folder.path),
+							'Run all features on folder',
+							{ notifications: this.notifications },
+						);
+					},
 					defaultPath,
 				).open();
 			},
@@ -526,7 +532,9 @@ export default class SynapsePlugin extends Plugin {
 			leaf = rightLeaf;
 			await leaf.setViewState({ type: UNIFIED_VIEW_TYPE, active: true });
 		}
-		workspace.revealLeaf(leaf);
+		// Deliberate background work: reveal is best-effort UI and must not block
+		// the refresh below; surface failures to the console only (no toast).
+		fireAndForget(workspace.revealLeaf(leaf), 'Reveal proposal view', { background: true });
 		await this.refreshUnifiedView();
 	}
 
@@ -719,7 +727,9 @@ export default class SynapsePlugin extends Plugin {
 		for (const task of tasks) {
 			switch (task.type) {
 				case 'refresh-sidebar-view':
-					this.refreshUnifiedView();
+					// Deliberate background work: refresh the sidebar without
+					// blocking the caller; log failures to the console only.
+					fireAndForget(this.refreshUnifiedView(), 'Refresh proposal view', { background: true });
 					break;
 				default:
 					console.warn(`[Synapse] Unknown deferred task type: ${task.type}`);
