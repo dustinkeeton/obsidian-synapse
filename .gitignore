@@ -31,3 +31,6 @@ coverage/
 *.log
 npm-debug.log*
 yarn-error.log*
+
+# Internal Docs
+docs/reviews/
