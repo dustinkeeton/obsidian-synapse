@@ -79,7 +79,7 @@ interface RemSettings {
 
 ```
 remScanNote(path) / remScanDirectory(folder?, skip?, onlyFile?)
-  --> isExcluded? (reuses enrichment.excludeFolders / excludeTags)
+  --> isExcluded? (centralized isPathExcluded under 'rem' + reuses enrichment.excludeTags)
   --> MentionScanner.scan(file, content, maxLinksPerNote)            // literal candidates
   --> if semanticMatching: SemanticMatcher.match(...) filtered by confidenceThreshold
   --> RemProposal { candidates, status: 'pending' } --> RemStore.save
@@ -119,6 +119,6 @@ generated proposal is accepted in full as generated. NOTE: REM auto-accept REWRI
 |--------|------|
 | `NotificationManager`, `CheckpointManager`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `generateId`, `getMarkdownFiles`, `FolderPickerModal` | `../shared` |
 | `CommandRegistrar` | `../commands` |
-| `enrichment.excludeFolders` / `excludeTags` (settings) | reused for exclusion |
+| `isPathExcluded` (centralized, feature `'rem'`) / `enrichment.excludeTags` (settings) | path + tag exclusion |
 
 Exclusion rules reuse the enrichment settings rather than defining REM-specific ones.

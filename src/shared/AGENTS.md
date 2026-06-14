@@ -214,6 +214,8 @@ interface Checkpoint {
 | `checkpoint-manager.ts` | `CheckpointManager` | CRUD and lifecycle management for resumable operation checkpoints |
 | `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
 | `tweet-fetcher.ts` | `fetchTweetContent`, `isTwitterUrl`, `TweetContent` | Twitter/X.com tweet fetching with oEmbed → fxtwitter → vxtwitter fallback chain |
+| `exclusions.ts` | `FeatureId`, `ExclusionRule`, `findMatchingRule`, `isPathExcluded`, `matchesExcludeTag`, `ALL_FEATURE_IDS`, `buildMigratedExclusions`, `LegacyModuleExclusions` | Centralized per-path exclusion (#307): case-sensitive glob→regex matcher (`/**`, `/*`, exact, bare-token recursive; escapes metacharacters), shared tag-exclusion check, and the legacy `excludeFolders`→`exclusions` migration builder |
+| `exclusions.test.ts` | Tests | Exclusion matcher + migration tests |
 | `tweet-fetcher.test.ts` | Tests | Tweet fetcher tests |
 | `index.ts` | re-exports | Barrel file |
 

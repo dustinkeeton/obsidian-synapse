@@ -192,7 +192,9 @@ export function matchesExcludeTag(
 ): boolean {
 	if (excludeTags.length === 0) return false;
 	const cache = metadataCache.getFileCache(file);
-	const raw = cache?.frontmatter?.tags;
+	// frontmatter is loosely typed (index signature → `any`); treat the tags
+	// field as `unknown` and let normalizeFrontmatterTags coerce it safely.
+	const raw: unknown = cache?.frontmatter?.tags;
 	if (raw === undefined || raw === null) return false;
 
 	const fileTags = normalizeFrontmatterTags(raw).map(stripHash);

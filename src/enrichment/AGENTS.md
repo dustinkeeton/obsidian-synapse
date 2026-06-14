@@ -87,7 +87,7 @@ interface WeightConfig { sameFolder: number; siblingFolder: number; cousinFolder
 ```
 1. enrich(filePath, trigger) -- triggered by callback or command
    |
-2. Exclusion check: excludeFolders, excludeTags
+2. Exclusion check: centralized isPathExcluded (feature 'enrichment') + excludeTags
    |
 3. Parallel enrichment (enrichFile):
    |  MetadataClassifier.classify() -- vocabulary-based tag classification via AI
@@ -205,7 +205,7 @@ All under `settings.enrichment`:
 | `internalLinkThreshold` | Min relevance score for links |
 | `weights.*` | Proximity weight configuration |
 | `enrichmentFolderPath` | Proposal JSON storage |
-| `excludeFolders` | Folders to skip |
+| `exclusions` (top-level, feature `'enrichment'`) | Paths to skip (centralized) |
 | `excludeTags` | Tags that suppress enrichment |
 | `relatedNotesHeading` | Heading for internal links section |
 | `referencesHeading` | Heading for external refs section |

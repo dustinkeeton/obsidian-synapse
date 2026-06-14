@@ -154,7 +154,7 @@ Open **Settings > Synapse** to configure the plugin. All features can be individ
 | Minimum word threshold | Notes with fewer words are considered stubs | 50 |
 | Detect TODO markers | Flag notes containing TODO, TBD, FIXME, PLACEHOLDER | On |
 | Detect empty sections | Flag notes with headings but no content | On |
-| Excluded folders | Comma-separated folders to skip | `templates, .synapse` |
+| Excluded tags | Notes carrying these tags are skipped | `no-elaborate` |
 
 ### Audio Transcription
 
@@ -224,6 +224,23 @@ Open **Settings > Synapse** to configure the plugin. All features can be individ
 | Nesting mode | Nested, flat, or auto-organize | Nested |
 | Auto-enrich on accept | Trigger enrichment when a note is accepted | On |
 | Auto-organize on accept | Trigger organize when a note is accepted | Off |
+
+### Exclusions
+
+A single, cross-cutting list controls which vault paths Synapse may touch. Each rule names a path pattern and the features it blocks, so you can hide a folder from everything or from just a few flows. Path exclusions live here for every feature; tag exclusions (`Excluded tags`) stay per-feature.
+
+By default, `.synapse/**` (the plugin's own data folder) and `templates/**` are excluded from **all** features — including audio/video transcription, OCR, the intake watcher, and title checks, none of which had folder exclusions before. Existing vaults are migrated automatically on upgrade: folders you had excluded from every module broaden to all features, while a folder you scoped to a single feature stays scoped to it.
+
+| Pattern form | Matches | Example |
+|--------------|---------|---------|
+| `folder/**` | The folder and everything beneath it (not the folder note itself) | `Archive/**` |
+| `folder/*` | Direct children only (not nested subfolders) | `Inbox/*` |
+| `path/to/note.md` | One exact note | `Journal/2026-06-14.md` |
+| `name` (typed by hand) | The folder and all descendants (recursive prefix) | `templates` |
+
+Patterns are vault-relative and **case-sensitive**, and metacharacters such as `.` are matched literally (so `.synapse/**` never matches `Xsynapse/...`). Add a folder with the picker (saved in canonical `folder/**` form) or type an exact path / `folder/*` pattern directly. Per rule, toggle **All features** off to reveal a checkbox for each feature and scope the rule precisely.
+
+When a batch or vault-wide scan hits an excluded note it skips silently; an explicitly invoked single-note command refuses with a notice naming the rule that matched.
 
 ## Development
 

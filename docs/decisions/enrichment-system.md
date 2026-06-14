@@ -177,10 +177,11 @@ This enables:
 | `weights.distantFolder` | number | 0.2 | Proximity weight for distant folders |
 | `weights.decayPerLevel` | number | 0.15 | Weight reduction per folder level |
 | `weights.minimumFloor` | number | 0.1 | Minimum weight (never goes below this) |
-| `excludeFolders` | string[] | ['templates', '.synapse'] | Folders to skip during vault analysis |
 | `excludeTags` | string[] | ['no-enrich'] | Notes with these tags are skipped |
 | `relatedNotesHeading` | string | 'Related Notes' | Heading for the internal links section |
 | `referencesHeading` | string | 'References' | Heading for external references |
+
+> **Path exclusion moved (#307):** the former per-module `excludeFolders` field was removed. Path-based exclusion is now centralized in the top-level `exclusions` list (`src/shared/exclusions.ts`), scoped per feature via `FeatureId`. Enrichment's `isExcluded` delegates to `isPathExcluded(path, 'enrichment', settings)`; REM reuses the same list under `'rem'`. Tag exclusion (`excludeTags`) stays module-level.
 
 **Rationale**: The `max*` and `threshold` settings control output volume. The `weights.*` settings control ranking behavior. Most users will only ever change the max counts; the weight parameters are for users who want to fine-tune scoring for their vault structure.
 
