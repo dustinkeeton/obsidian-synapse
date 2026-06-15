@@ -7,6 +7,7 @@ import {
 	createSettingsSectionContext,
 	FolderPickerModal,
 	ALL_FEATURE_IDS,
+	renderFeatureChipSelect,
 } from './shared';
 import type { SettingsSectionContext, FeatureId, ExclusionRule } from './shared';
 import { PROPOSAL_KINDS } from './views';
@@ -387,11 +388,13 @@ export class SynapseSettingTab extends PluginSettingTab {
 	/**
 	 * Exclusions — a cross-cutting list of vault paths hidden from some or all
 	 * Synapse flows (#307). Top-level (not per-feature): the single source of
-	 * truth for path-based exclusion. Each rule shows its glob pattern, an "All
-	 * features" toggle that reveals 12 per-feature checkboxes when off, and a
-	 * remove button. New rules are added via a folder picker (canonicalized to
-	 * `<folder>/**`) or a free-text pattern (exact paths, `dir/*`). Layout
-	 * changes re-render the whole tab via `ctx.rerender`.
+	 * truth for path-based exclusion. Each rule shows its glob pattern, a remove
+	 * button, and a chip multi-select for its feature scope (#328 — replaced the
+	 * "All features" toggle + 12 per-feature checkboxes). New rules are added via a
+	 * folder picker (canonicalized to `<folder>/**`) or a free-text pattern (exact
+	 * paths, `dir/*`), with their scope chosen up front. Adding or removing a whole
+	 * rule re-renders the tab via `ctx.rerender`; editing a scope self-redraws only
+	 * its chip row.
 	 */
 	private renderExclusions(ctx: SettingsSectionContext): void {
 		const body = ctx.configSection('exclusions', 'Exclusions');
@@ -418,9 +421,15 @@ export class SynapseSettingTab extends PluginSettingTab {
 		});
 
 		// ── Add controls ──
+		// Each add row carries an up-front scope picker (the chips below it). The
+		// chosen scope is read when the rule is created, so the user no longer has
+		// to add as "all" and narrow afterward. Scope edits update the pending
+		// value and self-redraw their own chip container — they must NOT re-render
+		// the tab (that would wipe the "Add a pattern" text input mid-entry).
+		let pendingFolderScope: 'all' | FeatureId[] = 'all';
 		new Setting(body)
 			.setName('Add a folder')
-			.setDesc('Pick a folder to exclude (saved as "folder/**").')
+			.setDesc('Pick a folder to exclude (saved as "folder/**"). The chips below set which features it is excluded from.')
 			.addButton((btn) =>
 				btn
 					.setButtonText('Choose folder')
@@ -429,17 +438,26 @@ export class SynapseSettingTab extends PluginSettingTab {
 							const pattern = folder.isRoot() ? '/**' : `${folder.path}/**`;
 							// Skip exact duplicates so a re-pick doesn't stack rules.
 							if (!this.plugin.settings.exclusions.some((r) => r.pattern === pattern)) {
-								this.plugin.settings.exclusions.push({ pattern, features: 'all' });
+								this.plugin.settings.exclusions.push({ pattern, features: pendingFolderScope });
 							}
 							void this.plugin.saveSettings().then(() => ctx.rerender());
 						}).open();
 					})
 			);
+		renderFeatureChipSelect(body.createDiv({ cls: 'synapse-exclusion-chips' }), {
+			value: pendingFolderScope,
+			labels: FEATURE_LABELS,
+			order: FEATURE_ORDER,
+			onChange: (next) => {
+				pendingFolderScope = next;
+			},
+		});
 
 		let pendingPattern = '';
+		let pendingPatternScope: 'all' | FeatureId[] = 'all';
 		new Setting(body)
 			.setName('Add a pattern')
-			.setDesc('For exact note paths or direct-children globs (e.g. "Inbox/*").')
+			.setDesc('For exact note paths or direct-children globs (e.g. "Inbox/*"). The chips below set which features it is excluded from.')
 			.addText((text) =>
 				text
 					.setPlaceholder('path/to/note.md or folder/*')
@@ -454,17 +472,27 @@ export class SynapseSettingTab extends PluginSettingTab {
 						const pattern = pendingPattern.trim();
 						if (!pattern) return;
 						if (!this.plugin.settings.exclusions.some((r) => r.pattern === pattern)) {
-							this.plugin.settings.exclusions.push({ pattern, features: 'all' });
+							this.plugin.settings.exclusions.push({ pattern, features: pendingPatternScope });
 						}
 						void this.plugin.saveSettings().then(() => ctx.rerender());
 					})
 			);
+		renderFeatureChipSelect(body.createDiv({ cls: 'synapse-exclusion-chips' }), {
+			value: pendingPatternScope,
+			labels: FEATURE_LABELS,
+			order: FEATURE_ORDER,
+			onChange: (next) => {
+				pendingPatternScope = next;
+			},
+		});
 	}
 
 	/**
-	 * Render a single exclusion rule row plus, when it is feature-scoped, the
-	 * grid of per-feature checkboxes. Toggling "All features" or removing the
-	 * rule mutates settings, persists, and re-renders the tab.
+	 * Render a single exclusion rule row: the pattern name, a remove button, and a
+	 * chip multi-select for the rule's feature scope (#328). The chip control owns
+	 * the `'all' | FeatureId[]` value (incl. the `'all'` shorthand and the empty =
+	 * "rule inactive" case); editing it persists and self-redraws, so only removing
+	 * the rule re-renders the tab.
 	 */
 	private renderExclusionRule(
 		ctx: SettingsSectionContext,
@@ -472,64 +500,27 @@ export class SynapseSettingTab extends PluginSettingTab {
 		rule: ExclusionRule,
 		index: number,
 	): void {
-		const features = rule.features;
-		const isAll = features === 'all';
-		const setting = new Setting(body)
+		new Setting(body)
 			.setName(rule.pattern || '(empty pattern)')
-			.setDesc(
-				features === 'all'
-					? 'Excluded from all features'
-					: `Excluded from: ${this.describeScopedFeatures(features)}`,
-			);
-
-		setting.addToggle((toggle) =>
-			toggle
-				.setTooltip('All features')
-				.setValue(isAll)
-				.onChange((value) => {
-					// Switching to scoped seeds an empty list (user then ticks the
-					// features); switching to all collapses to the literal 'all'.
-					this.plugin.settings.exclusions[index].features = value ? 'all' : [];
-					void this.plugin.saveSettings().then(() => ctx.rerender());
-				}),
-		);
-
-		setting.addExtraButton((btn) =>
-			btn
-				.setIcon('trash')
-				.setTooltip('Remove exclusion')
-				.onClick(() => {
-					this.plugin.settings.exclusions.splice(index, 1);
-					void this.plugin.saveSettings().then(() => ctx.rerender());
-				}),
-		);
-
-		if (isAll) return;
-
-		// Per-feature checkboxes (rendered only for a scoped rule).
-		const scoped = rule.features as FeatureId[];
-		for (const feature of FEATURE_ORDER) {
-			new Setting(body)
-				.setClass('synapse-exclusion-feature-row')
-				.setName(FEATURE_LABELS[feature])
-				.addToggle((toggle) =>
-					toggle.setValue(scoped.includes(feature)).onChange((value) => {
-						const current = this.plugin.settings.exclusions[index].features;
-						if (current === 'all') return; // defensive: shape changed underneath
-						const next = new Set(current);
-						if (value) next.add(feature);
-						else next.delete(feature);
-						this.plugin.settings.exclusions[index].features = [...next];
+			.addExtraButton((btn) =>
+				btn
+					.setIcon('trash')
+					.setTooltip('Remove exclusion')
+					.onClick(() => {
+						this.plugin.settings.exclusions.splice(index, 1);
 						void this.plugin.saveSettings().then(() => ctx.rerender());
 					}),
-				);
-		}
-	}
+			);
 
-	/** Human-readable list of the features a scoped rule blocks. */
-	private describeScopedFeatures(features: FeatureId[]): string {
-		if (features.length === 0) return 'no features (rule inactive)';
-		return features.map((f) => FEATURE_LABELS[f]).join(', ');
+		renderFeatureChipSelect(body.createDiv({ cls: 'synapse-exclusion-chips' }), {
+			value: rule.features,
+			labels: FEATURE_LABELS,
+			order: FEATURE_ORDER,
+			onChange: (next) => {
+				this.plugin.settings.exclusions[index].features = next;
+				void this.plugin.saveSettings();
+			},
+		});
 	}
 
 	/**

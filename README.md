@@ -238,7 +238,7 @@ By default, `.synapse/**` (the plugin's own data folder) and `templates/**` are 
 | `path/to/note.md` | One exact note | `Journal/2026-06-14.md` |
 | `name` (typed by hand) | The folder and all descendants (recursive prefix) | `templates` |
 
-Patterns are vault-relative and **case-sensitive**, and metacharacters such as `.` are matched literally (so `.synapse/**` never matches `Xsynapse/...`). Add a folder with the picker (saved in canonical `folder/**` form) or type an exact path / `folder/*` pattern directly. Per rule, toggle **All features** off to reveal a checkbox for each feature and scope the rule precisely.
+Patterns are vault-relative and **case-sensitive**, and metacharacters such as `.` are matched literally (so `.synapse/**` never matches `Xsynapse/...`). Add a folder with the picker (saved in canonical `folder/**` form) or type an exact path / `folder/*` pattern directly, choosing the scope up front. Each rule shows the features it blocks as a row of chips: pick **All features**, or add individual flows from the "+ Add feature" dropdown. Remove a chip (`✕`) to narrow the rule; a rule with no chips is inactive and blocks nothing.
 
 When a batch or vault-wide scan hits an excluded note it skips silently; an explicitly invoked single-note command refuses with a notice naming the rule that matched.
 

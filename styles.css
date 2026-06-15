@@ -1020,17 +1020,58 @@
   font-weight: var(--font-semibold);
 }
 
-/* ── Exclusions: per-feature checkbox rows (#307) ──
- * Indents and de-emphasizes the 12 per-feature toggles revealed under a
- * feature-scoped exclusion rule, so they read as children of the rule above
- * rather than as top-level settings. */
-.setting-item.synapse-exclusion-feature-row {
-  padding-left: 24px;
-  border-top: none;
-  padding-top: 4px;
-  padding-bottom: 4px;
+/* ── Exclusions: feature scope chips (#328) ──
+ * A compact, wrapping row of removable chips (the rule's blocked features) plus
+ * an inline "add" dropdown, replacing the per-feature toggle grid. Rendered just
+ * below each exclusion rule and each add-folder/add-pattern row. */
+.synapse-exclusion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 8px 24px;
 }
-.synapse-exclusion-feature-row .setting-item-name {
+.synapse-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 12px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: var(--font-ui-small);
+  line-height: 1.4;
+}
+.synapse-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  opacity: 0.75;
+  box-shadow: none;
+}
+.synapse-chip-remove:hover {
+  opacity: 1;
+  background: var(--background-modifier-hover);
+}
+.synapse-chip-remove:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+  opacity: 1;
+}
+.synapse-chip-add {
+  font-size: var(--font-ui-small);
+}
+.synapse-exclusion-chips-empty {
   font-size: var(--font-ui-small);
   color: var(--text-muted);
+  font-style: italic;
 }

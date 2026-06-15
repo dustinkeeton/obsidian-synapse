@@ -72,6 +72,8 @@ export type {
 	CollapsibleSection,
 	CollapsibleSectionOptions,
 } from './collapsible-section';
+export { renderFeatureChipSelect } from './feature-chip-select';
+export type { FeatureChipSelectOptions } from './feature-chip-select';
 export {
 	createSettingsSectionContext,
 	isSectionCollapsed,
