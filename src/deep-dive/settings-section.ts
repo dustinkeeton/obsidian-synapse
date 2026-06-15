@@ -127,19 +127,6 @@ export function renderDeepDiveSettings(ctx: SettingsSectionContext): void {
 		);
 
 	new Setting(deepDiveBody)
-		.setName('Excluded folders')
-		.setDesc('Comma-separated list of folders to skip for deep dive')
-		.addText((text) =>
-			text
-				.setValue(plugin.settings.deepDive.excludeFolders.join(', '))
-				.onChange(async (value) => {
-					plugin.settings.deepDive.excludeFolders =
-						value.split(',').map((s) => s.trim()).filter(Boolean);
-					await plugin.saveSettings();
-				})
-		);
-
-	new Setting(deepDiveBody)
 		.setName('Excluded tags')
 		.setDesc('Notes with these tags will skip deep dive')
 		.addText((text) =>

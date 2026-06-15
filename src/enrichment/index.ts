@@ -4,6 +4,7 @@ import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter,
 	CheckpointManager, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
+	isPathExcluded, matchesExcludeTag, findMatchingRule,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
@@ -375,8 +376,21 @@ export class EnrichmentModule {
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) return;
 
-		// Check exclusions
-		if (this.isExcluded(file)) return;
+		// Check exclusions. enrich() is dual-mode: a silent post-op callback
+		// (elaboration/transcription/summarization/deep-dive) and a manual
+		// command. Only the manual path surfaces a Notice naming the rule; all
+		// other triggers skip silently (#307).
+		if (this.isExcluded(file)) {
+			if (trigger === 'manual') {
+				const rule = findMatchingRule(file.path, 'enrichment', this.getSettings());
+				this.notifications.info(
+					rule
+						? `Skipped — "${file.path}" is excluded by rule "${rule.pattern}"`
+						: 'Note is excluded from enrichment (excluded tag)'
+				);
+			}
+			return;
+		}
 
 		const op = this.notifications.startOperation(
 			`Enriching ${file.basename}`,
@@ -605,23 +619,11 @@ export class EnrichmentModule {
 	}
 
 	private isExcluded(file: TFile): boolean {
-		const settings = this.getSettings().enrichment;
-
-		// Check excluded folders
-		for (const folder of settings.excludeFolders) {
-			if (file.path.startsWith(folder + '/')) return true;
-		}
-
-		// Check excluded tags
-		const tags = this.analyzer.getFileTags(file);
-		for (const excludeTag of settings.excludeTags) {
-			const normalized = excludeTag.startsWith('#')
-				? excludeTag.toLowerCase()
-				: `#${excludeTag.toLowerCase()}`;
-			if (tags.includes(normalized)) return true;
-		}
-
-		return false;
+		const settings = this.getSettings();
+		return (
+			isPathExcluded(file.path, 'enrichment', settings) ||
+			matchesExcludeTag(file, settings.enrichment.excludeTags, this.plugin.app.metadataCache)
+		);
 	}
 
 	private async fetchTwitterContext(urls: string[]): Promise<string> {

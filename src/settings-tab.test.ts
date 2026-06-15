@@ -160,3 +160,92 @@ describe('SynapseSettingTab — About support links (#274)', () => {
 		);
 	});
 });
+
+/** Recursively collect every element in a stub tree. */
+function walkEls(el: any, out: any[] = []): any[] {
+	for (const child of el?.children ?? []) {
+		out.push(child);
+		walkEls(child, out);
+	}
+	return out;
+}
+function elsWithClass(root: any, cls: string): any[] {
+	return walkEls(root).filter((e) => e.classList?.contains(cls));
+}
+function elsWithTag(root: any, tag: string): any[] {
+	return walkEls(root).filter((e) => e.tagName === tag);
+}
+
+describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
+	/**
+	 * The `synapse-exclusion-chips` containers in DOM order: one per rule, then the
+	 * add-folder and add-pattern scope pickers. (The mocked `Setting` rows are not
+	 * appended to the container, so only these chip divs are introspectable.)
+	 */
+	function chipContainers(tab: SynapseSettingTab): any[] {
+		const containerEl = (tab as unknown as { containerEl: any }).containerEl;
+		return elsWithClass(containerEl, 'synapse-exclusion-chips');
+	}
+	const chipLabels = (container: any): string[] =>
+		elsWithClass(container, 'synapse-chip-label').map((e) => e.textContent);
+
+	it('renders one removable chip per scoped feature, ordered by FEATURE_ORDER', () => {
+		const { tab } = makeTab((s) => {
+			s.exclusions = [{ pattern: 'Archive/**', features: ['organize', 'summarize'] }];
+		});
+		tab.display();
+
+		const containers = chipContainers(tab);
+		expect(containers).toHaveLength(3); // rule + add-folder + add-pattern
+		expect(chipLabels(containers[0])).toEqual(['Summarize', 'Organize']);
+	});
+
+	it("renders a single 'All features' chip for an all-scoped rule", () => {
+		const { tab } = makeTab((s) => {
+			s.exclusions = [{ pattern: '.synapse/**', features: 'all' }];
+		});
+		tab.display();
+		expect(chipLabels(chipContainers(tab)[0])).toEqual(['All features']);
+	});
+
+	it('adds a feature to a rule via its dropdown and persists', () => {
+		const { tab, plugin } = makeTab((s) => {
+			s.exclusions = [{ pattern: 'Archive/**', features: ['organize'] }];
+		});
+		tab.display();
+
+		const select = elsWithTag(chipContainers(tab)[0], 'SELECT')[0];
+		select.value = 'summarize';
+		select.dispatchEvent({ type: 'change' });
+
+		expect(plugin.settings.exclusions[0].features).toEqual(['summarize', 'organize']);
+		expect(plugin.saveSettings).toHaveBeenCalled();
+	});
+
+	it('removes a feature from a rule via its chip and persists', () => {
+		const { tab, plugin } = makeTab((s) => {
+			s.exclusions = [{ pattern: 'Archive/**', features: ['summarize', 'organize'] }];
+		});
+		tab.display();
+
+		const removeBtn = elsWithClass(chipContainers(tab)[0], 'synapse-chip-remove').find(
+			(b) => b.getAttribute('aria-label') === 'Remove Organize',
+		);
+		removeBtn.dispatchEvent({ type: 'click' });
+
+		expect(plugin.settings.exclusions[0].features).toEqual(['summarize']);
+		expect(plugin.saveSettings).toHaveBeenCalled();
+	});
+
+	it('gives the add rows a scope picker defaulting to "All features"', () => {
+		const { tab } = makeTab((s) => {
+			s.exclusions = [];
+		});
+		tab.display();
+
+		// No rules → the only chip containers are the two add-row pickers.
+		const containers = chipContainers(tab);
+		expect(containers).toHaveLength(2);
+		for (const c of containers) expect(chipLabels(c)).toEqual(['All features']);
+	});
+});

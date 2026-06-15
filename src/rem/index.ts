@@ -5,7 +5,7 @@ import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, FolderPickerModal, fireAndForget, normalizeFrontmatterTags } from '../shared';
+import { generateId, getMarkdownFiles, FolderPickerModal, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule } from '../shared';
 import { MentionScanner } from './mention-scanner';
 import { SemanticMatcher } from './semantic-matcher';
 import { RemApplier } from './rem-applier';
@@ -96,7 +96,12 @@ export class RemModule {
 
 		const tFile = file;
 		if (this.isExcluded(tFile)) {
-			this.notifications.info('Note is excluded from REM scanning');
+			const rule = findMatchingRule(tFile.path, 'rem', this.getSettings());
+			this.notifications.info(
+				rule
+					? `Skipped — "${tFile.path}" is excluded by rule "${rule.pattern}"`
+					: 'Note is excluded from REM scanning (excluded tag)'
+			);
 			return null;
 		}
 
@@ -290,6 +295,14 @@ export class RemModule {
 					continue;
 				}
 
+				// Re-check exclusions on resume (#307): a path may have been added
+				// to the exclusion list after the checkpoint was created. Silent —
+				// resume is a batch continuation, mirroring organize's resume.
+				if (this.isExcluded(file)) {
+					await this.checkpointManager.completeItem(checkpoint.id, item.id);
+					continue;
+				}
+
 				const content = await this.plugin.app.vault.read(file);
 				const candidates = this.scanner.scan(file, content, settings.maxLinksPerNote);
 
@@ -456,26 +469,16 @@ export class RemModule {
 	}
 
 	/**
-	 * Check if a file is excluded from REM scanning.
-	 * Reuses enrichment exclude-folder and exclude-tag settings.
+	 * Check if a file is excluded from REM scanning. Path exclusion is
+	 * centralized (#307) under the `rem` feature; tag exclusion still reuses
+	 * enrichment's `excludeTags` (REM has no exclude-tag setting of its own).
 	 */
 	private isExcluded(file: TFile): boolean {
-		const enrichmentSettings = this.getSettings().enrichment;
-
-		for (const folder of enrichmentSettings.excludeFolders) {
-			if (file.path.startsWith(folder + '/') || file.path === folder) return true;
-		}
-
-		const cache = this.plugin.app.metadataCache.getFileCache(file);
-		if (cache?.frontmatter?.tags) {
-			const tags = normalizeFrontmatterTags(cache.frontmatter.tags);
-			for (const excludeTag of enrichmentSettings.excludeTags) {
-				const normalized = excludeTag.replace(/^#/, '');
-				if (tags.some(t => t.replace(/^#/, '') === normalized)) return true;
-			}
-		}
-
-		return false;
+		const settings = this.getSettings();
+		return (
+			isPathExcluded(file.path, 'rem', settings) ||
+			matchesExcludeTag(file, settings.enrichment.excludeTags, this.plugin.app.metadataCache)
+		);
 	}
 
 	private async refreshView(): Promise<void> {

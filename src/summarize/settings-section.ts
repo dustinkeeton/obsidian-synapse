@@ -75,19 +75,6 @@ export function renderSummarizeSettings(ctx: SettingsSectionContext): void {
 		);
 
 	new Setting(summarizeBody)
-		.setName('Excluded folders')
-		.setDesc('Comma-separated list of folders to skip for summarization')
-		.addText((text) =>
-			text
-				.setValue(plugin.settings.summarize.excludeFolders.join(', '))
-				.onChange(async (value) => {
-					plugin.settings.summarize.excludeFolders =
-						value.split(',').map((s) => s.trim()).filter(Boolean);
-					await plugin.saveSettings();
-				})
-		);
-
-	new Setting(summarizeBody)
 		.setName('Excluded tags')
 		.setDesc('Notes with these tags will skip summarization')
 		.addText((text) =>

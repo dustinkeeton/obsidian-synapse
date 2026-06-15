@@ -3,7 +3,8 @@ import { SynapseSettings, DeepDiveNestingMode } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	NotificationManager, readNote, writeNote, wordCount,
-	CheckpointManager, generateId, fireAndForget, normalizeFrontmatterTags,
+	CheckpointManager, generateId, fireAndForget,
+	isPathExcluded, matchesExcludeTag, findMatchingRule,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { ContentAnalyzer, DirectoryMatcher } from '../organize';
@@ -229,7 +230,12 @@ export class DeepDiveModule {
 	 */
 	private async deepDive(file: TFile): Promise<void> {
 		if (this.isExcluded(file)) {
-			this.notifications.info('Note is in an excluded folder or has an excluded tag');
+			const rule = findMatchingRule(file.path, 'deep-dive', this.getSettings());
+			this.notifications.info(
+				rule
+					? `Skipped — "${file.path}" is excluded by rule "${rule.pattern}"`
+					: 'Note is excluded from deep dive (excluded tag)'
+			);
 			return;
 		}
 
@@ -625,24 +631,11 @@ export class DeepDiveModule {
 	}
 
 	private isExcluded(file: TFile): boolean {
-		const settings = this.getSettings().deepDive;
-
-		for (const folder of settings.excludeFolders) {
-			if (file.path.startsWith(folder + '/')) return true;
-		}
-
-		const cache = this.plugin.app.metadataCache.getFileCache(file);
-		if (cache?.frontmatter?.tags) {
-			const fileTags = normalizeFrontmatterTags(cache.frontmatter.tags);
-			for (const excludeTag of settings.excludeTags) {
-				const normalized = excludeTag.startsWith('#')
-					? excludeTag.slice(1)
-					: excludeTag;
-				if (fileTags.includes(normalized)) return true;
-			}
-		}
-
-		return false;
+		const settings = this.getSettings();
+		return (
+			isPathExcluded(file.path, 'deep-dive', settings) ||
+			matchesExcludeTag(file, settings.deepDive.excludeTags, this.plugin.app.metadataCache)
+		);
 	}
 
 	/** Dispatch deferred tasks (I1). */

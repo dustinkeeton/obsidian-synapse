@@ -34,19 +34,6 @@ export function renderOrganizeSettings(ctx: SettingsSectionContext): void {
 	);
 
 	new Setting(organizeBody)
-		.setName('Excluded folders')
-		.setDesc('Comma-separated list of folders to skip for organization')
-		.addText((text) =>
-			text
-				.setValue(plugin.settings.organize.excludeFolders.join(', '))
-				.onChange(async (value) => {
-					plugin.settings.organize.excludeFolders =
-						value.split(',').map((s) => s.trim()).filter(Boolean);
-					await plugin.saveSettings();
-				})
-		);
-
-	new Setting(organizeBody)
 		.setName('Excluded tags')
 		.setDesc('Notes with these tags will skip organization')
 		.addText((text) =>

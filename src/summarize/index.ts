@@ -3,7 +3,8 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout,
-	CALLOUT_TYPES, CheckpointManager, generateId, fireAndForget, normalizeFrontmatterTags,
+	CALLOUT_TYPES, CheckpointManager, generateId, fireAndForget,
+	isPathExcluded, matchesExcludeTag,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { OperationHandle } from '../shared';
@@ -795,24 +796,11 @@ export class SummarizeModule {
 	}
 
 	private isExcluded(file: TFile): boolean {
-		const settings = this.getSettings().summarize;
-
-		for (const folder of settings.excludeFolders) {
-			if (file.path.startsWith(folder + '/')) return true;
-		}
-
-		const cache = this.plugin.app.metadataCache.getFileCache(file);
-		if (cache?.frontmatter?.tags) {
-			const fileTags = normalizeFrontmatterTags(cache.frontmatter.tags);
-			for (const excludeTag of settings.excludeTags) {
-				const normalized = excludeTag.startsWith('#')
-					? excludeTag.slice(1)
-					: excludeTag;
-				if (fileTags.includes(normalized)) return true;
-			}
-		}
-
-		return false;
+		const settings = this.getSettings();
+		return (
+			isPathExcluded(file.path, 'summarize', settings) ||
+			matchesExcludeTag(file, settings.summarize.excludeTags, this.plugin.app.metadataCache)
+		);
 	}
 
 	/** Dispatch deferred tasks (I1). */

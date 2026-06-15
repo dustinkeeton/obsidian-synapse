@@ -174,19 +174,6 @@ export function renderEnrichmentSettings(ctx: SettingsSectionContext): void {
 	}
 
 	new Setting(enrichmentBody)
-		.setName('Excluded folders')
-		.setDesc('Comma-separated list of folders to skip for enrichment')
-		.addText((text) =>
-			text
-				.setValue(plugin.settings.enrichment.excludeFolders.join(', '))
-				.onChange(async (value) => {
-					plugin.settings.enrichment.excludeFolders =
-						value.split(',').map((s) => s.trim()).filter(Boolean);
-					await plugin.saveSettings();
-				})
-		);
-
-	new Setting(enrichmentBody)
 		.setName('Excluded tags')
 		.setDesc('Notes with these tags will skip enrichment')
 		.addText((text) =>

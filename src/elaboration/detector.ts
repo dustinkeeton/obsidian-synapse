@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { wordCount, normalizeFrontmatterTags } from '../shared';
+import { wordCount, isPathExcluded, matchesExcludeTag } from '../shared';
 import { DetectionReason, DetectionResult } from './types';
 
 export class PlaceholderDetector {
@@ -51,18 +51,11 @@ export class PlaceholderDetector {
 	}
 
 	private isExcluded(file: TFile): boolean {
-		const settings = this.getSettings().elaboration;
-		for (const folder of settings.detection.excludeFolders) {
-			if (file.path.startsWith(folder + '/')) return true;
-		}
-		const cache = this.app.metadataCache.getFileCache(file);
-		if (cache?.frontmatter?.tags) {
-			const tags = normalizeFrontmatterTags(cache.frontmatter.tags);
-			for (const tag of settings.detection.excludeTags) {
-				if (tags.includes(tag)) return true;
-			}
-		}
-		return false;
+		const settings = this.getSettings();
+		return (
+			isPathExcluded(file.path, 'elaboration', settings) ||
+			matchesExcludeTag(file, settings.elaboration.detection.excludeTags, this.app.metadataCache)
+		);
 	}
 
 	private stripFrontmatter(content: string): string {

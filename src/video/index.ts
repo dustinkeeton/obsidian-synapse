@@ -5,6 +5,7 @@ import { AudioModule, TranscriptionResult } from '../audio';
 import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES,
 	CheckpointManager, generateId, formatTimeRange, detectPlatform, loadNodeModules,
+	isPathExcluded, findMatchingRule,
 } from '../shared';
 import type { TimeRange } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
@@ -149,6 +150,16 @@ export class VideoModule {
 			return;
 		}
 
+		// Path exclusion (#307): transcription lands in the ACTIVE note. Explicit
+		// command → Notice naming the rule.
+		const rule = findMatchingRule(activeFile.path, 'video', this.getSettings());
+		if (rule) {
+			this.notifications.info(
+				`Skipped — "${activeFile.path}" is excluded by rule "${rule.pattern}"`
+			);
+			return;
+		}
+
 		const op = this.notifications.startOperation(
 			'Processing video URL...',
 			`video-url-${Date.now()}`
@@ -202,6 +213,9 @@ export class VideoModule {
 		noteFile: TFile,
 		embeds: VideoUrlEmbed[]
 	): Promise<void> {
+		// Path exclusion (#307): batch insert into the note → silent skip.
+		if (isPathExcluded(noteFile.path, 'video', this.getSettings())) return;
+
 		const total = embeds.length;
 		let completed = 0;
 

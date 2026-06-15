@@ -5,6 +5,7 @@ import {
 	NotificationManager,
 	ensureFolder,
 	fetchArticleContent,
+	isPathExcluded,
 	parseFrontmatter,
 	serializeFrontmatter,
 	writeNote,
@@ -114,6 +115,13 @@ export class IntakeModule {
 		}
 
 		if (!this.isInIntakeFolder(file.path, settings.intakeFolder)) {
+			return;
+		}
+
+		// Path exclusion (#307): never auto-process a watched note that an
+		// exclusion rule hides from `intake`. Silent — this is an event-driven
+		// gatekeeper, additive to the capture-log guard above.
+		if (isPathExcluded(file.path, 'intake', this.getSettings())) {
 			return;
 		}
 

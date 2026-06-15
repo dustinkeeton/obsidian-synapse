@@ -56,3 +56,33 @@ describe('onboarding settings (#89)', () => {
 		expect(DEFAULT_SETTINGS.onboarding.hasSeenWelcome).toBe(false);
 	});
 });
+
+describe('exclusions settings (#307)', () => {
+	it('protects .synapse and templates from every feature by default', () => {
+		expect(DEFAULT_SETTINGS.exclusions).toEqual([
+			{ pattern: '.synapse/**', features: 'all' },
+			{ pattern: 'templates/**', features: 'all' },
+		]);
+	});
+
+	it('no longer carries a per-module excludeFolders field', () => {
+		const modules: Array<Record<string, unknown>> = [
+			DEFAULT_SETTINGS.elaboration.detection as unknown as Record<string, unknown>,
+			DEFAULT_SETTINGS.enrichment as unknown as Record<string, unknown>,
+			DEFAULT_SETTINGS.summarize as unknown as Record<string, unknown>,
+			DEFAULT_SETTINGS.organize as unknown as Record<string, unknown>,
+			DEFAULT_SETTINGS.deepDive as unknown as Record<string, unknown>,
+		];
+		for (const m of modules) {
+			expect(m).not.toHaveProperty('excludeFolders');
+		}
+	});
+
+	it('retains per-module excludeTags', () => {
+		expect(DEFAULT_SETTINGS.elaboration.detection.excludeTags).toContain('no-elaborate');
+		expect(DEFAULT_SETTINGS.enrichment.excludeTags).toContain('no-enrich');
+		expect(DEFAULT_SETTINGS.summarize.excludeTags).toContain('no-summarize');
+		expect(DEFAULT_SETTINGS.organize.excludeTags).toContain('no-organize');
+		expect(DEFAULT_SETTINGS.deepDive.excludeTags).toContain('no-deep-dive');
+	});
+});

@@ -72,7 +72,7 @@ interface Proposal {
    |
 2. PlaceholderDetector.detect(file)
    |  Checks: word count, TODO markers, empty sections, sparse links
-   |  Filters: excludeFolders, excludeTags
+   |  Filters: centralized isPathExcluded (feature 'elaboration'), excludeTags
    |  Returns: DetectionResult | null
    |
 3. Two-phase confirmation (vault scan only):

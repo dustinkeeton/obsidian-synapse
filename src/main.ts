@@ -17,8 +17,8 @@ import { CommandRegistrar, auditCommands } from './commands';
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
-import { FolderPickerModal, NotificationManager, CheckpointManager, fireAndForget } from './shared';
-import type { DeferredTask } from './shared';
+import { FolderPickerModal, NotificationManager, CheckpointManager, fireAndForget, buildMigratedExclusions } from './shared';
+import type { DeferredTask, LegacyModuleExclusions } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
 import { findVideoUrls } from './video';
@@ -429,6 +429,28 @@ export default class SynapsePlugin extends Plugin {
 		// source param directly — no boundary cast needed. deepMerge itself is
 		// left untouched (its prototype-pollution-safe recursion is out of scope).
 		this.settings = this.deepMerge(DEFAULT_SETTINGS, data ?? {});
+
+		// One-time migration of the legacy per-module `excludeFolders` lists into
+		// the centralized `exclusions` list (#307). Gated on the RAW persisted
+		// data lacking an `exclusions` key (no settings-version system exists —
+		// that's #93), so it runs exactly once and never re-runs even if the user
+		// later empties the list. Fresh installs already get the default
+		// exclusions from DEFAULT_SETTINGS, so they skip migration entirely.
+		if (!this.isFreshInstall && data && data.exclusions === undefined) {
+			try {
+				// Read legacy folders off the raw object via a narrow read type
+				// (the fields no longer exist on SynapseSettings).
+				const migrated = buildMigratedExclusions(data as LegacyModuleExclusions);
+				// Atomic assign of the fully-built list, then persist so the
+				// `exclusions` key is present on the next load.
+				this.settings.exclusions = migrated;
+				await this.saveData(this.settings);
+			} catch (error) {
+				// Swallow-and-warn (mirrors migrateDataFolder): on failure keep the
+				// merged default exclusions rather than breaking load.
+				console.warn('[Synapse] Failed to migrate excludeFolders to exclusions:', error);
+			}
+		}
 	}
 
 	async saveSettings(): Promise<void> {
