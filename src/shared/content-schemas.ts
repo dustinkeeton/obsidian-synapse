@@ -1,14 +1,24 @@
 /**
- * Content-aware summary templates.
+ * Content-aware formatting schemas.
  *
- * Each template defines a detection heuristic and a specialized prompt.
- * When auto-detection is enabled and no custom prompt is set, the first
- * matching template's prompt is used instead of the default style prompt.
+ * Each schema defines a detection heuristic and a specialized prompt, plus
+ * metadata describing which pipeline stage(s) it applies to and whether it
+ * reformats or summarizes. When auto-detection is enabled and no custom
+ * prompt is set, the first matching schema's prompt is used instead of the
+ * default style prompt.
+ *
+ * This registry is shared so both the summarize and transcription stages can
+ * consult it via `detectSchemaFor(stage, content)`.
  */
 
-export interface ContentTemplate {
+export type PipelineStage = 'transcription' | 'summary';
+export type SchemaMode = 'reformat' | 'summarize';
+
+export interface ContentSchema {
 	id: string;
 	name: string;
+	appliesTo: PipelineStage[];
+	mode: SchemaMode;
 	detect: (content: string) => boolean;
 	prompt: string;
 }
@@ -198,30 +208,36 @@ const RECEIPT_PROMPT =
 	'Extract all information from the provided content. If a field is not present in the source, write "Not specified". ' +
 	'Do not invent information that is not in the original text.';
 
-// ── Template Registry ─────────────────────────────────────────────────
+// ── Schema Registry ───────────────────────────────────────────────────
 
-export const CONTENT_TEMPLATES: ContentTemplate[] = [
+export const CONTENT_SCHEMAS: ContentSchema[] = [
 	{
 		id: 'recipe',
 		name: 'Recipe',
+		appliesTo: ['summary'],
+		mode: 'summarize',
 		detect: isRecipeContent,
 		prompt: RECIPE_PROMPT,
 	},
 	{
 		id: 'receipt',
 		name: 'Receipt',
+		appliesTo: ['summary'],
+		mode: 'summarize',
 		detect: isReceiptContent,
 		prompt: RECEIPT_PROMPT,
 	},
 ];
 
 /**
- * Iterate registered templates and return the first match, or null.
+ * Iterate registered schemas applicable to the given pipeline stage and
+ * return the first match, or null. Order matters: recipe is checked before
+ * receipt.
  */
-export function detectContentTemplate(content: string): ContentTemplate | null {
-	for (const template of CONTENT_TEMPLATES) {
-		if (template.detect(content)) {
-			return template;
+export function detectSchemaFor(stage: PipelineStage, content: string): ContentSchema | null {
+	for (const schema of CONTENT_SCHEMAS) {
+		if (schema.appliesTo.includes(stage) && schema.detect(content)) {
+			return schema;
 		}
 	}
 	return null;

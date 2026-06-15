@@ -48,9 +48,9 @@ Exported types: `SummarizeTarget`, `SummarizeSettings`, `TranscribeUrlFn`, `Tran
 | `summarize-modal.ts` | `SummarizeSelectionModal` | Selection modal when multiple targets found |
 | `summarize-module.test.ts` | Tests | SummarizeModule integration tests |
 | `audio-summarize.test.ts` | Tests | Audio-embed summarization tests |
-| `templates.ts` | `detectContentTemplate`, `isRecipeContent`, `scoreRecipeContent`, `CONTENT_TEMPLATES` | Content-aware template detection (recipe format, extensible) |
-| `templates.test.ts` | Tests | Template detection unit tests |
 | `types.ts` | -- | `SummarizeTarget` |
+
+> Content-aware formatting schemas (recipe/receipt detection + prompts) live in the shared `content-schemas.ts` registry (`shared/content-schemas.ts`), consumed here via `detectSchemaFor('summary', content)`. See [Content-Aware Schemas](#content-aware-schemas).
 
 ## Data Flow
 
@@ -76,7 +76,7 @@ processFileTargets(file, targets, op, content)
     else (inline target):
       --> fetchContentForUrl(url) or use transcription content
       --> determine effectivePrompt:
-            customPrompt > detectContentTemplate(content) > style default
+            customPrompt > detectSchemaFor('summary', content) > style default
       --> Summarizer.summarize(content, url, style, effectivePrompt)
       --> insert callout after target line
   --> vault.modify(sourceFile)
@@ -149,36 +149,42 @@ this.summarize = new SummarizeModule(
 
 ## Dependencies
 
-- `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, OperationHandle, buildCallout, CALLOUT_TYPES, CheckpointManager, generateId, Checkpoint, CheckpointWorkItem, DeferredTask, fetchPageContent, fetchTweetContent, isSupportedUrl, detectPlatform)
+- `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, OperationHandle, buildCallout, CALLOUT_TYPES, CheckpointManager, generateId, Checkpoint, CheckpointWorkItem, DeferredTask, fetchPageContent, fetchTweetContent, isSupportedUrl, detectPlatform, detectSchemaFor)
 - `audio/` (findAudioEmbeds -- used in collectTargets)
 - `settings.ts` (SynapseSettings, SummarizeSettings)
 - NO static `video/` import. URL-platform helpers (`isSupportedUrl`/`detectPlatform`) and content fetchers (`fetchPageContent`/`fetchTweetContent`) resolve from `shared`. Video transcription happens only through the injected `transcribeUrl` callback (`TranscribeUrlFn`).
 
-## Content-Aware Templates
+## Content-Aware Schemas
 
-When `autoDetectTemplates` is enabled (default: true) and no `customPrompt` is set, the module runs `detectContentTemplate(content)` on inline-target content before summarization. If a template matches, its specialized prompt replaces the style-based default.
+The content-aware formatting registry lives in the **shared** module (`shared/content-schemas.ts`) so both the summarize and transcription stages can consult it. Each `ContentSchema` declares which `appliesTo` pipeline stage(s) it targets (`'transcription' | 'summary'`) and a `mode` (`'reformat' | 'summarize'`). The summarize module only ever asks for the `'summary'` stage.
 
-Priority chain: `customPrompt` > template match > style default.
+When `autoDetectTemplates` is enabled (default: true) and no `customPrompt` is set, the module runs `detectSchemaFor('summary', content)` on inline-target content before summarization. If a schema matches, its specialized prompt replaces the style-based default.
 
-Enrichment targets (standalone notes) always use `COMPREHENSIVE_SUMMARY_PROMPT` and are not affected by template detection.
+Priority chain: `customPrompt` > schema match > style default.
 
-### Templates
+Enrichment targets (standalone notes) always use `COMPREHENSIVE_SUMMARY_PROMPT` and are not affected by schema detection.
+
+### Summary-stage schemas
 
 | ID | Name | Detection | Prompt Format |
 |----|------|-----------|---------------|
 | `recipe` | Recipe | Keyword scoring (structural headers, cooking verbs, measurements); threshold >= 5 | Structured recipe: title, times, servings, ingredients with exact amounts, numbered instructions with step images, notes |
+| `receipt` | Receipt | Keyword scoring (currency/total headers, line items, payment terms, identifiers, date/time); threshold >= 5 | Structured receipt: store, date, item table, totals, payment method, notes |
 
-### Adding New Templates
+### Adding new schemas
 
-1. Create a detection function in `templates.ts` (pure function, no side effects).
+Schemas are defined centrally in `shared/content-schemas.ts`:
+
+1. Create a detection function (pure function, no side effects).
 2. Define the specialized prompt string.
-3. Add a `ContentTemplate` entry to the `CONTENT_TEMPLATES` array.
-4. Add tests in `templates.test.ts` for both positive and negative detection.
+3. Add a `ContentSchema` entry to the `CONTENT_SCHEMAS` array with `appliesTo` + `mode` set, and export anything needed from `shared/index.ts`.
+4. Add tests in `shared/content-schemas.test.ts` for both positive and negative detection (and the stage gate).
 
 ## Tests
 
 - `summarizer.test.ts`
 - `note-scanner.test.ts`
 - `summarize-module.test.ts`
-- `templates.test.ts`
 - `audio-summarize.test.ts`
+
+> Content-schema detection tests live in `shared/content-schemas.test.ts`.

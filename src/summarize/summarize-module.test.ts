@@ -35,7 +35,10 @@ vi.mock('../video', () => ({
 // Mock the shared module to avoid folder picker / getMarkdownFiles issues.
 // Content fetchers are stubbed here (they moved from ./content-fetcher into
 // ../shared) to avoid real network calls.
-vi.mock('../shared', () => ({
+vi.mock('../shared', async () => ({
+	// Use the REAL content-schema registry (recipe/receipt detection + prompts)
+	// so auto-format behavior is exercised faithfully through the shared barrel.
+	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),

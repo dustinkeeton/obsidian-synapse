@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
-	detectContentTemplate,
+	detectSchemaFor,
 	isRecipeContent,
 	scoreRecipeContent,
 	isReceiptContent,
 	scoreReceiptContent,
-	CONTENT_TEMPLATES,
-} from './templates';
+	CONTENT_SCHEMAS,
+} from './content-schemas';
+import type { PipelineStage, SchemaMode } from './content-schemas';
 
 // ── Recipe Detection ──────────────────────────────────────────────────
 
@@ -179,10 +180,10 @@ describe('scoreRecipeContent', () => {
 	});
 });
 
-// ── detectContentTemplate ─────────────────────────────────────────────
+// ── detectSchemaFor (recipe) ──────────────────────────────────────────
 
-describe('detectContentTemplate', () => {
-	it('returns the recipe template for recipe content', () => {
+describe('detectSchemaFor', () => {
+	it('returns the recipe schema for recipe content', () => {
 		const content = [
 			'# Pancakes',
 			'',
@@ -197,10 +198,10 @@ describe('detectContentTemplate', () => {
 			'3. Cook on a griddle for 2 minutes per side.',
 		].join('\n');
 
-		const template = detectContentTemplate(content);
-		expect(template).not.toBeNull();
-		expect(template!.id).toBe('recipe');
-		expect(template!.name).toBe('Recipe');
+		const schema = detectSchemaFor('summary', content);
+		expect(schema).not.toBeNull();
+		expect(schema!.id).toBe('recipe');
+		expect(schema!.name).toBe('Recipe');
 	});
 
 	it('returns null for non-recipe content', () => {
@@ -211,27 +212,99 @@ describe('detectContentTemplate', () => {
 			'We have completed 80% of the planned features.',
 		].join('\n');
 
-		expect(detectContentTemplate(content)).toBeNull();
+		expect(detectSchemaFor('summary', content)).toBeNull();
 	});
 });
 
-// ── Template Shape Validation ─────────────────────────────────────────
+// ── Stage Gate Lock ───────────────────────────────────────────────────
+// Locks the appliesTo stage gate so the transcription stage cannot
+// accidentally fire summary-only schemas (recipe/receipt).
 
-describe('CONTENT_TEMPLATES', () => {
-	it('each template has a valid id, name, detect function, and prompt', () => {
-		for (const template of CONTENT_TEMPLATES) {
-			expect(typeof template.id).toBe('string');
-			expect(template.id.length).toBeGreaterThan(0);
-			expect(typeof template.name).toBe('string');
-			expect(template.name.length).toBeGreaterThan(0);
-			expect(typeof template.detect).toBe('function');
-			expect(typeof template.prompt).toBe('string');
-			expect(template.prompt.length).toBeGreaterThan(0);
+describe('detectSchemaFor stage gating', () => {
+	const recipe = [
+		'# Pancakes',
+		'',
+		'## Ingredients',
+		'- 1 cup flour',
+		'- 2 tbsp sugar',
+		'- 1 tsp baking powder',
+		'',
+		'## Instructions',
+		'1. Whisk dry ingredients.',
+		'2. Stir in milk and eggs.',
+		'3. Cook on a griddle for 2 minutes per side.',
+	].join('\n');
+
+	const receipt = [
+		'TARGET',
+		'Store #1234',
+		'Cashier: Mike',
+		'01/20/2026 10:15',
+		'',
+		'PAPER TOWELS          $8.99',
+		'DISH SOAP             $3.49',
+		'',
+		'Subtotal              $12.48',
+		'Tax                   $1.00',
+		'Total                 $13.48',
+		'',
+		'Debit **** 9876',
+		'Payment               $13.48',
+	].join('\n');
+
+	it('fires recipe at the summary stage', () => {
+		expect(detectSchemaFor('summary', recipe)?.id).toBe('recipe');
+	});
+
+	it('fires receipt at the summary stage', () => {
+		expect(detectSchemaFor('summary', receipt)?.id).toBe('receipt');
+	});
+
+	it('does NOT fire recipe at the transcription stage', () => {
+		expect(detectSchemaFor('transcription', recipe)).toBeNull();
+	});
+
+	it('does NOT fire receipt at the transcription stage', () => {
+		expect(detectSchemaFor('transcription', receipt)).toBeNull();
+	});
+});
+
+// ── Schema Shape Validation ───────────────────────────────────────────
+
+describe('CONTENT_SCHEMAS', () => {
+	const VALID_STAGES: PipelineStage[] = ['transcription', 'summary'];
+	const VALID_MODES: SchemaMode[] = ['reformat', 'summarize'];
+
+	it('each schema has a valid id, name, detect function, and prompt', () => {
+		for (const schema of CONTENT_SCHEMAS) {
+			expect(typeof schema.id).toBe('string');
+			expect(schema.id.length).toBeGreaterThan(0);
+			expect(typeof schema.name).toBe('string');
+			expect(schema.name.length).toBeGreaterThan(0);
+			expect(typeof schema.detect).toBe('function');
+			expect(typeof schema.prompt).toBe('string');
+			expect(schema.prompt.length).toBeGreaterThan(0);
 		}
 	});
 
-	it('recipe template prompt includes structured output instructions', () => {
-		const recipe = CONTENT_TEMPLATES.find(t => t.id === 'recipe');
+	it('each schema declares a non-empty appliesTo with valid stages', () => {
+		for (const schema of CONTENT_SCHEMAS) {
+			expect(Array.isArray(schema.appliesTo)).toBe(true);
+			expect(schema.appliesTo.length).toBeGreaterThan(0);
+			for (const stage of schema.appliesTo) {
+				expect(VALID_STAGES).toContain(stage);
+			}
+		}
+	});
+
+	it('each schema declares a valid mode', () => {
+		for (const schema of CONTENT_SCHEMAS) {
+			expect(VALID_MODES).toContain(schema.mode);
+		}
+	});
+
+	it('recipe schema prompt includes structured output instructions', () => {
+		const recipe = CONTENT_SCHEMAS.find(s => s.id === 'recipe');
 		expect(recipe).toBeDefined();
 		expect(recipe!.prompt).toContain('Ingredients');
 		expect(recipe!.prompt).toContain('Instructions');
@@ -242,7 +315,7 @@ describe('CONTENT_TEMPLATES', () => {
 // ── RECIPE_PROMPT Content ────────────────────────────────────────────
 
 describe('RECIPE_PROMPT content', () => {
-	const recipe = CONTENT_TEMPLATES.find(t => t.id === 'recipe');
+	const recipe = CONTENT_SCHEMAS.find(s => s.id === 'recipe');
 
 	it('requires exact ingredient amounts', () => {
 		expect(recipe!.prompt).toContain('exact amount');
@@ -434,9 +507,9 @@ describe('receipt content detection', () => {
 		});
 	});
 
-	describe('receipt template shape', () => {
-		it('receipt template has valid id, name, detect function, and prompt', () => {
-			const receipt = CONTENT_TEMPLATES.find(t => t.id === 'receipt');
+	describe('receipt schema shape', () => {
+		it('receipt schema has valid id, name, detect function, and prompt', () => {
+			const receipt = CONTENT_SCHEMAS.find(s => s.id === 'receipt');
 			expect(receipt).toBeDefined();
 			expect(receipt!.id).toBe('receipt');
 			expect(receipt!.name).toBe('Receipt');
@@ -445,8 +518,8 @@ describe('receipt content detection', () => {
 			expect(receipt!.prompt.length).toBeGreaterThan(0);
 		});
 
-		it('receipt template prompt includes structured output sections', () => {
-			const receipt = CONTENT_TEMPLATES.find(t => t.id === 'receipt');
+		it('receipt schema prompt includes structured output sections', () => {
+			const receipt = CONTENT_SCHEMAS.find(s => s.id === 'receipt');
 			expect(receipt).toBeDefined();
 			expect(receipt!.prompt).toContain('Items');
 			expect(receipt!.prompt).toContain('Totals');
@@ -455,8 +528,8 @@ describe('receipt content detection', () => {
 		});
 	});
 
-	describe('detectContentTemplate for receipts', () => {
-		it('returns the receipt template for receipt content', () => {
+	describe('detectSchemaFor for receipts', () => {
+		it('returns the receipt schema for receipt content', () => {
 			const content = [
 				'TARGET',
 				'Store #1234',
@@ -474,10 +547,10 @@ describe('receipt content detection', () => {
 				'Payment               $13.48',
 			].join('\n');
 
-			const template = detectContentTemplate(content);
-			expect(template).not.toBeNull();
-			expect(template!.id).toBe('receipt');
-			expect(template!.name).toBe('Receipt');
+			const schema = detectSchemaFor('summary', content);
+			expect(schema).not.toBeNull();
+			expect(schema!.id).toBe('receipt');
+			expect(schema!.name).toBe('Receipt');
 		});
 	});
 });

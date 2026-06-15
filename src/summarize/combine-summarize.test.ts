@@ -26,7 +26,10 @@ vi.mock('../audio', () => ({
 	findAudioEmbeds: (...args: any[]) => mockFindAudioEmbeds(...args),
 }));
 
-vi.mock('../shared', () => ({
+vi.mock('../shared', async () => ({
+	// Use the REAL content-schema registry so auto-format detection runs as in
+	// production (this path consults detectSchemaFor on the combined transcript).
+	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),

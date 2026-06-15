@@ -217,6 +217,8 @@ interface Checkpoint {
 | `exclusions.ts` | `FeatureId`, `ExclusionRule`, `findMatchingRule`, `isPathExcluded`, `matchesExcludeTag`, `ALL_FEATURE_IDS`, `buildMigratedExclusions`, `LegacyModuleExclusions` | Centralized per-path exclusion (#307): case-sensitive glob→regex matcher (`/**`, `/*`, exact, bare-token recursive; escapes metacharacters), shared tag-exclusion check, and the legacy `excludeFolders`→`exclusions` migration builder |
 | `exclusions.test.ts` | Tests | Exclusion matcher + migration tests |
 | `tweet-fetcher.test.ts` | Tests | Tweet fetcher tests |
+| `content-schemas.ts` | `ContentSchema`, `PipelineStage`, `SchemaMode`, `CONTENT_SCHEMAS`, `detectSchemaFor`, `isRecipeContent`, `scoreRecipeContent`, `isReceiptContent`, `scoreReceiptContent` | Content-aware formatting registry (#233): recipe/receipt detection heuristics + prompts, stage-gated via `appliesTo` (`'transcription' \| 'summary'`) and `mode` (`'reformat' \| 'summarize'`). Promoted out of `summarize/` so both summarize and transcription stages can consult it via `detectSchemaFor(stage, content)` |
+| `content-schemas.test.ts` | Tests | Schema detection + scoring + stage-gate lock tests |
 | `index.ts` | re-exports | Barrel file |
 
 ## AIClient Provider Routing
