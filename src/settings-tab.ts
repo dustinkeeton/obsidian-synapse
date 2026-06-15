@@ -190,6 +190,12 @@ export class SynapseSettingTab extends PluginSettingTab {
 		// ── AI Configuration (always-needed config — no enable toggle) ──
 		this.renderAIConfiguration(ctx);
 
+		// ── Auto-Accept Proposals (global, non-feature) ──
+		this.renderAutoAccept(ctx);
+
+		// ── Exclusions (global, cross-cutting path exclusion list) ──
+		this.renderExclusions(ctx);
+
 		// ── Per-feature sections, in order (Video gated to desktop) ──
 		for (const render of FEATURE_SECTION_RENDERERS) {
 			render(ctx);
@@ -199,12 +205,6 @@ export class SynapseSettingTab extends PluginSettingTab {
 				renderVideoSettings(ctx);
 			}
 		}
-
-		// ── Auto-Accept Proposals (global, non-feature) ──
-		this.renderAutoAccept(ctx);
-
-		// ── Exclusions (global, cross-cutting path exclusion list) ──
-		this.renderExclusions(ctx);
 
 		// ── About (static support links, always last) ──
 		this.renderAbout(ctx);
