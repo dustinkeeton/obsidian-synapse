@@ -49,6 +49,10 @@ describe('Gemini provider settings (#251)', () => {
 	it('defaults the dedicated Gemini transcription key to empty', () => {
 		expect(DEFAULT_SETTINGS.audio.geminiApiKey).toBe('');
 	});
+
+	it('enables lyric auto-formatting by default (#234)', () => {
+		expect(DEFAULT_SETTINGS.audio.autoFormatLyrics).toBe(true);
+	});
 });
 
 describe('onboarding settings (#89)', () => {

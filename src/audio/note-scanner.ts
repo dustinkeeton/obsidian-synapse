@@ -45,6 +45,11 @@ export function hasTranscriptionBelow(lines: string[], embedLine: number, fileNa
 		if (lines[j].includes(`[!${CALLOUT_TYPES.transcription}]`) && lines[j].includes(`Transcription of ${fileName}`)) {
 			return true;
 		}
+		// Lyrics callout format (#234): a reformatted song transcript counts as
+		// already transcribed, so re-scans don't re-offer transcription.
+		if (lines[j].includes(`[!${CALLOUT_TYPES.lyrics}]`) && lines[j].includes(`Lyrics of ${fileName}`)) {
+			return true;
+		}
 		// Stop looking if we hit another embed or non-empty non-blank line that isn't a blockquote
 		if (lines[j].trim().length > 0 && !lines[j].startsWith('>') && lines[j].trim() !== '') {
 			break;

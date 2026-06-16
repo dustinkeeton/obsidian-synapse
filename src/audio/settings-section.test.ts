@@ -57,4 +57,23 @@ describe('renderAudioSettings', () => {
 		const openaiAI = makeCtx((s) => { s.audio.transcriptionProvider = 'gemini'; s.ai.provider = 'openai'; });
 		expect(() => renderAudioSettings(openaiAI.ctx)).not.toThrow();
 	});
+
+	it('renders the auto-format lyrics toggle reflecting the setting and saves changes', async () => {
+		// Make autoFormatLyrics the only OFF toggle so it is uniquely identifiable
+		// (header enabled + post-processing toggles are all ON).
+		const { ctx, plugin, saveSettings } = makeCtx((s) => {
+			s.audio.enabled = true;
+			s.audio.autoFormatLyrics = false;
+			s.audio.postProcessing.enabled = true;
+			s.audio.postProcessing.removeFiller = true;
+		});
+		renderAudioSettings(ctx);
+
+		const lyricsToggle = ToggleComponent.instances.find((t) => t.getValue() === false);
+		expect(lyricsToggle).toBeDefined();
+
+		await lyricsToggle!._trigger(true);
+		expect(plugin.settings.audio.autoFormatLyrics).toBe(true);
+		expect(saveSettings).toHaveBeenCalled();
+	});
 });

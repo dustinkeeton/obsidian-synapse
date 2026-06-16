@@ -34,7 +34,7 @@ export {
 	formatTimeRange,
 } from './validation';
 export type { TimeRange } from './validation';
-export { CALLOUT_TYPES, buildCallout, ENRICHMENT_START, ENRICHMENT_END } from './callouts';
+export { CALLOUT_TYPES, buildCallout, calloutForTranscriptionResult, ENRICHMENT_START, ENRICHMENT_END } from './callouts';
 export type { CalloutType } from './callouts';
 export {
 	parseFrontmatter,
@@ -98,6 +98,8 @@ export {
 	scoreRecipeContent,
 	isReceiptContent,
 	scoreReceiptContent,
+	isLyricsContent,
+	scoreLyricsContent,
 } from './content-schemas';
 export type { ContentSchema, PipelineStage, SchemaMode } from './content-schemas';
 export { generateId, isValidCheckpointId } from './id-utils';

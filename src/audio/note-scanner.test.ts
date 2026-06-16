@@ -132,6 +132,16 @@ describe('hasTranscriptionBelow', () => {
 		expect(hasTranscriptionBelow(lines, 0, 'recording.mp3')).toBe(true);
 	});
 
+	it('returns true for a lyrics callout (#234 reformatted song)', () => {
+		const lines = [
+			'![[recording.mp3]]',
+			'',
+			'> [!synapse-lyrics]- Lyrics of recording.mp3',
+			'> ## Untitled',
+		];
+		expect(hasTranscriptionBelow(lines, 0, 'recording.mp3')).toBe(true);
+	});
+
 	it('returns false when no transcription exists', () => {
 		const lines = [
 			'![[recording.mp3]]',
