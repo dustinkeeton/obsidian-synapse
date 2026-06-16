@@ -1,5 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
+import { getIncludedMarkdownFiles } from '../shared';
 import { InternalLinkCandidate, WeightConfig } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
 import { computeProximityWeight } from './weight-calculator';
@@ -191,7 +192,7 @@ export class LinkResolver {
 	): void {
 		// Files in the same folder or sibling folders
 		const fileFolder = file.path.substring(0, file.path.lastIndexOf('/'));
-		const allFiles = this.app.vault.getMarkdownFiles();
+		const allFiles = getIncludedMarkdownFiles(this.app, 'enrichment', this.getSettings());
 
 		for (const other of allFiles) {
 			if (other.path === file.path) continue;

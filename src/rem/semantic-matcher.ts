@@ -1,7 +1,7 @@
 import type { App, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { RemLinkCandidate, RemOccurrence } from './types';
-import { AIClient, isRecord, parseJson } from '../shared';
+import { AIClient, isRecord, parseJson, getIncludedMarkdownFiles } from '../shared';
 
 /** One conceptual match the AI is expected to return, after validation. */
 interface SemanticMatch {
@@ -57,7 +57,7 @@ export class SemanticMatcher {
 
 		// Gather vault note titles (excluding self and already-matched)
 		const noteTitles: { path: string; title: string }[] = [];
-		for (const file of this.app.vault.getMarkdownFiles()) {
+		for (const file of getIncludedMarkdownFiles(this.app, 'rem', this.getSettings())) {
 			if (file.path === sourceFile.path) continue;
 			if (existingMatches.has(file.path)) continue;
 			noteTitles.push({ path: file.path, title: file.basename });

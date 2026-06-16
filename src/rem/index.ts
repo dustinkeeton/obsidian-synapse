@@ -46,7 +46,7 @@ export class RemModule {
 
 	async onload(): Promise<void> {
 		this.store = new RemStore(this.plugin.app, this.getSettings);
-		this.scanner = new MentionScanner(this.plugin.app);
+		this.scanner = new MentionScanner(this.plugin.app, this.getSettings);
 		this.semanticMatcher = new SemanticMatcher(this.plugin.app, this.getSettings);
 		this.applier = new RemApplier();
 

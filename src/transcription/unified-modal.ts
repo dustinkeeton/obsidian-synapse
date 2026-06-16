@@ -2,7 +2,7 @@ import { App, Modal, Notice, Platform, Setting, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AUDIO_EXTENSIONS } from '../audio';
 import { detectPlatform } from '../video';
-import { validateTimeRange } from '../shared';
+import { validateTimeRange, isPathExcluded } from '../shared';
 import type { TimeRange } from '../shared';
 import {
 	detectLocalFileDuration,
@@ -35,9 +35,16 @@ export class UnifiedTranscriptionModal extends Modal {
 
 		// Local File section
 		if (this.enabledModules.audio || this.enabledModules.video) {
+			const settings = this.getSettings();
+			// Honor folder exclusions scoped to audio: a folder the user excluded
+			// from audio transcription is also hidden from this manual picker (#323).
 			const audioFiles = this.app.vault
 				.getFiles()
-				.filter((f) => AUDIO_EXTENSIONS.test(f.name));
+				.filter(
+					(f) =>
+						AUDIO_EXTENSIONS.test(f.name) &&
+						!isPathExcluded(f.path, 'audio', settings)
+				);
 
 			new Setting(contentEl)
 				.setName('Local file')
@@ -55,8 +62,7 @@ export class UnifiedTranscriptionModal extends Modal {
 				});
 
 			// Post-processing info
-			const settings = this.getSettings().audio.postProcessing;
-			const ppStatus = settings.enabled
+			const ppStatus = settings.audio.postProcessing.enabled
 				? 'Enabled (configure in settings)'
 				: 'Disabled';
 			new Setting(contentEl)

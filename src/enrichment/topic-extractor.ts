@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, parseJson, sanitizeAIResponse } from '../shared';
+import { AIClient, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles } from '../shared';
 import { InternalLinkCandidate } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
 import { computeProximityWeight } from './weight-calculator';
@@ -146,7 +146,7 @@ export class TopicExtractor {
 
 	private buildTitleMap(): Map<string, string> {
 		const map = new Map<string, string>();
-		const files = this.app.vault.getMarkdownFiles();
+		const files = getIncludedMarkdownFiles(this.app, 'enrichment', this.getSettings());
 		for (const file of files) {
 			map.set(file.basename.toLowerCase(), file.path);
 		}

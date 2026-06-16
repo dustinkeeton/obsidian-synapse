@@ -24,6 +24,9 @@ function makeApp(files: TFile[], cacheMap: Map<string, Partial<CachedMetadata>> 
 	} as any;
 }
 
+const noExclusions = () => ({ exclusions: [] }) as any;
+const settingsWith = (exclusions: unknown[]) => () => ({ exclusions }) as any;
+
 // ── Tests ────────────────────────────────────────────────────
 
 describe('MentionScanner', () => {
@@ -36,7 +39,7 @@ describe('MentionScanner', () => {
 				makeFile('Machine Learning.md', 'Machine Learning'),
 				makeFile('Data Science.md', 'Data Science'),
 			];
-			scanner = new MentionScanner(makeApp(files));
+			scanner = new MentionScanner(makeApp(files), noExclusions);
 		});
 
 		it('should find exact title mentions', () => {
@@ -74,6 +77,20 @@ describe('MentionScanner', () => {
 		});
 	});
 
+	describe('folder exclusion (#323)', () => {
+		it('does not match notes in folders excluded for rem', () => {
+			const files = [
+				makeFile('source.md', 'source'),
+				makeFile('Templates/Machine Learning.md', 'Machine Learning'),
+			];
+			const getSettings = settingsWith([{ pattern: 'Templates/**', features: ['rem'] }]);
+			const excludingScanner = new MentionScanner(makeApp(files), getSettings);
+			const source = makeFile('source.md', 'source');
+			const results = excludingScanner.scan(source, 'I am studying machine learning today.', 20);
+			expect(results).toHaveLength(0);
+		});
+	});
+
 	describe('alias match', () => {
 		beforeEach(() => {
 			const files = [
@@ -87,7 +104,7 @@ describe('MentionScanner', () => {
 					position: { start: { line: 0, col: 0, offset: 0 }, end: { line: 0, col: 0, offset: 0 } },
 				},
 			});
-			scanner = new MentionScanner(makeApp(files, cache));
+			scanner = new MentionScanner(makeApp(files, cache), noExclusions);
 		});
 
 		it('should match aliases', () => {
@@ -117,7 +134,7 @@ describe('MentionScanner', () => {
 				makeFile('source.md', 'source'),
 				makeFile('Machine Learning.md', 'Machine Learning'),
 			];
-			scanner = new MentionScanner(makeApp(files));
+			scanner = new MentionScanner(makeApp(files), noExclusions);
 		});
 
 		it('should match regardless of case', () => {
@@ -137,7 +154,7 @@ describe('MentionScanner', () => {
 				makeFile('Data.md', 'Data'),
 				makeFile('Art.md', 'Art'),
 			];
-			scanner = new MentionScanner(makeApp(files));
+			scanner = new MentionScanner(makeApp(files), noExclusions);
 		});
 
 		it('should not match partial words', () => {
@@ -177,7 +194,7 @@ describe('MentionScanner', () => {
 				makeFile('source.md', 'source'),
 				makeFile('Machine Learning.md', 'Machine Learning'),
 			];
-			scanner = new MentionScanner(makeApp(files));
+			scanner = new MentionScanner(makeApp(files), noExclusions);
 		});
 
 		it('should skip frontmatter', () => {
@@ -237,7 +254,7 @@ describe('MentionScanner', () => {
 				makeFile('Machine.md', 'Machine'),
 				makeFile('Machine Learning.md', 'Machine Learning'),
 			];
-			scanner = new MentionScanner(makeApp(files));
+			scanner = new MentionScanner(makeApp(files), noExclusions);
 		});
 
 		it('should prefer longest match when candidates overlap', () => {
@@ -268,7 +285,7 @@ describe('MentionScanner', () => {
 			const files = [
 				makeFile('Machine Learning.md', 'Machine Learning'),
 			];
-			scanner = new MentionScanner(makeApp(files));
+			scanner = new MentionScanner(makeApp(files), noExclusions);
 
 			const source = makeFile('Machine Learning.md', 'Machine Learning');
 			const content = 'This note is about machine learning.';
@@ -287,7 +304,7 @@ describe('MentionScanner', () => {
 				makeFile('Gamma.md', 'Gamma'),
 				makeFile('Delta.md', 'Delta'),
 			];
-			scanner = new MentionScanner(makeApp(files));
+			scanner = new MentionScanner(makeApp(files), noExclusions);
 
 			const source = makeFile('source.md', 'source');
 			const content = 'alpha beta gamma delta';
@@ -303,7 +320,7 @@ describe('MentionScanner', () => {
 				makeFile('source.md', 'source'),
 				makeFile('Résumé.md', 'Résumé'),
 			];
-			scanner = new MentionScanner(makeApp(files));
+			scanner = new MentionScanner(makeApp(files), noExclusions);
 
 			const source = makeFile('source.md', 'source');
 			const content = 'Update your résumé today.';

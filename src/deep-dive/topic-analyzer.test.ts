@@ -16,6 +16,9 @@ vi.mock('../shared', async () => {
 		sanitizeAIResponse: (text: string) => text,
 		parseJson,
 		isRecord,
+		// Passthrough: exclusion filtering is covered in file-utils.test.ts; these
+		// tests only need the same files getMarkdownFiles would have returned.
+		getIncludedMarkdownFiles: (app: import('obsidian').App) => app.vault.getMarkdownFiles(),
 	};
 });
 

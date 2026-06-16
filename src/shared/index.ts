@@ -13,6 +13,7 @@ export {
 	readNote,
 	writeNote,
 	getMarkdownFiles,
+	getIncludedMarkdownFiles,
 	wordCount,
 } from './file-utils';
 export { arrayBufferToBase64, base64EncodedLength } from './encoding';
@@ -90,7 +91,7 @@ export {
 	ALL_FEATURE_IDS,
 	buildMigratedExclusions,
 } from './exclusions';
-export type { FeatureId, ExclusionRule, LegacyModuleExclusions } from './exclusions';
+export type { FeatureId, ExclusionRule, LegacyModuleExclusions, ExclusionSettings } from './exclusions';
 export {
 	CONTENT_SCHEMAS,
 	detectSchemaFor,

@@ -56,7 +56,7 @@ export class EnrichmentModule {
 		shouldAutoAccept?: () => boolean
 	) {
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
-		this.analyzer = new VaultAnalyzer(plugin.app);
+		this.analyzer = new VaultAnalyzer(plugin.app, getSettings);
 		this.classifier = new MetadataClassifier(getSettings);
 		this.topicExtractor = new TopicExtractor(plugin.app, this.analyzer, getSettings);
 		this.linkResolver = new LinkResolver(plugin.app, this.analyzer, getSettings);

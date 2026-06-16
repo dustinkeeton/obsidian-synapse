@@ -65,7 +65,7 @@ export interface ExclusionRule {
  * `exclusions` so the matcher stays decoupled from the full settings shape (and
  * so tests can pass a thin object).
  */
-interface ExclusionSettings {
+export interface ExclusionSettings {
 	exclusions: ExclusionRule[];
 }
 
