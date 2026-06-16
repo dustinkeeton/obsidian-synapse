@@ -208,6 +208,140 @@ const RECEIPT_PROMPT =
 	'Extract all information from the provided content. If a field is not present in the source, write "Not specified". ' +
 	'Do not invent information that is not in the original text.';
 
+// ── Lyrics Detection ──────────────────────────────────────────────────
+
+// Explicit section markers — the strongest signal a transcript is song lyrics.
+const LYRICS_SECTION_MARKER =
+	/(\[\s*(?:verse|chorus|pre[-\s]?chorus|bridge|intro|outro|hook|refrain)\s*\d*\s*\]|\(\s*(?:bridge|chorus|hook|refrain|pre[-\s]?chorus)\s*\))/i;
+
+// Annotations and vocable runs common to lyrics ("[x2]", "(repeat)", "la la").
+const LYRICS_ANNOTATION =
+	/(\[\s*x\s*\d+\s*\]|\(\s*(?:x\s*\d+|\d+\s*x|repeat)\s*\)|\b(?:la(?:\s+la)+|na(?:\s+na)+|oh(?:\s+oh)+|whoa(?:\s+whoa)+|yeah(?:\s+yeah)+)\b)/i;
+
+/** Normalize a chunk for repetition comparison: lowercase, strip punctuation, collapse whitespace. */
+function normalizeChunk(chunk: string): string {
+	return chunk.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Fraction of chunks that are verbatim repeats of an earlier chunk. Choruses
+ * repeat word-for-word, which is the single most distinctive statistical signal
+ * for lyrics. Returns 0 below a minimum chunk count to avoid trivial-input noise.
+ */
+function repetitionRatio(chunks: string[]): number {
+	const normalized = chunks.map(normalizeChunk).filter(c => c.length > 0);
+	if (normalized.length < 6) return 0;
+	const counts = new Map<string, number>();
+	for (const c of normalized) counts.set(c, (counts.get(c) ?? 0) + 1);
+	let repeated = 0;
+	for (const n of counts.values()) if (n > 1) repeated += n - 1;
+	return repeated / normalized.length;
+}
+
+/**
+ * Split content into comparable segments. Prefers real line breaks; for the
+ * run-on single-paragraph output Whisper typically produces, falls back to
+ * splitting on sentence/clause punctuation so the statistical signals still work.
+ */
+function lyricSegments(text: string): string[] {
+	const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+	if (lines.length >= 4) return lines;
+	return text.split(/[,.;!?\n]+/).map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * Score content for song-lyric characteristics. Exported for testing.
+ *
+ * Repetition is weighted highest because choruses repeat verbatim — a signal
+ * prose, lists, notes, and recipes lack — which keeps false positives down.
+ *
+ * Scoring (threshold 5):
+ *   - Section markers ([Verse]/[Chorus]/(Bridge)) — 2 pts
+ *   - Repetition ratio — 2 pts (>= 0.15), or 3 pts (>= 0.35)
+ *   - Short-segment profile — 1 pt (>= 0.6 short & unterminated), or 2 pts (>= 0.85)
+ *   - Stanza structure (multiple short blank-line-delimited blocks) — 1 pt
+ *   - Lyric annotations / vocable runs — 1 pt
+ */
+export function scoreLyricsContent(content: string): number {
+	const text = content.trim();
+	if (!text) return 0;
+	let score = 0;
+
+	if (LYRICS_SECTION_MARKER.test(text)) {
+		score += 2;
+	}
+
+	// Repetition — the max of line- and phrase-level ratios so it fires on both
+	// stanza'd lyrics and run-on paragraphs.
+	const lines = text.split('\n');
+	const phrases = text.split(/[\n.,;!?]+/);
+	const repetition = Math.max(repetitionRatio(lines), repetitionRatio(phrases));
+	if (repetition >= 0.35) {
+		score += 3;
+	} else if (repetition >= 0.15) {
+		score += 2;
+	}
+
+	// Short-segment profile — lyric lines are short and rarely end in . ? !
+	const segments = lyricSegments(text);
+	if (segments.length >= 4) {
+		const short = segments.filter(s => s.length <= 50).length / segments.length;
+		const unterminated = segments.filter(s => !/[.?!]$/.test(s)).length / segments.length;
+		if (short >= 0.85 && unterminated >= 0.85) {
+			score += 2;
+		} else if (short >= 0.6 && unterminated >= 0.6) {
+			score += 1;
+		}
+	}
+
+	// Stanza structure — multiple blank-line-delimited blocks of short lines.
+	const blocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+	const shortBlocks = blocks.filter(b => {
+		const ls = b.split('\n').map(l => l.trim()).filter(Boolean);
+		return ls.length >= 2 && ls.every(l => l.length <= 60);
+	});
+	if (shortBlocks.length >= 2) {
+		score += 1;
+	}
+
+	if (LYRICS_ANNOTATION.test(text)) {
+		score += 1;
+	}
+
+	return score;
+}
+
+/**
+ * Score content for song-lyric characteristics.
+ * Returns true if the score meets or exceeds the threshold (5).
+ */
+export function isLyricsContent(content: string): boolean {
+	return scoreLyricsContent(content) >= 5;
+}
+
+const LYRICS_PROMPT =
+	'You are formatting a song transcript as structured lyrics. The transcript IS the lyrics — ' +
+	'preserve EVERY line exactly. Do NOT summarize, paraphrase, condense, translate, or omit any line. ' +
+	'Reproduce repeated sections (such as a repeated chorus) IN FULL each time they occur — never collapse ' +
+	'a repeat to "Chorus (repeat)" or similar.\n\n' +
+	'Produce the lyrics using the following format:\n\n' +
+	'## [Song Title or "Untitled"]\n' +
+	'**Artist:** [artist or "Not specified"]\n\n' +
+	'Then output each section as a callout. Use `> [!verse] Verse N` for verses and `> [!chorus] Chorus` ' +
+	'for choruses (use `> [!verse] Bridge`, `> [!verse] Intro`, `> [!verse] Outro` for other sections), ' +
+	'with one lyric line per line inside the callout, for example:\n\n' +
+	'> [!verse] Verse 1\n' +
+	'> first line\n' +
+	'> second line\n\n' +
+	'> [!chorus] Chorus\n' +
+	'> first line\n' +
+	'> second line\n\n' +
+	'If the transcript already contains [Verse]/[Chorus] markers, honor them; otherwise infer the ' +
+	'verse/chorus structure from repetition and phrasing. If the transcript is one run-on paragraph, ' +
+	'split it into natural lyric lines.\n\n' +
+	'Extract all information from the provided content. If a field is not present in the source, write "Not specified". ' +
+	'Do not invent information that is not in the original text.';
+
 // ── Schema Registry ───────────────────────────────────────────────────
 
 export const CONTENT_SCHEMAS: ContentSchema[] = [
@@ -226,6 +360,14 @@ export const CONTENT_SCHEMAS: ContentSchema[] = [
 		mode: 'summarize',
 		detect: isReceiptContent,
 		prompt: RECEIPT_PROMPT,
+	},
+	{
+		id: 'lyrics',
+		name: 'Lyrics',
+		appliesTo: ['transcription'],
+		mode: 'reformat',
+		detect: isLyricsContent,
+		prompt: LYRICS_PROMPT,
 	},
 ];
 

@@ -11,6 +11,7 @@ const CALLOUT_TRANSCRIPTION_HEADER = new RegExp(
 );
 const CALLOUT_SUMMARY_PREFIX = `[!${CALLOUT_TYPES.summary}]`;
 const CALLOUT_TRANSCRIPTION_PREFIX = `[!${CALLOUT_TYPES.transcription}]`;
+const CALLOUT_LYRICS_PREFIX = `[!${CALLOUT_TYPES.lyrics}]`;
 const CALLOUT_ENRICHMENT_PREFIX = `[!${CALLOUT_TYPES.enrichment}]`;
 
 /**
@@ -181,6 +182,11 @@ function hasTranscriptionBelow(lines: string[], urlLine: number, url: string): b
 		}
 		// Callout format: > [!synapse-transcription] Transcription of <url>
 		if (line.includes(CALLOUT_TRANSCRIPTION_PREFIX) && (line.includes(`Transcription of ${url}`) || line.includes(`Transcription of ${normalized}`))) {
+			return true;
+		}
+		// Lyrics callout (#234): a reformatted song transcript also counts, so a
+		// transcribed song URL isn't re-fetched and summarized.
+		if (line.includes(CALLOUT_LYRICS_PREFIX) && (line.includes(`Lyrics of ${url}`) || line.includes(`Lyrics of ${normalized}`))) {
 			return true;
 		}
 		// Stop at non-empty, non-blockquote content

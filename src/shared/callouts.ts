@@ -9,6 +9,9 @@
 export const CALLOUT_TYPES = {
 	summary: 'synapse-summary',
 	transcription: 'synapse-transcription',
+	lyrics: 'synapse-lyrics',
+	verse: 'synapse-verse',
+	chorus: 'synapse-chorus',
 	enrichment: 'synapse-enrichment',
 	elaboration: 'synapse-elaboration',
 	deepDive: 'synapse-deep-dive',
@@ -17,6 +20,21 @@ export const CALLOUT_TYPES = {
 } as const;
 
 export type CalloutType = (typeof CALLOUT_TYPES)[keyof typeof CALLOUT_TYPES];
+
+/**
+ * Choose the callout type and header verb for a finished transcription based on
+ * whether a content schema reformatted it. Lyric reformatting (#234) writes a
+ * distinct `synapse-lyrics` callout — which the summarize note-scanner does not
+ * match — so reformatted song lyrics are never re-condensed into a summary.
+ */
+export function calloutForTranscriptionResult(
+	result: { reformatted?: boolean; schemaId?: string }
+): { type: CalloutType; verb: string } {
+	if (result.schemaId === 'lyrics') {
+		return { type: CALLOUT_TYPES.lyrics, verb: 'Lyrics of' };
+	}
+	return { type: CALLOUT_TYPES.transcription, verb: 'Transcription of' };
+}
 
 /**
  * Legacy comment-based enrichment section markers.

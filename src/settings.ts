@@ -85,6 +85,8 @@ export interface AudioSettings {
 	whisperModel: string;
 	localWhisperPath: string;
 	language: string;
+	/** Auto-detect song transcripts and format them as structured lyrics (#234). */
+	autoFormatLyrics: boolean;
 	postProcessing: PostProcessingSettings;
 }
 
@@ -332,6 +334,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		whisperModel: 'whisper-1',
 		localWhisperPath: '',
 		language: '',
+		autoFormatLyrics: true,
 		postProcessing: {
 			enabled: true,
 			removeFiller: true,

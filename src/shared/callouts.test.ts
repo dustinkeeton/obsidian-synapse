@@ -1,14 +1,37 @@
 import { describe, it, expect } from 'vitest';
-import { buildCallout, CALLOUT_TYPES } from './callouts';
+import { buildCallout, CALLOUT_TYPES, calloutForTranscriptionResult } from './callouts';
 
 describe('CALLOUT_TYPES', () => {
 	it('has all expected types', () => {
 		expect(CALLOUT_TYPES.summary).toBe('synapse-summary');
 		expect(CALLOUT_TYPES.transcription).toBe('synapse-transcription');
+		expect(CALLOUT_TYPES.lyrics).toBe('synapse-lyrics');
+		expect(CALLOUT_TYPES.verse).toBe('synapse-verse');
+		expect(CALLOUT_TYPES.chorus).toBe('synapse-chorus');
 		expect(CALLOUT_TYPES.enrichment).toBe('synapse-enrichment');
 		expect(CALLOUT_TYPES.elaboration).toBe('synapse-elaboration');
 		expect(CALLOUT_TYPES.deepDive).toBe('synapse-deep-dive');
 		expect(CALLOUT_TYPES.nav).toBe('synapse-nav');
+	});
+});
+
+describe('calloutForTranscriptionResult', () => {
+	it('uses the lyrics callout and verb when a lyrics schema reformatted the transcript', () => {
+		const result = calloutForTranscriptionResult({ reformatted: true, schemaId: 'lyrics' });
+		expect(result.type).toBe(CALLOUT_TYPES.lyrics);
+		expect(result.verb).toBe('Lyrics of');
+	});
+
+	it('uses the transcription callout and verb for an unreformatted transcript', () => {
+		const result = calloutForTranscriptionResult({});
+		expect(result.type).toBe(CALLOUT_TYPES.transcription);
+		expect(result.verb).toBe('Transcription of');
+	});
+
+	it('falls back to transcription for an unknown schema id', () => {
+		const result = calloutForTranscriptionResult({ reformatted: true, schemaId: 'recipe' });
+		expect(result.type).toBe(CALLOUT_TYPES.transcription);
+		expect(result.verb).toBe('Transcription of');
 	});
 });
 

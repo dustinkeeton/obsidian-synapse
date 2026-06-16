@@ -3,7 +3,7 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import { AudioModule, TranscriptionResult } from '../audio';
 import {
-	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, CALLOUT_TYPES,
+	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, calloutForTranscriptionResult,
 	CheckpointManager, generateId, formatTimeRange, detectPlatform, loadNodeModules,
 	isPathExcluded, findMatchingRule,
 } from '../shared';
@@ -176,11 +176,12 @@ export class VideoModule {
 				blockLines.push('');
 			}
 
+			const { type, verb } = calloutForTranscriptionResult(result);
 			const title = timeRange
-				? `Transcription of ${url} ${formatTimeRange(timeRange)}`
-				: `Transcription of ${url}`;
+				? `${verb} ${url} ${formatTimeRange(timeRange)}`
+				: `${verb} ${url}`;
 			const callout = buildCallout(
-				CALLOUT_TYPES.transcription,
+				type,
 				title,
 				text,
 				true
@@ -270,9 +271,10 @@ export class VideoModule {
 					blockLines.push('');
 				}
 
+				const { type, verb } = calloutForTranscriptionResult(result);
 				const callout = buildCallout(
-					CALLOUT_TYPES.transcription,
-					`Transcription of ${embed.url}`,
+					type,
+					`${verb} ${embed.url}`,
 					text,
 					true
 				);

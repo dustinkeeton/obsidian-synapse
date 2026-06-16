@@ -152,6 +152,22 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 		);
 
 	new Setting(audioBody)
+		.setName('Auto-format song lyrics')
+		.setDesc(
+			'Detect transcripts that are song lyrics and format them into verse/chorus ' +
+			'sections (preserving every line) instead of leaving them as prose. Makes one ' +
+			'extra AI call when a song is detected.'
+		)
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.audio.autoFormatLyrics)
+				.onChange(async (value) => {
+					plugin.settings.audio.autoFormatLyrics = value;
+					await plugin.saveSettings();
+				})
+		);
+
+	new Setting(audioBody)
 		.setName('Post-processing')
 		.setDesc('Clean up and structure transcriptions with AI')
 		.addToggle((toggle) =>

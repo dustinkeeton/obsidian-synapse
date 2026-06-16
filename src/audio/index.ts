@@ -1,7 +1,8 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
-	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
+	NotificationManager, buildCallout, CALLOUT_TYPES, calloutForTranscriptionResult,
+	sanitizeAIResponse, AIClient, detectSchemaFor,
 	CheckpointManager, generateId, formatTimeRange, loadNodeModules,
 	isPathExcluded, findMatchingRule,
 } from '../shared';
@@ -21,6 +22,7 @@ export class AudioModule {
 
 	private transcriber: Transcriber;
 	private postProcessor: PostProcessor;
+	private aiClient: AIClient;
 
 	/**
 	 * Delay (ms) between sequential per-file transcriptions in the no-ffmpeg
@@ -40,6 +42,7 @@ export class AudioModule {
 	) {
 		this.transcriber = new Transcriber(getSettings);
 		this.postProcessor = new PostProcessor(getSettings);
+		this.aiClient = new AIClient(getSettings);
 	}
 
 	async onload(): Promise<void> {
@@ -81,11 +84,43 @@ export class AudioModule {
 			result.processed = await this.postProcessor.process(result.raw);
 		}
 
+		await this.maybeReformatBySchema(result);
+
 		if (options?.sourceName) {
 			result.sourceName = options.sourceName;
 		}
 
 		return result;
+	}
+
+	/**
+	 * Content-schema reformat (#234): if a transcription-stage schema (e.g.
+	 * lyrics) matches and auto-formatting is enabled, reformat the transcript in
+	 * place — preserving it rather than condensing it. The reformatted text is
+	 * written to `result.processed` (every consumer reads `processed || raw`) and
+	 * tagged via `schemaId`/`reformatted` so the write sites emit a distinct
+	 * callout type. Detection is local (no AI cost); the AI call fires only on a
+	 * match. Any failure falls back to the unmodified transcript.
+	 */
+	private async maybeReformatBySchema(result: TranscriptionResult): Promise<void> {
+		if (!this.getSettings().audio.autoFormatLyrics) return;
+
+		const base = result.processed ?? result.raw;
+		const schema = detectSchemaFor('transcription', base);
+		if (!schema || schema.mode !== 'reformat') return;
+
+		try {
+			const reformatted = sanitizeAIResponse(await this.aiClient.complete(base, schema.prompt));
+			if (reformatted.trim()) {
+				result.processed = reformatted;
+				result.reformatted = true;
+				result.schemaId = schema.id;
+			}
+		} catch (error) {
+			// Graceful fallback (#234): keep the raw/cleaned transcript on any
+			// failure (e.g. the provider refuses or truncates a long song).
+			console.warn('[Synapse] Schema reformat failed; keeping transcript', error);
+		}
 	}
 
 	async transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void> {
@@ -137,11 +172,12 @@ export class AudioModule {
 			const result = await this.transcribe(data, file.name);
 			const text = result.processed || result.raw;
 
+			const { type, verb } = calloutForTranscriptionResult(result);
 			const title = timeRange && this.extractor
-				? `Transcription of ${file.name} ${formatTimeRange(timeRange)}`
-				: `Transcription of ${file.name}`;
+				? `${verb} ${file.name} ${formatTimeRange(timeRange)}`
+				: `${verb} ${file.name}`;
 			const transcriptionBlock = buildCallout(
-				CALLOUT_TYPES.transcription,
+				type,
 				title,
 				text,
 				true
@@ -222,9 +258,10 @@ export class AudioModule {
 				const result = await this.transcribe(data, embed.fileName);
 				const text = result.processed || result.raw;
 
+				const { type, verb } = calloutForTranscriptionResult(result);
 				const transcriptionBlock = buildCallout(
-					CALLOUT_TYPES.transcription,
-					`Transcription of ${embed.fileName}`,
+					type,
+					`${verb} ${embed.fileName}`,
 					text,
 					true
 				);

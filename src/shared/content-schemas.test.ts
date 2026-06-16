@@ -5,6 +5,8 @@ import {
 	scoreRecipeContent,
 	isReceiptContent,
 	scoreReceiptContent,
+	isLyricsContent,
+	scoreLyricsContent,
 	CONTENT_SCHEMAS,
 } from './content-schemas';
 import type { PipelineStage, SchemaMode } from './content-schemas';
@@ -551,6 +553,157 @@ describe('receipt content detection', () => {
 			expect(schema).not.toBeNull();
 			expect(schema!.id).toBe('receipt');
 			expect(schema!.name).toBe('Receipt');
+		});
+	});
+});
+
+// ── Lyrics Detection ─────────────────────────────────────────────────
+
+describe('lyrics content detection', () => {
+	// Structured lyrics with explicit section markers and a repeated chorus.
+	const BRACKETED_LYRICS = [
+		'[Verse 1]',
+		'City lights are calling out my name',
+		'Walking down these empty streets again',
+		'Every shadow tells me you are the same',
+		'But I keep moving on',
+		'',
+		'[Chorus]',
+		'We were running, running through the night',
+		'Holding on to something that felt right',
+		'We were running, running through the night',
+		'Chasing every star in sight',
+		'',
+		'[Verse 2]',
+		'Morning comes and washes you away',
+		'All the words I never got to say',
+		'Faded like a photograph in rain',
+		'But I keep moving on',
+		'',
+		'[Chorus]',
+		'We were running, running through the night',
+		'Holding on to something that felt right',
+		'We were running, running through the night',
+		'Chasing every star in sight',
+	].join('\n');
+
+	// Real Whisper output: one run-on paragraph, no markers. Detection has to
+	// rely on repetition + short-phrase statistics, not section headers.
+	const RUNON_LYRICS =
+		'I see the fire in your eyes, I see the fire in your eyes, dancing like the summer skies, ' +
+		'we don\'t have to say goodbye, I see the fire in your eyes, I see the fire in your eyes, ' +
+		'take my hand and hold it tight, we will be running through the night, ' +
+		'I see the fire in your eyes, I see the fire in your eyes, na na na na, na na na na';
+
+	describe('isLyricsContent — positives', () => {
+		it('detects lyrics with [Verse]/[Chorus] markers', () => {
+			expect(isLyricsContent(BRACKETED_LYRICS)).toBe(true);
+		});
+
+		it('detects run-on single-paragraph lyrics via repetition (no markers)', () => {
+			expect(isLyricsContent(RUNON_LYRICS)).toBe(true);
+			// The run-on case must NOT lean on section markers.
+			expect(RUNON_LYRICS).not.toMatch(/\[(verse|chorus)/i);
+		});
+	});
+
+	describe('isLyricsContent — false-positive guards', () => {
+		const poem = [
+			'The Road Not Taken',
+			'',
+			'Two roads diverged in a yellow wood,',
+			'And sorry I could not travel both',
+			'And be one traveler, long I stood',
+			'And looked down one as far as I could',
+			'To where it bent in the undergrowth;',
+			'',
+			'Then took the other, as just as fair,',
+			'And having perhaps the better claim,',
+			'Because it was grassy and wanted wear;',
+			'Though as for that the passing there',
+			'Had worn them really about the same,',
+		].join('\n');
+
+		const prose =
+			'The quarterly report shows that revenue increased by twelve percent compared to the ' +
+			'previous period. This growth was driven primarily by strong performance in the enterprise ' +
+			'segment, which saw new customer acquisition rise significantly. Management expects this ' +
+			'trend to continue into the next fiscal year, although some uncertainty remains.';
+
+		const meetingNotes = [
+			'# Team Sync — March 12',
+			'',
+			'Attendees: Alice, Bob, Carol.',
+			'',
+			'- Alice gave an update on the API migration; on track for Q2.',
+			'- Bob raised concerns about the test coverage in the auth module.',
+			'- Carol will follow up with design on the new onboarding flow.',
+			'- Next meeting scheduled for March 19 at 10am.',
+		].join('\n');
+
+		const listHeavy = [
+			'Shopping list',
+			'',
+			'- Milk',
+			'- Eggs',
+			'- Bread',
+			'- Coffee beans',
+			'- Olive oil',
+			'- Spinach',
+			'- Chicken thighs',
+			'- Greek yogurt',
+		].join('\n');
+
+		const recipe = [
+			'## Banana Bread',
+			'',
+			'Ingredients:',
+			'- 3 ripe bananas',
+			'- 2 cups flour',
+			'- 1 cup sugar',
+			'',
+			'Instructions:',
+			'1. Preheat oven to 350 degrees.',
+			'2. Mash the bananas in a large bowl.',
+			'3. Bake for 60 minutes.',
+		].join('\n');
+
+		it.each([
+			['a poem', poem],
+			['a prose paragraph', prose],
+			['meeting notes', meetingNotes],
+			['a list-heavy note', listHeavy],
+			['a recipe', recipe],
+		])('does not flag %s as lyrics', (_label, content) => {
+			expect(scoreLyricsContent(content)).toBeLessThan(5);
+			expect(isLyricsContent(content)).toBe(false);
+		});
+	});
+
+	describe('detectSchemaFor — lyrics stage gating', () => {
+		it('fires lyrics at the transcription stage', () => {
+			expect(detectSchemaFor('transcription', BRACKETED_LYRICS)?.id).toBe('lyrics');
+		});
+
+		it('does NOT fire lyrics at the summary stage', () => {
+			expect(detectSchemaFor('summary', BRACKETED_LYRICS)).toBeNull();
+		});
+	});
+
+	describe('lyrics schema shape', () => {
+		const lyrics = CONTENT_SCHEMAS.find(s => s.id === 'lyrics');
+
+		it('is registered with transcription applicability and reformat mode', () => {
+			expect(lyrics).toBeDefined();
+			expect(lyrics!.appliesTo).toEqual(['transcription']);
+			expect(lyrics!.mode).toBe('reformat');
+		});
+
+		it('prompt preserves every line, segments verse/chorus, and reuses the guardrail', () => {
+			expect(lyrics!.prompt).toContain('[!verse]');
+			expect(lyrics!.prompt).toContain('[!chorus]');
+			expect(lyrics!.prompt).toMatch(/do not (summarize|paraphrase|condense)|omit/i);
+			expect(lyrics!.prompt).toContain('Not specified');
 		});
 	});
 });

@@ -8,6 +8,10 @@ export interface TranscriptionResult {
 	duration?: number;
 	sourceName: string;
 	timestamps?: TimestampEntry[];
+	/** True when a content schema (#234, e.g. lyrics) reformatted the transcript. */
+	reformatted?: boolean;
+	/** Id of the content schema that reformatted the transcript, if any (e.g. 'lyrics'). */
+	schemaId?: string;
 }
 
 export interface TimestampEntry {
