@@ -18,6 +18,12 @@ export {
 } from './file-utils';
 export { arrayBufferToBase64, base64EncodedLength } from './encoding';
 export { redactSecrets } from './redact';
+export { PROVIDER_METADATA, aiProviderToCredential } from './provider-metadata';
+export type { CredentialProvider, ProviderMetadata, ProbeSpec } from './provider-metadata';
+export { validateCredentials } from './credential-validator';
+export type { ValidationResult, ValidationStatus, ValidateOptions } from './credential-validator';
+export { decorateCredentialField } from './credential-field';
+export type { CredentialFieldOptions, CredentialFieldHandle } from './credential-field';
 export { NotificationManager } from './notifications';
 export type { OperationHandle } from './notifications';
 export { fireAndForget } from './fire-and-forget';

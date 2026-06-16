@@ -1020,6 +1020,40 @@
   font-weight: var(--font-semibold);
 }
 
+/* ── Friendlier provider auth: get-key link + live validation (#335) ──
+ * The "Get an API key →" deep link and the ✓/✗ status chip are appended to the
+ * credential setting row and wrap onto their own line beneath the field (the row
+ * is made wrap-friendly only when a chip is present). Colors use Obsidian theme
+ * vars so they read correctly in both light and dark themes. */
+.setting-item:has(> .synapse-credential-chip) {
+  flex-wrap: wrap;
+}
+.synapse-get-key-link {
+  flex-basis: 100%;
+  margin-top: 6px;
+  font-size: var(--font-ui-smaller);
+}
+.synapse-credential-chip {
+  flex-basis: 100%;
+  margin-top: 4px;
+  min-height: 1em;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+.synapse-credential-chip.is-valid {
+  color: var(--text-success);
+}
+.synapse-credential-chip.is-invalid {
+  color: var(--text-error);
+}
+.synapse-credential-chip.is-error {
+  color: var(--text-warning);
+}
+.synapse-credential-chip.is-checking,
+.synapse-credential-chip.is-hint {
+  color: var(--text-muted);
+}
+
 /* ── Exclusions: feature scope chips (#328) ──
  * A compact, wrapping row of removable chips (the rule's blocked features) plus
  * an inline "add" dropdown, replacing the per-feature toggle grid. Rendered just
