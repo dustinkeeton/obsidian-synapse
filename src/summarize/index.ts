@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout,
 	CALLOUT_TYPES, CheckpointManager, generateId, fireAndForget,
-	isPathExcluded, matchesExcludeTag,
+	isPathExcluded, matchesExcludeTag, detectSchemaFor,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { OperationHandle } from '../shared';
@@ -15,7 +15,6 @@ import { findSummarizeTargets } from './note-scanner';
 import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
 import { Summarizer } from './summarizer';
-import { detectContentTemplate } from './templates';
 import { SummarizeTarget } from './types';
 
 export type { SummarizeTarget } from './types';
@@ -288,8 +287,8 @@ export class SummarizeModule {
 
 					let effectivePrompt = settings.customPrompt || undefined;
 					if (!effectivePrompt && settings.autoDetectTemplates) {
-						const template = detectContentTemplate(transcript);
-						if (template) effectivePrompt = template.prompt;
+						const schema = detectSchemaFor('summary', transcript);
+						if (schema) effectivePrompt = schema.prompt;
 					}
 
 					const summary = await this.summarizer.summarize(
@@ -551,12 +550,12 @@ export class SummarizeModule {
 
 					op.update(`Summarizing ${target.source}`);
 
-					// Priority chain: customPrompt > template match > style default
+					// Priority chain: customPrompt > schema match > style default
 					let effectivePrompt = settings.customPrompt || undefined;
 					if (!effectivePrompt && settings.autoDetectTemplates) {
-						const template = detectContentTemplate(textToSummarize);
-						if (template) {
-							effectivePrompt = template.prompt;
+						const schema = detectSchemaFor('summary', textToSummarize);
+						if (schema) {
+							effectivePrompt = schema.prompt;
 						}
 					}
 

@@ -91,6 +91,15 @@ export {
 	buildMigratedExclusions,
 } from './exclusions';
 export type { FeatureId, ExclusionRule, LegacyModuleExclusions } from './exclusions';
+export {
+	CONTENT_SCHEMAS,
+	detectSchemaFor,
+	isRecipeContent,
+	scoreRecipeContent,
+	isReceiptContent,
+	scoreReceiptContent,
+} from './content-schemas';
+export type { ContentSchema, PipelineStage, SchemaMode } from './content-schemas';
 export { generateId, isValidCheckpointId } from './id-utils';
 export {
 	loadNodeModules,
