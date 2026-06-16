@@ -1,4 +1,6 @@
 import { App, TFile, normalizePath } from 'obsidian';
+import { isPathExcluded } from './exclusions';
+import type { FeatureId, ExclusionSettings } from './exclusions';
 
 export async function ensureFolder(app: App, path: string): Promise<void> {
 	const normalized = normalizePath(path);
@@ -47,6 +49,25 @@ export function getMarkdownFiles(app: App, folder?: string): TFile[] {
 	if (!folder) return files;
 	const normalized = normalizePath(folder);
 	return files.filter(f => f.path.startsWith(normalized + '/'));
+}
+
+/**
+ * Like {@link getMarkdownFiles}, but additionally drops any file excluded for
+ * `feature` by the centralized exclusion rules (#323). Use this for the
+ * candidate/index enumerations — tag indexes, title maps, link/mention/semantic
+ * candidate lists — so notes in an excluded folder are never offered as a link,
+ * tag, or match target, mirroring how each flow already skips them as a
+ * processing source.
+ */
+export function getIncludedMarkdownFiles(
+	app: App,
+	feature: FeatureId,
+	settings: ExclusionSettings,
+	folder?: string
+): TFile[] {
+	return getMarkdownFiles(app, folder).filter(
+		f => !isPathExcluded(f.path, feature, settings)
+	);
 }
 
 export function wordCount(text: string): number {

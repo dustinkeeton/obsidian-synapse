@@ -1,5 +1,6 @@
 import type { App, CachedMetadata, TFile } from 'obsidian';
-import { normalizeFrontmatterTags } from '../shared';
+import type { SynapseSettings } from '../settings';
+import { normalizeFrontmatterTags, getIncludedMarkdownFiles } from '../shared';
 import type { RemLinkCandidate, RemOccurrence } from './types';
 
 /** Entry in the lookup table: a term and the note it maps to. */
@@ -27,7 +28,10 @@ interface SkipRegion {
  * Returns link candidates with precise occurrence positions.
  */
 export class MentionScanner {
-	constructor(private app: App) {}
+	constructor(
+		private app: App,
+		private getSettings: () => SynapseSettings
+	) {}
 
 	/**
 	 * Scan a note's content for mentions of other vault notes.
@@ -87,7 +91,7 @@ export class MentionScanner {
 	 */
 	private buildLookupTable(sourceFilePath: string): LookupEntry[] {
 		const entries: LookupEntry[] = [];
-		const files = this.app.vault.getMarkdownFiles();
+		const files = getIncludedMarkdownFiles(this.app, 'rem', this.getSettings());
 
 		for (const file of files) {
 			// Skip self-references

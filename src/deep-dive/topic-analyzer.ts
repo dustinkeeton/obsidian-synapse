@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, isRecord, parseJson, sanitizeAIResponse } from '../shared';
+import { AIClient, isRecord, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles } from '../shared';
 import { ExtractedTopic } from './types';
 
 /**
@@ -85,7 +85,7 @@ ${content.slice(0, 4000)}`;
 	}
 
 	private matchVaultNotes(topics: ExtractedTopic[]): ExtractedTopic[] {
-		const allFiles = this.app.vault.getMarkdownFiles();
+		const allFiles = getIncludedMarkdownFiles(this.app, 'deep-dive', this.getSettings());
 		const titleMap = new Map<string, TFile>();
 		for (const file of allFiles) {
 			titleMap.set(file.basename.toLowerCase(), file);

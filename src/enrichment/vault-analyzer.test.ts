@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { VaultAnalyzer } from './vault-analyzer';
 import { TFile } from '../__mocks__/obsidian';
 
+const noExclusions = () => ({ exclusions: [] }) as any;
+const settingsWith = (exclusions: unknown[]) => () => ({ exclusions }) as any;
+
 function createMockApp(files: TFile[], caches: Map<string, any>, resolvedLinks: Record<string, Record<string, number>> = {}) {
 	return {
 		vault: {
@@ -29,7 +32,7 @@ describe('VaultAnalyzer', () => {
 			});
 
 			const app = createMockApp([file1, file2], caches);
-			const analyzer = new VaultAnalyzer(app);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
 			const index = analyzer.buildTagIndex();
 
 			expect(index.tags.get('#python')).toEqual({
@@ -46,13 +49,31 @@ describe('VaultAnalyzer', () => {
 			});
 		});
 
+		it('omits files in folders excluded for enrichment (#323)', () => {
+			const included = new TFile('notes/a.md');
+			const excluded = new TFile('Templates/t.md');
+			const caches = new Map();
+			caches.set('notes/a.md', { tags: [{ tag: '#python' }] });
+			caches.set('Templates/t.md', { tags: [{ tag: '#tpl' }] });
+
+			const app = createMockApp([included, excluded], caches);
+			const analyzer = new VaultAnalyzer(
+				app,
+				settingsWith([{ pattern: 'Templates/**', features: ['enrichment'] }])
+			);
+			const index = analyzer.buildTagIndex();
+
+			expect(index.tags.get('#python')).toEqual({ count: 1, files: ['notes/a.md'] });
+			expect(index.tags.has('#tpl')).toBe(false);
+		});
+
 		it('returns empty index for vault with no tags', () => {
 			const file = new TFile('empty.md');
 			const caches = new Map();
 			caches.set('empty.md', {});
 
 			const app = createMockApp([file], caches);
-			const analyzer = new VaultAnalyzer(app);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
 			const index = analyzer.buildTagIndex();
 
 			expect(index.tags.size).toBe(0);
@@ -64,7 +85,7 @@ describe('VaultAnalyzer', () => {
 			caches.set('note.md', { tags: [{ tag: '#test' }] });
 
 			const app = createMockApp([file], caches);
-			const analyzer = new VaultAnalyzer(app);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
 
 			const index1 = analyzer.buildTagIndex();
 			const index2 = analyzer.buildTagIndex();
@@ -84,7 +105,7 @@ describe('VaultAnalyzer', () => {
 			};
 
 			const app = createMockApp([], new Map(), resolvedLinks);
-			const analyzer = new VaultAnalyzer(app);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
 			const graph = analyzer.buildLinkGraph();
 
 			// Outgoing
@@ -98,7 +119,7 @@ describe('VaultAnalyzer', () => {
 
 		it('handles empty resolved links', () => {
 			const app = createMockApp([], new Map(), {});
-			const analyzer = new VaultAnalyzer(app);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
 			const graph = analyzer.buildLinkGraph();
 
 			expect(graph.outgoing.size).toBe(0);
@@ -115,7 +136,7 @@ describe('VaultAnalyzer', () => {
 			});
 
 			const app = createMockApp([file], caches);
-			const analyzer = new VaultAnalyzer(app);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
 
 			expect(analyzer.getFileTags(file as any)).toEqual(['#python', '#ml']);
 		});
@@ -123,7 +144,7 @@ describe('VaultAnalyzer', () => {
 		it('returns empty array for file with no cache', () => {
 			const file = new TFile('uncached.md');
 			const app = createMockApp([file], new Map());
-			const analyzer = new VaultAnalyzer(app);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
 
 			expect(analyzer.getFileTags(file as any)).toEqual([]);
 		});
@@ -137,7 +158,7 @@ describe('VaultAnalyzer', () => {
 			};
 
 			const app = createMockApp([], new Map(), resolvedLinks);
-			const analyzer = new VaultAnalyzer(app);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
 
 			expect(analyzer.getOutgoingLinks('a.md')).toEqual(['b.md']);
 			expect(analyzer.getIncomingLinks('a.md')).toEqual(['b.md']);
@@ -146,7 +167,7 @@ describe('VaultAnalyzer', () => {
 
 		it('returns empty for unknown files', () => {
 			const app = createMockApp([], new Map(), {});
-			const analyzer = new VaultAnalyzer(app);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
 
 			expect(analyzer.getOutgoingLinks('unknown.md')).toEqual([]);
 			expect(analyzer.getIncomingLinks('unknown.md')).toEqual([]);

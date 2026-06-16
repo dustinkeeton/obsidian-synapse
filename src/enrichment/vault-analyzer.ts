@@ -1,4 +1,6 @@
 import { App, getAllTags, TFile } from 'obsidian';
+import type { SynapseSettings } from '../settings';
+import { getIncludedMarkdownFiles } from '../shared';
 import { TagIndex, LinkGraph } from './types';
 
 /**
@@ -10,7 +12,10 @@ export class VaultAnalyzer {
 	private tagIndexCache: TagIndex | null = null;
 	private linkGraphCache: LinkGraph | null = null;
 
-	constructor(private app: App) {}
+	constructor(
+		private app: App,
+		private getSettings: () => SynapseSettings
+	) {}
 
 	/** Invalidate all caches — call from metadataCache 'resolved' event. */
 	invalidate(): void {
@@ -26,7 +31,7 @@ export class VaultAnalyzer {
 		if (this.tagIndexCache) return this.tagIndexCache;
 
 		const tags = new Map<string, { count: number; files: string[] }>();
-		const files = this.app.vault.getMarkdownFiles();
+		const files = getIncludedMarkdownFiles(this.app, 'enrichment', this.getSettings());
 
 		for (const file of files) {
 			const cache = this.app.metadataCache.getFileCache(file);

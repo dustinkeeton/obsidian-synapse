@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { wordCount, isPathExcluded, matchesExcludeTag } from '../shared';
+import { wordCount, isPathExcluded, matchesExcludeTag, getIncludedMarkdownFiles } from '../shared';
 import { DetectionReason, DetectionResult } from './types';
 
 export class PlaceholderDetector {
@@ -101,7 +101,7 @@ export class PlaceholderDetector {
 
 	private findInboundLinks(file: TFile): string[] {
 		const links: string[] = [];
-		const allFiles = this.app.vault.getMarkdownFiles();
+		const allFiles = getIncludedMarkdownFiles(this.app, 'elaboration', this.getSettings());
 		for (const other of allFiles) {
 			if (other.path === file.path) continue;
 			const cache = this.app.metadataCache.getFileCache(other);
