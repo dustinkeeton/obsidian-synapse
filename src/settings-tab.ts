@@ -16,6 +16,7 @@ import { renderElaborationSettings } from './elaboration';
 import { renderIntakeSettings } from './intake';
 import { renderImageSettings } from './image';
 import { renderAudioSettings } from './audio';
+import { renderTranscriptionCredentials } from './audio/transcription-credentials';
 import { renderVideoSettings } from './video';
 import { renderEnrichmentSettings } from './enrichment';
 import { renderSummarizeSettings } from './summarize';
@@ -292,6 +293,13 @@ export class SynapseSettingTab extends PluginSettingTab {
 						})
 				);
 		}
+
+		// Transcription provider + its provider-specific API-key fields (#332).
+		// They configure audio transcription but live here because the choice of
+		// transcription provider is coupled to the AI provider above (e.g. when
+		// the AI provider already supplies the needed key). Changing either
+		// provider re-renders the tab, resolving the coupling.
+		renderTranscriptionCredentials(aiBody, ctx);
 
 		const currentProvider = this.plugin.settings.ai.provider;
 		const models = MODEL_OPTIONS[currentProvider];

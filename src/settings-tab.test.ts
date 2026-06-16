@@ -142,6 +142,26 @@ describe('SynapseSettingTab — Auto-Accept disabled state', () => {
 	});
 });
 
+describe('SynapseSettingTab — transcription credentials in AI Configuration (#332)', () => {
+	beforeEach(() => {
+		ToggleComponent.instances.length = 0;
+	});
+
+	// The transcription provider dropdown + its API-key fields now render inside
+	// the AI Configuration section. A full display() across a couple of provider
+	// values confirms the relocated controls render in their new home without
+	// throwing (the Obsidian mock no-ops dropdown/text, so this is a smoke test).
+	it.each(['whisper-api', 'gemini', 'deepgram'] as const)(
+		'renders the settings tab without throwing for transcription provider %s',
+		(provider) => {
+			const { tab } = makeTab((s) => {
+				s.audio.transcriptionProvider = provider;
+			});
+			expect(() => tab.display()).not.toThrow();
+		},
+	);
+});
+
 describe('SynapseSettingTab — About support links (#274)', () => {
 	it('renders static GitHub Sponsors and Buy Me a Coffee links', () => {
 		const { tab } = makeTab();
