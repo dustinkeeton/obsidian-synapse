@@ -92,29 +92,6 @@ export function decorateCredentialField(opts: CredentialFieldOptions): Credentia
 		setChip(state, icon ? `${icon} ${result.message}` : result.message);
 	};
 
-	// DIAGNOSTIC (temporary #335): isolate synchronous-combo vs async-promise.
-	// Single ops were all confirmed fine; only the real (async) Test froze.
-	const fakeOk = (): ValidationResult => ({
-		status: 'valid',
-		provider,
-		message: `Connected to ${meta.label}`,
-	});
-	setting.addButton((b) => b.setButtonText('D-combo').onClick(() => {
-		// Full sequence, fully SYNCHRONOUS, no promise returned.
-		setChip('checking', 'Checking…');
-		b.setDisabled(true);
-		showResult(fakeOk());
-		b.setDisabled(false);
-	}));
-	setting.addButton((b) => b.setButtonText('D-async').onClick(() => {
-		// Same sequence but through a resolved promise (like the real Test), no network.
-		setChip('checking', 'Checking…');
-		b.setDisabled(true);
-		return Promise.resolve()
-			.then(() => showResult(fakeOk()))
-			.finally(() => b.setDisabled(false));
-	}));
-
 	setting.addButton((btn) =>
 		btn
 			.setButtonText('Test')
@@ -122,9 +99,12 @@ export function decorateCredentialField(opts: CredentialFieldOptions): Credentia
 			.onClick(() => {
 				setChip('checking', 'Checking…');
 				btn.setDisabled(true);
-				// Returned (not floating) so Obsidian owns the promise and tests can
-				// await the click via the mock's `_click()`.
-				return validate(provider, getKey(), { endpoint: getEndpoint?.() })
+				// Fire-and-forget — do NOT `return` this promise. Returning a Promise
+				// from an Obsidian ButtonComponent onClick hard-freezes the renderer
+				// (confirmed by isolation: the exact same operations run synchronously
+				// are fine; only the promise-returning form freezes). `void` runs the
+				// async validation and updates the chip without handing Obsidian a promise.
+				void validate(provider, getKey(), { endpoint: getEndpoint?.() })
 					.then(showResult)
 					.catch((err: unknown) =>
 						showResult({

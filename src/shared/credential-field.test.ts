@@ -34,6 +34,13 @@ function validatorReturning(result: ValidationResult) {
 	return vi.fn(async () => Promise.resolve(result));
 }
 
+/**
+ * Flush pending microtasks. The Test onClick fires validation fire-and-forget
+ * (it must NOT return the promise — that freezes Obsidian), so `_click()` returns
+ * `undefined`; tests await this to let `.then(showResult)` settle.
+ */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 describe('decorateCredentialField', () => {
 	beforeEach(() => {
 		ButtonComponent.instances.length = 0;
@@ -86,7 +93,8 @@ describe('decorateCredentialField', () => {
 		});
 		decorateCredentialField({ setting, container, provider: 'openai', getKey: () => 'sk-good', validate });
 
-		await testButton()._click();
+		testButton()._click();
+		await flush();
 
 		expect(validate).toHaveBeenCalledWith('openai', 'sk-good', { endpoint: undefined });
 		const chip = chipEl(container);
@@ -103,7 +111,8 @@ describe('decorateCredentialField', () => {
 		});
 		decorateCredentialField({ setting, container, provider: 'openai', getKey: () => 'sk-bad', validate });
 
-		await testButton()._click();
+		testButton()._click();
+		await flush();
 
 		const chip = chipEl(container);
 		expect(chip.textContent).toContain('Invalid key');
@@ -126,7 +135,8 @@ describe('decorateCredentialField', () => {
 			validate,
 		});
 
-		await testButton()._click();
+		testButton()._click();
+		await flush();
 
 		expect(validate).toHaveBeenCalledWith('ollama', '', { endpoint: 'http://localhost:11434' });
 	});
@@ -146,7 +156,8 @@ describe('decorateCredentialField', () => {
 			validate,
 		});
 
-		await testButton()._click();
+		testButton()._click();
+		await flush();
 		expect(chipEl(container).classList.contains('is-valid')).toBe(true);
 
 		handle.reset();
