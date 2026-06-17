@@ -92,6 +92,19 @@ export function decorateCredentialField(opts: CredentialFieldOptions): Credentia
 		setChip(state, icon ? `${icon} ${result.message}` : result.message);
 	};
 
+	// DIAGNOSTIC (temporary #335): each button does exactly ONE thing so we can
+	// see which operation freezes. No console.log (it masks the freeze). Remove after.
+	setting.addButton((b) => b.setButtonText('D-empty').onClick(() => { /* nothing */ }));
+	setting.addButton((b) => b.setButtonText('D-text').onClick(() => { chip.setText('D-text changed'); }));
+	setting.addButton((b) => b.setButtonText('D-class').onClick(() => {
+		chip.removeClass(...STATE_CLASSES);
+		chip.addClass('is-valid');
+	}));
+	setting.addButton((b) => b.setButtonText('D-disable').onClick(() => {
+		b.setDisabled(true);
+		window.setTimeout(() => b.setDisabled(false), 800);
+	}));
+
 	setting.addButton((btn) =>
 		btn
 			.setButtonText('Test')
