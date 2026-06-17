@@ -89,20 +89,30 @@ export function decorateCredentialField(opts: CredentialFieldOptions): Credentia
 			.setButtonText('Test')
 			.setTooltip(`Test the ${meta.label} credential`)
 			.onClick(() => {
+				console.log('[synapse335] Test clicked, provider =', provider);
 				setChip('checking', 'Checking…');
 				btn.setDisabled(true);
+				console.log('[synapse335] chip set to Checking, calling validate');
 				// Returned (not floating) so Obsidian owns the promise and tests can
 				// await the click via the mock's `_click()`.
 				return validate(provider, getKey(), { endpoint: getEndpoint?.() })
-					.then(showResult)
-					.catch((err: unknown) =>
+					.then((result) => {
+						console.log('[synapse335] validate resolved:', result.status);
+						showResult(result);
+						console.log('[synapse335] showResult done');
+					})
+					.catch((err: unknown) => {
+						console.log('[synapse335] onClick catch:', err instanceof Error ? err.message : String(err));
 						showResult({
 							status: 'error',
 							provider,
 							message: err instanceof Error ? err.message : String(err),
-						}),
-					)
-					.finally(() => btn.setDisabled(false));
+						});
+					})
+					.finally(() => {
+						console.log('[synapse335] finally — re-enabling button');
+						btn.setDisabled(false);
+					});
 			}),
 	);
 
