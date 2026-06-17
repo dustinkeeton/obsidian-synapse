@@ -52,6 +52,12 @@ export function decorateCredentialField(opts: CredentialFieldOptions): Credentia
 	const validate = opts.validate ?? validateCredentials;
 	const meta = PROVIDER_METADATA[provider];
 
+	// Mark the row so its link + chip wrap onto their own line. A plain static
+	// class — NOT a CSS `:has()` selector. `:has()` forces Chromium to re-check
+	// the selector across the whole (large) settings DOM on every chip mutation,
+	// which can stall/freeze the renderer; a fixed class costs nothing to match.
+	setting.settingEl.addClass('synapse-credential-row');
+
 	// "Get an API key →" deep link. Omitted for keyless providers (Ollama).
 	// Rendered as an external anchor (like the About support links) so Obsidian
 	// hands it to the OS browser and tests can find it via the anchor walk.

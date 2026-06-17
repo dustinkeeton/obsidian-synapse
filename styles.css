@@ -1022,10 +1022,12 @@
 
 /* ── Friendlier provider auth: get-key link + live validation (#335) ──
  * The "Get an API key →" deep link and the ✓/✗ status chip are appended to the
- * credential setting row and wrap onto their own line beneath the field (the row
- * is made wrap-friendly only when a chip is present). Colors use Obsidian theme
- * vars so they read correctly in both light and dark themes. */
-.setting-item:has(> .synapse-credential-chip) {
+ * credential setting row and wrap onto their own line beneath the field. The row
+ * opts in via the `.synapse-credential-row` class (added in code) rather than a
+ * `:has()` selector — `:has()` forces a style recalc across the whole settings
+ * DOM on every chip update and can freeze the renderer. Colors use Obsidian
+ * theme vars so they read correctly in both light and dark themes. */
+.synapse-credential-row {
   flex-wrap: wrap;
 }
 .synapse-get-key-link {

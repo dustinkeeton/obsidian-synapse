@@ -60,6 +60,12 @@ describe('decorateCredentialField', () => {
 		expect(chip.classList.contains('is-hint')).toBe(true);
 	});
 
+	it('marks the row with a static class (no CSS :has() — avoids settings-DOM freeze)', () => {
+		const setting = makeSetting();
+		decorateCredentialField({ setting, provider: 'openai', getKey: () => 'sk-x' });
+		expect((setting.settingEl as any).classList.contains('synapse-credential-row')).toBe(true);
+	});
+
 	it('shows a valid chip when the Test button reports valid', async () => {
 		const setting = makeSetting();
 		const validate = validatorReturning({
