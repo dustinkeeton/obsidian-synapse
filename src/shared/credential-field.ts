@@ -92,17 +92,27 @@ export function decorateCredentialField(opts: CredentialFieldOptions): Credentia
 		setChip(state, icon ? `${icon} ${result.message}` : result.message);
 	};
 
-	// DIAGNOSTIC (temporary #335): each button does exactly ONE thing so we can
-	// see which operation freezes. No console.log (it masks the freeze). Remove after.
-	setting.addButton((b) => b.setButtonText('D-empty').onClick(() => { /* nothing */ }));
-	setting.addButton((b) => b.setButtonText('D-text').onClick(() => { chip.setText('D-text changed'); }));
-	setting.addButton((b) => b.setButtonText('D-class').onClick(() => {
-		chip.removeClass(...STATE_CLASSES);
-		chip.addClass('is-valid');
-	}));
-	setting.addButton((b) => b.setButtonText('D-disable').onClick(() => {
+	// DIAGNOSTIC (temporary #335): isolate synchronous-combo vs async-promise.
+	// Single ops were all confirmed fine; only the real (async) Test froze.
+	const fakeOk = (): ValidationResult => ({
+		status: 'valid',
+		provider,
+		message: `Connected to ${meta.label}`,
+	});
+	setting.addButton((b) => b.setButtonText('D-combo').onClick(() => {
+		// Full sequence, fully SYNCHRONOUS, no promise returned.
+		setChip('checking', 'Checking…');
 		b.setDisabled(true);
-		window.setTimeout(() => b.setDisabled(false), 800);
+		showResult(fakeOk());
+		b.setDisabled(false);
+	}));
+	setting.addButton((b) => b.setButtonText('D-async').onClick(() => {
+		// Same sequence but through a resolved promise (like the real Test), no network.
+		setChip('checking', 'Checking…');
+		b.setDisabled(true);
+		return Promise.resolve()
+			.then(() => showResult(fakeOk()))
+			.finally(() => b.setDisabled(false));
 	}));
 
 	setting.addButton((btn) =>
