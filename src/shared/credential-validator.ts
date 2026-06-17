@@ -70,6 +70,19 @@ export async function validateCredentials(
 		};
 	}
 
+	// DIAGNOSTIC (temporary, #335): short-circuit BEFORE any network call so the
+	// "Test" button exercises only the chip-rendering path. If the app still
+	// freezes with this in place, the freeze is in rendering, not requestUrl.
+	// `: boolean` keeps the code below reachable for the type-checker. Remove after.
+	const DIAGNOSTIC_SKIP_NETWORK: boolean = true;
+	if (DIAGNOSTIC_SKIP_NETWORK) {
+		return {
+			status: 'valid',
+			provider,
+			message: `Connected to ${meta.label} (diagnostic — no network call)`,
+		};
+	}
+
 	const timeoutMs = opts.timeoutMs ?? VALIDATION_TIMEOUT_MS;
 	try {
 		const timeout = new Promise<never>((_, reject) =>
