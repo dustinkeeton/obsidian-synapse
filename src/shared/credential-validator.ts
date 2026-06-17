@@ -78,7 +78,6 @@ export async function validateCredentials(
 				timeoutMs,
 			),
 		);
-		console.log('[synapse335] before requestUrl', probe.method, probe.url);
 		const response = await Promise.race([
 			requestUrl({
 				url: probe.url,
@@ -90,11 +89,9 @@ export async function validateCredentials(
 			}),
 			timeout,
 		]);
-		console.log('[synapse335] after requestUrl, status =', response.status);
 
 		const status = response.status;
 		if (status >= 200 && status < 300) {
-			console.log('[synapse335] valid path — returning');
 			return {
 				status: 'valid',
 				provider,
@@ -105,7 +102,6 @@ export async function validateCredentials(
 		}
 
 		// Pull a redacted detail out of the (untrusted, any-typed) error body.
-		console.log('[synapse335] reading error body, status =', status);
 		let detail = '';
 		try {
 			const body: unknown = response.json;
@@ -113,7 +109,6 @@ export async function validateCredentials(
 		} catch {
 			detail = '';
 		}
-		console.log('[synapse335] error body read, detail length =', detail.length);
 
 		if (status === 401 || status === 403) {
 			return {
@@ -135,7 +130,6 @@ export async function validateCredentials(
 			message: `Couldn’t verify (HTTP ${status})${detail ? `: ${detail}` : ''}`,
 		};
 	} catch (err) {
-		console.log('[synapse335] catch:', err instanceof Error ? err.message : String(err));
 		// describeNetworkError handles connection-refused/DNS/timeout/offline; the
 		// timeout rejection message above ("… timed out") classifies as a timeout.
 		const networkMsg = describeNetworkError(err, meta.label);
