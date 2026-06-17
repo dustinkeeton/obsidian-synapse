@@ -291,6 +291,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		if (keyMeta.requiresKey) {
 			credentialField = decorateCredentialField({
 				setting: apiKeySetting,
+				container: aiBody,
 				provider: cred,
 				getKey: () => this.plugin.settings.ai.apiKey,
 			});
@@ -324,6 +325,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			// Reachability test (no key) against {endpoint}/api/tags.
 			ollamaField = decorateCredentialField({
 				setting: endpointSetting,
+				container: aiBody,
 				provider: 'ollama',
 				getKey: () => '',
 				getEndpoint: () => this.plugin.settings.ai.ollamaEndpoint,

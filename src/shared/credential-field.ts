@@ -13,8 +13,15 @@ import { validateCredentials } from './credential-validator';
 import type { ValidationResult } from './credential-validator';
 
 export interface CredentialFieldOptions {
-	/** The key (or, for Ollama, endpoint) Setting row to decorate. */
+	/** The key (or, for Ollama, endpoint) Setting row to decorate (gets the Test button). */
 	setting: Setting;
+	/**
+	 * The section body the row lives in. The get-key link + status chip are
+	 * rendered here as their own block (right after the row), NOT inside the
+	 * `.setting-item` — mutating a child of the flex row forces a pathological
+	 * relayout of Obsidian's settings flexbox that can freeze the app.
+	 */
+	container: HTMLElement;
 	provider: CredentialProvider;
 	/** Reads the current key value at click time (empty for keyless providers). */
 	getKey: () => string;
@@ -48,28 +55,29 @@ const STATE_CLASSES = ['is-valid', 'is-invalid', 'is-error', 'is-checking', 'is-
  * after the user edits the key.
  */
 export function decorateCredentialField(opts: CredentialFieldOptions): CredentialFieldHandle {
-	const { setting, provider, getKey, getEndpoint } = opts;
+	const { setting, container, provider, getKey, getEndpoint } = opts;
 	const validate = opts.validate ?? validateCredentials;
 	const meta = PROVIDER_METADATA[provider];
 
-	// Mark the row so its link + chip wrap onto their own line. A plain static
-	// class — NOT a CSS `:has()` selector. `:has()` forces Chromium to re-check
-	// the selector across the whole (large) settings DOM on every chip mutation,
-	// which can stall/freeze the renderer; a fixed class costs nothing to match.
-	setting.settingEl.addClass('synapse-credential-row');
+	// Render the link + chip as their own block in the section body, right after
+	// the row — NOT inside the `.setting-item`. Mutating a flex child of the row
+	// (the chip) forces a pathological relayout of Obsidian's settings flexbox
+	// that hard-freezes the app; a standalone block reflows only itself. This
+	// mirrors the exclusion-chips UI, which renders into the body and never freezes.
+	const extras = container.createDiv({ cls: 'synapse-credential-extras' });
 
 	// "Get an API key →" deep link. Omitted for keyless providers (Ollama).
-	// Rendered as an external anchor (like the About support links) so Obsidian
-	// hands it to the OS browser and tests can find it via the anchor walk.
+	// An external anchor (like the About support links) so Obsidian hands it to
+	// the OS browser and tests can find it via the anchor walk.
 	if (meta.getKeyUrl) {
-		setting.settingEl.createEl('a', {
+		extras.createEl('a', {
 			cls: 'synapse-get-key-link',
 			text: 'Get an API key →',
 			attr: { href: meta.getKeyUrl, target: '_blank', rel: 'noopener' },
 		});
 	}
 
-	const chip = setting.settingEl.createDiv({ cls: 'synapse-credential-chip' });
+	const chip = extras.createDiv({ cls: 'synapse-credential-chip' });
 
 	const setChip = (state: ChipState, text: string): void => {
 		chip.removeClass(...STATE_CLASSES);

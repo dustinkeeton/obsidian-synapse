@@ -1021,23 +1021,23 @@
 }
 
 /* ── Friendlier provider auth: get-key link + live validation (#335) ──
- * The "Get an API key →" deep link and the ✓/✗ status chip are appended to the
- * credential setting row and wrap onto their own line beneath the field. The row
- * opts in via the `.synapse-credential-row` class (added in code) rather than a
- * `:has()` selector — `:has()` forces a style recalc across the whole settings
- * DOM on every chip update and can freeze the renderer. Colors use Obsidian
- * theme vars so they read correctly in both light and dark themes. */
-.synapse-credential-row {
+ * The "Get an API key →" deep link and the ✓/✗ status chip render as their own
+ * block in the section body, just beneath the credential row — NOT inside the
+ * `.setting-item`. Mutating a child of the settings flex row forces a pathological
+ * relayout that can freeze the app, so this block stands on its own and reflows
+ * only itself. Colors use Obsidian theme vars for light/dark compatibility. */
+.synapse-credential-extras {
+  display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: -2px 0 10px;
+  font-size: var(--font-ui-smaller);
 }
 .synapse-get-key-link {
-  flex-basis: 100%;
-  margin-top: 6px;
   font-size: var(--font-ui-smaller);
 }
 .synapse-credential-chip {
-  flex-basis: 100%;
-  margin-top: 4px;
   min-height: 1em;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
