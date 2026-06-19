@@ -26,7 +26,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | main | `src/main.ts` | Plugin entry, module orchestration, command/view registration, checkpoint dispatch | `SynapsePlugin` (default) |
 | settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `SynapseSettingTab` |
-| commands | `src/commands/` | Command registry: developer source of truth + master control (status/flow gating), central registrar, drift audit | `CommandRegistrar`, `COMMAND_REGISTRY`, `isInFlow`, `isPipelineKeyInFlow`, `auditCommands` |
+| commands | `src/commands/` | Command registry: developer source of truth + master control (status/flow/context gating), central registrar, drift audit, palette-action derivation | `CommandRegistrar`, `COMMAND_REGISTRY`, `isInFlow`, `isPipelineKeyInFlow`, `listPaletteActions`, `auditCommands` |
 | pipeline | `src/pipeline/` | Fire Synapse orchestration: ordered multi-phase run over a folder or single note | `SynapseRunner`, `SYNAPSE_PIPELINE`, `PipelineModuleKey`, `PipelineModuleMap`, `PipelineScanFn` |
 | intake | `src/intake/` | Watches intake folder, auto-routes + pipeline-processes new notes (#111) | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute` |
 | rem | `src/rem/` | REM: discover linkable references, propose in-place `[[wikilink]]` insertions | `RemModule`, types |
@@ -42,7 +42,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
 | title | `src/title/` | AI title suggestions for untitled/mismatched notes | `TitleModule`, types |
 | shared | `src/shared/` | AI client (multi-modal), file utils, validation, notifications, callouts, frontmatter, checkpoints | `AIClient`, `NotificationManager`, `CheckpointManager`, file/validation utils, callout registry, id-utils |
-| views | `src/views/` | Unified sidebar for all proposal types and checkpoint management | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem` |
+| views | `src/views/` | Unified proposal/checkpoint sidebar + registry-driven Synapse actions sidebar | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `SynapseActionsView`, `SYNAPSE_ACTIONS_VIEW_TYPE` |
 
 ## Dependency Graph
 
@@ -88,7 +88,7 @@ Key constraints:
 
 ## Command Registry
 
-Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries + 1 synthetic pipeline-only entry. Only `status: active` entries register/run; 6 ship `disabled` as a developer master switch (gated out of registration). Flows: `p`=palette, `f`=fire-synapse, `s`=startup. `pipelineKey` links an entry to a Fire Synapse phase.
+Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries + 1 synthetic pipeline-only entry. Only `status: active` entries register/run; 6 ship `disabled` as a developer master switch (gated out of registration). Flows: `p`=palette, `f`=fire-synapse, `s`=startup. `pipelineKey` links an entry to a Fire Synapse phase. Each entry also carries a `context` (`note` | `vault` | `global`); the Synapse actions sidebar (`listPaletteActions`) uses it to disable per-note (`note`) buttons when no note is active.
 
 | ID | Name | Type | Module | Flows | Status | pipelineKey |
 |----|------|------|--------|-------|--------|-------------|
@@ -123,14 +123,16 @@ Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries
 
 | Icon | Label | Action |
 |------|-------|--------|
-| `sparkles` | Review proposals | Opens unified proposal sidebar |
+| `synapse` | Review proposals | Opens unified proposal sidebar |
 | `mic` | Transcribe media | Opens unified transcription modal (desktop only) |
+| `layout-grid` | Synapse actions | Opens registry-driven actions sidebar |
 
 ## View Types
 
 | View Type ID | Class | Location |
 |--------------|-------|----------|
 | `synapse-proposals` | `UnifiedProposalView` | `src/views/unified-proposal-view.ts` |
+| `synapse-actions` | `SynapseActionsView` | `src/views/synapse-actions-view.ts` |
 
 Legacy views (`ProposalReviewView`, `EnrichmentReviewView`) exist in source but are not registered.
 

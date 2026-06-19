@@ -81,6 +81,32 @@ describe('COMMAND_REGISTRY', () => {
 			expect(entry.name.length).toBeGreaterThan(0);
 		}
 	});
+
+	it('gives every entry a valid context', () => {
+		const validContexts = ['note', 'vault', 'global'];
+		for (const entry of COMMAND_REGISTRY) {
+			expect(validContexts, `bad context on ${entry.id}`).toContain(entry.context);
+		}
+	});
+
+	it('marks exactly the per-note commands as note-context', () => {
+		const noteContext = COMMAND_REGISTRY.filter(c => c.context === 'note')
+			.map(c => c.id)
+			.sort();
+		expect(noteContext).toEqual([
+			'deep-dive',
+			'enrich-current-note',
+			'organize-current-note',
+			'rem-current-note',
+			'scan-current-note',
+			'summarize-current-note',
+			'tidy-current-note',
+			'transcribe-note-media',
+			'undo-enrichment',
+			'undo-organize',
+			'undo-tidy',
+		]);
+	});
 });
 
 describe('pipeline mapping', () => {
@@ -101,8 +127,8 @@ describe('pipeline mapping', () => {
 
 	it('throws when two entries share a pipelineKey', () => {
 		const dupes: CommandDefinition[] = [
-			{ id: 'a', name: 'A', feature: 'tidy', status: 'active', flows: ['fire-synapse'], pipelineKey: 'tidy' },
-			{ id: 'b', name: 'B', feature: 'tidy', status: 'active', flows: ['fire-synapse'], pipelineKey: 'tidy' },
+			{ id: 'a', name: 'A', feature: 'tidy', status: 'active', flows: ['fire-synapse'], context: 'vault', pipelineKey: 'tidy' },
+			{ id: 'b', name: 'B', feature: 'tidy', status: 'active', flows: ['fire-synapse'], context: 'vault', pipelineKey: 'tidy' },
 		];
 		expect(() => buildPipelineKeyMap(dupes)).toThrow(/Duplicate pipelineKey/);
 	});
