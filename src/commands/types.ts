@@ -13,6 +13,17 @@ export type CommandStatus = 'active' | 'deprecated' | 'disabled';
 /** The flows a command can participate in. */
 export type CommandFlow = 'palette' | 'fire-synapse' | 'startup';
 
+/**
+ * The runtime environment a command needs to act on.
+ * - `note`   — operates on the active note (Obsidian `editorCallback`); unavailable when no markdown note is active.
+ * - `vault`  — operates over the vault or a chosen folder (vault scan / folder picker); always available.
+ * - `global` — app-level action independent of any note (open a view, manage checkpoints); always available.
+ *
+ * Consumed by the Synapse actions sidebar (`src/views/synapse-actions-view.ts`) to disable
+ * `note` buttons when no note is active. Mirrors each command's handler kind in its module.
+ */
+export type CommandContext = 'note' | 'vault' | 'global';
+
 /** The feature module a command belongs to (modules without commands are omitted). */
 export type FeatureKey =
 	| 'main'
@@ -41,6 +52,8 @@ export interface CommandDefinition {
 	status: CommandStatus;
 	/** Flows this command participates in. All palette commands include `'palette'`. */
 	flows: readonly CommandFlow[];
+	/** Runtime environment the command needs (drives per-note gating in the actions sidebar). */
+	context: CommandContext;
 	/**
 	 * Links a command to a Fire Synapse pipeline phase (matches a `PipelineModuleKey`).
 	 * Typed as `string` deliberately so `src/commands/` never imports from `src/pipeline/`

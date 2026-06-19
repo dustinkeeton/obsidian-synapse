@@ -219,6 +219,7 @@ src/
 │
 └── views/                  # UI components
     ├── unified-proposal-view.ts  # Single sidebar for all proposal types + checkpoints
+    ├── synapse-actions-view.ts   # Registry-driven action buttons sidebar (mobile-friendly)
     └── types.ts                  # UnifiedItem, UnifiedViewCallbacks
 ```
 
