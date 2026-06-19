@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Platform, Plugin, addIcon } from 'obsidian';
+import { MarkdownView, Notice, Platform, Plugin, TFile, addIcon } from 'obsidian';
 import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
 import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
@@ -13,7 +13,7 @@ import { DeepDiveModule } from './deep-dive';
 import { TitleModule } from './title';
 import { RemModule } from './rem';
 import { IntakeModule } from './intake';
-import { CommandRegistrar, auditCommands, listPaletteActions } from './commands';
+import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID } from './commands';
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
@@ -175,7 +175,7 @@ export default class SynapsePlugin extends Plugin {
 		this.registerView(SYNAPSE_ACTIONS_VIEW_TYPE, (leaf) => new SynapseActionsView(leaf, {
 			getActions: () => listPaletteActions(registrar.getRegistered()),
 			runAction: (id) => this.runCommand(id),
-			isNoteActive: () => this.app.workspace.getActiveViewOfType(MarkdownView) !== null,
+			isNoteActive: () => this.activeMarkdownFile() !== null,
 		}));
 
 		// Keep per-note buttons in sync with the active note (enable/disable live).
@@ -606,14 +606,47 @@ export default class SynapsePlugin extends Plugin {
 	}
 
 	/**
-	 * Run a registered command by its registry id (without the `synapse:` prefix).
-	 * Goes through Obsidian's own command dispatch — the same gated path the palette
-	 * uses, so editor/check gating is honored. `app.commands` isn't in the public
-	 * typings, hence the localized cast (the repo has no global App augmentation).
+	 * The active markdown note, or null. Uses `getActiveFile()` (which returns the
+	 * most recently active file) rather than `getActiveViewOfType(MarkdownView)`,
+	 * so it survives the actions sidebar — especially the mobile drawer — stealing
+	 * focus from the editor. That focus theft is exactly why the per-note buttons
+	 * used to grey out once the panel was open (#289 follow-up).
+	 */
+	private activeMarkdownFile(): TFile | null {
+		const file = this.app.workspace.getActiveFile();
+		return file && file.extension === 'md' ? file : null;
+	}
+
+	/**
+	 * Run a registered command by its registry id (without the `synapse:` prefix),
+	 * via Obsidian's own command dispatch — the same gated path the palette uses,
+	 * so editor/check gating is honored. `app.commands` isn't in the public typings,
+	 * hence the localized cast (the repo has no global App augmentation).
+	 *
+	 * For `context: 'note'` commands (registered as `editorCallback`s) the active
+	 * editor is required, but opening the actions sidebar makes the note's editor
+	 * inactive (`workspace.activeEditor` goes null) — so the command would silently
+	 * no-op. We re-activate the note's markdown leaf first, restoring the editor
+	 * context so the command runs against the note the user was viewing.
 	 */
 	private runCommand(id: string): void {
-		(this.app as unknown as { commands: { executeCommandById(id: string): boolean } })
-			.commands.executeCommandById(`${this.manifest.id}:${id}`);
+		const commands = (this.app as unknown as {
+			commands: { executeCommandById(id: string): boolean };
+		}).commands;
+
+		if (REGISTRY_BY_ID.get(id)?.context === 'note') {
+			const file = this.activeMarkdownFile();
+			if (!file) {
+				new Notice('Synapse: open a note first to use this action.');
+				return;
+			}
+			const mdLeaf = this.app.workspace
+				.getLeavesOfType('markdown')
+				.find((leaf) => leaf.view instanceof MarkdownView && leaf.view.file === file);
+			if (mdLeaf) this.app.workspace.setActiveLeaf(mdLeaf, { focus: true });
+		}
+
+		commands.executeCommandById(`${this.manifest.id}:${id}`);
 	}
 
 	private async discardCheckpoint(id: string): Promise<void> {
