@@ -17,30 +17,33 @@
 import { addIcon } from 'obsidian';
 
 /**
- * Monochrome `currentColor` S-Signal mark — the ONLY glyph that keeps the spark
- * and cleft (brand rule: one spark, reserved for Synapse identity). Mirrors
- * `assets/brand/icon-mono.svg`; do not recolor (this variant is color-agnostic —
- * its color comes from the host UI via `currentColor`).
+ * Monochrome `currentColor` in-app proposals mark: a NEURON (dendrites, a filled
+ * soma, and an axon carrying one round-capped impulse), built around the brand's
+ * impulse/charge idea (#349 review). Mirrors `assets/brand/icon-mono.svg` and
+ * INTENTIONALLY diverges from the canonical full-color S-Signal (`icon.svg` etc.),
+ * which is unchanged. Do not recolor; the color comes from the host UI via
+ * `currentColor`.
  */
 export const SYNAPSE_ICON_SVG =
-	'<path d="M71.5 27.5 A17.5 17.5 0 1 0 43 45" fill="none" stroke="currentColor" stroke-width="10.5" stroke-linecap="round" stroke-linejoin="round"/> ' +
-	'<circle cx="71.5" cy="27.5" r="10.2" fill="currentColor"/> ' +
-	'<path d="M69.5 55 A19 19 0 0 1 41 73.5" fill="none" stroke="currentColor" stroke-width="10.5" stroke-linecap="round" stroke-linejoin="round"/> ' +
-	'<ellipse cx="56.5" cy="49.8" rx="17" ry="7.4" fill="currentColor" transform="rotate(28 56.5 49.8)"/>';
+	'<path d="M34 46 L25 39 M25 39 L19 31 M19 31 L20 22 M19 31 L11 27 M25 39 L14 45" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/> ' +
+	'<circle cx="43" cy="50" r="14" fill="currentColor"/> ' +
+	'<path d="M57 50 L65 50 L71 40 L78 60 L84 50 L91 50" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>';
 
 /**
  * name -> inner SVG content for every Synapse-registered glyph. Keys MUST match
  * the names in `src/commands/icons.ts` and the ribbon/view references in
- * `src/main.ts` / `src/views/synapse-actions-view.ts`. Per-action override and
- * per-feature glyphs share one line-icon system (round caps/joins, one stroke
- * weight, a canonical note shape, filled = the action's subject); the spark is
- * reserved for `synapse` alone.
+ * `src/main.ts` / `src/views/synapse-actions-view.ts`. The per-feature and
+ * per-action glyphs share one line-icon system (round caps/joins, one stroke
+ * weight, a canonical note shape, filled = the action's subject). The two in-app
+ * identity marks `synapse` (neuron) and `synapse-actions` (brain) each carry a
+ * round-capped impulse and intentionally diverge from the canonical S-Signal;
+ * the remaining glyphs stay impulse-free.
  */
 export const SYNAPSE_ICONS: Readonly<Record<string, string>> = {
-	// Identity mark (proposals ribbon + proposal views).
+	// In-app proposals identity mark — neuron (proposals ribbon + proposal views).
 	synapse: SYNAPSE_ICON_SVG,
-	// Ribbon / launcher + per-action override glyphs.
-	'synapse-actions': '<path d="M50 20 H22 a8 8 0 0 0 -8 8 V72 a8 8 0 0 0 8 8 H50" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/> <path d="M40 50 H82 M66 34 L84 50 L66 66" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>',
+	// Launcher (Synapse actions ribbon + sidebar view = brain) + per-action overrides.
+	'synapse-actions': '<path d="M24 70 a16 14 0 0 1 -2 -26 a13 13 0 0 1 6 -16 a14 13 0 0 1 18 -2 a14 13 0 0 1 18 2 a13 13 0 0 1 6 16 a16 14 0 0 1 -2 26 a16 16 0 0 1 -22 4 a16 16 0 0 1 -22 -4 Z" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/> <path d="M50 25 V37 M50 63 V76" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/> <path d="M30 51 L43 51 L49 42 L56 59 L62 51 L70 51" fill="none" stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>',
 	'synapse-transcribe': '<path d="M13 44 V56" stroke="currentColor" stroke-width="7.5" stroke-linecap="round"/> <path d="M24 32 V68" stroke="currentColor" stroke-width="7.5" stroke-linecap="round"/> <path d="M35 40 V60" stroke="currentColor" stroke-width="7.5" stroke-linecap="round"/> <rect x="50" y="22" width="37" height="56" rx="8" fill="currentColor"/>',
 	'synapse-fire': '<path d="M14 78 a6 6 0 0 1 -6 -6 V34 a6 6 0 0 1 6 -6 H32 l7 8 H82 a6 6 0 0 1 6 6 V72 a6 6 0 0 1 -6 6 Z" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/> <path d="M20 54 H78 M66 42 L80 54 L66 66" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>',
 	'synapse-checkpoints': '<path d="M50 22 A28 28 0 1 1 26 36" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/> <path d="M42 40 L60 50 L42 60 Z" fill="currentColor" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/>',

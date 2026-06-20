@@ -8,7 +8,7 @@ Canonical visual assets for Synapse. The full brand guidelines — palette, typo
 |-------|-------------|---------|
 | `icon.svg` | "The S-Signal" mark — 256×256 viewBox, transparent background, flat palette colors only | Plugin icon contexts, avatars, favicons, anywhere square **above ~24px** |
 | `icon-small.svg` | Optical-size cut of the S-Signal — 256×256 viewBox, transparent, flat palette only. Widened cleft, enlarged volt bead on a thinned Gap Black chip, plain open receptor terminal (ring dropped) | Renders **at or below ~24px**: 16px favicons, 16–24px list/UI icons |
-| `icon-mono.svg` | Single-color `currentColor` silhouette of the S-Signal — **`0 0 100 100` viewBox**, transparent, no palette colors. Tightened cleft; the spark bead bridges the cleft so the one-color spine stays whole at 16px. The `synapse` body in `registerSynapseIcons()` (`src/brand-icons.ts`) is kept byte-synced with this file's inner content | Color-stripping surfaces: Obsidian ribbon/UI (registered as the `synapse` icon), and any monochrome context |
+| `icon-mono.svg` | In-app **proposals** identity mark — a single-color `currentColor` **neuron** (dendrites → filled soma → axon carrying one impulse) on a **`0 0 100 100` viewBox**, no palette colors. Registered as the `synapse` icon by `registerSynapseIcons()` (`src/brand-icons.ts`), kept byte-synced with this file's inner content. Intentionally diverges from the S-Signal — see [In-app neuron/brain marks](#in-app-neuronbrain-marks) | Color-stripping surfaces: Obsidian ribbon/UI (the `synapse` icon), and any monochrome context |
 | `glyphs/*.svg` | The Synapse **UI glyph set** — 13 mono `currentColor` icons on **`0 0 100 100` viewBox**, flat, no palette colors. Feature/action glyphs for the Synapse Actions sidebar and commands (see [Glyph set](#glyph-set-glyphs) below) | Registered via `registerSynapseIcons()` in `src/brand-icons.ts`; rendered by the host UI and feature-tinted in the Synapse Actions sidebar |
 | `icon-accepted.svg` | **Accept-state** cut of the S-Signal — 256×256, transparent, flat palette only. The cleft is bridged in violet (gap jumped) and the single Impulse Volt spark has **landed in the receptor**, now closed/filled instead of an open ring | The **accepted** outcome of a proposal: accept-button confirmation, accepted-link badges, the end frame of the accept-flash. Pairs with `icon.svg` (open) — not the default identity. Use **above ~24px** |
 | `banner.svg` | README hero — 1280×320, self-contained dark background, mark + wordmark + tagline | Top of README; safe on both GitHub light and dark themes |
@@ -20,11 +20,11 @@ Use **`icon.svg`** above ~24px and **`icon-small.svg`** at ~24px and below. Belo
 
 Both color variants are for surfaces that **keep** color. For surfaces that strip it, use `icon-mono.svg` (below).
 
-### Monochrome variant (`icon-mono.svg`)
+### Monochrome in-app marks (`icon-mono.svg`, `glyphs/synapse-actions.svg`)
 
-Obsidian's ribbon and UI render icons as a single `currentColor` silhouette — gradients and palette colors are discarded. `icon-mono.svg` is the S-Signal built for exactly that: every stroke and fill is `currentColor`, so the host UI's text color drives it (Ion White on dark, Gap Black on white — verified on both). Where the colored cuts *widen* the cleft to keep the lime spark distinct, the mono cut *tightens* it: in one color the spark bead bridges the cleft and completes the S spine, so the silhouette stays whole down to 16px.
+Obsidian's ribbon and UI render icons as a single `currentColor` silhouette — gradients and palette colors are discarded. `icon-mono.svg` (the `synapse` proposals mark, now a **neuron**) and `glyphs/synapse-actions.svg` (the actions launcher, a **brain**) are built for exactly that: every stroke and fill is `currentColor`, so the host UI's text color drives them (Ion White on dark, Gap Black on white — verified on both). Both carry a single round-capped **impulse** and **intentionally diverge from the canonical S-Signal** (see [In-app neuron/brain marks](#in-app-neuronbrain-marks)); they are no longer mono cuts of it.
 
-It is authored on a **`0 0 100 100`** viewBox (not the family's 256) because that is Obsidian's `addIcon` convention — the inner content of this file is the literal string registered as the `synapse` icon by `registerSynapseIcons()` in `src/brand-icons.ts`. **Keep the two in sync:** if you edit the asset, update the registered `synapse` body (and vice-versa). Use it only on color-stripping or monochrome surfaces; anywhere color survives, use `icon.svg` / `icon-small.svg`.
+They are authored on a **`0 0 100 100`** viewBox (not the family's 256) because that is Obsidian's `addIcon` convention — each file's inner content is the literal string registered by `registerSynapseIcons()` in `src/brand-icons.ts`. **Keep them in sync:** if you edit an asset, update its registered body (and vice-versa); `brand-icons.test.ts` fails on drift. Use these only on color-stripping or monochrome surfaces; anywhere color survives, use `icon.svg` / `icon-small.svg`.
 
 ### Glyph set (`glyphs/`)
 
@@ -44,9 +44,9 @@ The `glyphs/` folder holds the **Synapse UI glyph set**: 13 monochrome `currentC
 | `synapse-transcribe` | Audio waveform + note (sound → linked text; also the Transcribe ribbon) |
 | `synapse-fire` | A folder with one bold arrow sweeping through it (run all features over a directory) |
 | `synapse-checkpoints` | Resume triangle + a broken ring (manage/resume interrupted runs) |
-| `synapse-actions` | A panel with an arrow emerging (open the Synapse actions panel/launcher) |
+| `synapse-actions` | A **brain** with one impulse across it (the Synapse actions launcher / command center) |
 
-These are line/silhouette glyphs that share one system: a ~76×76 live area, a single stroke weight (~8 at the artboard), round caps and joins throughout, one consistent rounded-rect radius for panels/folders, and **one canonical note shape** (a rounded portrait page) used identically wherever a note appears. Solid fill marks the single *subject* of each action; everything else is outlined. **The spark, cleft, and S-spine are reserved for `synapse` (the `icon-mono.svg` body) and appear in none of these glyphs.**
+These are line/silhouette glyphs that share one system: a ~76×76 live area, a single stroke weight (~8 at the artboard), round caps and joins throughout, one consistent rounded-rect radius for panels/folders, and **one canonical note shape** (a rounded portrait page) used identically wherever a note appears. Solid fill marks the single *subject* of each action; everything else is outlined. **Exception:** `synapse-actions` is now a **brain** in-app identity mark carrying one impulse (see [In-app neuron/brain marks](#in-app-neuronbrain-marks)); the other twelve glyphs stay impulse-free and contain no spark, cleft, or "S".
 
 ### Accept-state variant (`icon-accepted.svg`)
 
@@ -63,7 +63,7 @@ An "S" traced by a neural impulse: two violet synaptic arcs broken by a charged 
 ## Hard rules
 
 - Use only palette colors (see guidelines). Never recolor the mark or detach the spark. **Exception:** `icon-mono.svg` and everything in `glyphs/` are intentionally single-color `currentColor` — no palette colors, no lime accent, no Gap Black chip. They are the color-agnostic variants; the rules below about the volt spark and its chip do not apply to them.
-- **One spark, one owner.** The spark / cleft / S-spine belongs to `synapse` (`icon-mono.svg`) alone. No `glyphs/` icon may contain a spark, lime, cleft, or an "S" silhouette.
+- **Impulse on the in-app identity marks only.** `synapse` (`icon-mono.svg`, neuron) and `synapse-actions` (brain) each carry one round-capped impulse; no other `glyphs/` icon may contain a spark, lime, cleft, or an "S" silhouette.
 - **One volt element per composition** — the spark is the only bright accent, ever.
 - On white backgrounds the spark keeps its Gap Black outline/chip; never remove it.
 - The mark is flat — no glows, blurs, drop shadows, or gradients in the mark itself.
@@ -82,3 +82,9 @@ Check dark (`#131019`) and white backgrounds, plus a ~48px copy for small-size l
 ## Wanted (not yet produced)
 
 - _Nothing currently open. The UI glyph set (`glyphs/`), the accept-state variant (`icon-accepted.svg`), and the accept-flash motion spec are done; see above._
+
+## In-app neuron/brain marks
+
+> **In-app neuron/brain marks (divergent from the S-Signal).** `icon-mono.svg` (the `synapse` glyph) and `glyphs/synapse-actions.svg` are now in-app identity marks drawn around a **neuron** (proposals) and a **brain** (the actions launcher / command center), each carrying a single round-capped impulse. They **intentionally diverge from the canonical S-Signal** — they are no longer mono cuts of it. The full-color S-Signal family (`icon.svg`, `icon-small.svg`, `icon-accepted.svg`, `banner.svg`, `social-preview.*`) is unchanged and remains the canonical identity.
+>
+> **Sanctioned motifs.** For these two `currentColor` in-app marks only, **neuron, brain, and electricity (impulse/charge)** are sanctioned — a deliberate, scoped relaxation of the brain/neuron ban. It does not extend to the full-color S-Signal or the rest of the `glyphs/` set, which stay neuron-/brain-/spark-free.
