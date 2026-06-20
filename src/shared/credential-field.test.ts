@@ -8,8 +8,8 @@ import { PROVIDER_METADATA } from './provider-metadata';
 /**
  * Build a mock Setting row + a section-body container. The link + chip render
  * into the container (their own block), so tests inspect the container — not the
- * Setting row — mirroring how the decorator renders to avoid the settings-flex
- * freeze. The Setting is typed as the real one so it satisfies the decorator API.
+ * Setting row — mirroring how the decorator renders. The Setting is typed as the
+ * real one so it satisfies the decorator API.
  */
 function makeCtx() {
 	const setting = new Setting({} as never) as unknown as ObsidianSetting;
@@ -55,7 +55,7 @@ describe('decorateCredentialField', () => {
 		decorateCredentialField({ setting, container, provider: 'openai', getKey: () => 'sk-x' });
 		// The extras block lives in the container…
 		expect(extrasEl(container)).toBeDefined();
-		// …and nothing was appended to the setting row itself (which would freeze).
+		// …and nothing was appended to the setting row itself (link + chip live in the container).
 		expect((setting.settingEl as any).children).toHaveLength(0);
 	});
 
