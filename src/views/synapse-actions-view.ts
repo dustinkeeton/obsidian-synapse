@@ -1,5 +1,6 @@
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, WorkspaceLeaf, setIcon } from 'obsidian';
 import type { CommandDefinition, FeatureKey } from '../commands';
+import { resolveActionIcon } from '../commands';
 import { actionsGroupClass } from './proposal-styles';
 
 export const SYNAPSE_ACTIONS_VIEW_TYPE = 'synapse-actions';
@@ -59,9 +60,10 @@ export class SynapseActionsView extends ItemView {
 	}
 
 	getIcon(): string {
-		// Non-sparkle Lucide glyph (the sparkle family is on the brand's banned
-		// inventory). Distinct from the 'synapse' mark used by the proposal view.
-		return 'layout-grid';
+		// Bespoke launcher mark (registered via addIcon in src/brand-icons.ts),
+		// matching the "Synapse actions" ribbon that opens this view (#349).
+		// Distinct from the 'synapse' S-Signal used by the proposal view.
+		return 'synapse-actions';
 	}
 
 	async onOpen(): Promise<void> {
@@ -105,9 +107,20 @@ export class SynapseActionsView extends ItemView {
 			for (const action of groupActions) {
 				const disabled = action.context === 'note' && !noteActive;
 				const button = group.createEl('button', {
-					text: action.name,
 					cls: 'synapse-actions-button',
 				});
+
+				// Feature glyph (or per-action override), resolved from the registry
+				// and tinted per feature via CSS. `data-icon` mirrors the resolved
+				// name so it stays assertable in tests — setIcon injects an <svg> at
+				// runtime, which the obsidian test mock no-ops.
+				const iconName = resolveActionIcon(action);
+				const iconEl = button.createSpan({ cls: 'synapse-actions-button-icon' });
+				iconEl.setAttribute('data-icon', iconName);
+				setIcon(iconEl, iconName);
+
+				button.createSpan({ text: action.name, cls: 'synapse-actions-button-label' });
+
 				if (disabled) {
 					// Real <button disabled> can't be clicked and matches `:disabled`
 					// styling; we also skip wiring the handler so it can never fire.

@@ -10,6 +10,7 @@
 
 import type { Command } from 'obsidian';
 import { REGISTRY_BY_ID } from './registry';
+import { resolveActionIcon } from './icons';
 
 /** Minimal structural shape we need from the plugin — keeps tests trivial. */
 interface AddCommandHost {
@@ -40,7 +41,11 @@ export class CommandRegistrar {
 		const inPalette = entry ? entry.flows.includes('palette') : true;
 
 		if (active && inPalette && userEnabled) {
-			this.host.addCommand({ id, ...spec });
+			// Give the palette command its registry-resolved icon (feature glyph or
+			// per-action override; #349). Spread `spec` last so a caller-supplied
+			// icon still wins.
+			const icon = entry ? resolveActionIcon(entry) : undefined;
+			this.host.addCommand({ id, ...(icon ? { icon } : {}), ...spec });
 			this.registered.add(id);
 		}
 	}

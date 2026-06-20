@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Platform, Plugin, TFile, addIcon } from 'obsidian';
+import { MarkdownView, Notice, Platform, Plugin, TFile } from 'obsidian';
 import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
 import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
@@ -30,22 +30,7 @@ import {
 	SynapseActionsView,
 } from './views';
 import type { UnifiedItem } from './views';
-
-/**
- * Monochrome `currentColor` silhouette of the S-Signal mark, registered as the
- * `synapse` icon for ribbon/UI surfaces (which strip color to a single
- * currentColor fill). This is the inner body of `assets/brand/icon-mono.svg`,
- * authored on the 0 0 100 100 viewBox Obsidian's `addIcon` expects. In
- * monochrome the spark bead bridges the synaptic cleft and completes the S
- * spine, so the silhouette stays whole down to 16px. Keep this in sync with the
- * canonical asset; do not recolor (the brand mark only ever uses palette colors
- * in its full-color variants — this variant is intentionally color-agnostic).
- */
-const SYNAPSE_ICON_SVG =
-	'<path d="M70 25.2 A16.4 16.4 0 1 0 42.3 42.3" fill="none" stroke="currentColor" stroke-width="10.5" stroke-linecap="round"/>' +
-	'<circle cx="70" cy="25.2" r="7.8" fill="currentColor"/>' +
-	'<path d="M69.3 55.4 A18 18 0 0 1 41.8 78.5" fill="none" stroke="currentColor" stroke-width="10.5" stroke-linecap="round"/>' +
-	'<ellipse cx="55.8" cy="48.9" rx="16.5" ry="7.2" fill="currentColor" transform="rotate(26 55.8 48.9)"/>';
+import { registerSynapseIcons } from './brand-icons';
 
 /**
  * Narrows a value to a plain object record (a non-null, non-array object) so
@@ -86,9 +71,11 @@ export default class SynapsePlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadSettings();
 
-		// Register the brand mark as a custom icon so ribbon/UI surfaces can use
-		// it. Must run before any addRibbonIcon('synapse', …) call below.
-		addIcon('synapse', SYNAPSE_ICON_SVG);
+		// Register the bespoke Synapse glyphs (S-Signal mark, ribbon/launcher
+		// marks, and per-feature/per-action icons; #349) as custom icons so
+		// ribbon/UI surfaces can use them. Must run before any
+		// addRibbonIcon(...)/setIcon/view getIcon that references these names.
+		registerSynapseIcons();
 
 		// Migrate legacy .auto-notes folder to .synapse (one-time, backward compat)
 		await this.migrateDataFolder();
@@ -323,27 +310,26 @@ export default class SynapsePlugin extends Plugin {
 			};
 		}
 
-		// Single ribbon icon + command for the unified view. Uses the brand
-		// S-Signal mark (registered above) rather than a stock Lucide glyph —
-		// the previous 'sparkles' icon is on the brand's banned inventory.
+		// Single ribbon icon + command for the unified view. Uses the bespoke
+		// S-Signal mark (registered above) — the only glyph that carries the
+		// brand spark, reserved for Synapse identity (#349).
 		this.addRibbonIcon('synapse', 'Review proposals', () => {
 			fireAndForget(this.activateUnifiedView(), 'Open proposal review', { notifications: this.notifications });
 		});
 
-		// Unified transcription ribbon icon (desktop only — mic icon implies video
-		// support). 'mic' stays a functional Lucide glyph: it communicates the
-		// transcribe action better than the brand mark, and only sparkle glyphs
-		// are banned, not all Lucide icons.
+		// Unified transcription ribbon (desktop only — transcribe implies video
+		// support). Uses the bespoke 'synapse-transcribe' mark (#349), the same
+		// glyph the transcribe action carries, so the set stays coherent.
 		if (Platform.isDesktop) {
-			this.addRibbonIcon('mic', 'Transcribe media', () => {
+			this.addRibbonIcon('synapse-transcribe', 'Transcribe media', () => {
 				this.openUnifiedModal();
 			});
 		}
 
-		// Opener for the Synapse actions sidebar (#289). Unconditional so it appears
-		// on mobile, where the command palette is hardest to reach. 'layout-grid' is
-		// a functional Lucide glyph (only the sparkle family is on the banned list).
-		this.addRibbonIcon('layout-grid', 'Synapse actions', () => {
+		// Opener for the Synapse actions sidebar (#289). Unconditional so it
+		// appears on mobile, where the command palette is hardest to reach. Uses
+		// the bespoke 'synapse-actions' launcher mark (#349).
+		this.addRibbonIcon('synapse-actions', 'Synapse actions', () => {
 			fireAndForget(this.activateSynapseActionsView(), 'Open Synapse actions', { notifications: this.notifications });
 		});
 

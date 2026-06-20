@@ -1287,7 +1287,9 @@
   border-left-color: var(--synapse-color-main);
 }
 .synapse-actions-button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   min-height: 44px; /* comfortable touch target (iOS/Material guidance) */
   margin: 4px 0;
@@ -1299,6 +1301,53 @@
 .synapse-actions-button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+/*
+ * Per-action glyph (bespoke feature icon, #349). The registered SVG draws in
+ * `currentColor`, so the feature tint is applied by setting `color` on this span
+ * — the same action-type tokens that accent the group headings. `main`/General
+ * keeps the muted default; per-feature overrides below recolor it.
+ */
+.synapse-actions-button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--synapse-color-main);
+}
+.synapse-actions-button-icon .svg-icon {
+  width: 18px;
+  height: 18px;
+}
+.synapse-actions-button-label {
+  flex: 1 1 auto;
+}
+.synapse-actions-group--elaboration .synapse-actions-button-icon {
+  color: var(--synapse-color-elaboration);
+}
+.synapse-actions-group--enrichment .synapse-actions-button-icon {
+  color: var(--synapse-color-enrichment);
+}
+.synapse-actions-group--organize .synapse-actions-button-icon {
+  color: var(--synapse-color-organize);
+}
+.synapse-actions-group--deep-dive .synapse-actions-button-icon {
+  color: var(--synapse-color-deep-dive);
+}
+.synapse-actions-group--summarize .synapse-actions-button-icon {
+  color: var(--synapse-color-summarize);
+}
+.synapse-actions-group--tidy .synapse-actions-button-icon {
+  color: var(--synapse-color-tidy);
+}
+.synapse-actions-group--rem .synapse-actions-button-icon {
+  color: var(--synapse-color-rem);
+}
+.synapse-actions-group--video .synapse-actions-button-icon {
+  color: var(--synapse-color-video);
+}
+.synapse-actions-group--main .synapse-actions-button-icon {
+  color: var(--synapse-color-main);
 }
 .synapse-actions-empty {
   color: var(--text-muted);

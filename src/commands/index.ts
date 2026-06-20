@@ -28,5 +28,6 @@ export {
 } from './registry';
 
 export { listPaletteActions } from './actions';
+export { FEATURE_ICONS, resolveActionIcon } from './icons';
 export { CommandRegistrar } from './registrar';
 export { auditCommands } from './audit';

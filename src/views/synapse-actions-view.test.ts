@@ -10,10 +10,14 @@ function mockLeaf(): any {
 	return { view: {} };
 }
 
-/** A small, representative action set spanning two features and all contexts. */
+/**
+ * A small, representative action set spanning two features and all contexts.
+ * `review-proposals` carries the same explicit `icon` override the real registry
+ * gives it; the enrichment actions inherit their feature-default glyph.
+ */
 function sampleActions(): CommandDefinition[] {
 	return [
-		{ id: 'review-proposals', name: 'Open proposal review sidebar', feature: 'main', status: 'active', flows: ['palette'], context: 'global' },
+		{ id: 'review-proposals', name: 'Open proposal review sidebar', feature: 'main', status: 'active', flows: ['palette'], context: 'global', icon: 'synapse' },
 		{ id: 'enrich-current-note', name: 'Enrich current note', feature: 'enrichment', status: 'active', flows: ['palette'], context: 'note' },
 		{ id: 'scan-vault-enrichment', name: 'Scan vault for enrichment', feature: 'enrichment', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault' },
 	];
@@ -46,6 +50,25 @@ function buttons(el: any): any[] {
 	return out;
 }
 
+/** The text of a button's label span (label now lives in a child span, not the button's own text). */
+function labelOf(button: any): string | undefined {
+	return (button.children ?? [])
+		.find((c: any) => c.classList?.contains?.('synapse-actions-button-label'))
+		?.textContent;
+}
+
+/** The resolved icon name stamped on a button's icon span via `data-icon`. */
+function iconOf(button: any): string | null {
+	const iconEl = (button.children ?? [])
+		.find((c: any) => c.classList?.contains?.('synapse-actions-button-icon'));
+	return iconEl ? iconEl.getAttribute('data-icon') : null;
+}
+
+/** Find the action <button> whose label span reads `label`. */
+function findButton(el: any, label: string): any {
+	return buttons(el).find((b) => labelOf(b) === label);
+}
+
 /** Recursively collect text of all descendants carrying `cls`. */
 function textsByClass(el: any, cls: string): string[] {
 	const out: string[] = [];
@@ -69,12 +92,22 @@ describe('SynapseActionsView', () => {
 	it('renders one button per action with its registry name', async () => {
 		const { view, contentEl } = makeView();
 		await view.onOpen();
-		const labels = buttons(contentEl).map((b) => b.textContent);
+		const labels = buttons(contentEl).map(labelOf);
 		expect(labels).toEqual([
 			'Open proposal review sidebar',
 			'Enrich current note',
 			'Scan vault for enrichment',
 		]);
+	});
+
+	it('renders each button with its resolved glyph (per-action override, else feature default)', async () => {
+		const { view, contentEl } = makeView();
+		await view.onOpen();
+		// review-proposals carries an explicit override; enrichment actions inherit
+		// the feature-default glyph (FEATURE_ICONS.enrichment).
+		expect(iconOf(findButton(contentEl, 'Open proposal review sidebar'))).toBe('synapse');
+		expect(iconOf(findButton(contentEl, 'Enrich current note'))).toBe('synapse-enrichment');
+		expect(iconOf(findButton(contentEl, 'Scan vault for enrichment'))).toBe('synapse-enrichment');
 	});
 
 	it('groups actions under sentence-case feature headings in registry order', async () => {
@@ -91,7 +124,7 @@ describe('SynapseActionsView', () => {
 		const { view, contentEl } = makeView({ isNoteActive: () => false, runAction });
 		await view.onOpen();
 
-		const noteButton = buttons(contentEl).find((b) => b.textContent === 'Enrich current note');
+		const noteButton = findButton(contentEl, 'Enrich current note');
 		expect(noteButton.disabled).toBe(true);
 		// A disabled button has no handler, so dispatching a click is a no-op.
 		noteButton.dispatchEvent({ type: 'click' });
@@ -103,7 +136,7 @@ describe('SynapseActionsView', () => {
 		const { view, contentEl } = makeView({ isNoteActive: () => false, runAction });
 		await view.onOpen();
 
-		const vaultButton = buttons(contentEl).find((b) => b.textContent === 'Scan vault for enrichment');
+		const vaultButton = findButton(contentEl, 'Scan vault for enrichment');
 		expect(vaultButton.disabled).toBeFalsy();
 		vaultButton.dispatchEvent({ type: 'click' });
 		expect(runAction).toHaveBeenCalledWith('scan-vault-enrichment');
@@ -114,7 +147,7 @@ describe('SynapseActionsView', () => {
 		const { view, contentEl } = makeView({ isNoteActive: () => true, runAction });
 		await view.onOpen();
 
-		buttons(contentEl).find((b) => b.textContent === 'Enrich current note').dispatchEvent({ type: 'click' });
+		findButton(contentEl, 'Enrich current note').dispatchEvent({ type: 'click' });
 		expect(runAction).toHaveBeenCalledWith('enrich-current-note');
 	});
 
@@ -122,11 +155,11 @@ describe('SynapseActionsView', () => {
 		let noteActive = false;
 		const { view, contentEl } = makeView({ isNoteActive: () => noteActive });
 		await view.onOpen();
-		expect(buttons(contentEl).find((b) => b.textContent === 'Enrich current note').disabled).toBe(true);
+		expect(findButton(contentEl, 'Enrich current note').disabled).toBe(true);
 
 		noteActive = true;
 		view.refresh();
-		expect(buttons(contentEl).find((b) => b.textContent === 'Enrich current note').disabled).toBeFalsy();
+		expect(findButton(contentEl, 'Enrich current note').disabled).toBeFalsy();
 	});
 
 	it('shows an empty-state message and no buttons when nothing is registered', async () => {

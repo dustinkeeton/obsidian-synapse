@@ -14,11 +14,14 @@ import { CommandDefinition, CommandFlow } from './types';
 
 export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 	// --- main (src/main.ts) ---
-	{ id: 'review-proposals', name: 'Open proposal review sidebar', feature: 'main', status: 'active', flows: ['palette'], context: 'global' },
-	{ id: 'manage-checkpoints', name: 'Manage interrupted operations', feature: 'main', status: 'active', flows: ['palette'], context: 'global' },
-	{ id: 'transcribe-media', name: 'Transcribe media', feature: 'main', status: 'disabled', flows: ['palette'], context: 'global' },
-	{ id: 'transcribe-note-media', name: 'Transcribe media from current note', feature: 'main', status: 'active', flows: ['palette'], context: 'note' },
-	{ id: 'fire', name: 'Run all features on a directory', feature: 'main', status: 'active', flows: ['palette'], context: 'vault' },
+	// `main` bundles dissimilar actions, so each carries an explicit `icon`
+	// override instead of sharing one feature glyph (review-proposals reuses the
+	// S-Signal identity mark; #349).
+	{ id: 'review-proposals', name: 'Open proposal review sidebar', feature: 'main', status: 'active', flows: ['palette'], context: 'global', icon: 'synapse' },
+	{ id: 'manage-checkpoints', name: 'Manage interrupted operations', feature: 'main', status: 'active', flows: ['palette'], context: 'global', icon: 'synapse-checkpoints' },
+	{ id: 'transcribe-media', name: 'Transcribe media', feature: 'main', status: 'disabled', flows: ['palette'], context: 'global', icon: 'synapse-transcribe' },
+	{ id: 'transcribe-note-media', name: 'Transcribe media from current note', feature: 'main', status: 'active', flows: ['palette'], context: 'note', icon: 'synapse-transcribe' },
+	{ id: 'fire', name: 'Run all features on a directory', feature: 'main', status: 'active', flows: ['palette'], context: 'vault', icon: 'synapse-fire' },
 
 	// --- elaboration (src/elaboration/index.ts) ---
 	{ id: 'scan-vault', name: 'Scan vault for stub notes', feature: 'elaboration', status: 'active', flows: ['palette', 'fire-synapse', 'startup'], context: 'vault', pipelineKey: 'elaboration' },
