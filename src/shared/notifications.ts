@@ -131,6 +131,21 @@ export class NotificationManager {
 	}
 
 	/**
+	 * Tear down every in-flight operation: stop its animated-ellipsis interval and
+	 * hide its notice. Called from the plugin's `onunload` so disabling Synapse
+	 * while an operation is still running never leaves an orphaned 400ms
+	 * `setInterval` firing against a detached toast (Obsidian lifecycle hygiene).
+	 */
+	dispose(): void {
+		for (const op of this.operations.values()) {
+			stopEllipsis(op.ellipsisInterval);
+			op.ellipsisInterval = null;
+			op.notice.hide();
+		}
+		this.operations.clear();
+	}
+
+	/**
 	 * Begin a tracked operation. Returns a handle for updating progress.
 	 * The notice is non-dismissible and includes a Cancel button.
 	 */
