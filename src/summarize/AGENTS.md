@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-11
+last-updated: 2026-06-19
 ---
 
 # Summarize Module
@@ -18,173 +18,201 @@ class SummarizeModule {
     getSettings: () => SynapseSettings,
     notifications: NotificationManager,
     checkpointManager: CheckpointManager,
+    registrar: CommandRegistrar,
     transcribeUrl?: TranscribeUrlFn,
-    transcribeAudio?: TranscribeAudioFn
+    transcribeAudio?: TranscribeAudioFn,
+    transcribeAudioCombined?: TranscribeAudioCombinedFn
   )
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
+  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<void>
 }
 
+// Injected callback: transcribes a video URL (from VideoModule)
 type TranscribeUrlFn = (
   url: string,
   parentOp?: { update: (msg: string) => void }
 ) => Promise<string>
 
+// Injected callback: transcribes a single audio TFile (from AudioModule)
 type TranscribeAudioFn = (file: TFile) => Promise<string>
+
+// Injected callback: transcribes multiple audio TFiles as one combined recording (#214)
+type TranscribeAudioCombinedFn = (files: TFile[]) => Promise<string>
 ```
 
-Exported types: `SummarizeTarget`, `SummarizeSettings`, `TranscribeUrlFn`, `TranscribeAudioFn`
+Exported types: `SummarizeTarget`, `TranscribeUrlFn`, `TranscribeAudioFn`, `TranscribeAudioCombinedFn`
 
-## Internal Components
+Exported functions: `renderSummarizeSettings(ctx: SettingsSectionContext): void`
 
-| File | Class/Function | Role |
-|------|---------------|------|
+## Internal File Map
+
+| File | Class/Export | Role |
+|------|-------------|------|
+| `index.ts` | `SummarizeModule`, type + fn re-exports | Orchestrator, commands, scan + summarize flows |
+| `types.ts` | `SummarizeTarget` | Target type model |
 | `summarizer.ts` | `Summarizer` | AI summarization with style (bullets/paragraph/key-points) |
-| `summarizer.test.ts` | Tests | Summarizer tests |
+| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow` | Finds URLs, transcription blocks in note content |
+| `summarize-modal.ts` | `SummarizeSelectionModal` | Selection modal when multiple targets found; offers combine option for 2+ audio targets |
 | `settings-section.ts` | `renderSummarizeSettings` | Summarize settings UI section |
-| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow` | Finds URLs, transcription blocks, and audio embed summary gaps in note content |
+| `summarizer.test.ts` | Tests | Summarizer tests |
 | `note-scanner.test.ts` | Tests | Note scanner tests |
-| `summarize-modal.ts` | `SummarizeSelectionModal` | Selection modal when multiple targets found |
 | `summarize-module.test.ts` | Tests | SummarizeModule integration tests |
 | `audio-summarize.test.ts` | Tests | Audio-embed summarization tests |
-| `types.ts` | -- | `SummarizeTarget` |
+| `combine-summarize.test.ts` | Tests | Combined-audio summarization tests (#214) |
 
-> Content-aware formatting schemas (recipe/receipt detection + prompts) live in the shared `content-schemas.ts` registry (`shared/content-schemas.ts`), consumed here via `detectSchemaFor('summary', content)`. See [Content-Aware Schemas](#content-aware-schemas).
+## Target Types (`types.ts`)
+
+```ts
+interface SummarizeTarget {
+  type: 'url' | 'transcription' | 'audio'
+  source: string          // URL or audio filename or transcription source label
+  line: number            // zero-based line number in note
+  endLine: number         // end of target block (for transcriptions)
+  content?: string        // pre-extracted content (for transcription blocks)
+  inEnrichmentSection?: boolean  // found inside enrichment markers
+  linkTitle?: string      // display text from markdown link (enrichment refs)
+}
+```
 
 ## Data Flow
 
 ```
 summarizeNote(file)
   --> collectTargets(content, sourcePath)
-        findSummarizeTargets(content)  [regex: URLs, transcription blocks]
-        findAudioEmbeds(content)  [audio embeds without existing summary]
-  --> if multiple: SummarizeSelectionModal
-  --> processTargets(file, targets, content)
+        findSummarizeTargets(content)    [URLs, transcription blocks]
+        findAudioEmbeds(content, ...)    [audio embeds without existing summary below]
+  --> if 1 target: processTargets(file, targets, content)
+  --> if 2+ targets: SummarizeSelectionModal
+        if combine + 2+ audio: processTargetsCombined(file, selected, content)
+        else: processTargets(file, selected, content)
 
 processFileTargets(file, targets, op, content)
   For each target (reverse line order):
-    if inEnrichmentSection:
-      --> fetchContentForUrl(url)  [HTTP or video transcription]
-      --> Summarizer.summarize(content, url, style, comprehensive prompt)
-      --> create standalone note (deferred until after source modify)
-      --> replace external link with [[internal link]]
+    if inEnrichmentSection + linkTitle:
+      --> fetchContentForUrl(url)  [video transcription or HTTP fetch]
+      --> Summarizer.summarize(content, url, style, COMPREHENSIVE_SUMMARY_PROMPT)
+      --> pendingNotes.push(path, content)
+      --> replace external link with [[internal link]] in lines[]
     elif target.type === 'audio':
       --> fetchContentForAudio(fileName, sourceFile)  [transcribeAudio callback]
-      --> Summarizer.summarize(transcript, source, style)
-      --> insert callout after target line
-    else (inline target):
-      --> fetchContentForUrl(url) or use transcription content
-      --> determine effectivePrompt:
-            customPrompt > detectSchemaFor('summary', content) > style default
+      --> Summarizer.summarize(transcript, source, style, effectivePrompt)
+      --> lines.splice(endLine+1, callout)
+    else (inline URL / transcription):
+      --> fetchContentForUrl(url) or use target.content
+      --> effectivePrompt: customPrompt > detectSchemaFor('summary', content) > style default
       --> Summarizer.summarize(content, url, style, effectivePrompt)
-      --> insert callout after target line
-  --> vault.modify(sourceFile)
-  --> vault.create() for pending notes
+      --> lines.splice(endLine+1, callout)
+  --> vault.process(file, () => lines.join('\n'))   [source written FIRST]
+  --> vault.create() for each pendingNote            [new notes AFTER source]
   --> onSummaryComplete?.(filePath)
-  --> onOrganizeRequested?.(file) [if autoOrganizeOnSummarize]
+  --> onOrganizeRequested?.(file)  [if autoOrganizeOnSummarize]
+
+processTargetsCombined(file, targets, content)   [#214]
+  --> otherTargets processed via processFileTargets first
+  --> transcribeAudioCombined(audioFiles) --> combined transcript
+  --> Summarizer.summarize(transcript, ..., COMPREHENSIVE_SUMMARY_PROMPT)
+  --> vault.process(file, insert combined callout after last audio embed)
+  --> onSummaryComplete?.(file.path)
 ```
 
 ## Vault Scan (checkpointed)
 
 ```
-scanVault(folderPath?)
-  Phase 1: Collect files with targets (cancellable scan)
-  Phase 2: User confirmation
-  Phase 3: Checkpointed processing
+scanVault(folderPath?, skipConfirmation?, onlyFile?)
+  Phase 1: collect files with targets (cancellable scan)
+  Phase 2: user confirmation (skipped when skipConfirmation=true)
+  Phase 3: checkpointed processing
     --> checkpointManager.create(module: 'summarize', items)
     --> addDeferredTask('refresh-sidebar-view')
-    --> for each file: processFileTargets(), completeItem()
+    --> for each file: re-read + re-scan + processFileTargets(), completeItem()
     --> on cancel: checkpointManager.discard()
-    --> on success: checkpointManager.complete(), dispatch deferred tasks
+    --> on success: checkpointManager.complete(), dispatchDeferredTasks
 
 resumeFromCheckpoint(checkpoint)
   --> re-processes remaining items from saved checkpoint
   --> completeItem() after each file
   --> on cancel: discard()
-  --> on success: complete(), dispatch deferred tasks
+  --> on success: complete(), dispatchDeferredTasks
 ```
 
-## Target Types
+## Commands
 
-```ts
-interface SummarizeTarget {
-  type: 'url' | 'transcription' | 'audio'
-  source: string
-  line: number
-  endLine: number
-  content?: string
-  inEnrichmentSection?: boolean
-  linkTitle?: string
-}
-```
+Registered in `onload()` (both gated by `summarize.enabled`):
+
+| ID | Name | Type |
+|----|------|------|
+| `synapse:summarize-current-note` | Summarize current note | editorCallback |
+| `synapse:scan-vault-summarize` | Scan vault for notes to summarize | callback (FolderPickerModal) |
 
 ## Video URL Auto-Transcription
 
-When `transcribeUrl` is injected (from `VideoModule.transcribeUrl`):
-- `fetchContentForUrl()` checks `isSupportedUrl(url)` first (`isSupportedUrl` from `shared/url-detector`)
-- If video URL detected, transcribes via the injected `transcribeUrl` callback instead of HTTP fetch
-- Falls back to `fetchPageContent()` (from `shared/content-fetcher`) for non-video URLs
+`transcribeUrl` is injected by `main.ts` from `VideoModule.transcribeUrl`. When set:
+- `fetchContentForUrl()` calls `isSupportedUrl(url)` (from `shared`) before deciding
+- If supported video URL: calls injected `transcribeUrl` callback
+- Falls back to `fetchTweetContent()` for Twitter URLs, then `fetchPageContent()` for others
 
-## Audio Embed Summarization
+`isSupportedUrl` and `detectPlatform` both resolve from `shared` barrel. There is NO static import of `video/` anywhere in this module.
 
-When `transcribeAudio` is injected (from main.ts closure over `AudioModule.transcribe`):
-- `collectTargets()` scans for `![[*.mp3|wav|...]]` embeds via `findAudioEmbeds()`
-- Skips embeds with existing summary below (checked via `hasSummaryBelow()`)
-- `fetchContentForAudio()` resolves file via MetadataCache, calls `transcribeAudio(file)`
-- Resulting transcript is summarized and inserted as callout
+## Combined Audio (#214)
+
+When `transcribeAudioCombined` is injected and 2+ audio targets are selected via the modal:
+- `processTargetsCombined()` resolves all audio `TFile` objects via `MetadataCache`
+- Calls `transcribeAudioCombined(files)` for one transcript spanning all files
+- Inserts a single `Combined summary (N files)` callout after the last audio embed
+- Insert line is re-derived from fresh content inside `vault.process()` callback (safe against phase-1 line shifts)
 
 Injected in `main.ts`:
 ```ts
 this.summarize = new SummarizeModule(
-  this, getSettings, this.notifications, this.checkpointManager,
+  this, getSettings, this.notifications, this.checkpointManager, this.registrar,
   (url, parentOp) => this.video.transcribeUrl(url, parentOp),
   async (audioFile) => {
     const data = await this.app.vault.readBinary(audioFile);
     const result = await this.audio.transcribe(data, audioFile.name);
     return result.processed || result.raw;
-  }
+  },
+  (files) => this.audio.transcribeCombined(files)
 );
 ```
 
-## Dependencies
+## Settings Keys
 
-- `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, OperationHandle, buildCallout, CALLOUT_TYPES, CheckpointManager, generateId, Checkpoint, CheckpointWorkItem, DeferredTask, fetchPageContent, fetchTweetContent, isSupportedUrl, detectPlatform, detectSchemaFor)
-- `audio/` (findAudioEmbeds -- used in collectTargets)
-- `settings.ts` (SynapseSettings, SummarizeSettings)
-- NO static `video/` import. URL-platform helpers (`isSupportedUrl`/`detectPlatform`) and content fetchers (`fetchPageContent`/`fetchTweetContent`) resolve from `shared`. Video transcription happens only through the injected `transcribeUrl` callback (`TranscribeUrlFn`).
+All under `settings.summarize` (`SummarizeSettings`):
+
+| Key | Type | Default | Controls |
+|-----|------|---------|----------|
+| `enabled` | `boolean` | `true` | Module + command activation |
+| `maxContentLength` | `number` | — | Truncation limit for fetched content |
+| `summaryStyle` | `'bullets' \| 'paragraph' \| 'key-points'` | — | AI output style |
+| `customPrompt` | `string` | `''` | Overrides style-based prompt (highest priority) |
+| `autoDetectTemplates` | `boolean` | `true` | Enable content-schema detection |
+| `excludeTags` | `string[]` | `['no-summarize']` | Skip notes with these tags |
+| `autoOrganizeOnSummarize` | `boolean` | — | Trigger organize after single-note summarize |
+
+Path exclusion: centralized `settings.exclusions: ExclusionRule[]` (#307). No per-module `excludeFolders` field. Checked via `isPathExcluded(path, 'summarize', settings)` from `shared`.
 
 ## Content-Aware Schemas
 
-The content-aware formatting registry lives in the **shared** module (`shared/content-schemas.ts`) so both the summarize and transcription stages can consult it. Each `ContentSchema` declares which `appliesTo` pipeline stage(s) it targets (`'transcription' | 'summary'`) and a `mode` (`'reformat' | 'summarize'`). The summarize module only ever asks for the `'summary'` stage.
+Registry: `shared/content-schemas.ts`. Called via `detectSchemaFor('summary', content)`.
 
-When `autoDetectTemplates` is enabled (default: true) and no `customPrompt` is set, the module runs `detectSchemaFor('summary', content)` on inline-target content before summarization. If a schema matches, its specialized prompt replaces the style-based default.
+Priority chain for inline targets: `customPrompt` > schema match > style default.
+Enrichment targets always use `COMPREHENSIVE_SUMMARY_PROMPT` regardless.
 
-Priority chain: `customPrompt` > schema match > style default.
+| ID | Detection | Stage |
+|----|-----------|-------|
+| `recipe` | Keyword scoring >= 5 (headers, cooking verbs, measurements) | `'summary'` |
+| `receipt` | Keyword scoring >= 5 (currency, totals, payment terms) | `'summary'` |
 
-Enrichment targets (standalone notes) always use `COMPREHENSIVE_SUMMARY_PROMPT` and are not affected by schema detection.
+## Dependencies
 
-### Summary-stage schemas
+| Import | From |
+|--------|------|
+| `FolderPickerModal`, `getMarkdownFiles`, `NotificationManager`, `OperationHandle`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent` | `../shared` |
+| `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `../shared` (type-only) |
+| `findAudioEmbeds` | `../audio` |
+| `CommandRegistrar` | `../commands` |
+| `SynapseSettings`, `SummarizeSettings` | `../settings` |
 
-| ID | Name | Detection | Prompt Format |
-|----|------|-----------|---------------|
-| `recipe` | Recipe | Keyword scoring (structural headers, cooking verbs, measurements); threshold >= 5 | Structured recipe: title, times, servings, ingredients with exact amounts, numbered instructions with step images, notes |
-| `receipt` | Receipt | Keyword scoring (currency/total headers, line items, payment terms, identifiers, date/time); threshold >= 5 | Structured receipt: store, date, item table, totals, payment method, notes |
-
-### Adding new schemas
-
-Schemas are defined centrally in `shared/content-schemas.ts`:
-
-1. Create a detection function (pure function, no side effects).
-2. Define the specialized prompt string.
-3. Add a `ContentSchema` entry to the `CONTENT_SCHEMAS` array with `appliesTo` + `mode` set, and export anything needed from `shared/index.ts`.
-4. Add tests in `shared/content-schemas.test.ts` for both positive and negative detection (and the stage gate).
-
-## Tests
-
-- `summarizer.test.ts`
-- `note-scanner.test.ts`
-- `summarize-module.test.ts`
-- `audio-summarize.test.ts`
-
-> Content-schema detection tests live in `shared/content-schemas.test.ts`.
+NO static import of `../video`. Video transcription is callback-only (`TranscribeUrlFn`).
