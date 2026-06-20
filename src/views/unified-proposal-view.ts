@@ -8,6 +8,7 @@ import type { RemProposal } from '../rem';
 import type { Checkpoint } from '../shared';
 import { fireAndForget } from '../shared';
 import type { UnifiedItem, UnifiedViewCallbacks } from './types';
+import { badgeClass, cardClass, reviewPaneLabelClass } from './proposal-styles';
 
 export { type UnifiedItem, type UnifiedViewCallbacks } from './types';
 
@@ -454,9 +455,14 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	private renderElaborationCard(container: HTMLElement, proposal: Proposal): void {
-		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--elaboration' });
+		const card = container.createDiv({
+			cls: `synapse-proposal-card ${cardClass('elaboration')}`,
+		});
 
-		card.createEl('span', { text: 'Elaboration', cls: 'synapse-badge synapse-badge--elaboration' });
+		card.createEl('span', {
+			text: 'Elaboration',
+			cls: `synapse-badge ${badgeClass('elaboration')}`,
+		});
 
 		const reasons = proposal.detectionReasons.map(r => r.type).join(', ');
 		card.createEl('small', { text: reasons, cls: 'synapse-reasons' });
@@ -487,9 +493,14 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	private renderEnrichmentCard(container: HTMLElement, proposal: EnrichmentProposal): void {
-		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--enrichment' });
+		const card = container.createDiv({
+			cls: `synapse-proposal-card ${cardClass('enrichment')}`,
+		});
 
-		card.createEl('span', { text: 'Enrichment', cls: 'synapse-badge synapse-badge--enrichment' });
+		card.createEl('span', {
+			text: 'Enrichment',
+			cls: `synapse-badge ${badgeClass('enrichment')}`,
+		});
 
 		const { result } = proposal;
 		const parts: string[] = [];
@@ -547,9 +558,14 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	private renderOrganizeCard(container: HTMLElement, proposal: OrganizeProposal): void {
-		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--organize' });
+		const card = container.createDiv({
+			cls: `synapse-proposal-card ${cardClass('organize')}`,
+		});
 
-		card.createEl('span', { text: 'Organize', cls: 'synapse-badge synapse-badge--organize' });
+		card.createEl('span', {
+			text: 'Organize',
+			cls: `synapse-badge ${badgeClass('organize')}`,
+		});
 
 		card.createEl('small', {
 			text: `Move to ${proposal.proposedDirectory}`,
@@ -610,9 +626,11 @@ export class UnifiedProposalView extends ItemView {
 		const editorPane = contentEl.createDiv({ cls: 'synapse-review-pane' });
 		editorPane.createEl('div', {
 			text: 'Proposed additions',
-			cls: 'synapse-review-pane-label synapse-review-pane-label--elaboration',
+			cls: `synapse-review-pane-label ${reviewPaneLabelClass('elaboration')}`,
 		});
-		const textarea = editorPane.createEl('textarea', { cls: 'synapse-review-editor' });
+		const textarea = editorPane.createEl('textarea', {
+			cls: 'synapse-review-editor synapse-review-editor--elaboration',
+		});
 		textarea.value = proposal.proposedAdditions;
 
 		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
@@ -770,22 +788,22 @@ export class UnifiedProposalView extends ItemView {
 		const dirPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		dirPane.createEl('div', {
 			text: 'Proposed directory',
-			cls: 'synapse-review-pane-label synapse-review-pane-label--organize',
+			cls: `synapse-review-pane-label ${reviewPaneLabelClass('organize')}`,
 		});
 		dirPane.createEl('p', {
 			text: proposal.proposedDirectory,
-			cls: 'synapse-organize-directory',
+			cls: 'synapse-organize-directory synapse-review-box--organize',
 		});
 
 		// Reasoning
 		const reasonPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		reasonPane.createEl('div', {
 			text: 'Reasoning',
-			cls: 'synapse-review-pane-label synapse-review-pane-label--organize',
+			cls: `synapse-review-pane-label ${reviewPaneLabelClass('organize')}`,
 		});
 		reasonPane.createEl('p', {
 			text: proposal.reasoning,
-			cls: 'synapse-organize-reasoning',
+			cls: 'synapse-organize-reasoning synapse-review-box--organize',
 		});
 
 		// Action bar
@@ -805,10 +823,15 @@ export class UnifiedProposalView extends ItemView {
 	// ── Deep Dive Card ────────────────────────────────────────
 
 	private renderDeepDiveCard(container: HTMLElement, proposal: DeepDiveProposal): void {
-		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--deep-dive' });
+		const card = container.createDiv({
+			cls: `synapse-proposal-card ${cardClass('deep-dive')}`,
+		});
 
 		const badgeRow = card.createDiv({ cls: 'synapse-badge-row' });
-		badgeRow.createEl('span', { text: 'Deep dive', cls: 'synapse-badge synapse-badge--deep-dive' });
+		badgeRow.createEl('span', {
+			text: 'Deep dive',
+			cls: `synapse-badge ${badgeClass('deep-dive')}`,
+		});
 		badgeRow.createEl('span', {
 			text: `D${proposal.depth}`,
 			cls: 'synapse-depth-badge',
@@ -884,18 +907,18 @@ export class UnifiedProposalView extends ItemView {
 		const pathPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		pathPane.createEl('div', {
 			text: 'Proposed path',
-			cls: 'synapse-review-pane-label synapse-review-pane-label--deep-dive',
+			cls: `synapse-review-pane-label ${reviewPaneLabelClass('deep-dive')}`,
 		});
 		pathPane.createEl('p', {
 			text: proposal.proposedPath,
-			cls: 'synapse-organize-directory',
+			cls: 'synapse-organize-directory synapse-review-box--deep-dive',
 		});
 
 		// Content preview
 		const editorPane = contentEl.createDiv({ cls: 'synapse-review-pane' });
 		editorPane.createEl('div', {
 			text: 'Proposed content',
-			cls: 'synapse-review-pane-label synapse-review-pane-label--deep-dive',
+			cls: `synapse-review-pane-label ${reviewPaneLabelClass('deep-dive')}`,
 		});
 		const textarea = editorPane.createEl('textarea', { cls: 'synapse-review-editor synapse-review-editor--deep-dive' });
 		textarea.value = proposal.proposedContent;
@@ -926,9 +949,14 @@ export class UnifiedProposalView extends ItemView {
 	// ── Title Card ───────────────────────────────────────────
 
 	private renderTitleCard(container: HTMLElement, proposal: TitleProposal): void {
-		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--title' });
+		const card = container.createDiv({
+			cls: `synapse-proposal-card ${cardClass('title')}`,
+		});
 
-		card.createEl('span', { text: 'Title', cls: 'synapse-badge synapse-badge--title' });
+		card.createEl('span', {
+			text: 'Title',
+			cls: `synapse-badge ${badgeClass('title')}`,
+		});
 
 		const triggerLabel = proposal.trigger === 'untitled' ? 'Untitled note' : 'Content mismatch';
 		card.createEl('small', {
@@ -983,33 +1011,33 @@ export class UnifiedProposalView extends ItemView {
 		const currentPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		currentPane.createEl('div', {
 			text: 'Current title',
-			cls: 'synapse-review-pane-label synapse-review-pane-label--title',
+			cls: `synapse-review-pane-label ${reviewPaneLabelClass('title')}`,
 		});
 		currentPane.createEl('p', {
 			text: proposal.currentTitle,
-			cls: 'synapse-organize-directory',
+			cls: 'synapse-organize-directory synapse-review-box--title',
 		});
 
 		// Proposed title
 		const proposedPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		proposedPane.createEl('div', {
 			text: 'Proposed title',
-			cls: 'synapse-review-pane-label synapse-review-pane-label--title',
+			cls: `synapse-review-pane-label ${reviewPaneLabelClass('title')}`,
 		});
 		proposedPane.createEl('p', {
 			text: proposal.proposedTitle,
-			cls: 'synapse-organize-directory',
+			cls: 'synapse-organize-directory synapse-review-box--title',
 		});
 
 		// Reasoning
 		const reasonPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		reasonPane.createEl('div', {
 			text: 'Reasoning',
-			cls: 'synapse-review-pane-label synapse-review-pane-label--title',
+			cls: `synapse-review-pane-label ${reviewPaneLabelClass('title')}`,
 		});
 		reasonPane.createEl('p', {
 			text: proposal.reasoning,
-			cls: 'synapse-organize-reasoning',
+			cls: 'synapse-organize-reasoning synapse-review-box--title',
 		});
 
 		// Action bar
@@ -1029,9 +1057,14 @@ export class UnifiedProposalView extends ItemView {
 	// ── REM Card ─────────────────────────────────────────────
 
 	private renderRemCard(container: HTMLElement, proposal: RemProposal): void {
-		const card = container.createDiv({ cls: 'synapse-proposal-card synapse-card--rem' });
+		const card = container.createDiv({
+			cls: `synapse-proposal-card ${cardClass('rem')}`,
+		});
 
-		card.createEl('span', { text: 'REM', cls: 'synapse-badge synapse-badge--rem' });
+		card.createEl('span', {
+			text: 'REM',
+			cls: `synapse-badge ${badgeClass('rem')}`,
+		});
 
 		const { candidates } = proposal;
 		const parts: string[] = [];

@@ -1,5 +1,6 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type { CommandDefinition, FeatureKey } from '../commands';
+import { actionsGroupClass } from './proposal-styles';
 
 export const SYNAPSE_ACTIONS_VIEW_TYPE = 'synapse-actions';
 
@@ -93,7 +94,9 @@ export class SynapseActionsView extends ItemView {
 		const noteActive = this.callbacks.isNoteActive();
 
 		for (const { feature, actions: groupActions } of groupByFeature(actions)) {
-			const group = contentEl.createDiv({ cls: 'synapse-actions-group' });
+			const group = contentEl.createDiv({
+				cls: `synapse-actions-group ${actionsGroupClass(feature)}`,
+			});
 			group.createEl('div', {
 				text: FEATURE_LABELS[feature],
 				cls: 'synapse-actions-group-heading',

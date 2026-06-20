@@ -1,5 +1,52 @@
 /* Synapse plugin styles */
 
+/* ══════════════════════════════════════════════════════════════
+ * Action-type color tokens — SINGLE SOURCE OF TRUTH (#342)
+ *
+ * One semantic token per Synapse action type. EVERY action-type surface
+ * (cards, badges, review labels, checklist headings, callouts, actions-sidebar
+ * groups, modal accents) consumes these — no action-type hue is hardcoded
+ * anywhere else. Re-theming a type is a one-line edit here.
+ *
+ * Base tokens map to Obsidian's `--color-*` vars so they adapt to the active
+ * theme (and light/dark) automatically. The TypeScript guard in
+ * `src/views/proposal-styles.ts` (`Record<ProposalKind, string>`) fails the
+ * build if a proposal kind ever loses its token.
+ *
+ * Notes:
+ * - `elaboration` uses `--color-blue` (moved OFF `--interactive-accent` so it
+ *   no longer collides with the user's accent or the generic CTA buttons).
+ * - `tidy` intentionally shares organize's hue (sibling structural-cleanup
+ *   ops) but keeps its own token, so it can diverge with a one-line change.
+ * - `main` ("General") is neutral.
+ * ══════════════════════════════════════════════════════════════ */
+.theme-light,
+.theme-dark {
+  --synapse-color-elaboration: var(--color-blue);
+  --synapse-color-enrichment: var(--color-green);
+  --synapse-color-organize: var(--color-orange);
+  --synapse-color-deep-dive: var(--color-purple);
+  --synapse-color-title: var(--color-cyan);
+  --synapse-color-rem: var(--color-pink);
+  --synapse-color-summarize: var(--color-red);
+  --synapse-color-tidy: var(--color-orange);
+  --synapse-color-video: var(--color-yellow);
+  --synapse-color-main: var(--text-muted);
+
+  /*
+   * Callout tints take comma-separated RGB CHANNELS (not a color value), so
+   * these companion tokens carry literal channels aligned to each hue above.
+   * Only the types that render as callouts need an `-rgb` companion. Channels
+   * are fixed (theme vars are not channel-decomposable), matching how the
+   * callouts already worked; the low-opacity tint reads fine in light + dark.
+   */
+  --synapse-color-elaboration-rgb: 100, 160, 255;
+  --synapse-color-enrichment-rgb: 80, 180, 120;
+  --synapse-color-deep-dive-rgb: 160, 120, 220;
+  --synapse-color-summarize-rgb: 230, 110, 110;
+  --synapse-color-video-rgb: 220, 180, 70;
+}
+
 /*
  * Cap the height of embedded videos so portrait-oriented content
  * (TikTok, Instagram Reels, phone recordings) does not dominate the note.
@@ -66,28 +113,30 @@
   opacity: 0.95;
 }
 
+/* synapse-summary ↔ summarize feature */
 .callout[data-callout="synapse-summary"] {
-  --callout-color: 100, 160, 255;
+  --callout-color: var(--synapse-color-summarize-rgb);
   --callout-icon: lucide-file-text;
 }
 
+/* synapse-transcription ↔ video feature */
 .callout[data-callout="synapse-transcription"] {
-  --callout-color: 160, 120, 220;
+  --callout-color: var(--synapse-color-video-rgb);
   --callout-icon: lucide-mic;
 }
 
 .callout[data-callout="synapse-enrichment"] {
-  --callout-color: 80, 180, 120;
+  --callout-color: var(--synapse-color-enrichment-rgb);
   --callout-icon: lucide-link;
 }
 
 .callout[data-callout="synapse-elaboration"] {
-  --callout-color: 220, 160, 60;
+  --callout-color: var(--synapse-color-elaboration-rgb);
   --callout-icon: lucide-pen-tool;
 }
 
 .callout[data-callout="synapse-deep-dive"] {
-  --callout-color: 60, 180, 200;
+  --callout-color: var(--synapse-color-deep-dive-rgb);
   --callout-icon: lucide-layers;
 }
 
@@ -98,6 +147,18 @@
   gap: 8px;
   justify-content: flex-end;
   margin-top: 16px;
+}
+
+/* ── Modal type accents (#342) ──
+ * A type-colored underline beneath the modal title ties each detail modal to
+ * its action type, matching the sidebar card/badge for that type. */
+.synapse-elaboration-detail h2 {
+  border-bottom: 2px solid var(--synapse-color-elaboration);
+  padding-bottom: 6px;
+}
+.synapse-enrichment-detail h2 {
+  border-bottom: 2px solid var(--synapse-color-enrichment);
+  padding-bottom: 6px;
 }
 
 /* ── Proposal editor textarea ── */
@@ -526,13 +587,13 @@
   margin-top: auto;
 }
 .synapse-card--elaboration {
-  border-left-color: var(--interactive-accent);
+  border-left-color: var(--synapse-color-elaboration);
 }
 .synapse-card--enrichment {
-  border-left-color: var(--color-green);
+  border-left-color: var(--synapse-color-enrichment);
 }
 .synapse-card--organize {
-  border-left-color: var(--color-orange);
+  border-left-color: var(--synapse-color-organize);
 }
 .synapse-badge {
   display: inline-block;
@@ -547,15 +608,15 @@
   white-space: nowrap;
 }
 .synapse-badge--elaboration {
-  background: var(--interactive-accent);
+  background: var(--synapse-color-elaboration);
   color: var(--text-on-accent);
 }
 .synapse-badge--enrichment {
-  background: var(--color-green);
+  background: var(--synapse-color-enrichment);
   color: var(--text-on-accent);
 }
 .synapse-badge--organize {
-  background: var(--color-orange);
+  background: var(--synapse-color-organize);
   color: var(--text-on-accent);
 }
 .synapse-reasons {
@@ -689,9 +750,23 @@
   border-radius: 4px 4px 0 0;
 }
 .synapse-review-pane-label--elaboration {
-  background: var(--interactive-accent);
+  background: var(--synapse-color-elaboration);
   color: var(--text-on-accent);
 }
+.synapse-review-pane-label--enrichment {
+  background: var(--synapse-color-enrichment);
+  color: var(--text-on-accent);
+}
+.synapse-review-pane-label--rem {
+  background: var(--synapse-color-rem);
+  color: var(--text-on-accent);
+}
+/*
+ * Shared editor base — neutral structural border. The action-type hue is
+ * applied per editor via a `.synapse-review-editor--<type>` modifier so the
+ * editor matches its label/card (elaboration was previously hardcoded to
+ * `--interactive-accent`, colliding with the user's accent).
+ */
 .synapse-review-editor {
   flex: 1;
   padding: 8px;
@@ -699,16 +774,19 @@
   font-family: var(--font-monospace);
   line-height: 1.5;
   background: var(--background-primary);
-  border: 1px solid var(--interactive-accent);
+  border: 1px solid var(--background-modifier-border);
   border-top: none;
   border-radius: 0 0 4px 4px;
   resize: none;
   color: var(--text-normal);
   min-height: 120px;
 }
+.synapse-review-editor--elaboration {
+  border-color: var(--synapse-color-elaboration);
+}
 .synapse-review-editor:focus {
   outline: none;
-  border-color: var(--interactive-accent-hover);
+  border-color: var(--text-accent);
 }
 
 /* ── Enrichment Review (checklist) ── */
@@ -727,7 +805,7 @@
   letter-spacing: 0.5px;
   padding: 4px 8px;
   border-radius: 4px;
-  background: var(--color-green);
+  background: var(--synapse-color-enrichment);
   color: var(--text-on-accent);
   margin-bottom: 4px;
 }
@@ -755,10 +833,10 @@
 
 /* ── Deep Dive ── */
 .synapse-card--deep-dive {
-  border-left-color: var(--color-purple);
+  border-left-color: var(--synapse-color-deep-dive);
 }
 .synapse-badge--deep-dive {
-  background: var(--color-purple);
+  background: var(--synapse-color-deep-dive);
   color: var(--text-on-accent);
 }
 .synapse-badge-row {
@@ -788,32 +866,32 @@
   margin-bottom: 6px;
 }
 .synapse-review-pane-label--deep-dive {
-  background: var(--color-purple);
+  background: var(--synapse-color-deep-dive);
   color: var(--text-on-accent);
 }
 .synapse-review-editor--deep-dive {
-  border-color: var(--color-purple);
+  border-color: var(--synapse-color-deep-dive);
 }
 
 /* ── Title ── */
 .synapse-card--title {
-  border-left-color: var(--color-cyan);
+  border-left-color: var(--synapse-color-title);
 }
 .synapse-badge--title {
-  background: var(--color-cyan);
+  background: var(--synapse-color-title);
   color: var(--text-on-accent);
 }
 .synapse-review-pane-label--title {
-  background: var(--color-cyan);
+  background: var(--synapse-color-title);
   color: var(--text-on-accent);
 }
 
 /* ── REM ── */
 .synapse-card--rem {
-  border-left-color: var(--color-pink);
+  border-left-color: var(--synapse-color-rem);
 }
 .synapse-badge--rem {
-  background: var(--color-pink);
+  background: var(--synapse-color-rem);
   color: var(--text-on-accent);
 }
 .synapse-badge--rem-title {
@@ -868,12 +946,19 @@
 
 /* ── Organize Review ── */
 .synapse-review-pane-label--organize {
-  background: var(--color-orange);
+  background: var(--synapse-color-organize);
   color: var(--text-on-accent);
 }
 .synapse-organize-detail {
   margin-bottom: 12px;
 }
+/*
+ * `.synapse-organize-directory` / `.synapse-organize-reasoning` are the generic
+ * "detail box" styles, shared by the organize, deep-dive, and title reviews.
+ * The base border is neutral structural chrome; the action-type hue is applied
+ * per box via a `.synapse-review-box--<type>` modifier (below) so each review's
+ * box matches its label and card instead of all defaulting to one hue.
+ */
 .synapse-organize-directory {
   font-size: 14px;
   font-weight: 600;
@@ -881,7 +966,7 @@
   color: var(--text-normal);
   padding: 8px;
   background: var(--background-primary);
-  border: 1px solid var(--color-orange);
+  border: 1px solid var(--background-modifier-border);
   border-top: none;
   border-radius: 0 0 4px 4px;
   margin: 0;
@@ -892,10 +977,20 @@
   color: var(--text-normal);
   padding: 8px;
   background: var(--background-primary);
-  border: 1px solid var(--color-orange);
+  border: 1px solid var(--background-modifier-border);
   border-top: none;
   border-radius: 0 0 4px 4px;
   margin: 0;
+}
+/* Per-type accent for detail boxes — keeps each box on its own action token. */
+.synapse-review-box--organize {
+  border-color: var(--synapse-color-organize);
+}
+.synapse-review-box--deep-dive {
+  border-color: var(--synapse-color-deep-dive);
+}
+.synapse-review-box--title {
+  border-color: var(--synapse-color-title);
 }
 
 /* ── Checkpoint Banner ── */
@@ -1139,6 +1234,40 @@
   letter-spacing: 0.05em;
   color: var(--text-muted);
   margin: 8px 0 4px;
+  /*
+   * Subtle per-feature accent: a colored left marker on the group heading,
+   * driven by the same action-type tokens as the cards/badges. Per-feature
+   * overrides below recolor it; `main` keeps the neutral default.
+   */
+  padding-left: 8px;
+  border-left: 3px solid var(--synapse-color-main);
+}
+.synapse-actions-group--elaboration .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-elaboration);
+}
+.synapse-actions-group--enrichment .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-enrichment);
+}
+.synapse-actions-group--organize .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-organize);
+}
+.synapse-actions-group--deep-dive .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-deep-dive);
+}
+.synapse-actions-group--summarize .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-summarize);
+}
+.synapse-actions-group--tidy .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-tidy);
+}
+.synapse-actions-group--rem .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-rem);
+}
+.synapse-actions-group--video .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-video);
+}
+.synapse-actions-group--main .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-main);
 }
 .synapse-actions-button {
   display: block;
