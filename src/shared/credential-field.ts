@@ -2,9 +2,11 @@
 // a "Get an API key →" deep link, a "Test" button, and a live ✓/✗ status chip.
 //
 // The Test button is added to the Setting row (`setting.addButton`); the get-key
-// link and status chip render into the provided `container` (the section body) as
-// their own block. The chip is updated in place, never via a settings re-render,
-// so the password field keeps focus while the user types.
+// link and status chip render INSIDE the row's own `.setting-item` as a
+// full-width wrapping line (no longer a section-body sibling), so the helper
+// reflows independently of the row's name/control. The chip is updated in place,
+// never via a settings re-render, so the password field keeps focus while the
+// user types.
 
 import { Setting } from 'obsidian';
 import { PROVIDER_METADATA } from './provider-metadata';
@@ -15,12 +17,6 @@ import type { ValidationResult } from './credential-validator';
 export interface CredentialFieldOptions {
 	/** The key (or, for Ollama, endpoint) Setting row to decorate (gets the Test button). */
 	setting: Setting;
-	/**
-	 * The section body the row lives in. The get-key link + status chip render
-	 * here as their own block (right after the row) rather than inside the
-	 * `.setting-item`, so the chip reflows only its own block.
-	 */
-	container: HTMLElement;
 	provider: CredentialProvider;
 	/** Reads the current key value at click time (empty for keyless providers). */
 	getKey: () => string;
@@ -54,16 +50,18 @@ const STATE_CLASSES = ['is-valid', 'is-invalid', 'is-error', 'is-checking', 'is-
  * after the user edits the key.
  */
 export function decorateCredentialField(opts: CredentialFieldOptions): CredentialFieldHandle {
-	const { setting, container, provider, getKey, getEndpoint } = opts;
+	const { setting, provider, getKey, getEndpoint } = opts;
 	const validate = opts.validate ?? validateCredentials;
 	const meta = PROVIDER_METADATA[provider];
 
-	// Render the link + chip as their own block in the section body, right after
-	// the row — not inside the `.setting-item` — so the chip reflows only itself
-	// (mirrors the exclusion-chips UI). NB: the #335 freeze was NOT the chip's
+	// Render the link + chip INSIDE the row's own `.setting-item`, as a full-width
+	// wrapping line below the name/control — not as a section-body sibling — so the
+	// helper reflows only itself. The marker class lets CSS wrap the setting-item so
+	// the helper drops onto its own line. NB: the #335 freeze was NOT the chip's
 	// location; it was updating the chip inside the promise-resolution microtask
 	// after Test (see the Test onClick below for the root cause + fix).
-	const extras = container.createDiv({ cls: 'synapse-credential-extras' });
+	setting.settingEl.addClass('synapse-setting--has-helper');
+	const extras = setting.settingEl.createDiv({ cls: 'synapse-credential-extras' });
 
 	// "Get an API key →" deep link. Omitted for keyless providers (Ollama).
 	// An external anchor (like the About support links) so Obsidian hands it to

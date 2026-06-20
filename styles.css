@@ -1126,17 +1126,24 @@
 }
 
 /* ── Friendlier provider auth: get-key link + live validation (#335) ──
- * The "Get an API key →" deep link and the ✓/✗ status chip render as their own
- * block in the section body, just beneath the credential row (not inside the
- * `.setting-item`), so they wrap independently of the row. Colors use Obsidian
- * theme vars for light/dark compatibility. */
+ * The "Get an API key →" deep link and the ✓/✗ status chip render INSIDE the
+ * credential row's `.setting-item`, on their own full-width line beneath the
+ * name/control (the host `.setting-item` sets `flex-wrap: wrap`), so the helper
+ * still wraps independently of the row. Colors use Obsidian theme vars for
+ * light/dark compatibility. */
 .synapse-credential-extras {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 14px;
-  margin: -2px 0 10px;
+  flex-basis: 100%;
+  margin-top: 4px;
   font-size: var(--font-ui-smaller);
+}
+/* Lets a nested full-width helper (credential extras / exclusion chips) drop onto
+ * its own line below the row's name + control instead of overflowing the flex row. */
+.setting-item.synapse-setting--has-helper {
+  flex-wrap: wrap;
 }
 .synapse-get-key-link {
   font-size: var(--font-ui-smaller);
@@ -1162,14 +1169,17 @@
 
 /* ── Exclusions: feature scope chips (#328) ──
  * A compact, wrapping row of removable chips (the rule's blocked features) plus
- * an inline "add" dropdown, replacing the per-feature toggle grid. Rendered just
- * below each exclusion rule and each add-folder/add-pattern row. */
+ * an inline "add" dropdown, replacing the per-feature toggle grid. Rendered
+ * INSIDE each exclusion rule / add-folder / add-pattern `.setting-item`, on its
+ * own full-width line beneath the row (the host sets `flex-wrap: wrap`), so it
+ * still wraps independently. */
 .synapse-exclusion-chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 4px 0 8px 24px;
+  flex-basis: 100%;
+  padding: 4px 0 8px;
 }
 .synapse-chip {
   display: inline-flex;

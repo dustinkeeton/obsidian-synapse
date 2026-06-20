@@ -209,6 +209,25 @@ describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
 	const chipLabels = (container: any): string[] =>
 		elsWithClass(container, 'synapse-chip-label').map((e) => e.textContent);
 
+	/**
+	 * Every chip container must be nested directly inside a `.setting-item` host
+	 * that carries `synapse-setting--has-helper` (the #347 nesting). We assert it
+	 * structurally: find a host with both classes whose direct children include
+	 * the chip div.
+	 */
+	function assertChipsNestedInSettingItem(tab: SynapseSettingTab): void {
+		const containerEl = (tab as unknown as { containerEl: any }).containerEl;
+		const hosts = walkEls(containerEl).filter(
+			(e) =>
+				e.classList?.contains('setting-item') &&
+				e.classList?.contains('synapse-setting--has-helper'),
+		);
+		for (const chip of chipContainers(tab)) {
+			const host = hosts.find((h) => h.children.includes(chip));
+			expect(host).toBeDefined();
+		}
+	}
+
 	it('renders one removable chip per scoped feature, ordered by FEATURE_ORDER', () => {
 		const { tab } = makeTab((s) => {
 			s.exclusions = [{ pattern: 'Archive/**', features: ['organize', 'summarize'] }];
@@ -218,6 +237,8 @@ describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
 		const containers = chipContainers(tab);
 		expect(containers).toHaveLength(3); // rule + add-folder + add-pattern
 		expect(chipLabels(containers[0])).toEqual(['Summarize', 'Organize']);
+		// #347: each chip list now lives inside its owning `.setting-item`.
+		assertChipsNestedInSettingItem(tab);
 	});
 
 	it("renders a single 'All features' chip for an all-scoped rule", () => {
@@ -267,5 +288,7 @@ describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
 		const containers = chipContainers(tab);
 		expect(containers).toHaveLength(2);
 		for (const c of containers) expect(chipLabels(c)).toEqual(['All features']);
+		// #347: the add-folder / add-pattern chip lists nest inside their `.setting-item`.
+		assertChipsNestedInSettingItem(tab);
 	});
 });

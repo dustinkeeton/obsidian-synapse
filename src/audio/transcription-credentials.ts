@@ -58,7 +58,7 @@ export function renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsS
 				text.inputEl.type = 'password';
 				text.inputEl.autocomplete = 'off';
 			});
-		handle = decorateCredentialField({ setting, container: body, provider, getKey: read });
+		handle = decorateCredentialField({ setting, provider, getKey: read });
 	};
 
 	const providerSetting = new Setting(body)
