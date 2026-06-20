@@ -1111,3 +1111,42 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* ══════════════════════════════════════════════════════════════
+ * Synapse actions sidebar (#289)
+ * Registry-driven action buttons, grouped by feature. Buttons are
+ * sized for touch so mobile users reach key functions in <=2 taps.
+ * ══════════════════════════════════════════════════════════════ */
+.synapse-actions-view-root {
+  padding: 0 8px;
+}
+.synapse-actions-group {
+  margin-bottom: 12px;
+}
+.synapse-actions-group-heading {
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 8px 0 4px;
+}
+.synapse-actions-button {
+  display: block;
+  width: 100%;
+  min-height: 44px; /* comfortable touch target (iOS/Material guidance) */
+  margin: 4px 0;
+  padding: 8px 12px;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+.synapse-actions-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.synapse-actions-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px;
+}

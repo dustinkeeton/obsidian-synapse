@@ -14,6 +14,7 @@
 export type {
 	CommandStatus,
 	CommandFlow,
+	CommandContext,
 	FeatureKey,
 	CommandDefinition,
 } from './types';
@@ -26,5 +27,6 @@ export {
 	isPipelineKeyInFlow,
 } from './registry';
 
+export { listPaletteActions } from './actions';
 export { CommandRegistrar } from './registrar';
 export { auditCommands } from './audit';
