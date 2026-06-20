@@ -55,6 +55,14 @@ export interface CommandDefinition {
 	/** Runtime environment the command needs (drives per-note gating in the actions sidebar). */
 	context: CommandContext;
 	/**
+	 * Registered glyph name (Obsidian `addIcon` id) overriding the command's
+	 * feature-default icon. Used for the heterogeneous General/`main` actions,
+	 * which bundle dissimilar operations and so don't share one feature glyph.
+	 * Resolution lives in `resolveActionIcon` (`./icons`); omit to inherit
+	 * `FEATURE_ICONS[feature]`.
+	 */
+	icon?: string;
+	/**
 	 * Links a command to a Fire Synapse pipeline phase (matches a `PipelineModuleKey`).
 	 * Typed as `string` deliberately so `src/commands/` never imports from `src/pipeline/`
 	 * (which imports back from here) — avoids a module cycle. The registry test

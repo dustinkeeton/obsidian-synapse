@@ -436,6 +436,13 @@ export class SliderComponent {
 /** Registers a custom icon by id (real Obsidian: addIcon(id, svgContent)). */
 export const addIcon = vi.fn();
 
+/**
+ * Sets an element's content to a registered icon's <svg> (real Obsidian:
+ * setIcon(el, iconId)). No-op here — callers that need the icon assertable in
+ * tests should also stamp a `data-icon` attribute on the element.
+ */
+export const setIcon = vi.fn();
+
 export function normalizePath(path: string): string {
 	return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 }

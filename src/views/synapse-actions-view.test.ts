@@ -10,10 +10,15 @@ function mockLeaf(): any {
 	return { view: {} };
 }
 
-/** A small, representative action set spanning two features and all contexts. */
+/**
+ * A small, representative action set spanning two features and all contexts.
+ * `review-proposals` carries the same explicit `icon` override the real registry
+ * gives it (used for the command palette; the sidebar shows the per-feature glyph
+ * on the group heading, not per action).
+ */
 function sampleActions(): CommandDefinition[] {
 	return [
-		{ id: 'review-proposals', name: 'Open proposal review sidebar', feature: 'main', status: 'active', flows: ['palette'], context: 'global' },
+		{ id: 'review-proposals', name: 'Open proposal review sidebar', feature: 'main', status: 'active', flows: ['palette'], context: 'global', icon: 'synapse' },
 		{ id: 'enrich-current-note', name: 'Enrich current note', feature: 'enrichment', status: 'active', flows: ['palette'], context: 'note' },
 		{ id: 'scan-vault-enrichment', name: 'Scan vault for enrichment', feature: 'enrichment', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault' },
 	];
@@ -46,12 +51,30 @@ function buttons(el: any): any[] {
 	return out;
 }
 
+/** Find the action <button> whose text reads `label`. */
+function findButton(el: any, label: string): any {
+	return buttons(el).find((b) => b.textContent === label);
+}
+
 /** Recursively collect text of all descendants carrying `cls`. */
 function textsByClass(el: any, cls: string): string[] {
 	const out: string[] = [];
 	const walk = (node: any) => {
 		for (const child of node.children ?? []) {
 			if (child.classList?.contains?.(cls)) out.push(child.textContent);
+			walk(child);
+		}
+	};
+	walk(el);
+	return out;
+}
+
+/** The resolved glyph names stamped on each group heading icon (`data-icon`), in order. */
+function groupIcons(el: any): (string | null)[] {
+	const out: (string | null)[] = [];
+	const walk = (node: any) => {
+		for (const child of node.children ?? []) {
+			if (child.classList?.contains?.('synapse-actions-group-icon')) out.push(child.getAttribute('data-icon'));
 			walk(child);
 		}
 	};
@@ -77,10 +100,18 @@ describe('SynapseActionsView', () => {
 		]);
 	});
 
+	it('prefixes each group heading with its per-feature glyph (one per type, not per action)', async () => {
+		const { view, contentEl } = makeView();
+		await view.onOpen();
+		// Headings carry the feature default glyph (FEATURE_ICONS[feature]); the
+		// per-action `icon` override is for the palette, not the sidebar.
+		expect(groupIcons(contentEl)).toEqual(['synapse-main', 'synapse-enrichment']);
+	});
+
 	it('groups actions under sentence-case feature headings in registry order', async () => {
 		const { view, contentEl } = makeView();
 		await view.onOpen();
-		expect(textsByClass(contentEl, 'synapse-actions-group-heading')).toEqual([
+		expect(textsByClass(contentEl, 'synapse-actions-group-label')).toEqual([
 			'General',
 			'Enrichment',
 		]);
@@ -91,7 +122,7 @@ describe('SynapseActionsView', () => {
 		const { view, contentEl } = makeView({ isNoteActive: () => false, runAction });
 		await view.onOpen();
 
-		const noteButton = buttons(contentEl).find((b) => b.textContent === 'Enrich current note');
+		const noteButton = findButton(contentEl, 'Enrich current note');
 		expect(noteButton.disabled).toBe(true);
 		// A disabled button has no handler, so dispatching a click is a no-op.
 		noteButton.dispatchEvent({ type: 'click' });
@@ -103,7 +134,7 @@ describe('SynapseActionsView', () => {
 		const { view, contentEl } = makeView({ isNoteActive: () => false, runAction });
 		await view.onOpen();
 
-		const vaultButton = buttons(contentEl).find((b) => b.textContent === 'Scan vault for enrichment');
+		const vaultButton = findButton(contentEl, 'Scan vault for enrichment');
 		expect(vaultButton.disabled).toBeFalsy();
 		vaultButton.dispatchEvent({ type: 'click' });
 		expect(runAction).toHaveBeenCalledWith('scan-vault-enrichment');
@@ -114,7 +145,7 @@ describe('SynapseActionsView', () => {
 		const { view, contentEl } = makeView({ isNoteActive: () => true, runAction });
 		await view.onOpen();
 
-		buttons(contentEl).find((b) => b.textContent === 'Enrich current note').dispatchEvent({ type: 'click' });
+		findButton(contentEl, 'Enrich current note').dispatchEvent({ type: 'click' });
 		expect(runAction).toHaveBeenCalledWith('enrich-current-note');
 	});
 
@@ -122,11 +153,11 @@ describe('SynapseActionsView', () => {
 		let noteActive = false;
 		const { view, contentEl } = makeView({ isNoteActive: () => noteActive });
 		await view.onOpen();
-		expect(buttons(contentEl).find((b) => b.textContent === 'Enrich current note').disabled).toBe(true);
+		expect(findButton(contentEl, 'Enrich current note').disabled).toBe(true);
 
 		noteActive = true;
 		view.refresh();
-		expect(buttons(contentEl).find((b) => b.textContent === 'Enrich current note').disabled).toBeFalsy();
+		expect(findButton(contentEl, 'Enrich current note').disabled).toBeFalsy();
 	});
 
 	it('shows an empty-state message and no buttons when nothing is registered', async () => {

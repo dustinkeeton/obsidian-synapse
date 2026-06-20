@@ -5,6 +5,16 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- On-brand icons for every action in the Synapse Actions sidebar and command palette, tinted by feature
+
+### Changed
+
+- Redesigned all three ribbon icons (review proposals, transcribe media, Synapse actions) as bespoke, on-brand marks
+
 ## [1.0.4] - 2026-06-20
 
 ### Added
