@@ -41,7 +41,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes | `OrganizeModule`, types |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
 | title | `src/title/` | AI title suggestions for untitled/mismatched notes | `TitleModule`, types |
-| shared | `src/shared/` | AI client (multi-modal), file utils, validation, notifications, callouts, frontmatter, checkpoints | `AIClient`, `NotificationManager`, `CheckpointManager`, file/validation utils, callout registry, id-utils |
+| shared | `src/shared/` | AI client (multi-modal), file utils, validation, notifications, callouts, frontmatter, checkpoints, credential metadata + validation | `AIClient`, `NotificationManager`, `CheckpointManager`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, file/validation utils, callout registry, id-utils |
 | views | `src/views/` | Unified proposal/checkpoint sidebar + registry-driven Synapse actions sidebar | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `SynapseActionsView`, `SYNAPSE_ACTIONS_VIEW_TYPE` |
 
 ## Dependency Graph
@@ -452,6 +452,7 @@ Framework: Vitest, globals enabled, node environment.
 - Paths validated via `sanitizePath()` (rejects `..`, null bytes, shell metacharacters)
 - AI output sanitized via `sanitizeAIResponse()` before vault writes
 - Secret redaction centralized in `shared/redact.ts` (`redactSecrets`); both `ai-client.ts` (upstream error bodies) and `api-utils.ts:notifyError` (user/console errors) route through it — single source of truth, re-exported from `ai-client` and the `shared` barrel. Covers `sk-`/`sk-ant-`, `key-`, Deepgram `dg-`, `Bearer `/`Token ` headers, `anthropic-`, and Google `AIza` keys
+- Credential validation (`shared/credential-validator.ts`, `validateCredentials`) probes each provider with a single minimal GET (probe specs in `shared/provider-metadata.ts`); every result message routes through `redactSecrets`, so a key echoed in a 401/400 body cannot reach the status chip. One-shot (no retry), 10s timeout, `throw:false`. Validation state is ephemeral (never persisted to settings)
 - Multipart transcription bodies (`audio/transcriber.ts:buildMultipartBody`) sanitize vault-/settings-derived field names and file names via `sanitizeMultipartHeaderValue` (strips CR/LF, replaces `"`/`\` with `_`) to block `Content-Disposition` header / multipart injection
 - Gemini audio transcription places its instruction in `system_instruction` (not the user turn beside the audio) so speech inside untrusted audio cannot override the prompt (prompt-injection hardening)
 - Ollama endpoint: HTTPS required (HTTP for localhost only)

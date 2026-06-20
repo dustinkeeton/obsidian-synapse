@@ -146,6 +146,14 @@ Open **Settings > Synapse** to configure the plugin. All features can be individ
 | Model | AI model for the selected provider | GPT-4o |
 | Temperature | Controls randomness (0 = deterministic, 1 = creative) | 0.7 |
 
+Each API-key field carries a **Get an API key →** link to the right provider's console and a
+**Test** button that makes a minimal authenticated request and reports **✓ Connected** or
+**✗ Invalid key** inline -- so you can confirm a key works before running a feature, instead of
+discovering a typo later. The same helpers appear on the per-provider transcription key fields, and
+Ollama's endpoint gets a reachability **Test**. Keys are still entered manually: a one-click OAuth
+"connect" flow isn't offered because the major providers don't support third-party API access that
+way (see DECISIONS.md).
+
 ### Elaboration
 
 | Setting | Description | Default |

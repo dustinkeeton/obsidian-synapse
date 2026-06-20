@@ -1020,6 +1020,42 @@
   font-weight: var(--font-semibold);
 }
 
+/* ── Friendlier provider auth: get-key link + live validation (#335) ──
+ * The "Get an API key →" deep link and the ✓/✗ status chip render as their own
+ * block in the section body, just beneath the credential row — NOT inside the
+ * `.setting-item`. Mutating a child of the settings flex row forces a pathological
+ * relayout that can freeze the app, so this block stands on its own and reflows
+ * only itself. Colors use Obsidian theme vars for light/dark compatibility. */
+.synapse-credential-extras {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: -2px 0 10px;
+  font-size: var(--font-ui-smaller);
+}
+.synapse-get-key-link {
+  font-size: var(--font-ui-smaller);
+}
+.synapse-credential-chip {
+  min-height: 1em;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+.synapse-credential-chip.is-valid {
+  color: var(--text-success);
+}
+.synapse-credential-chip.is-invalid {
+  color: var(--text-error);
+}
+.synapse-credential-chip.is-error {
+  color: var(--text-warning);
+}
+.synapse-credential-chip.is-checking,
+.synapse-credential-chip.is-hint {
+  color: var(--text-muted);
+}
+
 /* ── Exclusions: feature scope chips (#328) ──
  * A compact, wrapping row of removable chips (the rule's blocked features) plus
  * an inline "add" dropdown, replacing the per-feature toggle grid. Rendered just

@@ -8,8 +8,16 @@ import {
 	FolderPickerModal,
 	ALL_FEATURE_IDS,
 	renderFeatureChipSelect,
+	PROVIDER_METADATA,
+	aiProviderToCredential,
+	decorateCredentialField,
 } from './shared';
-import type { SettingsSectionContext, FeatureId, ExclusionRule } from './shared';
+import type {
+	SettingsSectionContext,
+	FeatureId,
+	ExclusionRule,
+	CredentialFieldHandle,
+} from './shared';
 import { PROPOSAL_KINDS } from './views';
 import type { ProposalKind } from './views';
 import { renderElaborationSettings } from './elaboration';
@@ -254,28 +262,49 @@ export class SynapseSettingTab extends PluginSettingTab {
 		// applyApiKeyEmphasis so a brand-new user sees the one field that gates
 		// every AI feature highlighted until they fill it (#89). Toggled live as
 		// they type — no full re-render, so the field keeps focus.
+		//
+		// The placeholder + guided "Get a key"/"Test" affordances are per-provider
+		// (#335), resolved from PROVIDER_METADATA. The provider dropdown above
+		// re-renders the whole tab, so these refresh automatically on switch.
+		const cred = aiProviderToCredential(this.plugin.settings.ai.provider);
+		const keyMeta = PROVIDER_METADATA[cred];
+		let credentialField: CredentialFieldHandle | undefined;
 		const apiKeySetting = new Setting(aiBody)
 			.setName('API key')
 			.addText((text) => {
 				text
-					.setPlaceholder('sk-...')
+					.setPlaceholder(keyMeta.requiresKey ? keyMeta.placeholder : 'sk-...')
 					.setValue(this.plugin.settings.ai.apiKey)
 					.onChange(async (value) => {
 						this.plugin.settings.ai.apiKey = value;
 						await this.plugin.saveSettings();
 						applyApiKeyEmphasis(apiKeySetting, this.plugin.settings);
+						// Clear a stale ✓/✗ — the key just changed and is unverified.
+						credentialField?.reset();
 					});
 				text.inputEl.type = 'password';
 				text.inputEl.autocomplete = 'off';
 			});
 		applyApiKeyEmphasis(apiKeySetting, this.plugin.settings);
+		// Hosted providers get the guided link + live Test on the shared key.
+		// Ollama needs no key — its endpoint gets its own reachability test below.
+		if (keyMeta.requiresKey) {
+			credentialField = decorateCredentialField({
+				setting: apiKeySetting,
+				container: aiBody,
+				provider: cred,
+				getKey: () => this.plugin.settings.ai.apiKey,
+			});
+		}
 
 		if (this.plugin.settings.ai.provider === 'ollama') {
-			new Setting(aiBody)
+			let ollamaField: CredentialFieldHandle | undefined;
+			const endpointSetting = new Setting(aiBody)
 				.setName('Ollama endpoint')
 				.setDesc('URL for local Ollama server (HTTPS required for non-localhost)')
 				.addText((text) =>
 					text
+						.setPlaceholder(PROVIDER_METADATA.ollama.placeholder)
 						.setValue(this.plugin.settings.ai.ollamaEndpoint)
 						.onChange(async (value) => {
 							// Validate endpoint URL before saving
@@ -290,8 +319,17 @@ export class SynapseSettingTab extends PluginSettingTab {
 							}
 							this.plugin.settings.ai.ollamaEndpoint = value;
 							await this.plugin.saveSettings();
+							ollamaField?.reset();
 						})
 				);
+			// Reachability test (no key) against {endpoint}/api/tags.
+			ollamaField = decorateCredentialField({
+				setting: endpointSetting,
+				container: aiBody,
+				provider: 'ollama',
+				getKey: () => '',
+				getEndpoint: () => this.plugin.settings.ai.ollamaEndpoint,
+			});
 		}
 
 		// Transcription provider + its provider-specific API-key fields (#332).

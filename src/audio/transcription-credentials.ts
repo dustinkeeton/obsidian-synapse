@@ -1,5 +1,7 @@
 import { Setting } from 'obsidian';
 import type { SettingsSectionContext } from '../shared/settings-section';
+import { PROVIDER_METADATA, decorateCredentialField } from '../shared';
+import type { CredentialProvider, CredentialFieldHandle } from '../shared';
 import { GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 
 /**
@@ -28,6 +30,37 @@ const providerOptions: Record<string, string> = {
  */
 export function renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext): void {
 	const { plugin } = ctx;
+
+	/**
+	 * Render a provider-specific transcription key field with a per-provider
+	 * placeholder plus the guided "Get a key"/"Test"/status-chip affordances
+	 * (#335). The chip resets on edit so a stale ✓/✗ never lingers.
+	 */
+	const addKeyField = (
+		name: string,
+		desc: string,
+		provider: CredentialProvider,
+		read: () => string,
+		write: (value: string) => void,
+	): void => {
+		let handle: CredentialFieldHandle | undefined;
+		const setting = new Setting(body)
+			.setName(name)
+			.setDesc(desc)
+			.addText((text) => {
+				text
+					.setPlaceholder(PROVIDER_METADATA[provider].placeholder)
+					.setValue(read())
+					.onChange(async (value) => {
+						write(value);
+						await plugin.saveSettings();
+						handle?.reset();
+					});
+				text.inputEl.type = 'password';
+				text.inputEl.autocomplete = 'off';
+			});
+		handle = decorateCredentialField({ setting, container: body, provider, getKey: read });
+	};
 
 	const providerSetting = new Setting(body)
 		.setName('Transcription provider')
@@ -58,24 +91,15 @@ export function renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsS
 		plugin.settings.audio.transcriptionProvider === 'whisper-api' &&
 		plugin.settings.ai.provider !== 'openai'
 	) {
-		new Setting(body)
-			.setName('OpenAI API key (Whisper)')
-			.setDesc(
-				'Whisper uses the OpenAI API. Provide your OpenAI key here since your AI provider is set to ' +
+		addKeyField(
+			'OpenAI API key (Whisper)',
+			'Whisper uses the OpenAI API. Provide your OpenAI key here since your AI provider is set to ' +
 				plugin.settings.ai.provider.charAt(0).toUpperCase() +
-				plugin.settings.ai.provider.slice(1) + '.'
-			)
-			.addText((text) => {
-				text
-					.setPlaceholder('sk-...')
-					.setValue(plugin.settings.audio.whisperApiKey)
-					.onChange(async (value) => {
-						plugin.settings.audio.whisperApiKey = value;
-						await plugin.saveSettings();
-					});
-				text.inputEl.type = 'password';
-				text.inputEl.autocomplete = 'off';
-			});
+				plugin.settings.ai.provider.slice(1) + '.',
+			'openai',
+			() => plugin.settings.audio.whisperApiKey,
+			(value) => { plugin.settings.audio.whisperApiKey = value; },
+		);
 	}
 
 	// Show Gemini API key field when provider is gemini and AI provider isn't Gemini
@@ -84,40 +108,24 @@ export function renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsS
 		plugin.settings.audio.transcriptionProvider === 'gemini' &&
 		plugin.settings.ai.provider !== 'gemini'
 	) {
-		new Setting(body)
-			.setName('Google Gemini API key')
-			.setDesc(
-				'Gemini transcription uses the Google AI API. Provide your Gemini key here since your AI provider is set to ' +
+		addKeyField(
+			'Google Gemini API key',
+			'Gemini transcription uses the Google AI API. Provide your Gemini key here since your AI provider is set to ' +
 				plugin.settings.ai.provider.charAt(0).toUpperCase() +
-				plugin.settings.ai.provider.slice(1) + '.'
-			)
-			.addText((text) => {
-				text
-					.setPlaceholder('AIza...')
-					.setValue(plugin.settings.audio.geminiApiKey)
-					.onChange(async (value) => {
-						plugin.settings.audio.geminiApiKey = value;
-						await plugin.saveSettings();
-					});
-				text.inputEl.type = 'password';
-				text.inputEl.autocomplete = 'off';
-			});
+				plugin.settings.ai.provider.slice(1) + '.',
+			'gemini',
+			() => plugin.settings.audio.geminiApiKey,
+			(value) => { plugin.settings.audio.geminiApiKey = value; },
+		);
 	}
 
 	if (plugin.settings.audio.transcriptionProvider === 'deepgram') {
-		new Setting(body)
-			.setName('Deepgram API key')
-			.setDesc('Required for Deepgram transcription provider')
-			.addText((text) => {
-				text
-					.setPlaceholder('dg-...')
-					.setValue(plugin.settings.audio.deepgramApiKey)
-					.onChange(async (value) => {
-						plugin.settings.audio.deepgramApiKey = value;
-						await plugin.saveSettings();
-					});
-				text.inputEl.type = 'password';
-				text.inputEl.autocomplete = 'off';
-			});
+		addKeyField(
+			'Deepgram API key',
+			'Required for Deepgram transcription provider',
+			'deepgram',
+			() => plugin.settings.audio.deepgramApiKey,
+			(value) => { plugin.settings.audio.deepgramApiKey = value; },
+		);
 	}
 }

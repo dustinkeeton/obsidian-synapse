@@ -4,6 +4,22 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-16: Guided key onboarding + live validation (OAuth deferred)
+
+**Context**: Every AI/transcription provider was configured by pasting a raw API key into a password field with no validation. A typo, wrong-provider, or expired key failed *silently* and only surfaced later when an elaboration/transcription operation errored out — the single biggest onboarding-friction point. The original ask (#335) was an OAuth/OIDC "click to connect your provider" button to replace keys.
+
+**Decision**: Ship the achievable friendlier-auth win that works for **all** providers today — guided key acquisition + live validation — and defer OAuth. Concretely: a per-provider metadata map (`shared/provider-metadata.ts`: console get-key URL, placeholder/format hint, probe spec), a pure `validateCredentials()` checker (`shared/credential-validator.ts`) that fires one minimal authenticated GET and returns a redacted ✓/✗ result, and a reusable settings decorator (`shared/credential-field.ts`: "Get an API key →" link + "Test" button + inline status chip) applied to the shared AI key, the per-provider transcription keys, and the Ollama endpoint. Validation logic lives in pure modules (not UI callbacks) because the Obsidian test mock no-ops `Setting.addText`; the chip attaches to `settingEl` (the only element the mock exposes) and updates in place so the field keeps focus. Validation state is ephemeral — never persisted to settings.
+
+**Why not OAuth (as of June 2026)**: third-party use of Anthropic subscription OAuth tokens is **banned** by ToS (2026-02-19) — `sk-ant-oat…` is rejected by the Messages API; OpenAI "Sign in with ChatGPT" is **identity-only** and grants no general API access; Google Gemini OAuth is viable only via **Vertex AI** (needs a GCP project + billing). Building a "connect" button for the first two would be a dead end or a ToS violation, so a friendlier *key* UX serves all providers without that risk. An OAuth "Connect" spike for Google/Vertex (via `registerObsidianProtocolHandler` + PKCE) remains a deferred stretch goal.
+
+**Alternatives considered**:
+- **OAuth "Connect" button now** — rejected. Not viable for our main providers (above); would either fail or violate ToS.
+- **Persist validation state to settings** (e.g. `ai.keyValid`) — rejected. A stored "valid" flag goes stale the moment a key rotates or expires; the chip is a point-in-time live check, so keep it ephemeral and leave the settings schema (and `version-bump --check`) untouched.
+- **Validate inside the settings `onChange`/UI callback** — rejected. The Obsidian test mock no-ops `addText`, so any behavior there is unreachable by unit tests; the probe lives in a pure module instead.
+- **Retry the probe** (reuse `withRetry`) — rejected for the probe path. A "Test" click should report immediately; retrying would make a wrong key take seconds.
+
+---
+
 ## 2026-06-11: Canonical secret-redaction module (`shared/redact.ts`)
 
 **Context**: Two code paths scrubbed API keys/tokens out of strings before they could reach a user-facing Notice, an error message, an echoed-back upstream error body, or the console: the AI client (`ai-client.ts`) and `notifyError` (`api-utils.ts`). Each kept its *own* inline copy of the redaction regex, and the two had drifted — the `notifyError` copy was missing the Google `AIza…` (Gemini) pattern. A leaked Gemini key surfaced through `notifyError` would have been shown to the user verbatim.

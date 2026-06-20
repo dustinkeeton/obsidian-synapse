@@ -275,13 +275,28 @@ export class ToggleComponent {
  * `onClick`) the settings UI uses. `_click()` is a test helper to fire onClick.
  */
 export class ButtonComponent {
+	/** Test helper: every instance ever constructed (clear between tests). */
+	static instances: ButtonComponent[] = [];
 	private clickCb: (() => unknown) | undefined;
+	/** Last text set via setButtonText — lets tests locate a specific button. */
+	buttonText = '';
+	/** Last disabled state set via setDisabled. */
+	disabled = false;
+	constructor() {
+		ButtonComponent.instances.push(this);
+	}
 	setIcon = vi.fn().mockReturnThis();
-	setButtonText = vi.fn().mockReturnThis();
+	setButtonText = vi.fn((t: string) => {
+		this.buttonText = t;
+		return this;
+	});
 	setTooltip = vi.fn().mockReturnThis();
 	setCta = vi.fn().mockReturnThis();
 	setWarning = vi.fn().mockReturnThis();
-	setDisabled = vi.fn().mockReturnThis();
+	setDisabled = vi.fn((d: boolean) => {
+		this.disabled = d;
+		return this;
+	});
 	onClick = vi.fn((cb: () => unknown) => {
 		this.clickCb = cb;
 		return this;
