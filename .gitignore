@@ -3,12 +3,24 @@ main.js
 *.js.map
 dist/
 data.json
+data.json.*
 .env
 .env.*
 .synapse/
 .auto-notes/
 *.bak
 *.tmp
+
+# Secrets / credentials (defense-in-depth: keys live only in Obsidian's
+# saveData() / data.json, never committed; these patterns stop any stray
+# credential file from being staged accidentally)
+secrets.json
+credentials.json
+*.secret
+*.pem
+*.key
+*.p12
+*.pfx
 .DS_Store
 coverage/
 .obsidian/

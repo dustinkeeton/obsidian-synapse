@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-08
+last-updated: 2026-06-19
 ---
 
 # Commands Module
@@ -14,17 +14,22 @@ Exported from `index.ts`:
 // types.ts
 type CommandStatus = 'active' | 'deprecated' | 'disabled'   // only 'active' registers/runs
 type CommandFlow = 'palette' | 'fire-synapse' | 'startup'
+type CommandContext = 'note' | 'vault' | 'global'           // runtime env; drives per-note gating in actions sidebar
 type FeatureKey = 'main' | 'elaboration' | 'enrichment' | 'organize' | 'deep-dive'
                 | 'summarize' | 'tidy' | 'rem' | 'video'
 interface CommandDefinition {
-  id: string                       // Obsidian command id, e.g. 'synapse:scan-vault'
+  id: string                       // command id WITHOUT plugin prefix, e.g. 'scan-vault' (Obsidian prepends -> 'synapse:scan-vault')
   name: string                     // palette display name
   feature: FeatureKey
   status: CommandStatus
   flows: readonly CommandFlow[]
+  context: CommandContext          // required: 'note' | 'vault' | 'global'
   pipelineKey?: string             // links to a PipelineModuleKey; typed string to avoid pipeline import cycle
   note?: string
 }
+
+// actions.ts
+function listPaletteActions(registered: ReadonlySet<string>): CommandDefinition[]   // registry entries whose id passed the full register() gate, in registry order
 
 // registry.ts
 const COMMAND_REGISTRY: readonly CommandDefinition[]
@@ -49,11 +54,12 @@ function auditCommands(attempted: ReadonlySet<string>): string[]   // drift warn
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `types.ts` | `CommandStatus`, `CommandFlow`, `FeatureKey`, `CommandDefinition` | Registry type model |
+| `types.ts` | `CommandStatus`, `CommandFlow`, `CommandContext`, `FeatureKey`, `CommandDefinition` | Registry type model |
 | `registry.ts` | `COMMAND_REGISTRY`, `REGISTRY_BY_ID`, `REGISTRY_BY_PIPELINE_KEY`, `isInFlow`, `isPipelineKeyInFlow`, `buildPipelineKeyMap` | Source-of-truth registry + flow gates |
 | `registrar.ts` | `CommandRegistrar` | Single wiring point to `plugin.addCommand`; gates by status + palette flow + userEnabled |
+| `actions.ts` | `listPaletteActions` | Derives the Synapse actions sidebar's button list from the registry + `getRegistered()` (no hand-maintained list) |
 | `audit.ts` | `auditCommands` | Drift detection between registry and wired handlers |
-| `registry.test.ts`, `registrar.test.ts`, `audit.test.ts` | Tests | |
+| `registry.test.ts`, `registrar.test.ts`, `actions.test.ts`, `audit.test.ts` | Tests | |
 | `index.ts` | re-exports | Barrel |
 
 ## Registration Gate
@@ -94,6 +100,8 @@ Run once at the end of `main.ts` `onload()` and reused by `registry`/`audit` tes
 | `isPipelineKeyInFlow` | `pipeline/synapse-runner.ts` |
 | `isInFlow` | `elaboration/index.ts` (startup flow gating) |
 | `auditCommands` | `main.ts` (end of onload) |
+| `listPaletteActions` | `main.ts` (Synapse actions sidebar factory) -> rendered by `views/synapse-actions-view.ts` |
+| `context` field | `views/synapse-actions-view.ts` (disables `note` buttons when no markdown note is active); `main.runCommand` re-activates the note leaf for `context: 'note'` commands |
 
 ## Command Registry (active palette + pipeline)
 

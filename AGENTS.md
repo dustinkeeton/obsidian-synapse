@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-11
+last-updated: 2026-06-19
 ---
 
 # Synapse — Agent Reference
@@ -48,15 +48,15 @@ Output: `main.js` (single bundle, Obsidian loads this)
 
 ```
 main.ts
-  |-- settings.ts  (type-only import of views/types for ProposalKind; no runtime cycle)
+  |-- settings.ts  (type-only imports only: ProposalKind from views/types, ExclusionRule from shared/exclusions; both erased at compile time, no runtime cycle)
   |-- settings-tab.ts
   |-- commands/   (depends on NOTHING in src/ — never in a cycle)
   |-- shared/     (base layer: depends on NO feature module; owns url-detector)
   |-- pipeline/ --> commands/ (isPipelineKeyInFlow); modules injected via PipelineModuleMap
   |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types, title/types, rem/types, shared/checkpoint-types
   |-- elaboration/ --> shared/, commands/, image/ (ImageAnalyzer uses shared AIClient + image/preprocessImage)
-  |-- audio/ --> shared/, commands/
-  |-- video/ --> shared/ (CheckpointManager, url-detector), commands/, audio/ (reuses transcription pipeline)
+  |-- audio/ --> shared/, commands/; type-only edge to video/ (`import type { AudioExtractor }` — erased at compile time, no runtime cycle)
+  |-- video/ --> shared/ (CheckpointManager, url-detector), commands/, audio/ (reuses transcription pipeline; runtime value edge)
   |-- image/ --> shared/ (CheckpointManager, AIClient, callouts, validation), commands/
   |-- transcription/ --> audio/ (types), video/ (types), image/ (types), shared/ (detectPlatform, TimeRange, validation)
   |-- enrichment/ --> shared/, commands/
@@ -76,7 +76,7 @@ Key constraints:
 - `commands` imports nothing in `src/`; `pipeline` imports `commands` but never the feature modules
   (they are injected via `PipelineModuleMap` in main.ts).
 - `intake` imports only `obsidian` + `src/shared/*`; all cross-module work goes through `IntakeDeps`.
-- `video` depends on `audio` (reuses transcription pipeline)
+- `video` depends on `audio` (reuses transcription pipeline, runtime value import). `audio` has only a type-only back-edge to `video` (`import type { AudioExtractor }`), so the value-level dependency stays one-directional `video → audio` (no runtime cycle)
 - `transcription` is UI-only; delegates work to `audio`, `video`, and `image` modules
 - `summarize` has NO static import of `video`; URL-platform helpers (`isSupportedUrl`/`detectPlatform`) resolve from `shared/url-detector`. It receives `video.transcribeUrl` and an audio transcribe callback via constructor injection
 - `deep-dive` reuses `organize` for auto-organize nesting mode
@@ -85,6 +85,34 @@ Key constraints:
 - All feature modules depend on `shared`; no circular dependencies
 - Modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) receive `CheckpointManager`; `tidy`, `title`, `transcription`, `intake` do not
 - `views` imports types only from feature modules (incl. `rem`) and `Checkpoint` from shared
+- Path exclusion is centralized (#307): the single `settings.exclusions: ExclusionRule[]` (model + matcher in `shared/exclusions.ts`) replaces the former per-module `excludeFolders` fields. Modules gate via `isPathExcluded(path, FeatureId, settings)` / `findMatchingRule`. Tag exclusion (`excludeTags`) stays per-module. `main.loadSettings()` runs a one-time `buildMigratedExclusions()` migration for upgraders whose persisted data has no `exclusions` key
+
+## Plugin Lifecycle (main.ts)
+
+```
+onload()
+  |-- loadSettings()  (deepMerge over DEFAULT_SETTINGS; one-time excludeFolders -> exclusions migration, #307)
+  |-- addIcon('synapse', ...)  (brand S-Signal mark; registered before any ribbon use)
+  |-- migrateDataFolder()  (.auto-notes -> .synapse, one-time)
+  |-- new NotificationManager(); status bar attached on desktop only
+  |-- new CheckpointManager(app)  (single instance, injected into all modules)
+  |-- new CommandRegistrar(this)
+  |-- construct modules (audio before video; video desktop-only); each gets a () => autoAccept[kind] getter
+  |-- registerView(UNIFIED_VIEW_TYPE), registerView(SYNAPSE_ACTIONS_VIEW_TYPE)
+  |-- wire onViewRefreshNeeded / onOpenProposalView / cross-module callbacks
+  |-- await <module>.onload() for each settings.<feature>.enabled module
+  |-- addRibbonIcon x3; registrar.register(...) for main commands
+  |-- startupTimeout = setTimeout(checkForIncompleteCheckpoints, 3000)
+  |-- build PipelineModuleMap + SynapseRunner; construct IntakeModule (deps injected)
+  |-- auditCommands(registrar.getAttempted())  (logs drift)
+  +-- runFirstRunOnboarding()  (#89)
+
+onunload()
+  |-- clearTimeout(startupTimeout)
+  |-- <module>?.onunload() for every module (optional-chained; video may be null)
+  +-- notifications.dispose()  (tears down in-flight operation ellipsis intervals + hides notices so a
+                                disable mid-operation never leaks an orphaned 400ms setInterval on a detached toast)
+```
 
 ## Command Registry
 
@@ -96,7 +124,7 @@ Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries
 | `synapse:manage-checkpoints` | Manage interrupted operations | callback | main | p | active | |
 | `synapse:transcribe-media` | Transcribe media | callback | main | p | disabled | |
 | `synapse:transcribe-note-media` | Transcribe media from current note | editorCallback | main | p | active | |
-| `synapse:fire` | Fire Synapse: run all features on a directory | callback | main | p | active | |
+| `synapse:fire` | Run all features on a directory | callback | main | p | active | |
 | `synapse:scan-vault` | Scan vault for stub notes | callback | elaboration | p, f, s | active | elaboration |
 | `synapse:scan-current-note` | Scan current note for elaboration | editorCallback | elaboration | p | active | |
 | `synapse:clear-proposals` | Clear all pending proposals | callback | elaboration | p | disabled | |
@@ -115,7 +143,7 @@ Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries
 | `synapse:rem-current-note` | REM: Discover links in current note | editorCallback | rem | p | active | |
 | `synapse:rem-directory` | REM: Discover links in directory | callback | rem | p, f | active | rem |
 | `synapse:check-dependencies` | Check external tool availability | callback | video | p | active | |
-| `synapse:tidy-vault` | Tidy vault (Fire Synapse) | (synthetic) | tidy | f | active | tidy |
+| `synapse:tidy-vault` | Tidy vault | (synthetic) | tidy | f | active | tidy |
 
 `synapse:tidy-vault` is synthetic and pipeline-only: it gates the tidy Fire Synapse phase independently of any palette command and is never passed to `registrar.register()`. Fire Synapse phase order: elaboration → summarize → enrichment → rem → tidy → organize.
 
@@ -172,7 +200,6 @@ SynapseSettings {
       detectTodoMarkers: boolean                    // default: true
       detectEmptySections: boolean                  // default: true
       detectSparseLinks: boolean                    // default: true
-      excludeFolders: string[]                      // default: ['templates', '.synapse']
       excludeTags: string[]                         // default: ['no-elaborate']
     }
     proposal: ProposalSettings {
@@ -190,6 +217,7 @@ SynapseSettings {
     whisperModel: string                            // default: 'whisper-1'
     localWhisperPath: string                        // default: ''
     language: string                                // default: ''
+    autoFormatLyrics: boolean                       // default: true (auto-detect song transcripts, format as lyrics, #234)
     postProcessing: PostProcessingSettings {
       enabled: boolean                              // default: true
       removeFiller: boolean                         // default: true
@@ -230,7 +258,6 @@ SynapseSettings {
     internalLinkThreshold: number                   // default: 0.3
     weights: EnrichmentWeightSettings               // sameFolder, siblingFolder, cousinFolder, distantFolder, decayPerLevel, minWeight
     enrichmentFolderPath: string                    // default: '.synapse/enrichments'
-    excludeFolders: string[]                        // default: ['templates', '.synapse']
     excludeTags: string[]                           // default: ['no-enrich']
     relatedNotesHeading: string                     // default: 'Related Notes'
     referencesHeading: string                       // default: 'References'
@@ -241,7 +268,6 @@ SynapseSettings {
     summaryStyle: 'bullets' | 'paragraph' | 'key-points'  // default: 'bullets'
     customPrompt: string                            // default: ''
     autoDetectTemplates: boolean                    // default: true
-    excludeFolders: string[]                        // default: ['templates', '.synapse']
     excludeTags: string[]                           // default: ['no-summarize']
     autoOrganizeOnSummarize: boolean                // default: false
   }
@@ -253,7 +279,6 @@ SynapseSettings {
     enabled: boolean                                // default: true
     proposalFolderPath: string                      // default: '.synapse/organize/proposals'
     snapshotFolderPath: string                      // default: '.synapse/organize/snapshots'
-    excludeFolders: string[]                        // default: ['templates', '.synapse']
     excludeTags: string[]                           // default: ['no-organize']
     organizeConfidenceThreshold: number             // default: 0.9
   }
@@ -264,8 +289,7 @@ SynapseSettings {
     qualityThreshold: number                        // default: 0.4
     maxNotesPerRun: number                          // default: 50
     noteOutputFolder: string                        // default: 'Deep Dives'
-    nestingMode: 'nested' | 'flat' | 'auto-organize'  // default: 'nested'
-    excludeFolders: string[]                        // default: ['templates', '.synapse']
+    nestingMode: 'nested' | 'flat' | 'auto-organize'  // DeepDiveNestingMode, default: 'nested'
     excludeTags: string[]                           // default: ['no-deep-dive']
     autoEnrichOnAccept: boolean                     // default: true
     autoOrganizeOnAccept: boolean                   // default: false
@@ -305,8 +329,24 @@ SynapseSettings {
   onboarding: OnboardingSettings {
     hasSeenWelcome: boolean                         // default: false (first-run welcome gate, #89)
   }
+  exclusions: ExclusionRule[]                        // centralized per-path exclusion (#307); default 2 rules (see below)
 }
 ```
+
+Centralized path exclusion (#307). `ExclusionRule` and the glob matcher live in
+`src/shared/exclusions.ts`; type-only-imported into `settings.ts`:
+
+```ts
+type FeatureId = 'elaboration' | 'enrichment' | 'summarize' | 'tidy' | 'organize'
+               | 'deep-dive' | 'audio' | 'video' | 'title' | 'image' | 'rem' | 'intake'
+interface ExclusionRule { pattern: string; features: 'all' | FeatureId[] }
+// ALL_FEATURE_IDS (exclusions.ts) is a compile-time exhaustiveness guard over this union.
+```
+
+Default `exclusions`: `[{ pattern: '.synapse/**', features: 'all' }, { pattern: 'templates/**', features: 'all' }]`.
+Modules gate paths via `isPathExcluded(path, featureId, settings)` / `findMatchingRule`. The legacy
+per-module `excludeFolders` fields were removed; `main.loadSettings()` runs a one-time
+`buildMigratedExclusions()` migration for upgraders whose persisted data lacks an `exclusions` key.
 
 Provider model dropdowns: `MODEL_OPTIONS: Record<AIProvider, Record<id, label>>` in `src/settings.ts`.
 openai: gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini. anthropic: opus, sonnet, haiku (resolved to full

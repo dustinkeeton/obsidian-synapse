@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-08
+last-updated: 2026-06-19
 ---
 
 # Pipeline Module
@@ -42,8 +42,8 @@ class SynapseRunner {
 |------|---------|---------|
 | `types.ts` | `PipelineModuleKey`, `PipelineModuleMap`, `PipelinePhase`, `PipelineScanFn`, `SYNAPSE_PIPELINE` | Phase model + ordered phase list |
 | `synapse-runner.ts` | `SynapseRunner` | Sequential phase executor with per-phase progress + error isolation |
+| `index.ts` | re-exports all of the above | Barrel |
 | `synapse-runner.test.ts`, `fire-flow-gate.test.ts` | Tests | |
-| `index.ts` | re-exports | Barrel |
 
 ## Ordered Phases (`SYNAPSE_PIPELINE`)
 

@@ -454,6 +454,9 @@ export default class SynapsePlugin extends Plugin {
 		this.title?.onunload();
 		this.rem?.onunload();
 		this.intake?.onunload();
+		// Stop any animated-ellipsis intervals left running by in-flight
+		// operations so a disable mid-operation leaves no orphaned timer.
+		this.notifications?.dispose();
 	}
 
 	async loadSettings(): Promise<void> {

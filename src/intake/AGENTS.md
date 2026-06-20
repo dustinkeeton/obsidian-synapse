@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-08
+last-updated: 2026-06-19
 ---
 
 # Intake Module
@@ -36,22 +36,27 @@ interface IntakeDeps {
 class IntakeDispatcher {
   route(file: TFile, parsed: ParsedNote): IntakeRoute   // classifies note into a route
 }
+
+// settings-section.ts
+function renderIntakeSettings(ctx: SettingsSectionContext): void
 ```
 
 ## File Inventory
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `index.ts` | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute`, `SYNAPSE_PROCESSED_FLAG`, `SYNAPSE_PROCESSED_AT_FLAG` | Folder watcher + processor |
+| `index.ts` | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute`, `SYNAPSE_PROCESSED_FLAG`, `SYNAPSE_PROCESSED_AT_FLAG`, `renderIntakeSettings` | Barrel + folder watcher |
 | `intake-dispatcher.ts` | `IntakeDispatcher` | Routes a parsed note to an `IntakeRoute` |
-| `types.ts` | route + deps types, flag constants | Type model |
-| `intake-module.test.ts`, `intake-dispatcher.test.ts` | Tests | |
+| `types.ts` | `IntakeRoute`, `IntakeDeps`, `SYNAPSE_PROCESSED_FLAG`, `SYNAPSE_PROCESSED_AT_FLAG` | Type model |
+| `settings-section.ts` | `renderIntakeSettings` | Settings UI accordion (#243) |
+| `intake-module.test.ts`, `intake-dispatcher.test.ts`, `intake-organize-e2e.test.ts`, `settings-section.test.ts` | Tests | |
 
 ## Data Flow
 
 ```
 vault create/modify event
-  --> handleEvent: cheap sync guards (is .md, intake.enabled, in intake folder, not in-flight)
+  --> handleEvent: cheap sync guards (is .md, intake.enabled, in intake folder,
+                   not capture-log subfolder, not path-excluded, not in-flight)
   --> scheduleFlush(path): per-path debounce, resets timer on every event (settle window)
         settleWindowMs = intake.settleSeconds * 1000 (fallback 5000ms if missing/invalid)
   --> flush(path) after the note is quiet for the full window:
@@ -70,6 +75,7 @@ vault create/modify event
 
 - Idempotency: a note carrying `synapse-processed` (boolean `true` or string `'true'`) is never reprocessed; this also suppresses the modify echo from the flag-stamp write.
 - In-flight guard: paths being flushed are tracked so the stamp/move rename echo does not re-enter `flush`.
+- Path exclusion: `isPathExcluded(file.path, 'intake', settings)` is checked before scheduling; excluded notes are silently skipped (#307).
 - Primary mover is organize (last pipeline phase). `moveWhenDone` is a FALLBACK mover, applied only when organize left the note inside the intake folder (low-confidence / no-op).
 - Stamp-before-move: the processed flag is written before any relocation so idempotency survives the move's rename echo.
 - Failure leaves the note un-stamped (retriable); errors surface via `notifications.notifyError`.
@@ -77,9 +83,12 @@ vault create/modify event
 ## Capture Log (#224)
 
 When `intake.captureLog` is true and a processed note actually left the intake folder, a dated breadcrumb
-is written to `‹intakeFolder›/‹captureLogFolder›/‹YYYY-MM-DD› — ‹title›.md` (default subfolder `_captured`).
+is written to `<intakeFolder>/<captureLogFolder>/<YYYY-MM-DD> — <title>.md` (default subfolder `_captured`).
 The capture-log subfolder is excluded from the watcher and breadcrumbs are stamped `synapse-processed: true`
 (defense-in-depth) so they are never re-ingested — preventing an infinite ingest loop.
+
+Collision policy (#227): two distinct notes that sanitize to the same dated title get a uniqueness suffix
+(` (2)`, ` (3)`, ...). Re-processing the same note overwrites its own breadcrumb idempotently.
 
 ## Settings Keys
 
@@ -99,7 +108,7 @@ All under `settings.intake` (`IntakeSettings`):
 
 | Import | From |
 |--------|------|
-| `NotificationManager`, `ensureFolder`, `fetchArticleContent`, `parseFrontmatter`, `serializeFrontmatter`, `writeNote` | `../shared` |
+| `NotificationManager`, `ensureFolder`, `fetchArticleContent`, `isPathExcluded`, `parseFrontmatter`, `serializeFrontmatter`, `writeNote`, `classifyUrl`, `extractUrls`, `ParsedNote`, `SettingsSectionContext` | `../shared` |
 | `fireOnFile`, `transcribeUrlToNote` | injected via `IntakeDeps` (wired in `main.ts`) |
 
 Architecture rule: intake imports no feature module. `fireOnFile` is `SynapseRunner.fireOnFile` injected by `main.ts`.

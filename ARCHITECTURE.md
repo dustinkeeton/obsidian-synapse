@@ -1,8 +1,10 @@
 # Architecture Overview
 
+**Last updated**: 2026-06-20 · **Version**: 1.0.3
+
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, and in-place wikilink discovery (REM). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile (video and media-clipping features are desktop-only).
 
-The codebase has **17 modules under `src/`** (audio, commands, deep-dive, elaboration, enrichment, image, intake, organize, pipeline, rem, shared, summarize, tidy, title, transcription, video, views) plus the top-level `main.ts`, `settings.ts`, and `settings-tab.ts`.
+The codebase has **17 modules under `src/`** (audio, commands, deep-dive, elaboration, enrichment, image, intake, organize, pipeline, rem, shared, summarize, tidy, title, transcription, video, views) plus the top-level `main.ts`, `settings.ts`, `settings-tab.ts`, and a small pure `onboarding.ts` (first-run welcome, #89).
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -12,6 +14,8 @@ The codebase has **17 modules under `src/`** (audio, commands, deep-dive, elabor
 - **`shared/`** is the foundation everything stands on — the AI client, validation, checkpoints, callouts, and URL detection. It depends on no feature module.
 - **`commands/`** is a developer-level master switch for every command, sitting *above* user settings. It also depends on nothing else in `src/`.
 - **`pipeline/`** runs features in order; **`intake/`** decides what to feed the pipeline. Neither imports a feature module directly — `main.ts` injects the features into them. This is what keeps the dependency graph acyclic.
+- **`views/`** holds the two sidebars: the **unified proposal view** (review/accept every proposal type) and the **Synapse actions view** (registry-driven, touch-friendly buttons so mobile users reach any command without the palette).
+- **Mobile safety**: the plugin ships `isDesktopOnly: false`. Anything that needs Node.js (yt-dlp, ffmpeg, the filesystem) is funneled through one guarded loader (`shared/node-loader.ts`) that refuses to run off-desktop, so the bundle loads cleanly on mobile and desktop-only features degrade gracefully.
 
 ---
 
@@ -23,6 +27,7 @@ graph TB
         Main["main.ts<br/>SynapsePlugin"]
         Settings["Settings + Tab"]
         Sidebar["Unified Proposal View<br/>(sidebar)"]
+        Actions["Synapse Actions View<br/>(registry-driven sidebar)"]
         CkptMgr["CheckpointManager<br/>(shared, singleton)"]
 
         subgraph Coord["Coordination Layers"]
@@ -57,10 +62,12 @@ graph TB
 
     Main --> Settings
     Main --> Sidebar
+    Main --> Actions
     Main --> CkptMgr
     Main --> Commands
     Main --> Coord
     Main --> Features
+    Commands -.->|derives buttons| Actions
     Pipe -.->|injected modules| Features
     Intake -.->|injected fireOnFile| Pipe
     Features --> Shared
@@ -81,6 +88,7 @@ graph TB
 
     style Trans fill:#f9f,stroke:#333
     style Sidebar fill:#bbf,stroke:#333
+    style Actions fill:#bbf,stroke:#333
     style CkptMgr fill:#ffd,stroke:#333
     style Commands fill:#fde,stroke:#333
     style Shared fill:#def,stroke:#333
@@ -96,14 +104,15 @@ Both `shared/` and `commands/` are **base layers**: every feature may depend on 
 ```
 src/
 ├── main.ts                 # Plugin entry, module orchestration, callback wiring, dependency injection
-├── settings.ts             # Type definitions, defaults, model options
-├── settings-tab.ts         # Obsidian settings UI
+├── settings.ts             # Type definitions, defaults, model options (type-only imports of ProposalKind + ExclusionRule)
+├── settings-tab.ts         # Obsidian settings UI (video section gated behind Platform.isDesktop)
+├── onboarding.ts           # Pure first-run welcome logic (#89): planFirstRun, needsApiKey
 │
 ├── commands/               # Command registry (base layer; imports nothing in src/)
-│   ├── registry.ts         #   COMMAND_REGISTRY source of truth + flow gates
+│   ├── registry.ts         #   COMMAND_REGISTRY source of truth + flow/status/context gates
 │   ├── registrar.ts        #   Single wiring point to plugin.addCommand
 │   ├── audit.ts            #   Registry <-> handler drift detection
-│   └── index.ts            #   Barrel export
+│   └── index.ts            #   Barrel export (listPaletteActions for the actions sidebar)
 │
 ├── pipeline/               # Fire Synapse: ordered multi-phase runner
 │   ├── synapse-runner.ts   #   Sequential phase executor (fire / fireOnFile)
@@ -201,12 +210,17 @@ src/
 ├── shared/                 # Cross-cutting utilities (base layer)
 │   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); re-exports redactSecrets
 │   ├── redact.ts           #   redactSecrets() — single source of truth for API-key/token redaction
+│   ├── node-loader.ts      #   loadNodeModules/assertDesktop/DesktopOnlyError/shellEnv — the ONE guarded Node-builtin site
+│   ├── exclusions.ts       #   Centralized path-exclusion model + glob matcher (#307); tag-exclusion helper
+│   ├── credential-validator.ts # validateCredentials() — one minimal authenticated probe per provider (#335)
+│   ├── provider-metadata.ts#   Per-provider get-key URL, placeholder, probe spec (#335)
+│   ├── credential-field.ts #   Settings decorator: "Get an API key →" link + Test button + status chip (#335)
 │   ├── encoding.ts         #   arrayBufferToBase64 / base64EncodedLength (shared by audio/image/elaboration)
 │   ├── url-detector.ts     #   YouTube/TikTok/Instagram URL parsing (moved here 2026-06-08)
 │   ├── checkpoint-manager.ts #  Checkpoint/resume for long-running operations
 │   ├── checkpoint-types.ts #   Checkpoint type definitions
 │   ├── id-utils.ts         #   ID generation and validation
-│   ├── notifications.ts    #   Centralized notification system
+│   ├── notifications.ts    #   Centralized notification system (+ dispose() teardown on unload)
 │   ├── validation.ts       #   URL, path, AI response sanitization
 │   ├── file-utils.ts       #   Vault file operations
 │   ├── frontmatter-utils.ts#   YAML frontmatter parsing/serialization
@@ -214,7 +228,7 @@ src/
 │   ├── diagram-generator.ts#   Mermaid diagram generation
 │   ├── slider-helper.ts    #   Settings UI helper for range sliders
 │   ├── folder-picker-modal.ts # Modal for folder selection
-│   ├── api-utils.ts        #   Retry logic, error handling
+│   ├── api-utils.ts        #   Retry logic, error handling (notifyError routes through redactSecrets)
 │   └── index.ts            #   Barrel export
 │
 └── views/                  # UI components
@@ -378,21 +392,78 @@ sequenceDiagram
     participant CK as CheckpointManager
 
     O->>M: onload()
-    M->>M: loadSettings() (deep-merge)
+    M->>M: loadSettings() (deep-merge + one-time excludeFolders→exclusions migration, #307)
+    M->>M: addIcon('synapse') (brand S-Signal mark, before any ribbon use)
     M->>M: migrateDataFolder() (.auto-notes -> .synapse)
     M->>M: addSettingTab()
-    M->>M: NotificationManager()
+    M->>M: NotificationManager() (status bar on desktop only)
     M->>CK: new CheckpointManager(app)
     M->>Reg: new CommandRegistrar(plugin)
-    M->>Mod: Initialize feature modules<br/>(Audio before Video; inject CheckpointManager, registrar, shouldAutoAccept)
-    M->>Coord: Build SynapseRunner (inject PipelineModuleMap)<br/>+ IntakeModule (inject IntakeDeps.fireOnFile)
-    M->>M: registerView(UnifiedProposalView)
+    M->>Mod: Initialize feature modules<br/>(Audio before Video; Video desktop-only; inject CheckpointManager, registrar, shouldAutoAccept getter)
+    M->>M: registerView(UnifiedProposalView) + registerView(SynapseActionsView)
+    M->>M: Wire view refresh + onOpenProposalView + cross-module callbacks<br/>(enrichment, title, organize)
     M->>Mod: Conditional module.onload()<br/>(registers commands via registrar if enabled)
-    M->>M: Wire cross-module callbacks<br/>(enrichment, title, organize, view refresh)
-    M->>M: addRibbonIcon (sparkles, mic)
+    M->>M: addRibbonIcon x3 (synapse; mic [desktop]; layout-grid)
+    M->>Reg: registrar.register(main commands)
+    M->>CK: startupTimeout = checkForIncompleteCheckpoints() (delayed 3s)
+    M->>Coord: Build SynapseRunner (inject PipelineModuleMap)<br/>+ IntakeModule (inject IntakeDeps.fireOnFile)
     M->>Reg: auditCommands(attempted) — warn on drift
-    M->>CK: checkForIncompleteCheckpoints() (delayed 3s)
+    M->>M: runFirstRunOnboarding() (#89, fresh installs only)
+
+    O->>M: onunload()
+    M->>M: clearTimeout(startupTimeout)
+    M->>Mod: module?.onunload() for every module (video may be null)
+    M->>M: notifications.dispose() (tear down ellipsis timers + hide notices)
 ```
+
+---
+
+## Desktop Gating Model
+
+Synapse ships `isDesktopOnly: false` in `manifest.json`, so the **single bundle must load on Obsidian mobile** — which has no `os`, `path`, `fs`, or `child_process`. esbuild marks those Node builtins as `external`, so any *top-level* `require('fs')` would throw on mobile at module-load time, before any platform check could run. The plugin closes that hole structurally:
+
+```mermaid
+graph TB
+    Caller["Audio / Video / Duration detector<br/>(needs ffmpeg / yt-dlp / fs)"]
+    Caller --> Guard["assertDesktop()<br/>throws DesktopOnlyError off-desktop"]
+    Guard --> Load["loadNodeModules()<br/>lazy require os/path/fs/execFile (inside the fn body)"]
+    Load --> Env["shellEnv()<br/>allowlisted PATH/HOME/TMPDIR/proxy for subprocesses"]
+    Env --> Tools["execFile yt-dlp / ffmpeg / ffprobe"]
+
+    style Guard fill:#fde,stroke:#333
+    style Load fill:#def,stroke:#333
+```
+
+- **One sanctioned site.** `shared/node-loader.ts` is the *only* place Node builtins are required, and it's the only file allowed to disable the `no-var-requires` lint rule. Every desktop-only path routes through it.
+- **Explicit assertion, not truthiness.** Code paths call `assertDesktop()` (which throws a descriptive `DesktopOnlyError`) rather than relying on a `this.extractor` being defined.
+- **Construction-time gating too.** `main.ts` only builds `VideoModule` and the shared `AudioExtractor` when `Platform.isDesktop`; the `mic` ribbon icon and the settings-tab video section are desktop-only.
+- **Graceful degradation.** On mobile, media clipping/duration detection fall back to full-file processing or surface a clear "not available on mobile" message. All non-Node features (elaboration, enrichment, summarize, tidy, organize, deep-dive, title, REM, audio API transcription, image OCR) run on both platforms.
+
+---
+
+## Path Exclusions (#307)
+
+A single `settings.exclusions` list controls which folders each feature may touch, replacing the old per-module `excludeFolders` fields. The model and matcher live in `shared/exclusions.ts`.
+
+```ts
+interface ExclusionRule { pattern: string; features: 'all' | FeatureId[] }
+// FeatureId is a closed 12-member union with an ALL_FEATURE_IDS exhaustiveness guard.
+```
+
+- **First-match-wins.** `findMatchingRule(path, featureId, settings)` walks `exclusions` in order and returns the first rule that applies to the feature *and* matches the path; `isPathExcluded(...)` is the boolean wrapper.
+- **Glob forms.** `dir/**` (folder + all descendants), `dir/*` (direct children), a bare token (recursive prefix), or an exact `dir/file.md` path. Patterns are normalized and anchored; `.` is escaped so `.synapse/**` can't over-match.
+- **Defaults.** Fresh installs get `[{ pattern: '.synapse/**', features: 'all' }, { pattern: 'templates/**', features: 'all' }]`.
+- **One-time migration.** `loadSettings()` runs `buildMigratedExclusions()` for upgraders whose persisted data lacks an `exclusions` key, preserving their old per-module folders exactly (a folder excluded by *every* legacy feature collapses to `features: 'all'`).
+- **Tags stay per-module.** `excludeTags` remains per feature but routes through a shared `matchesExcludeTag` helper (handles inline + frontmatter tags, case-insensitively).
+
+---
+
+## Synapse Actions Sidebar (#289)
+
+A second sidebar (`SynapseActionsView`, `synapse-actions` view, opened by the `layout-grid` ribbon icon) gives mobile users — where the command palette is hardest to reach — a touch-friendly button for every enabled command.
+
+- **Registry-derived.** Buttons come from `listPaletteActions(registrar.getRegistered())`; no command behavior is re-declared. Each button dispatches the already-registered command via Obsidian's `executeCommandById`, honoring the same editor/check gating as the palette.
+- **Context-aware.** Every registry entry carries a `context` (`note` | `vault` | `global`). Per-note buttons disable when no note is active; for `note` commands the opener re-activates the note's markdown leaf first, so opening the panel (which can steal editor focus) never makes a button silently no-op.
 
 ---
 
@@ -466,7 +537,7 @@ graph TB
 
 The transcription module replaced 4 modal files across audio/ and video/ with 2 unified modals. The `NoteMediaModal` also handles image OCR extraction. All callbacks are wired in `main.ts`.
 
-### Time-Range Clipping (v0.3.2)
+### Time-Range Clipping
 
 When a user selects an audio file or enters a video URL, the modal auto-detects media duration via ffprobe (local) or yt-dlp (URLs). If duration >= 10 seconds, a dual-handle `TimeRangeSlider` appears allowing sub-range selection. Clipping uses ffmpeg on the extracted audio (desktop only; mobile falls back to full-file transcription).
 
@@ -698,7 +769,7 @@ graph TB
     AIC["AIClient<br/>(shared/ai-client.ts)"]
 
     AIC -->|"'openai'"| OAI["POST api.openai.com/v1/chat/completions<br/>Auth: Bearer {ai.apiKey}"]
-    AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>Models: opus->claude-opus-4-6, etc."]
+    AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>Models: opus/sonnet/haiku resolved to full IDs in ai-client.ts"]
     AIC -->|"'gemini'"| GEM["POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent<br/>Auth: x-goog-api-key · system -> system_instruction"]
     AIC -->|"'ollama'"| OLL["POST {ollamaEndpoint}/api/chat<br/>HTTPS required (HTTP localhost only)"]
 
@@ -751,31 +822,36 @@ All AI-generated content uses Obsidian callouts from a shared registry:
 SynapseSettings
 +-- ai              -> Provider, API key, model, temperature, max tokens
 +-- elaboration     -> Detection thresholds, scan behavior, proposal storage
-|   +-- detection   -> Word threshold, TODO markers, empty sections, excludes
+|   +-- detection   -> Word threshold, TODO markers, empty sections, exclude tags
 |   +-- proposal    -> Max per note, preserve frontmatter, include context
-+-- audio           -> Transcription provider, API keys, post-processing
++-- audio           -> Transcription provider, API keys, post-processing, auto-format lyrics (#234)
 |   +-- postProcessing -> Filler removal, structure, key points, custom prompt
 +-- video           -> yt-dlp/ffmpeg paths, download folder, embed setting
 |   +-- frameExtraction -> (Not implemented) interval, vision model, max frames
-+-- image           -> Enabled, vision model override, language hint
-+-- enrichment      -> Auto-enrich, max tags/links, vocabulary, proximity weights
++-- image           -> Enabled, vision model override, language hint, max image size MB (auto-downscale)
++-- enrichment      -> Auto-enrich, max tags/links, vocabulary, proximity weights, exclude tags
 |   +-- tagVocabulary   -> TagVocabularyEntry[] (category, tags, description)
 |   +-- weights         -> Same/sibling/cousin/distant folder, decay, minimum
-+-- summarize       -> Style (bullets/paragraph/key-points), max length, templates
++-- summarize       -> Style (bullets/paragraph/key-points), max length, templates,
+|                     exclude tags, auto-organize on summarize
 +-- tidy            -> Snapshot folder path
-+-- organize        -> Proposal/snapshot folder paths, confidence threshold, excludes
++-- organize        -> Proposal/snapshot folder paths, confidence threshold, exclude tags
 +-- deepDive        -> Max depth, quality threshold, max notes, output folder,
-|                     nesting mode, auto-enrich/organize on accept, excludes
+|                     nesting mode, auto-enrich/organize on accept, exclude tags
 +-- title           -> Enabled, proposal folder path, check after operations
 +-- rem             -> Enabled, semantic matching, confidence threshold,
 |                     max links per note, proposal folder path
 +-- intake          -> Enabled, watched folder, mark-processed, move-when-done,
 |                     settle seconds, capture log + capture-log folder
++-- ui              -> collapsedSections (settings accordion state)
 +-- autoAccept      -> Per-kind booleans (elaboration, enrichment, organize,
-                      deep-dive, title, rem) — all default false (#228)
+|                     deep-dive, title, rem) — all default false (#228)
++-- onboarding      -> hasSeenWelcome (first-run welcome gate, #89)
++-- exclusions      -> ExclusionRule[] — centralized per-path exclusion (#307);
+                      replaces all former per-module excludeFolders fields
 ```
 
-Modules access settings via `getSettings()` closure -- always reads latest values, no event subscriptions needed.
+Path exclusion is centralized (#307): the per-module `excludeFolders` fields were removed in favor of one `exclusions` list (see "Path Exclusions" above). Tag exclusion (`excludeTags`) stays per-module. Modules access settings via the `getSettings()` closure -- always reads latest values, no event subscriptions needed.
 
 ---
 
@@ -785,16 +861,19 @@ Modules access settings via `getSettings()` closure -- always reads latest value
 |-------|-----------|----------|
 | Input validation | `sanitizeUrl()`, `sanitizePath()` | `shared/validation.ts` |
 | Output sanitization | `sanitizeAIResponse()` strips scripts, event handlers, dangerous URIs | `shared/validation.ts` |
-| Subprocess security | `execFile` with argument arrays (no shell) | `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
+| Subprocess security | `execFile` with argument arrays (no shell); narrowed allowlist env via `shellEnv()` | `video/audio-extractor.ts`, `transcription/duration-detector.ts`, `shared/node-loader.ts` |
+| Desktop gating | `assertDesktop()`/`loadNodeModules()` — Node builtins resolve only on desktop, behind one guarded site; keeps `isDesktopOnly: false` mobile-safe | `shared/node-loader.ts` |
 | Temp-path hardening | Vault-derived basenames sanitized before composing temp paths (2026-06-08) | `transcription/duration-detector.ts` |
 | Multipart header hardening | Vault-/settings-derived field + file names sanitized (`sanitizeMultipartHeaderValue`: strip CR/LF, replace `"`/`\`) before `Content-Disposition` lines — blocks multipart/header injection (2026-06-11) | `audio/transcriber.ts` |
 | API key protection | `redactSecrets()` — **single source of truth** scrubbing keys from error messages/console; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts` + `api-utils.ts`) |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
+| Credential validation | Live key probe is one minimal authenticated GET; result is **ephemeral** (never persisted) and routed through `redactSecrets` so an echoed key can't reach the status chip | `shared/credential-validator.ts`, `shared/provider-metadata.ts` |
 | Idempotent updates | `%% synapse-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
 | Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
+| Lifecycle hygiene | `NotificationManager.dispose()` tears down in-flight ellipsis timers + hides notices on unload (no orphaned `setInterval`) | `shared/notifications.ts`, `main.ts:onunload()` |
 
-**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. `data.json` (live API keys) is gitignored and never committed.
+**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). `data.json` (live API keys) is gitignored and never committed.
 
 **Known posture / not-yet-enforced:**
 - `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths** — there is no active vault-boundary enforcement on writes today.
@@ -807,9 +886,10 @@ Modules access settings via `getSettings()` closure -- always reads latest value
 1. Clone into Obsidian vault's plugin directory
 2. `npm install` then `npm run dev` (watch mode)
 3. Module pattern: each feature in `src/<module>/` with `index.ts` exporting the module class
-4. Follow the FeatureModule contract: `constructor(plugin, getSettings, notifications, checkpointManager)`, `onload()`, `onunload()`
+4. Follow the FeatureModule contract: `constructor(plugin, getSettings, notifications, …)`, `onload()`, `onunload()`. `main.ts` injects the rest — the shared `CheckpointManager` (for resumable scans), the `CommandRegistrar`, and a `() => settings.autoAccept[kind]` getter where applicable — never reach for globals.
 5. Types go in `<module>/types.ts`, tests co-located as `<name>.test.ts`
-6. All shared utilities imported from `../shared` (barrel export)
-7. Build check: `npm run build` (type-checks + bundles)
-8. Tests: `npm test`
-9. Git: create a feature branch, push, open PR. See `.claude/skills/git-workflow/SKILL.md` for full protocol.
+6. All shared utilities imported from `../shared` (barrel export) — never from a sibling feature module or an internal `shared/` file. Where you only need a *type* from a higher layer, use `import type` (erased at compile time, no runtime cycle).
+7. Need a Node builtin (`fs`/`path`/`os`/`child_process`)? Go through `loadNodeModules()`/`assertDesktop()` only — never `require` at module top level (keeps the bundle mobile-loadable).
+8. Gate vault paths with `isPathExcluded(path, featureId, settings)` and tags with the shared `matchesExcludeTag` helper.
+9. Build check: `npm run build` (type-checks + bundles); tests: `npm test`
+10. Git: create a feature branch, push, open PR. See `.claude/skills/git-workflow/SKILL.md` for full protocol.

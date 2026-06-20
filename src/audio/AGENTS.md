@@ -1,14 +1,14 @@
 ---
-last-updated: 2026-06-11
+last-updated: 2026-06-19
 ---
 
 # Audio Module
 
-Transcribes audio files from the vault using configurable providers (Whisper API, Deepgram, Gemini, local Whisper stub), with optional AI post-processing. Exposes public methods for unified transcription UI. All HTTP goes through Obsidian `requestUrl` (CSP-safe on mobile), not native `fetch`.
+Transcribes audio files from the vault using configurable providers (Whisper API, Deepgram, Gemini, local Whisper stub), with optional AI post-processing and optional lyrics auto-formatting. Exposes public methods for the unified transcription UI. All HTTP goes through Obsidian `requestUrl` (CSP-safe on mobile), not native `fetch`.
 
 ## Public API
 
-Exported from `index.ts`:
+Barrel (`index.ts`) re-exports: `AudioModule`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry`. `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
 
 ```ts
 class AudioModule {
@@ -19,12 +19,14 @@ class AudioModule {
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
   transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void>
   transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>
+  transcribeAndInsertCombined(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // #214; <2 embeds falls back to transcribeAndInsert
+  transcribeAudioCombined(files: TFile[]): Promise<string>                            // #214; concat (ffmpeg) or sequential fallback -> combined text
   onTranscriptionComplete: ((filePath: string) => void) | null
 }
 
 function findAudioEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): AudioEmbed[]
 
-// transcriber.ts (exported for reuse + tests)
+// transcriber.ts (module-internal: imported directly, NOT via the barrel)
 function buildMultipartBody(
   fields: { name: string; value: string }[],
   file: { name: string; fieldName: string; data: ArrayBuffer }
@@ -61,9 +63,10 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 | `transcriber.test.ts` | Tests | Transcriber + multipart + provider routing tests |
 | `post-processor.ts` | `PostProcessor` | AI transcript cleanup via `AIClient` |
 | `settings-section.ts` | `renderAudioSettings` | Audio settings UI section |
+| `transcription-credentials.ts` | `renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext)` | Transcription-provider dropdown + per-provider API-key fields rendered into the AI Configuration section (#332/#335). Imports `PROVIDER_METADATA`/`decorateCredentialField` and types `CredentialProvider`/`CredentialFieldHandle`/`SettingsSectionContext` via the `../shared` barrel (audit Stage-1 barrel-import refactor — no deep `../shared/<file>` imports) |
 | `note-scanner.ts` | `findAudioEmbeds`, `hasTranscriptionBelow`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` | Scan note content for audio embeds |
 | `note-scanner.test.ts` | Tests | Note scanner tests |
-| `index.ts` | `AudioModule` | Orchestrator, public transcription methods |
+| `index.ts` | `AudioModule` (+ note-scanner & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307) |
 
 ## Data Flow
 
@@ -120,7 +123,10 @@ All under `settings.audio`:
 | `geminiApiKey` | Dedicated Gemini key (fallback: `ai.apiKey`) |
 | `whisperModel` | Whisper model name |
 | `language` | Language hint |
+| `autoFormatLyrics` | Auto-detect song transcripts and reformat as structured lyrics (#234); default `true` |
 | `postProcessing.*` | AI cleanup flags |
+
+Path exclusion: write paths gate on the centralized `settings.exclusions` (#307) via `isPathExcluded(path, 'audio', settings)` (batch insert = silent skip; single-file = `findMatchingRule` Notice). No per-module `excludeFolders`/`excludeTags`.
 
 ## Time-Range Clipping
 
@@ -145,10 +151,12 @@ never interpreted as text.
 
 ## Video Module Integration
 
-`AudioModule.transcribe()` is called by `VideoModule.processUrl()` at `video/index.ts:L118`. Video passes extracted audio as `ArrayBuffer` with `sourceName` set to video title.
+`AudioModule.transcribe()` is called by `VideoModule.processUrl()` (video passes extracted audio as `ArrayBuffer` with `sourceName` set to the video title) — a runtime `video → audio` edge.
+
+`audio/index.ts` has only a type-only back-edge to video: `import type { AudioExtractor } from '../video'` (constructor `extractor?` param, desktop-only clipping/concat). Type-only = erased at compile time, so there is no runtime `audio ⇄ video` cycle.
 
 ## Commands
 
-No commands registered directly. Commands are registered in `main.ts` (unified transcription):
-- `synapse:transcribe-media` -> `AudioModule.transcribeFileToActiveNote(file)`
-- `synapse:transcribe-note-media` -> `AudioModule.transcribeAndInsert(file, embeds)`
+No commands registered directly by this module; `main.ts` registers the unified transcription commands and routes them here:
+- `synapse:transcribe-media` (registry `status: disabled` — gated out) -> `UnifiedTranscriptionModal` -> `AudioModule.transcribeFileToActiveNote(file, timeRange?)`
+- `synapse:transcribe-note-media` (active) -> `NoteMediaModal` -> `transcribeAndInsert(file, embeds)` or `transcribeAndInsertCombined(file, embeds)` when the user opts to combine (ffmpeg-gated)

@@ -4,6 +4,178 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-20: Notification timers torn down on unload; audit reaffirms the layering
+
+**Context**: A periodic codebase audit (architecture, security, and Obsidian-guideline compliance) reviewed the plugin at version 1.0.3. It found the code security-mature and the module graph acyclic, but surfaced one lifecycle leak: `NotificationManager` starts a 400 ms `setInterval` to animate the "…" ellipsis on every in-flight operation toast. If the plugin was disabled (or reloaded) while an operation was still running, that interval kept firing against a detached toast — an orphaned timer, exactly the class of leak Obsidian's reviewer guidelines call out.
+
+**Decision**: Add `NotificationManager.dispose()` — it stops every tracked operation's ellipsis interval, hides the notice, and clears the operation map — and call it from `SynapsePlugin.onunload()` after every module's `onunload()`. The audit's other touch-ups were hygiene/doc-only: shared-utility imports normalized to the `../shared` barrel (the `SettingsSectionContext` import), `.gitignore` hardened against stray credential files, and the machine-readable `AGENTS.md` set refreshed.
+
+**Alternatives considered**:
+- **Switch the ellipsis to `registerInterval()`** — rejected for now; the manager is a plain class (not an Obsidian `Component`), and a targeted `dispose()` is a smaller, more explicit change that also hides the toasts.
+- **Leave it (low impact)** — rejected; a timer firing against a destroyed plugin can throw, and clean unload is a hard requirement for an Obsidian community plugin (and for dev reloads).
+
+**Rationale**: One teardown method, called once on unload, closes the leak without changing any running-operation behavior. It extends the earlier resource-cleanup work (#170) to cover the ellipsis timers added since.
+
+**Impact**: `shared/notifications.ts` (`dispose()`), `main.ts:onunload()`. No user-visible change. The audit otherwise found no critical/high security issues; `data.json` (live keys) remains gitignored.
+
+---
+
+## 2026-06-20: Type-only imports are the sanctioned escape hatch for the acyclic graph
+
+**Context**: The value-level module graph is deliberately acyclic (`shared`/`commands` are base layers; features depend down; the coordination layers inject features rather than importing them). But a few places genuinely need a *type* that lives "above" them in the graph. Importing the value would close a cycle; re-declaring the type locally would drift.
+
+**Decision**: Where only a type is needed, use a TypeScript `import type`, which esbuild erases at compile time — so it creates **no runtime edge** and cannot form a runtime cycle. Three sanctioned cases:
+- `audio/index.ts` → `import type { AudioExtractor } from '../video'` for time-range clipping. The runtime value edge stays one-directional `video → audio`; the type-only back-edge carries no JS.
+- `settings.ts` → `import type { ProposalKind } from './views/types'` (the single source of truth for proposal kinds / `autoAccept` keys).
+- `settings.ts` → `import type { ExclusionRule } from './shared/exclusions'` (the centralized exclusion model, #307).
+
+Both `settings.ts` imports are type-only precisely because `views/types` and `shared/exclusions` sit above `settings` in the value graph; a runtime import would invert the layering.
+
+**Alternatives considered**:
+- **Move `AudioExtractor` into `shared/`** (or pass a structural interface) — still the preferred *eventual* cleanup for that one edge, but unnecessary for correctness while the import is type-only. Flagged, not blocking.
+- **Re-declare the shared types locally** — rejected; guarantees drift between `ProposalKind`/`ExclusionRule` and their real definitions. A compile-time guard already asserts `ProposalKind` matches the `UnifiedItem` union exactly.
+
+**Rationale**: `import type` lets the codebase share a single authoritative type across layers without paying a runtime dependency. The distinction (erased type edge vs. real value edge) is what keeps the dependency graph provably acyclic at runtime even though a couple of type arrows point "the wrong way."
+
+**Impact**: Documents an intentional, enforced pattern rather than an oversight. The audio→video type edge is the one remaining structural back-edge, slated for a future move of `AudioExtractor` into `shared/`.
+
+---
+
+## 2026-06-19: Registry-driven "Synapse actions" sidebar for mobile reach (#289)
+
+**Context**: On Obsidian mobile the command palette is buried, and there is no `removeRibbonIcon` API, so piling per-feature ribbon icons on isn't viable. Mobile users had no fast path to the plugin's ~20 commands.
+
+**Decision**: Add a second sidebar view, `SynapseActionsView` (`views/`), that renders a touch-friendly button for every *enabled* palette command. The button list is derived from the command registry via `listPaletteActions(registrar.getRegistered())` — no command behavior is re-declared; each button runs the already-registered command through Obsidian's own `executeCommandById`. A `layout-grid` ribbon icon opens it (unconditional, so it's reachable on mobile). Each registry entry now carries a `context` (`note` | `vault` | `global`); per-note buttons disable when no note is active, and for `note` commands the opener re-activates the note's markdown leaf first (opening the sidebar can steal editor focus, which previously made those buttons silently no-op).
+
+**Alternatives considered**:
+- **More ribbon icons** — rejected; there's no way to remove them, and they don't scale to ~20 commands.
+- **A bespoke action list hand-maintained beside the registry** — rejected; it re-creates exactly the drift the command registry exists to kill. Deriving from `getRegistered()` keeps it authoritative.
+
+**Rationale**: Reusing the registry as the source of truth means the sidebar can never list a command that isn't actually wired, and gating by `context` gives correct enable/disable state per active note. Dispatching via `executeCommandById` honors the same editor/check gating the palette uses.
+
+**Impact**: New `views/synapse-actions-view.ts` + `SYNAPSE_ACTIONS_VIEW_TYPE`; `layout-grid` ribbon icon; `context` field on registry entries; `listPaletteActions` in `commands/`. Mobile users reach any enabled command in ≤2 taps.
+
+---
+
+## 2026-06-19: "Review" action button on proposal-generation toasts (#340)
+
+**Context**: After a scan generated proposals, users got a success toast but still had to find and open the proposal sidebar by hand.
+
+**Decision**: Extend `NotificationManager` notices with an optional `NoticeAction` (a labeled button). Proposal-producing modules surface a "Review" button on their completion toasts that opens the unified proposal view via a shared `onOpenProposalView` callback wired in `main.ts` (the same six modules: elaboration, enrichment, organize, deep-dive, title, rem). Actionable toasts stay up longer (8 s) so the button is clickable.
+
+**Rationale**: One shared opener callback keeps the wiring consistent with the existing `onViewRefreshNeeded` pattern, and the action lives on the toast the user is already looking at.
+
+**Impact**: `shared/notifications.ts` (`NoticeAction`, `showActionNotice`), `main.ts` (`onOpenProposalView` wiring). Purely additive UX.
+
+---
+
+## 2026-06-19: Action-type colors unified into semantic theme tokens (#342)
+
+**Context**: Proposal card colors (blue/green/orange/purple/yellow) and action accents were hard-coded across the UI, making them inconsistent and unfriendly to community themes.
+
+**Decision**: Route action-type colors through semantic CSS theme tokens rather than literal color values, so they adapt to the active Obsidian theme and stay consistent across surfaces.
+
+**Rationale**: Theme tokens are the Obsidian-idiomatic way to color UI; centralizing them removes drift and respects light/dark and community themes.
+
+**Impact**: Styling only (`styles.css` + view code). No behavior change.
+
+---
+
+## 2026-06-19: Defer settings-DOM mutation to a macrotask to avoid an Obsidian freeze (#335)
+
+**Context**: The guided-key "Test" button (added with #335) mutates the settings DOM to show its ✓/✗ result. Doing that synchronously from within the click handler's promise *microtask* could hard-freeze Obsidian's settings pane — a reproducible hang that looked like a CSS or network problem but was neither.
+
+**Decision**: Defer the result-rendering DOM update to a *macrotask* (`setTimeout(…, 0)`) instead of mutating from within the resolving microtask, render the get-key link and status chip outside the settings row so the field keeps focus, and don't return the promise from the button's `onClick`.
+
+**Alternatives considered**:
+- **Tweak CSS / drop the `:has()` selector** — tried during diagnosis; `:has()` was one contributor but not the root cause.
+- **Mutate synchronously** — that *is* the freezing path; rejected.
+
+**Rationale**: Settling settings-DOM changes onto a macrotask lets Obsidian's own layout/reflow complete first, side-stepping the re-entrant freeze. This generalizes: heavy or focus-sensitive settings-DOM work belongs on a macrotask, not on a microtask chained off a click handler.
+
+**Impact**: The credential-field decorator (`shared/credential-field.ts`) and its settings rendering. The "Test" button now reports results without freezing — captured as an Obsidian engineering lesson for future settings UI.
+
+---
+
+## 2026-06-16: Hoist transcription provider + API key into AI Configuration (#332)
+
+**Context**: Each transcription provider key (Whisper, Deepgram, Gemini) was configured deep inside the Audio settings, far from the primary AI provider/key. Users setting up transcription had to hunt for the right field.
+
+**Decision**: Surface the transcription provider selector and its API key alongside the main AI provider in the "AI Configuration" settings section, so credential setup lives in one place. The underlying fallbacks (`whisperApiKey || ai.apiKey`, `geminiApiKey || ai.apiKey`) are unchanged.
+
+**Rationale**: Co-locating credentials reduces onboarding friction and pairs naturally with the guided key validation (#335) decorator applied to those same fields.
+
+**Impact**: Settings-tab layout only; no schema change.
+
+---
+
+## 2026-06-15: Content-type auto-formatting registry; lyrics formatting (#233, #234)
+
+**Context**: Content-type–specific formatting (recipe, receipt) was wired ad hoc inside the summarize/OCR paths. A new case — song transcripts, which read far better as structured lyrics — needed the same treatment without bolting more special cases onto each caller.
+
+**Decision**: Promote a shared content-type auto-formatting **registry** into `src/shared` (#233), then add a lyrics schema/template that auto-detects song transcripts and formats them as structured lyrics (#234, `audio.autoFormatLyrics`, default on). New content types register against the shared registry instead of editing each consumer.
+
+**Rationale**: A registry makes content-type formatting extensible and testable in one place; the existing recipe/receipt templates proved the pattern, and lyrics slot in cleanly.
+
+**Impact**: New shared content-type registry; `audio.autoFormatLyrics` setting. Song transcripts render as lyrics; other content is unaffected.
+
+---
+
+## 2026-06-14: Centralized path-exclusion model with one-time migration (#307)
+
+**Context**: Every feature carried its own `excludeFolders` list in settings, and several modules hand-rolled near-identical folder/tag matching. The same folder (e.g. `templates/`, `.synapse/`) had to be repeated per feature, and the duplicated matchers drifted (case sensitivity, inline vs. frontmatter tags).
+
+**Decision**: Replace the per-module `excludeFolders` fields with a single `settings.exclusions: ExclusionRule[]`. The model and a glob matcher live in `shared/exclusions.ts`: each rule is `{ pattern, features: 'all' | FeatureId[] }`; `isPathExcluded(path, featureId, settings)` / `findMatchingRule` are first-match-wins. A 12-member `FeatureId` union (with an `ALL_FEATURE_IDS` compile-time exhaustiveness guard) defines who can be excluded. Tag exclusion (`excludeTags`) stays per-module but now routes through a shared `matchesExcludeTag` helper. `main.loadSettings()` runs a one-time `buildMigratedExclusions()` migration, gated on the *raw persisted data* lacking an `exclusions` key, so upgraders' folders are preserved exactly (a folder excluded by every legacy feature collapses to `features: 'all'`). Fresh installs get default rules (`.synapse/**`, `templates/**`) and skip migration. Exclusions are also applied at vault-enumeration sites (#323).
+
+**Alternatives considered**:
+- **Keep per-module lists** — rejected; the duplication and matcher drift were the problem.
+- **A settings-version system to drive migration** — deferred (#93); gating on the missing `exclusions` key runs the migration exactly once without one.
+- **A glob library** — rejected (zero-runtime-deps policy); a small, documented matcher (`dir/**`, `dir/*`, bare token, exact path) covers the needed forms.
+
+**Rationale**: One authoritative list plus one tested matcher removes the per-feature duplication and the drift it caused, and lets a user scope an exclusion to specific features or to all of them. The exhaustiveness guard forces every new flow to make an explicit exclusion decision.
+
+**Impact**: New `shared/exclusions.ts`; `settings.exclusions` replaces all per-module `excludeFolders`; chip multi-select UI for feature scoping (#328); one-time migration in `loadSettings()`. Behavior-preserving for upgraders.
+
+---
+
+## 2026-06-14: Desktop-only Node access behind a single guarded loader (#299)
+
+**Context**: The plugin ships `isDesktopOnly: false`, so the bundle must load on Obsidian mobile, which has no `os`/`path`/`fs`/`child_process`. esbuild marks those builtins `external`, so any *top-level* `require('fs')` would throw on mobile at module-load time — before any `Platform.isDesktop` guard could run. The earlier fix (#198) used lazy getters scattered across modules; that worked but spread the invariant thin.
+
+**Decision**: Centralize every Node-builtin access in one module, `shared/node-loader.ts`:
+- `loadNodeModules()` lazily `require`s `os`/`path`/`fs`/`child_process.execFile` *inside the function body* and returns typed handles. It calls `assertDesktop()` first.
+- `assertDesktop(context?)` throws a descriptive `DesktopOnlyError` off-desktop, instead of a raw `Cannot find module 'fs'`.
+- `shellEnv()` builds a narrowed, allowlisted environment (augmented `PATH`, plus `HOME`, `TMPDIR`, and proxy vars when present) for spawning yt-dlp/ffmpeg/ffprobe.
+
+This is the single sanctioned `no-var-requires` site; audio, video, and transcription/duration-detection route through it after an explicit desktop assertion.
+
+**Alternatives considered**:
+- **Keep scattered lazy getters (#198)** — worked, but the mobile-safety invariant lived in many files; one loader makes it auditable in one place.
+- **Separate mobile/desktop builds** — rejected; doubles build complexity for a single bundle artifact.
+- **`isDesktopOnly: true`** — rejected; would lock mobile users out of all the text/AI features that need no Node builtins.
+
+**Rationale**: One guarded entry point makes the "never touch Node at module top level" rule structural rather than a convention each file must remember, and a distinct `DesktopOnlyError` makes any violation obvious in logs. Desktop-only features degrade gracefully; everything else runs on mobile.
+
+**Impact**: New `shared/node-loader.ts` (`loadNodeModules`, `assertDesktop`, `DesktopOnlyError`, `shellEnv`). Audio/video/duration-detector call it behind a desktop guard. `manifest.json` stays `isDesktopOnly: false`; the bundle loads on mobile. Supersedes the scattered lazy-getter approach from the 2026-03-19 "Lazy Node.js requires" decision.
+
+---
+
+## 2026-06-11: First-run onboarding welcome (#89)
+
+**Context**: A brand-new install dropped users into a fully-featured plugin with no API key set and no pointer to where to start; AI operations would simply fail until a key was configured.
+
+**Decision**: Add a pure, testable `onboarding` module (`src/onboarding.ts`). On a genuine fresh install (`loadData()` returns nothing), show a one-time welcome notice pointing at the settings tab, then persist `onboarding.hasSeenWelcome` so it never fires again; existing upgraders are marked seen silently. The settings tab additionally emphasizes the AI provider API-key field as "required" while the active hosted provider still lacks a key. All decision logic is pure (`planFirstRun`, `needsApiKey`); the caller performs the side effects, so every branch is unit-testable without rendering a settings tab.
+
+**Alternatives considered**:
+- **A multi-step onboarding modal/wizard** — rejected as heavier than warranted; a single notice plus a "required" field cue is enough to unblock setup.
+- **Show the welcome to upgraders too** — rejected; only genuine fresh installs need it.
+
+**Rationale**: Keeping the logic pure makes onboarding deterministic and testable, and gating on a missing-persisted-data signal cleanly distinguishes fresh installs from upgrades without a settings-version system.
+
+**Impact**: New `src/onboarding.ts`; `settings.onboarding.hasSeenWelcome`; `runFirstRunOnboarding()` runs last in `onload()` and never blocks load.
+
+---
+
 ## 2026-06-16: Guided key onboarding + live validation (OAuth deferred)
 
 **Context**: Every AI/transcription provider was configured by pasting a raw API key into a password field with no validation. A typo, wrong-provider, or expired key failed *silently* and only surfaced later when an elaboration/transcription operation errored out — the single biggest onboarding-friction point. The original ask (#335) was an OAuth/OIDC "click to connect your provider" button to replace keys.
