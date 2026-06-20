@@ -30,6 +30,9 @@ export { DirectoryMatcher } from './directory-matcher';
 export class OrganizeModule {
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
+	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
+	onOpenProposalView: (() => void) | null = null;
+
 	private analyzer: ContentAnalyzer;
 	private matcher: DirectoryMatcher;
 	private store: OrganizeStore;
@@ -174,7 +177,14 @@ export class OrganizeModule {
 		if (movedCount > 0) parts.push(`${movedCount} moved`);
 		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
 		if (errorCount > 0) parts.push(`${errorCount} failed`);
-		genOp.finish(`Resumed -- ${parts.length > 0 ? parts.join(', ') : 'no changes needed'}`);
+		// Review action only when at least one new-directory proposal remains
+		// pending after any auto-accept (#340).
+		genOp.finish(
+			`Resumed -- ${parts.length > 0 ? parts.join(', ') : 'no changes needed'}`,
+			proposalCount - autoAcceptedCount > 0
+				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+				: undefined
+		);
 
 		if (moveRecords.length > 0) {
 			const summaryPath = await this.writeOrganizeSummary(moveRecords);
@@ -225,7 +235,12 @@ export class OrganizeModule {
 			if (result.movedDirectly) {
 				op.finish(`Moved to ${result.action.type === 'move' ? result.action.targetDirectory : ''}`);
 			} else if (result.proposalCreated) {
-				op.finish('Proposal created for new directory');
+				// Review action only when the proposal stays pending — organize
+				// auto-accept moves the note, leaving nothing to review (#340).
+				op.finish(
+					'Proposal created for new directory',
+					result.autoAccepted ? undefined : { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+				);
 			} else {
 				op.finish('Note is already well-placed');
 			}

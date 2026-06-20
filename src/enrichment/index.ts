@@ -40,6 +40,9 @@ export class EnrichmentModule {
 	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
+	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
+	onOpenProposalView: (() => void) | null = null;
+
 	/**
 	 * Live accessor for the enrichment auto-accept flag (#228). Wired by
 	 * main.ts to `() => this.settings.autoAccept.enrichment`. Defaults to
@@ -182,7 +185,12 @@ export class EnrichmentModule {
 
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
-		genOp.finish(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		genOp.finish(
+			`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
+			proposalCount - autoAcceptedCount > 0
+				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+				: undefined
+		);
 		if (autoAcceptedCount > 0) {
 			this.notifications.info(
 				`Auto-accepted ${autoAcceptedCount} enrichment proposal${autoAcceptedCount === 1 ? '' : 's'}`
@@ -355,8 +363,13 @@ export class EnrichmentModule {
 		// Mark checkpoint completed and dispatch deferred tasks (I1)
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
+		// Review action only when at least one proposal remains pending after
+		// any batch auto-accept (#340).
 		genOp.finish(
-			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`
+			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
+			proposalCount - autoAcceptedCount > 0
+				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+				: undefined
 		);
 		if (autoAcceptedCount > 0) {
 			this.notifications.info(
@@ -403,7 +416,12 @@ export class EnrichmentModule {
 			// so discard any accumulated unmatched topics
 			this.topicExtractor.clearPending();
 			if (id) {
-				op.finish('Enrichment proposal created');
+				// Review action only when the proposal stays pending — auto-accept
+				// (applied right after) leaves nothing to review (#340).
+				op.finish(
+					'Enrichment proposal created',
+					this.shouldAutoAccept() ? undefined : { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+				);
 				// Single-note path is final here (no Phase 4 merge), so the
 				// stored proposal is fully formed — safe to auto-accept (#228).
 				await this.maybeAutoAccept(id);

@@ -25,7 +25,7 @@ export type { ValidationResult, ValidationStatus, ValidateOptions } from './cred
 export { decorateCredentialField } from './credential-field';
 export type { CredentialFieldOptions, CredentialFieldHandle } from './credential-field';
 export { NotificationManager } from './notifications';
-export type { OperationHandle } from './notifications';
+export type { OperationHandle, NoticeAction } from './notifications';
 export { fireAndForget } from './fire-and-forget';
 export type { FireAndForgetOptions } from './fire-and-forget';
 export { FolderPickerModal } from './folder-picker-modal';

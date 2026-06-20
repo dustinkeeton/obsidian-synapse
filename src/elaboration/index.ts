@@ -27,6 +27,9 @@ export class ElaborationModule {
 	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
+	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
+	onOpenProposalView: (() => void) | null = null;
+
 	/**
 	 * Live accessor for the elaboration auto-accept flag (#228). Wired by
 	 * main.ts to `() => this.settings.autoAccept.elaboration` so a settings
@@ -172,7 +175,12 @@ export class ElaborationModule {
 
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
-		genOp.finish(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		genOp.finish(
+			`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
+			proposalCount - autoAcceptedCount > 0
+				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+				: undefined
+		);
 		if (autoAcceptedCount > 0) {
 			this.notifications.info(
 				`Auto-accepted ${autoAcceptedCount} elaboration proposal${autoAcceptedCount === 1 ? '' : 's'}`
@@ -295,7 +303,14 @@ export class ElaborationModule {
 		// Mark checkpoint completed and dispatch deferred tasks (I1)
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
-		genOp.finish(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
+		// Review action only when at least one proposal remains pending after
+		// any batch auto-accept (#340).
+		genOp.finish(
+			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
+			proposalCount - autoAcceptedCount > 0
+				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+				: undefined
+		);
 		if (autoAcceptedCount > 0) {
 			this.notifications.info(
 				`Auto-accepted ${autoAcceptedCount} elaboration proposal${autoAcceptedCount === 1 ? '' : 's'}`
@@ -325,7 +340,12 @@ export class ElaborationModule {
 				op.update(`Generating proposal for ${file.basename}`);
 				const proposal = await this.proposer.generate(result);
 				await this.store.save(proposal);
-				op.finish('Proposal generated');
+				// Review action only when the proposal stays pending — auto-accept
+				// (applied right after) leaves nothing to review (#340).
+				op.finish(
+					'Proposal generated',
+					this.shouldAutoAccept() ? undefined : { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+				);
 				await this.maybeAutoAccept(proposal);
 				await this.refreshView();
 			} else {

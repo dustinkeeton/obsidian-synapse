@@ -53,6 +53,9 @@ export class DeepDiveModule {
 	onNoteAccepted: ((filePath: string) => void) | null = null;
 	onOrganizeRequested: ((file: TFile) => void) | null = null;
 
+	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
+	onOpenProposalView: (() => void) | null = null;
+
 	private analyzer: TopicAnalyzer;
 	private generator: NoteGenerator;
 	private store: DeepDiveStore;
@@ -489,8 +492,14 @@ export class DeepDiveModule {
 				const depthSummary = Object.entries(run.stats.byDepth)
 					.map(([d, c]) => `depth ${d}: ${c}`)
 					.join(', ');
+				// Review action only when proposals remain pending — auto-accept
+				// (applied right after) creates every note, leaving nothing to
+				// review (#340).
 				genOp.finish(
-					`Generated ${run.stats.totalProposals} proposals (${depthSummary})`
+					`Generated ${run.stats.totalProposals} proposals (${depthSummary})`,
+					run.stats.totalProposals > 0 && !this.shouldAutoAccept()
+						? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+						: undefined
 				);
 
 				// Auto-accept the whole generated tree if enabled (#228), in

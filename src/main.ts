@@ -193,6 +193,18 @@ export default class SynapsePlugin extends Plugin {
 		this.title.onViewRefreshNeeded = refreshView;
 		this.rem.onViewRefreshNeeded = refreshView;
 
+		// Wire the "Review" toast action (#340): proposal-generation toasts carry a
+		// Review button that opens the unified proposal view. Shared opener across
+		// all six proposal-producing modules.
+		const openProposalView = () =>
+			fireAndForget(this.activateUnifiedView(), 'Open proposal review', { notifications: this.notifications });
+		this.elaboration.onOpenProposalView = openProposalView;
+		this.enrichment.onOpenProposalView = openProposalView;
+		this.organize.onOpenProposalView = openProposalView;
+		this.deepDive.onOpenProposalView = openProposalView;
+		this.title.onOpenProposalView = openProposalView;
+		this.rem.onOpenProposalView = openProposalView;
+
 		// Load enabled modules
 		if (this.settings.elaboration.enabled) {
 			await this.elaboration.onload();

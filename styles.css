@@ -472,6 +472,16 @@
   background: transparent;
   color: var(--text-muted);
 }
+/*
+ * Actionable success/info toasts carry a single button (e.g. "Review");
+ * right-align it so it reads as a trailing call-to-action rather than a
+ * left-aligned form control. Scoped to single-action toasts so the
+ * confirmation snackbar's Proceed/Cancel pair is unaffected.
+ */
+.notice.synapse-notice--success .synapse-notice-actions,
+.notice.synapse-notice--info .synapse-notice-actions {
+  justify-content: flex-end;
+}
 
 /* ══════════════════════════════════════════════════════════════
  * Unified Proposal View (sidebar)

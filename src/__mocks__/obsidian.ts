@@ -177,12 +177,17 @@ export function createEl(tag = 'div'): any {
 }
 
 export class Notice {
+	/** Test helper: every Notice ever constructed (clear between tests). */
+	static instances: Notice[] = [];
 	noticeEl: any;
+	duration?: number;
 	constructor(_message: string | DocumentFragment, _duration?: number) {
 		this.noticeEl = createStubEl();
+		this.duration = _duration;
 		if (typeof _message === 'string') {
 			this.noticeEl.textContent = _message;
 		}
+		Notice.instances.push(this);
 	}
 	setMessage = vi.fn((msg: string) => {
 		if (this.noticeEl) this.noticeEl.textContent = msg;
