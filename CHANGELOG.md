@@ -5,6 +5,49 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.4] - 2026-06-20
+
+### Added
+
+- Guided API-key onboarding with live validation when configuring AI providers
+- "Review" action on proposal toasts to open the unified proposal view directly
+
+### Changed
+
+- Unified action-type colors into semantic theme tokens for consistent coloring across the UI
+
+### Fixed
+
+- Stop the animated progress-notification timer when the plugin is disabled mid-operation, preventing an orphaned interval from firing after unload
+
+## [1.0.3] - 2026-06-19
+
+### Added
+
+- Synapse actions sidebar — a registry-driven panel exposing every action, including on mobile
+- Centralized per-path exclusion list, applied across vault enumeration so excluded folders are skipped everywhere
+- Automatic formatting of song transcripts into structured lyrics
+
+### Changed
+
+- Hoisted the transcription provider and API key into the shared AI Configuration settings
+
+## [1.0.2] - 2026-06-14
+
+### Changed
+
+- Centralized desktop-only Node.js access behind a guarded loader for safer mobile behavior
+- Hardened internals: typed AI/provider responses and external data, enforced promise-rejection handling, and type-aware ESLint rules in CI
+
+### Fixed
+
+- Use window-scoped timers and DOM APIs so features work correctly in pop-out windows
+- Adopt Obsidian API and CSS best practices from a guideline review
+
+### Security
+
+- Publish build provenance attestations for release assets
+
 ## [1.0.1] - 2026-06-12
 
 ### Fixed
