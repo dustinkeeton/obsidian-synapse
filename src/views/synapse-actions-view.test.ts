@@ -13,7 +13,8 @@ function mockLeaf(): any {
 /**
  * A small, representative action set spanning two features and all contexts.
  * `review-proposals` carries the same explicit `icon` override the real registry
- * gives it; the enrichment actions inherit their feature-default glyph.
+ * gives it (used for the command palette; the sidebar shows the per-feature glyph
+ * on the group heading, not per action).
  */
 function sampleActions(): CommandDefinition[] {
 	return [
@@ -50,23 +51,9 @@ function buttons(el: any): any[] {
 	return out;
 }
 
-/** The text of a button's label span (label now lives in a child span, not the button's own text). */
-function labelOf(button: any): string | undefined {
-	return (button.children ?? [])
-		.find((c: any) => c.classList?.contains?.('synapse-actions-button-label'))
-		?.textContent;
-}
-
-/** The resolved icon name stamped on a button's icon span via `data-icon`. */
-function iconOf(button: any): string | null {
-	const iconEl = (button.children ?? [])
-		.find((c: any) => c.classList?.contains?.('synapse-actions-button-icon'));
-	return iconEl ? iconEl.getAttribute('data-icon') : null;
-}
-
-/** Find the action <button> whose label span reads `label`. */
+/** Find the action <button> whose text reads `label`. */
 function findButton(el: any, label: string): any {
-	return buttons(el).find((b) => labelOf(b) === label);
+	return buttons(el).find((b) => b.textContent === label);
 }
 
 /** Recursively collect text of all descendants carrying `cls`. */
@@ -75,6 +62,19 @@ function textsByClass(el: any, cls: string): string[] {
 	const walk = (node: any) => {
 		for (const child of node.children ?? []) {
 			if (child.classList?.contains?.(cls)) out.push(child.textContent);
+			walk(child);
+		}
+	};
+	walk(el);
+	return out;
+}
+
+/** The resolved glyph names stamped on each group heading icon (`data-icon`), in order. */
+function groupIcons(el: any): (string | null)[] {
+	const out: (string | null)[] = [];
+	const walk = (node: any) => {
+		for (const child of node.children ?? []) {
+			if (child.classList?.contains?.('synapse-actions-group-icon')) out.push(child.getAttribute('data-icon'));
 			walk(child);
 		}
 	};
@@ -92,7 +92,7 @@ describe('SynapseActionsView', () => {
 	it('renders one button per action with its registry name', async () => {
 		const { view, contentEl } = makeView();
 		await view.onOpen();
-		const labels = buttons(contentEl).map(labelOf);
+		const labels = buttons(contentEl).map((b) => b.textContent);
 		expect(labels).toEqual([
 			'Open proposal review sidebar',
 			'Enrich current note',
@@ -100,20 +100,18 @@ describe('SynapseActionsView', () => {
 		]);
 	});
 
-	it('renders each button with its resolved glyph (per-action override, else feature default)', async () => {
+	it('prefixes each group heading with its per-feature glyph (one per type, not per action)', async () => {
 		const { view, contentEl } = makeView();
 		await view.onOpen();
-		// review-proposals carries an explicit override; enrichment actions inherit
-		// the feature-default glyph (FEATURE_ICONS.enrichment).
-		expect(iconOf(findButton(contentEl, 'Open proposal review sidebar'))).toBe('synapse');
-		expect(iconOf(findButton(contentEl, 'Enrich current note'))).toBe('synapse-enrichment');
-		expect(iconOf(findButton(contentEl, 'Scan vault for enrichment'))).toBe('synapse-enrichment');
+		// Headings carry the feature default glyph (FEATURE_ICONS[feature]); the
+		// per-action `icon` override is for the palette, not the sidebar.
+		expect(groupIcons(contentEl)).toEqual(['synapse-main', 'synapse-enrichment']);
 	});
 
 	it('groups actions under sentence-case feature headings in registry order', async () => {
 		const { view, contentEl } = makeView();
 		await view.onOpen();
-		expect(textsByClass(contentEl, 'synapse-actions-group-heading')).toEqual([
+		expect(textsByClass(contentEl, 'synapse-actions-group-label')).toEqual([
 			'General',
 			'Enrichment',
 		]);

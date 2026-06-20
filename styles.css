@@ -1251,6 +1251,9 @@
   letter-spacing: 0.05em;
   color: var(--text-muted);
   margin: 8px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   /*
    * Subtle per-feature accent: a colored left marker on the group heading,
    * driven by the same action-type tokens as the cards/badges. Per-feature
@@ -1287,9 +1290,7 @@
   border-left-color: var(--synapse-color-main);
 }
 .synapse-actions-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: block;
   width: 100%;
   min-height: 44px; /* comfortable touch target (iOS/Material guidance) */
   margin: 4px 0;
@@ -1303,50 +1304,50 @@
   cursor: default;
 }
 /*
- * Per-action glyph (bespoke feature icon, #349). The registered SVG draws in
- * `currentColor`, so the feature tint is applied by setting `color` on this span
- * — the same action-type tokens that accent the group headings. `main`/General
- * keeps the muted default; per-feature overrides below recolor it.
+ * Feature glyph prefixed to the group heading (#349). The registered SVG draws
+ * in `currentColor`, so the feature tint is applied by setting `color` on this
+ * span; it reuses the same action-type tokens that accent the heading's left
+ * marker. `main`/General keeps the muted default; per-feature overrides recolor.
  */
-.synapse-actions-button-icon {
+.synapse-actions-group-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   color: var(--synapse-color-main);
 }
-.synapse-actions-button-icon .svg-icon {
-  width: 18px;
-  height: 18px;
+.synapse-actions-group-icon .svg-icon {
+  width: 16px;
+  height: 16px;
 }
-.synapse-actions-button-label {
+.synapse-actions-group-label {
   flex: 1 1 auto;
 }
-.synapse-actions-group--elaboration .synapse-actions-button-icon {
+.synapse-actions-group--elaboration .synapse-actions-group-icon {
   color: var(--synapse-color-elaboration);
 }
-.synapse-actions-group--enrichment .synapse-actions-button-icon {
+.synapse-actions-group--enrichment .synapse-actions-group-icon {
   color: var(--synapse-color-enrichment);
 }
-.synapse-actions-group--organize .synapse-actions-button-icon {
+.synapse-actions-group--organize .synapse-actions-group-icon {
   color: var(--synapse-color-organize);
 }
-.synapse-actions-group--deep-dive .synapse-actions-button-icon {
+.synapse-actions-group--deep-dive .synapse-actions-group-icon {
   color: var(--synapse-color-deep-dive);
 }
-.synapse-actions-group--summarize .synapse-actions-button-icon {
+.synapse-actions-group--summarize .synapse-actions-group-icon {
   color: var(--synapse-color-summarize);
 }
-.synapse-actions-group--tidy .synapse-actions-button-icon {
+.synapse-actions-group--tidy .synapse-actions-group-icon {
   color: var(--synapse-color-tidy);
 }
-.synapse-actions-group--rem .synapse-actions-button-icon {
+.synapse-actions-group--rem .synapse-actions-group-icon {
   color: var(--synapse-color-rem);
 }
-.synapse-actions-group--video .synapse-actions-button-icon {
+.synapse-actions-group--video .synapse-actions-group-icon {
   color: var(--synapse-color-video);
 }
-.synapse-actions-group--main .synapse-actions-button-icon {
+.synapse-actions-group--main .synapse-actions-group-icon {
   color: var(--synapse-color-main);
 }
 .synapse-actions-empty {

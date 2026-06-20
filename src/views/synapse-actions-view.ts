@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, setIcon } from 'obsidian';
 import type { CommandDefinition, FeatureKey } from '../commands';
-import { resolveActionIcon } from '../commands';
+import { FEATURE_ICONS } from '../commands';
 import { actionsGroupClass } from './proposal-styles';
 
 export const SYNAPSE_ACTIONS_VIEW_TYPE = 'synapse-actions';
@@ -99,28 +99,23 @@ export class SynapseActionsView extends ItemView {
 			const group = contentEl.createDiv({
 				cls: `synapse-actions-group ${actionsGroupClass(feature)}`,
 			});
-			group.createEl('div', {
-				text: FEATURE_LABELS[feature],
-				cls: 'synapse-actions-group-heading',
-			});
+			// One feature glyph per group, prefixed to the type heading and tinted
+			// per feature via CSS -- actions in a group share the feature glyph, so
+			// it isn't repeated on every button (#349 review). data-icon mirrors the
+			// name so it stays assertable in tests (setIcon's <svg> is a mock no-op).
+			const heading = group.createEl('div', { cls: 'synapse-actions-group-heading' });
+			const iconName = FEATURE_ICONS[feature];
+			const iconEl = heading.createSpan({ cls: 'synapse-actions-group-icon' });
+			iconEl.setAttribute('data-icon', iconName);
+			setIcon(iconEl, iconName);
+			heading.createSpan({ text: FEATURE_LABELS[feature], cls: 'synapse-actions-group-label' });
 
 			for (const action of groupActions) {
 				const disabled = action.context === 'note' && !noteActive;
 				const button = group.createEl('button', {
+					text: action.name,
 					cls: 'synapse-actions-button',
 				});
-
-				// Feature glyph (or per-action override), resolved from the registry
-				// and tinted per feature via CSS. `data-icon` mirrors the resolved
-				// name so it stays assertable in tests — setIcon injects an <svg> at
-				// runtime, which the obsidian test mock no-ops.
-				const iconName = resolveActionIcon(action);
-				const iconEl = button.createSpan({ cls: 'synapse-actions-button-icon' });
-				iconEl.setAttribute('data-icon', iconName);
-				setIcon(iconEl, iconName);
-
-				button.createSpan({ text: action.name, cls: 'synapse-actions-button-label' });
-
 				if (disabled) {
 					// Real <button disabled> can't be clicked and matches `:disabled`
 					// styling; we also skip wiring the handler so it can never fire.
