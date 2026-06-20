@@ -1,7 +1,6 @@
 import { Setting } from 'obsidian';
-import type { SettingsSectionContext } from '../shared/settings-section';
 import { PROVIDER_METADATA, decorateCredentialField } from '../shared';
-import type { CredentialProvider, CredentialFieldHandle } from '../shared';
+import type { CredentialProvider, CredentialFieldHandle, SettingsSectionContext } from '../shared';
 import { GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 
 /**
