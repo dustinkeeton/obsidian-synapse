@@ -13,3 +13,11 @@ export type {
 	UnifiedViewCallbacks,
 	ProposalKind,
 } from './types';
+export {
+	SYNAPSE_COLOR_TOKENS,
+	FEATURE_COLOR_TOKENS,
+	cardClass,
+	badgeClass,
+	reviewPaneLabelClass,
+	actionsGroupClass,
+} from './proposal-styles';

@@ -21,6 +21,9 @@ export class ProposalDetailModal extends Modal {
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
+		// Type-accent hook: styles the title underline with the elaboration token
+		// (single source of truth in styles.css), matching the sidebar card/badge.
+		contentEl.addClass('synapse-elaboration-detail');
 
 		contentEl.createEl('h2', { text: `Proposal for: ${this.proposal.sourceNotePath}` });
 
