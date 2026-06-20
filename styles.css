@@ -1173,14 +1173,21 @@
  * INSIDE each exclusion rule / add-folder / add-pattern `.setting-item`, on its
  * own full-width line beneath the row (the host sets `flex-wrap: wrap`), so it
  * still wraps independently. */
-.synapse-exclusion-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  flex-basis: 100%;
-  padding: 4px 0 8px;
-}
+ .synapse-exclusion-chips {
+   display: flex;
+   flex-wrap: wrap;
+   align-items: center;
+   gap: 6px;
+   flex-basis: 100%;
+   padding: 4px 0 8px;
+  }
+  .synapse-chips-container {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
 .synapse-chip {
   display: inline-flex;
   align-items: center;
