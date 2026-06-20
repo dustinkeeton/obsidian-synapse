@@ -291,7 +291,6 @@ export class SynapseSettingTab extends PluginSettingTab {
 		if (keyMeta.requiresKey) {
 			credentialField = decorateCredentialField({
 				setting: apiKeySetting,
-				container: aiBody,
 				provider: cred,
 				getKey: () => this.plugin.settings.ai.apiKey,
 			});
@@ -325,7 +324,6 @@ export class SynapseSettingTab extends PluginSettingTab {
 			// Reachability test (no key) against {endpoint}/api/tags.
 			ollamaField = decorateCredentialField({
 				setting: endpointSetting,
-				container: aiBody,
 				provider: 'ollama',
 				getKey: () => '',
 				getEndpoint: () => this.plugin.settings.ai.ollamaEndpoint,
@@ -473,7 +471,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		// value and self-redraw their own chip container — they must NOT re-render
 		// the tab (that would wipe the "Add a pattern" text input mid-entry).
 		let pendingFolderScope: 'all' | FeatureId[] = 'all';
-		new Setting(body)
+		const folderSetting = new Setting(body)
 			.setName('Add a folder')
 			.setDesc('Pick a folder to exclude (saved as "folder/**"). The chips below set which features it is excluded from.')
 			.addButton((btn) =>
@@ -490,7 +488,8 @@ export class SynapseSettingTab extends PluginSettingTab {
 						}).open();
 					})
 			);
-		renderFeatureChipSelect(body.createDiv({ cls: 'synapse-exclusion-chips' }), {
+		folderSetting.settingEl.addClass('synapse-setting--has-helper');
+		renderFeatureChipSelect(folderSetting.settingEl.createDiv({ cls: 'synapse-exclusion-chips' }), {
 			value: pendingFolderScope,
 			labels: FEATURE_LABELS,
 			order: FEATURE_ORDER,
@@ -501,7 +500,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		let pendingPattern = '';
 		let pendingPatternScope: 'all' | FeatureId[] = 'all';
-		new Setting(body)
+		const patternSetting = new Setting(body)
 			.setName('Add a pattern')
 			.setDesc('For exact note paths or direct-children globs (e.g. "Inbox/*"). The chips below set which features it is excluded from.')
 			.addText((text) =>
@@ -523,7 +522,10 @@ export class SynapseSettingTab extends PluginSettingTab {
 						void this.plugin.saveSettings().then(() => ctx.rerender());
 					})
 			);
-		renderFeatureChipSelect(body.createDiv({ cls: 'synapse-exclusion-chips' }), {
+		patternSetting.settingEl.addClass('synapse-setting--has-helper');
+		// The chip div's `container.empty()` only clears the chip div, not the text
+		// input in the control area, so add-pattern focus is preserved on each redraw.
+		renderFeatureChipSelect(patternSetting.settingEl.createDiv({ cls: 'synapse-exclusion-chips' }), {
 			value: pendingPatternScope,
 			labels: FEATURE_LABELS,
 			order: FEATURE_ORDER,
@@ -546,7 +548,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 		rule: ExclusionRule,
 		index: number,
 	): void {
-		new Setting(body)
+		const ruleSetting = new Setting(body)
 			.setName(rule.pattern || '(empty pattern)')
 			.addExtraButton((btn) =>
 				btn
@@ -558,7 +560,8 @@ export class SynapseSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		renderFeatureChipSelect(body.createDiv({ cls: 'synapse-exclusion-chips' }), {
+		ruleSetting.settingEl.addClass('synapse-setting--has-helper');
+		renderFeatureChipSelect(ruleSetting.settingEl.createDiv({ cls: 'synapse-exclusion-chips' }), {
 			value: rule.features,
 			labels: FEATURE_LABELS,
 			order: FEATURE_ORDER,

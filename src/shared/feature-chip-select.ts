@@ -121,10 +121,11 @@ export function renderFeatureChipSelect(
 	function render(): void {
 		container.empty();
 
+		const chipsContainer = container.createDiv({ cls: 'synapse-chips-container' });
 		if (current === 'all') {
-			renderChip(container, 'All features', () => apply([]));
+			renderChip(chipsContainer, 'All features', () => apply([]));
 		} else if (current.length === 0) {
-			container.createSpan({
+			chipsContainer.createSpan({
 				cls: 'synapse-exclusion-chips-empty',
 				text: 'No features — rule inactive',
 			});
@@ -132,7 +133,7 @@ export function renderFeatureChipSelect(
 			const scoped = current;
 			for (const feature of order) {
 				if (scoped.includes(feature)) {
-					renderChip(container, labels[feature], () =>
+					renderChip(chipsContainer, labels[feature], () =>
 						apply(scoped.filter((f) => f !== feature)),
 					);
 				}

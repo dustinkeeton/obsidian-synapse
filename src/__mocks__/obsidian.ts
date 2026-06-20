@@ -313,10 +313,18 @@ export class ButtonComponent {
 }
 
 export class Setting {
-	settingEl: any = createStubEl();
+	/**
+	 * Mirrors real Obsidian: the row's element is created from (and appended to)
+	 * the container, so helpers nested into `settingEl` stay reachable from the
+	 * container in tests. Falls back to an orphan stub when no container is passed
+	 * (e.g. credential-field.test.ts passes `{}` and inspects the stub directly).
+	 */
+	settingEl: any;
 	/** Child components created via add*, mirroring Obsidian's `components`. */
 	components: ToggleComponent[] = [];
-	constructor(_containerEl: unknown) {}
+	constructor(containerEl?: any) {
+		this.settingEl = containerEl?.createDiv?.('setting-item') ?? createStubEl();
+	}
 	setName = vi.fn().mockReturnThis();
 	setDesc = vi.fn().mockReturnThis();
 	setHeading = vi.fn().mockReturnThis();

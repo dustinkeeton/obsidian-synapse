@@ -6,10 +6,11 @@ import type { ValidationResult } from './credential-validator';
 import { PROVIDER_METADATA } from './provider-metadata';
 
 /**
- * Build a mock Setting row + a section-body container. The link + chip render
- * into the container (their own block), so tests inspect the container — not the
- * Setting row — mirroring how the decorator renders. The Setting is typed as the
- * real one so it satisfies the decorator API.
+ * Build a mock Setting row + a section-body container. The link + chip now render
+ * INSIDE the row's own `.setting-item` (`setting.settingEl`), on their own line —
+ * so tests inspect the setting row, not the container. The `{}` passed to the mock
+ * `Setting` has no `createDiv`, so `settingEl` is an orphan stub the tests inspect
+ * directly. The Setting is typed as the real one so it satisfies the decorator API.
  */
 function makeCtx() {
 	const setting = new Setting({} as never) as unknown as ObsidianSetting;
@@ -17,12 +18,12 @@ function makeCtx() {
 	return { setting, container };
 }
 
-const extrasEl = (container: any) =>
-	container.children.find((el: any) => el.classList?.contains('synapse-credential-extras'));
-const chipEl = (container: any) =>
-	extrasEl(container)?.children.find((el: any) => el.classList?.contains('synapse-credential-chip'));
-const anchorEl = (container: any) =>
-	extrasEl(container)?.children.find((el: any) => el.tagName === 'A');
+const extrasEl = (setting: any) =>
+	setting.settingEl.children.find((el: any) => el.classList?.contains('synapse-credential-extras'));
+const chipEl = (setting: any) =>
+	extrasEl(setting)?.children.find((el: any) => el.classList?.contains('synapse-credential-chip'));
+const anchorEl = (setting: any) =>
+	extrasEl(setting)?.children.find((el: any) => el.tagName === 'A');
 
 function testButton(): ButtonComponent {
 	const btn = ButtonComponent.instances.find((b) => b.buttonText === 'Test');
@@ -50,81 +51,82 @@ describe('decorateCredentialField', () => {
 		ButtonComponent.instances.length = 0;
 	});
 
-	it('renders the link + chip as a block in the container, not in the setting row', () => {
+	it('renders the link + chip as a block inside the setting row, not the container', () => {
 		const { setting, container } = makeCtx();
-		decorateCredentialField({ setting, container, provider: 'openai', getKey: () => 'sk-x' });
-		// The extras block lives in the container…
-		expect(extrasEl(container)).toBeDefined();
-		// …and nothing was appended to the setting row itself (link + chip live in the container).
-		expect((setting.settingEl as any).children).toHaveLength(0);
+		decorateCredentialField({ setting, provider: 'openai', getKey: () => 'sk-x' });
+		// The extras block now lives inside the setting row's own `.setting-item`…
+		expect(extrasEl(setting)).toBeDefined();
+		// …and the host row is marked so CSS can wrap the helper onto its own line.
+		expect((setting.settingEl as any).classList.contains('synapse-setting--has-helper')).toBe(true);
+		// …and nothing leaked into the section-body container.
+		expect(container.children).toHaveLength(0);
 	});
 
 	it('renders a get-key anchor pointing at the provider console', () => {
-		const { setting, container } = makeCtx();
-		decorateCredentialField({ setting, container, provider: 'openai', getKey: () => 'sk-x' });
-		const a = anchorEl(container);
+		const { setting } = makeCtx();
+		decorateCredentialField({ setting, provider: 'openai', getKey: () => 'sk-x' });
+		const a = anchorEl(setting);
 		expect(a).toBeDefined();
 		expect(a.getAttribute('href')).toBe(PROVIDER_METADATA.openai.getKeyUrl);
 		expect(a.getAttribute('target')).toBe('_blank');
 	});
 
 	it('omits the get-key anchor for keyless ollama', () => {
-		const { setting, container } = makeCtx();
+		const { setting } = makeCtx();
 		decorateCredentialField({
 			setting,
-			container,
 			provider: 'ollama',
 			getKey: () => '',
 			getEndpoint: () => 'http://localhost:11434',
 		});
-		expect(anchorEl(container)).toBeUndefined();
+		expect(anchorEl(setting)).toBeUndefined();
 	});
 
 	it('starts with a neutral format-hint chip', () => {
-		const { setting, container } = makeCtx();
-		decorateCredentialField({ setting, container, provider: 'openai', getKey: () => '' });
-		const chip = chipEl(container);
+		const { setting } = makeCtx();
+		decorateCredentialField({ setting, provider: 'openai', getKey: () => '' });
+		const chip = chipEl(setting);
 		expect(chip.textContent).toBe(PROVIDER_METADATA.openai.formatHint);
 		expect(chip.classList.contains('is-hint')).toBe(true);
 	});
 
 	it('shows a valid chip when the Test button reports valid', async () => {
-		const { setting, container } = makeCtx();
+		const { setting } = makeCtx();
 		const validate = validatorReturning({
 			status: 'valid',
 			provider: 'openai',
 			message: 'Connected to OpenAI',
 		});
-		decorateCredentialField({ setting, container, provider: 'openai', getKey: () => 'sk-good', validate });
+		decorateCredentialField({ setting, provider: 'openai', getKey: () => 'sk-good', validate });
 
 		testButton()._click();
 		await flush();
 
 		expect(validate).toHaveBeenCalledWith('openai', 'sk-good', { endpoint: undefined });
-		const chip = chipEl(container);
+		const chip = chipEl(setting);
 		expect(chip.textContent).toContain('Connected to OpenAI');
 		expect(chip.classList.contains('is-valid')).toBe(true);
 	});
 
 	it('shows an invalid chip when the Test button reports invalid', async () => {
-		const { setting, container } = makeCtx();
+		const { setting } = makeCtx();
 		const validate = validatorReturning({
 			status: 'invalid',
 			provider: 'openai',
 			message: 'Invalid key',
 		});
-		decorateCredentialField({ setting, container, provider: 'openai', getKey: () => 'sk-bad', validate });
+		decorateCredentialField({ setting, provider: 'openai', getKey: () => 'sk-bad', validate });
 
 		testButton()._click();
 		await flush();
 
-		const chip = chipEl(container);
+		const chip = chipEl(setting);
 		expect(chip.textContent).toContain('Invalid key');
 		expect(chip.classList.contains('is-invalid')).toBe(true);
 	});
 
 	it('passes the live endpoint through for ollama', async () => {
-		const { setting, container } = makeCtx();
+		const { setting } = makeCtx();
 		const validate = validatorReturning({
 			status: 'valid',
 			provider: 'ollama',
@@ -132,7 +134,6 @@ describe('decorateCredentialField', () => {
 		});
 		decorateCredentialField({
 			setting,
-			container,
 			provider: 'ollama',
 			getKey: () => '',
 			getEndpoint: () => 'http://localhost:11434',
@@ -146,7 +147,7 @@ describe('decorateCredentialField', () => {
 	});
 
 	it('reset() restores the neutral hint after a result', async () => {
-		const { setting, container } = makeCtx();
+		const { setting } = makeCtx();
 		const validate = validatorReturning({
 			status: 'valid',
 			provider: 'openai',
@@ -154,7 +155,6 @@ describe('decorateCredentialField', () => {
 		});
 		const handle = decorateCredentialField({
 			setting,
-			container,
 			provider: 'openai',
 			getKey: () => 'sk-good',
 			validate,
@@ -162,10 +162,10 @@ describe('decorateCredentialField', () => {
 
 		testButton()._click();
 		await flush();
-		expect(chipEl(container).classList.contains('is-valid')).toBe(true);
+		expect(chipEl(setting).classList.contains('is-valid')).toBe(true);
 
 		handle.reset();
-		const chip = chipEl(container);
+		const chip = chipEl(setting);
 		expect(chip.textContent).toBe(PROVIDER_METADATA.openai.formatHint);
 		expect(chip.classList.contains('is-hint')).toBe(true);
 		expect(chip.classList.contains('is-valid')).toBe(false);
