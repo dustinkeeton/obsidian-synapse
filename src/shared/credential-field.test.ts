@@ -35,11 +35,15 @@ function validatorReturning(result: ValidationResult) {
 }
 
 /**
- * Flush pending microtasks. The Test onClick fires validation fire-and-forget
- * (it must NOT return the promise — that freezes Obsidian), so `_click()` returns
- * `undefined`; tests await this to let `.then(showResult)` settle.
+ * Let validation settle AND the deferred UI update run. The Test onClick applies
+ * the result on a macrotask (`setTimeout`, not the resolved-promise microtask —
+ * that form hard-freezes Obsidian; see #335), so we wait two macrotask ticks: one
+ * for `validate()` to resolve, one for the deferred chip update.
  */
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+const flush = async () => {
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+};
 
 describe('decorateCredentialField', () => {
 	beforeEach(() => {

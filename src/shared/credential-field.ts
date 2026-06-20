@@ -16,10 +16,9 @@ export interface CredentialFieldOptions {
 	/** The key (or, for Ollama, endpoint) Setting row to decorate (gets the Test button). */
 	setting: Setting;
 	/**
-	 * The section body the row lives in. The get-key link + status chip are
-	 * rendered here as their own block (right after the row), NOT inside the
-	 * `.setting-item` — mutating a child of the flex row forces a pathological
-	 * relayout of Obsidian's settings flexbox that can freeze the app.
+	 * The section body the row lives in. The get-key link + status chip render
+	 * here as their own block (right after the row) rather than inside the
+	 * `.setting-item`, so the chip reflows only its own block.
 	 */
 	container: HTMLElement;
 	provider: CredentialProvider;
@@ -60,10 +59,10 @@ export function decorateCredentialField(opts: CredentialFieldOptions): Credentia
 	const meta = PROVIDER_METADATA[provider];
 
 	// Render the link + chip as their own block in the section body, right after
-	// the row — NOT inside the `.setting-item`. Mutating a flex child of the row
-	// (the chip) forces a pathological relayout of Obsidian's settings flexbox
-	// that hard-freezes the app; a standalone block reflows only itself. This
-	// mirrors the exclusion-chips UI, which renders into the body and never freezes.
+	// the row — not inside the `.setting-item` — so the chip reflows only itself
+	// (mirrors the exclusion-chips UI). NB: the #335 freeze was NOT the chip's
+	// location; it was updating the chip inside the promise-resolution microtask
+	// after Test (see the Test onClick below for the root cause + fix).
 	const extras = container.createDiv({ cls: 'synapse-credential-extras' });
 
 	// "Get an API key →" deep link. Omitted for keyless providers (Ollama).
@@ -99,21 +98,27 @@ export function decorateCredentialField(opts: CredentialFieldOptions): Credentia
 			.onClick(() => {
 				setChip('checking', 'Checking…');
 				btn.setDisabled(true);
-				// Fire-and-forget — do NOT `return` this promise. Returning a Promise
-				// from an Obsidian ButtonComponent onClick hard-freezes the renderer
-				// (confirmed by isolation: the exact same operations run synchronously
-				// are fine; only the promise-returning form freezes). `void` runs the
-				// async validation and updates the chip without handing Obsidian a promise.
+				// Apply the result on a MACROTASK, not in the promise-resolution
+				// microtask. Updating the settings DOM (the chip) inside the `.then()`
+				// continuation after validation hard-freezes Obsidian's settings layout
+				// — isolated for #335: the identical update via setTimeout never freezes;
+				// only the `.then()`-microtask form does, independent of the network.
+				// `void` keeps Obsidian's onClick handler synchronous.
+				const settle = (result: ValidationResult): void => {
+					window.setTimeout(() => {
+						showResult(result);
+						btn.setDisabled(false);
+					}, 0);
+				};
 				void validate(provider, getKey(), { endpoint: getEndpoint?.() })
-					.then(showResult)
+					.then(settle)
 					.catch((err: unknown) =>
-						showResult({
+						settle({
 							status: 'error',
 							provider,
 							message: err instanceof Error ? err.message : String(err),
 						}),
-					)
-					.finally(() => btn.setDisabled(false));
+					);
 			}),
 	);
 
