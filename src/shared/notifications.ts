@@ -2,13 +2,26 @@ import { Notice } from 'obsidian';
 
 export type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error';
 
+/**
+ * A single action button rendered on an actionable success/completion toast
+ * (e.g. "Review"). `onClick` runs when the user presses the button; the toast
+ * then hides itself.
+ */
+export interface NoticeAction {
+	label: string;
+	onClick: () => void;
+}
+
 export interface OperationHandle {
 	/** Update the operation's status message */
 	update(message: string): void;
 	/** Update with progress counter (e.g., 3/5) */
 	progress(current: number, total: number, label?: string): void;
-	/** Mark operation as successfully finished */
-	finish(message?: string): void;
+	/**
+	 * Mark operation as successfully finished. When `action` is supplied the
+	 * completion toast renders an action button (e.g. "Review").
+	 */
+	finish(message?: string, action?: NoticeAction): void;
 	/** Mark operation as failed */
 	error(message: string): void;
 	/** Whether the operation has been cancelled */
@@ -36,6 +49,13 @@ interface TrackedOperation {
  * automatically with the plugin.
  */
 const CLS = 'synapse-notice';
+
+/**
+ * Auto-dismiss (ms) for actionable success/completion toasts. Longer than the
+ * plain 4s default so the user has time to click the action button before the
+ * toast disappears.
+ */
+const ACTION_NOTICE_DURATION = 8000;
 
 /** Get the underlying DOM element from a Notice */
 function getNoticeEl(notice: Notice): HTMLElement {
@@ -202,9 +222,16 @@ export class NotificationManager {
 				this.updateStatusBar();
 			},
 
-			finish: (message?: string) => {
+			finish: (message?: string, action?: NoticeAction) => {
 				if (op.state !== 'running') return;
-				this.completeOperation(opId, 'done', message || `${op.label} complete`, 'success', 4000);
+				this.completeOperation(
+					opId,
+					'done',
+					message || `${op.label} complete`,
+					'success',
+					action ? ACTION_NOTICE_DURATION : 4000,
+					action
+				);
 			},
 
 			error: (message: string) => {
@@ -270,16 +297,64 @@ export class NotificationManager {
 		this.completeOperation(id, 'cancelled', 'Operation cancelled', 'warning', 4000);
 	}
 
-	/** Show a one-shot informational notice (not tracked, dismissible) */
-	info(message: string, duration = 4000): void {
+	/**
+	 * Show a one-shot informational notice (not tracked, dismissible).
+	 * When `action` is supplied the toast renders an action button (e.g. "Review").
+	 */
+	info(message: string, duration = 4000, action?: NoticeAction): void {
+		if (action) {
+			this.showActionNotice(message, 'info', Math.max(duration, ACTION_NOTICE_DURATION), action);
+			return;
+		}
 		const notice = new Notice(`Synapse: ${message}`, duration);
 		styleNotice(notice, 'info');
 	}
 
-	/** Show a one-shot success notice (dismissible) */
-	success(message: string, duration = 4000): void {
+	/**
+	 * Show a one-shot success notice (dismissible). When `action` is supplied the
+	 * toast renders an action button (e.g. "Review") and stays up longer.
+	 */
+	success(message: string, duration = 4000, action?: NoticeAction): void {
+		if (action) {
+			this.showActionNotice(message, 'success', Math.max(duration, ACTION_NOTICE_DURATION), action);
+			return;
+		}
 		const notice = new Notice(`Synapse: ${message}`, duration);
 		styleNotice(notice, 'success');
+	}
+
+	/**
+	 * Build an interactive one-shot notice carrying a single action button.
+	 * Mirrors the confirm() snackbar markup: a message div plus an actions
+	 * container holding one `.mod-cta` button. The notice blocks background
+	 * click-to-dismiss, but the button click passes through (preventDismiss
+	 * lets button targets through), runs the action, and hides the toast.
+	 */
+	private showActionNotice(
+		message: string,
+		level: NoticeLevel,
+		duration: number,
+		action: NoticeAction
+	): void {
+		const notice = new Notice('', duration);
+		styleNotice(notice, level);
+		preventDismiss(notice);
+
+		const el = getNoticeEl(notice);
+		el.empty();
+
+		el.createEl('div', { text: `Synapse: ${message}` });
+
+		const actions = el.createDiv({ cls: `${CLS}-actions` });
+		const button = actions.createEl('button', {
+			text: action.label,
+			cls: 'mod-cta',
+		});
+		button.addEventListener('click', (e) => {
+			e.stopPropagation();
+			action.onClick();
+			notice.hide();
+		});
 	}
 
 	/** Show a one-shot error notice (dismissible, stays longer) */
@@ -299,16 +374,23 @@ export class NotificationManager {
 		newState: TrackedOperation['state'],
 		message: string,
 		level: NoticeLevel,
-		duration: number
+		duration: number,
+		action?: NoticeAction
 	): void {
 		const op = this.operations.get(id);
 		if (!op) return;
 		op.state = newState;
 		stopEllipsis(op.ellipsisInterval);
 		op.notice.hide();
-		// Completion/error/cancel notices are normal dismissible toasts
-		const notice = new Notice(`Synapse: ${message}`, duration);
-		styleNotice(notice, level);
+		// Completion/error/cancel notices are normal dismissible toasts. When an
+		// action is supplied, build an interactive notice with a single button;
+		// otherwise keep the plain (unchanged) path.
+		if (action) {
+			this.showActionNotice(message, level, duration, action);
+		} else {
+			const notice = new Notice(`Synapse: ${message}`, duration);
+			styleNotice(notice, level);
+		}
 		this.operations.delete(id);
 		this.updateStatusBar();
 	}

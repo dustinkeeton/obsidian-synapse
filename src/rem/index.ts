@@ -26,6 +26,9 @@ export class RemModule {
 	/** Optional callback to refresh the unified proposal view. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
+	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
+	onOpenProposalView: (() => void) | null = null;
+
 	/**
 	 * Live accessor for the REM auto-accept flag (#228). Wired by main.ts to
 	 * `() => this.settings.autoAccept.rem`. Defaults to "never auto-accept".
@@ -142,8 +145,12 @@ export class RemModule {
 		};
 
 		await this.store.save(proposal);
+		// Review action only when the proposal stays pending — auto-accept
+		// (applied right after) inserts the links, leaving nothing to review (#340).
 		this.notifications.success(
-			`Found ${allCandidates.length} linkable mention${allCandidates.length === 1 ? '' : 's'}`
+			`Found ${allCandidates.length} linkable mention${allCandidates.length === 1 ? '' : 's'}`,
+			undefined,
+			this.shouldAutoAccept() ? undefined : { label: 'Review', onClick: () => this.onOpenProposalView?.() }
 		);
 
 		// Single-note path: auto-accept the whole proposal if enabled (#228).
@@ -256,7 +263,14 @@ export class RemModule {
 		} else {
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
-			op.finish(`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions`);
+			// Review action only when at least one proposal remains pending after
+			// any batch auto-accept (#340).
+			op.finish(
+				`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions`,
+				created - autoAcceptedCount > 0
+					? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+					: undefined
+			);
 			if (autoAcceptedCount > 0) {
 				this.notifications.info(
 					`Auto-accepted REM links in ${autoAcceptedCount} note${autoAcceptedCount === 1 ? '' : 's'}`
@@ -334,7 +348,12 @@ export class RemModule {
 		} else {
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
-			op.finish(`Resumed -- generated ${createdProposalIds.length} proposals`);
+			op.finish(
+				`Resumed -- generated ${createdProposalIds.length} proposals`,
+				createdProposalIds.length - autoAcceptedCount > 0
+					? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+					: undefined
+			);
 			if (autoAcceptedCount > 0) {
 				this.notifications.info(
 					`Auto-accepted REM links in ${autoAcceptedCount} note${autoAcceptedCount === 1 ? '' : 's'}`

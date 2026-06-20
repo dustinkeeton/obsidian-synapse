@@ -1,11 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Notice } from 'obsidian';
 import { NotificationManager } from './notifications';
+
+/** Recursively locate the first <button> element in a stub-element tree. */
+function findButton(el: any): any | null {
+	for (const child of el.children ?? []) {
+		if (child.tagName === 'BUTTON') return child;
+		const nested = findButton(child);
+		if (nested) return nested;
+	}
+	return null;
+}
+
+/** The most recently constructed Notice (the visible completion/success toast). */
+function lastNotice(): any {
+	return (Notice as unknown as { instances: any[] }).instances.at(-1);
+}
 
 describe('NotificationManager', () => {
 	let manager: NotificationManager;
 
 	beforeEach(() => {
 		manager = new NotificationManager();
+		(Notice as unknown as { instances: any[] }).instances.length = 0;
 	});
 
 	afterEach(() => {
@@ -112,6 +129,49 @@ describe('NotificationManager', () => {
 			const handle = manager.startOperation('Work', 'sb-done');
 			handle.finish();
 			expect((mockEl as any).setText).toHaveBeenLastCalledWith('Synapse');
+		});
+	});
+
+	describe('action button (#340)', () => {
+		it('success renders a button labelled by the action and wires its click', () => {
+			const onClick = vi.fn();
+			manager.success('Title proposal ready', undefined, { label: 'Review', onClick });
+
+			const notice = lastNotice();
+			const button = findButton(notice.noticeEl);
+			expect(button).not.toBeNull();
+			expect(button.textContent).toBe('Review');
+			expect(button.classList.contains('mod-cta')).toBe(true);
+
+			// Clicking invokes the handler exactly once, then hides the toast.
+			button.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+			expect(onClick).toHaveBeenCalledTimes(1);
+			expect(notice.hide).toHaveBeenCalledTimes(1);
+		});
+
+		it('success without an action renders no button (regression guard)', () => {
+			manager.success('Done!');
+			expect(findButton(lastNotice().noticeEl)).toBeNull();
+		});
+
+		it('finish renders an action button when an action is supplied', () => {
+			const onClick = vi.fn();
+			const handle = manager.startOperation('Generating', 'op-action');
+			handle.finish('Generated 3 proposals', { label: 'Review', onClick });
+
+			const notice = lastNotice();
+			const button = findButton(notice.noticeEl);
+			expect(button?.textContent).toBe('Review');
+
+			button.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+			expect(onClick).toHaveBeenCalledTimes(1);
+			expect(notice.hide).toHaveBeenCalledTimes(1);
+		});
+
+		it('finish without an action renders no button (regression guard)', () => {
+			const handle = manager.startOperation('Working', 'op-plain');
+			handle.finish('Done');
+			expect(findButton(lastNotice().noticeEl)).toBeNull();
 		});
 	});
 

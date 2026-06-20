@@ -16,6 +16,9 @@ export class TitleModule {
 	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
+	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
+	onOpenProposalView: (() => void) | null = null;
+
 	/**
 	 * Live accessor for the title auto-accept flag (#228). Wired by main.ts to
 	 * `() => this.settings.autoAccept.title`. Defaults to "never auto-accept".
@@ -39,13 +42,17 @@ export class TitleModule {
 	 * Auto-accept a freshly generated title proposal (#228), if the title
 	 * auto-accept flag is on. This RENAMES the file. A single Notice fires
 	 * (title proposals are generated one-at-a-time, never in a tight batch).
+	 *
+	 * Returns `true` when auto-accept was applied, so callers can suppress the
+	 * "Title proposal ready" Review toast for proposals that were consumed (#340).
 	 */
-	private async maybeAutoAccept(proposal: TitleProposal): Promise<void> {
-		if (!this.shouldAutoAccept()) return;
+	private async maybeAutoAccept(proposal: TitleProposal): Promise<boolean> {
+		if (!this.shouldAutoAccept()) return false;
 		await this.acceptProposal(proposal.id, { silent: true });
 		this.notifications.info(
 			`Auto-accepted title "${proposal.proposedTitle}"`
 		);
+		return true;
 	}
 
 	async onload(): Promise<void> {
@@ -94,7 +101,16 @@ export class TitleModule {
 			};
 
 			await this.store.save(proposal);
-			await this.maybeAutoAccept(proposal);
+			const autoAccepted = await this.maybeAutoAccept(proposal);
+			// Title's check is silent until a proposal is actually pending: surface
+			// a Review toast so the otherwise-silent title flow is reachable, but
+			// never for an auto-accepted (already-applied) proposal (#340).
+			if (!autoAccepted) {
+				this.notifications.success('Title proposal ready', undefined, {
+					label: 'Review',
+					onClick: () => this.onOpenProposalView?.(),
+				});
+			}
 			await this.refreshView();
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
@@ -136,7 +152,15 @@ export class TitleModule {
 			};
 
 			await this.store.save(proposal);
-			await this.maybeAutoAccept(proposal);
+			const autoAccepted = await this.maybeAutoAccept(proposal);
+			// As in checkUntitled: a Review toast unless the proposal was already
+			// applied via auto-accept (#340).
+			if (!autoAccepted) {
+				this.notifications.success('Title proposal ready', undefined, {
+					label: 'Review',
+					onClick: () => this.onOpenProposalView?.(),
+				});
+			}
 			await this.refreshView();
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);

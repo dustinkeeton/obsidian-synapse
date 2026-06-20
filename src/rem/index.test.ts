@@ -131,7 +131,11 @@ describe('RemModule', () => {
 			expect(result!.candidates).toHaveLength(2);
 			expect(result!.status).toBe('pending');
 			expect(saveSpy).toHaveBeenCalledWith(expect.objectContaining({ sourceNotePath: 'notes/A.md' }));
-			expect(notifications.success).toHaveBeenCalledWith(expect.stringContaining('2 linkable mentions'));
+			expect(notifications.success).toHaveBeenCalledWith(
+				expect.stringContaining('2 linkable mentions'),
+				undefined,
+				expect.objectContaining({ label: 'Review' })
+			);
 		});
 
 		it('returns null when no linkable mentions are found', async () => {
@@ -255,6 +259,71 @@ describe('RemModule', () => {
 				'accepted',
 				['Foo'],
 				expect.any(String)
+			);
+		});
+	});
+
+	describe('Review toast action (#340)', () => {
+		it('forwards a Review action that opens the proposal view to the success toast', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('mentions Foo');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			const module = await loadedModule(); // auto-accept off
+			const openSpy = vi.fn();
+			module.onOpenProposalView = openSpy;
+
+			await module.remScanNote('notes/A.md');
+
+			expect(notifications.success).toHaveBeenCalledWith(
+				expect.stringContaining('linkable mention'),
+				undefined,
+				expect.objectContaining({ label: 'Review' })
+			);
+			// The action opens the unified proposal view.
+			const action = notifications.success.mock.calls[0][2];
+			action.onClick();
+			expect(openSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('forwards a Review action to the directory-scan completion toast', async () => {
+			const op = makeOp();
+			notifications.startOperation.mockReturnValue(op);
+			app.vault.getMarkdownFiles.mockReturnValue([mockFile('notes/A.md')]);
+			app.vault.read.mockResolvedValue('Foo content');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			const module = await loadedModule(); // auto-accept off
+			const openSpy = vi.fn();
+			module.onOpenProposalView = openSpy;
+
+			await module.remScanDirectory();
+
+			expect(op.finish).toHaveBeenCalledWith(
+				expect.stringContaining('REM scan complete'),
+				expect.objectContaining({ label: 'Review' })
+			);
+			op.finish.mock.calls.at(-1)![1].onClick();
+			expect(openSpy).toHaveBeenCalledTimes(1);
+		});
+
+		it('omits the Review action when auto-accept is on (nothing left to review)', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('mentions Foo');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			loadSpy.mockImplementation(async () => ({
+				id: 'x',
+				sourceNotePath: 'notes/A.md',
+				createdAt: '2026-06-11T00:00:00.000Z',
+				candidates: [candidate('Foo')],
+				status: 'pending',
+			}));
+			const module = await loadedModule(() => true);
+
+			await module.remScanNote('notes/A.md');
+
+			expect(notifications.success).toHaveBeenCalledWith(
+				expect.stringContaining('linkable mention'),
+				undefined,
+				undefined
 			);
 		});
 	});
