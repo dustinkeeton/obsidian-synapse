@@ -388,7 +388,14 @@ export class OrganizeModule {
 		if (movedCount > 0) parts.push(`${movedCount} moved`);
 		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
 		if (errorCount > 0) parts.push(`${errorCount} failed`);
-		genOp.finish(parts.length > 0 ? parts.join(', ') : 'No changes needed');
+		// Review action only when at least one new-directory proposal remains
+		// pending after any auto-accept (#340).
+		genOp.finish(
+			parts.length > 0 ? parts.join(', ') : 'No changes needed',
+			proposalCount - autoAcceptedCount > 0
+				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+				: undefined
+		);
 
 		// Generate organize summary with move diagram
 		if (moveRecords.length > 0) {
