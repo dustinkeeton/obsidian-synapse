@@ -1,9 +1,9 @@
 // Decorates an API-key Setting row with the friendlier-auth affordances (#335):
 // a "Get an API key →" deep link, a "Test" button, and a live ✓/✗ status chip.
 //
-// All of these attach to `setting.settingEl` (the one element both real Obsidian
-// and the test mock expose on `Setting` — controlEl/descEl/nameEl are absent
-// from the mock). The chip is updated in place, never via a settings re-render,
+// The Test button is added to the Setting row (`setting.addButton`); the get-key
+// link and status chip render into the provided `container` (the section body) as
+// their own block. The chip is updated in place, never via a settings re-render,
 // so the password field keeps focus while the user types.
 
 import { Setting } from 'obsidian';

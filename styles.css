@@ -1022,10 +1022,9 @@
 
 /* ── Friendlier provider auth: get-key link + live validation (#335) ──
  * The "Get an API key →" deep link and the ✓/✗ status chip render as their own
- * block in the section body, just beneath the credential row — NOT inside the
- * `.setting-item`. Mutating a child of the settings flex row forces a pathological
- * relayout that can freeze the app, so this block stands on its own and reflows
- * only itself. Colors use Obsidian theme vars for light/dark compatibility. */
+ * block in the section body, just beneath the credential row (not inside the
+ * `.setting-item`), so they wrap independently of the row. Colors use Obsidian
+ * theme vars for light/dark compatibility. */
 .synapse-credential-extras {
   display: flex;
   flex-wrap: wrap;
