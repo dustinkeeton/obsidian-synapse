@@ -20,7 +20,7 @@ function sampleActions(): CommandDefinition[] {
 	return [
 		{ id: 'review-proposals', name: 'Open proposal review sidebar', feature: 'main', status: 'active', flows: ['palette'], context: 'global', icon: 'synapse' },
 		{ id: 'enrich-current-note', name: 'Enrich current note', feature: 'enrichment', status: 'active', flows: ['palette'], context: 'note' },
-		{ id: 'scan-vault-enrichment', name: 'Scan vault for enrichment', feature: 'enrichment', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault' },
+		{ id: 'scan-vault-enrichment', name: 'Scan folder for enrichment', feature: 'enrichment', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault' },
 	];
 }
 
@@ -96,7 +96,7 @@ describe('SynapseActionsView', () => {
 		expect(labels).toEqual([
 			'Open proposal review sidebar',
 			'Enrich current note',
-			'Scan vault for enrichment',
+			'Scan folder for enrichment',
 		]);
 	});
 
@@ -134,7 +134,7 @@ describe('SynapseActionsView', () => {
 		const { view, contentEl } = makeView({ isNoteActive: () => false, runAction });
 		await view.onOpen();
 
-		const vaultButton = findButton(contentEl, 'Scan vault for enrichment');
+		const vaultButton = findButton(contentEl, 'Scan folder for enrichment');
 		expect(vaultButton.disabled).toBeFalsy();
 		vaultButton.dispatchEvent({ type: 'click' });
 		expect(runAction).toHaveBeenCalledWith('scan-vault-enrichment');

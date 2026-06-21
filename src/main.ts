@@ -355,7 +355,7 @@ export default class SynapsePlugin extends Plugin {
 		});
 
 		registrar.register('transcribe-note-media', !!hasTranscription, {
-			name: 'Transcribe media from current note',
+			name: 'Transcribe current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.transcribeMediaFromNote(ctx.file);
@@ -396,7 +396,7 @@ export default class SynapsePlugin extends Plugin {
 		}
 
 		registrar.register('fire', true, {
-			name: 'Run all features on a directory',
+			name: 'Run all features on a folder',
 			callback: () => {
 				const defaultPath = this.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
@@ -404,7 +404,7 @@ export default class SynapsePlugin extends Plugin {
 					(folder) => {
 						fireAndForget(
 							synapseRunner.fire(folder.isRoot() ? undefined : folder.path),
-							'Run all features on folder',
+							'Run all features on a folder',
 							{ notifications: this.notifications },
 						);
 					},

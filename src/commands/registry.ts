@@ -20,31 +20,31 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 	{ id: 'review-proposals', name: 'Open proposal review sidebar', feature: 'main', status: 'active', flows: ['palette'], context: 'global', icon: 'synapse' },
 	{ id: 'manage-checkpoints', name: 'Manage interrupted operations', feature: 'main', status: 'active', flows: ['palette'], context: 'global', icon: 'synapse-checkpoints' },
 	{ id: 'transcribe-media', name: 'Transcribe media', feature: 'main', status: 'disabled', flows: ['palette'], context: 'global', icon: 'synapse-transcribe' },
-	{ id: 'transcribe-note-media', name: 'Transcribe media from current note', feature: 'main', status: 'active', flows: ['palette'], context: 'note', icon: 'synapse-transcribe' },
-	{ id: 'fire', name: 'Run all features on a directory', feature: 'main', status: 'active', flows: ['palette'], context: 'vault', icon: 'synapse-fire' },
+	{ id: 'transcribe-note-media', name: 'Transcribe current note', feature: 'main', status: 'active', flows: ['palette'], context: 'note', icon: 'synapse-transcribe' },
+	{ id: 'fire', name: 'Run all features on a folder', feature: 'main', status: 'active', flows: ['palette'], context: 'vault', icon: 'synapse-fire' },
 
 	// --- elaboration (src/elaboration/index.ts) ---
-	{ id: 'scan-vault', name: 'Scan vault for stub notes', feature: 'elaboration', status: 'active', flows: ['palette', 'fire-synapse', 'startup'], context: 'vault', pipelineKey: 'elaboration' },
-	{ id: 'scan-current-note', name: 'Scan current note for elaboration', feature: 'elaboration', status: 'active', flows: ['palette'], context: 'note' },
+	{ id: 'scan-vault', name: 'Scan folder for stub notes', feature: 'elaboration', status: 'active', flows: ['palette', 'fire-synapse', 'startup'], context: 'vault', pipelineKey: 'elaboration' },
+	{ id: 'scan-current-note', name: 'Elaborate current note', feature: 'elaboration', status: 'active', flows: ['palette'], context: 'note' },
 	{ id: 'clear-proposals', name: 'Clear all pending proposals', feature: 'elaboration', status: 'disabled', flows: ['palette'], context: 'global' },
 
 	// --- enrichment (src/enrichment/index.ts) ---
 	{ id: 'enrich-current-note', name: 'Enrich current note', feature: 'enrichment', status: 'active', flows: ['palette'], context: 'note' },
-	{ id: 'scan-vault-enrichment', name: 'Scan vault for enrichment', feature: 'enrichment', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'enrichment' },
+	{ id: 'scan-vault-enrichment', name: 'Scan folder for enrichment', feature: 'enrichment', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'enrichment' },
 	{ id: 'undo-enrichment', name: 'Undo last enrichment on current note', feature: 'enrichment', status: 'disabled', flows: ['palette'], context: 'note' },
 
 	// --- organize (src/organize/index.ts) ---
 	{ id: 'organize-current-note', name: 'Organize current note', feature: 'organize', status: 'active', flows: ['palette'], context: 'note' },
-	{ id: 'scan-directory-organize', name: 'Scan directory for organization', feature: 'organize', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'organize' },
+	{ id: 'scan-directory-organize', name: 'Scan folder for organization', feature: 'organize', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'organize' },
 	{ id: 'undo-organize', name: 'Undo last organize on current note', feature: 'organize', status: 'disabled', flows: ['palette'], context: 'note' },
 
 	// --- deep-dive (src/deep-dive/index.ts) ---
-	{ id: 'deep-dive', name: 'Deep dive into current note', feature: 'deep-dive', status: 'active', flows: ['palette'], context: 'note' },
+	{ id: 'deep-dive', name: 'Deep dive current note', feature: 'deep-dive', status: 'active', flows: ['palette'], context: 'note' },
 	{ id: 'clear-deep-dive', name: 'Clear deep dive proposals', feature: 'deep-dive', status: 'disabled', flows: ['palette'], context: 'global' },
 
 	// --- summarize (src/summarize/index.ts) ---
 	{ id: 'summarize-current-note', name: 'Summarize current note', feature: 'summarize', status: 'active', flows: ['palette'], context: 'note' },
-	{ id: 'scan-vault-summarize', name: 'Scan vault for notes to summarize', feature: 'summarize', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'summarize' },
+	{ id: 'scan-vault-summarize', name: 'Scan folder for notes to summarize', feature: 'summarize', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'summarize' },
 
 	// --- tidy (src/tidy/index.ts) ---
 	{ id: 'tidy-current-note', name: 'Tidy current note', feature: 'tidy', status: 'active', flows: ['palette'], context: 'note' },
@@ -52,7 +52,7 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 
 	// --- rem (src/rem/index.ts) ---
 	{ id: 'rem-current-note', name: 'REM: Discover links in current note', feature: 'rem', status: 'active', flows: ['palette'], context: 'note' },
-	{ id: 'rem-directory', name: 'REM: Discover links in directory', feature: 'rem', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'rem' },
+	{ id: 'rem-directory', name: 'Scan folder for links', feature: 'rem', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'rem' },
 
 	// --- video (src/video/index.ts) ---
 	{ id: 'check-dependencies', name: 'Check external tool availability', feature: 'video', status: 'active', flows: ['palette'], context: 'global' },
@@ -63,7 +63,7 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 	// palette command runs `tidy()` on a single note — a different operation. This
 	// entry carries `pipelineKey: 'tidy'` so the tidy pipeline phase is controlled
 	// independently of the palette command. It is never passed to registrar.register().
-	{ id: 'tidy-vault', name: 'Tidy vault', feature: 'tidy', status: 'active', flows: ['fire-synapse'], context: 'vault', pipelineKey: 'tidy', note: 'vault scan run only by Fire Synapse; no palette command' },
+	{ id: 'tidy-vault', name: 'Scan folder for notes to tidy', feature: 'tidy', status: 'active', flows: ['fire-synapse'], context: 'vault', pipelineKey: 'tidy', note: 'vault scan run only by Fire Synapse; no palette command' },
 ];
 
 /** Lookup by command id. */

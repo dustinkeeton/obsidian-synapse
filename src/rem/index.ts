@@ -67,13 +67,13 @@ export class RemModule {
 
 		// Command: scan directory
 		this.registrar.register('rem-directory', this.getSettings().rem.enabled, {
-			name: 'REM: Discover links in directory',
+			name: 'Scan folder for links',
 			callback: () => {
 				new FolderPickerModal(
 					this.plugin.app,
 					(folder) => {
 						const path = folder.isRoot() ? undefined : folder.path;
-						fireAndForget(this.remScanDirectory(path), 'Discover REM links in directory', {
+						fireAndForget(this.remScanDirectory(path), 'Discover REM links in folder', {
 							notifications: this.notifications,
 						});
 					}

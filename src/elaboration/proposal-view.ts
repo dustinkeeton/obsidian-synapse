@@ -73,7 +73,7 @@ export class ProposalReviewView extends ItemView {
 		const pending = this.proposals.filter(p => p.status === 'pending');
 		if (pending.length === 0) {
 			contentEl.createEl('p', {
-				text: 'No pending proposals. Run "Scan vault" to find stub notes.',
+				text: 'No pending proposals. Run "Scan folder for stub notes" to find them.',
 				cls: 'synapse-empty',
 			});
 			return;

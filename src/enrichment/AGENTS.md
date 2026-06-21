@@ -190,7 +190,7 @@ function renderEnrichmentSettings(ctx: SettingsSectionContext): void
 | Command ID | Name | Condition |
 |-----------|------|-----------|
 | `enrich-current-note` | Enrich current note | `settings.enrichment.enabled` |
-| `scan-vault-enrichment` | Scan vault for enrichment | `settings.enrichment.enabled` |
+| `scan-vault-enrichment` | Scan folder for enrichment | `settings.enrichment.enabled` |
 | `undo-enrichment` | Undo last enrichment on current note | `settings.enrichment.enabled` |
 
 ## Dependencies

@@ -187,8 +187,8 @@ All registered via `CommandRegistrar` in `onload()`:
 
 | Command suffix | Name | Condition |
 |---------------|------|-----------|
-| `scan-vault` | Scan vault for stub notes | `elaboration.enabled` |
-| `scan-current-note` | Scan current note for elaboration | `elaboration.enabled` |
+| `scan-vault` | Scan folder for stub notes | `elaboration.enabled` |
+| `scan-current-note` | Elaborate current note | `elaboration.enabled` |
 | `clear-proposals` | Clear all pending proposals | `elaboration.enabled` |
 
 ## Dependencies
