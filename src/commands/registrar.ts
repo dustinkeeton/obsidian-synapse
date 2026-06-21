@@ -5,7 +5,9 @@
  *
  * A command is actually registered only when the registry says it's `active` and
  * in the `'palette'` flow AND the user has the owning feature enabled. The
- * registrar also tracks every attempted/registered id for drift detection (audit.ts).
+ * palette label is resolved from COMMAND_REGISTRY (single source of truth shared
+ * with the action panel; #357) — callers no longer pass a `name`. The registrar
+ * also tracks every attempted/registered id for drift detection (audit.ts).
  */
 
 import type { Command } from 'obsidian';
@@ -29,9 +31,11 @@ export class CommandRegistrar {
 	 * @param id          command id (must match a COMMAND_REGISTRY entry)
 	 * @param userEnabled user-level enablement (the feature's `enabled` flag, or a
 	 *                    runtime predicate such as `hasTranscription`)
-	 * @param spec        the rest of the Obsidian command (name + a callback)
+	 * @param spec        the rest of the Obsidian command (a callback, optional icon,
+	 *                    etc.) — NOT the label. The palette `name` is sourced from
+	 *                    COMMAND_REGISTRY (#357), not from the spec.
 	 */
-	register(id: string, userEnabled: boolean, spec: Omit<Command, 'id'>): void {
+	register(id: string, userEnabled: boolean, spec: Omit<Command, 'id' | 'name'>): void {
 		this.attempted.add(id);
 
 		const entry = REGISTRY_BY_ID.get(id);
@@ -45,7 +49,10 @@ export class CommandRegistrar {
 			// per-action override; #349). Spread `spec` last so a caller-supplied
 			// icon still wins.
 			const icon = entry ? resolveActionIcon(entry) : undefined;
-			this.host.addCommand({ id, ...(icon ? { icon } : {}), ...spec });
+			// Name comes from COMMAND_REGISTRY (single source of truth, shared with the
+			// action panel; #357). Fail-open to the id; auditCommands() flags the miss.
+			const name = entry ? entry.name : id;
+			this.host.addCommand({ id, name, ...(icon ? { icon } : {}), ...spec });
 			this.registered.add(id);
 		}
 	}

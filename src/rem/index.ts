@@ -57,7 +57,6 @@ export class RemModule {
 
 		// Command: scan current note
 		this.registrar.register('rem-current-note', this.getSettings().rem.enabled, {
-			name: 'REM: Discover links in current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.remScanNote(ctx.file.path);
@@ -67,7 +66,6 @@ export class RemModule {
 
 		// Command: scan directory
 		this.registrar.register('rem-directory', this.getSettings().rem.enabled, {
-			name: 'Scan folder for links',
 			callback: () => {
 				new FolderPickerModal(
 					this.plugin.app,

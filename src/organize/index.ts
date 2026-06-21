@@ -62,7 +62,6 @@ export class OrganizeModule {
 		await this.store.init();
 
 		this.registrar.register('organize-current-note', this.getSettings().organize.enabled, {
-			name: 'Organize current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.organizeNote(ctx.file);
@@ -71,7 +70,6 @@ export class OrganizeModule {
 		});
 
 		this.registrar.register('scan-directory-organize', this.getSettings().organize.enabled, {
-			name: 'Scan folder for organization',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
@@ -89,7 +87,6 @@ export class OrganizeModule {
 		});
 
 		this.registrar.register('undo-organize', this.getSettings().organize.enabled, {
-			name: 'Undo last organize on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.undoOrganize(ctx.file);

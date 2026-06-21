@@ -90,7 +90,6 @@ export class DeepDiveModule {
 		await this.store.init();
 
 		this.registrar.register('deep-dive', this.getSettings().deepDive.enabled, {
-			name: 'Deep dive current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.deepDive(ctx.file);
@@ -99,7 +98,6 @@ export class DeepDiveModule {
 		});
 
 		this.registrar.register('clear-deep-dive', this.getSettings().deepDive.enabled, {
-			name: 'Clear deep dive proposals',
 			callback: async () => {
 				await this.clearProposals();
 			},

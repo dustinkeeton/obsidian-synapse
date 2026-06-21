@@ -48,7 +48,6 @@ export class VideoModule {
 		);
 
 		this.registrar.register('check-dependencies', this.getSettings().video.enabled, {
-			name: 'Check external tool availability',
 			callback: () => this.checkDependencies(),
 		});
 	}

@@ -18,7 +18,7 @@ import { CommandRegistrar } from './registrar';
 describe('CommandRegistrar', () => {
 	let host: { addCommand: ReturnType<typeof vi.fn> };
 	let registrar: CommandRegistrar;
-	const spec = { name: 'X', callback: () => {} };
+	const spec = { callback: () => {} };
 
 	beforeEach(() => {
 		host = { addCommand: vi.fn() };
@@ -29,18 +29,18 @@ describe('CommandRegistrar', () => {
 		registrar.register('cmd:active-palette', true, spec);
 		expect(host.addCommand).toHaveBeenCalledTimes(1);
 		// feature 'main' has no per-entry icon -> resolves to FEATURE_ICONS.main.
-		expect(host.addCommand).toHaveBeenCalledWith({ id: 'cmd:active-palette', icon: 'synapse-main', ...spec });
+		expect(host.addCommand).toHaveBeenCalledWith({ id: 'cmd:active-palette', name: 'Active', icon: 'synapse-main', ...spec });
 		expect(registrar.getRegistered().has('cmd:active-palette')).toBe(true);
 	});
 
 	it('passes through a per-entry icon override', () => {
 		registrar.register('cmd:icon-override', true, spec);
-		expect(host.addCommand).toHaveBeenCalledWith({ id: 'cmd:icon-override', icon: 'synapse-custom', ...spec });
+		expect(host.addCommand).toHaveBeenCalledWith({ id: 'cmd:icon-override', name: 'Override', icon: 'synapse-custom', ...spec });
 	});
 
 	it('lets a caller-supplied spec.icon win over the registry-resolved icon', () => {
 		registrar.register('cmd:active-palette', true, { ...spec, icon: 'caller-icon' });
-		expect(host.addCommand).toHaveBeenCalledWith({ id: 'cmd:active-palette', icon: 'caller-icon', name: 'X', callback: spec.callback });
+		expect(host.addCommand).toHaveBeenCalledWith({ id: 'cmd:active-palette', name: 'Active', icon: 'caller-icon', callback: spec.callback });
 	});
 
 	it('skips registration when userEnabled is false (still records the attempt)', () => {
@@ -69,7 +69,7 @@ describe('CommandRegistrar', () => {
 
 	it('fails open for an unknown id (registers + tracks it) so the command keeps working', () => {
 		registrar.register('cmd:unknown', true, spec);
-		expect(host.addCommand).toHaveBeenCalledWith({ id: 'cmd:unknown', ...spec });
+		expect(host.addCommand).toHaveBeenCalledWith({ id: 'cmd:unknown', name: 'cmd:unknown', ...spec });
 		expect(registrar.getAttempted().has('cmd:unknown')).toBe(true);
 		expect(registrar.getRegistered().has('cmd:unknown')).toBe(true);
 	});

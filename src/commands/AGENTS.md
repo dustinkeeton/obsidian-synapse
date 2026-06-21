@@ -41,7 +41,7 @@ function isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean  /
 // registrar.ts
 class CommandRegistrar {
   constructor(host: { addCommand: (command: Command) => unknown })
-  register(id: string, userEnabled: boolean, spec: Omit<Command, 'id'>): void
+  register(id: string, userEnabled: boolean, spec: Omit<Command, 'id' | 'name'>): void
   getAttempted(): ReadonlySet<string>
   getRegistered(): ReadonlySet<string>
 }
@@ -70,7 +70,7 @@ CommandRegistrar.register(id, userEnabled, spec)
   --> entry = REGISTRY_BY_ID.get(id)
   --> active   = entry ? entry.status === 'active' : true   (fail-open on unknown id)
   --> inPalette= entry ? entry.flows.includes('palette') : true
-  --> if (active && inPalette && userEnabled) plugin.addCommand({id, ...spec}); record in `registered`
+  --> if (active && inPalette && userEnabled) plugin.addCommand({id, name: entry?.name ?? id, ...spec}); record in `registered`
 ```
 
 Precedence (all ANDed, registry authoritative):
