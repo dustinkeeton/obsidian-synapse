@@ -491,6 +491,9 @@
   text-align: left;
 }
 .synapse-notice-op-cancel {
+  /* `position: relative` anchors the absolutely-positioned SVG progress overlay
+     (.synapse-notice-op-progress) to the button. */
+  position: relative;
   flex-shrink: 0;
   padding: 2px 10px;
   border-radius: 4px;
@@ -504,6 +507,77 @@
 .synapse-notice-op-cancel:hover {
   color: var(--text-normal);
   border-color: var(--text-normal);
+}
+
+/*
+ * Cancel-button progress border (#269).
+ *
+ * An SVG overlay traces the button perimeter; its stroke is the progress track.
+ * It sits directly over the button's 1px border (inset to overlap) and is purely
+ * decorative — `pointer-events: none` keeps the button itself clickable. The
+ * track <rect>s carry pathLength="100", so dash math is a plain 0..100 space.
+ *
+ * `transform: scaleY(-1)` flips the SVG so the determinate fill grows from the
+ * BOTTOM-LEFT corner clockwise (SVG rect strokes natively start top-left).
+ */
+.synapse-notice-op-progress {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  overflow: visible;
+  pointer-events: none;
+  transform: scaleY(-1);
+}
+.synapse-notice-op-progress rect {
+  stroke: var(--interactive-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  /* Round the visual corners of the stroked outline to match the button. */
+  stroke-linejoin: round;
+}
+
+/* Determinate fill: a single dash sized to current/total, animated via offset. */
+.synapse-notice-op-progress-fill {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100; /* start empty; JS lowers it toward 0 (full) */
+  transition: stroke-dashoffset 0.4s ease;
+}
+
+/*
+ * Indeterminate orbit: a short "comet" dash (the dot + fading trail) that travels
+ * the perimeter continuously. The fade is approximated with a rounded cap and a
+ * gentle accent so the leading end reads as a dot and the tail dissolves.
+ */
+.synapse-notice-op-progress-orbit {
+  opacity: 0.9;
+  animation: synapse-notice-orbit 1.4s linear infinite;
+}
+
+/* Show exactly one layer per mode. */
+.synapse-notice-op-progress.is-determinate .synapse-notice-op-progress-orbit,
+.synapse-notice-op-progress.is-indeterminate .synapse-notice-op-progress-fill {
+  display: none;
+}
+
+@keyframes synapse-notice-orbit {
+  from { stroke-dashoffset: 100; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/*
+ * Accessibility: honor reduced-motion. The determinate fill keeps its position
+ * but drops the sliding transition (it snaps), and the orbiting dot is rendered
+ * as a static, faint partial outline instead of continuously animating.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .synapse-notice-op-progress-fill {
+    transition: none;
+  }
+  .synapse-notice-op-progress-orbit {
+    animation: none;
+    opacity: 0.5;
+  }
 }
 
 /* Prevent click-to-dismiss on running operations */

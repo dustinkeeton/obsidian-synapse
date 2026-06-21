@@ -104,6 +104,10 @@ function createStubEl(tag = 'div'): any {
 		const child = createStubEl(childTag);
 		applyInfo(child, info);
 		children.push(child);
+		// Track the parent's child list so child.remove() can detach itself —
+		// mirrors native Element.remove(), which the SVG progress overlay uses
+		// during teardown (notifications.ts).
+		child._parentChildren = children;
 		if (cb) cb(child);
 		return child;
 	};
@@ -132,6 +136,12 @@ function createStubEl(tag = 'div'): any {
 			children.length = 0;
 		}),
 		createEl: vi.fn((t: string, info?: any, cb?: (el: any) => void) =>
+			make(t)(info, cb),
+		),
+		// SVG-aware counterpart of createEl (real Obsidian exposes createSvg with
+		// SvgElementInfo). Shares the same builder, so cls/attr/text all apply and
+		// the resulting <svg>/<rect>/<path> stubs are introspectable in tests.
+		createSvg: vi.fn((t: string, info?: any, cb?: (el: any) => void) =>
 			make(t)(info, cb),
 		),
 		createDiv: vi.fn(make('div')),
@@ -163,6 +173,15 @@ function createStubEl(tag = 'div'): any {
 		},
 		closest: vi.fn().mockReturnValue(null),
 		style: {},
+		/** Back-reference to the parent's child array, set by make() on append. */
+		_parentChildren: null as any[] | null,
+		/** Detach from the parent (mirrors native Element.remove()). */
+		remove: vi.fn(() => {
+			const siblings = el._parentChildren;
+			if (!siblings) return;
+			const i = siblings.indexOf(el);
+			if (i !== -1) siblings.splice(i, 1);
+		}),
 	};
 	return el;
 }
