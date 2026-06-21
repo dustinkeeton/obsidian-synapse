@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createEl } from '../__mocks__/obsidian';
 import { SynapseActionsView, SynapseActionsCallbacks } from './synapse-actions-view';
 import type { CommandDefinition } from '../commands';
+import { dispatchSidebarCommand, type CommandDispatchHost, type ActivatableLeaf } from '../commands';
 
 // --- Helpers ----------------------------------------------------------------
 
@@ -167,5 +168,98 @@ describe('SynapseActionsView', () => {
 		expect(textsByClass(contentEl, 'synapse-actions-empty')).toEqual([
 			'No actions available — enable features in settings.',
 		]);
+	});
+
+	// --- #352 regression: per-note actions must run on the FIRST click ----------
+	//
+	// Wires the REAL command-dispatch (`dispatchSidebarCommand`, the same path
+	// main.ts uses) as the button's `runAction`, so a single click exercises the
+	// exact end-to-end sequence. Against the OLD synchronous code, the command
+	// dispatched in the same tick as the leaf re-activation — before the editor
+	// became active — so it no-op'd until a 2nd click. This asserts the fixed
+	// ordering: re-activate the editor, let a macrotask elapse, THEN dispatch.
+	describe('first-click dispatch (#352 regression)', () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		/** Spy dispatch host that records call order, mirroring main.ts's host. */
+		function makeDispatchHost(): CommandDispatchHost & { calls: string[] } {
+			const calls: string[] = [];
+			return {
+				calls,
+				setActiveLeaf: vi.fn((_leaf: ActivatableLeaf, _o: { focus: boolean }) => {
+					calls.push('setActiveLeaf');
+				}),
+				executeCommandById: vi.fn((_fullId: string) => {
+					calls.push('executeCommandById');
+					return true;
+				}),
+			};
+		}
+
+		it('re-establishes editor context before dispatching on a single first click', async () => {
+			const host = makeDispatchHost();
+			const noteLeaf: ActivatableLeaf = { view: {} };
+			// The view's runAction is the production dispatch, exactly as main.ts wires it.
+			const runAction = vi.fn(async (id: string): Promise<void> => {
+				await dispatchSidebarCommand(host, id, `synapse:${id}`, noteLeaf);
+			});
+			const { view, contentEl } = makeView({ isNoteActive: () => true, runAction });
+			await view.onOpen();
+
+			// ONE click on a `context: 'note'` action.
+			findButton(contentEl, 'Enrich current note').dispatchEvent({ type: 'click' });
+			expect(runAction).toHaveBeenCalledTimes(1);
+
+			// Synchronously: the editor was re-activated, but the command has NOT yet
+			// dispatched — it's deferred a macrotask so the editor is active first.
+			// (The old code dispatched here, in the same tick, hence the 2nd-click bug.)
+			expect(host.setActiveLeaf).toHaveBeenCalledWith(noteLeaf, { focus: true });
+			expect(host.executeCommandById).not.toHaveBeenCalled();
+
+			// Let the macrotask elapse — the command now dispatches, on the FIRST click.
+			await vi.runAllTimersAsync();
+			expect(host.executeCommandById).toHaveBeenCalledTimes(1);
+			expect(host.executeCommandById).toHaveBeenCalledWith('synapse:enrich-current-note');
+			expect(host.calls).toEqual(['setActiveLeaf', 'executeCommandById']);
+		});
+
+		it('does not re-render the panel as a side effect of a click', async () => {
+			const host = makeDispatchHost();
+			const noteLeaf: ActivatableLeaf = { view: {} };
+			const runAction = async (id: string): Promise<void> => {
+				await dispatchSidebarCommand(host, id, `synapse:${id}`, noteLeaf);
+			};
+			const { view, contentEl } = makeView({ isNoteActive: () => true, runAction });
+			await view.onOpen();
+
+			// Spy on the panel's own re-render. A click must not trigger it (the
+			// self-induced active-leaf-change refresh is suppressed during dispatch).
+			const refreshSpy = vi.spyOn(view, 'refresh');
+			findButton(contentEl, 'Enrich current note').dispatchEvent({ type: 'click' });
+			await vi.runAllTimersAsync();
+
+			expect(refreshSpy).not.toHaveBeenCalled();
+		});
+
+		it('runs a non-note action on the first click without re-activating any leaf', async () => {
+			const host = makeDispatchHost();
+			const noteLeaf: ActivatableLeaf = { view: {} };
+			const runAction = async (id: string): Promise<void> => {
+				await dispatchSidebarCommand(host, id, `synapse:${id}`, noteLeaf);
+			};
+			const { view, contentEl } = makeView({ isNoteActive: () => true, runAction });
+			await view.onOpen();
+
+			findButton(contentEl, 'Open proposal review sidebar').dispatchEvent({ type: 'click' });
+			await vi.runAllTimersAsync();
+
+			expect(host.setActiveLeaf).not.toHaveBeenCalled();
+			expect(host.executeCommandById).toHaveBeenCalledWith('synapse:review-proposals');
+		});
 	});
 });

@@ -355,6 +355,20 @@ export class WorkspaceLeaf {
 	setViewState = vi.fn().mockResolvedValue(undefined);
 }
 
+/**
+ * Minimal Workspace stub exposing the surface the Synapse actions sidebar's
+ * command dispatch touches: `setActiveLeaf` (re-activates the note's editor
+ * before running a per-note command) and a `commands.executeCommandById` shim
+ * reachable via `app.commands`. Spies so tests can assert dispatch ordering
+ * (#352). Kept tiny and additive — extend in the Workspace/WorkspaceLeaf region.
+ */
+export class Workspace {
+	setActiveLeaf = vi.fn();
+	getLeavesOfType = vi.fn().mockReturnValue([]);
+	getActiveFile = vi.fn().mockReturnValue(null);
+	on = vi.fn();
+}
+
 // --- Metadata helpers ---
 
 export function getAllTags(cache: any): string[] | null {
