@@ -90,7 +90,7 @@ export class DeepDiveModule {
 		await this.store.init();
 
 		this.registrar.register('deep-dive', this.getSettings().deepDive.enabled, {
-			name: 'Deep dive into current note',
+			name: 'Deep dive current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.deepDive(ctx.file);

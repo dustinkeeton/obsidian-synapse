@@ -71,7 +71,7 @@ export class OrganizeModule {
 		});
 
 		this.registrar.register('scan-directory-organize', this.getSettings().organize.enabled, {
-			name: 'Scan directory for organization',
+			name: 'Scan folder for organization',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
@@ -79,7 +79,7 @@ export class OrganizeModule {
 					(folder) => {
 						fireAndForget(
 							this.scanDirectory(folder.isRoot() ? undefined : folder.path),
-							'Scan directory for organization',
+							'Scan folder for organization',
 							{ notifications: this.notifications },
 						);
 					},

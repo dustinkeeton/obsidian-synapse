@@ -144,7 +144,7 @@ Registered in `onload()` (both gated by `summarize.enabled`):
 | ID | Name | Type |
 |----|------|------|
 | `synapse:summarize-current-note` | Summarize current note | editorCallback |
-| `synapse:scan-vault-summarize` | Scan vault for notes to summarize | callback (FolderPickerModal) |
+| `synapse:scan-vault-summarize` | Scan folder for notes to summarize | callback (FolderPickerModal) |
 
 ## Video URL Auto-Transcription
 

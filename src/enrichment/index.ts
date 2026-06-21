@@ -88,7 +88,7 @@ export class EnrichmentModule {
 		});
 
 		this.registrar.register('scan-vault-enrichment', this.getSettings().enrichment.enabled, {
-			name: 'Scan vault for enrichment',
+			name: 'Scan folder for enrichment',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
@@ -96,7 +96,7 @@ export class EnrichmentModule {
 					(folder) => {
 						fireAndForget(
 							this.scanVault(folder.isRoot() ? undefined : folder.path),
-							'Scan vault for enrichment',
+							'Scan folder for enrichment',
 							{ notifications: this.notifications },
 						);
 					},

@@ -123,27 +123,27 @@ Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries
 | `synapse:review-proposals` | Open proposal review sidebar | callback | main | p | active | |
 | `synapse:manage-checkpoints` | Manage interrupted operations | callback | main | p | active | |
 | `synapse:transcribe-media` | Transcribe media | callback | main | p | disabled | |
-| `synapse:transcribe-note-media` | Transcribe media from current note | editorCallback | main | p | active | |
-| `synapse:fire` | Run all features on a directory | callback | main | p | active | |
-| `synapse:scan-vault` | Scan vault for stub notes | callback | elaboration | p, f, s | active | elaboration |
-| `synapse:scan-current-note` | Scan current note for elaboration | editorCallback | elaboration | p | active | |
+| `synapse:transcribe-note-media` | Transcribe current note | editorCallback | main | p | active | |
+| `synapse:fire` | Run all features on a folder | callback | main | p | active | |
+| `synapse:scan-vault` | Scan folder for stub notes | callback | elaboration | p, f, s | active | elaboration |
+| `synapse:scan-current-note` | Elaborate current note | editorCallback | elaboration | p | active | |
 | `synapse:clear-proposals` | Clear all pending proposals | callback | elaboration | p | disabled | |
 | `synapse:enrich-current-note` | Enrich current note | editorCallback | enrichment | p | active | |
-| `synapse:scan-vault-enrichment` | Scan vault for enrichment | callback | enrichment | p, f | active | enrichment |
+| `synapse:scan-vault-enrichment` | Scan folder for enrichment | callback | enrichment | p, f | active | enrichment |
 | `synapse:undo-enrichment` | Undo last enrichment on current note | editorCallback | enrichment | p | disabled | |
 | `synapse:organize-current-note` | Organize current note | editorCallback | organize | p | active | |
-| `synapse:scan-directory-organize` | Scan directory for organization | callback | organize | p, f | active | organize |
+| `synapse:scan-directory-organize` | Scan folder for organization | callback | organize | p, f | active | organize |
 | `synapse:undo-organize` | Undo last organize on current note | editorCallback | organize | p | disabled | |
-| `synapse:deep-dive` | Deep dive into current note | editorCallback | deep-dive | p | active | |
+| `synapse:deep-dive` | Deep dive current note | editorCallback | deep-dive | p | active | |
 | `synapse:clear-deep-dive` | Clear deep dive proposals | callback | deep-dive | p | disabled | |
 | `synapse:summarize-current-note` | Summarize current note | editorCallback | summarize | p | active | |
-| `synapse:scan-vault-summarize` | Scan vault for notes to summarize | callback | summarize | p, f | active | summarize |
+| `synapse:scan-vault-summarize` | Scan folder for notes to summarize | callback | summarize | p, f | active | summarize |
 | `synapse:tidy-current-note` | Tidy current note | editorCallback | tidy | p | active | |
 | `synapse:undo-tidy` | Undo last tidy on current note | editorCallback | tidy | p | disabled | |
 | `synapse:rem-current-note` | REM: Discover links in current note | editorCallback | rem | p | active | |
-| `synapse:rem-directory` | REM: Discover links in directory | callback | rem | p, f | active | rem |
+| `synapse:rem-directory` | Scan folder for links | callback | rem | p, f | active | rem |
 | `synapse:check-dependencies` | Check external tool availability | callback | video | p | active | |
-| `synapse:tidy-vault` | Tidy vault | (synthetic) | tidy | f | active | tidy |
+| `synapse:tidy-vault` | Scan folder for notes to tidy | (synthetic) | tidy | f | active | tidy |
 
 `synapse:tidy-vault` is synthetic and pipeline-only: it gates the tidy Fire Synapse phase independently of any palette command and is never passed to `registrar.register()`. Fire Synapse phase order: elaboration → summarize → enrichment → rem → tidy → organize.
 

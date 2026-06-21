@@ -106,7 +106,7 @@ export class SummarizeModule {
 		});
 
 		this.registrar.register('scan-vault-summarize', this.getSettings().summarize.enabled, {
-			name: 'Scan vault for notes to summarize',
+			name: 'Scan folder for notes to summarize',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
@@ -114,7 +114,7 @@ export class SummarizeModule {
 					(folder) => {
 						fireAndForget(
 							this.scanVault(folder.isRoot() ? undefined : folder.path),
-							'Scan vault for notes to summarize',
+							'Scan folder for notes to summarize',
 							{ notifications: this.notifications },
 						);
 					},

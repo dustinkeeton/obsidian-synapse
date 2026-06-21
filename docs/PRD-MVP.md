@@ -225,7 +225,7 @@ Reference: [Obsidian Plugin Guidelines](https://docs.obsidian.md/Plugins/Releasi
 - [x] **Loading states for AI operations** -- `NotificationManager.startOperation()` creates a persistent, non-dismissible notice with animated ellipsis, progress counter updates, and a Cancel button. Status bar shows operation summary.
 - [x] **Error handling with user-friendly messages** -- All modules use `notifyError(context, error)` which: prefixes with "Synapse:", redacts API keys, shows for 8 seconds, logs to console. No raw stack traces shown to users.
 - [x] **Settings UI is organized and intuitive** -- Settings are grouped under clear headings: AI Configuration, Note Elaboration, Media Transcription (with Audio/Video subheadings), Note Enrichment (with Proximity Weights/Tag Vocabulary subsections), Summarize, Note Tidy, Note Organize, Deep Dive. Sliders have tick marks, labels, and current-value display.
-- [x] **Commands are well-named in the command palette** -- 21 commands follow "Action target" naming pattern. Examples: "Open proposal review sidebar", "Transcribe media", "Enrich current note", "Scan vault", "Undo enrichment".
+- [x] **Commands are well-named in the command palette** -- 21 commands follow "Action target" naming pattern. Examples: "Open proposal review sidebar", "Transcribe media", "Enrich current note", "Scan folder for stub notes", "Undo enrichment".
 - [x] **Confirmation dialogs for destructive operations** -- Vault-wide scans prompt "Found N eligible notes. Proceed?" before making AI calls. Cancel button on all long-running operations.
 - [x] **Visual identity for AI content** -- All AI-generated content uses Obsidian callouts from a shared registry (`synapse-summary`, `synapse-transcription`, etc.) with distinct colors and Lucide icons. Users can always identify which content was AI-generated.
 - [x] **Ribbon icons** -- Two ribbon icons: sparkles (proposal review sidebar) and mic (transcribe media).
@@ -278,22 +278,22 @@ Reference: [Obsidian Plugin Guidelines](https://docs.obsidian.md/Plugins/Releasi
 |--------|---------|-----|
 | Main | Open proposal review sidebar | `synapse:review-proposals` |
 | Main | Transcribe media | `synapse:transcribe-media` |
-| Main | Transcribe media from current note | `synapse:transcribe-note-media` |
-| Elaboration | Scan vault for stubs | `synapse:elaboration-scan-vault` |
-| Elaboration | Scan current note | `synapse:elaboration-scan-note` |
+| Main | Transcribe current note | `synapse:transcribe-note-media` |
+| Elaboration | Scan folder for stub notes | `synapse:elaboration-scan-vault` |
+| Elaboration | Elaborate current note | `synapse:elaboration-scan-note` |
 | Elaboration | Clear all proposals | `synapse:elaboration-clear` |
 | Video | Check dependencies | `synapse:video-check-deps` |
 | Enrichment | Enrich current note | `synapse:enrichment-enrich-note` |
-| Enrichment | Scan vault for enrichment | `synapse:enrichment-scan-vault` |
+| Enrichment | Scan folder for enrichment | `synapse:enrichment-scan-vault` |
 | Enrichment | Undo enrichment | `synapse:enrichment-undo` |
 | Summarize | Summarize current note | `synapse:summarize-note` |
-| Summarize | Scan vault for summarization | `synapse:summarize-scan-vault` |
+| Summarize | Scan folder for notes to summarize | `synapse:summarize-scan-vault` |
 | Tidy | Tidy current note | `synapse:tidy-note` |
 | Tidy | Undo tidy | `synapse:tidy-undo` |
 | Organize | Organize current note | `synapse:organize-note` |
-| Organize | Scan directory | `synapse:organize-scan-directory` |
+| Organize | Scan folder for organization | `synapse:organize-scan-directory` |
 | Organize | Undo organize | `synapse:organize-undo` |
-| Deep Dive | Deep dive into note | `synapse:deep-dive-note` |
+| Deep Dive | Deep dive current note | `synapse:deep-dive-note` |
 | Deep Dive | Clear deep dive proposals | `synapse:deep-dive-clear` |
 
 ## Appendix: External Dependencies

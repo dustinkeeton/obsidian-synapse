@@ -141,7 +141,7 @@ Registered in `onload()` (both gated by `rem.enabled`):
 | ID | Name | Type | Pipeline |
 |----|------|------|---------|
 | `synapse:rem-current-note` | REM: Discover links in current note | editorCallback | palette |
-| `synapse:rem-directory` | REM: Discover links in directory | callback (FolderPickerModal) | palette, fire-synapse (`pipelineKey: rem`) |
+| `synapse:rem-directory` | Scan folder for links | callback (FolderPickerModal) | palette, fire-synapse (`pipelineKey: rem`) |
 
 ## Auto-Accept (#228)
 

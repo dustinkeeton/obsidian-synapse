@@ -184,7 +184,7 @@ interface DeepDiveRun {
 
 | Command ID | Enabled When | Description |
 |------------|-------------|-------------|
-| `deep-dive` | `settings.deepDive.enabled` | Deep dive into current note |
+| `deep-dive` | `settings.deepDive.enabled` | Deep dive current note |
 | `clear-deep-dive` | `settings.deepDive.enabled` | Clear all deep dive proposals |
 
 ## Settings Keys
