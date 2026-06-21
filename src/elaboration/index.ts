@@ -55,7 +55,6 @@ export class ElaborationModule {
 		await this.store.init();
 
 		this.registrar.register('scan-vault', this.getSettings().elaboration.enabled, {
-			name: 'Scan folder for stub notes',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
@@ -73,7 +72,6 @@ export class ElaborationModule {
 		});
 
 		this.registrar.register('scan-current-note', this.getSettings().elaboration.enabled, {
-			name: 'Elaborate current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.scanNote(ctx.file);
@@ -82,7 +80,6 @@ export class ElaborationModule {
 		});
 
 		this.registrar.register('clear-proposals', this.getSettings().elaboration.enabled, {
-			name: 'Clear all pending proposals',
 			callback: () => this.clearProposals(),
 		});
 

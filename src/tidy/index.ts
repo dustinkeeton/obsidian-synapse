@@ -47,7 +47,6 @@ export class TidyModule {
 		await this.store.init();
 
 		this.registrar.register('tidy-current-note', this.getSettings().tidy.enabled, {
-			name: 'Tidy current note',
 			editorCallback: async (_editor, ctx) => {
 				if (!ctx.file) return;
 				// Path exclusion (#307): explicit single-note command → Notice
@@ -64,7 +63,6 @@ export class TidyModule {
 		});
 
 		this.registrar.register('undo-tidy', this.getSettings().tidy.enabled, {
-			name: 'Undo last tidy on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.undoTidy(ctx.file);

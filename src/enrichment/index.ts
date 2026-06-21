@@ -79,7 +79,6 @@ export class EnrichmentModule {
 		);
 
 		this.registrar.register('enrich-current-note', this.getSettings().enrichment.enabled, {
-			name: 'Enrich current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.enrich(ctx.file.path, 'manual');
@@ -88,7 +87,6 @@ export class EnrichmentModule {
 		});
 
 		this.registrar.register('scan-vault-enrichment', this.getSettings().enrichment.enabled, {
-			name: 'Scan folder for enrichment',
 			callback: () => {
 				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
@@ -106,7 +104,6 @@ export class EnrichmentModule {
 		});
 
 		this.registrar.register('undo-enrichment', this.getSettings().enrichment.enabled, {
-			name: 'Undo last enrichment on current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.undoLastEnrichment(ctx.file.path);

@@ -334,12 +334,10 @@ export default class SynapsePlugin extends Plugin {
 		});
 
 		registrar.register('review-proposals', true, {
-			name: 'Open proposal review sidebar',
 			callback: () => this.activateUnifiedView(),
 		});
 
 		registrar.register('manage-checkpoints', true, {
-			name: 'Manage interrupted operations',
 			callback: () => this.manageCheckpoints(),
 		});
 
@@ -350,12 +348,10 @@ export default class SynapsePlugin extends Plugin {
 		// Always attempted so the registry audit sees them; userEnabled gates actual registration.
 		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video) || this.settings.image.enabled;
 		registrar.register('transcribe-media', !!hasTranscription, {
-			name: 'Transcribe media',
 			callback: () => this.openUnifiedModal(),
 		});
 
 		registrar.register('transcribe-note-media', !!hasTranscription, {
-			name: 'Transcribe current note',
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
 					await this.transcribeMediaFromNote(ctx.file);
@@ -396,7 +392,6 @@ export default class SynapsePlugin extends Plugin {
 		}
 
 		registrar.register('fire', true, {
-			name: 'Run all features on a folder',
 			callback: () => {
 				const defaultPath = this.app.workspace.getActiveFile()?.parent?.path || '';
 				new FolderPickerModal(
