@@ -457,29 +457,35 @@
 /* ── Notification toasts (severity + tracked operations) ── */
 
 /*
- * Compound `.notice.synapse-notice` selector beats core `.notice` padding on
- * specificity without `!important` (both classes co-occur on the toast el).
+ * Obsidian renders a toast as `.notice > .notice-message`, and styleNotice()
+ * adds the `synapse-notice*` classes to whatever `Notice.noticeEl` points at —
+ * the inner `.notice-message` in current Obsidian, not the `.notice` element.
+ * So the severity class is NOT reliably co-located with `.notice`. Match BOTH
+ * shapes for each rule:
+ *   - `.notice.synapse-notice`       — class on the `.notice` element itself
+ *   - `.notice:has(.synapse-notice)` — class on a descendant (`.notice-message`)
+ * `:has()` keeps the (0,2,0) specificity (so we still beat core `.notice`
+ * padding/background without `!important`) AND styles the real `.notice`
+ * container, so the error wash is full-bleed rather than inset to the message.
  */
-.notice.synapse-notice {
+.notice.synapse-notice,
+.notice:has(.synapse-notice) {
   border-left: 3px solid var(--text-muted);
   padding-left: 10px;
   transition: border-color 0.3s ease;
 }
-/*
- * Severity colors. Compounded with `.notice` so they match the base
- * `.notice.synapse-notice` specificity (0,2,0) and win on source order —
- * otherwise the base `border-left` shorthand would override the accent color.
- */
-.notice.synapse-notice--info     { border-left-color: var(--text-muted); }
-.notice.synapse-notice--progress { border-left-color: var(--interactive-accent); }
-.notice.synapse-notice--success  { border-left-color: var(--color-green); }
-.notice.synapse-notice--warning  { border-left-color: var(--color-yellow); }
+/* Severity colors (source order after the base wins on equal specificity). */
+.notice.synapse-notice--info,     .notice:has(.synapse-notice--info)     { border-left-color: var(--text-muted); }
+.notice.synapse-notice--progress, .notice:has(.synapse-notice--progress) { border-left-color: var(--interactive-accent); }
+.notice.synapse-notice--success,  .notice:has(.synapse-notice--success)  { border-left-color: var(--color-green); }
+.notice.synapse-notice--warning,  .notice:has(.synapse-notice--warning)  { border-left-color: var(--color-yellow); }
 /*
  * Error toasts read unmistakably as errors and are click-to-copy/dismiss
  * (see NotificationManager.showErrorNotice): a soft, theme-aware error wash
  * behind the red accent, and a pointer cursor to signal they're clickable.
  */
-.notice.synapse-notice--error {
+.notice.synapse-notice--error,
+.notice:has(.synapse-notice--error) {
   border-left-color: var(--color-red);
   background-color: var(--background-modifier-error);
   cursor: pointer;
@@ -549,7 +555,9 @@
  * confirmation snackbar's Proceed/Cancel pair is unaffected.
  */
 .notice.synapse-notice--success .synapse-notice-actions,
-.notice.synapse-notice--info .synapse-notice-actions {
+.notice.synapse-notice--info .synapse-notice-actions,
+.notice:has(.synapse-notice--success) .synapse-notice-actions,
+.notice:has(.synapse-notice--info) .synapse-notice-actions {
   justify-content: flex-end;
 }
 

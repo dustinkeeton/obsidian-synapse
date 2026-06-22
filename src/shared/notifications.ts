@@ -404,7 +404,12 @@ export class NotificationManager {
 		styleNotice(notice, 'error');
 		const el = getNoticeEl(notice);
 		if (!el) return;
-		el.addEventListener('click', () => {
+		// Attach to the `.notice` container so the whole toast — the full surface
+		// the error wash + pointer cursor cover — copies on click. noticeEl is the
+		// inner `.notice-message` in current Obsidian; fall back to it when there
+		// is no container (e.g. the test mock).
+		const clickTarget = el.closest('.notice') ?? el;
+		clickTarget.addEventListener('click', () => {
 			// Always dismiss on click, even if the clipboard write fails.
 			notice.hide();
 			navigator.clipboard.writeText(redacted)
