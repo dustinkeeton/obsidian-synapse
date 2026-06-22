@@ -5,6 +5,17 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.6] - 2026-06-22
+
+### Added
+
+- Click an error notice before it dismisses to copy its full message to the clipboard
+
+### Changed
+
+- Error notices now persist until dismissed and use a softer, less alarming color
+- Normalized action command names in the command palette for clearer, more consistent wording
+
 ## [1.0.5] - 2026-06-20
 
 ### Added
