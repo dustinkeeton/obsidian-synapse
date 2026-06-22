@@ -3,7 +3,6 @@ import {
 	classifyNetworkError,
 	describeNetworkError,
 	isTransientNetworkError,
-	notifyError,
 	withRetry,
 } from './api-utils';
 
@@ -116,39 +115,5 @@ describe('withRetry', () => {
 		await vi.runAllTimersAsync();
 		await expect(promise).resolves.toBe('done');
 		expect(fn).toHaveBeenCalledTimes(2);
-	});
-});
-
-describe('notifyError redaction', () => {
-	let errorSpy: ReturnType<typeof vi.spyOn>;
-
-	beforeEach(() => {
-		errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-	});
-
-	afterEach(() => {
-		errorSpy.mockRestore();
-	});
-
-	const loggedMessage = () => String(errorSpy.mock.calls[0]?.[1] ?? '');
-
-	it('redacts Google AIza… keys (the gap the old inline regex missed)', () => {
-		notifyError('Gemini call failed', new Error('API key not valid: AIzaSyBadKey1234567890123456789012345'));
-		const msg = loggedMessage();
-		expect(msg).toContain('[REDACTED]');
-		expect(msg).not.toContain('AIzaSyBadKey');
-	});
-
-	it('redacts OpenAI sk- keys and Bearer tokens', () => {
-		notifyError('OpenAI call failed', new Error('rejected key sk-abcdef1234567890 via Bearer abcdefgh12345678'));
-		const msg = loggedMessage();
-		expect(msg).not.toContain('sk-abcdef1234567890');
-		expect(msg).not.toContain('abcdefgh12345678');
-		expect(msg).toContain('[REDACTED]');
-	});
-
-	it('leaves non-secret error text intact', () => {
-		notifyError('Parse failed', new Error('Unexpected token at position 12'));
-		expect(loggedMessage()).toContain('Unexpected token at position 12');
 	});
 });

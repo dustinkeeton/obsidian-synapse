@@ -1,4 +1,5 @@
 import { Notice } from 'obsidian';
+import { redactSecrets } from './redact';
 
 export type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error';
 
@@ -251,7 +252,9 @@ export class NotificationManager {
 
 			error: (message: string) => {
 				if (op.state !== 'running') return;
-				this.completeOperation(opId, 'error', message, 'error', 8000);
+				// Duration is ignored for errors (showErrorNotice forces persist);
+				// pass 0 to document the persist-until-dismissed intent.
+				this.completeOperation(opId, 'error', message, 'error', 0);
 				console.error(`[Synapse] ${op.label}:`, message);
 			},
 		};
@@ -339,6 +342,17 @@ export class NotificationManager {
 	}
 
 	/**
+	 * Surface a one-shot error from a fully composed message. The toast is
+	 * persistent (stays until clicked) and copies its redacted text to the
+	 * clipboard on dismiss — see {@link showErrorNotice}. Use this when you
+	 * already have the message text; use {@link notifyError} when you have an
+	 * error object plus a context label.
+	 */
+	error(message: string): void {
+		this.showErrorNotice(message);
+	}
+
+	/**
 	 * Build an interactive one-shot notice carrying a single action button.
 	 * Mirrors the confirm() snackbar markup: a message div plus an actions
 	 * container holding one `.mod-cta` button. The notice blocks background
@@ -372,16 +386,50 @@ export class NotificationManager {
 		});
 	}
 
-	/** Show a one-shot error notice (dismissible, stays longer) */
+	/**
+	 * Render a persistent, click-to-dismiss error toast. The single shared sink
+	 * for every error path (operation errors via completeOperation, notifyError,
+	 * and the public error()), so error styling, persistence, secret redaction,
+	 * and copy-on-dismiss all live in exactly one place.
+	 *
+	 * Unlike running-operation and confirmation toasts, error toasts are NOT
+	 * preventDismiss()'d — clicking is how the user dismisses them. The same
+	 * click copies the (redacted) text to the clipboard for bug reports; the
+	 * copy is best-effort and never blocks dismissal.
+	 */
+	private showErrorNotice(message: string): void {
+		const redacted = redactSecrets(message);
+		// Duration 0 → Obsidian never auto-hides it; it persists until clicked.
+		const notice = new Notice(`Synapse: ${redacted}`, 0);
+		styleNotice(notice, 'error');
+		const el = getNoticeEl(notice);
+		if (!el) return;
+		// Attach to the `.notice` container so the whole toast — the full surface
+		// the error wash + pointer cursor cover — copies on click. noticeEl is the
+		// inner `.notice-message` in current Obsidian; fall back to it when there
+		// is no container (e.g. the test mock).
+		const clickTarget = el.closest('.notice') ?? el;
+		clickTarget.addEventListener('click', () => {
+			// Always dismiss on click, even if the clipboard write fails.
+			notice.hide();
+			navigator.clipboard.writeText(redacted)
+				.then(() => this.info('Error copied to clipboard'))
+				.catch((err) => {
+					console.error('[Synapse] Could not copy error to clipboard:', err);
+					this.info("Couldn't copy error to clipboard");
+				});
+		});
+	}
+
+	/**
+	 * Surface an error (object + context label) as a persistent, copyable error
+	 * toast. Routes through {@link showErrorNotice} so the displayed and copied
+	 * text are redacted by the canonical redactor; also logs the redacted message.
+	 */
 	notifyError(context: string, error: unknown): void {
 		const message = error instanceof Error ? error.message : String(error);
-		const redacted = message.replace(
-			/(?:sk-|key-|dg-|anthropic-|Bearer\s+|Token\s+)[A-Za-z0-9_-]{8,}/g,
-			'[REDACTED]'
-		);
-		const notice = new Notice(`Synapse: ${context} — ${redacted}`, 8000);
-		styleNotice(notice, 'error');
-		console.error(`[Synapse] ${context}:`, redacted);
+		this.showErrorNotice(`${context} — ${message}`);
+		console.error(`[Synapse] ${context}:`, redactSecrets(message));
 	}
 
 	private completeOperation(
@@ -402,6 +450,9 @@ export class NotificationManager {
 		// otherwise keep the plain (unchanged) path.
 		if (action) {
 			this.showActionNotice(message, level, duration, action);
+		} else if (level === 'error') {
+			// Error completions get the persistent, copy-on-dismiss treatment.
+			this.showErrorNotice(message);
 		} else {
 			const notice = new Notice(`Synapse: ${message}`, duration);
 			styleNotice(notice, level);

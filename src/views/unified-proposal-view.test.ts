@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UnifiedProposalView, UnifiedItem, UnifiedViewCallbacks } from './unified-proposal-view';
+import { NotificationManager } from '../shared/notifications';
 import type { Proposal } from '../elaboration';
 import type { EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
@@ -131,7 +132,7 @@ describe('UnifiedProposalView reject-all', () => {
 
 	beforeEach(() => {
 		callbacks = mockCallbacks();
-		view = new UnifiedProposalView(mockLeaf(), callbacks);
+		view = new UnifiedProposalView(mockLeaf(), callbacks, new NotificationManager());
 		// Stub contentEl with a recursive mock so render calls don't throw
 		view.contentEl = stubEl();
 	});
