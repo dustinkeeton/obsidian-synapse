@@ -32,4 +32,4 @@ export { FEATURE_ICONS, resolveActionIcon } from './icons';
 export { CommandRegistrar } from './registrar';
 export { auditCommands } from './audit';
 export { dispatchSidebarCommand } from './dispatch';
-export type { CommandDispatchHost, ActivatableLeaf } from './dispatch';
+export type { CommandDispatchHost, InvokableCommand, NoteEditorContext } from './dispatch';

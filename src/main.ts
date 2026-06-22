@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Platform, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { MarkdownView, Notice, Platform, Plugin, TFile } from 'obsidian';
 import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
 import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
@@ -13,7 +13,7 @@ import { DeepDiveModule } from './deep-dive';
 import { TitleModule } from './title';
 import { RemModule } from './rem';
 import { IntakeModule } from './intake';
-import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID, dispatchSidebarCommand } from './commands';
+import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID, dispatchSidebarCommand, type NoteEditorContext } from './commands';
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
@@ -67,14 +67,6 @@ export default class SynapsePlugin extends Plugin {
 	 * onboarding (#89): only fresh installs are greeted with the welcome notice.
 	 */
 	private isFreshInstall = false;
-	/**
-	 * Guards the `active-leaf-change` listener while a Synapse actions button is
-	 * dispatching a `context: 'note'` command. Re-activating the note's leaf fires
-	 * `active-leaf-change`, which would otherwise re-render the whole actions panel
-	 * mid-click (tearing down the button being pressed); we skip that redundant
-	 * refresh during dispatch (#352).
-	 */
-	private suppressActionsRefresh = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -177,10 +169,7 @@ export default class SynapsePlugin extends Plugin {
 		}));
 
 		// Keep per-note buttons in sync with the active note (enable/disable live).
-		// Skipped while a button is dispatching: re-activating the note's leaf fires
-		// this event, but re-rendering then would rebuild the panel mid-click (#352).
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
-			if (this.suppressActionsRefresh) return;
 			const view = this.app.workspace.getLeavesOfType(SYNAPSE_ACTIONS_VIEW_TYPE)[0]?.view;
 			if (view instanceof SynapseActionsView) view.refresh();
 		}));
@@ -633,61 +622,49 @@ export default class SynapsePlugin extends Plugin {
 	}
 
 	/**
-	 * Run a registered command by its registry id (without the `synapse:` prefix),
-	 * via Obsidian's own command dispatch — the same gated path the palette uses,
-	 * so editor/check gating is honored. `app.commands` isn't in the public typings,
-	 * hence the localized cast (the repo has no global App augmentation).
+	 * Run a registered command by its registry id (without the `synapse:` prefix).
 	 *
-	 * For `context: 'note'` commands (registered as `editorCallback`s) the active
-	 * editor is required, but opening the actions sidebar makes the note's editor
-	 * inactive (`workspace.activeEditor` goes null) — so the command would silently
-	 * no-op. We re-activate the note's markdown leaf first, restoring the editor
-	 * context so the command runs against the note the user was viewing.
-	 *
-	 * The re-activate→dispatch sequence is async: `setActiveLeaf` doesn't make the
-	 * editor active within the same synchronous tick, so dispatching immediately
-	 * saw no active editor and silently no-op'd — the bug where buttons only worked
-	 * on the SECOND click (#352). `dispatchSidebarCommand` yields a macrotask between
-	 * re-activation and dispatch so the command runs on the first click. A guard flag
-	 * suppresses the `active-leaf-change` listener's `view.refresh()` during dispatch
-	 * so the click doesn't tear down and rebuild the panel mid-action.
+	 * For `context: 'note'` commands (registered as `editorCallback`s) we invoke the
+	 * command's handler DIRECTLY with the note's own editor + view, instead of
+	 * routing through `executeCommandById`. Opening the actions sidebar makes the
+	 * note's editor inactive, so the palette path's editor gate would silently no-op
+	 * on the first click — the #352 "works only on the second click" bug. Resolving
+	 * the note's markdown view ourselves and calling `editorCallback(editor, view)`
+	 * runs the action deterministically on the FIRST click, with no focus theft and
+	 * no self-induced `active-leaf-change` re-render of the panel. `app.commands`
+	 * isn't in the public typings, hence the localized cast.
 	 */
 	private async runCommand(id: string): Promise<void> {
 		const commands = (this.app as unknown as {
-			commands: { executeCommandById(id: string): boolean };
+			commands: {
+				executeCommandById(id: string): boolean;
+				commands: Record<string, { editorCallback?: (editor: unknown, ctx: unknown) => unknown }>;
+			};
 		}).commands;
 
-		let noteLeaf: WorkspaceLeaf | null = null;
+		let noteContext: NoteEditorContext | null = null;
 		if (REGISTRY_BY_ID.get(id)?.context === 'note') {
 			const file = this.activeMarkdownFile();
 			if (!file) {
 				new Notice('Synapse: open a note first to use this action.');
 				return;
 			}
-			noteLeaf = this.app.workspace
+			const view = this.app.workspace
 				.getLeavesOfType('markdown')
-				.find((leaf) => leaf.view instanceof MarkdownView && leaf.view.file === file) ?? null;
+				.map((leaf) => leaf.view)
+				.find((v): v is MarkdownView => v instanceof MarkdownView && v.file === file);
+			if (view) noteContext = { editor: view.editor, view };
 		}
 
-		// Re-activating the note leaf fires `active-leaf-change`, whose listener
-		// re-renders the panel — redundant and disruptive mid-click. Suppress it
-		// just for this dispatch (the panel's enabled/disabled state can't change
-		// as a result of the action anyway: the note stays the active file).
-		this.suppressActionsRefresh = true;
-		try {
-			await dispatchSidebarCommand(
-				{
-					setActiveLeaf: (leaf, options) =>
-						this.app.workspace.setActiveLeaf(leaf as WorkspaceLeaf, options),
-					executeCommandById: (fullId) => commands.executeCommandById(fullId),
-				},
-				id,
-				`${this.manifest.id}:${id}`,
-				noteLeaf,
-			);
-		} finally {
-			this.suppressActionsRefresh = false;
-		}
+		await dispatchSidebarCommand(
+			{
+				getCommand: (fullId) => commands.commands[fullId],
+				executeCommandById: (fullId) => commands.executeCommandById(fullId),
+			},
+			id,
+			`${this.manifest.id}:${id}`,
+			noteContext,
+		);
 	}
 
 	private async discardCheckpoint(id: string): Promise<void> {

@@ -1,66 +1,77 @@
 /**
- * Dispatch a registry command through Obsidian's own command system, with the
- * focus/timing handling the Synapse actions sidebar needs.
+ * Dispatch a Synapse actions-sidebar button to its registered command.
  *
- * Why this exists (issue #352): the actions sidebar's per-note buttons run
+ * Why this exists (issue #352): the sidebar's per-note buttons run
  * `context: 'note'` commands, which Obsidian registers as `editorCallback`s and
  * gates on an active markdown editor. Opening the sidebar (especially the mobile
- * drawer) steals focus from the editor, so we re-activate the note's markdown
- * leaf before dispatching. Crucially, `setActiveLeaf` does NOT make the editor
- * active within the same synchronous tick — so dispatching immediately would see
- * no active editor and silently no-op, which is why the buttons used to require a
- * SECOND click. Yielding a macrotask between re-activation and dispatch lets the
- * workspace settle so the command runs on the FIRST click.
+ * drawer) makes the note's editor inactive, so routing these through
+ * `executeCommandById` (the command-palette path) hits that gate and silently
+ * no-ops. Re-activating the note's leaf first does NOT reliably restore the
+ * editor within the click's lifetime (focus settles on a later tick), which is
+ * why the buttons used to require a SECOND click.
  *
- * (A microtask is not enough — the active-editor change is applied on a later
- * task, mirroring the #335 freeze fix. Hence `setTimeout(0)`, not a resolved
- * Promise.)
+ * Instead we invoke the registered command's `editorCallback` DIRECTLY, passing
+ * the note's own editor + view. Synapse's per-note handlers only read `ctx.file`
+ * (they ignore the editor), and we resolve the view from the note's markdown
+ * leaf — so the action runs on the FIRST click, deterministically, with no focus
+ * theft and no panel re-render. Non-note commands (and anything we can't resolve)
+ * fall back to Obsidian's normal gated dispatch.
  *
- * This sequence is extracted here (rather than inlined in main.ts) so it can be
- * unit-tested for ordering without standing up the whole plugin.
+ * Extracted here (rather than inlined in main.ts) so it can be unit-tested
+ * without standing up the whole plugin.
  */
 
 import { REGISTRY_BY_ID } from './registry';
 
-/** A workspace leaf we can re-activate (structural subset of Obsidian's WorkspaceLeaf). */
-export interface ActivatableLeaf {
+/** The slice of an Obsidian `Command` the sidebar may invoke directly. */
+export interface InvokableCommand {
+	/** Editor-gated handler — what Synapse's per-note actions register. */
+	editorCallback?: (editor: unknown, ctx: unknown) => unknown;
+}
+
+/** The note's live editor context, resolved from its markdown leaf. */
+export interface NoteEditorContext {
+	/** The note's editor (`MarkdownView.editor`). */
+	editor: unknown;
+	/** The `MarkdownView` itself, passed as the `editorCallback` `ctx` (a `MarkdownFileInfo`). */
 	view: unknown;
 }
 
-/** The minimal workspace + command surface command dispatch needs. */
+/** The minimal command surface dispatch needs (Obsidian's private `app.commands`). */
 export interface CommandDispatchHost {
-	/** Re-activate (and focus) a leaf — restores the editor context for note commands. */
-	setActiveLeaf(leaf: ActivatableLeaf, options: { focus: boolean }): void;
-	/** Run a fully-prefixed command id via Obsidian's gated dispatch (the palette path). */
+	/** Look up a registered command by fully-prefixed id (e.g. `synapse:enrich-current-note`). */
+	getCommand(fullId: string): InvokableCommand | undefined;
+	/** Obsidian's gated dispatch (the palette path) — the fallback for non-note commands. */
 	executeCommandById(fullId: string): boolean;
 }
 
-/** Yield a macrotask so Obsidian's active-leaf/editor change is applied before we read it. */
-function nextMacrotask(): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
 /**
- * Dispatch the command `fullId` (already prefixed, e.g. `synapse:enrich-current-note`)
- * for the registry entry `id`.
+ * Run the command `fullId` for registry entry `id`.
  *
- * For `context: 'note'` entries, when `noteLeaf` is provided, the note's markdown
- * leaf is re-activated and a macrotask is awaited BEFORE dispatch so the
- * editor-gated command runs on the first attempt. Non-note commands (and note
- * commands without a resolvable leaf) dispatch immediately.
+ * For a `context: 'note'` entry with a resolved `noteContext`, invoke the
+ * command's `editorCallback` directly with the note's editor/view — bypassing
+ * the active-editor gate so it runs on the FIRST click. Everything else (non-note
+ * commands, or a note command we can't resolve a handler for) routes through
+ * `executeCommandById`.
  *
- * @returns `true` once the command was dispatched.
+ * @returns `true` once the command was invoked/dispatched.
  */
 export async function dispatchSidebarCommand(
 	host: CommandDispatchHost,
 	id: string,
 	fullId: string,
-	noteLeaf: ActivatableLeaf | null,
+	noteContext: NoteEditorContext | null,
 ): Promise<boolean> {
-	if (REGISTRY_BY_ID.get(id)?.context === 'note' && noteLeaf) {
-		host.setActiveLeaf(noteLeaf, { focus: true });
-		// Let the focus/active-editor change land before dispatching (see file doc).
-		await nextMacrotask();
+	if (REGISTRY_BY_ID.get(id)?.context === 'note' && noteContext) {
+		const command = host.getCommand(fullId);
+		if (command?.editorCallback) {
+			// Direct invocation with the note's own editor/view — deterministic,
+			// no focus theft, no self-induced `active-leaf-change` re-render. Awaited
+			// so the runner can surface a rejected handler (see file doc).
+			await command.editorCallback(noteContext.editor, noteContext.view);
+			return true;
+		}
+		// Unresolvable command shape — fall through to the gated path.
 	}
 	return host.executeCommandById(fullId);
 }

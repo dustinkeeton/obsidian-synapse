@@ -1,78 +1,85 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { dispatchSidebarCommand, type CommandDispatchHost, type ActivatableLeaf } from './dispatch';
+import { dispatchSidebarCommand, type CommandDispatchHost, type NoteEditorContext } from './dispatch';
+
+type Handler = (editor: unknown, ctx: unknown) => unknown;
 
 /**
- * A spy host that records the order of `setActiveLeaf` / `executeCommandById`
- * calls so we can assert the #352 ordering: re-activate the note's leaf, let a
- * macrotask elapse, THEN dispatch.
+ * A spy host over Obsidian's private command surface. `getCommand` returns a
+ * registered command (with an `editorCallback`) when one is configured; the gated
+ * `executeCommandById` is the fallback. Tests assert which path dispatch takes.
  */
-function makeHost(): CommandDispatchHost & { calls: string[] } {
-	const calls: string[] = [];
+function makeHost(
+	commands: Record<string, { editorCallback?: Handler }> = {},
+): CommandDispatchHost & { getCommand: ReturnType<typeof vi.fn>; executeCommandById: ReturnType<typeof vi.fn> } {
 	return {
-		calls,
-		setActiveLeaf: vi.fn((_leaf: ActivatableLeaf, _o: { focus: boolean }) => {
-			calls.push('setActiveLeaf');
-		}),
-		executeCommandById: vi.fn((_fullId: string) => {
-			calls.push('executeCommandById');
-			return true;
-		}),
+		getCommand: vi.fn((fullId: string) => commands[fullId]),
+		executeCommandById: vi.fn((_fullId: string) => true),
 	};
 }
 
-const noteLeaf: ActivatableLeaf = { view: {} };
+const noteContext: NoteEditorContext = { editor: { id: 'editor' }, view: { id: 'view' } };
 
 describe('dispatchSidebarCommand', () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-	});
-	afterEach(() => {
-		vi.restoreAllMocks();
-		vi.useRealTimers();
-	});
+	beforeEach(() => vi.clearAllMocks());
+	afterEach(() => vi.restoreAllMocks());
 
-	// Regression for #352: a single (first) dispatch of a `context: 'note'` command
-	// must re-activate the editor BEFORE the command runs, with a macrotask between
-	// them. The old code dispatched synchronously in the same tick as setActiveLeaf,
-	// so the editor wasn't active yet and the command no-op'd until a 2nd click.
-	it('re-activates the note leaf, waits a macrotask, then dispatches on the first call', async () => {
-		const host = makeHost();
+	// Regression for #352: a `context: 'note'` action must run on the FIRST click.
+	// The fix invokes the registered command's editorCallback DIRECTLY with the
+	// note's editor/view, bypassing the active-editor gate that executeCommandById
+	// can't satisfy from the sidebar (which is why it used to need a 2nd click).
+	it('invokes a note command editorCallback directly with the note editor + view', async () => {
+		const editorCallback = vi.fn();
+		const host = makeHost({ 'synapse:enrich-current-note': { editorCallback } });
 
-		const promise = dispatchSidebarCommand(host, 'enrich-current-note', 'synapse:enrich-current-note', noteLeaf);
+		const ran = await dispatchSidebarCommand(host, 'enrich-current-note', 'synapse:enrich-current-note', noteContext);
 
-		// Synchronously, only the re-activation has happened — dispatch is deferred to
-		// a later macrotask (this is the crux of the fix; sync dispatch is the bug).
-		expect(host.setActiveLeaf).toHaveBeenCalledTimes(1);
-		expect(host.setActiveLeaf).toHaveBeenCalledWith(noteLeaf, { focus: true });
+		expect(editorCallback).toHaveBeenCalledTimes(1);
+		expect(editorCallback).toHaveBeenCalledWith(noteContext.editor, noteContext.view);
+		// It must NOT take the gated palette path — the source of the bug.
 		expect(host.executeCommandById).not.toHaveBeenCalled();
+		expect(ran).toBe(true);
+	});
 
-		await vi.runAllTimersAsync();
-		await promise;
+	it('awaits the editorCallback so the runner can surface its result/errors', async () => {
+		const order: string[] = [];
+		const editorCallback = vi.fn(async () => {
+			await Promise.resolve();
+			order.push('handler-done');
+		});
+		const host = makeHost({ 'synapse:enrich-current-note': { editorCallback } });
 
-		// After a macrotask elapses, the command dispatches — on the FIRST call.
-		expect(host.executeCommandById).toHaveBeenCalledTimes(1);
+		await dispatchSidebarCommand(host, 'enrich-current-note', 'synapse:enrich-current-note', noteContext);
+		order.push('dispatch-returned');
+
+		expect(order).toEqual(['handler-done', 'dispatch-returned']);
+	});
+
+	it('falls back to executeCommandById for a note command with no resolvable editorCallback', async () => {
+		const host = makeHost(); // getCommand returns undefined
+
+		await dispatchSidebarCommand(host, 'enrich-current-note', 'synapse:enrich-current-note', noteContext);
+
 		expect(host.executeCommandById).toHaveBeenCalledWith('synapse:enrich-current-note');
-		// Ordering: setActiveLeaf strictly precedes executeCommandById.
-		expect(host.calls).toEqual(['setActiveLeaf', 'executeCommandById']);
 	});
 
-	it('dispatches a non-note command immediately without re-activating any leaf', async () => {
-		const host = makeHost();
-
-		// `review-proposals` is a `context: 'global'` command in the registry.
-		await dispatchSidebarCommand(host, 'review-proposals', 'synapse:review-proposals', noteLeaf);
-
-		expect(host.setActiveLeaf).not.toHaveBeenCalled();
-		expect(host.executeCommandById).toHaveBeenCalledWith('synapse:review-proposals');
-		expect(host.calls).toEqual(['executeCommandById']);
-	});
-
-	it('dispatches a note command immediately when no markdown leaf is resolvable', async () => {
-		const host = makeHost();
+	it('falls back to executeCommandById for a note command with no note context', async () => {
+		const editorCallback = vi.fn();
+		const host = makeHost({ 'synapse:enrich-current-note': { editorCallback } });
 
 		await dispatchSidebarCommand(host, 'enrich-current-note', 'synapse:enrich-current-note', null);
 
-		expect(host.setActiveLeaf).not.toHaveBeenCalled();
+		expect(editorCallback).not.toHaveBeenCalled();
 		expect(host.executeCommandById).toHaveBeenCalledWith('synapse:enrich-current-note');
+	});
+
+	it('dispatches a non-note command through executeCommandById, never invoking a handler directly', async () => {
+		const editorCallback = vi.fn();
+		// `review-proposals` is a `context: 'global'` command in the registry.
+		const host = makeHost({ 'synapse:review-proposals': { editorCallback } });
+
+		await dispatchSidebarCommand(host, 'review-proposals', 'synapse:review-proposals', noteContext);
+
+		expect(editorCallback).not.toHaveBeenCalled();
+		expect(host.executeCommandById).toHaveBeenCalledWith('synapse:review-proposals');
 	});
 });
