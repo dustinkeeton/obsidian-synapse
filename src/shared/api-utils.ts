@@ -51,6 +51,38 @@ export function sleep(ms: number): Promise<void> {
 	return new Promise(resolve => window.setTimeout(resolve, ms));
 }
 
+/**
+ * Number of times {@link filterYielding} hands control back to the event loop
+ * over a single pass. Bounds the added latency (each yield is one ~4ms
+ * macrotask) to a few hundred ms even for very large vaults, while still giving
+ * a running progress toast enough paints to animate smoothly (#354).
+ */
+const YIELD_FRAMES = 60;
+
+/**
+ * Filter `items` with a synchronous `keep` predicate, yielding to the event loop
+ * periodically so a running operation toast can paint and animate (#354).
+ *
+ * A tight synchronous scan (e.g. enrichment/organize collecting eligible notes)
+ * blocks the main thread from start to finish, so the toast's Cancel-button
+ * progress border — which animates on the main thread — never renders before the
+ * scan reaches `finish()`. Interleaving `await sleep(0)` lets the browser paint
+ * between batches. Yields are capped at ~{@link YIELD_FRAMES} so large vaults add
+ * only a few hundred ms regardless of size.
+ */
+export async function filterYielding<T>(
+	items: T[],
+	keep: (item: T) => boolean
+): Promise<T[]> {
+	const result: T[] = [];
+	const yieldEvery = Math.max(1, Math.ceil(items.length / YIELD_FRAMES));
+	for (let i = 0; i < items.length; i++) {
+		if (keep(items[i])) result.push(items[i]);
+		if ((i + 1) % yieldEvery === 0) await sleep(0);
+	}
+	return result;
+}
+
 export function notifyError(context: string, error: unknown): void {
 	const message = error instanceof Error ? error.message : String(error);
 	// Redact potential API keys/tokens before showing the error to the user or

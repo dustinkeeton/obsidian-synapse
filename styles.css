@@ -551,7 +551,9 @@
  */
 .synapse-notice-op-progress-orbit {
   opacity: 0.9;
-  animation: synapse-notice-orbit 1.4s linear infinite;
+  /* A calm ~3s revolution. Slower than a typical busy spinner so the orbiting
+     dot reads as "working" without feeling frantic (#354). */
+  animation: synapse-notice-orbit 3s linear infinite;
 }
 
 /* Show exactly one layer per mode. */

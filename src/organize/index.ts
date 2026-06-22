@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder,
 	writeNote, generateOrganizeSummary, CheckpointManager, generateId, fireAndForget,
-	isPathExcluded, matchesExcludeTag, findMatchingRule,
+	isPathExcluded, matchesExcludeTag, findMatchingRule, filterYielding,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import type { MoveRecord } from '../shared';
@@ -272,15 +272,14 @@ export class OrganizeModule {
 		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
-		const eligible: TFile[] = [];
 
+		let eligible: TFile[];
 		try {
-			for (let i = 0; i < allFiles.length; i++) {
-				scanOp.progress(i + 1, allFiles.length, scopeLabel);
-				if (!this.isExcluded(allFiles[i])) {
-					eligible.push(allFiles[i]);
-				}
-			}
+			// The scan is unmeasured, fast work: leave the toast in its
+			// indeterminate (orbiting) mode and yield periodically so that orbit
+			// actually paints. A plain synchronous loop here blocked the main
+			// thread start-to-finish, so the border never animated (#354).
+			eligible = await filterYielding(allFiles, f => !this.isExcluded(f));
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			scanOp.error(`Scan failed -- ${msg}`);

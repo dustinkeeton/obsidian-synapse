@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
 	classifyNetworkError,
 	describeNetworkError,
+	filterYielding,
 	isTransientNetworkError,
 	notifyError,
 	withRetry,
@@ -116,6 +117,55 @@ describe('withRetry', () => {
 		await vi.runAllTimersAsync();
 		await expect(promise).resolves.toBe('done');
 		expect(fn).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('filterYielding', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('keeps only items matching the predicate, preserving order', async () => {
+		const promise = filterYielding([1, 2, 3, 4, 5], n => n % 2 === 1);
+		await vi.runAllTimersAsync();
+		await expect(promise).resolves.toEqual([1, 3, 5]);
+	});
+
+	it('filters correctly on the throttled path for large inputs', async () => {
+		// Beyond the per-item-yield threshold the helper yields every Nth item;
+		// the result must still contain exactly the matching items, in order.
+		const input = Array.from({ length: 130 }, (_, i) => i);
+		const promise = filterYielding(input, n => n % 10 === 0);
+		await vi.runAllTimersAsync();
+		await expect(promise).resolves.toEqual([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]);
+	});
+
+	it('returns an empty array for empty input without scheduling a yield', async () => {
+		const setTimeoutSpy = vi.spyOn(window, 'setTimeout');
+		const promise = filterYielding<number>([], () => true);
+		await vi.runAllTimersAsync();
+		await expect(promise).resolves.toEqual([]);
+		expect(setTimeoutSpy).not.toHaveBeenCalled();
+	});
+
+	it('yields to the event loop instead of running synchronously (#354)', async () => {
+		// The whole point of the helper: it must suspend on a macrotask so a
+		// running progress toast can paint between batches. Verify it has not
+		// resolved before the pending timers run.
+		let resolved = false;
+		const promise = filterYielding([1, 2, 3], () => true).then(r => {
+			resolved = true;
+			return r;
+		});
+		await Promise.resolve();
+		expect(resolved).toBe(false);
+		await vi.runAllTimersAsync();
+		await promise;
+		expect(resolved).toBe(true);
 	});
 });
 
