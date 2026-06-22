@@ -474,7 +474,16 @@
 .notice.synapse-notice--progress { border-left-color: var(--interactive-accent); }
 .notice.synapse-notice--success  { border-left-color: var(--color-green); }
 .notice.synapse-notice--warning  { border-left-color: var(--color-yellow); }
-.notice.synapse-notice--error    { border-left-color: var(--color-red); }
+/*
+ * Error toasts read unmistakably as errors and are click-to-copy/dismiss
+ * (see NotificationManager.showErrorNotice): a soft, theme-aware error wash
+ * behind the red accent, and a pointer cursor to signal they're clickable.
+ */
+.notice.synapse-notice--error {
+  border-left-color: var(--color-red);
+  background-color: var(--background-modifier-error);
+  cursor: pointer;
+}
 
 /* Running operation layout */
 .synapse-notice-op {

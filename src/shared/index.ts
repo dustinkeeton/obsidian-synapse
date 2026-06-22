@@ -3,7 +3,6 @@ export type { ChatMessage, ContentBlock, TextContentBlock, ImageContentBlock } f
 export {
 	withRetry,
 	sleep,
-	notifyError,
 	classifyNetworkError,
 	isTransientNetworkError,
 	describeNetworkError,

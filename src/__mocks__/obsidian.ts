@@ -181,10 +181,13 @@ export class Notice {
 	static instances: Notice[] = [];
 	noticeEl: any;
 	duration?: number;
+	/** Test helper: the raw string message the Notice was constructed with. */
+	message?: string;
 	constructor(_message: string | DocumentFragment, _duration?: number) {
 		this.noticeEl = createStubEl();
 		this.duration = _duration;
 		if (typeof _message === 'string') {
+			this.message = _message;
 			this.noticeEl.textContent = _message;
 		}
 		Notice.instances.push(this);

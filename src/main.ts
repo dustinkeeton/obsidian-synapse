@@ -77,13 +77,15 @@ export default class SynapsePlugin extends Plugin {
 		// addRibbonIcon(...)/setIcon/view getIcon that references these names.
 		registerSynapseIcons();
 
+		// Centralized notification manager. Constructed before migrateDataFolder()
+		// so that path can surface a persistent, copyable error toast through it.
+		this.notifications = new NotificationManager();
+
 		// Migrate legacy .auto-notes folder to .synapse (one-time, backward compat)
 		await this.migrateDataFolder();
 
 		this.addSettingTab(new SynapseSettingTab(this.app, this));
 
-		// Centralized notification manager
-		this.notifications = new NotificationManager();
 		if (Platform.isDesktop) {
 			this.notifications.setStatusBarEl(this.addStatusBarItem());
 		}
@@ -150,7 +152,7 @@ export default class SynapsePlugin extends Plugin {
 				onRemReject: (id) => this.rem.rejectProposal(id),
 				onCheckpointDiscard: (id) => this.discardCheckpoint(id),
 				onCheckpointResume: (id) => this.resumeCheckpoint(id),
-			});
+			}, this.notifications);
 		});
 
 		// Registry-driven "Synapse actions" sidebar (#289): touch-friendly buttons
@@ -874,8 +876,10 @@ export default class SynapsePlugin extends Plugin {
 			);
 		} catch (error) {
 			console.error('[Synapse] Failed to migrate data folder:', error);
-			new Notice(
-				`Synapse: failed to migrate ${OLD_FOLDER}/ to ${NEW_FOLDER}/ -- ` +
+			// Persistent, copyable error toast (NotificationManager exists by now —
+			// it is constructed before migrateDataFolder() in onload).
+			this.notifications.error(
+				`failed to migrate ${OLD_FOLDER}/ to ${NEW_FOLDER}/ -- ` +
 				`please rename it manually.`
 			);
 		}

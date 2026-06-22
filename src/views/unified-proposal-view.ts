@@ -5,7 +5,7 @@ import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
 import type { RemProposal } from '../rem';
-import type { Checkpoint } from '../shared';
+import type { Checkpoint, NotificationManager } from '../shared';
 import { fireAndForget } from '../shared';
 import type { UnifiedItem, UnifiedViewCallbacks } from './types';
 import { badgeClass, cardClass, reviewPaneLabelClass } from './proposal-styles';
@@ -25,6 +25,7 @@ export class UnifiedProposalView extends ItemView {
 	private items: UnifiedItem[] = [];
 	private incompleteCheckpoints: Checkpoint[] = [];
 	private callbacks: UnifiedViewCallbacks;
+	private notifications: NotificationManager;
 
 	private reviewingElaboration: Proposal | null = null;
 	private reviewingEnrichment: EnrichmentProposal | null = null;
@@ -45,9 +46,14 @@ export class UnifiedProposalView extends ItemView {
 	private selectedRefs = new Set<string>();
 	private selectedFrontmatter = new Set<string>();
 
-	constructor(leaf: WorkspaceLeaf, callbacks: UnifiedViewCallbacks) {
+	constructor(
+		leaf: WorkspaceLeaf,
+		callbacks: UnifiedViewCallbacks,
+		notifications: NotificationManager,
+	) {
 		super(leaf);
 		this.callbacks = callbacks;
+		this.notifications = notifications;
 	}
 
 	getViewType(): string {
@@ -202,7 +208,7 @@ export class UnifiedProposalView extends ItemView {
 				this.acceptAllInProgress = false;
 				const label = this.itemLabel(item);
 				const message = err instanceof Error ? err.message : String(err);
-				new Notice(
+				this.notifications.error(
 					`Accept All stopped: failed on "${label}" -- ${message}. ` +
 					`${accepted}/${total} accepted, ${total - accepted} remaining.`
 				);
@@ -308,7 +314,7 @@ export class UnifiedProposalView extends ItemView {
 				this.rejectAllInProgress = false;
 				const label = this.itemLabel(item);
 				const message = err instanceof Error ? err.message : String(err);
-				new Notice(
+				this.notifications.error(
 					`Reject All stopped: failed on "${label}" -- ${message}. ` +
 					`${rejected}/${total} rejected, ${total - rejected} remaining.`
 				);
