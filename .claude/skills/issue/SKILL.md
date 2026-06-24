@@ -1,15 +1,29 @@
 ---
 name: issue
-description: Create a well-structured GitHub issue from a brief description. Fleshes out title, body, labels, and optional sub-issues. Invokable by users and agents.
+description: Create a well-structured GitHub issue from a brief description, or enrich an existing issue in place. Fleshes out title, body, labels, and optional sub-issues. Invokable by users and agents.
 user-invocable: true
-argument-hint: "<brief description of the issue>"
+argument-hint: "<description for a new issue> | <#N, number, or issue URL to enrich> | (omit to enrich all open 'Needs Inference' issues)"
 ---
 
 # GitHub Issue Creation
 
-When this skill is invoked, create a GitHub issue in **this repository** using the `gh` CLI. The user (or calling agent) provides a brief description; your job is to flesh it out into a clear, actionable issue.
+When this skill is invoked, you either **create a new GitHub issue** from a brief description or **enrich an existing issue in place** — in either case in **this repository** using the `gh` CLI. Your job is to flesh the input out into a clear, actionable issue.
+
+## Mode detection
+
+Inspect `$ARGUMENTS` to choose a mode (same detection approach as the `delegate` skill):
+
+| `$ARGUMENTS` | Mode | What to do |
+|--------------|------|------------|
+| `#N`, a bare number, or a GitHub issue URL | **Enrich-in-place** | Flesh out that existing issue and update it — see **Enriching an existing issue (Needs Inference)** below. |
+| empty / omitted | **Batch enrich** | Enrich **every** open issue labeled `Needs Inference` — see the batch note in that section. |
+| any other text | **Create new** | Treat the text as the description for a brand-new issue and follow the **Workflow** below. |
+
+`Needs Inference` is the lifecycle label: it marks an issue as awaiting AI fleshing-out, and is **removed** once the issue has been enriched.
 
 ## Workflow
+
+> Steps below cover **Create new** mode. Enrich-in-place reuses the context (1), classification (2), priority (5), and project-integration (6) steps — see **Enriching an existing issue (Needs Inference)**.
 
 ### 1. Gather context
 
@@ -194,6 +208,53 @@ Output the issue URL so the user (or calling agent) can reference it. Include:
 - Board status set (or skipped with reason)
 - Milestone assigned (or skipped with reason)
 
+## Enriching an existing issue (Needs Inference)
+
+Use this when `$ARGUMENTS` is an issue reference (`#N`, a bare number, or an issue URL), or for each issue in **Batch enrich** mode. Instead of creating a new issue, you flesh out the existing one and update it in place.
+
+1. **Fetch the issue:**
+   ```bash
+   gh issue view <N> --json number,title,body,labels,milestone,state
+   ```
+   This mode is intended for issues carrying the `Needs Inference` label. If the issue lacks it but was explicitly referenced, proceed anyway and note that it wasn't labeled.
+
+2. **Gather context** — read the relevant source files to understand the problem/feature area (same as Workflow step 1). The issue's existing body is your brief.
+
+3. **Re-draft title + body** using the same template (Problem / Proposed Solution / Sub-issues / Context) and the title/priority rules above. **Incorporate the issue's current content**, and **preserve the reporter's original text verbatim** at the end so nothing is lost:
+
+   ```markdown
+   <enriched body>
+
+   <details><summary>Original report</summary>
+
+   > <original issue body, quoted>
+   </details>
+   ```
+
+4. **Update the issue in place** (use `--body-file` to avoid shell-escaping problems with backticks/`$`/`&`):
+   ```bash
+   gh issue edit <N> --title "<new title>" --body-file <path-to-body>
+   ```
+
+5. **Labels** — add the type label (step 2) and priority label (step 5), and **remove the lifecycle label**:
+   ```bash
+   gh issue edit <N> --add-label "bug" --add-label "priority: high" --remove-label "Needs Inference"
+   ```
+
+6. **Project board + milestone** — ensure the issue is on the board with a Status (Backlog if open) and has a milestone, reusing **step 6** (project integration). Skip whichever is already set.
+
+7. **Report back** — issue URL, a one-line summary of what changed, and confirmation that `Needs Inference` was removed and the board/milestone were applied.
+
+### Batch enrich (no argument)
+
+When `$ARGUMENTS` is empty, process the whole queue:
+
+```bash
+gh issue list --state open --label "Needs Inference" --json number,title,body,labels
+```
+
+Run steps 1–7 above for each issue, then print a summary of every issue enriched (number, new title, labels, milestone).
+
 ## Examples
 
 ### Simple bug
@@ -208,6 +269,18 @@ Creates an issue titled "Fix silent failure when audio transcription API key is 
 ```
 Creates an issue titled "Add Instagram video transcription support" with `enhancement` label, a body explaining the motivation, proposed approach, and sub-issues for URL detection, extraction, pipeline integration, and tests. Applies `priority: medium` label, adds to project board as "Backlog", and assigns to the matching milestone if one exists.
 
+### Enrich an existing issue
+```
+/issue 360
+```
+Fetches issue #360 (labeled `Needs Inference`), reads the relevant code, and rewrites its title and body into the full template — preserving the original report in a collapsed block. Applies the `bug` + priority labels, removes `Needs Inference`, ensures it's on the board as "Backlog", and assigns a milestone.
+
+### Enrich the whole queue
+```
+/issue
+```
+With no argument, enriches every open issue labeled `Needs Inference` in one pass, then summarizes the results.
+
 ## When called by agents
 
-Agents may invoke this skill to create tracking issues for discovered bugs, missing features, or tech debt. The same workflow applies — the agent's prompt serves as the brief description. Post-creation steps (priority classification, project board placement, milestone assignment) run automatically.
+Agents may invoke this skill to create tracking issues for discovered bugs, missing features, or tech debt. The same workflow applies — the agent's prompt serves as the brief description. Post-creation steps (priority classification, project board placement, milestone assignment) run automatically. Agents can also pass an issue reference (`#N`/number/URL) to enrich an existing issue in place — e.g., after a user files a rough issue tagged `Needs Inference`.
