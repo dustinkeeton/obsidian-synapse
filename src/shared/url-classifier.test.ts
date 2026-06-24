@@ -177,6 +177,14 @@ describe('classifyUrl', () => {
 			expect(result.platform).toBe('wikipedia');
 		});
 
+		it('classifies a Wikipedia disambiguation URL with parentheses as article', () => {
+			// sanitizeUrl now allows URL-legal `()`, so a real disambiguation URL
+			// reaches classification instead of being rejected as unknown (#369).
+			const result = classifyUrl('https://en.wikipedia.org/wiki/Obsidian_(software)');
+			expect(result.type).toBe('article');
+			expect(result.platform).toBe('wikipedia');
+		});
+
 		it('classifies any other valid http(s) URL as a generic article', () => {
 			const result = classifyUrl('https://example.com/some/article');
 			expect(result.type).toBe('article');
@@ -233,17 +241,9 @@ describe('classifyUrl', () => {
 		});
 
 		it('classifies a URL with shell metacharacters as unknown (sanitizeUrl rejects)', () => {
+			// Regression guard: `$` (and backtick/`;`/`|`) stay rejected after #369
+			// loosened sanitizeUrl, so a `$(...)` injection attempt is still unknown.
 			expect(classifyUrl('https://example.com/$(rm -rf /)').type).toBe('unknown');
-		});
-
-		it('classifies a URL with parentheses as unknown (known sanitizeUrl limitation)', () => {
-			// Documents current behavior: sanitizeUrl rejects `()`, so even a real
-			// Wikipedia disambiguation URL is unknown until sanitizeUrl is relaxed
-			// for the fetch path (#109). Classification stays in sync with the gate
-			// every downstream fetcher applies.
-			expect(classifyUrl('https://en.wikipedia.org/wiki/Obsidian_(software)').type).toBe(
-				'unknown'
-			);
 		});
 
 		it('classifies a URL containing a null byte as unknown', () => {
