@@ -155,6 +155,10 @@ export interface SummarizeSettings {
 	autoDetectTemplates: boolean;
 	excludeTags: string[];
 	autoOrganizeOnSummarize: boolean;
+	/** Summarize the note's own prose as an additional item (#367). */
+	includeNoteContent: boolean;
+	/** Emit one combined summary instead of a callout per item (#367). */
+	combineSummaries: boolean;
 }
 
 export interface TidySettings {
@@ -398,6 +402,8 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		autoDetectTemplates: true,
 		excludeTags: ['no-summarize'],
 		autoOrganizeOnSummarize: false,
+		includeNoteContent: true,
+		combineSummaries: true,
 	},
 	tidy: {
 		enabled: true,

@@ -35,6 +35,30 @@ export function renderSummarizeSettings(ctx: SettingsSectionContext): void {
 		);
 
 	new Setting(summarizeBody)
+		.setName('Summarize note content')
+		.setDesc("Also summarize the note's own prose, in addition to any URLs, transcriptions, or audio it references")
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.summarize.includeNoteContent)
+				.onChange(async (value) => {
+					plugin.settings.summarize.includeNoteContent = value;
+					await plugin.saveSettings();
+				})
+		);
+
+	new Setting(summarizeBody)
+		.setName('Combine into one summary')
+		.setDesc('Produce a single combined summary from all items instead of a separate summary per item')
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.summarize.combineSummaries)
+				.onChange(async (value) => {
+					plugin.settings.summarize.combineSummaries = value;
+					await plugin.saveSettings();
+				})
+		);
+
+	new Setting(summarizeBody)
 		.setName('Auto-detect content templates')
 		.setDesc('Automatically detect content type (e.g. recipes) and use a specialized summary format')
 		.addToggle(toggle => toggle
