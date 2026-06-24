@@ -6,10 +6,59 @@ import {
 } from '../shared';
 
 /**
+ * User-facing message for a TikTok (or similar) post that carries no audio
+ * stream — typically a photo/image slideshow. Surfaced both proactively (from
+ * `--dump-json` metadata, before any extraction is attempted) and reactively
+ * (when ffprobe's `unable to obtain file audio codec` signature appears in
+ * stderr). Kept as a shared constant so the proactive and reactive paths stay
+ * in sync.
+ */
+const NO_AUDIO_MESSAGE =
+	'This TikTok post appears to be a photo slideshow with no audio track.';
+
+/**
+ * Marker error thrown the moment {@link AudioExtractor.extractFromUrl} detects a
+ * no-audio/slideshow post from metadata. It carries {@link NO_AUDIO_MESSAGE} and
+ * is deliberately NOT retried with a looser format (there is simply no audio to
+ * extract), so the fallback path rethrows it untouched.
+ */
+class NoAudioError extends Error {
+	constructor(message: string = NO_AUDIO_MESSAGE) {
+		super(message);
+		this.name = 'NoAudioError';
+	}
+}
+
+/**
+ * Does `p` look like a concrete filesystem path rather than a bare command name
+ * resolved via PATH? yt-dlp's `--ffmpeg-location` wants a real file/dir path, so
+ * passing the bare default (`'ffmpeg'`) would break PATH discovery. We only emit
+ * the flag when the user configured an actual path (contains a `/` or `\`, or is
+ * absolute on Windows like `C:\...`).
+ */
+function isConcretePath(p: string): boolean {
+	return p.includes('/') || p.includes('\\');
+}
+
+/**
+ * yt-dlp stderr signature emitted when ffprobe runs but cannot determine an
+ * audio codec — i.e. the post has no standard audio stream (TikTok
+ * photo/slideshow). Distinct from ffprobe being missing entirely.
+ */
+const NO_AUDIO_STDERR = /unable to obtain file audio codec/i;
+
+/**
+ * yt-dlp/ffmpeg stderr signatures indicating the ffmpeg or ffprobe binary could
+ * not be located (vs. being present but unable to introspect the media).
+ */
+const FFMPEG_NOT_FOUND_STDERR =
+	/ffprobe(?:\/ffmpeg)?(?: or ffmpeg)? not found|ffmpeg(?:\/ffprobe)?(?: or ffprobe)? not found|ffmpeg(?: and|,)? ffprobe not found|(?:ffmpeg|ffprobe).{0,40}\bENOENT\b/i;
+
+/**
  * The subset of yt-dlp's `--dump-json` output that {@link AudioExtractor}
  * reads. yt-dlp emits a large, format-dependent object; every field below is
  * optional and best-effort — a missing field falls back (see
- * {@link AudioExtractor.getMetadata}), it is never a hard error. Validated with
+ * {@link AudioExtractor.toMetadata}), it is never a hard error. Validated with
  * {@link isRecord} + per-field `typeof` checks before access, so a malformed or
  * partial payload degrades to the URL/`Untitled` fallback instead of throwing.
  */
@@ -21,6 +70,23 @@ interface YtDlpDumpJson {
 	upload_date?: string;
 	description?: string;
 	extractor_key?: string;
+	/**
+	 * Best-effort audio codec for the default/selected format. yt-dlp reports the
+	 * literal string `'none'` when a format carries no audio — the key signal for
+	 * a TikTok photo/slideshow post. Absent on many extractors (audio assumed).
+	 */
+	acodec?: string;
+	/**
+	 * Per-format list from `--dump-json`. Used as a fallback audio probe: a post
+	 * with no format whose `acodec` is anything other than `'none'` has no audio
+	 * stream. Each entry's `acodec` is best-effort and may be missing.
+	 */
+	formats?: Array<{ acodec?: string; vcodec?: string }>;
+	/**
+	 * yt-dlp result type. Image slideshows surface as non-`'video'` types (often
+	 * `'playlist'`/`'multi_video'`), one more signal for the no-audio case.
+	 */
+	_type?: string;
 }
 
 /**
@@ -41,7 +107,23 @@ function asYtDlpDumpJson(value: unknown): YtDlpDumpJson | null {
 		upload_date: typeof value.upload_date === 'string' ? value.upload_date : undefined,
 		description: typeof value.description === 'string' ? value.description : undefined,
 		extractor_key: typeof value.extractor_key === 'string' ? value.extractor_key : undefined,
+		acodec: typeof value.acodec === 'string' ? value.acodec : undefined,
+		formats: asFormats(value.formats),
+		_type: typeof value._type === 'string' ? value._type : undefined,
 	};
+}
+
+/** Narrow an unknown `formats` value to the best-effort `{acodec,vcodec}[]` shape. */
+function asFormats(value: unknown): YtDlpDumpJson['formats'] {
+	if (!Array.isArray(value)) {
+		return undefined;
+	}
+	return value.map((f) => (isRecord(f)
+		? {
+			acodec: typeof f.acodec === 'string' ? f.acodec : undefined,
+			vcodec: typeof f.vcodec === 'string' ? f.vcodec : undefined,
+		}
+		: {}));
 }
 
 export class AudioExtractor {
@@ -68,17 +150,87 @@ export class AudioExtractor {
 		// Use OS temp dir for absolute path — yt-dlp needs a real filesystem path
 		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-audio-${Date.now()}.mp3`);
 
-		// Get metadata first
-		const metadata = await this.getMetadata(sanitizedUrl);
+		// Fetch metadata once and reuse it for both the returned VideoMetadata and
+		// the proactive no-audio/slideshow check, avoiding a second network call.
+		const dump = await this.dumpJson(sanitizedUrl);
+		const metadata = this.toMetadata(dump, sanitizedUrl);
 
-		// Download and extract audio using execFile with argument array
-		await this.runCommand(sanitizePath(settings.ytDlpPath), [
-			'-x', '--audio-format', 'mp3',
-			'-o', outputPath,
-			sanitizedUrl,
-		], 'yt-dlp');
+		// TikTok photo/slideshow posts have no audio stream; ffprobe would later
+		// fail with "unable to obtain file audio codec". Detect it up front from
+		// metadata and fail fast with an actionable, specific message instead of
+		// burning a download + a fallback retry that cannot possibly succeed.
+		if (this.isNoAudioPost(dump)) {
+			throw new NoAudioError();
+		}
+
+		const ytDlp = sanitizePath(settings.ytDlpPath);
+		const ffmpegLocation = this.ffmpegLocationArgs();
+
+		// First attempt: force mp3. On a non-network, non-no-audio failure, retry
+		// once with a looser format that does not pin the container/codec — some
+		// posts only expose formats that the strict `--audio-format mp3` path
+		// cannot satisfy on the first try.
+		try {
+			await this.runCommand(ytDlp, [
+				'-x', '--audio-format', 'mp3',
+				...ffmpegLocation,
+				'-o', outputPath,
+				sanitizedUrl,
+			], 'yt-dlp');
+		} catch (error) {
+			// A confirmed no-audio post can never be salvaged by a looser format —
+			// surface the specific slideshow guidance instead of retrying.
+			if (this.isNoAudioFailure(error)) {
+				throw error instanceof NoAudioError ? error : new NoAudioError();
+			}
+			// Network failures are already user-actionable and not content-related;
+			// don't waste a retry on them.
+			if (this.isNetworkFailure(error)) {
+				throw error;
+			}
+			await this.runCommand(ytDlp, [
+				'-f', 'bestaudio/best',
+				'-x', '--audio-format', 'mp3',
+				...ffmpegLocation,
+				'-o', outputPath,
+				sanitizedUrl,
+			], 'yt-dlp');
+		}
 
 		return { audioPath: outputPath, metadata };
+	}
+
+	/**
+	 * Build the `--ffmpeg-location <path>` argument pair for yt-dlp, or an empty
+	 * array when the configured ffmpeg path is a bare command name. yt-dlp finds
+	 * the matching ffprobe alongside ffmpeg from this location, so pointing it at
+	 * a concrete path fixes the "unable to obtain file audio codec" class of
+	 * failures caused by yt-dlp picking up a mismatched/absent ffprobe via PATH.
+	 */
+	private ffmpegLocationArgs(): string[] {
+		const ffmpegPath = this.getSettings().video.ffmpegPath;
+		if (!isConcretePath(ffmpegPath)) {
+			// Bare command name (the default): let PATH discovery via shellEnv()
+			// resolve ffmpeg/ffprobe. Passing `--ffmpeg-location ffmpeg` would make
+			// yt-dlp treat it as a literal path and fail.
+			return [];
+		}
+		return ['--ffmpeg-location', sanitizePath(ffmpegPath)];
+	}
+
+	/** Did this error originate from a network failure (already user-actionable)? */
+	private isNetworkFailure(error: unknown): boolean {
+		const msg = error instanceof Error ? error.message : String(error);
+		return describeNetworkError(msg, 'yt-dlp') !== null;
+	}
+
+	/** Did this error represent a no-audio/slideshow post (proactive or reactive)? */
+	private isNoAudioFailure(error: unknown): boolean {
+		if (error instanceof NoAudioError) {
+			return true;
+		}
+		const msg = error instanceof Error ? error.message : String(error);
+		return msg === NO_AUDIO_MESSAGE || NO_AUDIO_STDERR.test(msg);
 	}
 
 	async extractFromFile(filePath: string): Promise<ExtractionResult> {
@@ -110,6 +262,7 @@ export class AudioExtractor {
 
 		await this.runCommand(sanitizePath(settings.ytDlpPath), [
 			'-f', 'mp4/best',
+			...this.ffmpegLocationArgs(),
 			'-o', outputPath,
 			sanitizedUrl,
 		], 'yt-dlp');
@@ -179,30 +332,75 @@ export class AudioExtractor {
 		return { ytDlp, ffmpeg };
 	}
 
-	private async getMetadata(url: string): Promise<VideoMetadata> {
+	/**
+	 * Fetch and narrow yt-dlp's `--dump-json --no-download` output for `url`.
+	 *
+	 * Returns `null` on any failure (network, non-zero exit, malformed JSON, or a
+	 * non-object payload) so callers can fall back wholesale — matching the prior
+	 * `getMetadata` "never throw on metadata" contract. The narrowed object is
+	 * consumed by both {@link toMetadata} and {@link isNoAudioPost}, so a single
+	 * dump call serves the returned metadata AND the proactive slideshow check.
+	 */
+	private async dumpJson(url: string): Promise<YtDlpDumpJson | null> {
 		const settings = this.getSettings().video;
 		try {
 			const output = await this.runCommand(sanitizePath(settings.ytDlpPath), [
 				'--dump-json', '--no-download', url,
 			], 'yt-dlp');
-			// Parse to `unknown` and narrow. A non-object payload yields all-fallback
-			// fields (matching the prior untyped `data.x` reads on a non-object,
-			// which were `undefined`); a thrown SyntaxError on malformed JSON is
-			// swallowed by the surrounding catch into the `{ title: 'Untitled' }`
-			// fallback, exactly as before.
-			const data = asYtDlpDumpJson(parseJson(output)) ?? {};
-			return {
-				title: data.title || 'Untitled',
-				channel: data.channel || data.uploader,
-				duration: data.duration,
-				uploadDate: data.upload_date,
-				description: data.description?.slice(0, 500),
-				platform: data.extractor_key,
-				url,
-			};
+			return asYtDlpDumpJson(parseJson(output));
 		} catch {
-			return { title: 'Untitled', url };
+			return null;
 		}
+	}
+
+	/** Build {@link VideoMetadata} from narrowed dump JSON (or all-fallback when null). */
+	private toMetadata(dump: YtDlpDumpJson | null, url: string): VideoMetadata {
+		const data = dump ?? {};
+		return {
+			title: data.title || 'Untitled',
+			channel: data.channel || data.uploader,
+			duration: data.duration,
+			uploadDate: data.upload_date,
+			description: data.description?.slice(0, 500),
+			platform: data.extractor_key,
+			url,
+		};
+	}
+
+	/**
+	 * Decide from dump JSON whether a post has no extractable audio (TikTok
+	 * photo/slideshow). Signals, in order:
+	 *  1. top-level `acodec === 'none'` (yt-dlp's explicit "no audio" marker);
+	 *  2. a non-empty `formats` list where NO format has an audio codec other
+	 *     than `'none'` (every format is audio-less);
+	 *  3. a slideshow-ish result `_type` (e.g. `playlist`/`multi_video`/`images`)
+	 *     when there is no audio-bearing format to contradict it.
+	 *
+	 * Conservative by design: a `null` dump (metadata fetch failed) or an unknown
+	 * shape returns `false`, so extraction is still attempted rather than wrongly
+	 * blocked. Reactive detection of the ffprobe stderr signature
+	 * ({@link NO_AUDIO_STDERR}) backstops anything this proactive check misses.
+	 */
+	private isNoAudioPost(dump: YtDlpDumpJson | null): boolean {
+		if (!dump) {
+			return false;
+		}
+		if (dump.acodec === 'none') {
+			return true;
+		}
+		const formats = dump.formats;
+		if (formats && formats.length > 0) {
+			const hasAudio = formats.some((f) => typeof f.acodec === 'string' && f.acodec !== 'none');
+			if (!hasAudio) {
+				return true;
+			}
+			// At least one audio-bearing format exists — trust it over _type.
+			return false;
+		}
+		if (typeof dump._type === 'string' && /playlist|multi_video|image/i.test(dump._type)) {
+			return true;
+		}
+		return false;
 	}
 
 	private runCommand(cmd: string, args: string[], label = cmd): Promise<string> {
@@ -230,6 +428,21 @@ export class AudioExtractor {
 					// Classify against the FULL stderr (not just the last line) so
 					// yt-dlp's "Connection refused"/"Failed to resolve host" lines are caught.
 					const stderrText = stderr?.trim() || '';
+					// No-audio/slideshow: ffprobe ran but found no audio codec. Map to
+					// the specific, actionable slideshow message. Checked before the
+					// generic fallback so the raw "unable to obtain file audio codec"
+					// line never reaches the user.
+					if (NO_AUDIO_STDERR.test(stderrText)) {
+						reject(new NoAudioError());
+						return;
+					}
+					// ffmpeg/ffprobe present-but-not-found (distinct from the binary
+					// being missing, which surfaces as ENOENT above). Point the user at
+					// the Video setting that controls the ffmpeg path.
+					if (FFMPEG_NOT_FOUND_STDERR.test(stderrText)) {
+						reject(new Error('ffmpeg/ffprobe not found — set the ffmpeg path in Synapse settings (Video).'));
+						return;
+					}
 					const networkMsg = describeNetworkError(error, label) ?? describeNetworkError(stderrText, label);
 					if (networkMsg) {
 						reject(new Error(networkMsg));
