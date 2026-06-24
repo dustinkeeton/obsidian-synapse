@@ -60,10 +60,12 @@ const URL_IN_TEXT_REGEX = /https?:\/\/[^\s<>"'`]+/gi;
  * would route it to a pipeline guaranteed to throw. Keeping the gate identical
  * means a non-`unknown` classification is always a fetchable URL.
  *
- * KNOWN LIMITATION: sanitizeUrl rejects shell metacharacters including `()`,
- * so disambiguation URLs like `…/wiki/Obsidian_(software)` classify as
- * `unknown` today. Relaxing that safely requires loosening sanitizeUrl for the
- * non-shell (fetch) path, which is out of scope for this module (see #109).
+ * sanitizeUrl now allows the URL-legal characters `()`, `{}`, `!` and `&`
+ * (multi-param query strings), so disambiguation URLs like
+ * `…/wiki/Obsidian_(software)` and multi-param TikTok/YouTube links classify
+ * normally for the fetch path. It still rejects the shell-dangerous `$`,
+ * backtick, `;` and `|` (plus control chars and null bytes) as
+ * defense-in-depth, so a URL like `…/$(rm -rf /)` remains `unknown`.
  */
 function safeParseUrl(url: string): URL | null {
 	if (typeof url !== 'string' || url.trim().length === 0) {

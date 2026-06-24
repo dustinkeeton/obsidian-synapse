@@ -25,9 +25,16 @@ export function sanitizeUrl(url: string): string {
 		throw new Error('Only HTTP and HTTPS URLs are supported');
 	}
 
-	// Reject shell metacharacters that could be used for injection
-	// Even with execFile, we want defense-in-depth
-	const shellMeta = /[;|&`$(){}!\n\r]/;
+	// Reject the shell metacharacters most dangerous in a shell context as
+	// defense-in-depth, while allowing URL-legal characters that appear in real
+	// links. `&` (multi-param query strings), `(` `)` `{` `}` `!` are common in
+	// legitimate URLs (TikTok/YouTube tracking params, Wikipedia disambiguation
+	// pages) and are NOT injection vectors here: the URL is passed to execFile as
+	// a single argv element with no shell, and new URL() above guarantees it is
+	// well-formed. We still reject `;` `|` backtick `$` and the control chars
+	// `\n` `\r` because they are rarely legitimate in a URL and stay dangerous if
+	// a value ever reaches a shell. The null-byte check above is also retained.
+	const shellMeta = /[;|`$\n\r]/;
 	if (shellMeta.test(url)) {
 		throw new Error('URL contains invalid characters');
 	}

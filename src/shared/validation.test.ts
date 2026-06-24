@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	blockquoteOriginal, ensureWithinVault, stripCodeFences,
-	parseTimestamp, validateTimeRange, formatTimeRange,
+	parseTimestamp, validateTimeRange, formatTimeRange, sanitizeUrl,
 } from './validation';
 
 describe('blockquoteOriginal', () => {
@@ -59,6 +59,90 @@ describe('blockquoteOriginal', () => {
 		// No valid frontmatter, so the whole thing gets blockquoted
 		expect(result).toContain('> ---');
 		expect(result).toContain('> Not actually frontmatter');
+	});
+});
+
+describe('sanitizeUrl', () => {
+	describe('allows URL-legal characters', () => {
+		it('passes a YouTube watch URL with a second & param', () => {
+			const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s';
+			expect(sanitizeUrl(url)).toBe(url);
+		});
+
+		it('passes a full TikTok URL with multiple tracking params', () => {
+			const url = 'https://www.tiktok.com/@x/video/123?_r=1&_t=ZT-9';
+			expect(sanitizeUrl(url)).toBe(url);
+		});
+
+		it('passes a Wikipedia disambiguation URL with parentheses', () => {
+			const url = 'https://en.wikipedia.org/wiki/Obsidian_(software)';
+			expect(sanitizeUrl(url)).toBe(url);
+		});
+
+		it('passes a URL containing { } and !', () => {
+			const url = 'https://example.com/path/{id}/item!';
+			expect(sanitizeUrl(url)).toBe(url);
+		});
+	});
+
+	describe('still rejects dangerous characters and schemes', () => {
+		it('rejects a URL containing a backtick', () => {
+			expect(() => sanitizeUrl('https://example.com/`whoami`')).toThrow(
+				'URL contains invalid characters'
+			);
+		});
+
+		it('rejects a URL containing $', () => {
+			expect(() => sanitizeUrl('https://example.com/$(x)')).toThrow(
+				'URL contains invalid characters'
+			);
+		});
+
+		it('rejects a URL containing a semicolon', () => {
+			expect(() => sanitizeUrl('https://example.com/a;b')).toThrow(
+				'URL contains invalid characters'
+			);
+		});
+
+		it('rejects a URL containing a pipe', () => {
+			expect(() => sanitizeUrl('https://example.com/a|b')).toThrow(
+				'URL contains invalid characters'
+			);
+		});
+
+		it('rejects a URL containing a newline', () => {
+			expect(() => sanitizeUrl('https://example.com/a\nb')).toThrow(
+				'URL contains invalid characters'
+			);
+		});
+
+		it('rejects a URL containing a carriage return', () => {
+			expect(() => sanitizeUrl('https://example.com/a\rb')).toThrow(
+				'URL contains invalid characters'
+			);
+		});
+
+		it('rejects a URL containing a null byte', () => {
+			expect(() => sanitizeUrl('https://example.com/\0')).toThrow(
+				'contains null bytes'
+			);
+		});
+
+		it('rejects a non-http(s) scheme (ftp)', () => {
+			expect(() => sanitizeUrl('ftp://example.com/file.zip')).toThrow(
+				'Only HTTP and HTTPS URLs are supported'
+			);
+		});
+
+		it('rejects a non-http(s) scheme (file)', () => {
+			expect(() => sanitizeUrl('file:///etc/passwd')).toThrow(
+				'Only HTTP and HTTPS URLs are supported'
+			);
+		});
+
+		it('rejects a structurally invalid URL', () => {
+			expect(() => sanitizeUrl('not a url')).toThrow('Invalid URL format');
+		});
 	});
 });
 
