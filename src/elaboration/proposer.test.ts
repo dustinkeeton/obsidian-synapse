@@ -3,6 +3,7 @@ import { TFile, requestUrl } from '../__mocks__/obsidian';
 import { ProposalGenerator } from './proposer';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { DetectionResult } from './types';
+import type { NotificationManager } from '../shared';
 
 const mockComplete = vi.fn().mockResolvedValue('Expanded content here.');
 const mockChat = vi.fn().mockResolvedValue(
@@ -37,6 +38,16 @@ function makeSettings(): SynapseSettings {
 	return structuredClone(DEFAULT_SETTINGS);
 }
 
+/**
+ * Minimal NotificationManager stand-in. ProposalGenerator only calls `info()`
+ * to surface skipped/empty external-context fetches, so spying on that one
+ * method is enough (the real NotificationManager's Notice DOM/CSS behavior is
+ * verified live in Obsidian, not here).
+ */
+function makeNotifications() {
+	return { info: vi.fn() } as unknown as NotificationManager & { info: ReturnType<typeof vi.fn> };
+}
+
 describe('ProposalGenerator -- image embed preservation (no images)', () => {
 	let generator: ProposalGenerator;
 
@@ -62,7 +73,7 @@ describe('ProposalGenerator -- image embed preservation (no images)', () => {
 		settings.elaboration.proposal.includeSourceContext = false;
 		// Disable image analysis so these tests stay focused on original behavior
 		settings.image.enabled = false;
-		generator = new ProposalGenerator(mockApp as any, () => settings);
+		generator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
 	});
 
 	afterEach(() => {
@@ -132,7 +143,7 @@ describe('ProposalGenerator -- image analysis integration', () => {
 		settings = makeSettings();
 		settings.elaboration.proposal.includeSourceContext = false;
 		settings.image.enabled = true;
-		generator = new ProposalGenerator(mockApp as any, () => settings);
+		generator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
 	});
 
 	afterEach(() => {
@@ -197,7 +208,7 @@ describe('ProposalGenerator -- image analysis integration', () => {
 			},
 		};
 
-		const noImageGenerator = new ProposalGenerator(mockApp as any, () => settings);
+		const noImageGenerator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
 
 		const detection: DetectionResult = {
 			notePath: 'notes/plain.md',
@@ -289,7 +300,7 @@ describe('ProposalGenerator -- Twitter URL external context', () => {
 		const settings = makeSettings();
 		settings.elaboration.proposal.includeSourceContext = false;
 		settings.image.enabled = false;
-		generator = new ProposalGenerator(mockApp as any, () => settings);
+		generator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
 
 		mockRequestUrl.mockResolvedValue({
 			text: JSON.stringify({
@@ -335,7 +346,10 @@ describe('ProposalGenerator -- Twitter URL external context', () => {
 });
 
 describe('ProposalGenerator -- article URL external context', () => {
-	function makeGenerator(noteContent: string): ProposalGenerator {
+	function makeGenerator(noteContent: string): {
+		generator: ProposalGenerator;
+		notifications: ReturnType<typeof makeNotifications>;
+	} {
 		const mockApp = {
 			vault: {
 				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
@@ -351,7 +365,11 @@ describe('ProposalGenerator -- article URL external context', () => {
 		const settings = makeSettings();
 		settings.elaboration.proposal.includeSourceContext = false;
 		settings.image.enabled = false;
-		return new ProposalGenerator(mockApp as any, () => settings);
+		const notifications = makeNotifications();
+		return {
+			generator: new ProposalGenerator(mockApp as any, () => settings, notifications),
+			notifications,
+		};
 	}
 
 	beforeEach(() => {
@@ -369,7 +387,7 @@ describe('ProposalGenerator -- article URL external context', () => {
 	});
 
 	it('fetches a non-Twitter article URL into external context', async () => {
-		const generator = makeGenerator(
+		const { generator } = makeGenerator(
 			'# Notes\n\nSee https://example.com/post for details.'
 		);
 
@@ -387,7 +405,7 @@ describe('ProposalGenerator -- article URL external context', () => {
 	});
 
 	it('does not fetch known video hosts as articles', async () => {
-		const generator = makeGenerator(
+		const { generator } = makeGenerator(
 			'# Notes\n\nWatch https://www.youtube.com/watch?v=abc123 here.'
 		);
 
@@ -401,9 +419,9 @@ describe('ProposalGenerator -- article URL external context', () => {
 		expect(prompt).not.toContain('External content referenced in this note:');
 	});
 
-	it('gracefully handles article fetch failure', async () => {
+	it('surfaces a notification (no longer silent) when an article fetch fails', async () => {
 		mockFetchArticleContent.mockRejectedValue(new Error('timeout'));
-		const generator = makeGenerator(
+		const { generator, notifications } = makeGenerator(
 			'# Notes\n\nSee https://example.com/broken here.'
 		);
 
@@ -416,5 +434,120 @@ describe('ProposalGenerator -- article URL external context', () => {
 		expect(proposal.proposedAdditions).toBeDefined();
 		const [prompt] = mockComplete.mock.calls[0];
 		expect(prompt).not.toContain('External content referenced in this note:');
+
+		// The failure is now surfaced to the user instead of swallowed.
+		expect(notifications.info).toHaveBeenCalledTimes(1);
+		const [msg] = notifications.info.mock.calls[0];
+		expect(msg).toContain('Could not load content from example.com');
+		expect(msg).toContain('timeout');
+	});
+
+	it('surfaces a notification when an article fetch returns no readable text', async () => {
+		mockFetchArticleContent.mockResolvedValue('   ');
+		const { generator, notifications } = makeGenerator(
+			'# Notes\n\nSee https://example.com/empty here.'
+		);
+
+		await generator.generate({
+			notePath: 'notes/empty.md',
+			reasons: [{ type: 'user-requested' }],
+		});
+
+		expect(notifications.info).toHaveBeenCalledTimes(1);
+		const [msg] = notifications.info.mock.calls[0];
+		expect(msg).toContain('Could not load content from example.com');
+		expect(msg).toContain('no readable text');
+	});
+});
+
+describe('ProposalGenerator -- Reddit URL external context', () => {
+	function makeGenerator(noteContent: string): {
+		generator: ProposalGenerator;
+		notifications: ReturnType<typeof makeNotifications>;
+	} {
+		const mockApp = {
+			vault: {
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue(noteContent),
+				read: vi.fn(),
+				readBinary: vi.fn(),
+			},
+			metadataCache: {
+				getCache: vi.fn().mockReturnValue(null),
+				getFirstLinkpathDest: vi.fn().mockReturnValue(null),
+			},
+		};
+		const settings = makeSettings();
+		settings.elaboration.proposal.includeSourceContext = false;
+		settings.image.enabled = false;
+		const notifications = makeNotifications();
+		return {
+			generator: new ProposalGenerator(mockApp as any, () => settings, notifications),
+			notifications,
+		};
+	}
+
+	beforeEach(() => {
+		mockComplete.mockClear();
+		mockChat.mockClear();
+		mockComplete.mockResolvedValue('Expanded content with reddit context.');
+		mockFetchArticleContent.mockClear();
+		mockFetchArticleContent.mockResolvedValue('SHOULD NOT BE USED');
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('routes a Reddit URL to the Reddit JSON fetcher (not the article fetcher)', async () => {
+		// reddit-fetcher is the real module here, so it hits the mocked
+		// requestUrl: return a valid post listing.
+		mockRequestUrl.mockResolvedValue({
+			text: JSON.stringify([
+				{ data: { children: [{ data: {
+					author: 'immich_fan',
+					title: 'Immich backup tips',
+					selftext: 'Use the CLI for bulk uploads.',
+				} }] } },
+			]),
+		} as never);
+
+		const { generator } = makeGenerator(
+			'# Notes\n\nSaw this: https://www.reddit.com/r/immich/comments/abc123/title/'
+		);
+
+		await generator.generate({
+			notePath: 'notes/reddit.md',
+			reasons: [{ type: 'user-requested' }],
+		});
+
+		// Reddit must NOT fall through to the generic article fetcher.
+		expect(mockFetchArticleContent).not.toHaveBeenCalled();
+
+		const [prompt] = mockComplete.mock.calls[0];
+		expect(prompt).toContain('External content referenced in this note:');
+		expect(prompt).toContain('u/immich_fan');
+		expect(prompt).toContain('Immich backup tips');
+		expect(prompt).toContain('Use the CLI for bulk uploads.');
+	});
+
+	it('surfaces a notification when a Reddit fetch fails', async () => {
+		mockRequestUrl.mockRejectedValue(new Error('403'));
+
+		const { generator, notifications } = makeGenerator(
+			'# Notes\n\nSaw this: https://www.reddit.com/r/immich/comments/abc123/title/'
+		);
+
+		const proposal = await generator.generate({
+			notePath: 'notes/reddit-fail.md',
+			reasons: [{ type: 'user-requested' }],
+		});
+
+		// Non-fatal — proposal still produced, but the failure is surfaced.
+		expect(proposal.proposedAdditions).toBeDefined();
+		expect(mockFetchArticleContent).not.toHaveBeenCalled();
+		expect(notifications.info).toHaveBeenCalledTimes(1);
+		const [msg] = notifications.info.mock.calls[0];
+		expect(msg).toContain('Could not load content from www.reddit.com');
 	});
 });

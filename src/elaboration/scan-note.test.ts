@@ -214,7 +214,7 @@ describe('ProposalGenerator — user-requested reason handling', () => {
 		};
 
 		const settings = structuredClone(DEFAULT_SETTINGS);
-		const generator = new ProposalGenerator(mockApp as any, () => settings);
+		const generator = new ProposalGenerator(mockApp as any, () => settings, { info: vi.fn() } as unknown as NotificationManager);
 
 		const detection: DetectionResult = {
 			notePath: 'notes/test.md',
@@ -246,7 +246,7 @@ describe('ProposalGenerator — user-requested reason handling', () => {
 		// Disable context gathering to simplify the test
 		settings.elaboration.proposal.includeSourceContext = false;
 
-		const generator = new ProposalGenerator(mockApp as any, () => settings);
+		const generator = new ProposalGenerator(mockApp as any, () => settings, { info: vi.fn() } as unknown as NotificationManager);
 
 		const userDetection: DetectionResult = {
 			notePath: 'notes/user.md',

@@ -39,6 +39,7 @@ const ARTICLE_HOSTS: ReadonlyArray<{ suffix: string; platform: string }> = [
 	{ suffix: 'medium.com', platform: 'medium' },
 	{ suffix: 'substack.com', platform: 'substack' },
 	{ suffix: 'wikipedia.org', platform: 'wikipedia' },
+	{ suffix: 'reddit.com', platform: 'reddit' },
 ];
 
 /**

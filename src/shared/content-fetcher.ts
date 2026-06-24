@@ -43,6 +43,12 @@ async function fetchHtml(url: string): Promise<string> {
 		window.setTimeout(() => reject(new Error('Page fetch timed out')), FETCH_TIMEOUT_MS)
 	);
 
+	// Obsidian's requestUrl follows HTTP redirects automatically and resolves
+	// with the final 200 response body, so share/short links (e.g. a `/s/`
+	// Reddit link or a shortener) are dereferenced here without any extra work.
+	// Note: the resolved RequestUrlResponse does NOT expose the final URL, so a
+	// caller that needs the canonical URL (see reddit-fetcher.ts) must derive it
+	// from the response body rather than reading it back off the response.
 	const response = await Promise.race([
 		requestUrl({
 			url: validatedUrl,

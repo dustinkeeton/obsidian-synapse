@@ -58,6 +58,8 @@ export {
 export type { TreeNode, MoveRecord } from './diagram-generator';
 export { fetchTweetContent, isTwitterUrl } from './tweet-fetcher';
 export type { TweetContent } from './tweet-fetcher';
+export { fetchRedditContent, isRedditUrl, extractCanonicalPostUrl } from './reddit-fetcher';
+export type { RedditContent } from './reddit-fetcher';
 export {
 	fetchPageContent,
 	fetchArticleContent,

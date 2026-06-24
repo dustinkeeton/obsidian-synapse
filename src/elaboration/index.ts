@@ -47,7 +47,7 @@ export class ElaborationModule {
 	) {
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 		this.detector = new PlaceholderDetector(plugin.app, getSettings);
-		this.proposer = new ProposalGenerator(plugin.app, getSettings);
+		this.proposer = new ProposalGenerator(plugin.app, getSettings, notifications);
 		this.store = new ProposalStore(plugin.app, getSettings);
 	}
 
