@@ -28,8 +28,12 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
 export interface SynapseActionsCallbacks {
 	/** The palette commands to show, in registry order (from `listPaletteActions`). */
 	getActions: () => CommandDefinition[];
-	/** Invoke a command by its registry id (main.ts runs it via `executeCommandById`). */
-	runAction: (id: string) => void;
+	/**
+	 * Invoke a command by its registry id (main.ts runs it via `executeCommandById`).
+	 * May be async: per-note dispatch re-activates the editor and awaits a macrotask
+	 * before running the command so it works on the first click (#352).
+	 */
+	runAction: (id: string) => void | Promise<void>;
 	/** Whether a markdown note is currently active (gates `context: 'note'` buttons). */
 	isNoteActive: () => boolean;
 }
@@ -122,7 +126,13 @@ export class SynapseActionsView extends ItemView {
 					button.disabled = true;
 					button.setAttribute('aria-disabled', 'true');
 				} else {
-					button.addEventListener('click', () => this.callbacks.runAction(action.id));
+					// `runAction` may be async (per-note dispatch yields a macrotask so
+					// editor-gated commands run on the first click, #352). main.ts wraps
+					// it in fireAndForget for rejection handling, so the returned promise
+					// is intentionally not awaited here.
+					button.addEventListener('click', () => {
+						void this.callbacks.runAction(action.id);
+					});
 				}
 			}
 		}

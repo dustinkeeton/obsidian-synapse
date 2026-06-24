@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createEl } from '../__mocks__/obsidian';
 import { SynapseActionsView, SynapseActionsCallbacks } from './synapse-actions-view';
 import type { CommandDefinition } from '../commands';
+import { dispatchSidebarCommand, type CommandDispatchHost, type NoteEditorContext } from '../commands';
 
 // --- Helpers ----------------------------------------------------------------
 
@@ -167,5 +168,86 @@ describe('SynapseActionsView', () => {
 		expect(textsByClass(contentEl, 'synapse-actions-empty')).toEqual([
 			'No actions available — enable features in settings.',
 		]);
+	});
+
+	// --- #352 regression: per-note actions must run on the FIRST click ----------
+	//
+	// Wires the REAL command-dispatch (`dispatchSidebarCommand`, the same path
+	// main.ts uses) as the button's `runAction`, so a single click exercises the
+	// end-to-end sequence. The OLD code routed note actions through Obsidian's
+	// editor-gated `executeCommandById`; with the sidebar focused there's no active
+	// editor, so it no-op'd until a 2nd click. The fix invokes the command's
+	// `editorCallback` directly with the note's editor/view — so one click runs it.
+	describe('first-click dispatch (#352 regression)', () => {
+		type Handler = (editor: unknown, ctx: unknown) => unknown;
+
+		/** Spy dispatch host: a registered note command + a gated-dispatch fallback. */
+		function makeDispatchHost(
+			editorCallback: Handler,
+		): CommandDispatchHost & { executeCommandById: ReturnType<typeof vi.fn> } {
+			const commands: Record<string, { editorCallback?: Handler }> = {
+				'synapse:enrich-current-note': { editorCallback },
+			};
+			return {
+				getCommand: (fullId: string) => commands[fullId],
+				executeCommandById: vi.fn((_fullId: string) => true),
+			};
+		}
+
+		const noteContext: NoteEditorContext = { editor: { id: 'editor' }, view: { id: 'view' } };
+
+		it('runs a per-note action on a single first click (direct editorCallback, no gated dispatch)', async () => {
+			const editorCallback = vi.fn();
+			const host = makeDispatchHost(editorCallback);
+			// The view's runAction is the production dispatch, exactly as main.ts wires it.
+			const runAction = vi.fn(async (id: string): Promise<void> => {
+				await dispatchSidebarCommand(host, id, `synapse:${id}`, noteContext);
+			});
+			const { view, contentEl } = makeView({ isNoteActive: () => true, runAction });
+			await view.onOpen();
+
+			// ONE click on a `context: 'note'` action runs its handler immediately...
+			findButton(contentEl, 'Enrich current note').dispatchEvent({ type: 'click' });
+			expect(runAction).toHaveBeenCalledTimes(1);
+			await Promise.resolve();
+
+			expect(editorCallback).toHaveBeenCalledTimes(1);
+			expect(editorCallback).toHaveBeenCalledWith(noteContext.editor, noteContext.view);
+			// ...without the editor-gated palette path that caused the 2nd-click bug.
+			expect(host.executeCommandById).not.toHaveBeenCalled();
+		});
+
+		it('does not re-render the panel as a side effect of a click', async () => {
+			const host = makeDispatchHost(vi.fn());
+			const runAction = async (id: string): Promise<void> => {
+				await dispatchSidebarCommand(host, id, `synapse:${id}`, noteContext);
+			};
+			const { view, contentEl } = makeView({ isNoteActive: () => true, runAction });
+			await view.onOpen();
+
+			// A click must not trigger the panel's own re-render — there's no
+			// setActiveLeaf now, so no self-induced active-leaf-change refresh.
+			const refreshSpy = vi.spyOn(view, 'refresh');
+			findButton(contentEl, 'Enrich current note').dispatchEvent({ type: 'click' });
+			await Promise.resolve();
+
+			expect(refreshSpy).not.toHaveBeenCalled();
+		});
+
+		it('routes a non-note action through executeCommandById (no direct handler)', async () => {
+			const editorCallback = vi.fn();
+			const host = makeDispatchHost(editorCallback);
+			const runAction = async (id: string): Promise<void> => {
+				await dispatchSidebarCommand(host, id, `synapse:${id}`, noteContext);
+			};
+			const { view, contentEl } = makeView({ isNoteActive: () => true, runAction });
+			await view.onOpen();
+
+			findButton(contentEl, 'Open proposal review sidebar').dispatchEvent({ type: 'click' });
+			await Promise.resolve();
+
+			expect(editorCallback).not.toHaveBeenCalled();
+			expect(host.executeCommandById).toHaveBeenCalledWith('synapse:review-proposals');
+		});
 	});
 });
