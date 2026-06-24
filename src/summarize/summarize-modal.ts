@@ -1,19 +1,35 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import { SummarizeTarget } from './types';
 
+export interface SummarizeModalDefaults {
+	/** Default state of the "Include note content" toggle (#367). */
+	includeNoteContent: boolean;
+	/** Default state of the "Combine into one summary" toggle (#367). */
+	combineSummaries: boolean;
+}
+
 export class SummarizeSelectionModal extends Modal {
 	private selected: Set<string>;
 	private onSummarize: (targets: SummarizeTarget[], combine: boolean) => Promise<void>;
-	private combineAudio = false;
+	private noteContentTarget: SummarizeTarget | null;
+	private refTargets: SummarizeTarget[];
+	private includeNote: boolean;
+	private combine: boolean;
 
 	constructor(
 		app: App,
-		private targets: SummarizeTarget[],
+		targets: SummarizeTarget[],
 		onSummarize: (targets: SummarizeTarget[], combine: boolean) => Promise<void>,
-		private canCombine = false
+		defaults: SummarizeModalDefaults
 	) {
 		super(app);
-		this.selected = new Set(targets.map(t => `${t.type}:${t.line}:${t.source}`));
+		// The note's own prose (#367) is presented as a dedicated toggle rather
+		// than a checkbox in the reference list.
+		this.noteContentTarget = targets.find(t => t.type === 'note-content') ?? null;
+		this.refTargets = targets.filter(t => t.type !== 'note-content');
+		this.selected = new Set(this.refTargets.map(t => `${t.type}:${t.line}:${t.source}`));
+		this.includeNote = defaults.includeNoteContent;
+		this.combine = defaults.combineSummaries;
 		this.onSummarize = onSummarize;
 	}
 
@@ -21,15 +37,43 @@ export class SummarizeSelectionModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
+		const total = this.refTargets.length + (this.noteContentTarget ? 1 : 0);
 		contentEl.createEl('h2', { text: 'Summarize content' });
 		contentEl.createEl('p', {
-			text: `Found ${this.targets.length} item(s) to summarize. Select which to process:`,
+			text: `Found ${total} item(s) to summarize. Select which to process:`,
 		});
+
+		// The note's own prose (#367).
+		if (this.noteContentTarget) {
+			new Setting(contentEl)
+				.setName('Include note content')
+				.setDesc("Summarize the note's own prose in addition to its references.")
+				.addToggle((toggle) => {
+					toggle
+						.setValue(this.includeNote)
+						.onChange((val) => {
+							this.includeNote = val;
+						});
+				});
+		}
+
+		// Combine vs. per-item summaries (#367). The modal only appears for 2+
+		// items, so combining is always applicable here.
+		new Setting(contentEl)
+			.setName('Combine into one summary')
+			.setDesc('Produce a single combined summary instead of one per item.')
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.combine)
+					.onChange((val) => {
+						this.combine = val;
+					});
+			});
 
 		new Setting(contentEl)
 			.addButton((btn) => {
 				btn.setButtonText('Select all').onClick(() => {
-					this.selected = new Set(this.targets.map(t => `${t.type}:${t.line}:${t.source}`));
+					this.selected = new Set(this.refTargets.map(t => `${t.type}:${t.line}:${t.source}`));
 					this.renderCheckboxes(listEl);
 				});
 			})
@@ -40,20 +84,6 @@ export class SummarizeSelectionModal extends Modal {
 				});
 			});
 
-		// Combine option (#214): shown with 2+ audio targets (ffmpeg optional).
-		if (this.canCombine) {
-			new Setting(contentEl)
-				.setName('Combine audio into one summary')
-				.setDesc('Produce a single combined transcription and summary from the selected audio files.')
-				.addToggle((toggle) => {
-					toggle
-						.setValue(this.combineAudio)
-						.onChange((val) => {
-							this.combineAudio = val;
-						});
-				});
-		}
-
 		const listEl = contentEl.createDiv({ cls: 'synapse-summarize-list' });
 		this.renderCheckboxes(listEl);
 
@@ -61,26 +91,31 @@ export class SummarizeSelectionModal extends Modal {
 			btn.setButtonText('Summarize selected')
 				.setCta()
 				.onClick(async () => {
-					const keys = this.selected;
-					const chosen = this.targets.filter(
-						t => keys.has(`${t.type}:${t.line}:${t.source}`)
-					);
+					const chosen = this.collectChosen();
 					if (chosen.length === 0) {
 						new Notice('Please select at least one item');
 						return;
 					}
 					this.close();
-					// Only combine when opted in AND 2+ audio targets are selected.
-					const audioSelected = chosen.filter(t => t.type === 'audio').length;
-					const combine = this.combineAudio && audioSelected >= 2;
-					await this.onSummarize(chosen, combine);
+					await this.onSummarize(chosen, this.combine);
 				});
 		});
 	}
 
+	/** Reference targets the user checked, plus note content if its toggle is on. */
+	private collectChosen(): SummarizeTarget[] {
+		const chosen = this.refTargets.filter(
+			t => this.selected.has(`${t.type}:${t.line}:${t.source}`)
+		);
+		if (this.noteContentTarget && this.includeNote) {
+			chosen.push(this.noteContentTarget);
+		}
+		return chosen;
+	}
+
 	private renderCheckboxes(container: HTMLElement): void {
 		container.empty();
-		for (const target of this.targets) {
+		for (const target of this.refTargets) {
 			const key = `${target.type}:${target.line}:${target.source}`;
 
 			let label: string;

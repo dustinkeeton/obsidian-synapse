@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildCallout, CALLOUT_TYPES } from '../shared';
-import { findSummarizeTargets, hasSummaryBelow, extractTranscriptionContent } from './note-scanner';
+import { findSummarizeTargets, hasSummaryBelow, extractTranscriptionContent, extractNoteProse } from './note-scanner';
 
 describe('findSummarizeTargets', () => {
 	it('finds a bare URL', () => {
@@ -755,5 +755,81 @@ describe('multi-URL inline insertion (integration)', () => {
 		expect(result).toContain('> Summary A.');
 		expect(result).toContain('> [!synapse-summary] Summary of https://example.com/b');
 		expect(result).toContain('> Summary B.');
+	});
+});
+
+describe('extractNoteProse', () => {
+	it('strips YAML frontmatter', () => {
+		const content = '---\ntitle: Note\ntags: [a]\n---\n\nReal prose here.';
+		expect(extractNoteProse(content)).toBe('Real prose here.');
+	});
+
+	it('strips a synapse-summary callout, keeping surrounding prose', () => {
+		const content = [
+			'My own writing.',
+			'',
+			'> [!synapse-summary] Summary of https://example.com',
+			'> - point one',
+			'> - point two',
+			'',
+			'More writing.',
+		].join('\n');
+		const prose = extractNoteProse(content);
+		expect(prose).toContain('My own writing.');
+		expect(prose).toContain('More writing.');
+		expect(prose).not.toContain('point one');
+		expect(prose).not.toContain('Summary of');
+	});
+
+	it('strips a legacy **Summary of …** block', () => {
+		const content = ['Intro.', '> **Summary of X**', '> body line', 'Outro.'].join('\n');
+		const prose = extractNoteProse(content);
+		expect(prose).toContain('Intro.');
+		expect(prose).toContain('Outro.');
+		expect(prose).not.toContain('Summary of X');
+		expect(prose).not.toContain('body line');
+	});
+
+	it('strips transcription and lyrics callouts (already separate items)', () => {
+		const content = [
+			'Notes.',
+			'> [!synapse-transcription] Transcription of clip.mp4',
+			'> spoken words',
+			'',
+			'> [!synapse-lyrics] Lyrics of song.mp3',
+			'> la la la',
+			'',
+			'End.',
+		].join('\n');
+		const prose = extractNoteProse(content);
+		expect(prose).toContain('Notes.');
+		expect(prose).toContain('End.');
+		expect(prose).not.toContain('spoken words');
+		expect(prose).not.toContain('la la la');
+	});
+
+	it('preserves user blockquotes that are not generated blocks', () => {
+		const content = ['Quote below:', '> A normal user quote.', '> second line', 'After.'].join('\n');
+		const prose = extractNoteProse(content);
+		expect(prose).toContain('A normal user quote.');
+		expect(prose).toContain('second line');
+		expect(prose).toContain('After.');
+	});
+
+	it('returns empty when the note has only frontmatter and generated blocks', () => {
+		const content = ['---', 'title: X', '---', '> [!synapse-summary] Summary of Y', '> stuff'].join('\n');
+		expect(extractNoteProse(content).trim()).toBe('');
+	});
+
+	it('collapses the blank-line gap left by a stripped block', () => {
+		const content = [
+			'Para one.',
+			'',
+			'> [!synapse-summary] Summary of Z',
+			'> summary body',
+			'',
+			'Para two.',
+		].join('\n');
+		expect(extractNoteProse(content)).toBe('Para one.\n\nPara two.');
 	});
 });

@@ -405,40 +405,11 @@ export class AudioModule {
 	}
 
 	/**
-	 * Combined transcription helper for the summarize path (#214): return ONE
-	 * transcript string for multiple audio files. With ffmpeg the audio is
-	 * concatenated and transcribed once; without it (mobile) each file is
-	 * transcribed separately and the TEXT is merged. A single file
-	 * short-circuits to a normal transcription.
-	 */
-	async transcribeAudioCombined(files: TFile[]): Promise<string> {
-		if (files.length === 1) {
-			const data = await this.plugin.app.vault.readBinary(files[0]);
-			const result = await this.transcribe(data, files[0].name);
-			return result.processed || result.raw;
-		}
-		// Mobile / no ffmpeg: transcribe each file and merge the text.
-		if (!this.extractor) {
-			return this.transcribeEachToText(files);
-		}
-		const { data, sizeBytes } = await this.concatEmbedsToBuffer(files);
-		const guard = this.combinedSizeGuard();
-		if (sizeBytes > guard.bytes) {
-			const mb = (sizeBytes / (1024 * 1024)).toFixed(1);
-			this.notifications.info(
-				`Combined audio is ${mb} MB, which ${guard.limitText}.`
-			);
-		}
-		const result = await this.transcribe(data, 'combined.mp3');
-		return result.processed || result.raw;
-	}
-
-	/**
 	 * Transcribe each file separately and join the transcripts into one
-	 * continuous block. The no-ffmpeg fallback for combined transcription /
-	 * summary (#214): the audio can't be concatenated, but the OUTPUT is still
-	 * combined. Sequential with a small delay to avoid API rate limits;
-	 * respects op cancellation/progress when provided.
+	 * continuous block. The no-ffmpeg fallback for combined transcription:
+	 * the audio can't be concatenated, but the OUTPUT is still combined.
+	 * Sequential with a small delay to avoid API rate limits; respects op
+	 * cancellation/progress when provided.
 	 */
 	private async transcribeEachToText(
 		files: TFile[],

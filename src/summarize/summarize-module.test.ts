@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import { fetchPageContent } from '../shared';
+import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 
 // Mock the summarizer to return a canned summary.
 // Track the last created instance so tests can inspect call args.
@@ -19,11 +20,15 @@ vi.mock('./summarizer', () => ({
 	},
 }));
 
-// Mock the note scanner to control what targets are found
+// Mock the note scanner to control what targets are found.
+// extractNoteProse defaults to empty so existing reference-only tests are
+// unaffected; note-content tests override it per-case.
 vi.mock('./note-scanner', () => ({
 	findSummarizeTargets: vi.fn().mockReturnValue([
 		{ type: 'url', source: 'https://example.com', line: 2, endLine: 2 },
 	]),
+	extractNoteProse: vi.fn().mockReturnValue(''),
+	hasSummaryBelow: vi.fn().mockReturnValue(false),
 }));
 
 // Mock the video module
@@ -323,5 +328,76 @@ describe('SummarizeModule content-aware templates', () => {
 		// The summarizer should have been called with undefined (style default)
 		const summarizeCall = lastSummarizerInstance.summarize.mock.calls[0];
 		expect(summarizeCall[3]).toBeUndefined();
+	});
+});
+
+// ── Note-content summarization (#367) ─────────────────────────────────
+
+describe('SummarizeModule note content (#367)', () => {
+	let module: SummarizeModule;
+	let mockPlugin: any;
+	let mockNotifications: ReturnType<typeof createMockNotifications>;
+	let settings: typeof DEFAULT_SETTINGS;
+
+	beforeEach(() => {
+		settings = structuredClone(DEFAULT_SETTINGS);
+
+		mockPlugin = {
+			app: {
+				vault: {
+					read: vi.fn().mockResolvedValue('# Title\n\nThe note body prose.\n'),
+					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+						fn(await mockPlugin.app.vault.read(file))
+					),
+					create: vi.fn().mockResolvedValue(new TFile()),
+					getAbstractFileByPath: vi.fn().mockReturnValue(null),
+				},
+				metadataCache: { getFileCache: vi.fn().mockReturnValue(null) },
+				workspace: { getActiveFile: vi.fn().mockReturnValue(null) },
+			},
+			addCommand: vi.fn(),
+			registerEvent: vi.fn(),
+		};
+
+		mockNotifications = createMockNotifications();
+		module = new SummarizeModule(
+			mockPlugin as any,
+			() => settings,
+			mockNotifications as any,
+			createMockCheckpointManager() as any,
+			new CommandRegistrar(mockPlugin as any)
+		);
+	});
+
+	async function runSummarize(path = 'notes/My Note.md'): Promise<void> {
+		await module.onload();
+		const cmd = mockPlugin.addCommand.mock.calls.find(
+			(c: any) => c[0].id === 'summarize-current-note'
+		)[0];
+		await cmd.editorCallback({}, { file: new TFile(path) });
+	}
+
+	it('summarizes a prose-only note when includeNoteContent is on', async () => {
+		vi.mocked(findSummarizeTargets).mockReturnValueOnce([]);
+		vi.mocked(extractNoteProse).mockReturnValueOnce('The note body prose.');
+
+		await runSummarize();
+
+		expect(lastSummarizerInstance.summarize).toHaveBeenCalledTimes(1);
+		expect(lastSummarizerInstance.summarize.mock.calls[0][0]).toContain('The note body prose.');
+		expect(mockPlugin.app.vault.process).toHaveBeenCalled();
+	});
+
+	it('treats a prose-only note as nothing to summarize when includeNoteContent is off', async () => {
+		settings.summarize.includeNoteContent = false;
+		vi.mocked(findSummarizeTargets).mockReturnValueOnce([]);
+		vi.mocked(extractNoteProse).mockReturnValue('Prose that should be ignored.');
+
+		await runSummarize();
+
+		expect(mockNotifications.info).toHaveBeenCalledWith(
+			'No note content, URLs, transcriptions, or audio to summarize in this note'
+		);
+		expect(lastSummarizerInstance.summarize).not.toHaveBeenCalled();
 	});
 });

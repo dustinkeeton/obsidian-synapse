@@ -11,7 +11,7 @@ import { OperationHandle } from '../shared';
 import { isSupportedUrl, detectPlatform } from '../shared';
 import { findAudioEmbeds } from '../audio';
 import { fetchPageContent, fetchTweetContent } from '../shared';
-import { findSummarizeTargets } from './note-scanner';
+import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
 import { Summarizer } from './summarizer';
@@ -36,16 +36,6 @@ export type TranscribeAudioFn = (
 	file: TFile
 ) => Promise<string>;
 
-/**
- * Function that transcribes MULTIPLE audio files as one continuous recording
- * and returns the combined transcript text. Injected by main.ts from the
- * AudioModule (which owns the ffmpeg-backed AudioExtractor). Used by the
- * combined-summary path (#214).
- */
-export type TranscribeAudioCombinedFn = (
-	files: TFile[]
-) => Promise<string>;
-
 const COMPREHENSIVE_SUMMARY_PROMPT =
 	'Provide a comprehensive summary of the following content. This summary will be a standalone reference note. ' +
 	'Cover all major points, key arguments, and important details. ' +
@@ -67,11 +57,20 @@ interface ProcessResult {
 	newNotePaths: string[];
 }
 
+/** Human-readable label for a target in combined-summary output (#367). */
+function labelForTarget(target: SummarizeTarget): string {
+	switch (target.type) {
+		case 'note-content': return `Note: ${target.source}`;
+		case 'audio': return `Audio: ${target.source}`;
+		case 'transcription': return `Transcription: ${target.source}`;
+		default: return target.source;
+	}
+}
+
 export class SummarizeModule {
 	private summarizer: Summarizer;
 	private transcribeUrl: TranscribeUrlFn | null;
 	private transcribeAudio: TranscribeAudioFn | null;
-	private transcribeAudioCombined: TranscribeAudioCombinedFn | null;
 
 	/** Optional callback invoked after summarization completes. Wired by main.ts for enrichment. */
 	onSummaryComplete: ((filePath: string) => void) | null = null;
@@ -86,13 +85,11 @@ export class SummarizeModule {
 		private checkpointManager: CheckpointManager,
 		private registrar: CommandRegistrar,
 		transcribeUrl?: TranscribeUrlFn,
-		transcribeAudio?: TranscribeAudioFn,
-		transcribeAudioCombined?: TranscribeAudioCombinedFn
+		transcribeAudio?: TranscribeAudioFn
 	) {
 		this.summarizer = new Summarizer(getSettings);
 		this.transcribeUrl = transcribeUrl ?? null;
 		this.transcribeAudio = transcribeAudio ?? null;
-		this.transcribeAudioCombined = transcribeAudioCombined ?? null;
 	}
 
 	async onload(): Promise<void> {
@@ -154,7 +151,13 @@ export class SummarizeModule {
 				const targets = this.collectTargets(content, file.path);
 				if (targets.length === 0) continue;
 
-				const result = await this.processFileTargets(file, targets, genOp, content);
+				const result = await this.processTargetsForFile(
+					file,
+					targets,
+					genOp,
+					content,
+					this.getSettings().summarize.combineSummaries
+				);
 				totalInline += result.inlineCompleted;
 				totalEnrichment += result.enrichmentCompleted;
 				totalLinksUpdated += result.linksUpdated;
@@ -188,145 +191,53 @@ export class SummarizeModule {
 		const targets = this.collectTargets(content, file.path);
 
 		if (targets.length === 0) {
-			this.notifications.info('No URLs, transcriptions, or audio to summarize in this note');
+			this.notifications.info('No note content, URLs, transcriptions, or audio to summarize in this note');
 			return;
 		}
 
+		// A single item (e.g. a prose-only note) is processed directly with a
+		// per-item callout -- no modal, and "combine" is meaningless for one item.
 		if (targets.length === 1) {
 			await this.processTargets(file, targets, content);
-		} else {
-			// Combine is offered whenever there are 2+ audio targets and a
-			// combined transcriber is wired. Without ffmpeg (mobile) the audio
-			// can't be concatenated, so each file is transcribed separately and
-			// the TEXT is merged into one summary.
-			const audioCount = targets.filter(t => t.type === 'audio').length;
-			const canCombine = audioCount >= 2 && !!this.transcribeAudioCombined;
-
-			new SummarizeSelectionModal(
-				this.plugin.app,
-				targets,
-				async (selected, combine) => {
-					if (combine) {
-						await this.processTargetsCombined(file, selected, content);
-					} else {
-						await this.processTargets(file, selected, content);
-					}
-				},
-				canCombine
-			).open();
+			return;
 		}
+
+		const settings = this.getSettings().summarize;
+		new SummarizeSelectionModal(
+			this.plugin.app,
+			targets,
+			async (selected, combine) => {
+				if (combine) {
+					await this.processTargetsCombined(file, selected, content);
+				} else {
+					await this.processTargets(file, selected, content);
+				}
+			},
+			{
+				includeNoteContent: settings.includeNoteContent,
+				combineSummaries: settings.combineSummaries,
+			}
+		).open();
 	}
 
 	/**
-	 * Combined-summary path (#214): collapse all selected `type:'audio'`
-	 * targets into ONE combined transcription + ONE summary, inserting a
-	 * single `Combined summary (N files)` callout after the last audio embed.
-	 * Non-audio targets (URLs, transcription blocks) are processed normally
-	 * via the shared per-target path. Falls back to per-target processing
-	 * when combining is not applicable.
+	 * Combined-summary path (#367): produce ONE summary for all selected
+	 * summarizable items. A thin wrapper around `processTargetsForFile` that
+	 * owns the progress operation, enrichment callbacks, and organize trigger
+	 * for the interactive single-note flow.
 	 */
 	private async processTargetsCombined(
 		file: TFile,
 		targets: SummarizeTarget[],
 		content: string
 	): Promise<void> {
-		const audioTargets = targets.filter(t => t.type === 'audio');
-		const otherTargets = targets.filter(t => t.type !== 'audio');
-
-		// Not enough audio (or no combined transcriber) -> normal path.
-		if (audioTargets.length < 2 || !this.transcribeAudioCombined) {
-			await this.processTargets(file, targets, content);
-			return;
-		}
-
-		const settings = this.getSettings().summarize;
 		const op = this.notifications.startOperation(
-			`Summarizing ${otherTargets.length + 1} item(s)`,
+			`Summarizing ${targets.length} item(s)`,
 			`summarize-${file.path}`
 		);
 
-		// Phase 1: process non-audio targets first (handles its own write).
-		let result: ProcessResult = {
-			inlineCompleted: 0,
-			enrichmentCompleted: 0,
-			linksUpdated: 0,
-			newNotePaths: [],
-		};
-		if (otherTargets.length > 0 && !op.cancelled) {
-			result = await this.processFileTargets(file, otherTargets, op, content);
-			this.fireEnrichmentCallbacks(file.path, result);
-		}
-
-		// Phase 2: one combined audio summary.
-		if (!op.cancelled) {
-			try {
-				const audioFiles: TFile[] = [];
-				const fileNames: string[] = [];
-				for (const t of audioTargets) {
-					const af = this.plugin.app.metadataCache.getFirstLinkpathDest(
-						t.source, file.path
-					);
-					if (af instanceof TFile) {
-						audioFiles.push(af);
-						fileNames.push(t.source);
-					}
-				}
-
-				if (audioFiles.length < 2) {
-					throw new Error('Could not resolve enough audio files to combine');
-				}
-
-				op.update('Transcribing combined audio');
-				const transcript = (await this.transcribeAudioCombined(audioFiles))
-					.slice(0, settings.maxContentLength);
-
-				if (transcript.trim()) {
-					op.update('Summarizing combined audio');
-
-					let effectivePrompt = settings.customPrompt || undefined;
-					if (!effectivePrompt && settings.autoDetectTemplates) {
-						const schema = detectSchemaFor('summary', transcript);
-						if (schema) effectivePrompt = schema.prompt;
-					}
-
-					const summary = await this.summarizer.summarize(
-						transcript,
-						fileNames.join(', '),
-						settings.summaryStyle,
-						effectivePrompt || COMPREHENSIVE_SUMMARY_PROMPT
-					);
-
-					const callout = buildCallout(
-						CALLOUT_TYPES.summary,
-						`Combined summary (${audioFiles.length} files)`,
-						`Source files: ${fileNames.join(', ')}\n\n${summary}`
-					);
-
-					// Insert after the last audio embed in the current file state.
-					// Re-derive the insert point from the FRESH content inside the
-					// atomic callback, since phase 1 may have shifted line numbers.
-					await this.plugin.app.vault.process(file, (current) => {
-						const curLines = current.split('\n');
-						const embeds = findAudioEmbeds(
-							current, file.path, this.plugin.app.metadataCache
-						);
-						const insertLine = embeds.length > 0
-							? Math.max(...embeds.map(e => e.line))
-							: curLines.length - 1;
-						curLines.splice(insertLine + 1, 0, ...callout.split('\n'));
-						return curLines.join('\n');
-					});
-					this.onSummaryComplete?.(file.path);
-				} else {
-					this.notifications.notifyError(
-						'No content extracted from combined audio',
-						new Error('Empty transcript')
-					);
-				}
-			} catch (error) {
-				this.notifications.notifyError('Combined audio summarization failed', error);
-			}
-		}
+		const result = await this.processTargetsForFile(file, targets, op, content, true);
+		this.fireEnrichmentCallbacks(file.path, result);
 
 		if (!op.cancelled) {
 			op.finish('Done -- combined summary added');
@@ -336,6 +247,148 @@ export class SummarizeModule {
 		if (this.getSettings().summarize.autoOrganizeOnSummarize) {
 			this.onOrganizeRequested?.(file);
 		}
+	}
+
+	/**
+	 * Route a file's targets through the combined or per-item path (#367).
+	 * Enrichment targets (which create standalone notes and rewrite links)
+	 * always go through the per-item path; the remaining summarizable items
+	 * are folded into ONE combined summary when `combine` is set. Returns the
+	 * merged counts so callers can report progress and fire callbacks. Shared
+	 * by the interactive single-note flow and the vault/folder scan.
+	 */
+	private async processTargetsForFile(
+		file: TFile,
+		targets: SummarizeTarget[],
+		op: OperationHandle,
+		content: string,
+		combine: boolean
+	): Promise<ProcessResult> {
+		if (!combine) {
+			return this.processFileTargets(file, targets, op, content);
+		}
+
+		const enrichmentTargets = targets.filter(t => t.inEnrichmentSection && t.linkTitle);
+		const summarizable = targets.filter(t => !(t.inEnrichmentSection && t.linkTitle));
+
+		let result: ProcessResult = {
+			inlineCompleted: 0,
+			enrichmentCompleted: 0,
+			linksUpdated: 0,
+			newNotePaths: [],
+		};
+
+		// Enrichment refs first (per-item): create notes + rewrite links.
+		if (enrichmentTargets.length > 0 && !op.cancelled) {
+			result = await this.processFileTargets(file, enrichmentTargets, op, content);
+		}
+
+		// Then ONE combined summary for everything else. Re-read the note when
+		// the enrichment pass rewrote links so the single-item fallback sees
+		// current content.
+		if (summarizable.length > 0 && !op.cancelled) {
+			const fresh = enrichmentTargets.length > 0
+				? await this.plugin.app.vault.read(file)
+				: content;
+			const combined = await this.combineSelectedTargets(file, summarizable, op, fresh);
+			result = {
+				inlineCompleted: result.inlineCompleted + combined.inlineCompleted,
+				enrichmentCompleted: result.enrichmentCompleted + combined.enrichmentCompleted,
+				linksUpdated: result.linksUpdated + combined.linksUpdated,
+				newNotePaths: [...result.newNotePaths, ...combined.newNotePaths],
+			};
+		}
+
+		return result;
+	}
+
+	/**
+	 * Gather every selected item's content -- the note's own prose, fetched URL
+	 * text, and existing or freshly-made transcripts (audio is transcribed at
+	 * most once; existing transcripts are reused, never re-fetched) -- then
+	 * concatenate it with source labels, run ONE summarize() call, and append
+	 * ONE `Combined summary (N items)` callout at the end of the note (#367).
+	 *
+	 * A single item is delegated to the per-item path for a cleaner callout
+	 * title. Does NOT fire enrichment callbacks -- the caller owns that.
+	 */
+	private async combineSelectedTargets(
+		file: TFile,
+		targets: SummarizeTarget[],
+		op: OperationHandle,
+		content: string
+	): Promise<ProcessResult> {
+		const empty: ProcessResult = {
+			inlineCompleted: 0,
+			enrichmentCompleted: 0,
+			linksUpdated: 0,
+			newNotePaths: [],
+		};
+		if (targets.length === 0) return empty;
+		if (targets.length === 1) {
+			return this.processFileTargets(file, targets, op, content);
+		}
+
+		const settings = this.getSettings().summarize;
+		const sections: string[] = [];
+		const labels: string[] = [];
+
+		for (const target of targets) {
+			if (op.cancelled) return empty;
+			try {
+				let text: string;
+				if (target.type === 'note-content' || (target.type === 'transcription' && target.content)) {
+					// Reuse already-extracted prose / transcripts -- no re-fetch, no re-transcribe.
+					text = target.content ?? '';
+				} else if (target.type === 'audio' && this.transcribeAudio) {
+					op.update(`Transcribing audio ${target.source}`);
+					text = await this.fetchContentForAudio(target.source, file, settings.maxContentLength);
+				} else {
+					op.update(`Fetching ${target.source}`);
+					text = await this.fetchContentForUrl(target.source, settings.maxContentLength, op);
+				}
+				if (text.trim()) {
+					const label = labelForTarget(target);
+					sections.push(`## ${label}\n\n${text.trim()}`);
+					labels.push(label);
+				}
+			} catch (error) {
+				this.notifications.notifyError(`Could not gather content from ${target.source}`, error);
+			}
+		}
+
+		if (op.cancelled || sections.length === 0) return empty;
+
+		const combinedText = sections.join('\n\n---\n\n').slice(0, settings.maxContentLength);
+
+		op.update('Summarizing combined content');
+		let effectivePrompt = settings.customPrompt || undefined;
+		if (!effectivePrompt && settings.autoDetectTemplates) {
+			const schema = detectSchemaFor('summary', combinedText);
+			if (schema) effectivePrompt = schema.prompt;
+		}
+
+		const summary = await this.summarizer.summarize(
+			combinedText,
+			labels.join(', '),
+			settings.summaryStyle,
+			effectivePrompt || COMPREHENSIVE_SUMMARY_PROMPT
+		);
+
+		const callout = buildCallout(
+			CALLOUT_TYPES.summary,
+			`Combined summary (${labels.length} items)`,
+			`Sources: ${labels.join(', ')}\n\n${summary}`
+		);
+
+		// Append at the end of the note's current content.
+		await this.plugin.app.vault.process(file, (current) => {
+			const lines = current.split('\n');
+			lines.push(...callout.split('\n'));
+			return lines.join('\n');
+		});
+
+		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [] };
 	}
 
 	/**
@@ -368,6 +421,25 @@ export class SummarizeModule {
 
 			// Re-sort by line number to maintain consistent ordering
 			targets.sort((a, b) => a.line - b.line);
+		}
+
+		// The note's own prose as an additional item (#367). Appended last so
+		// its summary callout lands at the end of the note. Stripped of
+		// frontmatter and prior summary/transcription/lyrics blocks so the AI
+		// never re-summarizes its own output or double-counts transcripts.
+		if (this.getSettings().summarize.includeNoteContent) {
+			const prose = extractNoteProse(content);
+			if (prose.trim()) {
+				const lastLine = Math.max(0, content.split('\n').length - 1);
+				const basename = sourcePath.split('/').pop()?.replace(/\.md$/, '') || sourcePath;
+				targets.push({
+					type: 'note-content',
+					source: basename,
+					line: lastLine,
+					endLine: lastLine,
+					content: prose,
+				});
+			}
 		}
 
 		return targets;
@@ -529,6 +601,9 @@ export class SummarizeModule {
 						);
 					} else if (target.type === 'transcription' && target.content) {
 						textToSummarize = target.content;
+					} else if (target.type === 'note-content') {
+						// The note's own prose, pre-extracted in collectTargets.
+						textToSummarize = (target.content ?? '').slice(0, settings.maxContentLength);
 					} else {
 						op.update(`Fetching ${target.source}`);
 						textToSummarize = await this.fetchContentForUrl(
@@ -763,7 +838,13 @@ export class SummarizeModule {
 			const content = await this.plugin.app.vault.read(file);
 			const targets = this.collectTargets(content, file.path);
 			if (targets.length === 0) continue;
-			const result = await this.processFileTargets(file, targets, genOp, content);
+			const result = await this.processTargetsForFile(
+				file,
+				targets,
+				genOp,
+				content,
+				this.getSettings().summarize.combineSummaries
+			);
 			totalInline += result.inlineCompleted;
 			totalEnrichment += result.enrichmentCompleted;
 			totalLinksUpdated += result.linksUpdated;

@@ -1,4 +1,4 @@
-import { CALLOUT_TYPES, ENRICHMENT_START, ENRICHMENT_END } from '../shared';
+import { CALLOUT_TYPES, ENRICHMENT_START, ENRICHMENT_END, parseFrontmatter } from '../shared';
 import { SummarizeTarget } from './types';
 
 const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
@@ -195,6 +195,52 @@ function hasTranscriptionBelow(lines: string[], urlLine: number, url: string): b
 		}
 	}
 	return false;
+}
+
+/**
+ * True for the header line of a Synapse-generated blockquote block (summary,
+ * transcription, or lyrics — callout or legacy format). Used to strip such
+ * blocks from a note's own prose so the AI never re-summarizes its output and
+ * already-extracted transcripts aren't double-counted.
+ */
+function isGeneratedBlockHeader(line: string): boolean {
+	const t = line.trimStart();
+	if (!t.startsWith('>')) return false;
+	if (
+		t.includes(CALLOUT_SUMMARY_PREFIX) ||
+		t.includes(CALLOUT_TRANSCRIPTION_PREFIX) ||
+		t.includes(CALLOUT_LYRICS_PREFIX)
+	) {
+		return true;
+	}
+	// Legacy bold headers: > **Summary of …**, > **Transcription of …**, > **Lyrics of …**
+	return /\*\*(?:Summary|Transcription|Lyrics) of .+?\*\*/.test(t);
+}
+
+/**
+ * Extract the note's own prose for summarization (#367): strip YAML
+ * frontmatter and every Synapse-generated summary / transcription / lyrics
+ * block (callout and legacy formats), leaving the user's own content. User
+ * blockquotes and enrichment sections are preserved.
+ */
+export function extractNoteProse(content: string): string {
+	const body = parseFrontmatter(content).body;
+	const lines = body.split('\n');
+	const kept: string[] = [];
+
+	for (let i = 0; i < lines.length; i++) {
+		if (isGeneratedBlockHeader(lines[i])) {
+			// Skip the header and its contiguous blockquote body.
+			let j = i + 1;
+			while (j < lines.length && lines[j].trimStart().startsWith('>')) j++;
+			i = j - 1;
+			continue;
+		}
+		kept.push(lines[i]);
+	}
+
+	// Collapse the blank-line gaps left by stripped blocks, then trim.
+	return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**

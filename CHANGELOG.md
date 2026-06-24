@@ -5,6 +5,17 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Summarize a note's own prose, not just the URLs, transcriptions, and audio it references ("Summarize note content" toggle)
+- Choose one combined summary or a separate summary per item ("Combine into one summary" toggle) — both honored by single-note summarize and vault/folder scans
+
+### Changed
+
+- By default, summarize now includes the note's own prose and produces a single combined summary block; switch either off in Settings → Summarize
+
 ## [1.0.6] - 2026-06-22
 
 ### Added

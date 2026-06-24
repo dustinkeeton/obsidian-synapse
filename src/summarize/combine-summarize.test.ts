@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SummarizeModule, TranscribeAudioFn, TranscribeAudioCombinedFn } from './index';
+import { SummarizeModule, TranscribeAudioFn } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
@@ -17,10 +17,6 @@ vi.mock('./note-scanner', async (importOriginal) => {
 	return { ...actual };
 });
 
-vi.mock('../video', () => ({
-	isSupportedUrl: vi.fn().mockReturnValue(false),
-}));
-
 const mockFindAudioEmbeds = vi.fn().mockReturnValue([]);
 vi.mock('../audio', () => ({
 	findAudioEmbeds: (...args: any[]) => mockFindAudioEmbeds(...args),
@@ -28,7 +24,7 @@ vi.mock('../audio', () => ({
 
 vi.mock('../shared', async () => ({
 	// Use the REAL content-schema registry so auto-format detection runs as in
-	// production (this path consults detectSchemaFor on the combined transcript).
+	// production (the combined path consults detectSchemaFor on the combined text).
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
@@ -40,7 +36,9 @@ vi.mock('../shared', async () => ({
 	ENRICHMENT_START: '%% synapse-enrichment-start %%',
 	ENRICHMENT_END: '%% synapse-enrichment-end %%',
 	generateId: vi.fn().mockReturnValue('id-mock'),
-	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
+	isSupportedUrl: vi.fn().mockReturnValue(false),
+	detectPlatform: vi.fn().mockReturnValue(null),
+	fetchPageContent: vi.fn().mockResolvedValue('Fetched URL content for testing.'),
 	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
 	CheckpointManager: class {
 		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
@@ -69,13 +67,14 @@ function createMockNotifications() {
 	};
 }
 
-describe('SummarizeModule combined audio summarization (#214)', () => {
+const NOTE = '# Lecture\n\n![[part1.mp3]]\n\n![[part2.wav]]\n';
+
+describe('SummarizeModule combined summarization (#367)', () => {
 	let module: SummarizeModule;
 	let mockPlugin: any;
 	let notifications: ReturnType<typeof createMockNotifications>;
 	let settings: typeof DEFAULT_SETTINGS;
 	let transcribeAudio: TranscribeAudioFn & ReturnType<typeof vi.fn>;
-	let transcribeAudioCombined: TranscribeAudioCombinedFn & ReturnType<typeof vi.fn>;
 
 	const part1 = new TFile('audio/part1.mp3');
 	const part2 = new TFile('audio/part2.wav');
@@ -83,18 +82,14 @@ describe('SummarizeModule combined audio summarization (#214)', () => {
 	beforeEach(() => {
 		settings = structuredClone(DEFAULT_SETTINGS);
 		mockFindAudioEmbeds.mockReset();
-		mockFindAudioEmbeds.mockReturnValue([
-			{ fileName: 'part1.mp3', file: part1, line: 2 },
-			{ fileName: 'part2.wav', file: part2, line: 4 },
-		]);
+		mockFindAudioEmbeds.mockReturnValue([]);
 
 		transcribeAudio = vi.fn().mockResolvedValue('single transcript') as any;
-		transcribeAudioCombined = vi.fn().mockResolvedValue('combined transcript text') as any;
 
 		mockPlugin = {
 			app: {
 				vault: {
-					read: vi.fn().mockResolvedValue('# Lecture\n\n![[part1.mp3]]\n\n![[part2.wav]]\n'),
+					read: vi.fn().mockResolvedValue(NOTE),
 					modify: vi.fn().mockResolvedValue(undefined),
 					// Atomic read -> transform -> write (mirrors Vault.process).
 					process: vi.fn(async (file: any, fn: (data: string) => string) =>
@@ -126,58 +121,74 @@ describe('SummarizeModule combined audio summarization (#214)', () => {
 			createMockCheckpointManager() as any,
 			new CommandRegistrar(mockPlugin as any),
 			undefined,
-			transcribeAudio,
-			transcribeAudioCombined
+			transcribeAudio
 		);
 	});
 
-	const audioTargets = (): SummarizeTarget[] => [
-		{ type: 'audio', source: 'part1.mp3', line: 2, endLine: 2 },
-		{ type: 'audio', source: 'part2.wav', line: 4, endLine: 4 },
-	];
-
+	const audio = (source: string, line: number): SummarizeTarget => ({ type: 'audio', source, line, endLine: line });
 	const file = () => new TFile('notes/lecture.md');
 
-	it('transcribes and summarizes the combined audio exactly once', async () => {
-		await (module as any).processTargetsCombined(file(), audioTargets(), '# Lecture\n\n![[part1.mp3]]\n\n![[part2.wav]]\n');
+	async function written(): Promise<string> {
+		const calls = mockPlugin.app.vault.process.mock.results;
+		return (await calls[calls.length - 1].value) as string;
+	}
 
-		expect(transcribeAudioCombined).toHaveBeenCalledTimes(1);
-		// Both audio files resolved and passed.
-		expect(transcribeAudioCombined.mock.calls[0][0]).toHaveLength(2);
-		// Per-file transcriber NOT used in combined mode.
-		expect(transcribeAudio).not.toHaveBeenCalled();
-	});
+	it('transcribes each selected audio once and writes a single combined summary', async () => {
+		await (module as any).processTargetsCombined(file(), [audio('part1.mp3', 2), audio('part2.wav', 4)], NOTE);
 
-	it('inserts a single Combined summary callout listing source files', async () => {
-		await (module as any).processTargetsCombined(file(), audioTargets(), '# Lecture\n\n![[part1.mp3]]\n\n![[part2.wav]]\n');
-
+		// One transcription per file -- no combined-file transcription pass.
+		expect(transcribeAudio).toHaveBeenCalledTimes(2);
 		expect(mockPlugin.app.vault.process).toHaveBeenCalledTimes(1);
-		const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
-		expect(written).toContain('Combined summary (2 files)');
-		expect((written.match(/Combined summary/g) || []).length).toBe(1);
-		expect(written).toContain('Source files: part1.mp3, part2.wav');
+
+		const out = await written();
+		expect(out).toContain('Combined summary (2 items)');
+		expect((out.match(/Combined summary/g) || []).length).toBe(1);
+		expect(out).toContain('Sources: Audio: part1.mp3, Audio: part2.wav');
+		expect(out).toContain('This is a test summary.');
 	});
 
-	it('falls back to per-target processing with fewer than 2 audio targets', async () => {
-		await (module as any).processTargetsCombined(
-			file(),
-			[{ type: 'audio', source: 'part1.mp3', line: 2, endLine: 2 }],
-			'# Lecture\n\n![[part1.mp3]]\n'
-		);
+	it('appends the combined callout at the end of the note', async () => {
+		await (module as any).processTargetsCombined(file(), [audio('part1.mp3', 2), audio('part2.wav', 4)], NOTE);
 
-		// Per-file path used, not the combined one.
-		expect(transcribeAudioCombined).not.toHaveBeenCalled();
+		const out = await written();
+		expect(out.indexOf('Combined summary')).toBeGreaterThan(out.indexOf('part2.wav'));
+	});
+
+	it('falls back to a per-item summary for a single selected item', async () => {
+		await (module as any).processTargetsCombined(file(), [audio('part1.mp3', 2)], '# Lecture\n\n![[part1.mp3]]\n');
+
 		expect(transcribeAudio).toHaveBeenCalledTimes(1);
+		const out = await written();
+		expect(out).toContain('Summary of part1.mp3');
+		expect(out).not.toContain('Combined summary');
 	});
 
-	it('reports an error when the combined transcript is empty', async () => {
-		transcribeAudioCombined.mockResolvedValue('');
-		await (module as any).processTargetsCombined(file(), audioTargets(), '# Lecture\n\n![[part1.mp3]]\n\n![[part2.wav]]\n');
+	it('reuses an existing transcript instead of re-transcribing it', async () => {
+		const transcription: SummarizeTarget = {
+			type: 'transcription', source: 'clip.mp4', line: 1, endLine: 3, content: 'existing transcript text',
+		};
+		await (module as any).processTargetsCombined(file(), [transcription, audio('part1.mp3', 5)], NOTE);
 
-		expect(notifications.notifyError).toHaveBeenCalledWith(
-			'No content extracted from combined audio',
-			expect.any(Error)
-		);
-		expect(mockPlugin.app.vault.process).not.toHaveBeenCalled();
+		// Only the audio target is transcribed; the transcription block is reused.
+		expect(transcribeAudio).toHaveBeenCalledTimes(1);
+		const out = await written();
+		expect(out).toContain('Combined summary (2 items)');
+		expect(out).toContain('Transcription: clip.mp4');
+		expect(out).toContain('Audio: part1.mp3');
+	});
+
+	it("combines the note's own prose with a URL reference into one summary", async () => {
+		const noteContent: SummarizeTarget = {
+			type: 'note-content', source: 'lecture', line: 9, endLine: 9, content: 'The lecture covered A and B.',
+		};
+		const url: SummarizeTarget = { type: 'url', source: 'https://example.com', line: 2, endLine: 2 };
+		await (module as any).processTargetsCombined(file(), [noteContent, url], NOTE);
+
+		// Prose is reused (never transcribed); the URL is fetched.
+		expect(transcribeAudio).not.toHaveBeenCalled();
+		const out = await written();
+		expect(out).toContain('Combined summary (2 items)');
+		expect(out).toContain('Note: lecture');
+		expect(out).toContain('https://example.com');
 	});
 });

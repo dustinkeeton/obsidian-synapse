@@ -92,6 +92,9 @@ describe('SummarizeModule audio target detection', () => {
 
 	beforeEach(() => {
 		settings = structuredClone(DEFAULT_SETTINGS);
+		// These tests focus on audio target detection/handling; keep note-content
+		// summarization (#367) out of the picture so target counts stay audio-only.
+		settings.summarize.includeNoteContent = false;
 		mockFindAudioEmbeds.mockReset();
 
 		transcribeAudioFn = vi.fn().mockResolvedValue('Transcribed audio content.') as any;
@@ -225,7 +228,7 @@ describe('SummarizeModule audio target detection', () => {
 		expect(transcribeAudioFn).not.toHaveBeenCalled();
 		// Should show "no targets" message
 		expect(mockNotifications.info).toHaveBeenCalledWith(
-			'No URLs, transcriptions, or audio to summarize in this note'
+			'No note content, URLs, transcriptions, or audio to summarize in this note'
 		);
 	});
 
