@@ -3,6 +3,8 @@ import { createEl, ToggleComponent, Setting } from './__mocks__/obsidian';
 import { SynapseSettingTab } from './settings-tab';
 import { DEFAULT_SETTINGS } from './settings';
 import type { SynapseSettings } from './settings';
+import { createSettingsSectionContext } from './shared';
+import { METADATA_CONTAINER_SELECTOR, PROPERTIES_COLLAPSED_CLASS } from './properties-fold';
 
 /**
  * Tooltip of the REM feature's accordion-header enable toggle (see
@@ -290,5 +292,101 @@ describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
 		for (const c of containers) expect(chipLabels(c)).toEqual(['All features']);
 		// #347: the add-folder / add-pattern chip lists nest inside their `.setting-item`.
 		assertChipsNestedInSettingItem(tab);
+	});
+});
+
+describe('SynapseSettingTab — General section / auto-fold properties (#381)', () => {
+	beforeEach(() => {
+		ToggleComponent.instances.length = 0;
+	});
+
+	/**
+	 * A fake markdown view exposing a `querySelector`-able `containerEl` with a
+	 * Properties panel, so a toggle-on can be asserted to fold it. `isCollapsed`
+	 * reports whether the panel carries Obsidian's collapsed class.
+	 */
+	function makeFoldableView() {
+		const classes = new Set<string>();
+		const panel = {
+			classList: {
+				contains: (c: string) => classes.has(c),
+				add: (c: string) => { classes.add(c); },
+			},
+		};
+		const containerEl = {
+			querySelector: (sel: string) =>
+				sel === METADATA_CONTAINER_SELECTOR ? panel : null,
+		};
+		return { view: { containerEl }, isCollapsed: () => classes.has(PROPERTIES_COLLAPSED_CLASS) };
+	}
+
+	/** Render ONLY the General section so the lone toggle is unambiguous. */
+	function renderGeneral(
+		mutate?: (s: SynapseSettings) => void,
+		activeView?: unknown,
+	) {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		mutate?.(settings);
+		const saveSettings = vi.fn().mockResolvedValue(undefined);
+		const getActiveViewOfType = vi.fn().mockReturnValue(activeView ?? null);
+		const app = { workspace: { getActiveViewOfType } };
+		const plugin = { app, settings, saveSettings, manifest: { version: '0.0.0-test' } };
+		const tab = new SynapseSettingTab(app as never, plugin as never);
+		const containerEl = createEl();
+		const ctx = createSettingsSectionContext({
+			containerEl,
+			plugin: plugin as never,
+			rerender: vi.fn(),
+		});
+		(tab as unknown as { renderGeneralSettings(c: unknown): void }).renderGeneralSettings(ctx);
+		return { plugin, settings, saveSettings, containerEl, getActiveViewOfType };
+	}
+
+	const generalToggle = () => ToggleComponent.instances[0];
+
+	it('renders a "General" accordion section', () => {
+		const { containerEl } = renderGeneral();
+		const titles = elsWithClass(containerEl, 'synapse-accordion-title').map((e) => e.textContent);
+		expect(titles).toContain('General');
+	});
+
+	it('renders the auto-fold toggle reflecting the stored setting (on)', () => {
+		renderGeneral((s) => { s.ui.autoFoldProperties = true; });
+		expect(ToggleComponent.instances).toHaveLength(1);
+		expect(generalToggle().getValue()).toBe(true);
+	});
+
+	it('renders the auto-fold toggle reflecting the stored setting (off)', () => {
+		renderGeneral((s) => { s.ui.autoFoldProperties = false; });
+		expect(generalToggle().getValue()).toBe(false);
+	});
+
+	it('persists the flag and saves when the toggle changes', async () => {
+		const { plugin, saveSettings } = renderGeneral((s) => { s.ui.autoFoldProperties = false; });
+		await generalToggle()._trigger(true);
+		expect(plugin.settings.ui.autoFoldProperties).toBe(true);
+		expect(saveSettings).toHaveBeenCalled();
+	});
+
+	it('folds the active note Properties immediately when switched on', async () => {
+		const { view, isCollapsed } = makeFoldableView();
+		const { getActiveViewOfType } = renderGeneral(
+			(s) => { s.ui.autoFoldProperties = false; },
+			view,
+		);
+		await generalToggle()._trigger(true);
+		expect(getActiveViewOfType).toHaveBeenCalled();
+		expect(isCollapsed()).toBe(true);
+	});
+
+	it('does not fold (or reach the view) when switched off', async () => {
+		const { view, isCollapsed } = makeFoldableView();
+		const { getActiveViewOfType } = renderGeneral(
+			(s) => { s.ui.autoFoldProperties = true; },
+			view,
+		);
+		await generalToggle()._trigger(false);
+		expect(isCollapsed()).toBe(false);
+		expect(getActiveViewOfType).not.toHaveBeenCalled();
 	});
 });

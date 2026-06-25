@@ -31,6 +31,7 @@ import {
 } from './views';
 import type { UnifiedItem } from './views';
 import { registerSynapseIcons } from './brand-icons';
+import { registerPropertiesAutoFold } from './properties-fold';
 
 /**
  * Narrows a value to a plain object record (a non-null, non-array object) so
@@ -171,6 +172,10 @@ export default class SynapsePlugin extends Plugin {
 			const view = this.app.workspace.getLeavesOfType(SYNAPSE_ACTIONS_VIEW_TYPE)[0]?.view;
 			if (view instanceof SynapseActionsView) view.refresh();
 		}));
+
+		// Auto-fold note Properties on open when enabled (#381). All workspace-event
+		// wiring + teardown lives in properties-fold.ts; this is the single hook.
+		registerPropertiesAutoFold(this, () => this.settings);
 
 		// Wire refresh callback -- both modules call this to update the shared view
 		const refreshView = () => this.refreshUnifiedView();
