@@ -2,6 +2,27 @@ import { Setting } from 'obsidian';
 import type { SettingsSectionContext } from '../shared';
 
 /**
+ * Per-OS install hint surfaced on the yt-dlp path setting's `?` help button (the
+ * `?`-circle icon's tooltip, #382). Covers macOS, Linux, and Windows plus the
+ * "download the binary and set its full path" escape hatch for systems without a
+ * package manager.
+ */
+const YT_DLP_INSTALL_HELP =
+	'Install yt-dlp:\n' +
+	'• macOS: brew install yt-dlp\n' +
+	'• Linux: sudo apt install yt-dlp  (or: pipx install yt-dlp)\n' +
+	'• Windows: winget install yt-dlp  (or: choco install yt-dlp)\n' +
+	'Or download the binary and set its full path here.';
+
+/** Per-OS install hint for the ffmpeg path setting's `?` help button (#382). */
+const FFMPEG_INSTALL_HELP =
+	'Install ffmpeg (includes ffprobe):\n' +
+	'• macOS: brew install ffmpeg\n' +
+	'• Linux: sudo apt install ffmpeg\n' +
+	'• Windows: winget install ffmpeg  (or: choco install ffmpeg)\n' +
+	'Or download the binary and set its full path here.';
+
+/**
  * Render the Video Transcription settings accordion (#243).
  *
  * NOTE: This feature is desktop-only (requires yt-dlp + ffmpeg). The
@@ -21,7 +42,12 @@ export function renderVideoSettings(ctx: SettingsSectionContext): void {
 
 	new Setting(videoBody)
 		.setName('yt-dlp path')
-		.setDesc('Path to yt-dlp binary')
+		.setDesc('Path to yt-dlp binary (or leave as "yt-dlp" to use your PATH)')
+		.addExtraButton((btn) =>
+			btn
+				.setIcon('help-circle')
+				.setTooltip(YT_DLP_INSTALL_HELP)
+		)
 		.addText((text) =>
 			text
 				.setValue(plugin.settings.video.ytDlpPath)
@@ -33,7 +59,12 @@ export function renderVideoSettings(ctx: SettingsSectionContext): void {
 
 	new Setting(videoBody)
 		.setName('ffmpeg path')
-		.setDesc('Path to ffmpeg binary')
+		.setDesc('Path to ffmpeg binary (or leave as "ffmpeg" to use your PATH)')
+		.addExtraButton((btn) =>
+			btn
+				.setIcon('help-circle')
+				.setTooltip(FFMPEG_INSTALL_HELP)
+		)
 		.addText((text) =>
 			text
 				.setValue(plugin.settings.video.ffmpegPath)
