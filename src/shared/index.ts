@@ -23,7 +23,7 @@ export { validateCredentials } from './credential-validator';
 export type { ValidationResult, ValidationStatus, ValidateOptions } from './credential-validator';
 export { decorateCredentialField } from './credential-field';
 export type { CredentialFieldOptions, CredentialFieldHandle } from './credential-field';
-export { NotificationManager } from './notifications';
+export { NotificationManager, linkLoadError } from './notifications';
 export type { OperationHandle, NoticeAction } from './notifications';
 export { fireAndForget } from './fire-and-forget';
 export type { FireAndForgetOptions } from './fire-and-forget';

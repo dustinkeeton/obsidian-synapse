@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, NotificationManager } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import { DetectionResult, Proposal } from './types';
 
@@ -117,8 +117,8 @@ export class ProposalGenerator {
 		const urlRegex = /https?:\/\/[^\s)\]>]+/g;
 		const urls = [...content.matchAll(urlRegex)]
 			.map(m => m[0])
-			// Twitter URLs are fetched as tweets, Reddit URLs via Reddit's JSON
-			// endpoint, and everything else that isn't a known video host is
+			// Twitter URLs are fetched as tweets, Reddit URLs via Reddit's RSS
+			// feed, and everything else that isn't a known video host is
 			// treated as an article. Video hosts are skipped because their pages
 			// are JS-rendered and yield no useful text -- proper URL
 			// classification is issue #109's job.
@@ -146,31 +146,21 @@ export class ProposalGenerator {
 				} else {
 					// A successful fetch that yields nothing usable (e.g. a
 					// JS-rendered or bot-blocked page) must not silently no-op --
-					// tell the user so Elaborate's lack of effect is explained.
-					this.notifications.info(
-						`Could not load content from ${this.hostOf(url)}: page returned no readable text`
+					// surface the same standardized error notice Summarize uses
+					// so Elaborate's lack of effect is explained, not swallowed.
+					this.notifications.error(
+						linkLoadError(url, 'page returned no readable text')
 					);
 				}
 			} catch (error) {
 				// Non-fatal: continue elaborating with whatever context we got,
-				// but surface the failure so the user knows the link was skipped
-				// (replaces the previous silent `catch {}`).
+				// but surface the failure (same standardized notice as Summarize)
+				// so the user knows the link was skipped.
 				const reason = error instanceof Error ? error.message : String(error);
-				this.notifications.info(
-					`Could not load content from ${this.hostOf(url)}: ${reason}`
-				);
+				this.notifications.error(linkLoadError(url, reason));
 			}
 		}
 		return parts.join('\n\n---\n\n');
-	}
-
-	/** Best-effort hostname for user-facing messages; falls back to the raw URL. */
-	private hostOf(url: string): string {
-		try {
-			return new URL(url).hostname;
-		} catch {
-			return url;
-		}
 	}
 
 	private async gatherContext(notePath: string): Promise<string> {

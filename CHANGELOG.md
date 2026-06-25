@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - By default, summarize now includes the note's own prose and produces a single combined summary block; switch either off in Settings → Summarize
 
+### Fixed
+
+- Elaborate and Summarize now read Reddit post and comment links instead of silently doing nothing
+- A link whose content can't be loaded now reports the same clear error notice in both Elaborate and Summarize
+
 ## [1.0.6] - 2026-06-22
 
 ### Added

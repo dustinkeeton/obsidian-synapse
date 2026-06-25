@@ -10,7 +10,7 @@ import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { OperationHandle } from '../shared';
 import { isSupportedUrl, detectPlatform } from '../shared';
 import { findAudioEmbeds } from '../audio';
-import { fetchPageContent, fetchTweetContent } from '../shared';
+import { fetchPageContent, fetchTweetContent, isRedditUrl, fetchRedditContent, linkLoadError } from '../shared';
 import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
@@ -543,19 +543,13 @@ export class SummarizeModule {
 					if (!noteAlreadyExists) {
 						op.update(`Fetching ${title}`);
 
-						const pageContent = await this.fetchContentForUrl(
+						const pageContent = await this.fetchUrlContentOrNotify(
 							target.source,
 							settings.maxContentLength,
 							op
 						);
 
-						if (!pageContent.trim()) {
-							this.notifications.notifyError(
-								`No content extracted from ${target.source}`,
-								new Error('Empty content')
-							);
-							continue;
-						}
+						if (pageContent === null) continue;
 
 						op.update(`Summarizing ${title}`);
 						const summary = await this.summarizer.summarize(
@@ -606,17 +600,18 @@ export class SummarizeModule {
 						textToSummarize = (target.content ?? '').slice(0, settings.maxContentLength);
 					} else {
 						op.update(`Fetching ${target.source}`);
-						textToSummarize = await this.fetchContentForUrl(
+						const fetched = await this.fetchUrlContentOrNotify(
 							target.source,
 							settings.maxContentLength,
 							op
 						);
+						if (fetched === null) continue;
+						textToSummarize = fetched;
 					}
 
 					if (!textToSummarize.trim()) {
-						this.notifications.notifyError(
-							`No content extracted from ${target.source}`,
-							new Error('Empty content')
+						this.notifications.error(
+							linkLoadError(target.source, 'page returned no readable text')
 						);
 						continue;
 					}
@@ -704,7 +699,39 @@ export class SummarizeModule {
 			return fetchTweetContent(url, maxLength);
 		}
 
+		// Reddit is classified as a generic 'article' platform, so route it
+		// explicitly (as Elaborate does) to the dedicated RSS fetcher; the
+		// JS-rendered HTML page fetchPageContent would get has no readable text.
+		if (isRedditUrl(url)) {
+			return fetchRedditContent(url, maxLength);
+		}
+
 		return fetchPageContent(url, maxLength);
+	}
+
+	/**
+	 * Fetch a URL's content, surfacing the standardized link-load error notice
+	 * (the same wording Elaborate uses) when the fetch throws or yields no
+	 * readable text. Returns null to signal the caller should skip this target.
+	 */
+	private async fetchUrlContentOrNotify(
+		source: string,
+		maxLength: number,
+		op: OperationHandle
+	): Promise<string | null> {
+		let content: string;
+		try {
+			content = await this.fetchContentForUrl(source, maxLength, op);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			this.notifications.error(linkLoadError(source, reason));
+			return null;
+		}
+		if (!content.trim()) {
+			this.notifications.error(linkLoadError(source, 'page returned no readable text'));
+			return null;
+		}
+		return content;
 	}
 
 	/**

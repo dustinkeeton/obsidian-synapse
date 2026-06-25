@@ -45,7 +45,10 @@ function makeSettings(): SynapseSettings {
  * verified live in Obsidian, not here).
  */
 function makeNotifications() {
-	return { info: vi.fn() } as unknown as NotificationManager & { info: ReturnType<typeof vi.fn> };
+	return { info: vi.fn(), error: vi.fn() } as unknown as NotificationManager & {
+		info: ReturnType<typeof vi.fn>;
+		error: ReturnType<typeof vi.fn>;
+	};
 }
 
 describe('ProposalGenerator -- image embed preservation (no images)', () => {
@@ -436,9 +439,9 @@ describe('ProposalGenerator -- article URL external context', () => {
 		expect(prompt).not.toContain('External content referenced in this note:');
 
 		// The failure is now surfaced to the user instead of swallowed.
-		expect(notifications.info).toHaveBeenCalledTimes(1);
-		const [msg] = notifications.info.mock.calls[0];
-		expect(msg).toContain('Could not load content from example.com');
+		expect(notifications.error).toHaveBeenCalledTimes(1);
+		const [msg] = notifications.error.mock.calls[0];
+		expect(msg).toContain('Could not load content from https://example.com/broken');
 		expect(msg).toContain('timeout');
 	});
 
@@ -453,9 +456,9 @@ describe('ProposalGenerator -- article URL external context', () => {
 			reasons: [{ type: 'user-requested' }],
 		});
 
-		expect(notifications.info).toHaveBeenCalledTimes(1);
-		const [msg] = notifications.info.mock.calls[0];
-		expect(msg).toContain('Could not load content from example.com');
+		expect(notifications.error).toHaveBeenCalledTimes(1);
+		const [msg] = notifications.error.mock.calls[0];
+		expect(msg).toContain('Could not load content from https://example.com/empty');
 		expect(msg).toContain('no readable text');
 	});
 });
@@ -499,17 +502,17 @@ describe('ProposalGenerator -- Reddit URL external context', () => {
 		vi.restoreAllMocks();
 	});
 
-	it('routes a Reddit URL to the Reddit JSON fetcher (not the article fetcher)', async () => {
+	it('routes a Reddit URL to the Reddit RSS fetcher (not the article fetcher)', async () => {
 		// reddit-fetcher is the real module here, so it hits the mocked
-		// requestUrl: return a valid post listing.
+		// requestUrl: return a valid post Atom feed.
 		mockRequestUrl.mockResolvedValue({
-			text: JSON.stringify([
-				{ data: { children: [{ data: {
-					author: 'immich_fan',
-					title: 'Immich backup tips',
-					selftext: 'Use the CLI for bulk uploads.',
-				} }] } },
-			]),
+			status: 200,
+			text:
+				'<?xml version="1.0"?><feed><entry>' +
+				'<author><name>/u/immich_fan</name></author>' +
+				'<title>Immich backup tips</title>' +
+				'<content type="html">&lt;p&gt;Use the CLI for bulk uploads.&lt;/p&gt;</content>' +
+				'</entry></feed>',
 		} as never);
 
 		const { generator } = makeGenerator(
@@ -546,8 +549,8 @@ describe('ProposalGenerator -- Reddit URL external context', () => {
 		// Non-fatal — proposal still produced, but the failure is surfaced.
 		expect(proposal.proposedAdditions).toBeDefined();
 		expect(mockFetchArticleContent).not.toHaveBeenCalled();
-		expect(notifications.info).toHaveBeenCalledTimes(1);
-		const [msg] = notifications.info.mock.calls[0];
-		expect(msg).toContain('Could not load content from www.reddit.com');
+		expect(notifications.error).toHaveBeenCalledTimes(1);
+		const [msg] = notifications.error.mock.calls[0];
+		expect(msg).toContain('Could not load content from https://www.reddit.com/r/immich/comments/abc123/title/');
 	});
 });

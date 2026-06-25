@@ -4,6 +4,19 @@ import { redactSecrets } from './redact';
 export type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error';
 
 /**
+ * Standardized message for a failed external-link content fetch. Used by both
+ * Elaborate (proposer) and Summarize so the same underlying failure reads
+ * identically wherever it surfaces; pass the result to {@link
+ * NotificationManager.error} so it renders as one persistent error notice in
+ * both features. `reason` is the specific cause — e.g. the thrown error's
+ * message, an HTTP status, or `'page returned no readable text'` for a
+ * successful-but-empty fetch.
+ */
+export function linkLoadError(source: string, reason: string): string {
+	return `Could not load content from ${source}: ${reason}`;
+}
+
+/**
  * A single action button rendered on an actionable success/completion toast
  * (e.g. "Review"). `onClick` runs when the user presses the button; the toast
  * then hides itself.

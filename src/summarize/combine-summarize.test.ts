@@ -40,6 +40,14 @@ vi.mock('../shared', async () => ({
 	detectPlatform: vi.fn().mockReturnValue(null),
 	fetchPageContent: vi.fn().mockResolvedValue('Fetched URL content for testing.'),
 	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
+	isRedditUrl: (url: string) => {
+		try {
+			const h = new URL(url).hostname.toLowerCase();
+			return h === 'reddit.com' || h.endsWith('.reddit.com') || h === 'redd.it' || h.endsWith('.redd.it');
+		} catch { return false; }
+	},
+	fetchRedditContent: vi.fn().mockResolvedValue('Reddit content for testing.'),
+	linkLoadError: (source: string, reason: string) => `Could not load content from ${source}: ${reason}`,
 	CheckpointManager: class {
 		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
 		completeItem = vi.fn().mockResolvedValue(null);
@@ -61,6 +69,7 @@ function createMockNotifications() {
 		startOperation: vi.fn().mockReturnValue(handle),
 		info: vi.fn(),
 		success: vi.fn(),
+		error: vi.fn(),
 		notifyError: vi.fn(),
 		confirm: vi.fn().mockResolvedValue(true),
 		_handle: handle,
