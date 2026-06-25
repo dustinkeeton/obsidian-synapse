@@ -1,4 +1,4 @@
-import { requestUrl } from 'obsidian';
+import { requestUrl, RequestUrlResponse } from 'obsidian';
 import { sanitizeUrl } from './validation';
 import { extractReadableText } from './content-fetcher';
 
@@ -6,6 +6,16 @@ const FETCH_TIMEOUT_MS = 30_000;
 
 /** User-Agent sent with Reddit fetches so the RSS/HTML endpoints respond. */
 const FETCH_USER_AGENT = 'Mozilla/5.0 (compatible; ObsidianSynapse/1.0)';
+
+/**
+ * Transient HTTP statuses worth retrying — Reddit rate-limits the RSS endpoint
+ * aggressively (429 after even a single recent hit) and occasionally returns
+ * 503. Permanent statuses (403/404) are NOT retried.
+ */
+const RETRY_STATUSES = new Set([429, 503]);
+
+/** Backoff before each retry; its length doubles as the max retry count. */
+const RETRY_BACKOFFS_MS = [1500, 3000];
 
 /** Number of top comments included alongside the post body. */
 const MAX_COMMENTS = 3;
@@ -63,6 +73,47 @@ function isShareLink(url: string): boolean {
 	}
 }
 
+/** Resolve after `ms`, using the same window timer the fetch timeout uses. */
+function sleep(ms: number): Promise<void> {
+	return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+/**
+ * GET a Reddit URL via Obsidian's `requestUrl` (never native fetch, for mobile
+ * CSP compatibility #88), racing each attempt against {@link FETCH_TIMEOUT_MS}.
+ *
+ * Reddit rate-limits the RSS endpoint hard, so a transient 429/503 is retried
+ * up to {@link RETRY_BACKOFFS_MS}.length times with backoff before the status is
+ * surfaced to the caller. `throw: false` keeps a 4xx/5xx body intact (Obsidian
+ * strips it on a thrown response) so the caller can report the real status
+ * rather than an opaque network failure.
+ */
+async function requestRedditUrl(url: string, accept: string): Promise<RequestUrlResponse> {
+	let response: RequestUrlResponse | undefined;
+	for (let attempt = 0; attempt <= RETRY_BACKOFFS_MS.length; attempt++) {
+		const timeout = new Promise<never>((_, reject) =>
+			window.setTimeout(() => reject(new Error('Reddit fetch timed out')), FETCH_TIMEOUT_MS)
+		);
+		response = await Promise.race([
+			requestUrl({
+				url,
+				method: 'GET',
+				headers: { 'User-Agent': FETCH_USER_AGENT, 'Accept': accept },
+				throw: false,
+			}),
+			timeout,
+		]);
+		if (RETRY_STATUSES.has(response.status) && attempt < RETRY_BACKOFFS_MS.length) {
+			await sleep(RETRY_BACKOFFS_MS[attempt]);
+			continue;
+		}
+		return response;
+	}
+	// The loop always returns inside its body once retries are exhausted; this
+	// is only reached if RETRY_BACKOFFS_MS is empty.
+	return response as RequestUrlResponse;
+}
+
 /**
  * Fetch a Reddit post and format its author / title / selftext (plus the top
  * few comments, when present) with a trailing `Source: <url>`.
@@ -86,25 +137,7 @@ export async function fetchRedditContent(url: string, maxLength: number): Promis
 		const canonicalUrl = await resolveCanonicalUrl(validatedUrl);
 		const rssUrl = toRssUrl(canonicalUrl);
 
-		const timeout = new Promise<never>((_, reject) =>
-			window.setTimeout(() => reject(new Error('Reddit fetch timed out')), FETCH_TIMEOUT_MS)
-		);
-
-		const response = await Promise.race([
-			requestUrl({
-				url: rssUrl,
-				method: 'GET',
-				headers: {
-					'User-Agent': FETCH_USER_AGENT,
-					'Accept': 'application/atom+xml, text/xml',
-				},
-				// Don't throw on 4xx/5xx — Obsidian strips the body on error, and a
-				// blocked/rate-limited/removed post (commonly 403/404/429) should
-				// surface its status rather than an opaque network failure.
-				throw: false,
-			}),
-			timeout,
-		]);
+		const response = await requestRedditUrl(rssUrl, 'application/atom+xml, text/xml');
 
 		if (response.status >= 400) {
 			throw new Error(`Reddit returned HTTP ${response.status}`);
@@ -156,23 +189,7 @@ async function resolveCanonicalUrl(url: string): Promise<string> {
 		return url;
 	}
 
-	const timeout = new Promise<never>((_, reject) =>
-		window.setTimeout(() => reject(new Error('Reddit fetch timed out')), FETCH_TIMEOUT_MS)
-	);
-
-	const response = await Promise.race([
-		requestUrl({
-			url,
-			method: 'GET',
-			headers: {
-				'User-Agent': FETCH_USER_AGENT,
-				'Accept': 'text/html,application/xhtml+xml',
-			},
-			// See fetchRedditContent — surface the status instead of an opaque error.
-			throw: false,
-		}),
-		timeout,
-	]);
+	const response = await requestRedditUrl(url, 'text/html,application/xhtml+xml');
 
 	if (response.status >= 400) {
 		throw new Error(`Reddit returned HTTP ${response.status}`);

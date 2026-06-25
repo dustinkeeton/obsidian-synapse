@@ -351,9 +351,19 @@ export class SummarizeModule {
 					const label = labelForTarget(target);
 					sections.push(`## ${label}\n\n${text.trim()}`);
 					labels.push(label);
+				} else {
+					// Parity with the per-item path: a successful-but-empty fetch is
+					// surfaced with the same standardized notice, not silently dropped.
+					this.notifications.error(
+						linkLoadError(target.source, 'page returned no readable text')
+					);
 				}
 			} catch (error) {
-				this.notifications.notifyError(`Could not gather content from ${target.source}`, error);
+				// Standardized link-load failure notice -- identical format to the
+				// per-item summarize path and Elaborate (was notifyError, which read
+				// differently for the same underlying failure).
+				const reason = error instanceof Error ? error.message : String(error);
+				this.notifications.error(linkLoadError(target.source, reason));
 			}
 		}
 

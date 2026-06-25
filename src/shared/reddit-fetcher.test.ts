@@ -272,3 +272,90 @@ describe('fetchRedditContent', () => {
 			.rejects.toThrow();
 	});
 });
+
+describe('fetchRedditContent -- retry on transient errors', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('retries on HTTP 429 and succeeds when a later attempt returns 200', async () => {
+		const { requestUrl } = await import('obsidian');
+		vi.useFakeTimers();
+		try {
+			let calls = 0;
+			(vi.mocked(requestUrl) as any).mockImplementation(async () => {
+				calls++;
+				if (calls === 1) return { status: 429, text: '' };
+				return mockFeed({ author: 'op', title: 'Recovered', bodyHtml: '<p>body after retry</p>' });
+			});
+
+			const promise = fetchRedditContent(CANONICAL, 10000);
+			await vi.advanceTimersByTimeAsync(5000);
+			const result = await promise;
+
+			expect(calls).toBe(2);
+			expect(result).toContain('u/op: Recovered');
+			expect(result).toContain('body after retry');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('retries on HTTP 503 as well', async () => {
+		const { requestUrl } = await import('obsidian');
+		vi.useFakeTimers();
+		try {
+			let calls = 0;
+			(vi.mocked(requestUrl) as any).mockImplementation(async () => {
+				calls++;
+				if (calls === 1) return { status: 503, text: '' };
+				return mockFeed({ author: 'op', title: 'Up again', bodyHtml: '<p>back online</p>' });
+			});
+
+			const promise = fetchRedditContent(CANONICAL, 10000);
+			await vi.advanceTimersByTimeAsync(5000);
+			const result = await promise;
+
+			expect(calls).toBe(2);
+			expect(result).toContain('back online');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('gives up after exhausting retries and surfaces the final 429', async () => {
+		const { requestUrl } = await import('obsidian');
+		vi.useFakeTimers();
+		try {
+			let calls = 0;
+			(vi.mocked(requestUrl) as any).mockImplementation(async () => {
+				calls++;
+				return { status: 429, text: '' };
+			});
+
+			const promise = fetchRedditContent(CANONICAL, 10000).catch((e: unknown) => e);
+			await vi.advanceTimersByTimeAsync(10000);
+			const err = await promise;
+
+			expect(err).toBeInstanceOf(Error);
+			expect((err as Error).message).toContain('Reddit returned HTTP 429');
+			// initial attempt + 2 retries
+			expect(calls).toBe(3);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('does not retry a permanent 403', async () => {
+		const { requestUrl } = await import('obsidian');
+		let calls = 0;
+		(vi.mocked(requestUrl) as any).mockImplementation(async () => {
+			calls++;
+			return { status: 403, text: '' };
+		});
+
+		await expect(fetchRedditContent(CANONICAL, 10000))
+			.rejects.toThrow('Reddit returned HTTP 403');
+		expect(calls).toBe(1);
+	});
+});

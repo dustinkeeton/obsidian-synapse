@@ -4,6 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager } from '../shared';
 import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { requestUrl } from '../__mocks__/obsidian';
 import { DetectionResult } from './types';
 
 // Shared mock function that all MockAIClient instances delegate to.
@@ -185,6 +186,25 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 			expect.objectContaining({ path: 'notes/full.md' })
 		);
 	});
+
+	it('does not persist a fabricated proposal when a link-only note fails to load', async () => {
+		// A note that is nothing but a Reddit URL, with the fetch forced to fail.
+		const urlOnly = 'https://www.reddit.com/r/playrustservers/comments/82l3sk/what_is_rconip_and_rconport_used_for/';
+		mockPlugin.app.vault.read.mockResolvedValue(urlOnly);
+		mockPlugin.app.vault.cachedRead.mockResolvedValue(urlOnly);
+		vi.mocked(requestUrl).mockRejectedValue(new Error('Too Many Requests'));
+
+		const savedProposals: any[] = [];
+		mockPlugin.app.vault.adapter.write.mockImplementation(async (_path: string, content: string) => {
+			try { savedProposals.push(JSON.parse(content)); } catch { /* not JSON */ }
+		});
+
+		const file = mockFile('notes/link-only.md');
+		await module.scanNote(file as any);
+
+		// generate() returns null -> scanNote must NOT save an invented proposal.
+		expect(savedProposals.length).toBe(0);
+	});
 });
 
 describe('ProposalGenerator — user-requested reason handling', () => {
@@ -223,10 +243,11 @@ describe('ProposalGenerator — user-requested reason handling', () => {
 
 		const proposal = await generator.generate(detection);
 
-		expect(proposal.sourceNotePath).toBe('notes/test.md');
-		expect(proposal.detectionReasons).toEqual([{ type: 'user-requested' }]);
-		expect(proposal.status).toBe('pending');
-		expect(proposal.proposedAdditions).toBeTruthy();
+		expect(proposal).not.toBeNull();
+		expect(proposal!.sourceNotePath).toBe('notes/test.md');
+		expect(proposal!.detectionReasons).toEqual([{ type: 'user-requested' }]);
+		expect(proposal!.status).toBe('pending');
+		expect(proposal!.proposedAdditions).toBeTruthy();
 	});
 
 	it('builds a user-requested prompt that differs from stub prompt', async () => {
