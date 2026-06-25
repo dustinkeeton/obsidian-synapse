@@ -185,6 +185,18 @@ describe('classifyUrl', () => {
 			expect(result.platform).toBe('wikipedia');
 		});
 
+		it('classifies a reddit.com post URL as article (reddit)', () => {
+			const result = classifyUrl('https://www.reddit.com/r/immich/comments/abc123/title/');
+			expect(result.type).toBe('article');
+			expect(result.platform).toBe('reddit');
+		});
+
+		it('classifies a reddit.com share (/s/) URL as article (reddit)', () => {
+			const result = classifyUrl('https://www.reddit.com/r/immich/s/DaHMD1DJhv');
+			expect(result.type).toBe('article');
+			expect(result.platform).toBe('reddit');
+		});
+
 		it('classifies any other valid http(s) URL as a generic article', () => {
 			const result = classifyUrl('https://example.com/some/article');
 			expect(result.type).toBe('article');

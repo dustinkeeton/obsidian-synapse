@@ -1,8 +1,15 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, fetchArticleContent } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import { DetectionResult, Proposal } from './types';
+
+/**
+ * Matches bare http(s) URLs in note text. Reserved for the `matchAll` in
+ * gatherExternalContext — kept global (matchAll requires it) and never used
+ * with test/exec/replace directly so its lastIndex stays at 0 across calls.
+ */
+const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
 
 export class ProposalGenerator {
 	private aiClient: AIClient;
@@ -10,13 +17,14 @@ export class ProposalGenerator {
 
 	constructor(
 		private app: App,
-		private getSettings: () => SynapseSettings
+		private getSettings: () => SynapseSettings,
+		private notifications: NotificationManager
 	) {
 		this.aiClient = new AIClient(getSettings);
 		this.imageAnalyzer = new ImageAnalyzer(app, getSettings);
 	}
 
-	async generate(detection: DetectionResult): Promise<Proposal> {
+	async generate(detection: DetectionResult): Promise<Proposal | null> {
 		// Vault API (not adapter) — vault notes must go through vault.cachedRead
 		// per the Obsidian plugin guidelines; the adapter is reserved for the
 		// plugin's own .synapse/ storage.
@@ -41,10 +49,21 @@ export class ProposalGenerator {
 			analyses = result.analyses;
 		}
 
-		// Gather external context from Twitter URLs in the note
-		const externalContext = await this.gatherExternalContext(content);
+		// Gather external context from links in the note (tweets, Reddit, articles).
+		const { context: externalContext, attempted } = await this.gatherExternalContext(content);
+		const linkDominated = this.isLinkDominated(content);
 
-		const prompt = this.buildPrompt(content, detection, contextNotes, imageContext, externalContext);
+		// Anti-fabrication guard: when the note is essentially just link(s) and
+		// every link failed to load, there is nothing real to elaborate --
+		// proceeding would invent content from the URL slug alone. Abort (the
+		// per-link failure notice already fired in gatherExternalContext) rather
+		// than fabricate. Notes with real prose alongside a dead link still
+		// elaborate, since isLinkDominated is false for them.
+		if (attempted > 0 && externalContext === '' && linkDominated) {
+			return null;
+		}
+
+		const prompt = this.buildPrompt(content, detection, contextNotes, imageContext, externalContext, linkDominated);
 		const systemPrompt = imageContext
 			? 'You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. Image analysis has been provided -- use the descriptions to write contextually aware content that references what the images actually show. Preserve all image embeds in their original format.'
 			: 'You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. If the source content contains image URLs, preserve them as markdown image embeds (![alt](url)) rather than describing the image in text. For internal images referenced as [[image.jpg]], embed them as ![[image.jpg]].';
@@ -70,7 +89,8 @@ export class ProposalGenerator {
 		detection: DetectionResult,
 		contextNotes: string,
 		imageContext: string,
-		externalContext = ''
+		externalContext = '',
+		linkDominated = false
 	): string {
 		const reasonDescriptions = detection.reasons.map(r => {
 			switch (r.type) {
@@ -106,37 +126,89 @@ export class ProposalGenerator {
 		}
 
 		if (externalContext) {
-			prompt += `\n\nExternal content referenced in this note:\n${externalContext}`;
+			// When the note is essentially just the link, center the elaboration on
+			// the fetched content (the user's intent is to capture that source), not
+			// on generic background derived from the URL.
+			prompt += linkDominated
+				? `\n\nThis note is essentially a reference to the external content below. Base your elaboration primarily on this fetched content -- summarize and expand on what it actually says, drawing out the key points of the source. Use general background knowledge only as secondary support, clearly subordinate to the source's own content:\n\n${externalContext}`
+				: `\n\nExternal content referenced in this note:\n${externalContext}`;
 		}
 
 		return prompt;
 	}
 
-	private async gatherExternalContext(content: string): Promise<string> {
-		const urlRegex = /https?:\/\/[^\s)\]>]+/g;
-		const urls = [...content.matchAll(urlRegex)]
+	private async gatherExternalContext(content: string): Promise<{ context: string; attempted: number }> {
+		const urls = [...content.matchAll(URL_REGEX)]
 			.map(m => m[0])
-			// Twitter URLs are fetched as tweets; everything else that isn't a
-			// known video host is treated as an article. Video hosts are skipped
-			// because their pages are JS-rendered and yield no useful text --
-			// proper URL classification is issue #109's job.
-			.filter(u => isTwitterUrl(u) || !isVideoHost(u))
+			// Twitter URLs are fetched as tweets, Reddit URLs via Reddit's RSS
+			// feed, and everything else that isn't a known video host is
+			// treated as an article. Video hosts are skipped because their pages
+			// are JS-rendered and yield no useful text -- proper URL
+			// classification is issue #109's job.
+			.filter(u => isTwitterUrl(u) || isRedditUrl(u) || !isVideoHost(u))
 			.slice(0, 3);
 
-		if (urls.length === 0) return '';
+		if (urls.length === 0) return { context: '', attempted: 0 };
 
 		const parts: string[] = [];
 		for (const url of urls) {
+			// Route each URL to its dedicated fetcher: tweets and Reddit posts
+			// have structured endpoints; everything else falls back to generic
+			// article extraction.
 			try {
-				const text = isTwitterUrl(url)
-					? await fetchTweetContent(url, 500)
-					: await fetchArticleContent(url, 2000);
-				if (text.trim()) parts.push(text);
-			} catch {
-				// Non-fatal — skip URLs that can't be fetched
+				let text: string;
+				if (isTwitterUrl(url)) {
+					text = await fetchTweetContent(url, 500);
+				} else if (isRedditUrl(url)) {
+					// 2000 (matching the article branch) so a link-only note has real
+					// post substance to elaborate on, not just the title + a comment.
+					text = await fetchRedditContent(url, 2000);
+				} else {
+					text = await fetchArticleContent(url, 2000);
+				}
+				if (text.trim()) {
+					parts.push(text);
+				} else {
+					// A successful fetch that yields nothing usable (e.g. a
+					// JS-rendered or bot-blocked page) must not silently no-op --
+					// surface the same standardized error notice Summarize uses
+					// so Elaborate's lack of effect is explained, not swallowed.
+					this.notifications.error(
+						linkLoadError(url, 'page returned no readable text')
+					);
+				}
+			} catch (error) {
+				// Non-fatal: continue elaborating with whatever context we got,
+				// but surface the failure (same standardized notice as Summarize)
+				// so the user knows the link was skipped.
+				const reason = error instanceof Error ? error.message : String(error);
+				this.notifications.error(linkLoadError(url, reason));
 			}
 		}
-		return parts.join('\n\n---\n\n');
+		return { context: parts.join('\n\n---\n\n'), attempted: urls.length };
+	}
+
+	/**
+	 * True when a note's substance is essentially just the link(s) it contains:
+	 * after removing URLs and reducing markdown/wiki links to their visible text,
+	 * almost no prose remains. Combined with a fully-failed external fetch, this
+	 * is what lets generate() refuse to elaborate rather than invent content from
+	 * a URL slug. Notes with a real sentence of prose are NOT link-dominated.
+	 */
+	private isLinkDominated(content: string): boolean {
+		const meaningful = content
+			// Drop bare URLs. A fresh instance (not URL_REGEX) so the shared
+			// regex's lastIndex is never perturbed for the next matchAll.
+			.replace(new RegExp(URL_REGEX.source, 'g'), ' ')
+			// Reduce `[text](url)` / `![alt](url)` and `[[wikilink]]` to their text.
+			.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+			.replace(/!?\[\[([^\]]*)\]\]/g, '$1')
+			// Keep only letters/numbers so markdown/punctuation can't inflate length.
+			.replace(/[^\p{L}\p{N}]+/gu, '');
+		// Conservative threshold (~one word): a bare URL or a one-word title beside
+		// a link counts as link-dominated; a real phrase of prose does not. This
+		// deliberately errs toward still elaborating when there's any real content.
+		return meaningful.length < 10;
 	}
 
 	private async gatherContext(notePath: string): Promise<string> {

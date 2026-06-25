@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
-import { fetchPageContent } from '../shared';
+import { fetchPageContent, fetchRedditContent } from '../shared';
 import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 
 // Mock the summarizer to return a canned summary.
@@ -58,6 +58,14 @@ vi.mock('../shared', async () => ({
 	generateId: vi.fn().mockReturnValue('id-mock'),
 	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
 	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
+	isRedditUrl: (url: string) => {
+		try {
+			const h = new URL(url).hostname.toLowerCase();
+			return h === 'reddit.com' || h.endsWith('.reddit.com') || h === 'redd.it' || h.endsWith('.redd.it');
+		} catch { return false; }
+	},
+	fetchRedditContent: vi.fn().mockResolvedValue('Reddit content for testing.'),
+	linkLoadError: (source: string, reason: string) => `Could not load content from ${source}: ${reason}`,
 	CheckpointManager: class MockCheckpointManager {
 		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
 		completeItem = vi.fn().mockResolvedValue(null);
@@ -79,6 +87,7 @@ function createMockNotifications() {
 		startOperation: vi.fn().mockReturnValue(handle),
 		info: vi.fn(),
 		success: vi.fn(),
+		error: vi.fn(),
 		notifyError: vi.fn(),
 		confirm: vi.fn().mockResolvedValue(true),
 		_handle: handle,
@@ -328,6 +337,22 @@ describe('SummarizeModule content-aware templates', () => {
 		// The summarizer should have been called with undefined (style default)
 		const summarizeCall = lastSummarizerInstance.summarize.mock.calls[0];
 		expect(summarizeCall[3]).toBeUndefined();
+	});
+
+	it('routes a Reddit URL to the Reddit fetcher, not the generic page fetcher', async () => {
+		const redditUrl = 'https://www.reddit.com/r/immich/comments/abc123/title/';
+		vi.mocked(findSummarizeTargets).mockReturnValueOnce([
+			{ type: 'url', source: redditUrl, line: 2, endLine: 2 },
+		] as any);
+		// Clear cross-test accumulation so the assertions reflect only this run.
+		vi.mocked(fetchPageContent).mockClear();
+		vi.mocked(fetchRedditContent).mockClear();
+
+		const file = new TFile('notes/reddit.md') as any;
+		await invokeCommand(file);
+
+		expect(fetchRedditContent).toHaveBeenCalledWith(redditUrl, expect.any(Number));
+		expect(fetchPageContent).not.toHaveBeenCalled();
 	});
 });
 

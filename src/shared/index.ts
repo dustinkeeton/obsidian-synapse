@@ -23,7 +23,7 @@ export { validateCredentials } from './credential-validator';
 export type { ValidationResult, ValidationStatus, ValidateOptions } from './credential-validator';
 export { decorateCredentialField } from './credential-field';
 export type { CredentialFieldOptions, CredentialFieldHandle } from './credential-field';
-export { NotificationManager } from './notifications';
+export { NotificationManager, linkLoadError } from './notifications';
 export type { OperationHandle, NoticeAction } from './notifications';
 export { fireAndForget } from './fire-and-forget';
 export type { FireAndForgetOptions } from './fire-and-forget';
@@ -58,6 +58,8 @@ export {
 export type { TreeNode, MoveRecord } from './diagram-generator';
 export { fetchTweetContent, isTwitterUrl } from './tweet-fetcher';
 export type { TweetContent } from './tweet-fetcher';
+export { fetchRedditContent, isRedditUrl, extractCanonicalPostUrl } from './reddit-fetcher';
+export type { RedditContent } from './reddit-fetcher';
 export {
 	fetchPageContent,
 	fetchArticleContent,

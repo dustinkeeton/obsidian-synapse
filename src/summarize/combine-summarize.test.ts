@@ -40,6 +40,14 @@ vi.mock('../shared', async () => ({
 	detectPlatform: vi.fn().mockReturnValue(null),
 	fetchPageContent: vi.fn().mockResolvedValue('Fetched URL content for testing.'),
 	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
+	isRedditUrl: (url: string) => {
+		try {
+			const h = new URL(url).hostname.toLowerCase();
+			return h === 'reddit.com' || h.endsWith('.reddit.com') || h === 'redd.it' || h.endsWith('.redd.it');
+		} catch { return false; }
+	},
+	fetchRedditContent: vi.fn().mockResolvedValue('Reddit content for testing.'),
+	linkLoadError: (source: string, reason: string) => `Could not load content from ${source}: ${reason}`,
 	CheckpointManager: class {
 		create = vi.fn().mockResolvedValue({ id: 'cp-mock' });
 		completeItem = vi.fn().mockResolvedValue(null);
@@ -61,6 +69,7 @@ function createMockNotifications() {
 		startOperation: vi.fn().mockReturnValue(handle),
 		info: vi.fn(),
 		success: vi.fn(),
+		error: vi.fn(),
 		notifyError: vi.fn(),
 		confirm: vi.fn().mockResolvedValue(true),
 		_handle: handle,
@@ -190,5 +199,23 @@ describe('SummarizeModule combined summarization (#367)', () => {
 		expect(out).toContain('Combined summary (2 items)');
 		expect(out).toContain('Note: lecture');
 		expect(out).toContain('https://example.com');
+	});
+
+	it('reports combined-path link failures with the standardized linkLoadError notice', async () => {
+		const { fetchPageContent } = await import('../shared');
+		vi.mocked(fetchPageContent)
+			.mockRejectedValueOnce(new Error('Reddit returned HTTP 429'))
+			.mockResolvedValueOnce('   ');
+
+		const url1: SummarizeTarget = { type: 'url', source: 'https://example.com/a', line: 2, endLine: 2 };
+		const url2: SummarizeTarget = { type: 'url', source: 'https://example.com/b', line: 3, endLine: 3 };
+		await (module as any).processTargetsCombined(file(), [url1, url2], NOTE);
+
+		// Both failure shapes (thrown + empty) now use notifications.error(linkLoadError(...)),
+		// matching the per-item summarize path and Elaborate -- NOT the old notifyError.
+		expect(notifications.notifyError).not.toHaveBeenCalled();
+		const messages = notifications.error.mock.calls.map((c: any[]) => c[0]);
+		expect(messages).toContain('Could not load content from https://example.com/a: Reddit returned HTTP 429');
+		expect(messages).toContain('Could not load content from https://example.com/b: page returned no readable text');
 	});
 });

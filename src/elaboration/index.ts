@@ -47,7 +47,7 @@ export class ElaborationModule {
 	) {
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 		this.detector = new PlaceholderDetector(plugin.app, getSettings);
-		this.proposer = new ProposalGenerator(plugin.app, getSettings);
+		this.proposer = new ProposalGenerator(plugin.app, getSettings, notifications);
 		this.store = new ProposalStore(plugin.app, getSettings);
 	}
 
@@ -148,6 +148,12 @@ export class ElaborationModule {
 				if (!result) continue;
 
 				const proposal = await this.proposer.generate(result);
+				if (!proposal) {
+					// Link-only note whose links all failed: skip the fabricated
+					// proposal but still complete the item so resume advances.
+					await this.checkpointManager.completeItem(checkpoint.id, item.id);
+					continue;
+				}
 				await this.store.save(proposal);
 				createdProposalIds.push(proposal.id);
 				proposalCount++;
@@ -268,6 +274,16 @@ export class ElaborationModule {
 
 				genOp.progress(i + 1, detected.length, 'Generating proposals');
 				const proposal = await this.proposer.generate(detected[i]);
+				if (!proposal) {
+					// Link-only note whose links all failed: skip without creating a
+					// fabricated proposal, but still mark the item done so the
+					// checkpoint advances.
+					await this.checkpointManager.completeItem(
+						checkpoint.id,
+						checkpointItems[i].id
+					);
+					continue;
+				}
 				await this.store.save(proposal);
 				createdProposalIds.push(proposal.id);
 				proposalCount++;
@@ -336,6 +352,14 @@ export class ElaborationModule {
 			if (result) {
 				op.update(`Generating proposal for ${file.basename}`);
 				const proposal = await this.proposer.generate(result);
+				if (!proposal) {
+					// generate() returns null when the note is essentially just
+					// unreadable link(s): no proposal is created and the link-load
+					// failure was already surfaced. Finish honestly instead of
+					// claiming a proposal was generated.
+					op.finish('No proposal -- could not load the linked content');
+					return;
+				}
 				await this.store.save(proposal);
 				// Review action only when the proposal stays pending — auto-accept
 				// (applied right after) leaves nothing to review (#340).
