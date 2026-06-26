@@ -46,6 +46,79 @@ Recursively explores a note's topics into a tree of interlinked child notes. Use
 - **Checkpoint/Undo System** -- every vault-wide operation creates checkpoints so you can resume interrupted operations or roll back changes.
 - **Notification Manager** -- centralized notifications with status bar integration on desktop.
 
+## How it all fits together
+
+Synapse has many commands, and several of them quietly trigger *other* steps once they finish. This master diagram is the **canonical birds-eye view** of every chain: what cascades after a single-note command, what runs standalone, what **Fire Synapse** runs over a folder, and how the **intake** folder auto-routes new notes.
+
+**How to read it**
+
+- **Solid labeled edge** = a follow-on step that is **on by default**.
+- **Dotted labeled edge** = a follow-on step that is **off by default**.
+- Every conditional edge names the exact setting that gates it and its default, so you can answer "does this *also* fire X?" at a glance.
+- Diamonds are routing decisions.
+
+```mermaid
+flowchart TD
+    subgraph perNote["a · Per-note commands — cascade after accept / complete"]
+        EL["Elaborate<br/>(on accept)"]
+        TR["Transcribe<br/>audio · video · image"]
+        SU["Summarize"]
+        DD["Deep Dive<br/>(on accept)"]
+    end
+
+    EL --> OP
+    TR --> OP
+    SU --> OP
+    DD -->|"deepDive.autoEnrichOnAccept · default ON"| OP
+    OP(["Operation completes / proposal accepted"])
+
+    OP -->|"enrichment.autoEnrich · default ON"| ENp["Enrichment proposals<br/>tags · links · references"]
+    OP -->|"title.checkAfterOperations · default ON"| TTp["Title → rename proposal"]
+
+    SU -.->|"summarize.autoOrganizeOnSummarize · default OFF"| ORGp["Organize proposal<br/>(single note)"]
+    DD -.->|"deepDive.autoOrganizeOnAccept · default OFF"| ORGp
+
+    subgraph standalone["b · Standalone commands — no cascade"]
+        SA1["Enrich"]
+        SA2["Tidy"]
+        SA3["REM — wikilink discovery"]
+        SA4["Organize"]
+        SA5["Title (manual check)"]
+    end
+    standalone --> SAp["Proposal only — nothing else fires"]
+
+    subgraph fire["c · Fire Synapse — run all on a folder/note, fixed order, serial"]
+        F1["1 · Elaboration"] --> F2["2 · Summarize"] --> F3["3 · Enrichment"] --> F4["4 · REM"] --> F5["5 · Tidy"] --> F6["6 · Organize"]
+    end
+
+    subgraph intake["d · Intake folder — auto-routes new notes"]
+        IN["New note in intake folder"] --> IG["Debounce + idempotency guard"]
+        IG --> IU{"Body is essentially<br/>one bare URL?"}
+        IU -->|"no — general / mixed / text"| FT["Fire pipeline on note"]
+        IU -->|yes| IC{"Classify URL"}
+        IC -->|article| FA["Fetch article + Fire pipeline"]
+        IC -->|"video / audio"| VS["Transcribe — stub, no-op today"]
+        IC -->|unknown| FT
+    end
+
+    FA -.->|fireOnFile| fire
+    FT -.->|fireOnFile| fire
+```
+
+**Per-note cascade defaults at a glance**
+
+| When you… | Also fires by default | Gated by | Default |
+|---|---|---|---|
+| Elaborate, Transcribe, Summarize, or accept a Deep Dive note | Enrichment proposals | `enrichment.autoEnrich` | On |
+| …any of the above | Title → rename proposal | `title.checkAfterOperations` | On |
+| Accept a Deep Dive note | Its enrich + title cascade | `deepDive.autoEnrichOnAccept` | On |
+| Summarize | Organize the note | `summarize.autoOrganizeOnSummarize` | Off |
+| Accept a Deep Dive note | Organize the note | `deepDive.autoOrganizeOnAccept` | Off |
+
+**Standalone commands** — Enrich, Tidy, REM, Organize, and a manual Title check — produce their own proposals and trigger nothing else.
+
+> This overview is the **single source of truth** for the command flow. For module-level detail — the exact callback wiring, the fallback path when enrichment is disabled but title checks stay on, and intake internals — see [`ARCHITECTURE.md`](ARCHITECTURE.md), whose **Fire Synapse Pipeline**, **Intake** and **Cross-Module Communication** diagrams expand the subgraphs above.
+
 ## Privacy and network use
 
 Synapse runs inside your vault. It contacts a remote service only when you configure one and then trigger a feature that needs it. Every request goes through Obsidian's `requestUrl` API, and every request is one you set up (your provider and API key) or started yourself (running a command).
