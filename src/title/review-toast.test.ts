@@ -122,6 +122,9 @@ describe('TitleModule Review toast action (#340)', () => {
 		await mod.checkUntitled('Inbox/Untitled.md');
 
 		// No Review toast — the proposal was auto-applied, nothing to review.
+		// checkUntitled now calls reviewAction() unconditionally (#402), so this
+		// also guards the centralized gate: if the helper ever stopped honoring
+		// shouldAutoAccept and returned an action, success() would fire and fail here.
 		expect(notifications.success).not.toHaveBeenCalled();
 		// Auto-accept renames the file and surfaces its own info toast.
 		expect(mockPlugin.app.vault.rename).toHaveBeenCalledTimes(1);
