@@ -191,6 +191,35 @@ describe('NotificationManager', () => {
 		});
 	});
 
+	describe('sticky action notice (#365)', () => {
+		it('persists (duration 0) and renders the action button', () => {
+			const onClick = vi.fn();
+			manager.infoSticky('Synapse v1.0.7 is available', { label: 'Update', onClick });
+
+			const notice = lastNotice();
+			// Sticky → Obsidian never auto-hides it.
+			expect(notice.duration).toBe(0);
+			const button = findButton(notice.noticeEl);
+			expect(button?.textContent).toBe('Update');
+		});
+
+		it('stays click-dismissible (no --no-dismiss class) so it can be waved away', () => {
+			manager.infoSticky('Update available', { label: 'Update', onClick: vi.fn() });
+			expect(lastNotice().noticeEl.classList.contains('synapse-notice--no-dismiss')).toBe(false);
+		});
+
+		it('invokes the action exactly once and hides on click', () => {
+			const onClick = vi.fn();
+			manager.infoSticky('Update available', { label: 'Update', onClick });
+
+			const notice = lastNotice();
+			findButton(notice.noticeEl).dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+
+			expect(onClick).toHaveBeenCalledTimes(1);
+			expect(notice.hide).toHaveBeenCalledTimes(1);
+		});
+	});
+
 	describe('info and notifyError', () => {
 		it('info does not throw', () => {
 			expect(() => manager.info('Test message')).not.toThrow();

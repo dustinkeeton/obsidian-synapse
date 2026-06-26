@@ -260,6 +260,29 @@ export interface UISettings {
 }
 
 /**
+ * Update-notification state (#365). Synapse is a community plugin, so Obsidian
+ * auto-checks for updates — but the only signal is a small badge buried in
+ * Settings → Community plugins. This group drives a louder, in-app, actionable
+ * prompt that points the user at that page when a newer release is published.
+ */
+export interface UpdateSettings {
+	/** Master toggle for the in-app "update available" notice. Default on. */
+	enableUpdateNotifications: boolean;
+	/**
+	 * Epoch ms of the last GitHub release check (success OR failure). Drives the
+	 * once-per-day rate limit so load is never gated on a network round-trip.
+	 * Absent until the first check runs.
+	 */
+	lastUpdateCheck?: number;
+	/**
+	 * The newest version the user has already been notified about. Set right
+	 * after a notice is shown so the same version never nags twice — clearing it
+	 * (or a newer release) re-arms the prompt. Absent until the first notice.
+	 */
+	dismissedUpdateVersion?: string;
+}
+
+/**
  * First-run onboarding state (#89). Persisted so the welcome experience fires
  * exactly once. Nested as its own group (rather than a bare top-level flag) so
  * future onboarding signals can join it without widening the settings root.
@@ -300,6 +323,7 @@ export interface SynapseSettings {
 	ui: UISettings;
 	autoAccept: AutoAcceptSettings;
 	onboarding: OnboardingSettings;
+	updates: UpdateSettings;
 	/**
 	 * Centralized per-path exclusion list (#307). Each rule names a vault-relative
 	 * glob and the features it blocks (or `'all'`). This is the single source of
@@ -471,6 +495,9 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 	},
 	onboarding: {
 		hasSeenWelcome: false,
+	},
+	updates: {
+		enableUpdateNotifications: true,
 	},
 	// Centralized path exclusions (#307). `.synapse` (plugin data) and
 	// `templates` are protected from EVERY flow out of the box; users add their

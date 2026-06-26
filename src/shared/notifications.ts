@@ -342,6 +342,17 @@ export class NotificationManager {
 	}
 
 	/**
+	 * Show a STICKY informational notice carrying a single action button (#365).
+	 * Unlike {@link info}/{@link success} with an action — which floor the
+	 * duration (~8s) and then auto-dismiss — this stays up until the user clicks
+	 * the action OR clicks the toast to dismiss it (duration 0, no preventDismiss).
+	 * Used for the "update available" prompt, which must persist until acted on.
+	 */
+	infoSticky(message: string, action: NoticeAction): void {
+		this.showActionNotice(message, 'info', 0, action, { dismissible: true });
+	}
+
+	/**
 	 * Show a one-shot success notice (dismissible). When `action` is supplied the
 	 * toast renders an action button (e.g. "Review") and stays up longer.
 	 */
@@ -371,16 +382,21 @@ export class NotificationManager {
 	 * container holding one `.mod-cta` button. The notice blocks background
 	 * click-to-dismiss, but the button click passes through (preventDismiss
 	 * lets button targets through), runs the action, and hides the toast.
+	 *
+	 * `options.dismissible` (used by {@link infoSticky}) skips preventDismiss so
+	 * a click anywhere on the toast also dismisses it — the right behavior for a
+	 * persistent (duration 0) prompt the user may want to wave away.
 	 */
 	private showActionNotice(
 		message: string,
 		level: NoticeLevel,
 		duration: number,
-		action: NoticeAction
+		action: NoticeAction,
+		options?: { dismissible?: boolean }
 	): void {
 		const notice = new Notice('', duration);
 		styleNotice(notice, level);
-		preventDismiss(notice);
+		if (!options?.dismissible) preventDismiss(notice);
 
 		const el = getNoticeEl(notice);
 		el.empty();

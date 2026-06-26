@@ -604,6 +604,22 @@ export class SynapseSettingTab extends PluginSettingTab {
 						foldActiveNoteProperties(this.app, value);
 					}),
 			);
+
+		// ── Update notifications (#365) ──
+		new Setting(body)
+			.setName('Notify me about Synapse updates')
+			.setDesc(
+				'Show an in-app notice when a newer version of Synapse is available. ' +
+				'Checked at most once a day; the notice links to Community plugins to update.',
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.updates.enableUpdateNotifications)
+					.onChange(async (value) => {
+						this.plugin.settings.updates.enableUpdateNotifications = value;
+						await this.plugin.saveSettings();
+					}),
+			);
 	}
 
 	/**

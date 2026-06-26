@@ -17,7 +17,7 @@ import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID } f
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
-import { FolderPickerModal, NotificationManager, CheckpointManager, fireAndForget, buildMigratedExclusions } from './shared';
+import { FolderPickerModal, NotificationManager, CheckpointManager, UpdateChecker, fireAndForget, buildMigratedExclusions } from './shared';
 import type { DeferredTask, LegacyModuleExclusions } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
@@ -46,6 +46,7 @@ export default class SynapsePlugin extends Plugin {
 	settings!: SynapseSettings;
 	notifications!: NotificationManager;
 	private checkpointManager!: CheckpointManager;
+	private updateChecker!: UpdateChecker;
 
 	private elaboration!: ElaborationModule;
 	private audio!: AudioModule;
@@ -62,6 +63,12 @@ export default class SynapsePlugin extends Plugin {
 	private audioExtractor: AudioExtractor | undefined;
 	private ffmpegAvailable: boolean | null = null;
 	private startupTimeout: number | null = null;
+	/**
+	 * Separate startup timer for the once-per-day update check (#365). Kept
+	 * distinct from {@link startupTimeout} so neither clobbers the other's
+	 * handle; cleared in {@link onunload}.
+	 */
+	private updateCheckTimeout: number | null = null;
 	/**
 	 * True when `loadData()` returned no persisted settings — i.e. a genuine
 	 * fresh install rather than an existing user upgrading. Drives first-run
@@ -134,6 +141,17 @@ export default class SynapsePlugin extends Plugin {
 		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept['deep-dive']);
 		this.title = new TitleModule(this, getSettings, this.notifications, () => this.settings.autoAccept.title);
 		this.rem = new RemModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.rem);
+
+		// In-app "newer Synapse available" check (#365). Self-gated on the settings
+		// toggle and rate-limited to once/day inside maybeCheck(); fired from a
+		// delayed startup timer below so it never blocks load.
+		this.updateChecker = new UpdateChecker({
+			currentVersion: this.manifest.version,
+			app: this.app,
+			notifications: this.notifications,
+			getSettings,
+			saveSettings: () => this.saveSettings(),
+		});
 
 		// Register the unified proposal view
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => {
@@ -350,6 +368,11 @@ export default class SynapsePlugin extends Plugin {
 		// Startup check for incomplete checkpoints (delayed to avoid blocking load)
 		this.startupTimeout = window.setTimeout(() => { void this.checkForIncompleteCheckpoints(); }, 3000);
 
+		// Startup check for a newer Synapse release (#365). Delayed (and staggered
+		// after the checkpoint check) so it never blocks load; maybeCheck() self-gates
+		// on the toggle and the once/day rate limit.
+		this.updateCheckTimeout = window.setTimeout(() => { void this.updateChecker.maybeCheck(); }, 5000);
+
 		// Unified transcription commands (audio on any platform, video on desktop only, image OCR).
 		// Always attempted so the registry audit sees them; userEnabled gates actual registration.
 		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video) || this.settings.image.enabled;
@@ -428,6 +451,10 @@ export default class SynapsePlugin extends Plugin {
 		if (this.startupTimeout !== null) {
 			window.clearTimeout(this.startupTimeout);
 			this.startupTimeout = null;
+		}
+		if (this.updateCheckTimeout !== null) {
+			window.clearTimeout(this.updateCheckTimeout);
+			this.updateCheckTimeout = null;
 		}
 		this.elaboration?.onunload();
 		this.audio?.onunload();
