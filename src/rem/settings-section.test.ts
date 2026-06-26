@@ -5,7 +5,7 @@ import { renderRemSettings } from './settings-section';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
 
-const FEATURE_TOOLTIP = 'Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions';
+const FEATURE_TOOLTIP = 'Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions. Link suggestions are ranked by AI content relevance, not just literal title matches.';
 
 function makeCtx(mutate?: (s: SynapseSettings) => void) {
 	const settings = structuredClone(DEFAULT_SETTINGS);

@@ -301,7 +301,7 @@ SynapseSettings {
   }
   rem: RemSettings {
     enabled: boolean                                // default: true
-    semanticMatching: boolean                       // default: false (AI conceptual matches)
+    titleMatchWeight: number                        // default: 0.6 (weight for literal title/alias matches)
     confidenceThreshold: number                     // default: 0.5 (semantic matches only)
     maxLinksPerNote: number                         // default: 20
     remFolderPath: string                           // default: '.synapse/rem'
