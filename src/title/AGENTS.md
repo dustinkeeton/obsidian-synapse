@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-19
+last-updated: 2026-06-25
 ---
 
 # title module
@@ -44,7 +44,7 @@ Exported types: `TitleProposal`, `TitleProposalTrigger`, `TitleProposalStatus`
 | `index.ts` | `TitleModule`, re-exports | Module entry point and public API |
 | `title-suggester.ts` | `TitleSuggester` | AI title suggestion and mismatch detection |
 | `title-store.ts` | `TitleProposalStore` | JSON persistence in `settings.title.proposalFolderPath` |
-| `title-detector.ts` | `isUntitled` | Regex check for Obsidian "Untitled" default pattern |
+| `title-detector.ts` | re-exports `isUntitled` | Thin re-export of `isUntitled` from `shared/title-detector` (its canonical home) |
 | `types.ts` | -- | All title types |
 
 ## TitleSuggester (`title-suggester.ts`)
@@ -59,13 +59,15 @@ class TitleSuggester {
 
 Content truncated to 4000 chars before AI call.
 
-## isUntitled (`title-detector.ts`)
+## isUntitled (`shared/title-detector.ts`, re-exported by `title-detector.ts`)
 
 ```ts
 function isUntitled(title: string): boolean
 // Matches "Untitled", "Untitled 1", "Untitled 2", etc. (case-insensitive)
 // Pattern: /^untitled(\s+\d+)?$/i
 ```
+
+Canonical definition lives in `shared/title-detector.ts` (alongside `isGenericTitle`, used by elaboration's anti-fabrication guard) so non-`title/` features can reuse it without importing from this module. `title/title-detector.ts` re-exports it.
 
 ## Data Flow
 
