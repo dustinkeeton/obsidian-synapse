@@ -5,16 +5,41 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.7] - 2026-06-25
 
 ### Added
 
 - Summarize a note's own prose, not just the URLs, transcriptions, and audio it references ("Summarize note content" toggle)
 - Choose one combined summary or a separate summary per item ("Combine into one summary" toggle) — both honored by single-note summarize and vault/folder scans
+- Get a notice when a newer version of Synapse is available, with an Update button that opens Community plugins
+- Turn update notifications on or off with the new "Notify me about Synapse updates" toggle in General settings
+- A "What's new" link in Settings → About that opens an in-app changelog view with the installed version highlighted
+- A General settings section with an "Auto-fold properties" toggle that collapses a note's Properties panel when it opens — off by default, still manually expandable
+- An "Open settings" button on the video-summary error notice when yt-dlp or ffmpeg is missing, jumping straight to the Video transcription section
+- Per-OS install commands (macOS, Linux, Windows) with one-click copy in the yt-dlp and ffmpeg path settings
 
 ### Changed
 
 - By default, summarize now includes the note's own prose and produces a single combined summary block; switch either off in Settings → Summarize
+- Note elaboration now uses the note's title as a signal, producing more relevant suggestions — including for notes that have only a title and no body yet
+- Elaboration declines to generate content for an empty note with a generic title (an Untitled default, a date, or a bare URL) and prompts you to add a few words first
+- REM link discovery suggests content-relevant links automatically whenever it's enabled; the separate semantic-matching toggle has been removed
+- REM ranks link suggestions by content relevance, so a coincidental title match no longer automatically outranks a more relevant link
+- Sentence-cased the "REM: discover links in current note" command to match Obsidian's command-palette convention
+
+### Fixed
+
+- Elaborate now reads content from Reddit links (including share links) instead of silently ignoring them
+- Elaborate shows a notice when a linked page can't be loaded, instead of silently continuing without it
+- Full links with multiple query parameters — such as complete TikTok and YouTube URLs — are no longer rejected as containing invalid characters
+- URLs with parentheses, like Wikipedia disambiguation pages, are now accepted instead of being treated as invalid
+- Transcribing a TikTok photo slideshow now reports that the post has no audio track instead of failing with a cryptic codec error
+- When ffmpeg or ffprobe can't be found, transcription tells you to set the ffmpeg path in Synapse settings instead of showing a raw error
+- Audio extraction from video URLs retries with a fallback format, succeeding more often
+
+### Security
+
+- Redact secret keys from operation-error messages written to the console, matching the redaction already applied to on-screen error notices
 
 ## [1.0.6] - 2026-06-22
 
