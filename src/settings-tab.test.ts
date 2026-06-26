@@ -1,5 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createEl, ToggleComponent, Setting } from './__mocks__/obsidian';
+
+// Mock the changelog modal so this suite never resolves the real CHANGELOG.md
+// import (a build-time `.md` text import that Vitest can't transform), and so
+// the About link's open behavior can be asserted (#375).
+const { changelogOpen } = vi.hoisted(() => ({ changelogOpen: vi.fn() }));
+vi.mock('./changelog-modal', () => ({
+	// A regular function (not an arrow) so it's usable with `new` while staying a
+	// spy for construction assertions.
+	ChangelogModal: vi.fn(function (this: { open: () => void }) {
+		this.open = changelogOpen;
+	}),
+}));
+
+import { ChangelogModal } from './changelog-modal';
 import { SynapseSettingTab } from './settings-tab';
 import { DEFAULT_SETTINGS } from './settings';
 import type { SynapseSettings } from './settings';
@@ -180,6 +194,29 @@ describe('SynapseSettingTab — About support links (#274)', () => {
 		expect(byHref.get('https://www.buymeacoffee.com/dustinkeeton')).toBe(
 			'Buy Me a Coffee',
 		);
+	});
+});
+
+describe('SynapseSettingTab — About "What\'s new" changelog link (#375)', () => {
+	beforeEach(() => {
+		(ChangelogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+		changelogOpen.mockClear();
+	});
+
+	it('renders a "What\'s new" link that opens the changelog modal on click', () => {
+		const { tab } = makeTab();
+		tab.display();
+
+		const containerEl = (tab as unknown as { containerEl: any }).containerEl;
+		const link = findAnchors(containerEl).find((a) => a.textContent === "What's new");
+		expect(link).toBeDefined();
+
+		const preventDefault = vi.fn();
+		link!.dispatchEvent({ type: 'click', preventDefault });
+
+		expect(preventDefault).toHaveBeenCalled();
+		expect(ChangelogModal).toHaveBeenCalledTimes(1);
+		expect(changelogOpen).toHaveBeenCalledTimes(1);
 	});
 });
 

@@ -39,6 +39,9 @@ const context = await esbuild.context({
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
+	// Inline `*.md` imports as strings so CHANGELOG.md ships in the bundle and
+	// can be rendered in the in-app changelog view (#375).
+	loader: { ".md": "text" },
 	outfile: "main.js",
 });
 
