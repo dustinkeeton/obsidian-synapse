@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
-import { AudioExtractor } from './audio-extractor';
+import { AudioExtractor, DependencyMissingError } from './audio-extractor';
 import { DEFAULT_SETTINGS } from '../settings';
 
 // Capture the ffmpeg argument array without spawning a process. The extractor
@@ -123,6 +123,46 @@ describe('AudioExtractor.runCommand error classification', () => {
 		const rejection = ex.extractFromUrl('https://www.tiktok.com/@user/video/123');
 		await expect(rejection).rejects.toThrow(/not found/i);
 		await expect(rejection).rejects.toThrow(/yt-dlp/);
+	});
+
+	it('throws a typed DependencyMissingError(tool: yt-dlp) on ENOENT (#382)', async () => {
+		const error = Object.assign(new Error('spawn yt-dlp ENOENT'), { code: 'ENOENT' });
+		execFileMock.mockImplementation(
+			(_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) =>
+				cb(error, '', '')
+		);
+
+		const ex = makeExtractor();
+		const thrown = await ex
+			.extractFromUrl('https://www.tiktok.com/@user/video/123')
+			.catch((e: unknown) => e);
+		expect(thrown).toBeInstanceOf(DependencyMissingError);
+		expect((thrown as DependencyMissingError).tool).toBe('yt-dlp');
+		// A missing binary must NOT trigger the looser-format retry (only the
+		// metadata dump + the single failed extraction attempt ran).
+		expect(execFileMock.mock.calls.filter((c) => !(c[1] as string[]).includes('--dump-json')))
+			.toHaveLength(1);
+	});
+
+	it('throws a typed DependencyMissingError(tool: ffmpeg) when ffprobe is not found (#382)', async () => {
+		const stderr = 'ERROR: ffprobe/ffmpeg not found. Please install or provide the path using --ffmpeg-location';
+		const error = Object.assign(new Error('Command failed'), { code: 1 });
+		execFileMock.mockImplementation(
+			(_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) => {
+				if (args.includes('--dump-json')) {
+					cb(null, JSON.stringify({ title: 'Clip', formats: [{ acodec: 'aac' }] }), '');
+				} else {
+					cb(error, '', stderr);
+				}
+			}
+		);
+
+		const ex = makeExtractor();
+		const thrown = await ex
+			.extractFromUrl('https://www.tiktok.com/@user/video/123')
+			.catch((e: unknown) => e);
+		expect(thrown).toBeInstanceOf(DependencyMissingError);
+		expect((thrown as DependencyMissingError).tool).toBe('ffmpeg');
 	});
 
 	it('reports a timeout when execFile kills the child via signal (no ETIMEDOUT code)', async () => {
