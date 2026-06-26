@@ -33,6 +33,7 @@ import { renderOrganizeSettings } from './organize';
 import { renderDeepDiveSettings } from './deep-dive';
 import { renderRemSettings } from './rem';
 import { applyApiKeyEmphasis } from './onboarding';
+import { foldActiveNoteProperties } from './properties-fold';
 
 /**
  * Per-kind display copy for the Auto-Accept Proposals section (#228). MUTATING
@@ -204,6 +205,9 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		// ── Exclusions (global, cross-cutting path exclusion list) ──
 		this.renderExclusions(ctx);
+
+		// ── General (non-feature, cross-cutting preferences; sits near the top) ──
+		this.renderGeneralSettings(ctx);
 
 		// ── Per-feature sections, in order (Video gated to desktop) ──
 		for (const render of FEATURE_SECTION_RENDERERS) {
@@ -570,6 +574,36 @@ export class SynapseSettingTab extends PluginSettingTab {
 				void this.plugin.saveSettings();
 			},
 		});
+	}
+
+	/**
+	 * General — non-feature, cross-cutting preferences (#381). A config section
+	 * (no enable toggle), collapsible with persisted state, rendered near the top.
+	 *
+	 * Each preference is one self-contained `Setting` block; adding another (e.g.
+	 * #365's update-notifications toggle) is a one-block append — no other wiring.
+	 */
+	private renderGeneralSettings(ctx: SettingsSectionContext): void {
+		const body = ctx.configSection('general', 'General');
+
+		// ── Auto-fold properties (#381) ──
+		new Setting(body)
+			.setName('Auto-fold properties')
+			.setDesc(
+				'Collapse the Properties (frontmatter) panel when a note is opened. ' +
+				'You can still expand it manually — this only sets the initial state.',
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.ui.autoFoldProperties)
+					.onChange(async (value) => {
+						this.plugin.settings.ui.autoFoldProperties = value;
+						await this.plugin.saveSettings();
+						// Apply immediately to the note open behind the settings tab when
+						// switched on (a no-op when switched off).
+						foldActiveNoteProperties(this.app, value);
+					}),
+			);
 	}
 
 	/**

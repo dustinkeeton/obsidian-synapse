@@ -249,6 +249,14 @@ export interface UISettings {
 	 * section's feature is disabled and expanded when it is enabled.
 	 */
 	collapsedSections: Record<string, boolean>;
+	/**
+	 * When `true`, a note's Properties (frontmatter) panel is collapsed when the
+	 * note is opened (#381). Synapse writes heavily to frontmatter, so notes
+	 * otherwise open with a tall, expanded Properties block. This only sets the
+	 * initial folded state on open — the user can still expand it manually.
+	 * Off by default.
+	 */
+	autoFoldProperties: boolean;
 }
 
 /**
@@ -451,6 +459,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 	},
 	ui: {
 		collapsedSections: {},
+		autoFoldProperties: false,
 	},
 	autoAccept: {
 		elaboration: false,

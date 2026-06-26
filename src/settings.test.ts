@@ -61,6 +61,16 @@ describe('onboarding settings (#89)', () => {
 	});
 });
 
+describe('UI settings — auto-fold properties (#381)', () => {
+	it('defaults autoFoldProperties to false (opt-in)', () => {
+		expect(DEFAULT_SETTINGS.ui.autoFoldProperties).toBe(false);
+	});
+
+	it('keeps the existing collapsedSections map alongside it', () => {
+		expect(DEFAULT_SETTINGS.ui.collapsedSections).toEqual({});
+	});
+});
+
 describe('exclusions settings (#307)', () => {
 	it('protects .synapse and templates from every feature by default', () => {
 		expect(DEFAULT_SETTINGS.exclusions).toEqual([

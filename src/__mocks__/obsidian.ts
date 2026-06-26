@@ -208,6 +208,23 @@ export class PluginSettingTab {
 	hide(): void {}
 }
 
+/**
+ * Minimal MarkdownView stub. Real folding logic is tested against hand-built
+ * fake views (with a `querySelector`-capable root), so the stub only needs to
+ * satisfy the `import { MarkdownView }` binding + `instanceof` checks; its
+ * `contentEl`/`containerEl` are plain stub els without `querySelector`.
+ */
+export class MarkdownView {
+	app: unknown = {};
+	leaf: unknown;
+	file: TFile | null = null;
+	contentEl: any = createStubEl();
+	containerEl: any = createStubEl();
+	constructor(leaf?: unknown) {
+		this.leaf = leaf;
+	}
+}
+
 export class ItemView {
 	app: unknown;
 	contentEl = { empty: vi.fn(), createEl: vi.fn(), createDiv: vi.fn() };
