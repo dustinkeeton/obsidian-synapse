@@ -4,7 +4,7 @@ import { CommandRegistrar, isInFlow } from '../commands';
 import {
 	buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles,
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager, generateId,
-	fireAndForget,
+	fireAndForget, reviewAction,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { PlaceholderDetector } from './detector';
@@ -180,9 +180,11 @@ export class ElaborationModule {
 		this.dispatchDeferredTasks(tasks);
 		genOp.finish(
 			`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
-			proposalCount - autoAcceptedCount > 0
-				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
-				: undefined
+			reviewAction({
+				generated: proposalCount > 0,
+				shouldAutoAccept: this.shouldAutoAccept,
+				openProposalView: this.onOpenProposalView,
+			})
 		);
 		if (autoAcceptedCount > 0) {
 			this.notifications.info(
@@ -316,13 +318,15 @@ export class ElaborationModule {
 		// Mark checkpoint completed and dispatch deferred tasks (I1)
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
-		// Review action only when at least one proposal remains pending after
-		// any batch auto-accept (#340).
+		// Review action only when something was generated AND elaboration
+		// auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
 			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
-			proposalCount - autoAcceptedCount > 0
-				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
-				: undefined
+			reviewAction({
+				generated: proposalCount > 0,
+				shouldAutoAccept: this.shouldAutoAccept,
+				openProposalView: this.onOpenProposalView,
+			})
 		);
 		if (autoAcceptedCount > 0) {
 			this.notifications.info(
@@ -362,10 +366,14 @@ export class ElaborationModule {
 				}
 				await this.store.save(proposal);
 				// Review action only when the proposal stays pending — auto-accept
-				// (applied right after) leaves nothing to review (#340).
+				// (applied right after) leaves nothing to review (#366).
 				op.finish(
 					'Proposal generated',
-					this.shouldAutoAccept() ? undefined : { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+					reviewAction({
+						generated: true,
+						shouldAutoAccept: this.shouldAutoAccept,
+						openProposalView: this.onOpenProposalView,
+					})
 				);
 				await this.maybeAutoAccept(proposal);
 				await this.refreshView();

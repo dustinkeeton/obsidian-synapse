@@ -127,4 +127,20 @@ describe('TitleModule Review toast action (#340)', () => {
 		expect(mockPlugin.app.vault.rename).toHaveBeenCalledTimes(1);
 		expect(notifications.info).toHaveBeenCalledWith(expect.stringContaining('Auto-accepted title'));
 	});
+
+	it('suppresses the secondary Review toast for an automatic post-op checkTitle (#366)', async () => {
+		// Title auto-accept is OFF, so a directly-invoked check WOULD surface the
+		// Review toast — but a chained post-op run must not (it fires after nearly
+		// every primary action, which is the "button always shows" leak).
+		settings.autoAccept.title = false;
+		const mod = build(() => settings.autoAccept.title);
+		await mod.onload();
+
+		await mod.checkTitle('Inbox/Untitled.md', { postOp: true });
+
+		// No secondary Review toast despite a generated proposal.
+		expect(notifications.success).not.toHaveBeenCalled();
+		// And nothing was applied — the proposal still lands pending in the view.
+		expect(mockPlugin.app.vault.rename).not.toHaveBeenCalled();
+	});
 });

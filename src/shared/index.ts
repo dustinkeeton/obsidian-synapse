@@ -25,6 +25,8 @@ export { decorateCredentialField } from './credential-field';
 export type { CredentialFieldOptions, CredentialFieldHandle } from './credential-field';
 export { NotificationManager, linkLoadError } from './notifications';
 export type { OperationHandle, NoticeAction } from './notifications';
+export { reviewAction } from './review-action';
+export type { ReviewActionOptions } from './review-action';
 export { UpdateChecker, isNewerVersion } from './update-checker';
 export type { UpdateCheckerDeps } from './update-checker';
 export { fireAndForget } from './fire-and-forget';
