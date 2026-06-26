@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import {
 	NotificationManager, readNote, writeNote, wordCount,
 	CheckpointManager, generateId, fireAndForget,
-	isPathExcluded, matchesExcludeTag, findMatchingRule,
+	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { ContentAnalyzer, DirectoryMatcher } from '../organize';
@@ -490,14 +490,16 @@ export class DeepDiveModule {
 				const depthSummary = Object.entries(run.stats.byDepth)
 					.map(([d, c]) => `depth ${d}: ${c}`)
 					.join(', ');
-				// Review action only when proposals remain pending — auto-accept
-				// (applied right after) creates every note, leaving nothing to
-				// review (#340).
+				// Review action only when proposals were generated AND deep-dive
+				// auto-accept is off — auto-accept (applied right after) creates
+				// every note, leaving nothing to review (#366).
 				genOp.finish(
 					`Generated ${run.stats.totalProposals} proposals (${depthSummary})`,
-					run.stats.totalProposals > 0 && !this.shouldAutoAccept()
-						? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
-						: undefined
+					reviewAction({
+						generated: run.stats.totalProposals > 0,
+						shouldAutoAccept: this.shouldAutoAccept,
+						openProposalView: this.onOpenProposalView,
+					})
 				);
 
 				// Auto-accept the whole generated tree if enabled (#228), in

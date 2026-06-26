@@ -5,7 +5,7 @@ import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, FolderPickerModal, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule } from '../shared';
+import { generateId, getMarkdownFiles, FolderPickerModal, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction } from '../shared';
 import { MentionScanner } from './mention-scanner';
 import { SemanticMatcher } from './semantic-matcher';
 import { RemApplier } from './rem-applier';
@@ -146,11 +146,15 @@ export class RemModule {
 
 		await this.store.save(proposal);
 		// Review action only when the proposal stays pending — auto-accept
-		// (applied right after) inserts the links, leaving nothing to review (#340).
+		// (applied right after) inserts the links, leaving nothing to review (#366).
 		this.notifications.success(
 			`Found ${allCandidates.length} linkable mention${allCandidates.length === 1 ? '' : 's'}`,
 			undefined,
-			this.shouldAutoAccept() ? undefined : { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+			reviewAction({
+				generated: true,
+				shouldAutoAccept: this.shouldAutoAccept,
+				openProposalView: this.onOpenProposalView,
+			})
 		);
 
 		// Single-note path: auto-accept the whole proposal if enabled (#228).
@@ -245,13 +249,15 @@ export class RemModule {
 		} else {
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
-			// Review action only when at least one proposal remains pending after
-			// any batch auto-accept (#340).
+			// Review action only when something was generated AND REM auto-accept
+			// is off (#366) — the deep-dive rule, centralized.
 			op.finish(
 				`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions`,
-				created - autoAcceptedCount > 0
-					? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
-					: undefined
+				reviewAction({
+					generated: created > 0,
+					shouldAutoAccept: this.shouldAutoAccept,
+					openProposalView: this.onOpenProposalView,
+				})
 			);
 			if (autoAcceptedCount > 0) {
 				this.notifications.info(
@@ -331,9 +337,11 @@ export class RemModule {
 			this.dispatchDeferredTasks(tasks);
 			op.finish(
 				`Resumed -- generated ${createdProposalIds.length} proposals`,
-				createdProposalIds.length - autoAcceptedCount > 0
-					? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
-					: undefined
+				reviewAction({
+					generated: createdProposalIds.length > 0,
+					shouldAutoAccept: this.shouldAutoAccept,
+					openProposalView: this.onOpenProposalView,
+				})
 			);
 			if (autoAcceptedCount > 0) {
 				this.notifications.info(

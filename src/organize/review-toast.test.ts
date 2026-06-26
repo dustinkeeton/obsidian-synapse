@@ -137,12 +137,47 @@ describe('OrganizeModule Review toast action (#340)', () => {
 
 		await mod.scanDirectory(undefined, true);
 
-		// proposalCount === autoAcceptedCount, so the guard yields no action.
+		// generated > 0 but auto-accept is on, so the gate yields no action.
 		expect(genOp.finish).toHaveBeenCalledWith(
 			expect.stringContaining('proposal'),
 			undefined
 		);
 		// And the note was actually moved by auto-accept.
+		expect((app.vault as unknown as { rename: ReturnType<typeof vi.fn> }).rename).toHaveBeenCalledTimes(1);
+	});
+
+	it('forwards a Review action to the single-note organize toast when the proposal stays pending', async () => {
+		settings.autoAccept.organize = false;
+		const mod = build(() => settings.autoAccept.organize);
+		await mod.onload();
+		const openSpy = vi.fn();
+		mod.onOpenProposalView = openSpy;
+
+		await mod.organizeNote(sourceFile as never);
+
+		// organizeNote uses the per-file op (id `organize-<path>`), routed to scanOp.
+		expect(scanOp.finish).toHaveBeenCalledWith(
+			'Proposal created for new directory',
+			expect.objectContaining({ label: 'Review' })
+		);
+		scanOp.finish.mock.calls.at(-1)![1].onClick();
+		expect(openSpy).toHaveBeenCalledTimes(1);
+		// Nothing moved — the proposal is left pending for review.
+		expect((app.vault as unknown as { rename: ReturnType<typeof vi.fn> }).rename).not.toHaveBeenCalled();
+	});
+
+	it('omits the Review action on the single-note organize toast when auto-accept moved the note', async () => {
+		settings.autoAccept.organize = true;
+		const mod = build(() => settings.autoAccept.organize);
+		await mod.onload();
+
+		await mod.organizeNote(sourceFile as never);
+
+		expect(scanOp.finish).toHaveBeenCalledWith(
+			'Proposal created for new directory',
+			undefined
+		);
+		// The note was moved by auto-accept.
 		expect((app.vault as unknown as { rename: ReturnType<typeof vi.fn> }).rename).toHaveBeenCalledTimes(1);
 	});
 });

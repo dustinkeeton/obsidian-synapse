@@ -254,42 +254,42 @@ export default class SynapsePlugin extends Plugin {
 		// Wire enrichment callbacks -- triggers after other processes complete
 		if (this.settings.enrichment.enabled && this.settings.enrichment.autoEnrich) {
 			this.elaboration.onProposalAccepted = (filePath: string) => {
-				fireAndForget(this.enrichment.enrich(filePath, 'elaboration'), 'Enrich note', { notifications: this.notifications });
+				fireAndForget(this.enrichment.enrich(filePath, 'elaboration', { postOp: true }), 'Enrich note', { notifications: this.notifications });
 				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+					fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 				}
 			};
 			this.audio.onTranscriptionComplete = (filePath: string) => {
-				fireAndForget(this.enrichment.enrich(filePath, 'transcription'), 'Enrich note', { notifications: this.notifications });
+				fireAndForget(this.enrichment.enrich(filePath, 'transcription', { postOp: true }), 'Enrich note', { notifications: this.notifications });
 				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+					fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 				}
 			};
 			if (this.video) {
 				this.video.onTranscriptionComplete = (filePath: string) => {
-					fireAndForget(this.enrichment.enrich(filePath, 'transcription'), 'Enrich note', { notifications: this.notifications });
+					fireAndForget(this.enrichment.enrich(filePath, 'transcription', { postOp: true }), 'Enrich note', { notifications: this.notifications });
 					if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-						fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+						fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 					}
 				};
 			}
 			this.image.onExtractionComplete = (filePath: string) => {
-				fireAndForget(this.enrichment.enrich(filePath, 'transcription'), 'Enrich note', { notifications: this.notifications });
+				fireAndForget(this.enrichment.enrich(filePath, 'transcription', { postOp: true }), 'Enrich note', { notifications: this.notifications });
 				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+					fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 				}
 			};
 			this.summarize.onSummaryComplete = (filePath: string) => {
-				fireAndForget(this.enrichment.enrich(filePath, 'summarization'), 'Enrich note', { notifications: this.notifications });
+				fireAndForget(this.enrichment.enrich(filePath, 'summarization', { postOp: true }), 'Enrich note', { notifications: this.notifications });
 				if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+					fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 				}
 			};
 			if (this.settings.deepDive.autoEnrichOnAccept) {
 				this.deepDive.onNoteAccepted = (filePath: string) => {
-					fireAndForget(this.enrichment.enrich(filePath, 'deep-dive'), 'Enrich note', { notifications: this.notifications });
+					fireAndForget(this.enrichment.enrich(filePath, 'deep-dive', { postOp: true }), 'Enrich note', { notifications: this.notifications });
 					if (this.settings.title.enabled && this.settings.title.checkAfterOperations) {
-						fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+						fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 					}
 				};
 			}
@@ -299,24 +299,24 @@ export default class SynapsePlugin extends Plugin {
 		if (this.settings.title.enabled && this.settings.title.checkAfterOperations &&
 			!(this.settings.enrichment.enabled && this.settings.enrichment.autoEnrich)) {
 			this.elaboration.onProposalAccepted = (filePath: string) => {
-				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+				fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 			};
 			this.audio.onTranscriptionComplete = (filePath: string) => {
-				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+				fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 			};
 			if (this.video) {
 				this.video.onTranscriptionComplete = (filePath: string) => {
-					fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+					fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 				};
 			}
 			this.image.onExtractionComplete = (filePath: string) => {
-				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+				fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 			};
 			this.summarize.onSummaryComplete = (filePath: string) => {
-				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+				fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 			};
 			this.deepDive.onNoteAccepted = (filePath: string) => {
-				fireAndForget(this.title.checkTitle(filePath), 'Check note title', { notifications: this.notifications });
+				fireAndForget(this.title.checkTitle(filePath, { postOp: true }), 'Check note title', { notifications: this.notifications });
 			};
 		}
 

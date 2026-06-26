@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder,
 	writeNote, generateOrganizeSummary, CheckpointManager, generateId, fireAndForget,
-	isPathExcluded, matchesExcludeTag, findMatchingRule,
+	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import type { MoveRecord } from '../shared';
@@ -174,13 +174,15 @@ export class OrganizeModule {
 		if (movedCount > 0) parts.push(`${movedCount} moved`);
 		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
 		if (errorCount > 0) parts.push(`${errorCount} failed`);
-		// Review action only when at least one new-directory proposal remains
-		// pending after any auto-accept (#340).
+		// Review action only when a new-directory proposal was generated AND
+		// organize auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
 			`Resumed -- ${parts.length > 0 ? parts.join(', ') : 'no changes needed'}`,
-			proposalCount - autoAcceptedCount > 0
-				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
-				: undefined
+			reviewAction({
+				generated: proposalCount > 0,
+				shouldAutoAccept: this.shouldAutoAccept,
+				openProposalView: this.onOpenProposalView,
+			})
 		);
 
 		if (moveRecords.length > 0) {
@@ -233,10 +235,14 @@ export class OrganizeModule {
 				op.finish(`Moved to ${result.action.type === 'move' ? result.action.targetDirectory : ''}`);
 			} else if (result.proposalCreated) {
 				// Review action only when the proposal stays pending — organize
-				// auto-accept moves the note, leaving nothing to review (#340).
+				// auto-accept moves the note, leaving nothing to review (#366).
 				op.finish(
 					'Proposal created for new directory',
-					result.autoAccepted ? undefined : { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+					reviewAction({
+						generated: true,
+						shouldAutoAccept: this.shouldAutoAccept,
+						openProposalView: this.onOpenProposalView,
+					})
 				);
 			} else {
 				op.finish('Note is already well-placed');
@@ -385,13 +391,15 @@ export class OrganizeModule {
 		if (movedCount > 0) parts.push(`${movedCount} moved`);
 		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
 		if (errorCount > 0) parts.push(`${errorCount} failed`);
-		// Review action only when at least one new-directory proposal remains
-		// pending after any auto-accept (#340).
+		// Review action only when a new-directory proposal was generated AND
+		// organize auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
 			parts.length > 0 ? parts.join(', ') : 'No changes needed',
-			proposalCount - autoAcceptedCount > 0
-				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
-				: undefined
+			reviewAction({
+				generated: proposalCount > 0,
+				shouldAutoAccept: this.shouldAutoAccept,
+				openProposalView: this.onOpenProposalView,
+			})
 		);
 
 		// Generate organize summary with move diagram

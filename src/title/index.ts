@@ -1,6 +1,6 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, NotificationManager, generateId, readNote, isPathExcluded } from '../shared';
+import { AIClient, NotificationManager, generateId, readNote, isPathExcluded, reviewAction } from '../shared';
 import { TitleProposalStore } from './title-store';
 import { TitleSuggester } from './title-suggester';
 import { isUntitled } from './title-detector';
@@ -71,8 +71,13 @@ export class TitleModule {
 	/**
 	 * Check if a note has an "Untitled" name and generate a title proposal.
 	 * Called after any Synapse operation completes on a note.
+	 *
+	 * `options.postOp` marks an automatic post-op invocation (the chained
+	 * `checkTitle` after a primary action), which suppresses the secondary
+	 * "Title proposal ready" Review toast entirely (#366). The proposal still
+	 * lands in the unified view for review at the user's leisure.
 	 */
-	async checkUntitled(filePath: string): Promise<void> {
+	async checkUntitled(filePath: string, options?: { postOp?: boolean }): Promise<void> {
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) return;
 
@@ -102,14 +107,20 @@ export class TitleModule {
 
 			await this.store.save(proposal);
 			const autoAccepted = await this.maybeAutoAccept(proposal);
-			// Title's check is silent until a proposal is actually pending: surface
-			// a Review toast so the otherwise-silent title flow is reachable, but
-			// never for an auto-accepted (already-applied) proposal (#340).
+			// Title's check is otherwise silent: the success toast exists ONLY to
+			// carry the Review button, so emit it only when the centralized gate
+			// yields an action — never for an auto-accepted (already-applied)
+			// proposal, and never as an automatic post-op side effect (#366).
 			if (!autoAccepted) {
-				this.notifications.success('Title proposal ready', undefined, {
-					label: 'Review',
-					onClick: () => this.onOpenProposalView?.(),
+				const action = reviewAction({
+					generated: true,
+					shouldAutoAccept: this.shouldAutoAccept,
+					openProposalView: this.onOpenProposalView,
+					postOp: options?.postOp,
 				});
+				if (action) {
+					this.notifications.success('Title proposal ready', undefined, action);
+				}
 			}
 			await this.refreshView();
 		} catch (error) {
@@ -121,8 +132,11 @@ export class TitleModule {
 	/**
 	 * Check if a note's title still matches its content after modification.
 	 * Called after content-modifying operations (elaboration accept, transcription, etc.)
+	 *
+	 * `options.postOp` (see {@link checkUntitled}) suppresses the secondary
+	 * Review toast for automatic post-op invocations (#366).
 	 */
-	async checkMismatch(filePath: string): Promise<void> {
+	async checkMismatch(filePath: string, options?: { postOp?: boolean }): Promise<void> {
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) return;
 
@@ -153,13 +167,19 @@ export class TitleModule {
 
 			await this.store.save(proposal);
 			const autoAccepted = await this.maybeAutoAccept(proposal);
-			// As in checkUntitled: a Review toast unless the proposal was already
-			// applied via auto-accept (#340).
+			// As in checkUntitled: surface the Review toast only when the gate
+			// yields an action — not for an auto-accepted proposal, and not as an
+			// automatic post-op side effect (#366).
 			if (!autoAccepted) {
-				this.notifications.success('Title proposal ready', undefined, {
-					label: 'Review',
-					onClick: () => this.onOpenProposalView?.(),
+				const action = reviewAction({
+					generated: true,
+					shouldAutoAccept: this.shouldAutoAccept,
+					openProposalView: this.onOpenProposalView,
+					postOp: options?.postOp,
 				});
+				if (action) {
+					this.notifications.success('Title proposal ready', undefined, action);
+				}
 			}
 			await this.refreshView();
 		} catch (error) {
@@ -171,8 +191,13 @@ export class TitleModule {
 	/**
 	 * Run both untitled detection and mismatch detection on a note.
 	 * Convenience method for post-operation hooks.
+	 *
+	 * In production this is ALWAYS a chained post-op side effect (main.ts wires
+	 * it after primary actions; the title module registers no direct command),
+	 * so callers pass `{ postOp: true }` to suppress the secondary Review toast
+	 * (#366). The flag is threaded through to checkUntitled/checkMismatch.
 	 */
-	async checkTitle(filePath: string): Promise<void> {
+	async checkTitle(filePath: string, options?: { postOp?: boolean }): Promise<void> {
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) return;
 
@@ -181,9 +206,9 @@ export class TitleModule {
 		if (isPathExcluded(file.path, 'title', this.getSettings())) return;
 
 		if (isUntitled(file.basename)) {
-			await this.checkUntitled(filePath);
+			await this.checkUntitled(filePath, options);
 		} else {
-			await this.checkMismatch(filePath);
+			await this.checkMismatch(filePath, options);
 		}
 	}
 

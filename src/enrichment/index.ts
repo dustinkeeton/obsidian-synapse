@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import {
 	FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter,
 	CheckpointManager, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
-	isPathExcluded, matchesExcludeTag, findMatchingRule,
+	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
@@ -184,9 +184,11 @@ export class EnrichmentModule {
 		this.dispatchDeferredTasks(tasks);
 		genOp.finish(
 			`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
-			proposalCount - autoAcceptedCount > 0
-				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
-				: undefined
+			reviewAction({
+				generated: proposalCount > 0,
+				shouldAutoAccept: this.shouldAutoAccept,
+				openProposalView: this.onOpenProposalView,
+			})
 		);
 		if (autoAcceptedCount > 0) {
 			this.notifications.info(
@@ -360,13 +362,15 @@ export class EnrichmentModule {
 		// Mark checkpoint completed and dispatch deferred tasks (I1)
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
-		// Review action only when at least one proposal remains pending after
-		// any batch auto-accept (#340).
+		// Review action only when something was generated AND enrichment
+		// auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
 			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
-			proposalCount - autoAcceptedCount > 0
-				? { label: 'Review', onClick: () => this.onOpenProposalView?.() }
-				: undefined
+			reviewAction({
+				generated: proposalCount > 0,
+				shouldAutoAccept: this.shouldAutoAccept,
+				openProposalView: this.onOpenProposalView,
+			})
 		);
 		if (autoAcceptedCount > 0) {
 			this.notifications.info(
@@ -381,8 +385,18 @@ export class EnrichmentModule {
 	 * Generate an enrichment proposal for a note.
 	 * Called by main.ts callbacks after other processes complete,
 	 * or directly via command for manual enrichment.
+	 *
+	 * `options.postOp` marks the call as an automatic post-op side effect (the
+	 * chained auto-enrich after elaboration/transcription/summarize/deep-dive),
+	 * which suppresses the SECONDARY Review toast so auto-accepting a PRIMARY
+	 * action doesn't surface an unrelated enrichment Review prompt every time
+	 * (#366). The direct `enrich-current-note` command omits it and keeps Review.
 	 */
-	async enrich(filePath: string, trigger: EnrichmentTrigger): Promise<void> {
+	async enrich(
+		filePath: string,
+		trigger: EnrichmentTrigger,
+		options?: { postOp?: boolean }
+	): Promise<void> {
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) return;
 
@@ -414,10 +428,16 @@ export class EnrichmentModule {
 			this.topicExtractor.clearPending();
 			if (id) {
 				// Review action only when the proposal stays pending — auto-accept
-				// (applied right after) leaves nothing to review (#340).
+				// (applied right after) leaves nothing to review, and an automatic
+				// post-op run suppresses the secondary Review prompt entirely (#366).
 				op.finish(
 					'Enrichment proposal created',
-					this.shouldAutoAccept() ? undefined : { label: 'Review', onClick: () => this.onOpenProposalView?.() }
+					reviewAction({
+						generated: true,
+						shouldAutoAccept: this.shouldAutoAccept,
+						openProposalView: this.onOpenProposalView,
+						postOp: options?.postOp,
+					})
 				);
 				// Single-note path is final here (no Phase 4 merge), so the
 				// stored proposal is fully formed — safe to auto-accept (#228).
