@@ -320,7 +320,7 @@ describe('SynapseSettingTab — General section / auto-fold properties (#381)', 
 		return { view: { containerEl }, isCollapsed: () => classes.has(PROPERTIES_COLLAPSED_CLASS) };
 	}
 
-	/** Render ONLY the General section so the lone toggle is unambiguous. */
+	/** Render ONLY the General section so its toggles are unambiguous. */
 	function renderGeneral(
 		mutate?: (s: SynapseSettings) => void,
 		activeView?: unknown,
@@ -342,7 +342,10 @@ describe('SynapseSettingTab — General section / auto-fold properties (#381)', 
 		return { plugin, settings, saveSettings, containerEl, getActiveViewOfType };
 	}
 
+	// Toggles render in source order: auto-fold (#381) first, then update
+	// notifications (#365).
 	const generalToggle = () => ToggleComponent.instances[0];
+	const updateToggle = () => ToggleComponent.instances[1];
 
 	it('renders a "General" accordion section', () => {
 		const { containerEl } = renderGeneral();
@@ -352,7 +355,8 @@ describe('SynapseSettingTab — General section / auto-fold properties (#381)', 
 
 	it('renders the auto-fold toggle reflecting the stored setting (on)', () => {
 		renderGeneral((s) => { s.ui.autoFoldProperties = true; });
-		expect(ToggleComponent.instances).toHaveLength(1);
+		// Two General toggles now: auto-fold (#381) + update notifications (#365).
+		expect(ToggleComponent.instances).toHaveLength(2);
 		expect(generalToggle().getValue()).toBe(true);
 	});
 
@@ -388,5 +392,19 @@ describe('SynapseSettingTab — General section / auto-fold properties (#381)', 
 		await generalToggle()._trigger(false);
 		expect(isCollapsed()).toBe(false);
 		expect(getActiveViewOfType).not.toHaveBeenCalled();
+	});
+
+	it('renders the update-notifications toggle reflecting the stored setting', () => {
+		renderGeneral((s) => { s.updates.enableUpdateNotifications = false; });
+		expect(updateToggle().getValue()).toBe(false);
+	});
+
+	it('persists the update-notifications flag and saves when the toggle changes', async () => {
+		const { plugin, saveSettings } = renderGeneral(
+			(s) => { s.updates.enableUpdateNotifications = true; },
+		);
+		await updateToggle()._trigger(false);
+		expect(plugin.settings.updates.enableUpdateNotifications).toBe(false);
+		expect(saveSettings).toHaveBeenCalled();
 	});
 });

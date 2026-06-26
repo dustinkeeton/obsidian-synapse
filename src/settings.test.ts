@@ -61,6 +61,17 @@ describe('onboarding settings (#89)', () => {
 	});
 });
 
+describe('update settings (#365)', () => {
+	it('enables update notifications by default', () => {
+		expect(DEFAULT_SETTINGS.updates.enableUpdateNotifications).toBe(true);
+	});
+
+	it('starts with no recorded check or dismissed version', () => {
+		expect(DEFAULT_SETTINGS.updates.lastUpdateCheck).toBeUndefined();
+		expect(DEFAULT_SETTINGS.updates.dismissedUpdateVersion).toBeUndefined();
+	});
+});
+
 describe('UI settings — auto-fold properties (#381)', () => {
 	it('defaults autoFoldProperties to false (opt-in)', () => {
 		expect(DEFAULT_SETTINGS.ui.autoFoldProperties).toBe(false);
