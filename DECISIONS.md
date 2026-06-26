@@ -4,6 +4,46 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-26: Idempotency foundation — scoping spike (#390)
+
+**Context**: Synapse has no shared notion of *idempotency* — same input → same outcome, repeating an operation doesn't multiply its effects. This spike investigated three layers and confirmed the current state against the live code (all citations verified in-tree):
+
+- **Proposals (no idempotency).** IDs are random, never content-addressed: every store builds ids from the shared `generateId()` (timestamp + `Math.random()`, `src/shared/id-utils.ts:8`), and elaboration's proposer carries its *own* `Math.random()`-based UUID generator (`src/elaboration/proposer.ts:89` → `:284`). `ElaborationModule.scanVault()` (`src/elaboration/index.ts:201`) has **no "already proposed?" guard** — Phase 3 calls `proposer.generate()` then `store.save()` unconditionally for every detected note (`:272`–`287`). `ProposalStore.save()` names files `<base>-<id.slice(0,8)>.json` (`src/elaboration/proposal-store.ts:99`), so a random id per run means a *second* file per re-scan. **Repro:** run "Scan vault" twice on one unchanged stub note → two pending proposals, two files, two random ids. `maxProposalsPerNote` is **dead code** — declared (`src/settings.ts:57`), defaulted to 3 (`:362`), referenced by **zero** module code (grep-confirmed; already flagged in `src/elaboration/AGENTS.md:204`). The same random-id + unconditional-save shape repeats across enrichment, organize, deep-dive, summarize, rem, title, tidy, image, audio, video stores.
+- **Notices (no idempotency).** `NotificationManager.info()/success()/error()/confirm()` each build a fresh `new Notice` per call (`src/shared/notifications.ts:344`,`:368`,`:436`,`:292`) — no equal-message dedup, no throttle. There are 24 `new Notice` sites total; ~16 are **ad-hoc** outside the manager (`src/main.ts`, `src/transcription/unified-modal.ts`, `src/views/unified-proposal-view.ts`, `src/image/extractor.ts`, `src/elaboration/image-analyzer.ts`, `src/shared/fire-and-forget.ts`, …), so they bypass any future manager-level throttle.
+- **AI requests (no idempotency).** `AIClient.complete()` → `chat()` (`src/shared/ai-client.ts:275`–`299`) dispatches a provider request on every call — no `(messages, provider, model, temperature, maxTokens)` → response cache and no in-flight coalescing. No content hashing exists anywhere in `src/` today (grep-confirmed).
+- **Reusable primitives already in-tree.** intake's in-flight `Set<string>` + per-path debounce (`src/intake/index.ts:69`,`:189`) is the model for request coalescing; `CheckpointManager.withLock()` per-id mutex over atomic `adapter.write` (`src/shared/checkpoint-manager.ts:279`) is the model for safe read-modify-write of a content-keyed store.
+
+**Decision** (recommendation; no production code shipped in this spike — only `DECISIONS.md` + follow-up issues #395–#398):
+
+- **Idempotency key, per layer.**
+  - *Proposal:* deterministic hash of `normalize(notePath) + contentHash(originalContent) + serialize(detectionReasons) + the AI/detection settings that change output` (provider, model, temperature, maxTokens, relevant detection thresholds). Key on **inputs only** — never the model's output.
+  - *Notice:* `level + message` within a short window.
+  - *AI request:* hash of the fully-resolved request (messages + provider + model + temperature + maxTokens).
+- **Deterministic hashing.** Add one dependency-free hash primitive to `src/shared/` (e.g. `src/shared/hash-utils.ts`, a stable FNV-1a/`djb2`-style string hash, exported via `src/shared/index.ts`). No `Math.random()`, no `Date.now()` in the key. This is also the seam to *replace* the per-store random ids with content-addressed ids over time.
+- **Shared dedup primitive.** A small `src/shared/` helper (working name `idempotency`/`content-key`) exposing: (a) `contentKey(parts: string[]): string` over the hash primitive; (b) an in-flight coalescer (`Map<string, Promise<T>>`, generalizing intake's `Set<string>`) so concurrent identical work shares one Promise; (c) a "seen key" lookup contract that stores implement against their existing persistence, guarded by the checkpoint-manager `withLock` mutex pattern for atomic read-modify-write. Stores keep owning their files; the primitive owns the key + coalescing + lock discipline.
+- **Enforcement altitude, per layer.** Dedup the **generate+save** path for proposals (that is the expensive, duplicating one); rendering stays a pure read of the deduped store. Notices dedup at **render** (the manager). AI requests coalesce at **call** time and optionally cache the response. "Both" is unnecessary anywhere.
+- **LLM non-determinism at temperature > 0.** Because every key is over **inputs**, an unchanged note never re-generates regardless of sampling. A response cache is the one place output is frozen — so **gate AI response caching on `temperature === 0`** (or an explicit opt-in) and never cache error responses.
+- **Coverage.** All seven pipeline phases share the random-id + unconditional-save pattern, and the `fire`/`fireOnFile` runner (`src/pipeline/synapse-runner.ts:14`,`:70`) simply calls each module's scan with `onlyFile` — it adds **no** dedup of its own, so fixing the per-module stores (starting with elaboration) is what makes Fire Synapse idempotent too.
+
+**Phased plan** (cheapest win first):
+
+1. **Proposal dedup by content key + revive `maxProposalsPerNote`** (#395) — highest value, lowest risk; de-risks the whole effort and kills the scan-twice duplicate.
+2. **Notice throttle/dedup + centralize the ad-hoc `new Notice` sites** (#396) — small, user-visible, unblocks the #366 Review-button work.
+3. **AI-request coalescing + opt-in response cache** (#397) — deeper; saves spend on any path that does call the model.
+4. **Prompt-injection gating for fetched external content** (#398) — hardening; injected instructions are also an idempotency/stability vector.
+
+**Alternatives considered**:
+- **Content-address every store at once (big-bang).** Rejected — sequence behind a shared primitive and migrate stores incrementally (elaboration first) so each lands with tests and no cross-module churn.
+- **Throttle notices only inside `NotificationManager`.** Insufficient alone — ~16 ad-hoc `new Notice` sites bypass it; the fix must also route them through a centralized helper.
+- **Cache AI responses unconditionally.** Rejected — at temperature > 0 that freezes a single sample and changes behavior; gate on `temperature === 0`/opt-in.
+- **Persist a separate idempotency ledger.** Rejected for now — proposals are already files on disk; look up by content key in the existing store under the `withLock` mutex rather than add a parallel index to keep in sync.
+
+**Rationale**: The cheapest, highest-leverage win is proposal dedup — it removes the visible "scan twice → duplicate proposals" bug, finally enforces a long-dead setting, and forces the shared hash + content-key primitive that the notice and AI layers reuse. Keying on inputs (not outputs) is what makes idempotency hold even with a non-deterministic model.
+
+**Impact**: No code changed by this spike (constraint: only `DECISIONS.md`). Follow-ups filed: **#395** (proposal dedup + `maxProposalsPerNote`), **#396** (notice throttle/dedup + centralized helper), **#397** (AI coalescing/cache), **#398** (prompt-injection gating) — all labeled `enhancement`, milestone *v1.1.0 — Post Release*. Acceptance for the bundle: re-running a command on unchanged inputs produces **no new proposal and no new equal notice**. Cross-agent note: the centralized notification helper (#396) and the proposal content-key (#395) are the two pieces the Review-button gating work (#366) should build on.
+
+---
+
 ## 2026-06-25: Audit pass (1.0.6) — redaction now guards the operation-error console sink; command-name normalization
 
 **Context**: A periodic codebase audit reviewed the plugin at version 1.0.6. The module graph is still acyclic and the code security-mature, but two small gaps surfaced. (1) `NotificationManager` routed three error sinks through `redactSecrets` — the `error()` toast, `notifyError`, and `showErrorNotice` — but the per-*operation* failure path still did a raw `console.error(message)`. That was the one remaining spot where an API key echoed into an operation error could reach the console unredacted. (2) One command name broke the all-lowercase palette convention ("REM: **D**iscover links in current note").
