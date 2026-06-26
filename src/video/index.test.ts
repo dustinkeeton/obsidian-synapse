@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { TFile } from '../__mocks__/obsidian';
 import { VideoModule } from './index';
+import { DependencyMissingError } from './audio-extractor';
 import type { VideoMetadata } from './types';
 
 /**
@@ -149,5 +150,66 @@ describe('VideoModule.downloadVideoToVault', () => {
 		const result = await callDownload(mod, { title: 'Busy Video' });
 
 		expect(result).toMatch(/^Media\/\d{4}-\d{2}-\d{2}-Busy Video-2\.mp4$/);
+	});
+});
+
+/**
+ * processUrl must preserve a typed DependencyMissingError (yt-dlp/ffmpeg missing)
+ * so the summarize layer can route it to the "Open settings" onboarding notice
+ * (#382); every other extraction failure stays flattened to the generic string.
+ */
+describe('VideoModule.processUrl dependency-error preservation (#382)', () => {
+	function makeModule(extractFromUrl: ReturnType<typeof vi.fn>): VideoModule {
+		const getSettings = () =>
+			({
+				video: {
+					enabled: true,
+					downloadFolder: '',
+					tempFolder: '.synapse/temp',
+					ffmpegPath: 'ffmpeg',
+					ytDlpPath: 'yt-dlp',
+				},
+			}) as never;
+		const plugin = { app: {} } as never;
+		const mod = new VideoModule(
+			plugin,
+			getSettings,
+			{} as never,
+			{} as never,
+			{} as never,
+			{} as never
+		);
+		(mod as unknown as { extractor: { extractFromUrl: ReturnType<typeof vi.fn> } }).extractor = {
+			extractFromUrl,
+		} as never;
+		return mod;
+	}
+
+	it('rethrows a DependencyMissingError unchanged so callers can detect it', async () => {
+		const dep = new DependencyMissingError(
+			'yt-dlp',
+			'yt-dlp not found — install it or set the full path in settings'
+		);
+		const mod = makeModule(vi.fn().mockRejectedValue(dep));
+
+		const thrown = await mod
+			.processUrl('https://www.tiktok.com/@user/video/123')
+			.catch((e: unknown) => e);
+
+		expect(thrown).toBe(dep);
+		expect(thrown).toBeInstanceOf(DependencyMissingError);
+		expect((thrown as DependencyMissingError).tool).toBe('yt-dlp');
+	});
+
+	it('flattens a non-dependency extraction failure to the generic wrapper message', async () => {
+		const mod = makeModule(vi.fn().mockRejectedValue(new Error('boom')));
+
+		const thrown = await mod
+			.processUrl('https://www.tiktok.com/@user/video/123')
+			.catch((e: unknown) => e);
+
+		expect(thrown).toBeInstanceOf(Error);
+		expect(thrown).not.toBeInstanceOf(DependencyMissingError);
+		expect((thrown as Error).message).toMatch(/Download\/audio extraction failed: boom/);
 	});
 });

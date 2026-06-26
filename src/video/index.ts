@@ -9,7 +9,7 @@ import {
 } from '../shared';
 import type { TimeRange } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
-import { AudioExtractor } from './audio-extractor';
+import { AudioExtractor, DependencyMissingError } from './audio-extractor';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
 
 export type {
@@ -84,6 +84,10 @@ export class VideoModule {
 		try {
 			extraction = await this.extractor.extractFromUrl(validatedUrl);
 		} catch (e) {
+			// Preserve a typed dependency-missing error (yt-dlp/ffmpeg) so callers
+			// up the chain can surface an actionable "Open settings" notice (#382);
+			// only other failures get flattened to the generic wrapper string.
+			if (e instanceof DependencyMissingError) throw e;
 			throw new Error(`Download/audio extraction failed: ${e instanceof Error ? e.message : String(e)}`);
 		}
 
