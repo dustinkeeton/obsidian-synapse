@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-19
+last-updated: 2026-06-25
 ---
 
 # Synapse — Agent Reference
@@ -41,8 +41,12 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes | `OrganizeModule`, types |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
 | title | `src/title/` | AI title suggestions for untitled/mismatched notes | `TitleModule`, types |
-| shared | `src/shared/` | AI client (multi-modal), file utils, validation, notifications, callouts, frontmatter, checkpoints, credential metadata + validation | `AIClient`, `NotificationManager`, `CheckpointManager`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, file/validation utils, callout registry, id-utils |
+| shared | `src/shared/` | AI client (multi-modal), file utils, validation, notifications, callouts, frontmatter, checkpoints, credential metadata + validation, secret redaction, update check, title predicates | `AIClient`, `NotificationManager`, `CheckpointManager`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, file/validation utils, callout registry, id-utils |
 | views | `src/views/` | Unified proposal/checkpoint sidebar + registry-driven Synapse actions sidebar | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `SynapseActionsView`, `SYNAPSE_ACTIONS_VIEW_TYPE` |
+| onboarding | `src/onboarding.ts` | First-run welcome gate + required-API-key emphasis (#89) | `needsApiKey`, `planFirstRun`, `applyApiKeyEmphasis`, `FirstRunPlan`, `WELCOME_MESSAGE` |
+| brand-icons | `src/brand-icons.ts` | Registers Synapse SVG icons (S-Signal identity mark + feature glyphs) | `registerSynapseIcons`, `SYNAPSE_ICONS`, `SYNAPSE_ICON_SVG` |
+| changelog | `src/changelog.ts`, `src/changelog-modal.ts` | In-app "What's new" modal; parses build-inlined `CHANGELOG.md` (#375) | `parseChangelog`, `renderChangelog`, `stripInlineMarkdown`, `ChangelogEntry`, `ChangelogSection`, `ChangelogModal` |
+| properties-fold | `src/properties-fold.ts` | Auto-fold a note's Properties panel on open (#381) | `registerPropertiesAutoFold`, `applyPropertiesFold`, `foldActiveNoteProperties`, `foldPropertiesIn` |
 
 ## Dependency Graph
 
@@ -92,23 +96,26 @@ Key constraints:
 ```
 onload()
   |-- loadSettings()  (deepMerge over DEFAULT_SETTINGS; one-time excludeFolders -> exclusions migration, #307)
-  |-- addIcon('synapse', ...)  (brand S-Signal mark; registered before any ribbon use)
+  |-- registerSynapseIcons()  (brand-icons.ts; registers all synapse-* glyphs before any ribbon/setIcon/view use)
   |-- migrateDataFolder()  (.auto-notes -> .synapse, one-time)
   |-- new NotificationManager(); status bar attached on desktop only
   |-- new CheckpointManager(app)  (single instance, injected into all modules)
   |-- new CommandRegistrar(this)
   |-- construct modules (audio before video; video desktop-only); each gets a () => autoAccept[kind] getter
+  |-- new UpdateChecker({ currentVersion, app, notifications, getSettings, saveSettings })  (#365)
   |-- registerView(UNIFIED_VIEW_TYPE), registerView(SYNAPSE_ACTIONS_VIEW_TYPE)
+  |-- registerPropertiesAutoFold(this, () => settings)  (#381; auto-fold note Properties on open)
   |-- wire onViewRefreshNeeded / onOpenProposalView / cross-module callbacks
   |-- await <module>.onload() for each settings.<feature>.enabled module
   |-- addRibbonIcon x3; registrar.register(...) for main commands
   |-- startupTimeout = setTimeout(checkForIncompleteCheckpoints, 3000)
+  |-- updateCheckTimeout = setTimeout(updateChecker.maybeCheck, 5000)  (#365; self-gated, once/day)
   |-- build PipelineModuleMap + SynapseRunner; construct IntakeModule (deps injected)
   |-- auditCommands(registrar.getAttempted())  (logs drift)
   +-- runFirstRunOnboarding()  (#89)
 
 onunload()
-  |-- clearTimeout(startupTimeout)
+  |-- clearTimeout(startupTimeout); clearTimeout(updateCheckTimeout)
   |-- <module>?.onunload() for every module (optional-chained; video may be null)
   +-- notifications.dispose()  (tears down in-flight operation ellipsis intervals + hides notices so a
                                 disable mid-operation never leaks an orphaned 400ms setInterval on a detached toast)
@@ -140,7 +147,7 @@ Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries
 | `synapse:scan-vault-summarize` | Scan folder for notes to summarize | callback | summarize | p, f | active | summarize |
 | `synapse:tidy-current-note` | Tidy current note | editorCallback | tidy | p | active | |
 | `synapse:undo-tidy` | Undo last tidy on current note | editorCallback | tidy | p | disabled | |
-| `synapse:rem-current-note` | REM: Discover links in current note | editorCallback | rem | p | active | |
+| `synapse:rem-current-note` | REM: discover links in current note | editorCallback | rem | p | active | |
 | `synapse:rem-directory` | Scan folder for links | callback | rem | p, f | active | rem |
 | `synapse:check-dependencies` | Check external tool availability | callback | video | p | active | |
 | `synapse:tidy-vault` | Scan folder for notes to tidy | (synthetic) | tidy | f | active | tidy |
@@ -149,11 +156,13 @@ Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries
 
 ## Ribbon Icons
 
+All ribbon glyphs are custom Synapse brand icons registered by `registerSynapseIcons()` (`src/brand-icons.ts`).
+
 | Icon | Label | Action |
 |------|-------|--------|
 | `synapse` | Review proposals | Opens unified proposal sidebar |
-| `mic` | Transcribe media | Opens unified transcription modal (desktop only) |
-| `layout-grid` | Synapse actions | Opens registry-driven actions sidebar |
+| `synapse-transcribe` | Transcribe media | Opens unified transcription modal (desktop only) |
+| `synapse-actions` | Synapse actions | Opens registry-driven actions sidebar |
 
 ## View Types
 
@@ -270,6 +279,8 @@ SynapseSettings {
     autoDetectTemplates: boolean                    // default: true
     excludeTags: string[]                           // default: ['no-summarize']
     autoOrganizeOnSummarize: boolean                // default: false
+    includeNoteContent: boolean                     // default: true (summarize the note's own prose as an extra item, #367)
+    combineSummaries: boolean                       // default: true (emit one combined summary instead of a callout per item, #367)
   }
   tidy: TidySettings {
     enabled: boolean                                // default: true
@@ -316,7 +327,8 @@ SynapseSettings {
     captureLogFolder: string                        // default: '_captured'
   }
   ui: UISettings {
-    collapsedSections: Record<string, boolean>      // default: {} (settings accordion state)
+    collapsedSections: Record<string, boolean>      // default: {} (settings accordion state, #235)
+    autoFoldProperties: boolean                     // default: false (fold note Properties panel on open, #381)
   }
   autoAccept: AutoAcceptSettings {                  // Record<ProposalKind, boolean>, all default false
     elaboration: boolean                            // default: false
@@ -328,6 +340,11 @@ SynapseSettings {
   }
   onboarding: OnboardingSettings {
     hasSeenWelcome: boolean                         // default: false (first-run welcome gate, #89)
+  }
+  updates: UpdateSettings {                          // in-app "newer release available" check (#365)
+    enableUpdateNotifications: boolean              // default: true (master toggle)
+    lastUpdateCheck?: number                        // epoch ms of last GitHub check (success or failure); absent until first check
+    dismissedUpdateVersion?: string                 // newest version already notified; absent until first notice
   }
   exclusions: ExclusionRule[]                        // centralized per-path exclusion (#307); default 2 rules (see below)
 }
@@ -491,7 +508,7 @@ Framework: Vitest, globals enabled, node environment.
 - URLs validated via `sanitizeUrl()` before external tool invocation
 - Paths validated via `sanitizePath()` (rejects `..`, null bytes, shell metacharacters)
 - AI output sanitized via `sanitizeAIResponse()` before vault writes
-- Secret redaction centralized in `shared/redact.ts` (`redactSecrets`); both `ai-client.ts` (upstream error bodies) and `api-utils.ts:notifyError` (user/console errors) route through it — single source of truth, re-exported from `ai-client` and the `shared` barrel. Covers `sk-`/`sk-ant-`, `key-`, Deepgram `dg-`, `Bearer `/`Token ` headers, `anthropic-`, and Google `AIza` keys
+- Secret redaction centralized in `shared/redact.ts` (`redactSecrets`); the AI client (`ai-client.ts`, upstream error bodies), the notification manager (`notifications.ts` — every error sink: the operation-error `console.error`, `showErrorNotice`, and the `NotificationManager.notifyError` method), and credential validation (`credential-validator.ts`, probe error bodies) all route through it — single source of truth, re-exported from `ai-client` and the `shared` barrel. Covers `sk-`/`sk-ant-`, `key-`, Deepgram `dg-`, `Bearer `/`Token ` headers, `anthropic-`, and Google `AIza` keys
 - Credential validation (`shared/credential-validator.ts`, `validateCredentials`) probes each provider with a single minimal GET (probe specs in `shared/provider-metadata.ts`); every result message routes through `redactSecrets`, so a key echoed in a 401/400 body cannot reach the status chip. One-shot (no retry), 10s timeout, `throw:false`. Validation state is ephemeral (never persisted to settings)
 - Multipart transcription bodies (`audio/transcriber.ts:buildMultipartBody`) sanitize vault-/settings-derived field names and file names via `sanitizeMultipartHeaderValue` (strips CR/LF, replaces `"`/`\` with `_`) to block `Content-Disposition` header / multipart injection
 - Gemini audio transcription places its instruction in `system_instruction` (not the user turn beside the audio) so speech inside untrusted audio cannot override the prompt (prompt-injection hardening)

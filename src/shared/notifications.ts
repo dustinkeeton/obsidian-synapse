@@ -268,7 +268,11 @@ export class NotificationManager {
 				// Duration is ignored for errors (showErrorNotice forces persist);
 				// pass 0 to document the persist-until-dismissed intent.
 				this.completeOperation(opId, 'error', message, 'error', 0);
-				console.error(`[Synapse] ${op.label}:`, message);
+				// Redact before the console sink too: the toast (via showErrorNotice)
+				// is already redacted, so logging the SAME message raw here would be
+				// the one spot a key echoed into an operation error could still leak.
+				// Matches notifyError below — redact.ts is the single source of truth.
+				console.error(`[Synapse] ${op.label}:`, redactSecrets(message));
 			},
 		};
 

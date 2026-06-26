@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-06-19
+last-updated: 2026-06-25
 ---
 
 # organize module
 
-AI-powered semantic directory structuring. Analyzes note content to determine the best directory, moves directly to existing directories or creates proposals for new ones. Supports checkpointed vault scans for resumability.
+AI-powered semantic directory structuring: analyzes note content to pick the best directory, moves directly into existing directories or proposes new ones, runs resumable checkpointed vault scans, and writes Mermaid move-diagram summaries.
 
 ## Public API (`index.ts`)
 
@@ -104,7 +104,7 @@ acceptProposal(id, options?)
   --> OrganizeStore.saveSnapshot()
   --> vault.rename(file, newPath)
   --> OrganizeStore.updateProposalStatus('accepted')
-  --> writeOrganizeSummary(moveRecords)  [.synapse/organize/summaries/]
+  --> writeOrganizeSummary(moveRecords)  [Mermaid move diagram -> .synapse/organize/summaries/]
 
 rejectProposal(id)
   --> OrganizeStore.updateProposalStatus('rejected')
@@ -202,7 +202,7 @@ Out: `ContentAnalyzer` and `DirectoryMatcher` are re-exported for use by `deep-d
 - Move skips if a file already exists at the destination (returns null, does not overwrite).
 - Batch scan coalesces near-identical proposed directories via `batchProposedDirs` map — variants like "model"/"models" resolve to a single folder (#172).
 - `organizeConfidenceThreshold` gates new-directory proposals; `minScoreThreshold` (0.6, hardcoded in `determineAction` call site) gates existing-directory moves.
-- Summary notes written to `.synapse/organize/summaries/{YYYY-MM-DD}-organize-summary.md`.
+- Summary notes (Mermaid `graph LR` move diagram via `generateOrganizeSummary`) written to `.synapse/organize/summaries/{YYYY-MM-DD}-organize-summary.md` by `writeOrganizeSummary` / `buildSummaryPath`.
 - `deep-dive` calls `onOrganizeRequested` which invokes `organizeNote` on accepted deep-dive notes (when `deepDive.autoOrganizeOnAccept` is true).
 
 ## Tests

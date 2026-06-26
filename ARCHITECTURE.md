@@ -1,10 +1,10 @@
 # Architecture Overview
 
-**Last updated**: 2026-06-20 · **Version**: 1.0.3
+**Last updated**: 2026-06-25 · **Version**: 1.0.6
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, and in-place wikilink discovery (REM). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile (video and media-clipping features are desktop-only).
 
-The codebase has **17 modules under `src/`** (audio, commands, deep-dive, elaboration, enrichment, image, intake, organize, pipeline, rem, shared, summarize, tidy, title, transcription, video, views) plus the top-level `main.ts`, `settings.ts`, `settings-tab.ts`, and a small pure `onboarding.ts` (first-run welcome, #89).
+The codebase has **17 modules under `src/`** (audio, commands, deep-dive, elaboration, enrichment, image, intake, organize, pipeline, rem, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts`, `settings.ts`, `settings-tab.ts`, a small pure `onboarding.ts` (first-run welcome, #89), `brand-icons.ts` (Synapse SVG icons), `changelog.ts`/`changelog-modal.ts` (in-app "What's new", #375), and `properties-fold.ts` (auto-fold note Properties, #381).
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -107,6 +107,10 @@ src/
 ├── settings.ts             # Type definitions, defaults, model options (type-only imports of ProposalKind + ExclusionRule)
 ├── settings-tab.ts         # Obsidian settings UI (video section gated behind Platform.isDesktop)
 ├── onboarding.ts           # Pure first-run welcome logic (#89): planFirstRun, needsApiKey
+├── brand-icons.ts          # registerSynapseIcons(): S-Signal mark + per-feature glyphs (before any ribbon/setIcon use)
+├── changelog.ts            # parseChangelog/renderChangelog of the build-inlined CHANGELOG.md (#375)
+├── changelog-modal.ts      # ChangelogModal — in-app "What's new" (#375)
+├── properties-fold.ts      # registerPropertiesAutoFold(): auto-fold note Properties panel on open (#381)
 │
 ├── commands/               # Command registry (base layer; imports nothing in src/)
 │   ├── registry.ts         #   COMMAND_REGISTRY source of truth + flow/status/context gates
@@ -125,8 +129,8 @@ src/
 │   └── index.ts            #   IntakeModule (debounce, idempotency, fireOnFile)
 │
 ├── rem/                    # In-place [[wikilink]] discovery
-│   ├── mention-scanner.ts  #   Literal title/alias matches
-│   ├── semantic-matcher.ts #   Optional AI semantic matches
+│   ├── mention-scanner.ts  #   Literal title/alias matches (down-weighted by titleMatchWeight, #380)
+│   ├── semantic-matcher.ts #   Always-on AI semantic matches (#380)
 │   ├── rem-applier.ts      #   Insert wikilinks into note body
 │   ├── rem-store.ts        #   Proposal persistence
 │   └── index.ts            #   RemModule orchestrator
@@ -220,7 +224,10 @@ src/
 │   ├── checkpoint-manager.ts #  Checkpoint/resume for long-running operations
 │   ├── checkpoint-types.ts #   Checkpoint type definitions
 │   ├── id-utils.ts         #   ID generation and validation
-│   ├── notifications.ts    #   Centralized notification system (+ dispose() teardown on unload)
+│   ├── notifications.ts    #   Centralized notifications: progress, cancellation, action buttons, dispose() teardown
+│   │                       #   every error sink (error/notifyError/operation-error console) routes through redactSecrets
+│   ├── update-checker.ts   #   UpdateChecker/isNewerVersion — once/24h GitHub Releases poll, sticky notice (#365)
+│   ├── title-detector.ts   #   isUntitled/isGenericTitle predicates (shared by title/ and elaboration/)
 │   ├── validation.ts       #   URL, path, AI response sanitization
 │   ├── file-utils.ts       #   Vault file operations
 │   ├── frontmatter-utils.ts#   YAML frontmatter parsing/serialization
@@ -228,7 +235,8 @@ src/
 │   ├── diagram-generator.ts#   Mermaid diagram generation
 │   ├── slider-helper.ts    #   Settings UI helper for range sliders
 │   ├── folder-picker-modal.ts # Modal for folder selection
-│   ├── api-utils.ts        #   Retry logic, error handling (notifyError routes through redactSecrets)
+│   ├── api-utils.ts        #   Retry logic + error handling helpers
+│   ├── markdown.d.ts       #   Ambient `declare module '*.md'` so esbuild can inline CHANGELOG.md (#375)
 │   └── index.ts            #   Barrel export
 │
 └── views/                  # UI components
@@ -393,25 +401,28 @@ sequenceDiagram
 
     O->>M: onload()
     M->>M: loadSettings() (deep-merge + one-time excludeFolders→exclusions migration, #307)
-    M->>M: addIcon('synapse') (brand S-Signal mark, before any ribbon use)
+    M->>M: registerSynapseIcons() (brand S-Signal mark + feature glyphs, before any ribbon/setIcon use)
     M->>M: migrateDataFolder() (.auto-notes -> .synapse)
     M->>M: addSettingTab()
     M->>M: NotificationManager() (status bar on desktop only)
     M->>CK: new CheckpointManager(app)
     M->>Reg: new CommandRegistrar(plugin)
     M->>Mod: Initialize feature modules<br/>(Audio before Video; Video desktop-only; inject CheckpointManager, registrar, shouldAutoAccept getter)
+    M->>M: new UpdateChecker(...) (#365)
     M->>M: registerView(UnifiedProposalView) + registerView(SynapseActionsView)
+    M->>M: registerPropertiesAutoFold(plugin, () => settings) (#381)
     M->>M: Wire view refresh + onOpenProposalView + cross-module callbacks<br/>(enrichment, title, organize)
     M->>Mod: Conditional module.onload()<br/>(registers commands via registrar if enabled)
-    M->>M: addRibbonIcon x3 (synapse; mic [desktop]; layout-grid)
+    M->>M: addRibbonIcon x3 (synapse; synapse-transcribe [desktop]; synapse-actions)
     M->>Reg: registrar.register(main commands)
     M->>CK: startupTimeout = checkForIncompleteCheckpoints() (delayed 3s)
+    M->>M: updateCheckTimeout = updateChecker.maybeCheck() (delayed 5s, self-gated once/day, #365)
     M->>Coord: Build SynapseRunner (inject PipelineModuleMap)<br/>+ IntakeModule (inject IntakeDeps.fireOnFile)
     M->>Reg: auditCommands(attempted) — warn on drift
     M->>M: runFirstRunOnboarding() (#89, fresh installs only)
 
     O->>M: onunload()
-    M->>M: clearTimeout(startupTimeout)
+    M->>M: clearTimeout(startupTimeout); clearTimeout(updateCheckTimeout)
     M->>Mod: module?.onunload() for every module (video may be null)
     M->>M: notifications.dispose() (tear down ellipsis timers + hide notices)
 ```
@@ -833,20 +844,24 @@ SynapseSettings
 |   +-- tagVocabulary   -> TagVocabularyEntry[] (category, tags, description)
 |   +-- weights         -> Same/sibling/cousin/distant folder, decay, minimum
 +-- summarize       -> Style (bullets/paragraph/key-points), max length, templates,
-|                     exclude tags, auto-organize on summarize
+|                     exclude tags, auto-organize on summarize,
+|                     include note content + combine summaries (#367, both default on)
 +-- tidy            -> Snapshot folder path
 +-- organize        -> Proposal/snapshot folder paths, confidence threshold, exclude tags
 +-- deepDive        -> Max depth, quality threshold, max notes, output folder,
 |                     nesting mode, auto-enrich/organize on accept, exclude tags
 +-- title           -> Enabled, proposal folder path, check after operations
-+-- rem             -> Enabled, semantic matching, confidence threshold,
-|                     max links per note, proposal folder path
++-- rem             -> Enabled, title-match weight (#380, no UI), semantic confidence
+|                     threshold, max links per note, proposal folder path
 +-- intake          -> Enabled, watched folder, mark-processed, move-when-done,
 |                     settle seconds, capture log + capture-log folder
-+-- ui              -> collapsedSections (settings accordion state)
++-- ui              -> collapsedSections (settings accordion state),
+|                     autoFoldProperties (#381, default off)
 +-- autoAccept      -> Per-kind booleans (elaboration, enrichment, organize,
 |                     deep-dive, title, rem) — all default false (#228)
 +-- onboarding      -> hasSeenWelcome (first-run welcome gate, #89)
++-- updates         -> enableUpdateNotifications, lastUpdateCheck,
+|                     dismissedUpdateVersion (in-app update check, #365)
 +-- exclusions      -> ExclusionRule[] — centralized per-path exclusion (#307);
                       replaces all former per-module excludeFolders fields
 ```
@@ -865,7 +880,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Desktop gating | `assertDesktop()`/`loadNodeModules()` — Node builtins resolve only on desktop, behind one guarded site; keeps `isDesktopOnly: false` mobile-safe | `shared/node-loader.ts` |
 | Temp-path hardening | Vault-derived basenames sanitized before composing temp paths (2026-06-08) | `transcription/duration-detector.ts` |
 | Multipart header hardening | Vault-/settings-derived field + file names sanitized (`sanitizeMultipartHeaderValue`: strip CR/LF, replace `"`/`\`) before `Content-Disposition` lines — blocks multipart/header injection (2026-06-11) | `audio/transcriber.ts` |
-| API key protection | `redactSecrets()` — **single source of truth** scrubbing keys from error messages/console; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts` + `api-utils.ts`) |
+| API key protection | `redactSecrets()` — **single source of truth** scrubbing keys from error messages/console on **every error path**; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts`, `credential-validator.ts`, and all of `notifications.ts` — `error`/`notifyError`/operation-error `console.error`) |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
 | Credential validation | Live key probe is one minimal authenticated GET; result is **ephemeral** (never persisted) and routed through `redactSecrets` so an echoed key can't reach the status chip | `shared/credential-validator.ts`, `shared/provider-metadata.ts` |
@@ -873,7 +888,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
 | Lifecycle hygiene | `NotificationManager.dispose()` tears down in-flight ellipsis timers + hides notices on unload (no orphaned `setInterval`) | `shared/notifications.ts`, `main.ts:onunload()` |
 
-**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). `data.json` (live API keys) is gitignored and never committed.
+**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). The 2026-06-25 audit pass (v1.0.6) brought the per-operation error `console.error` under `redactSecrets`, so the single redaction source now guards **every** error sink in `notifications.ts`. `data.json` (live API keys) is gitignored and never committed.
 
 **Known posture / not-yet-enforced:**
 - `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths** — there is no active vault-boundary enforcement on writes today.

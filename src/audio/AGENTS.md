@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-19
+last-updated: 2026-06-25
 ---
 
 # Audio Module
@@ -8,7 +8,7 @@ Transcribes audio files from the vault using configurable providers (Whisper API
 
 ## Public API
 
-Barrel (`index.ts`) re-exports: `AudioModule`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry`. `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
+Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry`. `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
 
 ```ts
 class AudioModule {
@@ -19,11 +19,11 @@ class AudioModule {
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
   transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void>
   transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>
-  transcribeAndInsertCombined(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // #214; <2 embeds falls back to transcribeAndInsert
-  transcribeAudioCombined(files: TFile[]): Promise<string>                            // #214; concat (ffmpeg) or sequential fallback -> combined text
+  transcribeAndInsertCombined(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // #214; <2 embeds falls back to transcribeAndInsert; ffmpeg concat (desktop) or per-file text merge (mobile) -> one combined callout
   onTranscriptionComplete: ((filePath: string) => void) | null
 }
 
+function renderAudioSettings(ctx: SettingsSectionContext): void   // settings UI; from settings-section.ts
 function findAudioEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): AudioEmbed[]
 
 // transcriber.ts (module-internal: imported directly, NOT via the barrel)
@@ -47,6 +47,8 @@ interface TranscriptionResult {
   duration?: number
   sourceName: string
   timestamps?: TimestampEntry[]
+  reformatted?: boolean   // #234; true when a content schema (e.g. lyrics) reformatted the transcript
+  schemaId?: string       // #234; id of the schema that reformatted (e.g. 'lyrics')
 }
 
 interface TimestampEntry { start: number; end: number; text: string }
@@ -105,26 +107,38 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 
 ## Note Scanning
 
-`findAudioEmbeds(content, sourcePath, metadataCache)` in `note-scanner.ts`:
-- Regex: `![[*.mp3|wav|m4a|ogg|flac|webm|aac]]`
-- Resolves files via `metadataCache.getFirstLinkpathDest()`
-- Skips embeds with existing transcription callout below (checks 3 lines)
+`findAudioEmbeds(content, sourcePath, metadataCache)` in `note-scanner.ts:L8`:
+- Regex `AUDIO_EMBED_REGEX`: `![[*.mp3|wav|m4a|ogg|flac|webm|aac]]`
+- Resolves files via `metadataCache.getFirstLinkpathDest()`; only `TFile` matches passing `AUDIO_EXTENSIONS` are kept
+- Skips embeds already transcribed via `hasTranscriptionBelow` (`note-scanner.ts:L38`): scans lines `embedLine+1..+3` for the legacy `**Transcription of X**`, the `[!synapse-transcription]` callout, or the `[!...lyrics]` callout `Lyrics of X` (#234)
 - Returns `AudioEmbed[]` with file references and line numbers
 
 ## Settings Keys
 
-All under `settings.audio`:
+All under `settings.audio` (interface `AudioSettings`, `settings.ts:L79`; defaults `settings.ts:L367`):
 
-| Key | Controls |
-|-----|----------|
-| `transcriptionProvider` | Backend: `whisper-api` \| `deepgram` \| `gemini` \| `local-whisper` |
-| `whisperApiKey` | Dedicated OpenAI key (fallback: `ai.apiKey`) |
-| `deepgramApiKey` | Deepgram API key |
-| `geminiApiKey` | Dedicated Gemini key (fallback: `ai.apiKey`) |
-| `whisperModel` | Whisper model name |
-| `language` | Language hint |
-| `autoFormatLyrics` | Auto-detect song transcripts and reformat as structured lyrics (#234); default `true` |
-| `postProcessing.*` | AI cleanup flags |
+| Key | Type | Default | Controls |
+|-----|------|---------|----------|
+| `enabled` | boolean | `true` | Feature toggle for the audio module |
+| `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'gemini' \| 'local-whisper'` | `'whisper-api'` | Transcription backend (routed in `transcriber.ts:L270`) |
+| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey`, `transcriber.ts:L287`) |
+| `deepgramApiKey` | string | `''` | Deepgram API key (no fallback) |
+| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey`, `transcriber.ts:L392`) |
+| `whisperModel` | string | `'whisper-1'` | Whisper model name (multipart `model` field) |
+| `localWhisperPath` | string | `''` | Reserved for `local-whisper` CLI path (provider not implemented) |
+| `language` | string | `''` | Language hint; empty = auto-detect |
+| `autoFormatLyrics` | boolean | `true` | Auto-detect song transcripts and reformat as structured lyrics (#234) |
+| `postProcessing` | `PostProcessingSettings` | see below | AI transcript cleanup block (`settings.ts:L71`) |
+
+`postProcessing` (`PostProcessingSettings`, `settings.ts:L71`), consumed by `post-processor.ts`:
+
+| Key | Type | Default | Controls |
+|-----|------|---------|----------|
+| `postProcessing.enabled` | boolean | `true` | Master switch; off returns the raw transcript unchanged |
+| `postProcessing.removeFiller` | boolean | `true` | Strip filler words / false starts |
+| `postProcessing.addStructure` | boolean | `true` | Add punctuation, paragraph breaks, headers |
+| `postProcessing.extractKeyPoints` | boolean | `false` | Prepend a "Key Points" summary section |
+| `postProcessing.customPrompt` | string | `''` | Extra instruction appended to the cleanup prompt |
 
 Path exclusion: write paths gate on the centralized `settings.exclusions` (#307) via `isPathExcluded(path, 'audio', settings)` (batch insert = silent skip; single-file = `findMatchingRule` Notice). No per-module `excludeFolders`/`excludeTags`.
 

@@ -30,7 +30,7 @@ class TitleModule {
   rejectProposal(id: string): Promise<void>
 }
 
-function isUntitled(basename: string): boolean
+function isUntitled(title: string): boolean
 ```
 
 Note: `TitleModule` does NOT take a `CheckpointManager`. Title proposals are single-note operations; no checkpoint support.
@@ -78,32 +78,42 @@ checkTitle(filePath)  [called by main.ts after enrichment/elaboration/transcript
   --> else: checkMismatch(filePath)
 
 checkUntitled(filePath)
+  --> return if not a TFile, or if !isUntitled(basename)
   --> skip if existing pending proposal for this note
+  --> return if note content empty/whitespace
   --> TitleSuggester.suggestTitle(content, basename)  [AI]
-  --> TitleProposalStore.save(proposal)
-  --> maybeAutoAccept(proposal)  [if shouldAutoAccept(): acceptProposal(id, {silent:true})]
+  --> return if suggested title empty or itself isUntitled()
+  --> TitleProposalStore.save(proposal)  [trigger 'untitled']
+  --> maybeAutoAccept(proposal)  [if shouldAutoAccept(): acceptProposal(id, {silent:true}) + info notice]
   --> if not auto-accepted: notifications.success('Title proposal ready', ..., Review toast)
-  --> onViewRefreshNeeded?()
+  --> refreshView() --> onViewRefreshNeeded?()
 
 checkMismatch(filePath)
-  --> skip if isUntitled (handled by checkUntitled)
+  --> return if not a TFile, or if isUntitled (handled by checkUntitled)
   --> skip if existing pending proposal for this note
+  --> return if note content empty/whitespace
   --> TitleSuggester.checkTitleMismatch(content, basename)  [AI]
-  --> if mismatch: TitleProposalStore.save(proposal)
+  --> return unless result.isMismatch && result.suggestedTitle
+  --> TitleProposalStore.save(proposal)  [trigger 'content-mismatch']
   --> maybeAutoAccept(proposal)
   --> if not auto-accepted: notifications.success('Title proposal ready', ..., Review toast)
-  --> onViewRefreshNeeded?()
+  --> refreshView() --> onViewRefreshNeeded?()
 
 acceptProposal(id, options?)
+  --> store.load(id); no-op if not found
   --> guard: no-op if proposal.status !== 'pending'
-  --> check no file exists at target path (in-folder rename collision)
+  --> if source note no longer a TFile: info notice, updateStatus(id,'rejected'), refreshView, return
+  --> compute newPath = <parentFolder>/<proposedTitle>.md (normalizePath)
+  --> if file already exists at newPath: info notice, abort (no rename)
   --> vault.rename(file, newPath)
-  --> TitleProposalStore.updateStatus(id, 'accepted')
-  --> if !silent: notifications.success, onViewRefreshNeeded?()
+  --> store.updateStatus(id, 'accepted')
+  --> if !silent: notifications.success('Renamed to ...'), refreshView()
+  --> on rename throw: notifyError, rethrow Error('Rename failed: ...')
 
 rejectProposal(id)
-  --> TitleProposalStore.updateStatus(id, 'rejected')
-  --> onViewRefreshNeeded?()
+  --> store.updateStatus(id, 'rejected')
+  --> notifications.info('Title proposal rejected')
+  --> refreshView() --> onViewRefreshNeeded?()
 ```
 
 ## Key Types
@@ -156,6 +166,18 @@ Out: Nothing. No other feature module imports from `title/`.
 - The Review toast fires via `notifications.success('Title proposal ready', undefined, { label: 'Review', onClick: ... })` — only when a proposal remains pending after generation.
 - `checkMismatch` skips notes that are already untitled (let `checkUntitled` handle those).
 - Both check methods skip if any pending proposal already exists for the note (prevents duplicate proposals).
+
+## Error States
+
+| Condition | Handling |
+|-----------|----------|
+| AI call fails in `checkUntitled`/`checkMismatch` | Caught; `console.warn('[Synapse] Title suggestion failed ...' / 'Title mismatch check failed ...')`; no user notice (flow is silent) |
+| Note content empty/whitespace | Silent return; no proposal generated |
+| Suggested title empty or itself `isUntitled()` | Silent return; no proposal saved (`checkUntitled`) |
+| `acceptProposal`: source note missing | `notifications.info('Source note no longer exists')`; proposal marked `rejected` |
+| `acceptProposal`: file exists at target path | `notifications.info('Cannot rename -- a file already exists at <path>')`; rename aborted |
+| `acceptProposal`: `vault.rename` throws | `notifications.notifyError('Failed to rename note', error)`; rethrows `Error('Rename failed: <msg>')` |
+| Persisted proposal JSON fails `isTitleProposal` guard | File skipped during load (`title-store.ts:L7`) |
 
 ## Tests
 

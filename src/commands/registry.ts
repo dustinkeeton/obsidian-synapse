@@ -51,7 +51,7 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 	{ id: 'undo-tidy', name: 'Undo last tidy on current note', feature: 'tidy', status: 'disabled', flows: ['palette'], context: 'note' },
 
 	// --- rem (src/rem/index.ts) ---
-	{ id: 'rem-current-note', name: 'REM: Discover links in current note', feature: 'rem', status: 'active', flows: ['palette'], context: 'note' },
+	{ id: 'rem-current-note', name: 'REM: discover links in current note', feature: 'rem', status: 'active', flows: ['palette'], context: 'note' },
 	{ id: 'rem-directory', name: 'Scan folder for links', feature: 'rem', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'rem' },
 
 	// --- video (src/video/index.ts) ---

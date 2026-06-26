@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-06-19
+last-updated: 2026-06-25
 ---
 
 # REM Module
 
-REM (Re-link & Enrich Mappings): discovers linkable references in note text (literal title/alias matches plus optional AI semantic matches) and proposes in-place `[[wikilink]]` insertions. Accepting a proposal rewrites the note body. Participates in the Fire Synapse pipeline (phase 4) and the unified proposal view.
+REM (Re-link & Enrich Mappings): discovers linkable references in note text (literal title/alias matches plus always-on AI semantic matches) and proposes in-place `[[wikilink]]` insertions. Accepting a proposal rewrites the note body. Participates in the Fire Synapse pipeline (`pipelineKey: rem`) and the unified proposal view.
 
 ## Public API (`index.ts`)
 
@@ -24,7 +24,7 @@ class RemModule {
   onload(): Promise<void>
   onunload(): void
   remScanNote(filePath: string): Promise<RemProposal | null>
-  remScanDirectory(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>
+  remScanDirectory(folderPath?: string, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   acceptProposal(id: string, acceptedMatchTexts: string[], options?: { silent?: boolean }): Promise<void>
   rejectProposal(id: string): Promise<void>
@@ -140,7 +140,7 @@ Registered in `onload()` (both gated by `rem.enabled`):
 
 | ID | Name | Type | Pipeline |
 |----|------|------|---------|
-| `synapse:rem-current-note` | REM: Discover links in current note | editorCallback | palette |
+| `synapse:rem-current-note` | REM: discover links in current note | editorCallback | palette |
 | `synapse:rem-directory` | Scan folder for links | callback (FolderPickerModal) | palette, fire-synapse (`pipelineKey: rem`) |
 
 ## Auto-Accept (#228)
@@ -160,7 +160,7 @@ Resume re-checks exclusion rules silently (a path may have been excluded after c
 ## Exclusion Rules
 
 ```ts
-// index.ts:L495-500
+// index.ts:L476-482
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (
@@ -179,20 +179,24 @@ Single-note command (`rem-current-note`) names the matched rule in the Notice. D
 
 All under `settings.rem` (`RemSettings`):
 
+Defaults from `settings.ts:L471-477`.
+
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
-| `enabled` | `boolean` | — | Module + command activation |
+| `enabled` | `boolean` | `true` | Module + command activation |
 | `titleMatchWeight` | `number` | `0.6` | Weight for literal title/alias matches when ranking (0-1) |
-| `confidenceThreshold` | `number` | — | Min confidence for semantic candidates (0-1) |
-| `maxLinksPerNote` | `number` | — | Max link candidates per scanned note |
+| `confidenceThreshold` | `number` | `0.5` | Min confidence for semantic candidates only (0-1) |
+| `maxLinksPerNote` | `number` | `20` | Max link candidates per scanned note |
 | `remFolderPath` | `string` | `.synapse/rem` | Storage folder for proposal JSON files |
+
+Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confidenceThreshold` slider, and `maxLinksPerNote` text input. `titleMatchWeight` has no UI control (#380) — edit `data.json` directly to change it.
 
 ## Dependencies
 
 | Import | From |
 |--------|------|
-| `generateId`, `getMarkdownFiles`, `FolderPickerModal`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `NotificationManager`, `CheckpointManager` | `../shared` |
-| `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` | `../shared` (type-only) |
+| `generateId`, `getMarkdownFiles`, `FolderPickerModal`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule` | `../shared` |
+| `NotificationManager`, `CheckpointManager`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` | `../shared` (type-only) |
 | `CommandRegistrar` | `../commands` (type-only) |
 | `SynapseSettings`, `RemSettings` | `../settings` (type-only) |
 | `MentionScanner` | `./mention-scanner` |

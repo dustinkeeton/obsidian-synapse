@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-06-19
+last-updated: 2026-06-25
 ---
 
 # Summarize Module
 
-Summarizes URLs, transcription blocks, and audio embeds found in notes. Creates inline summary callouts or standalone summary notes for enrichment-section links. Auto-transcribes video URLs and audio embeds via injected callbacks.
+Summarizes a note's own prose plus the URLs, transcription blocks, and audio embeds it references, emitting either per-item summary callouts or one combined summary, and creating standalone notes for enrichment-section links. Video URLs and audio embeds are transcribed via injected callbacks (no static `video/` import).
 
 ## Public API (`index.ts`)
 
@@ -20,8 +20,7 @@ class SummarizeModule {
     checkpointManager: CheckpointManager,
     registrar: CommandRegistrar,
     transcribeUrl?: TranscribeUrlFn,
-    transcribeAudio?: TranscribeAudioFn,
-    transcribeAudioCombined?: TranscribeAudioCombinedFn
+    transcribeAudio?: TranscribeAudioFn
   )
   onload(): Promise<void>
   onunload(): void
@@ -29,22 +28,18 @@ class SummarizeModule {
   scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<void>
 }
 
-// Injected callback: transcribes a video URL (from VideoModule)
+// Injected callback: transcribes a video URL (from VideoModule).
 type TranscribeUrlFn = (
   url: string,
   parentOp?: { update: (msg: string) => void }
 ) => Promise<string>
 
-// Injected callback: transcribes a single audio TFile (from AudioModule)
+// Injected callback: transcribes a single audio TFile (from AudioModule).
 type TranscribeAudioFn = (file: TFile) => Promise<string>
-
-// Injected callback: transcribes multiple audio TFiles as one combined recording (#214)
-type TranscribeAudioCombinedFn = (files: TFile[]) => Promise<string>
 ```
 
-Exported types: `SummarizeTarget`, `TranscribeUrlFn`, `TranscribeAudioFn`, `TranscribeAudioCombinedFn`
-
-Exported functions: `renderSummarizeSettings(ctx: SettingsSectionContext): void`
+Exported types: `SummarizeTarget` (re-export of `./types`), `TranscribeUrlFn`, `TranscribeAudioFn`.
+Exported functions: `renderSummarizeSettings(ctx: SettingsSectionContext): void` (re-export of `./settings-section`).
 
 ## Internal File Map
 
@@ -53,24 +48,27 @@ Exported functions: `renderSummarizeSettings(ctx: SettingsSectionContext): void`
 | `index.ts` | `SummarizeModule`, type + fn re-exports | Orchestrator, commands, scan + summarize flows |
 | `types.ts` | `SummarizeTarget` | Target type model |
 | `summarizer.ts` | `Summarizer` | AI summarization with style (bullets/paragraph/key-points) |
-| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow` | Finds URLs, transcription blocks in note content |
-| `summarize-modal.ts` | `SummarizeSelectionModal` | Selection modal when multiple targets found; offers combine option for 2+ audio targets |
-| `settings-section.ts` | `renderSummarizeSettings` | Summarize settings UI section |
-| `summarizer.test.ts` | Tests | Summarizer tests |
-| `note-scanner.test.ts` | Tests | Note scanner tests |
+| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks; note-prose extraction |
+| `summarize-modal.ts` | `SummarizeSelectionModal`, `SummarizeModalDefaults` | Selection modal for 2+ targets; include-note + combine toggles (#367) |
+| `settings-section.ts` | `renderSummarizeSettings` | Summarize settings UI section (#243) |
+| `summarizer.test.ts` | Tests | Summarizer style/prompt tests |
+| `note-scanner.test.ts` | Tests | Scanner + prose-extraction tests |
 | `summarize-module.test.ts` | Tests | SummarizeModule integration tests |
 | `audio-summarize.test.ts` | Tests | Audio-embed summarization tests |
-| `combine-summarize.test.ts` | Tests | Combined-audio summarization tests (#214) |
+| `combine-summarize.test.ts` | Tests | Combined-summary tests (#367) |
+| `summarize-modal.test.ts` | Tests | Selection-modal tests |
+| `settings-section.test.ts` | Tests | Settings-section render tests |
+| `video-dependency-notice.test.ts` | Tests | yt-dlp/ffmpeg onboarding-notice tests (#382) |
 
 ## Target Types (`types.ts`)
 
 ```ts
 interface SummarizeTarget {
-  type: 'url' | 'transcription' | 'audio'
-  source: string          // URL or audio filename or transcription source label
-  line: number            // zero-based line number in note
-  endLine: number         // end of target block (for transcriptions)
-  content?: string        // pre-extracted content (for transcription blocks)
+  type: 'url' | 'transcription' | 'audio' | 'note-content'
+  source: string          // URL / transcription source label, or note basename for note-content
+  line: number            // line in note (last line for note-content, so its callout appends)
+  endLine: number         // end of target block (transcriptions / note-content)
+  content?: string        // pre-extracted content (transcriptions and note-content prose)
   inEnrichmentSection?: boolean  // found inside enrichment markers
   linkTitle?: string      // display text from markdown link (enrichment refs)
 }
@@ -79,140 +77,153 @@ interface SummarizeTarget {
 ## Data Flow
 
 ```
-summarizeNote(file)
-  --> collectTargets(content, sourcePath)
+summarizeNote(file)                                   index.ts:L230
+  --> collectTargets(content, sourcePath)             index.ts:L453
         findSummarizeTargets(content)    [URLs, transcription blocks]
-        findAudioEmbeds(content, ...)    [audio embeds without existing summary below]
-  --> if 1 target: processTargets(file, targets, content)
-  --> if 2+ targets: SummarizeSelectionModal
-        if combine + 2+ audio: processTargetsCombined(file, selected, content)
-        else: processTargets(file, selected, content)
+        findAudioEmbeds(...)             [audio embeds w/o summary below]
+        extractNoteProse(content)        [appends 'note-content' if includeNoteContent]
+  --> 1 target:  processTargets(file, targets, content)            [per-item, no modal]
+  --> 2+ targets: SummarizeSelectionModal(defaults={includeNoteContent, combineSummaries})
+        callback(selected, combine):
+          combine  -> processTargetsCombined(file, selected, content)   index.ts:L270
+          !combine -> processTargets(file, selected, content)           index.ts:L502
 
-processFileTargets(file, targets, op, content)
-  For each target (reverse line order):
-    if inEnrichmentSection + linkTitle:
-      --> fetchContentForUrl(url)  [video transcription or HTTP fetch]
-      --> Summarizer.summarize(content, url, style, COMPREHENSIVE_SUMMARY_PROMPT)
-      --> pendingNotes.push(path, content)
-      --> replace external link with [[internal link]] in lines[]
-    elif target.type === 'audio':
-      --> fetchContentForAudio(fileName, sourceFile)  [transcribeAudio callback]
-      --> Summarizer.summarize(transcript, source, style, effectivePrompt)
-      --> lines.splice(endLine+1, callout)
-    else (inline URL / transcription):
-      --> fetchContentForUrl(url) or use target.content
-      --> effectivePrompt: customPrompt > detectSchemaFor('summary', content) > style default
-      --> Summarizer.summarize(content, url, style, effectivePrompt)
-      --> lines.splice(endLine+1, callout)
-  --> vault.process(file, () => lines.join('\n'))   [source written FIRST]
-  --> vault.create() for each pendingNote            [new notes AFTER source]
-  --> onSummaryComplete?.(filePath)
-  --> onOrganizeRequested?.(file)  [if autoOrganizeOnSummarize]
+processTargetsForFile(file, targets, op, content, combine)            index.ts:L301
+  combine == false:
+    --> processFileTargets(file, targets, op, content)
+  combine == true:
+    --> enrichment refs first (per-item):  processFileTargets(enrichmentTargets)
+    --> everything else folded into ONE summary: combineSelectedTargets(summarizable)
 
-processTargetsCombined(file, targets, content)   [#214]
-  --> otherTargets processed via processFileTargets first
-  --> transcribeAudioCombined(audioFiles) --> combined transcript
-  --> Summarizer.summarize(transcript, ..., COMPREHENSIVE_SUMMARY_PROMPT)
-  --> vault.process(file, insert combined callout after last audio embed)
-  --> onSummaryComplete?.(file.path)
+combineSelectedTargets(file, targets, op, content)                    index.ts:L356
+  per target: reuse note-content/transcript content, else fetch URL / transcribe audio
+  --> join sections w/ '## <label>' + '---' separators, slice(maxContentLength)
+  --> Summarizer.summarize(combinedText, labels, style, prompt)
+        prompt = customPrompt > schema('summary') > COMPREHENSIVE_SUMMARY_PROMPT
+  --> vault.process(file): append ONE 'Combined summary (N items)' callout at end
+
+processFileTargets(file, targets, op, content)                        index.ts:L560
+  for each target (reverse line order):
+    enrichment ref (inEnrichmentSection + linkTitle):
+      --> if note exists: rewrite link only (linksUpdated++)
+      --> else fetch + summarize(COMPREHENSIVE_SUMMARY_PROMPT) -> pendingNote + link rewrite
+    audio:        fetchContentForAudio() -> summarize -> splice inline callout
+    transcription: reuse target.content -> summarize -> splice inline callout
+    note-content:  reuse target.content -> summarize -> splice inline callout
+    inline URL:    fetchUrlContentOrNotify() -> summarize -> splice inline callout
+                   prompt = customPrompt > schema('summary') > style default
+  --> vault.process(file, finalContent)   [source written FIRST]
+  --> vault.create() per pendingNote      [new notes AFTER source]
+  returns { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths }
+
+fireEnrichmentCallbacks(path, result)                                 index.ts:L543
+  --> onSummaryComplete?.(path)  [only if inlineCompleted>0 and enrichmentCompleted==0]
+  --> onSummaryComplete?.(newNotePath)  per created note
+  caller separately: onOrganizeRequested?.(file) if autoOrganizeOnSummarize
 ```
 
 ## Vault Scan (checkpointed)
 
 ```
-scanVault(folderPath?, skipConfirmation?, onlyFile?)
-  Phase 1: collect files with targets (cancellable scan)
-  Phase 2: user confirmation (skipped when skipConfirmation=true)
+scanVault(folderPath?, skipConfirmation?, onlyFile?)                  index.ts:L900
+  Phase 1: collect files with targets (cancellable scan; onlyFile narrows scope, #111)
+  Phase 2: user confirmation (skipped when skipConfirmation=true / Fire Synapse)
   Phase 3: checkpointed processing
-    --> checkpointManager.create(module: 'summarize', items)
+    --> checkpointManager.create({ module: 'summarize', items })
     --> addDeferredTask('refresh-sidebar-view')
-    --> for each file: re-read + re-scan + processFileTargets(), completeItem()
-    --> on cancel: checkpointManager.discard()
-    --> on success: checkpointManager.complete(), dispatchDeferredTasks
+    --> per file: re-read + collectTargets + processTargetsForFile(..., combineSummaries)
+    --> completeItem() after each file
+    --> on cancel: discard(); on success: complete() + dispatchDeferredTasks
 
-resumeFromCheckpoint(checkpoint)
-  --> re-processes remaining items from saved checkpoint
-  --> completeItem() after each file
-  --> on cancel: discard()
-  --> on success: complete(), dispatchDeferredTasks
+resumeFromCheckpoint(checkpoint)                                      index.ts:L169
+  --> re-process remaining items via processTargetsForFile(..., combineSummaries)
+  --> completeItem() per file; on cancel discard(); on success complete()
 ```
 
 ## Commands
 
-Registered in `onload()` (both gated by `summarize.enabled`):
+Registered in `onload()`, both gated by `settings.summarize.enabled` (`commands/registry.ts:L46`):
 
 | ID | Name | Type |
 |----|------|------|
 | `synapse:summarize-current-note` | Summarize current note | editorCallback |
 | `synapse:scan-vault-summarize` | Scan folder for notes to summarize | callback (FolderPickerModal) |
 
-## Video URL Auto-Transcription
+## URL Fetch / Video Auto-Transcription (`fetchContentForUrl`, index.ts:L738)
 
-`transcribeUrl` is injected by `main.ts` from `VideoModule.transcribeUrl`. When set:
-- `fetchContentForUrl()` calls `isSupportedUrl(url)` (from `shared`) before deciding
-- If supported video URL: calls injected `transcribeUrl` callback
-- Falls back to `fetchTweetContent()` for Twitter URLs, then `fetchPageContent()` for others
+Routing order for a target URL:
+1. `transcribeUrl` injected AND `isSupportedUrl(url)` -> call `transcribeUrl(url, op)` (video transcript).
+2. `detectPlatform(url)?.platform === 'twitter'` -> `fetchTweetContent(url, max)`.
+3. `isRedditUrl(url)` -> `fetchRedditContent(url, max)` (Reddit is generic 'article'; routed explicitly to the RSS fetcher).
+4. else -> `fetchPageContent(url, max)`.
 
-`isSupportedUrl` and `detectPlatform` both resolve from `shared` barrel. There is NO static import of `video/` anywhere in this module.
+`transcribeUrl`/`transcribeAudio` are injected by `main.ts:L128`. On mobile (no VideoModule) `transcribeUrl` throws "Video transcription is not available on mobile". `isSupportedUrl`, `detectPlatform`, `isRedditUrl` all resolve from the `shared` barrel; there is NO static import of `video/`.
 
-## Combined Audio (#214)
+## Combined Summaries (#367)
 
-When `transcribeAudioCombined` is injected and 2+ audio targets are selected via the modal:
-- `processTargetsCombined()` resolves all audio `TFile` objects via `MetadataCache`
-- Calls `transcribeAudioCombined(files)` for one transcript spanning all files
-- Inserts a single `Combined summary (N files)` callout after the last audio embed
-- Insert line is re-derived from fresh content inside `vault.process()` callback (safe against phase-1 line shifts)
+When `combineSummaries` (or the modal's "Combine into one summary" toggle) is set:
+- Enrichment refs are processed per-item first (they create notes + rewrite links).
+- All remaining summarizable items (note prose, URLs, transcriptions, audio) are concatenated with `## <label>` sections and summarized in ONE `summarize()` call.
+- Output is a single `Combined summary (N items)` callout appended at the end of the note via `vault.process()` (re-read after the enrichment pass when links were rewritten).
+- A single item falls back to the per-item path for a cleaner callout title.
 
-Injected in `main.ts`:
-```ts
-this.summarize = new SummarizeModule(
-  this, getSettings, this.notifications, this.checkpointManager, this.registrar,
-  (url, parentOp) => this.video.transcribeUrl(url, parentOp),
-  async (audioFile) => {
-    const data = await this.app.vault.readBinary(audioFile);
-    const result = await this.audio.transcribe(data, audioFile.name);
-    return result.processed || result.raw;
-  },
-  (files) => this.audio.transcribeCombined(files)
-);
-```
+## Note Content (#367)
+
+`extractNoteProse(content)` (`note-scanner.ts:L226`) strips YAML frontmatter and every Synapse-generated summary / transcription / lyrics block (callout and legacy formats) so the AI never re-summarizes its own output. `collectTargets` appends a `note-content` target (when `includeNoteContent`) at the note's last line so a per-item prose callout lands at the end.
 
 ## Settings Keys
 
-All under `settings.summarize` (`SummarizeSettings`):
+All under `settings.summarize` (`SummarizeSettings`, `settings.ts:L150`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `enabled` | `boolean` | `true` | Module + command activation |
-| `maxContentLength` | `number` | — | Truncation limit for fetched content |
-| `summaryStyle` | `'bullets' \| 'paragraph' \| 'key-points'` | — | AI output style |
-| `customPrompt` | `string` | `''` | Overrides style-based prompt (highest priority) |
+| `maxContentLength` | `number` | `4000` | Truncation limit for fetched/combined content (UI slider 1000-10000) |
+| `summaryStyle` | `'bullets' \| 'paragraph' \| 'key-points'` | `'bullets'` | AI output style |
+| `customPrompt` | `string` | `''` | Overrides style/schema prompt (highest priority) |
 | `autoDetectTemplates` | `boolean` | `true` | Enable content-schema detection |
 | `excludeTags` | `string[]` | `['no-summarize']` | Skip notes with these tags |
-| `autoOrganizeOnSummarize` | `boolean` | — | Trigger organize after single-note summarize |
+| `autoOrganizeOnSummarize` | `boolean` | `false` | Trigger single-note organize after summarize |
+| `includeNoteContent` | `boolean` | `true` | Summarize the note's own prose as an additional item (#367) |
+| `combineSummaries` | `boolean` | `true` | Emit ONE combined summary instead of a callout per item (#367) |
 
-Path exclusion: centralized `settings.exclusions: ExclusionRule[]` (#307). No per-module `excludeFolders` field. Checked via `isPathExcluded(path, 'summarize', settings)` from `shared`.
+Path exclusion: centralized `settings.exclusions: ExclusionRule[]`; no per-module `excludeFolders`. Checked via `isPathExcluded(path, 'summarize', settings)`; tag exclusion via `matchesExcludeTag(file, excludeTags, metadataCache)` (both in `isExcluded`, `index.ts:L1031`).
 
 ## Content-Aware Schemas
 
-Registry: `shared/content-schemas.ts`. Called via `detectSchemaFor('summary', content)`.
+Registry: `shared/content-schemas.ts`. Consulted via `detectSchemaFor('summary', content)`.
 
-Priority chain for inline targets: `customPrompt` > schema match > style default.
-Enrichment targets always use `COMPREHENSIVE_SUMMARY_PROMPT` regardless.
+Inline / combined prompt priority: `customPrompt` > schema match (when `autoDetectTemplates`) > style default.
+Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 
-| ID | Detection | Stage |
-|----|-----------|-------|
-| `recipe` | Keyword scoring >= 5 (headers, cooking verbs, measurements) | `'summary'` |
-| `receipt` | Keyword scoring >= 5 (currency, totals, payment terms) | `'summary'` |
+| ID | appliesTo | Mode |
+|----|-----------|------|
+| `recipe` | `'summary'` | summarize |
+| `receipt` | `'summary'` | summarize |
+
+(`lyrics` exists but applies to `'transcription'`, not summarize.)
+
+## Error States
+
+| Condition | Handling |
+|-----------|----------|
+| Missing video dep (yt-dlp/ffmpeg) | `DependencyMissingError` matched by `name` through the `cause` chain (`findDependencyMissingError`, index.ts:L98); shows an actionable "Open settings" notice that reveals the Video section (#382) |
+| URL fetch throws | `notifyTargetError` -> `linkLoadError(source, reason)` persistent notice; target skipped |
+| Fetch returns empty text | `linkLoadError(source, 'page returned no readable text')`; target skipped |
+| Audio file not found in vault | throws `Audio file not found in vault: <name>` |
+| No targets in note | info notice "No note content, URLs, transcriptions, or audio to summarize in this note" |
+| Scan / resume exception | `op.error(...)`; checkpoint left intact |
+| User cancels | checkpoint `discard()`; partial work preserved |
 
 ## Dependencies
 
 | Import | From |
 |--------|------|
-| `FolderPickerModal`, `getMarkdownFiles`, `NotificationManager`, `OperationHandle`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent` | `../shared` |
+| `FolderPickerModal`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError` | `../shared` |
 | `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `../shared` (type-only) |
 | `findAudioEmbeds` | `../audio` |
 | `CommandRegistrar` | `../commands` |
-| `SynapseSettings`, `SummarizeSettings` | `../settings` |
+| `SynapseSettings` | `../settings` |
+| `findSummarizeTargets`, `extractNoteProse`, `hasSummaryBelow`, `SummarizeTarget`, `SummarizeSelectionModal`, `Summarizer` | local (`./note-scanner`, `./types`, `./summarize-modal`, `./summarizer`) |
 
 NO static import of `../video`. Video transcription is callback-only (`TranscribeUrlFn`).

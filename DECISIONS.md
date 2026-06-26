@@ -4,6 +4,155 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-25: Audit pass (1.0.6) — redaction now guards the operation-error console sink; command-name normalization
+
+**Context**: A periodic codebase audit reviewed the plugin at version 1.0.6. The module graph is still acyclic and the code security-mature, but two small gaps surfaced. (1) `NotificationManager` routed three error sinks through `redactSecrets` — the `error()` toast, `notifyError`, and `showErrorNotice` — but the per-*operation* failure path still did a raw `console.error(message)`. That was the one remaining spot where an API key echoed into an operation error could reach the console unredacted. (2) One command name broke the all-lowercase palette convention ("REM: **D**iscover links in current note").
+
+**Decision**: Route the operation-error `console.error` through `redactSecrets` too, so *every* error sink in `notifications.ts` shares the single redaction source. Normalize the command to "REM: discover links in current note". Refresh all 18 machine-readable `AGENTS.md` files and these human docs against the live code.
+
+**Alternatives considered**:
+- **Leave the console log raw ("it's just a log")** — rejected; logs get copied into bug reports, so a redacted toast beside a raw console line defeats the purpose.
+- **Tolerate the mixed-case command name** — rejected; the palette reads as inconsistent, and the registry is the place to keep names uniform.
+
+**Rationale**: `redact.ts` is the single source of truth only if it actually covers every path; the operation-error console was the last hole. The wording fix is cosmetic but keeps the registry authoritative.
+
+**Impact**: `shared/notifications.ts` (+ `notifications.test.ts`), `commands/registry.ts`. No behavior change beyond redaction coverage and palette wording. `data.json` (live keys) remains gitignored; the audit otherwise found no critical/high security issues.
+
+---
+
+## 2026-06-25: REM semantic matching is always-on; literal title/alias matches are down-weighted (#380)
+
+**Context**: REM gated AI semantic matching behind a toggle most users never enabled, so the feature mostly produced only literal title/alias matches — and those literal matches (raw confidence 1.0) out-ranked everything, crowding out the content-relevant links semantic matching is *for*.
+
+**Decision**: Make semantic matching **always run** (drop the enable toggle) and add `titleMatchWeight` (default `0.6`) that multiplies the raw confidence of literal title/alias matches so they no longer automatically dominate the ranking. Candidates from both phases merge, re-rank by confidence, and cap at `maxLinksPerNote`; `confidenceThreshold` now filters *semantic* matches only. Resume re-runs the same gather pipeline, so resumed items also get semantic links.
+
+**Alternatives considered**:
+- **Keep the toggle but default it on** — rejected; a setting people never find isn't a real default, and the literal-match ranking problem would remain.
+- **Surface `titleMatchWeight` in the settings UI** — deferred; left as a `data.json`-only knob rather than ship an obscure slider most users won't tune.
+
+**Rationale**: REM's value is the non-obvious links. Gating that behind a toggle and then out-ranking it with literal matches buried the whole feature.
+
+**Impact**: `rem/` (`SemanticMatcher` always invoked; weight applied during gather/re-rank); new `rem.titleMatchWeight` setting (no UI). REM auto-accept still **rewrites the note body** — the long-standing caution is unchanged.
+
+---
+
+## 2026-06-25: Note title as an elaboration signal + anti-fabrication guards (#387, #380)
+
+**Context**: Elaboration generated from body text alone. A near-empty note with a meaningful title ("Photosynthesis") produced weak proposals, while a note that is essentially just a URL or a date-named daily note risked the AI fabricating content from a slug.
+
+**Decision**: Surface the note title in every elaboration prompt (`Note title: "<basename>"`) and seed a title-only proposal when the body is empty. Add two **anti-fabrication guards** that return `null` (skip the note, create no proposal) rather than invent content:
+- **Guard A** — empty body **and** a generic title (Obsidian "Untitled", date-style daily-note names, bare URLs), detected via the shared `isGenericTitle` predicate.
+- **Guard B** — a link-dominated note where **every** external fetch returned nothing.
+
+**Alternatives considered**:
+- **Always generate something** — rejected; fabricated elaboration on a date-named note is worse than no proposal.
+- **Re-implement "generic title" detection inside elaboration** — rejected; it reuses the shared `isGenericTitle`/`isUntitled` predicate (`shared/title-detector.ts`) so elaboration and the title module agree, honoring the no-feature-to-feature-import rule.
+
+**Rationale**: The title is the single most reliable topic hint for a stub note; the guards keep that signal from becoming a fabrication vector.
+
+**Impact**: `elaboration/proposer.ts` (title context + Guards A/B), shared `isGenericTitle`. `generate()` returning `null` is a normal skip, not an error — callers complete the checkpoint item and move on.
+
+---
+
+## 2026-06-25: In-app update check against the plugin's GitHub Releases (#365)
+
+**Context**: Synapse isn't in the Obsidian community browser yet, so there is no auto-update channel and users had no signal when a newer build shipped.
+
+**Decision**: Add a `shared/UpdateChecker` that — gated on `settings.updates.enableUpdateNotifications` (default on) — polls the plugin's own public GitHub Releases API **at most once per 24h**, compares the latest tag to the running version (`isNewerVersion`, pure semver), and shows a sticky, dismissible notice whose button opens Settings → Community plugins. It **fails silently** (offline / non-200 / malformed → logged `null`) and records the version it surfaced so it never nags twice for the same release.
+
+**Alternatives considered**:
+- **Check on every load** — rejected; network spam and rate-limit risk. The 24h gate plus dismissed-version memory keep it quiet.
+- **Wait for community-store distribution to provide updates** — rejected as the *only* answer; this is the stop-gap until that lands.
+
+**Rationale**: A once-a-day, self-silencing nudge is the least-annoying way to close the "no auto-update channel" gap.
+
+**Impact**: `shared/update-checker.ts`; new `settings.updates` block (`enableUpdateNotifications`, `lastUpdateCheck`, `dismissedUpdateVersion`); a delayed (5 s) startup timer in `main.ts`.
+
+---
+
+## 2026-06-25: In-app "What's new" via build-inlined CHANGELOG.md (#375)
+
+**Context**: Release notes lived only in `CHANGELOG.md` on GitHub; users never saw them in-app.
+
+**Decision**: Inline `CHANGELOG.md` into the bundle at build time (esbuild text loader + a `*.md` ambient type in `shared/markdown.d.ts`) and parse/render it in a `ChangelogModal` reachable from settings. One source file, no network fetch, no drift between the shipped changelog and what's displayed.
+
+**Alternatives considered**:
+- **Fetch the changelog from GitHub at runtime** — rejected; offline-fragile and redundant with a file already in the repo.
+- **Maintain a separate in-app copy of the notes** — rejected; guarantees drift.
+
+**Rationale**: The changelog is already the source of truth; inlining it at build time shows exactly what shipped with zero extra maintenance.
+
+**Impact**: `changelog.ts`, `changelog-modal.ts`, `shared/markdown.d.ts`; esbuild config. Purely additive UX.
+
+---
+
+## 2026-06-25: Auto-fold the Properties panel on note open (#381)
+
+**Context**: Synapse writes a lot of frontmatter (tags, links, references), so the Obsidian Properties panel can grow tall and push content down on every note.
+
+**Decision**: Add an opt-in `ui.autoFoldProperties` (default **off**) that folds a note's Properties panel — and its heading chevron — when the note opens, via `registerPropertiesAutoFold`. It lives in a new "General" settings section.
+
+**Alternatives considered**:
+- **Default it on** — rejected; folding is a personal preference, and silently hiding metadata the plugin just wrote would surprise users.
+
+**Rationale**: The feature exists *because* Synapse-heavy vaults accumulate properties; making it opt-in respects users who want metadata visible.
+
+**Impact**: `properties-fold.ts`; new `ui.autoFoldProperties` setting; new "General" settings section.
+
+---
+
+## 2026-06-25: Actionable video-dependency onboarding notice (#382)
+
+**Context**: When yt-dlp/ffmpeg were missing, video and URL-transcription paths failed with a generic error and no guidance on how to fix it.
+
+**Decision**: Detect the `DependencyMissingError` through the error `cause` chain and show an actionable notice with an "Open settings" button that reveals the Video settings section (where the tool paths live). Path fields also gained tooltips.
+
+**Rationale**: A missing external tool is a setup problem, not a bug; the notice should route the user straight to the fix instead of surfacing a dead-end error.
+
+**Impact**: `summarize/` (dependency-error detection + notice), settings-tab tooltips. No schema change.
+
+---
+
+## 2026-06-23: Summarize the note's own prose + combined-summary mode (#367)
+
+**Context**: Summarize only touched the URLs, transcriptions, and audio a note *referenced* — never the note's own writing — and emitted a separate callout per item, cluttering notes with many references.
+
+**Decision**: Add two toggles, **both default on**. `includeNoteContent` adds the note's own prose (frontmatter and previously-generated Synapse blocks stripped, so it never re-summarizes its own output) as an extra summarize target. `combineSummaries` folds all summarizable items into ONE "Combined summary (N items)" callout instead of one callout each. Both are honored by single-note summarize, the 2+-target selection modal, and vault/folder scans. Enrichment-reference targets stay per-item (they create notes + rewrite links).
+
+**Alternatives considered**:
+- **Always combine** — rejected; some users want a per-source callout, so it's a toggle.
+- **Summarize whatever's in the note, including prior summaries** — rejected; `extractNoteProse` strips Synapse-generated blocks to avoid a feedback loop where the AI re-summarizes its own output.
+
+**Rationale**: Summarizing a note's own content is the common ask, and one combined block reads far better on reference-heavy notes.
+
+**Impact**: `summarize/` (`extractNoteProse`, combined path, modal defaults); new `summarize.includeNoteContent` and `summarize.combineSummaries` settings.
+
+---
+
+## 2026-06-22: Error notices persist, copy-on-dismiss, softer color (1.0.6)
+
+**Context**: Error toasts auto-dismissed on the standard timer, so a user could miss the message, and the full (often long) error text wasn't recoverable. The error color also read as alarming for routine, recoverable failures.
+
+**Decision**: Error notices now **stay up until dismissed**; clicking one **copies its full (redacted) message to the clipboard** before it closes; and they use a **softer, less-alarming color**. Implemented in `NotificationManager.error()`/`notifyError()`.
+
+**Rationale**: A persistent, copyable error is far easier to act on or paste into a bug report; the softer color matches that these failures are usually recoverable.
+
+**Impact**: `shared/notifications.ts`, `styles.css`. The copied text routes through `redactSecrets`, so keys never reach the clipboard.
+
+---
+
+## 2026-06-20: On-brand icon system (1.0.5)
+
+**Context**: Synapse reused generic Obsidian/Lucide glyphs for its ribbon icons and actions, which diluted the brand and left the actions sidebar visually flat.
+
+**Decision**: Register a set of bespoke Synapse SVG icons (`brand-icons.ts`, `registerSynapseIcons()`) — an S-Signal identity mark plus per-feature glyphs — **before** any ribbon/`setIcon`/view use, and use them for all three ribbon icons, the Synapse Actions sidebar buttons, and per-action command-palette icons.
+
+**Rationale**: Custom marks make the plugin recognizable and give the actions sidebar a scannable, per-feature visual language.
+
+**Impact**: `brand-icons.ts` (`SYNAPSE_ICONS`, `SYNAPSE_ICON_SVG`); ribbon + actions-sidebar + palette icon wiring. No behavior change.
+
+---
+
 ## 2026-06-20: Notification timers torn down on unload; audit reaffirms the layering
 
 **Context**: A periodic codebase audit (architecture, security, and Obsidian-guideline compliance) reviewed the plugin at version 1.0.3. It found the code security-mature and the module graph acyclic, but surfaced one lifecycle leak: `NotificationManager` starts a 400 ms `setInterval` to animate the "…" ellipsis on every in-flight operation toast. If the plugin was disabled (or reloaded) while an operation was still running, that interval kept firing against a detached toast — an orphaned timer, exactly the class of leak Obsidian's reviewer guidelines call out.
@@ -205,6 +354,8 @@ This is the single sanctioned `no-var-requires` site; audio, video, and transcri
 **Rationale**: One function, one regex, one place to extend when a new provider key shape appears — and one set of regression tests instead of two partial ones. The drift that exposed Gemini keys becomes structurally impossible once both callers share the module.
 
 **Impact**: New `src/shared/redact.ts`. Redaction is now consistent across both surfaces and covers Gemini `AIza` keys everywhere. Behavior-preserving except that `notifyError` now also redacts Gemini keys. Regression tests added (`ai-client.test.ts`, `api-utils.test.ts`).
+
+> _Later (2026-06-25): `notifyError` moved into `notifications.ts`, and the per-operation error `console.error` sink was brought under the same redactor — so `redactSecrets` now covers **every** error path, not just the two original surfaces. See the 2026-06-25 audit entry at the top of this log._
 
 ---
 
