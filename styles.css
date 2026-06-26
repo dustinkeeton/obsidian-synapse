@@ -1372,3 +1372,81 @@
   font-style: italic;
   padding: 8px;
 }
+
+/* ── Video install help (#382/#383) ── */
+
+/*
+ * Per-OS install-command panel toggled open by the yt-dlp/ffmpeg `?` help
+ * button (it adds `.is-open`). Renders directly beneath its path row; left
+ * aligned, with each command code-styled and individually copy-able.
+ */
+.synapse-install-help {
+  display: none;
+  margin: 4px 0 12px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--background-modifier-border);
+  text-align: left;
+}
+
+.synapse-install-help.is-open {
+  display: block;
+}
+
+.synapse-install-help-heading {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.synapse-install-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.synapse-install-row:last-child {
+  margin-bottom: 0;
+}
+
+.synapse-install-os {
+  flex: 0 0 auto;
+  min-width: 56px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.synapse-install-cmd {
+  flex: 1 1 auto;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  background: var(--code-background, var(--background-primary-alt));
+  color: var(--code-normal, var(--text-normal));
+  padding: 2px 6px;
+  border-radius: 4px;
+  user-select: text;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.synapse-install-copy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.synapse-install-copy:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.synapse-install-copy.is-copied {
+  color: var(--text-success);
+}
