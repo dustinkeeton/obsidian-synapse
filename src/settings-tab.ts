@@ -34,6 +34,7 @@ import { renderDeepDiveSettings } from './deep-dive';
 import { renderRemSettings } from './rem';
 import { applyApiKeyEmphasis } from './onboarding';
 import { foldActiveNoteProperties } from './properties-fold';
+import { ChangelogModal } from './changelog-modal';
 
 /**
  * Per-kind display copy for the Auto-Accept Proposals section (#228). MUTATING
@@ -642,6 +643,20 @@ export class SynapseSettingTab extends PluginSettingTab {
 		line.createEl('a', {
 			text: 'Buy Me a Coffee',
 			attr: { href: 'https://www.buymeacoffee.com/dustinkeeton' },
+		});
+
+		// "What's new" — opens the in-app changelog view (#375). A modal-opening
+		// link (not navigation), so it preventDefaults the dummy href.
+		const changelogLine = aboutBody.createDiv({ cls: 'setting-item-description' });
+		changelogLine.createSpan({ text: 'See what changed across versions → ' });
+		const changelogLink = changelogLine.createEl('a', {
+			text: "What's new",
+			cls: 'synapse-changelog-link',
+			attr: { href: '#' },
+		});
+		changelogLink.addEventListener('click', (evt) => {
+			evt.preventDefault();
+			new ChangelogModal(this.app, this.plugin).open();
 		});
 	}
 }

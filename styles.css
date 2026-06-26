@@ -1450,3 +1450,35 @@
 .synapse-install-copy.is-copied {
   color: var(--text-success);
 }
+
+/* ── Changelog view (#375) ──
+ * In-app "What's new" modal: a scrollable, lightly-styled render of CHANGELOG.md.
+ * The entry matching the installed version is accented so users can orient. */
+.synapse-changelog .synapse-changelog-body {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+.synapse-changelog-entry {
+  margin-bottom: 1.25em;
+}
+.synapse-changelog-version {
+  margin-bottom: 0.25em;
+}
+.synapse-changelog-entry--current {
+  border-left: 2px solid var(--text-accent);
+  padding-left: 0.75em;
+}
+.synapse-changelog-entry--current .synapse-changelog-version {
+  color: var(--text-accent);
+}
+.synapse-changelog-section {
+  margin: 0.5em 0 0.25em;
+  color: var(--text-muted);
+}
+.synapse-changelog-list {
+  margin-top: 0;
+}
+.synapse-changelog-link {
+  cursor: pointer;
+}
