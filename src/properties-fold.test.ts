@@ -5,13 +5,14 @@ import {
 	foldActiveNoteProperties,
 	METADATA_CONTAINER_SELECTOR,
 	PROPERTIES_COLLAPSED_CLASS,
+	PROPERTIES_COLLAPSE_INDICATOR_SELECTOR,
 } from './properties-fold';
 
 /**
- * A fake Properties panel that tracks its collapsed classes, mirroring the
- * `classList` surface the fold logic touches. `has()` lets tests assert state.
+ * A fake element that tracks its collapsed classes, mirroring the `classList`
+ * surface the fold logic touches. `has()` lets tests assert state.
  */
-function makePanel(collapsed = false) {
+function makeClassTracker(collapsed = false) {
 	const classes = new Set<string>(collapsed ? [PROPERTIES_COLLAPSED_CLASS] : []);
 	return {
 		classList: {
@@ -19,6 +20,22 @@ function makePanel(collapsed = false) {
 			add: vi.fn((c: string) => { classes.add(c); }),
 		},
 		has: (c: string) => classes.has(c),
+	};
+}
+
+/**
+ * A fake Properties panel: a class-tracking container whose `querySelector`
+ * returns its heading collapse chevron (also class-tracked). Assert the
+ * container via `panel.has(...)` and the chevron via `panel.indicator.has(...)`.
+ */
+function makePanel(collapsed = false) {
+	const indicator = makeClassTracker(collapsed);
+	return {
+		...makeClassTracker(collapsed),
+		indicator,
+		querySelector: vi.fn((sel: string) =>
+			sel === PROPERTIES_COLLAPSE_INDICATOR_SELECTOR ? indicator : null,
+		),
 	};
 }
 
@@ -36,6 +53,25 @@ describe('foldPropertiesIn', () => {
 		const panel = makePanel(false);
 		expect(foldPropertiesIn(makeRoot(panel))).toBe(true);
 		expect(panel.has(PROPERTIES_COLLAPSED_CLASS)).toBe(true);
+	});
+
+	it('also collapses the heading chevron so it matches the folded panel (#384)', () => {
+		const panel = makePanel(false);
+		expect(foldPropertiesIn(makeRoot(panel))).toBe(true);
+		expect(panel.has(PROPERTIES_COLLAPSED_CLASS)).toBe(true);
+		expect(panel.indicator.has(PROPERTIES_COLLAPSED_CLASS)).toBe(true);
+	});
+
+	it('still folds (no throw) when the container cannot query for the chevron', () => {
+		const classes = new Set<string>();
+		const container = {
+			classList: {
+				contains: (c: string) => classes.has(c),
+				add: (c: string) => { classes.add(c); },
+			},
+		};
+		expect(foldPropertiesIn(makeRoot(container as never))).toBe(true);
+		expect(classes.has(PROPERTIES_COLLAPSED_CLASS)).toBe(true);
 	});
 
 	it('is a no-op when the Properties panel is already collapsed', () => {

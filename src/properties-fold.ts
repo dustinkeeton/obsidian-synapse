@@ -13,8 +13,10 @@ import type { SynapseSettings } from './settings';
  * silent no-op and can NEVER break note rendering.
  *
  * Mechanism (JS, not CSS): we add Obsidian's OWN collapsed class to the
- * Properties container, mirroring exactly what happens when a user clicks the
- * Properties heading to fold it. This is preferred over a CSS rule because:
+ * Properties container AND its heading collapse chevron, mirroring exactly what
+ * happens when a user clicks the Properties heading to fold it. Obsidian flags
+ * the fold on both elements, so collapsing the container alone would leave the
+ * chevron still rotated "open". This is preferred over a CSS rule because:
  *   1. It reuses Obsidian's native collapse state, so the panel STILL EXPANDS
  *      on a heading click — a persistent CSS `display:none` rule would fight
  *      that and trap the panel closed (violating "still expandable").
@@ -35,6 +37,13 @@ export const METADATA_CONTAINER_SELECTOR = '.metadata-container';
 /** Class Obsidian applies to a collapsed Properties panel container. */
 export const PROPERTIES_COLLAPSED_CLASS = 'is-collapsed';
 
+/**
+ * Selector for the Properties heading's collapse chevron, found inside the
+ * container. Obsidian toggles {@link PROPERTIES_COLLAPSED_CLASS} on this element
+ * (rotating the triangle) in lockstep with the container's own fold state.
+ */
+export const PROPERTIES_COLLAPSE_INDICATOR_SELECTOR = '.collapse-indicator.collapse-icon';
+
 /** The minimal `classList` surface this module reads and mutates. */
 interface ClassListLike {
 	contains(token: string): boolean;
@@ -44,6 +53,7 @@ interface ClassListLike {
 /** The minimal element surface needed to collapse the Properties panel. */
 interface ElementLike {
 	classList?: ClassListLike | null;
+	querySelector?: ((selectors: string) => ElementLike | null) | null;
 }
 
 /** The minimal element surface needed to find the Properties panel. */
@@ -55,6 +65,22 @@ interface QueryRoot {
 interface ViewLike {
 	containerEl?: QueryRoot | null;
 	contentEl?: QueryRoot | null;
+}
+
+/**
+ * Add the collapsed class to the Properties heading's collapse chevron inside
+ * `container`, so the rotated triangle matches a folded panel (#384 review).
+ * Obsidian flags the fold on this indicator as well as the container itself.
+ * Fully guarded: a missing indicator, or a container that cannot query its
+ * descendants, is a silent no-op — never a throw on the open/render path.
+ */
+function collapsePropertiesIndicator(container: ElementLike | null | undefined): void {
+	if (!container || typeof container.querySelector !== 'function') return;
+	const indicator = container.querySelector(PROPERTIES_COLLAPSE_INDICATOR_SELECTOR);
+	const classList = indicator?.classList;
+	if (classList && !classList.contains(PROPERTIES_COLLAPSED_CLASS)) {
+		classList.add(PROPERTIES_COLLAPSED_CLASS);
+	}
 }
 
 /**
@@ -72,6 +98,9 @@ export function foldPropertiesIn(root: QueryRoot | null | undefined): boolean {
 		// Already folded → leave Obsidian's own state untouched.
 		if (classList.contains(PROPERTIES_COLLAPSED_CLASS)) return false;
 		classList.add(PROPERTIES_COLLAPSED_CLASS);
+		// Mirror a manual fold's chevron so the rotated triangle matches the
+		// now-collapsed panel; the container alone leaves it pointing "open".
+		collapsePropertiesIndicator(container);
 		return true;
 	} catch {
 		// The open path must never throw — a wrong selector is a no-op, not a crash.
