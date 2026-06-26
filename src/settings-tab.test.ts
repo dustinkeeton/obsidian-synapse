@@ -27,7 +27,7 @@ import { METADATA_CONTAINER_SELECTOR, PROPERTIES_COLLAPSED_CLASS } from './prope
  * the REM feature itself.
  */
 const REM_FEATURE_TOOLTIP =
-	'Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions';
+	'Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions. Link suggestions are ranked by AI content relevance, not just literal title matches.';
 
 interface MockPlugin {
 	settings: SynapseSettings;

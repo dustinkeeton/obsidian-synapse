@@ -13,20 +13,8 @@ export function renderRemSettings(ctx: SettingsSectionContext): void {
 		'REM (link discovery)',
 		() => plugin.settings.rem.enabled,
 		(v) => { plugin.settings.rem.enabled = v; },
-		'Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions',
+		'Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions. Link suggestions are ranked by AI content relevance, not just literal title matches.',
 	);
-
-	new Setting(remBody)
-		.setName('Semantic matching')
-		.setDesc('Use AI to find conceptual matches beyond literal title/alias matching')
-		.addToggle((toggle) =>
-			toggle
-				.setValue(plugin.settings.rem.semanticMatching)
-				.onChange(async (value) => {
-					plugin.settings.rem.semanticMatching = value;
-					await plugin.saveSettings();
-				})
-		);
 
 	addEnhancedSlider(
 		new Setting(remBody)

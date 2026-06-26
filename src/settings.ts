@@ -194,8 +194,11 @@ export interface DeepDiveSettings {
 
 export interface RemSettings {
 	enabled: boolean;
-	/** Use AI to find conceptual matches beyond literal title/alias matching. */
-	semanticMatching: boolean;
+	/**
+	 * Weight applied to literal title/alias matches (0-1) so a title coincidence
+	 * cannot automatically outrank a genuinely content-relevant semantic link.
+	 */
+	titleMatchWeight: number;
 	/** Minimum confidence for semantic matches (0-1). */
 	confidenceThreshold: number;
 	/** Maximum link candidates per scanned note. */
@@ -467,7 +470,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 	},
 	rem: {
 		enabled: true,
-		semanticMatching: false,
+		titleMatchWeight: 0.6,
 		confidenceThreshold: 0.5,
 		maxLinksPerNote: 20,
 		remFolderPath: '.synapse/rem',

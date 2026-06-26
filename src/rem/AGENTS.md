@@ -58,7 +58,7 @@ interface RemLinkCandidate {
   matchedText: string         // text in source note that was matched
   matchType: RemMatchType
   occurrences: RemOccurrence[]
-  confidence: number          // 1.0 for title/alias; AI-assigned for semantic
+  confidence: number          // title/alias raw 1.0 down-weighted by titleMatchWeight; AI-assigned for semantic
 }
 
 interface RemProposal {
@@ -73,7 +73,7 @@ interface RemProposal {
 
 interface RemSettings {
   enabled: boolean
-  semanticMatching: boolean
+  titleMatchWeight: number      // weight for literal title/alias matches (0-1)
   confidenceThreshold: number   // minimum confidence for semantic matches (0-1)
   maxLinksPerNote: number
   remFolderPath: string
@@ -87,7 +87,7 @@ interface RemSettings {
 | `index.ts` | `RemModule`, type + fn re-exports | Orchestrator, commands, scan + accept/reject/undo |
 | `types.ts` | `RemProposal`, `RemLinkCandidate`, `RemOccurrence`, `RemMatchType`, `RemProposalStatus`, `RemSettings` | Type model |
 | `mention-scanner.ts` | `MentionScanner` | Phase 1: literal title/alias mention scanning |
-| `semantic-matcher.ts` | `SemanticMatcher` | Phase 2: optional AI semantic matching |
+| `semantic-matcher.ts` | `SemanticMatcher` | Phase 2: always-on AI semantic matching |
 | `rem-applier.ts` | `RemApplier` | Inserts `[[wikilinks]]` into note body for accepted candidates |
 | `rem-store.ts` | `RemStore` | Proposal persistence under `rem.remFolderPath` |
 | `settings-section.ts` | `renderRemSettings` | REM settings UI section |
@@ -103,10 +103,10 @@ interface RemSettings {
 ```
 remScanNote(filePath)
   --> isExcluded? (isPathExcluded 'rem' + enrichment.excludeTags)
-  --> MentionScanner.scan(file, content, maxLinksPerNote)   // literal candidates
-  --> if semanticMatching:
-        SemanticMatcher.match(file, content, alreadyMatched, remaining)
-        filter by confidenceThreshold
+  --> gatherCandidates(file, content):
+        MentionScanner.scan(...) literal candidates, down-weighted by titleMatchWeight
+        SemanticMatcher.match(...) always-on, filtered by confidenceThreshold
+        merge + re-rank by confidence desc + cap at maxLinksPerNote
   --> RemProposal { candidates, status: 'pending' } --> RemStore.save
   --> maybeAutoAccept(proposal)   (#228, when shouldAutoAccept())
   --> onOpenProposalView callback offered in Notice (when NOT auto-accepting)
@@ -116,7 +116,7 @@ remScanDirectory(folderPath?, skipConfirmation?, onlyFile?)
   --> getMarkdownFiles filtered by isExcluded
   --> CheckpointManager.create(module: 'rem', items)
   --> addDeferredTask('refresh-sidebar-view')
-  --> for each file: scan literals + semantic, save proposal, maybeAutoAccept(batch=true)
+  --> for each file: gatherCandidates (literal down-weighted + always-on semantic, merged/re-ranked), save proposal, maybeAutoAccept(batch=true)
   --> completeItem() per file
   --> on error: rejectProposalBatch(createdIds) + return 0
   --> on cancel: discard() + rejectProposalBatch()
@@ -155,7 +155,7 @@ WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This
 
 `remScanDirectory` and `resumeFromCheckpoint` use `CheckpointManager` with module `'rem'`. Items tracked as `rem-{index}-{path}`. On error or cancel, all proposals created in the run are batch-rejected via `rejectProposalBatch()`.
 
-Resume re-checks exclusion rules silently (a path may have been excluded after checkpoint creation).
+Resume re-checks exclusion rules silently (a path may have been excluded after checkpoint creation). Resume runs the same `gatherCandidates` pipeline as a fresh scan (literal + always-on semantic), so resumed items also get content-relevant links (#380).
 
 ## Exclusion Rules
 
@@ -182,7 +182,7 @@ All under `settings.rem` (`RemSettings`):
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `enabled` | `boolean` | — | Module + command activation |
-| `semanticMatching` | `boolean` | — | Enable AI-based conceptual matching |
+| `titleMatchWeight` | `number` | `0.6` | Weight for literal title/alias matches when ranking (0-1) |
 | `confidenceThreshold` | `number` | — | Min confidence for semantic candidates (0-1) |
 | `maxLinksPerNote` | `number` | — | Max link candidates per scanned note |
 | `remFolderPath` | `string` | `.synapse/rem` | Storage folder for proposal JSON files |

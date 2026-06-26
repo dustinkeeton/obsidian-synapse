@@ -85,10 +85,31 @@ export class RemModule {
 	}
 
 	/**
+	 * Gather link candidates for a note: literal title/alias matches (down-weighted
+	 * by `titleMatchWeight`) merged with always-on semantic matches, then re-ranked
+	 * by confidence and capped at `maxLinksPerNote` (#380). Centralizes the scan
+	 * pipeline so single-note, directory, and resumed scans behave identically.
+	 */
+	private async gatherCandidates(file: TFile, content: string): Promise<RemLinkCandidate[]> {
+		const s = this.getSettings().rem;
+		// Phase 1 — literal title/alias matches, down-weighted from their raw 1.0 so a
+		// title coincidence can't automatically outrank a content-relevant link.
+		const literal = this.scanner.scan(file, content, s.maxLinksPerNote)
+			.map(c => ({ ...c, confidence: c.confidence * s.titleMatchWeight }));
+		// Phase 2 — semantic matching, always on, given the full link budget.
+		const already = new Set(literal.map(c => c.targetPath));
+		const semantic = (await this.semanticMatcher.match(file, content, already, s.maxLinksPerNote))
+			.filter(c => c.confidence >= s.confidenceThreshold);
+		// Merge, re-rank by confidence descending, then cap at the per-note budget.
+		return [...literal, ...semantic]
+			.sort((a, b) => b.confidence - a.confidence)
+			.slice(0, s.maxLinksPerNote);
+	}
+
+	/**
 	 * Scan a single note for linkable mentions.
 	 */
 	async remScanNote(filePath: string): Promise<RemProposal | null> {
-		const settings = this.getSettings().rem;
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) {
 			this.notifications.info('File not found');
@@ -108,26 +129,7 @@ export class RemModule {
 
 		const content = await this.plugin.app.vault.read(tFile);
 
-		// Phase 1: literal mention scanning
-		const literalCandidates = this.scanner.scan(tFile, content, settings.maxLinksPerNote);
-
-		// Phase 2: optional semantic matching
-		let semanticCandidates: RemLinkCandidate[] = [];
-		if (settings.semanticMatching) {
-			const alreadyMatched = new Set(literalCandidates.map(c => c.targetPath));
-			const remaining = settings.maxLinksPerNote - literalCandidates.length;
-			if (remaining > 0) {
-				semanticCandidates = await this.semanticMatcher.match(
-					tFile, content, alreadyMatched, remaining
-				);
-				// Filter by confidence threshold
-				semanticCandidates = semanticCandidates.filter(
-					c => c.confidence >= settings.confidenceThreshold
-				);
-			}
-		}
-
-		const allCandidates = [...literalCandidates, ...semanticCandidates];
+		const allCandidates = await this.gatherCandidates(tFile, content);
 
 		if (allCandidates.length === 0) {
 			this.notifications.info('No linkable mentions found');
@@ -162,7 +164,6 @@ export class RemModule {
 	 * Scan all markdown files in a directory (or vault root) with checkpoint support.
 	 */
 	async remScanDirectory(folderPath?: string, _skipConfirmation = false, onlyFile?: TFile): Promise<number> {
-		const settings = this.getSettings().rem;
 		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
@@ -212,24 +213,7 @@ export class RemModule {
 				op.progress(i + 1, eligible.length, `Scanning ${file.basename}`);
 
 				const content = await this.plugin.app.vault.read(file);
-				const candidates = this.scanner.scan(file, content, settings.maxLinksPerNote);
-
-				// Optional semantic matching
-				let semanticCandidates: RemLinkCandidate[] = [];
-				if (settings.semanticMatching) {
-					const alreadyMatched = new Set(candidates.map(c => c.targetPath));
-					const remaining = settings.maxLinksPerNote - candidates.length;
-					if (remaining > 0) {
-						semanticCandidates = await this.semanticMatcher.match(
-							file, content, alreadyMatched, remaining
-						);
-						semanticCandidates = semanticCandidates.filter(
-							c => c.confidence >= settings.confidenceThreshold
-						);
-					}
-				}
-
-				const allCandidates = [...candidates, ...semanticCandidates];
+				const allCandidates = await this.gatherCandidates(file, content);
 
 				if (allCandidates.length > 0) {
 					const proposal: RemProposal = {
@@ -283,7 +267,6 @@ export class RemModule {
 	 * Resume a REM scan from a checkpoint.
 	 */
 	async resumeFromCheckpoint(checkpoint: import('../shared').Checkpoint): Promise<void> {
-		const settings = this.getSettings().rem;
 		const op = this.notifications.startOperation(
 			'Resuming REM scan',
 			'rem-resume'
@@ -316,7 +299,7 @@ export class RemModule {
 				}
 
 				const content = await this.plugin.app.vault.read(file);
-				const candidates = this.scanner.scan(file, content, settings.maxLinksPerNote);
+				const candidates = await this.gatherCandidates(file, content);
 
 				if (candidates.length > 0) {
 					const proposal: RemProposal = {

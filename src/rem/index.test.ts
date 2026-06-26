@@ -151,7 +151,6 @@ describe('RemModule', () => {
 		});
 
 		it('augments literal candidates with semantic matches above the confidence threshold', async () => {
-			settings.rem.semanticMatching = true;
 			settings.rem.confidenceThreshold = 0.5;
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
 			app.vault.read.mockResolvedValue('deep learning content');
@@ -165,6 +164,25 @@ describe('RemModule', () => {
 			const result = await module.remScanNote('notes/A.md');
 			expect(matchSpy).toHaveBeenCalled();
 			expect(result!.candidates.map((c) => c.matchedText)).toEqual(['ML']);
+		});
+
+		it('re-ranks a down-weighted title match below a stronger semantic match (#380)', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('content discussing machine learning');
+			// Literal title hit: scanner emits raw 1.0; gatherCandidates down-weights to 0.6.
+			scanSpy.mockReturnValue([candidate('TitleHit')]);
+			// Semantic hit is more content-relevant than the weighted title match.
+			matchSpy.mockResolvedValue([
+				{ ...candidate('Relevant'), matchType: 'semantic', confidence: 0.8 },
+			]);
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('notes/A.md');
+
+			// 0.8 semantic outranks the 0.6 weighted title -> semantic sorts first.
+			expect(result!.candidates.map((c) => c.matchedText)).toEqual(['Relevant', 'TitleHit']);
+			const title = result!.candidates.find((c) => c.matchedText === 'TitleHit')!;
+			expect(title.confidence).toBeCloseTo(0.6);
 		});
 	});
 
@@ -418,6 +436,47 @@ describe('RemModule', () => {
 			expect(created).toBe(1);
 			expect(saveSpy).toHaveBeenCalledWith(
 				expect.objectContaining({ sourceNotePath: 'notes/B.md' })
+			);
+		});
+	});
+
+	describe('resumeFromCheckpoint', () => {
+		const checkpointWith = (filePaths: string[]): any => ({
+			id: 'cp1',
+			module: 'rem',
+			operationLabel: 'REM scan',
+			status: 'active',
+			createdAt: '2026-06-11T00:00:00.000Z',
+			updatedAt: '2026-06-11T00:00:00.000Z',
+			completedItems: [],
+			remainingItems: filePaths.map((path, i) => ({
+				id: `item-${i}`,
+				label: path,
+				payload: { filePath: path },
+			})),
+			deferredTasks: [],
+			metadata: {},
+		});
+
+		it('runs semantic matching on resumed scans, not just literal (#380)', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('content about deep learning');
+			scanSpy.mockReturnValue([]); // no literal matches at all
+			matchSpy.mockResolvedValue([
+				{ ...candidate('ML'), matchType: 'semantic', confidence: 0.9 },
+			]);
+			const module = await loadedModule();
+
+			await module.resumeFromCheckpoint(checkpointWith(['notes/A.md']));
+
+			// Resume previously scanned literally only -> a semantic-only note produced
+			// no proposal. Now the semantic candidate is gathered and saved.
+			expect(matchSpy).toHaveBeenCalled();
+			expect(saveSpy).toHaveBeenCalledWith(
+				expect.objectContaining({
+					sourceNotePath: 'notes/A.md',
+					candidates: [expect.objectContaining({ matchedText: 'ML', matchType: 'semantic' })],
+				})
 			);
 		});
 	});

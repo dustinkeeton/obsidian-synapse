@@ -25,7 +25,11 @@ export interface RemLinkCandidate {
 	matchType: RemMatchType;
 	/** All positions where this match appears */
 	occurrences: RemOccurrence[];
-	/** Match confidence (0-1). Always 1.0 for title/alias; AI-assigned for semantic. */
+	/**
+	 * Match confidence (0-1). Literal title/alias matches start at a raw 1.0 and
+	 * are down-weighted by `titleMatchWeight` when ranked; semantic matches are
+	 * AI-assigned.
+	 */
 	confidence: number;
 }
 
@@ -46,8 +50,11 @@ export interface RemProposal {
 
 export interface RemSettings {
 	enabled: boolean;
-	/** Use AI to find conceptual matches beyond literal title/alias matching. */
-	semanticMatching: boolean;
+	/**
+	 * Weight applied to literal title/alias matches (0-1) so a title coincidence
+	 * cannot automatically outrank a genuinely content-relevant semantic link.
+	 */
+	titleMatchWeight: number;
 	/** Minimum confidence for semantic matches (0-1). */
 	confidenceThreshold: number;
 	/** Maximum link candidates per scanned note. */
