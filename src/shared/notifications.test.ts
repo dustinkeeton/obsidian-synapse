@@ -111,6 +111,21 @@ describe('NotificationManager', () => {
 			handle.finish('Should not show');
 			consoleSpy.mockRestore();
 		});
+
+		it('redacts API keys from the console log', () => {
+			const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+			const handle = manager.startOperation('Transcribe', 'error-redact');
+			handle.error('Failed with sk-1234567890abcdef');
+			expect(consoleSpy).toHaveBeenCalledWith(
+				expect.stringContaining('[Synapse]'),
+				expect.stringContaining('[REDACTED]')
+			);
+			expect(consoleSpy).not.toHaveBeenCalledWith(
+				expect.anything(),
+				expect.stringContaining('sk-1234567890abcdef')
+			);
+			consoleSpy.mockRestore();
+		});
 	});
 
 	describe('status bar', () => {

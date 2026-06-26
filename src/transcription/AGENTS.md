@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-19
+last-updated: 2026-06-25
 ---
 
 # Transcription Module
@@ -8,7 +8,9 @@ UI-only module providing unified transcription modals with duration-aware time-r
 
 ## Public API
 
-Exported from `index.ts`:
+Re-exported from the `index.ts` barrel (`index.ts:L1`). `NodeDeps` is the one
+exception: it is a module-level export of `duration-detector.ts` (`duration-detector.ts:L46`),
+not re-exported by the barrel; it is only the type of the optional `deps?` param.
 
 ```ts
 class UnifiedTranscriptionModal extends Modal {
@@ -81,7 +83,7 @@ interface DurationResult {
   title: string
 }
 
-type NodeDeps = NodeModules  // injection seam for tests; alias of shared NodeModules
+type NodeDeps = NodeModules  // injection seam for tests; alias of shared NodeModules (not barrel-exported)
 ```
 
 ## File Inventory
@@ -100,17 +102,18 @@ type NodeDeps = NodeModules  // injection seam for tests; alias of shared NodeMo
 ## UnifiedTranscriptionModal
 
 Single modal combining audio file selection and video URL input (`unified-modal.ts`):
-- Dropdown lists all audio files in vault (filtered by `AUDIO_EXTENSIONS`, honors audio path exclusions from settings #323)
-- URL text field with platform detection badge (YouTube/TikTok/Instagram etc.)
-- URL section shown only on `Platform.isDesktop`
-- File selection and URL input are mutually exclusive
-- On submit: attempts duration detection (ffprobe for files, yt-dlp for URLs)
+- Local-file section rendered only when `enabledModules.audio || enabledModules.video` (`unified-modal.ts:L37`)
+- Dropdown lists all audio files in vault (filtered by `AUDIO_EXTENSIONS`, honors audio path exclusions via `isPathExcluded(path, 'audio', settings)`, #323)
+- URL section rendered only when `enabledModules.video && Platform.isDesktop` (`unified-modal.ts:L74`)
+- URL text field with platform detection badge (`detectPlatform`); unknown non-empty input shows "Unsupported URL"
+- File selection and URL input are mutually exclusive (setting one clears the other)
+- On submit (`handleTranscribe`, `unified-modal.ts:L118`): on mobile, transcribes full file/URL (no duration step); on desktop attempts duration detection (ffprobe for files, yt-dlp for URLs)
   - Duration >= `MIN_SLIDER_DURATION` (10s): shows `showTimeRangeToast`
-  - Duration < 10s: transcribes full file (no slider)
-  - Duration unknown: shows fallback text-input toast (MM:SS/HH:MM:SS manual entry)
+  - Duration defined but < 10s: transcribes full file (no slider)
+  - Duration unknown: shows fallback text-input toast (`showFallbackTextInputToast`, MM:SS/HH:MM:SS manual entry via `validateTimeRange`)
 - Callbacks receive `timeRange?: TimeRange` (undefined = full file)
 
-Opened via ribbon icon (`mic`) and command `synapse:transcribe-media`.
+Opened by `main.ts`: ribbon icon `synapse-transcribe` (desktop only) and command `synapse:transcribe-media` (plain `callback`; registration gated on a transcription module being enabled).
 
 ## NoteMediaModal
 
@@ -120,20 +123,21 @@ Selection modal for media embedded in the current note (`note-media-modal.ts`):
 - "Select all" / "Select none" buttons
 - "Combine audio" toggle (#214): shown for 2+ audio embeds; with ffmpeg concatenates audio before transcribing (single API call); without ffmpeg merges text transcriptions
   - `ffmpegAvailable` param controls the toggle description text only; actual concat logic is in `AudioModule`
+  - `combine` is passed true only when the toggle is on AND 2+ audio files are actually selected (`combine = this.combineAudio && chosenAudio.length >= 2`, `note-media-modal.ts:L109`)
   - `onTranscribeAudio` receives `combine: boolean` as second arg; caller decides behavior
 - "Process selected" dispatches to separate audio/video/image callbacks
 
-Opened via command `synapse:transcribe-note-media`.
+Opened by `main.ts` (`transcribeMediaFromNote`) via command `synapse:transcribe-note-media` (`editorCallback`; scans the active note's embeds, no-ops with a notice when none found).
 
 ## Duration Detection
 
 `duration-detector.ts` — both functions return early with `{ durationSeconds: undefined }` on mobile (`!Platform.isDesktop`).
 
 Local files (`detectLocalFileDuration`):
-1. Writes audio binary to OS temp dir (`synapse-probe-<ts>-<safeName>`)
-2. Runs ffprobe (derived from `video.ffmpegPath` by replacing `ffmpeg` with `ffprobe`)
+1. Writes audio binary to OS temp dir (`synapse-probe-<ts>-<safeName>`); `safeName` strips path-unsafe chars via `/[^A-Za-z0-9._-]/g`
+2. Runs ffprobe (derived from `video.ffmpegPath` via `replace(/ffmpeg$/, 'ffprobe')`), `env: shellEnv()`, `timeout: 15_000`ms
 3. Parses `-show_entries format=duration -of csv=p=0` output
-4. Cleans up temp file in `execFile` callback (fire-and-forget)
+4. Cleans up temp file in `execFile` callback (fire-and-forget `fs.promises.unlink`)
 
 URLs (`detectUrlDuration`):
 1. Validates URL via `sanitizeUrl`
@@ -163,16 +167,22 @@ URLs (`detectUrlDuration`):
 ## Data Flow
 
 ```
-main.ts constructs modals and wires callbacks:
+main.ts constructs modals and wires callbacks (main.ts:L539, main.ts:L576):
 
-UnifiedTranscriptionModal
+UnifiedTranscriptionModal (openUnifiedModal)
+  enabledModules = { audio: settings.audio.enabled,
+                     video: settings.video.enabled && this.video !== null }
   onTranscribeFile(file, timeRange?) --> AudioModule.transcribeFileToActiveNote(file, timeRange)
   onTranscribeUrl(url, timeRange?)   --> VideoModule.transcribeUrlToActiveNote(url, timeRange)
+                                         (no-op when video module absent)
 
-NoteMediaModal
-  onTranscribeAudio(embeds, combine) --> AudioModule.transcribeAndInsert(file, embeds, combine)
+NoteMediaModal (transcribeMediaFromNote; embeds from findAudioEmbeds/findVideoUrls/findImageEmbeds)
+  onTranscribeAudio(embeds, combine) --> combine
+                                           ? AudioModule.transcribeAndInsertCombined(file, embeds)
+                                           : AudioModule.transcribeAndInsert(file, embeds)
   onTranscribeVideo(embeds)          --> VideoModule.transcribeAndInsert(file, embeds)
   onExtractImages(embeds)            --> ImageModule.extractAndInsert(file, embeds)
+  ffmpegAvailable                    <-- await main.isFfmpegAvailable()
 ```
 
 ## Module Dependencies

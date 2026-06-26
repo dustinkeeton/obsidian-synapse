@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-06-19
+last-updated: 2026-06-25
 ---
 
 # deep-dive module
 
-Recursively explores a note by extracting topics and generating child notes via AI. Uses quality scoring to control recursion depth. Generates a syllabus index and inter-note navigation. Supports checkpointed generation for resumability.
+Recursively explores a note by AI-extracting sub-topics and generating child notes, using a local quality score to bound recursion depth, and emitting a syllabus index plus inter-note navigation under a resumable checkpoint.
 
 ## Public API (`index.ts`)
 
@@ -47,9 +47,9 @@ function computeTraversalOrder(proposals: DeepDiveProposal[], run: DeepDiveRun):
 function buildNavigationContext(proposalId: string, nodes: TraversalNode[], run: DeepDiveRun, syllabusPath: string): NavigationContext | null
 function renderNavigationBlock(ctx: NavigationContext): string
 function renderSyllabusContent(nodes: TraversalNode[], run: DeepDiveRun): string
-function buildTreeFromNodes(nodes: TraversalNode[]): TreeNode[]
+function buildTreeFromNodes(nodes: TraversalNode[], rootTitle: string): TreeNode
 function syllabusTitle(rootNotePath: string): string
-function syllabusPath(rootNotePath: string, outputFolder: string): string
+function syllabusPath(rootNotePath: string, noteOutputFolder: string): string
 function injectNavigationBlock(content: string, navBlock: string): string
 ```
 
@@ -61,15 +61,17 @@ Re-exported settings renderer: `renderDeepDiveSettings` (from `./settings-sectio
 
 | File | Class/Function | Role |
 |------|---------------|------|
-| `index.ts` | `DeepDiveModule`, `buildDeepDivePath` | Module entry point and public API |
-| `topic-analyzer.ts` | `TopicAnalyzer` | AI topic extraction; checks vault for existing notes |
-| `note-generator.ts` | `NoteGenerator` | AI content generation for a topic given parent context |
-| `quality-scorer.ts` | `scoreQuality` | Local heuristic scoring: word count, child topics, overlap, genericity |
-| `syllabus-navigator.ts` | Navigation utilities | Traversal ordering, syllabus index, prev/next navigation blocks |
-| `deep-dive-store.ts` | `DeepDiveStore` | JSON persistence for proposals and runs |
-| `depth-selector-modal.ts` | `DepthSelectorModal`, `selectDepth`, `MIN_DEPTH`, `MAX_DEPTH` | Modal for user to select recursion depth (1-6) |
-| `settings-section.ts` | `renderDeepDiveSettings` | Settings UI renderer |
+| `index.ts` | `DeepDiveModule` (L51), `buildDeepDivePath` (L681) | Module entry point and public API |
+| `topic-analyzer.ts` | `TopicAnalyzer` (L10) | AI topic extraction; matches titles against included vault notes |
+| `note-generator.ts` | `NoteGenerator` (L8) | AI content generation for a topic given parent title+content |
+| `quality-scorer.ts` | `scoreQuality` (L30) | Local heuristic scoring: topic count, word count, genericity, overlap, depth decay |
+| `syllabus-navigator.ts` | navigation utilities (L50+) | Traversal ordering, syllabus index, prev/next navigation blocks |
+| `deep-dive-store.ts` | `DeepDiveStore` (L36) | JSON persistence for proposals and runs |
+| `depth-selector-modal.ts` | `DepthSelectorModal`, `selectDepth`, `MIN_DEPTH`, `MAX_DEPTH` (L4-5) | Modal for user to select recursion depth (1-6) |
+| `settings-section.ts` | `renderDeepDiveSettings` (L12) | Settings UI renderer (accordion key `deepDive`) |
 | `types.ts` | -- | All deep-dive types |
+
+`syllabus-navigator.ts` also exports `wikiLink` (L107) and `buildBreadcrumbs` (L115); these are internal helpers and are NOT re-exported through `index.ts`.
 
 ## Dependency on `organize` module
 
@@ -182,10 +184,19 @@ interface DeepDiveRun {
 
 ## Commands Registered
 
-| Command ID | Enabled When | Description |
-|------------|-------------|-------------|
-| `deep-dive` | `settings.deepDive.enabled` | Deep dive current note |
-| `clear-deep-dive` | `settings.deepDive.enabled` | Clear all deep dive proposals |
+Registered at runtime in `index.ts:92` and `index.ts:100` via `registrar.register(id, deepDive.enabled, ...)`. Declared with metadata in `commands/registry.ts:42-43`. Gate order: registry `status` (dev) -> flow membership (dev) -> `settings.deepDive.enabled` (user).
+
+| Command ID | Name (registry.ts) | Callback | Context | Registry status | Runtime gate |
+|------------|--------------------|----------|---------|-----------------|--------------|
+| `deep-dive` | Deep dive current note | editorCallback | note | active | `settings.deepDive.enabled` |
+| `clear-deep-dive` | Clear deep dive proposals | callback | global | disabled (dev kill switch) | `settings.deepDive.enabled` |
+
+## Callouts
+
+| Callout | Defined / used | Emitted by |
+|---------|----------------|-----------|
+| `synapse-nav` | `syllabus-navigator.ts:205` | `renderNavigationBlock`; injected at the top of each accepted note body and replaced on every nav refresh |
+| `synapse-deep-dive` | `shared/callouts.ts:17` (`CALLOUT_TYPES.deepDive`), command icon `commands/icons.ts:31` | registered callout type + command/brand icon; not written into note bodies by this module |
 
 ## Settings Keys
 
@@ -211,6 +222,23 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 In: `shared/` (NotificationManager, readNote, writeNote, wordCount, CheckpointManager, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, Checkpoint, CheckpointWorkItem, DeferredTask), `organize/` (ContentAnalyzer, DirectoryMatcher — auto-organize mode only), `settings.ts` (SynapseSettings, DeepDiveNestingMode), `commands.ts` (CommandRegistrar)
 
 Out: Nothing consumed by other feature modules.
+
+## Error States
+
+| Condition | Handling (index.ts) |
+|-----------|---------------------|
+| Note excluded by rule or excludeTag | `isExcluded` true -> info Notice naming the matched rule pattern; abort before any AI call (L233) |
+| Empty/unreadable note | info Notice "Could not read note content"; abort (L245) |
+| Topic extraction throws (Phase 1) | `scanOp.error(...)`; abort, no run created (L261) |
+| Zero topics found / all already in vault | `scanOp.finish('No topics found')` or info Notice; abort (L266, L277) |
+| Depth modal dismissed / user declines confirm | info Notice "Deep dive cancelled"; abort (L283, L294) |
+| Child topic extraction throws (per-node) | caught; `childTopics = []`, score from content alone, recursion stops for that branch (L409) |
+| User cancels mid-generation (`genOp.cancelled`) | run.status='cancelled', `checkpointManager.discard`, info Notice; partial proposals stay saved (L482) |
+| Generation loop throws | run.status='cancelled', `checkpointManager.discard`, `genOp.error(...)` (L509) |
+| `acceptProposal` on missing proposal | info Notice "Proposal not found"; no-op (L139) |
+| `acceptProposal` on non-pending proposal | silent no-op (double-accept guard) (L145) |
+| `acceptProposal` write failure | `notifyError`, then rethrows `Accept proposal failed: <msg>` (L173) |
+| auto-organize AI failure or top score < 0.6 | caught; falls back to `buildDeepDivePath` (nested) (L632, L637) |
 
 ## Invariants / Gotchas
 
