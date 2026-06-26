@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import { DetectionResult, Proposal } from './types';
 
@@ -35,6 +35,20 @@ export class ProposalGenerator {
 		const content = await this.app.vault.cachedRead(noteFile);
 		const settings = this.getSettings();
 
+		// Anti-fabrication guard (sibling to the link-dominated guard below): a note
+		// with no body offers only its title as signal. When that title is also
+		// generic -- an Obsidian "Untitled" default, a date-style daily-note name,
+		// or a bare URL -- there is nothing meaningful to elaborate from, and asking
+		// the AI would invent content from the filename alone. Refuse instead. A
+		// real title (e.g. "Photosynthesis") is not generic and still seeds a
+		// title-led prompt in buildPrompt().
+		if (content.trim() === '' && isGenericTitle(noteFile.basename)) {
+			this.notifications.info(
+				`"${noteFile.basename}" has no content to elaborate from, and its title isn't specific enough to suggest a topic. Add a few words first, then try again.`
+			);
+			return null;
+		}
+
 		let contextNotes = '';
 		if (settings.elaboration.proposal.includeSourceContext) {
 			contextNotes = await this.gatherContext(detection.notePath);
@@ -63,7 +77,7 @@ export class ProposalGenerator {
 			return null;
 		}
 
-		const prompt = this.buildPrompt(content, detection, contextNotes, imageContext, externalContext, linkDominated);
+		const prompt = this.buildPrompt(noteFile.basename, content, detection, contextNotes, imageContext, externalContext, linkDominated);
 		const systemPrompt = imageContext
 			? 'You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. Image analysis has been provided -- use the descriptions to write contextually aware content that references what the images actually show. Preserve all image embeds in their original format.'
 			: 'You are a note-taking assistant. Your job is to expand placeholder or stub notes into fuller, more useful content. Preserve the original voice and intent. Output only the proposed additions in markdown format. Do not wrap the output in code fences. If the source content contains image URLs, preserve them as markdown image embeds (![alt](url)) rather than describing the image in text. For internal images referenced as [[image.jpg]], embed them as ![[image.jpg]].';
@@ -85,6 +99,7 @@ export class ProposalGenerator {
 	}
 
 	private buildPrompt(
+		noteTitle: string,
 		content: string,
 		detection: DetectionResult,
 		contextNotes: string,
@@ -110,11 +125,21 @@ export class ProposalGenerator {
 		const isUserRequested = detection.reasons.length === 1
 			&& detection.reasons[0].type === 'user-requested';
 
+		// The title is often the clearest statement of a note's topic and intent,
+		// so surface it as context in every prompt. (The empty-body + generic-title
+		// case is already short-circuited in generate(), so any empty body reaching
+		// here has a meaningful title to seed from.)
+		const titleContext = `Note title: "${noteTitle}"`;
+
 		let prompt: string;
-		if (isUserRequested) {
-			prompt = `The user has requested elaboration suggestions for the following note:\n\n---\n${content}\n---\n\nPlease review the entire note and propose additions, expansions, or improvements that would make it more comprehensive and useful. Consider adding detail to existing sections, suggesting new sections, or expanding on key ideas.`;
+		if (content.trim() === '') {
+			// No body yet: seed the proposal from the title rather than emitting an
+			// empty `---`/`---` block, which would give the model no signal at all.
+			prompt = `${titleContext}\n\nThis note has no body yet; it is currently just a title. Propose initial content for a note on this topic, matching the intent the title implies. Write the note as its author plausibly would.`;
+		} else if (isUserRequested) {
+			prompt = `${titleContext}\n\nThe user has requested elaboration suggestions for the following note:\n\n---\n${content}\n---\n\nPlease review the entire note and propose additions, expansions, or improvements that would make it more comprehensive and useful. Consider adding detail to existing sections, suggesting new sections, or expanding on key ideas.`;
 		} else {
-			prompt = `The following note appears to be a placeholder or stub:\n\n---\n${content}\n---\n\nReasons it was flagged:\n${reasonDescriptions.map(r => `- ${r}`).join('\n')}\n\nPlease propose additions that would flesh out this note.`;
+			prompt = `${titleContext}\n\nThe following note appears to be a placeholder or stub:\n\n---\n${content}\n---\n\nReasons it was flagged:\n${reasonDescriptions.map(r => `- ${r}`).join('\n')}\n\nPlease propose additions that would flesh out this note.`;
 		}
 
 		if (contextNotes) {

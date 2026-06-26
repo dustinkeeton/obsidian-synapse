@@ -1,7 +1,6 @@
-/**
- * Checks whether a note title matches Obsidian's "Untitled" default pattern.
- * Matches "Untitled", "Untitled 1", "Untitled 2", etc. (case-insensitive).
- */
-export function isUntitled(title: string): boolean {
-	return /^untitled(\s+\d+)?$/i.test(title.trim());
-}
+// The canonical home for note-title predicates is `shared/title-detector` so
+// that features outside `title/` (e.g. elaboration's generic-title guard) can
+// reuse them without importing from this feature module -- the dependency rules
+// allow features to depend on `shared/` but never on each other. Re-exported
+// here to preserve the title module's public surface (`isUntitled`).
+export { isUntitled } from '../shared/title-detector';
