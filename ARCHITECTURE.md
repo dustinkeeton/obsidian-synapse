@@ -351,9 +351,11 @@ Key constraints:
 
 "Fire Synapse" runs the AI features over a folder (or a single note) in a fixed, deliberate order. The `pipeline/` module owns a `SynapseRunner` that executes each phase sequentially, isolating failures so one bad phase doesn't abort the run.
 
+> This diagram expands subgraph **c (Fire Synapse)** of the master command-pipeline overview in [`README.md` → How it all fits together](README.md#how-it-all-fits-together), which is the canonical birds-eye view.
+
 ```mermaid
 graph LR
-    Elab["1. Elaboration"] --> Summ["2. Summarize"] --> Enrich["3. Enrichment"] --> Rem["4. REM"] --> Tidy["5. Tidy"] --> Org["6. Organize"]
+    Elab["1 · Elaboration"] --> Summ["2 · Summarize"] --> Enrich["3 · Enrichment"] --> Rem["4 · REM"] --> Tidy["5 · Tidy"] --> Org["6 · Organize"]
     style Org fill:#e8f5e9,stroke:#333
 ```
 
@@ -368,14 +370,22 @@ graph LR
 
 The `intake/` module turns a watched folder into a hands-off inbox. Drop a note — or a note containing an article/media URL — and Synapse processes it automatically.
 
+> This diagram expands subgraph **d (Intake)** of the master command-pipeline overview in [`README.md` → How it all fits together](README.md#how-it-all-fits-together), which is the canonical birds-eye view.
+
 ```mermaid
 graph TB
     Event["Vault create/modify in intake folder"] --> Guard["Cheap guards:<br/>is .md? enabled? in folder? not in-flight?"]
     Guard --> Debounce["Per-path debounce<br/>(wait for note to settle)"]
     Debounce --> Idem{"Already has<br/>synapse-processed flag?"}
     Idem -->|Yes| Skip["Skip (idempotent)"]
-    Idem -->|No| Route["Route: article URL / media URL / general"]
-    Route --> Fire["deps.fireOnFile(note)<br/>(full pipeline on one note)"]
+    Idem -->|No| Bare{"Body is essentially<br/>one bare URL?"}
+    Bare -->|"no — general / mixed / text"| Fire["deps.fireOnFile(note)<br/>(full pipeline on one note)"]
+    Bare -->|yes| Classify{"Classify URL"}
+    Classify -->|article| Article["Fetch article content<br/>+ deps.fireOnFile(note)"]
+    Classify -->|"video / audio"| Stub["Transcribe (stub — no-op today, #112)"]
+    Classify -->|unknown| Fire
+    Article --> Stamp
+    Stub --> Stamp
     Fire --> Stamp["Stamp synapse-processed<br/>(before any move)"]
     Stamp --> Move["Organize moved it?<br/>else optional fallback move"]
     Move --> Log["If it left the inbox:<br/>write dated capture-log breadcrumb (#224)"]
@@ -573,6 +583,8 @@ URL detection (`shared/url-detector.ts`) recognizes:
 
 All inter-module communication flows through `main.ts` via nullable callback assignments. No event bus, no pub-sub.
 
+> This diagram is the wiring-level detail behind the per-note cascade — subgraph **a** of the master command-pipeline overview in [`README.md` → How it all fits together](README.md#how-it-all-fits-together), which is the canonical birds-eye view. The setting names and defaults on the edges below match that diagram.
+
 ```mermaid
 graph LR
     subgraph Triggers["Enrichment + Title Triggers"]
@@ -584,15 +596,15 @@ graph LR
         DDa["Deep Dive<br/>onNoteAccepted"]
     end
 
-    Enrich["Enrichment.enrich()"]
-    TitleChk["Title.checkTitle()"]
+    Enrich["Enrichment.enrich()<br/>gated by enrichment.autoEnrich (default ON)"]
+    TitleChk["Title.checkTitle()<br/>gated by title.checkAfterOperations (default ON)"]
 
     Elab -->|"'elaboration'"| Enrich
     Audio -->|"'transcription'"| Enrich
     Video -->|"'transcription'"| Enrich
     Img -->|"'transcription'"| Enrich
     Summ -->|"'summarization'"| Enrich
-    DDa -->|"'deep-dive'"| Enrich
+    DDa -->|"'deep-dive' · deepDive.autoEnrichOnAccept (default ON)"| Enrich
 
     Elab --> TitleChk
     Audio --> TitleChk
@@ -601,11 +613,13 @@ graph LR
     Summ --> TitleChk
     DDa --> TitleChk
 
-    DD2["Deep Dive<br/>onOrganizeRequested"] -->|"when autoOrganize"| Org["Organize.organizeNote()"]
-    Summ2["Summarize<br/>onOrganizeRequested"] -->|"when autoOrganize"| Org
+    DD2["Deep Dive<br/>onOrganizeRequested"] -->|"deepDive.autoOrganizeOnAccept (default OFF)"| Org["Organize.organizeNote()"]
+    Summ2["Summarize<br/>onOrganizeRequested"] -->|"summarize.autoOrganizeOnSummarize (default OFF)"| Org
 
     ElabR["Elaboration"] & EnrichR["Enrichment"] & OrgR["Organize"] & DDR["Deep Dive"] & TitleR["Title"] -->|onViewRefreshNeeded| Refresh["main.refreshUnifiedView()"]
 ```
+
+> **Deep Dive caveat.** When global enrichment is on (`enrichment.autoEnrich` ON) but `deepDive.autoEnrichOnAccept` is OFF, accepting a deep-dive note wires *neither* the enrich nor the title callback — so the title check is effectively gated behind `deepDive.autoEnrichOnAccept` too. The standalone title-only fallback (each trigger → `Title.checkTitle()` with no enrich) is wired only when `enrichment.autoEnrich` is OFF.
 
 ---
 
