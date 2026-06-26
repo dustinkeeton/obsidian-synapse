@@ -679,3 +679,109 @@ describe('ProposalGenerator -- link-dominated notes (anti-fabrication)', () => {
 		expect(mockComplete).toHaveBeenCalledOnce();
 	});
 });
+
+describe('ProposalGenerator -- note title as elaboration signal (#387)', () => {
+	function makeGenerator(noteContent: string): {
+		generator: ProposalGenerator;
+		notifications: ReturnType<typeof makeNotifications>;
+	} {
+		const mockApp = {
+			vault: {
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue(noteContent),
+				read: vi.fn(),
+				readBinary: vi.fn(),
+			},
+			metadataCache: {
+				getCache: vi.fn().mockReturnValue(null),
+				getFirstLinkpathDest: vi.fn().mockReturnValue(null),
+			},
+		};
+		const settings = makeSettings();
+		settings.elaboration.proposal.includeSourceContext = false;
+		settings.image.enabled = false;
+		const notifications = makeNotifications();
+		return {
+			generator: new ProposalGenerator(mockApp as any, () => settings, notifications),
+			notifications,
+		};
+	}
+
+	beforeEach(() => {
+		mockComplete.mockClear();
+		mockChat.mockClear();
+		mockComplete.mockResolvedValue('Expanded content here.');
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('includes the note title as context for a content-bearing note', async () => {
+		// basename derives from the path: notes/Photosynthesis.md -> "Photosynthesis".
+		const { generator } = makeGenerator(
+			'# Photosynthesis\n\nThe process by which plants convert light into chemical energy.'
+		);
+
+		await generator.generate({
+			notePath: 'notes/Photosynthesis.md',
+			reasons: [{ type: 'user-requested' }],
+		});
+
+		expect(mockComplete).toHaveBeenCalledOnce();
+		const [prompt] = mockComplete.mock.calls[0];
+		expect(prompt).toContain('Note title: "Photosynthesis"');
+		// The original content is still embedded between the --- markers.
+		expect(prompt).toContain('The process by which plants convert light');
+	});
+
+	it('seeds the prompt from the title when the note body is empty', async () => {
+		// Whitespace-only body, but a meaningful (non-generic) title.
+		const { generator } = makeGenerator('   \n  ');
+
+		const proposal = await generator.generate({
+			notePath: 'notes/Quantum Tunneling.md',
+			reasons: [{ type: 'short-note', wordCount: 0 }],
+		});
+
+		expect(proposal).not.toBeNull();
+		expect(mockComplete).toHaveBeenCalledOnce();
+		const [prompt] = mockComplete.mock.calls[0];
+		// Title-led phrasing, with the title as the seed...
+		expect(prompt).toContain('Note title: "Quantum Tunneling"');
+		expect(prompt).toContain('This note has no body yet');
+		// ...and NO empty `---`/`---` block (the bug this fixes: an empty body must
+		// not be sent as nothing between the markers).
+		expect(prompt).not.toContain('---');
+	});
+
+	it('refuses to fabricate for an empty note with a generic title (no AI call, fires a notice)', async () => {
+		// Empty body + Obsidian "Untitled" default -> nothing to elaborate from.
+		const { generator, notifications } = makeGenerator('');
+
+		const proposal = await generator.generate({
+			notePath: 'notes/Untitled.md',
+			reasons: [{ type: 'short-note', wordCount: 0 }],
+		});
+
+		expect(proposal).toBeNull();
+		expect(mockComplete).not.toHaveBeenCalled();
+		expect(notifications.info).toHaveBeenCalledOnce();
+		const [msg] = notifications.info.mock.calls[0];
+		expect(msg).toContain('Untitled');
+	});
+
+	it('refuses to fabricate for an empty note named after a date', async () => {
+		// Empty body + date-style daily-note name -> also generic.
+		const { generator, notifications } = makeGenerator('');
+
+		const proposal = await generator.generate({
+			notePath: 'daily/2026-06-25.md',
+			reasons: [{ type: 'short-note', wordCount: 0 }],
+		});
+
+		expect(proposal).toBeNull();
+		expect(mockComplete).not.toHaveBeenCalled();
+		expect(notifications.info).toHaveBeenCalledOnce();
+	});
+});

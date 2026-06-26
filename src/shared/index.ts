@@ -113,6 +113,7 @@ export {
 } from './content-schemas';
 export type { ContentSchema, PipelineStage, SchemaMode } from './content-schemas';
 export { generateId, isValidCheckpointId } from './id-utils';
+export { isUntitled, isGenericTitle } from './title-detector';
 export {
 	loadNodeModules,
 	assertDesktop,
