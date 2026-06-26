@@ -67,6 +67,47 @@ function labelForTarget(target: SummarizeTarget): string {
 	}
 }
 
+/**
+ * Auto-dismiss (ms) for the actionable "Open settings" notice shown when a video
+ * dependency (yt-dlp/ffmpeg) is missing (#382). Generous so the user has time to
+ * read the install guidance and press the button before it disappears.
+ */
+const DEPENDENCY_NOTICE_DURATION = 15000;
+
+/**
+ * Structural view of the `DependencyMissingError` thrown by the video extractor
+ * (`src/video/audio-extractor.ts`) once it has bubbled up to the summarize
+ * layer. Matched by the discriminant `name` (see {@link findDependencyMissingError})
+ * rather than `instanceof`, so this module needs no static import from the video
+ * feature module.
+ */
+interface DependencyMissingInfo {
+	name: string;
+	message: string;
+	tool: 'yt-dlp' | 'ffmpeg';
+}
+
+/**
+ * Find the video extractor's dependency-missing error (yt-dlp/ffmpeg) in an
+ * error's `cause` chain, returning it so the caller can show actionable
+ * onboarding (#382), or `null` for any other failure. The whole chain is walked
+ * (not just the top level) so the error is still recognized if an intermediate
+ * layer wraps it with `{ cause }`; a `seen` guard prevents an infinite loop on a
+ * cyclic chain.
+ */
+function findDependencyMissingError(error: unknown): DependencyMissingInfo | null {
+	const seen = new Set<unknown>();
+	let current: unknown = error;
+	while (current instanceof Error && !seen.has(current)) {
+		if (current.name === 'DependencyMissingError') {
+			return current as unknown as DependencyMissingInfo;
+		}
+		seen.add(current);
+		current = (current as { cause?: unknown }).cause;
+	}
+	return null;
+}
+
 export class SummarizeModule {
 	private summarizer: Summarizer;
 	private transcribeUrl: TranscribeUrlFn | null;
@@ -361,9 +402,12 @@ export class SummarizeModule {
 			} catch (error) {
 				// Standardized link-load failure notice -- identical format to the
 				// per-item summarize path and Elaborate (was notifyError, which read
-				// differently for the same underlying failure).
-				const reason = error instanceof Error ? error.message : String(error);
-				this.notifications.error(linkLoadError(target.source, reason));
+				// differently for the same underlying failure). A missing video
+				// dependency instead routes to the actionable onboarding notice (#382).
+				this.notifyTargetError(error, () => {
+					const reason = error instanceof Error ? error.message : String(error);
+					this.notifications.error(linkLoadError(target.source, reason));
+				});
 			}
 		}
 
@@ -655,9 +699,11 @@ export class SummarizeModule {
 					inlineCompleted++;
 				}
 			} catch (error) {
-				this.notifications.notifyError(
-					`Summarization failed for ${target.source}`,
-					error
+				this.notifyTargetError(error, () =>
+					this.notifications.notifyError(
+						`Summarization failed for ${target.source}`,
+						error
+					)
 				);
 			}
 		}
@@ -700,6 +746,13 @@ export class SummarizeModule {
 				const transcript = await this.transcribeUrl(url, op);
 				return transcript.slice(0, maxLength);
 			} catch (error) {
+				// Preserve a typed video-dependency error (yt-dlp/ffmpeg) so the
+				// caller can offer onboarding (#382); matched by name to avoid a
+				// static summarize -> video import. Other failures keep the
+				// descriptive wrapper so the link-load notice stays informative.
+				if (error instanceof Error && error.name === 'DependencyMissingError') {
+					throw error;
+				}
 				const msg = error instanceof Error ? error.message : String(error);
 				throw new Error(`Video transcription failed for ${url}: ${msg}`);
 			}
@@ -733,8 +786,12 @@ export class SummarizeModule {
 		try {
 			content = await this.fetchContentForUrl(source, maxLength, op);
 		} catch (error) {
-			const reason = error instanceof Error ? error.message : String(error);
-			this.notifications.error(linkLoadError(source, reason));
+			// A missing video dependency routes to the actionable onboarding notice;
+			// every other failure keeps the standardized link-load error (#382).
+			this.notifyTargetError(error, () => {
+				const reason = error instanceof Error ? error.message : String(error);
+				this.notifications.error(linkLoadError(source, reason));
+			});
 			return null;
 		}
 		if (!content.trim()) {
@@ -764,6 +821,67 @@ export class SummarizeModule {
 
 		const transcript = await this.transcribeAudio!(audioFile);
 		return transcript.slice(0, maxLength);
+	}
+
+	/**
+	 * Surface a failed target. When the failure (or a wrapped `cause`) is a
+	 * missing video dependency — yt-dlp/ffmpeg, see {@link findDependencyMissingError}
+	 * — show an actionable notice with an "Open settings" button that reveals the
+	 * Video transcription section (#382). Any other failure falls through to
+	 * `fallback`, the call site's normal (persistent) error notice.
+	 */
+	private notifyTargetError(error: unknown, fallback: () => void): void {
+		const dependency = findDependencyMissingError(error);
+		if (dependency) {
+			this.notifications.info(dependency.message, DEPENDENCY_NOTICE_DURATION, {
+				label: 'Open settings',
+				onClick: () => this.revealVideoSettings(),
+			});
+			return;
+		}
+		fallback();
+	}
+
+	/**
+	 * Open Synapse settings and reveal the Video transcription section — wired as
+	 * the onClick of the dependency-missing "Open settings" action (#382). The
+	 * `app.setting` API is undocumented, so every access is feature-detected and
+	 * degrades to a no-op when absent.
+	 */
+	private revealVideoSettings(): void {
+		const setting = (this.plugin.app as unknown as {
+			setting?: {
+				open?: () => void;
+				openTabById?: (id: string) => { containerEl?: HTMLElement } | undefined;
+			};
+		}).setting;
+		if (!setting || typeof setting.open !== 'function') return;
+
+		// Expand the Video accordion before the tab paints so it opens revealed.
+		// Mutating the live settings object (the same instance the settings tab
+		// reads) is what takes effect on render; persistence is best-effort.
+		this.getSettings().ui.collapsedSections['video'] = false;
+		void (this.plugin as unknown as {
+			saveSettings?: () => Promise<void>;
+		}).saveSettings?.();
+
+		setting.open();
+		const tab = typeof setting.openTabById === 'function'
+			? setting.openTabById('synapse')
+			: undefined;
+
+		// Best-effort scroll of the Video section into view once the tab paints.
+		// The section is already expanded above, so this is pure polish; guard for
+		// the test environment where containerEl has no querySelectorAll.
+		const containerEl = tab?.containerEl;
+		if (containerEl && typeof containerEl.querySelectorAll === 'function') {
+			window.setTimeout(() => {
+				const title = Array.from(
+					containerEl.querySelectorAll<HTMLElement>('.synapse-accordion-title'),
+				).find((el) => el.textContent === 'Video transcription');
+				title?.closest('.synapse-accordion')?.scrollIntoView({ block: 'start' });
+			}, 0);
+		}
 	}
 
 	/**

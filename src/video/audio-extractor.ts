@@ -30,6 +30,29 @@ class NoAudioError extends Error {
 }
 
 /**
+ * Typed error thrown when a required external binary cannot be located — either
+ * because the executable is missing entirely (ENOENT on spawn) or because
+ * yt-dlp reports ffmpeg/ffprobe as not found. Carries which {@link tool} is
+ * missing so callers can route the failure to actionable onboarding UI: an
+ * "Open settings" notice that reveals the Video transcription section (#382).
+ *
+ * Unlike the plain-string failures around it, this instance is preserved
+ * (rethrown unchanged) through the video → summarize wrap layers so the
+ * discriminant survives to the notify site. Detection there matches on the
+ * error `name` (see `findDependencyMissingError` in the summarize module) to
+ * avoid a cross-feature import, so keep `name` stable.
+ */
+export class DependencyMissingError extends Error {
+	constructor(
+		readonly tool: 'yt-dlp' | 'ffmpeg',
+		message: string,
+	) {
+		super(message);
+		this.name = 'DependencyMissingError';
+	}
+}
+
+/**
  * Does `p` look like a concrete filesystem path rather than a bare command name
  * resolved via PATH? yt-dlp's `--ffmpeg-location` wants a real file/dir path, so
  * passing the bare default (`'ffmpeg'`) would break PATH discovery. We only emit
@@ -182,6 +205,11 @@ export class AudioExtractor {
 			// surface the specific slideshow guidance instead of retrying.
 			if (this.isNoAudioFailure(error)) {
 				throw error instanceof NoAudioError ? error : new NoAudioError();
+			}
+			// A missing binary (yt-dlp/ffmpeg) can't be fixed by a looser format —
+			// surface the typed error immediately so callers can offer onboarding (#382).
+			if (error instanceof DependencyMissingError) {
+				throw error;
 			}
 			// Network failures are already user-actionable and not content-related;
 			// don't waste a retry on them.
@@ -412,7 +440,13 @@ export class AudioExtractor {
 			}, (error, stdout, stderr) => {
 				if (error) {
 					if (error.code === 'ENOENT') {
-						reject(new Error(`${label} not found — install it or set the full path in settings`));
+						// The missing binary is whichever command we tried to run. Carry
+						// it as a typed error so callers can offer install/onboarding (#382).
+						const tool: 'yt-dlp' | 'ffmpeg' = label === 'ffmpeg' ? 'ffmpeg' : 'yt-dlp';
+						reject(new DependencyMissingError(
+							tool,
+							`${label} not found — install it or set the full path in settings`,
+						));
 						return;
 					}
 					// execFile's `timeout` kills the child with a signal (SIGTERM),
@@ -440,7 +474,11 @@ export class AudioExtractor {
 					// being missing, which surfaces as ENOENT above). Point the user at
 					// the Video setting that controls the ffmpeg path.
 					if (FFMPEG_NOT_FOUND_STDERR.test(stderrText)) {
-						reject(new Error('ffmpeg/ffprobe not found — set the ffmpeg path in Synapse settings (Video).'));
+						// Typed so callers can route to the actionable onboarding notice (#382).
+						reject(new DependencyMissingError(
+							'ffmpeg',
+							'ffmpeg/ffprobe not found — set the ffmpeg path in Synapse settings (Video).',
+						));
 						return;
 					}
 					const networkMsg = describeNetworkError(error, label) ?? describeNetworkError(stderrText, label);
