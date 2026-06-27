@@ -394,6 +394,22 @@ export class SynapseSettingTab extends PluginSettingTab {
 				},
 			},
 		);
+
+		new Setting(aiBody)
+			.setName('Cache identical AI responses')
+			.setDesc(
+				'Reuse the previous result for an identical request instead of spending again. ' +
+				'Caching is automatic at temperature 0; turn this on to cache at any temperature. ' +
+				'"Regenerate" actions always bypass the cache.'
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.ai.cacheResponses)
+					.onChange(async (value) => {
+						this.plugin.settings.ai.cacheResponses = value;
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 
 	/**

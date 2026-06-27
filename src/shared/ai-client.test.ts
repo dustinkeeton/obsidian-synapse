@@ -479,3 +479,121 @@ describe('AIClient — shared error handling and routing', () => {
 		expect(mockRequestUrl).not.toHaveBeenCalled();
 	});
 });
+
+describe('AIClient — idempotency: in-flight coalescing and response cache', () => {
+	let settings: SynapseSettings;
+	let client: AIClient;
+
+	const QUESTION: ChatMessage[] = [{ role: 'user', content: 'What is the capital of France?' }];
+
+	beforeEach(() => {
+		settings = makeSettings((s) => {
+			s.ai.provider = 'openai';
+			s.ai.model = 'gpt-4o';
+			s.ai.apiKey = 'sk-test123456789012345';
+			s.ai.maxTokens = 512;
+			// Per-case temperature/cacheResponses are set inside each test so the
+			// caching gate is exercised explicitly.
+			s.ai.temperature = 0;
+			s.ai.cacheResponses = false;
+		});
+		client = new AIClient(() => settings);
+		// Shared vi.fn() — reset so a previous case's queued return can't satisfy
+		// (and mask) a missing call here.
+		mockRequestUrl.mockReset();
+	});
+
+	afterEach(() => vi.restoreAllMocks());
+
+	it('coalesces two concurrent identical requests into a single dispatch', async () => {
+		// Caching OFF (temp > 0, flag off) so this isolates in-flight coalescing.
+		settings.ai.temperature = 0.7;
+		settings.ai.cacheResponses = false;
+		mockRequestUrl.mockResolvedValue(openAIResponse('shared answer'));
+
+		// Do NOT await the first before issuing the second — they must overlap.
+		const p1 = client.chat(QUESTION);
+		const p2 = client.chat(QUESTION);
+		const [r1, r2] = await Promise.all([p1, p2]);
+
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+		expect(r1).toBe('shared answer');
+		expect(r2).toBe('shared answer');
+	});
+
+	it('serves a second identical request from cache at temperature 0', async () => {
+		settings.ai.temperature = 0;
+		mockRequestUrl.mockResolvedValue(openAIResponse('Paris'));
+
+		const first = await client.chat(QUESTION);
+		const second = await client.chat(QUESTION);
+
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+		expect(first).toBe('Paris');
+		expect(second).toBe('Paris');
+	});
+
+	it('does not cache when temperature > 0 and cacheResponses is false', async () => {
+		settings.ai.temperature = 0.7;
+		settings.ai.cacheResponses = false;
+		mockRequestUrl.mockResolvedValue(openAIResponse('fresh'));
+
+		await client.chat(QUESTION);
+		await client.chat(QUESTION);
+
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+	});
+
+	it('caches at temperature > 0 once cacheResponses is opted in', async () => {
+		settings.ai.temperature = 0.7;
+		settings.ai.cacheResponses = true;
+		mockRequestUrl.mockResolvedValue(openAIResponse('memoized'));
+
+		const first = await client.chat(QUESTION);
+		const second = await client.chat(QUESTION);
+
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+		expect(first).toBe('memoized');
+		expect(second).toBe('memoized');
+	});
+
+	it('never caches a rejected dispatch — a later identical call retries and can succeed', async () => {
+		// Caching ON (temp 0) to prove the rejection specifically is not cached.
+		settings.ai.temperature = 0;
+		mockRequestUrl
+			.mockResolvedValueOnce({
+				status: 500,
+				json: { error: { message: 'upstream boom' } },
+				text: '',
+				headers: {},
+			})
+			.mockResolvedValueOnce(openAIResponse('recovered'));
+
+		await expect(client.chat(QUESTION)).rejects.toThrow(/API error \(500\)/);
+		const second = await client.chat(QUESTION);
+
+		expect(second).toBe('recovered');
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+	});
+
+	it('bypasses the cache on a refresh and updates it with the fresh result', async () => {
+		settings.ai.temperature = 0; // caching ON
+		mockRequestUrl
+			.mockResolvedValueOnce(openAIResponse('v1'))
+			.mockResolvedValue(openAIResponse('v2'));
+
+		// Prime the cache with v1.
+		expect(await client.chat(QUESTION)).toBe('v1');
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+
+		// Bypass must dispatch again even though v1 is cached, and refresh the cache.
+		const refreshed = await client.chat(QUESTION, { bypassCache: true });
+		expect(refreshed).toBe('v2');
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+
+		// A subsequent normal call now serves the refreshed v2 from cache.
+		const third = await client.chat(QUESTION);
+		expect(third).toBe('v2');
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+	});
+});

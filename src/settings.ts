@@ -43,6 +43,13 @@ export interface AISettings {
 	model: string;
 	maxTokens: number;
 	temperature: number;
+	/**
+	 * Opt-in response cache (#397). When `true`, an identical AI request reuses
+	 * the previous result instead of spending again. Caching is automatic at
+	 * temperature 0 (deterministic) regardless of this flag; enabling it extends
+	 * caching to any temperature. "Regenerate" actions always bypass the cache.
+	 */
+	cacheResponses: boolean;
 }
 
 export interface DetectionSettings {
@@ -345,6 +352,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		model: 'gpt-4o',
 		maxTokens: 2048,
 		temperature: 0.7,
+		cacheResponses: false,
 	},
 	elaboration: {
 		enabled: true,
