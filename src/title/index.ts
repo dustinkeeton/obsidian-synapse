@@ -43,8 +43,10 @@ export class TitleModule {
 	 * auto-accept flag is on. This RENAMES the file. A single Notice fires
 	 * (title proposals are generated one-at-a-time, never in a tight batch).
 	 *
-	 * Returns `true` when auto-accept was applied, so callers can suppress the
-	 * "Title proposal ready" Review toast for proposals that were consumed (#340).
+	 * Returns `true` when auto-accept was applied. Review-toast suppression is no
+	 * longer driven by this return — the centralized `reviewAction()` gate keys off
+	 * the same `shouldAutoAccept()` signal, so an auto-accepted proposal yields no
+	 * action and therefore no toast (#340, #366, #402).
 	 */
 	private async maybeAutoAccept(proposal: TitleProposal): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
@@ -106,21 +108,21 @@ export class TitleModule {
 			};
 
 			await this.store.save(proposal);
-			const autoAccepted = await this.maybeAutoAccept(proposal);
+			// maybeAutoAccept applies + announces the rename when auto-accept is on.
+			await this.maybeAutoAccept(proposal);
 			// Title's check is otherwise silent: the success toast exists ONLY to
-			// carry the Review button, so emit it only when the centralized gate
-			// yields an action — never for an auto-accepted (already-applied)
-			// proposal, and never as an automatic post-op side effect (#366).
-			if (!autoAccepted) {
-				const action = reviewAction({
-					generated: true,
-					shouldAutoAccept: this.shouldAutoAccept,
-					openProposalView: this.onOpenProposalView,
-					postOp: options?.postOp,
-				});
-				if (action) {
-					this.notifications.success('Title proposal ready', undefined, action);
-				}
+			// carry the Review button. Gate it through the centralized helper (like
+			// every other module) — it yields an action only when a proposal was
+			// generated, auto-accept is off, and this isn't an automatic post-op
+			// side effect (#366), so an auto-accepted proposal emits no toast.
+			const action = reviewAction({
+				generated: true,
+				shouldAutoAccept: this.shouldAutoAccept,
+				openProposalView: this.onOpenProposalView,
+				postOp: options?.postOp,
+			});
+			if (action) {
+				this.notifications.success('Title proposal ready', undefined, action);
 			}
 			await this.refreshView();
 		} catch (error) {
@@ -166,20 +168,19 @@ export class TitleModule {
 			};
 
 			await this.store.save(proposal);
-			const autoAccepted = await this.maybeAutoAccept(proposal);
-			// As in checkUntitled: surface the Review toast only when the gate
-			// yields an action — not for an auto-accepted proposal, and not as an
-			// automatic post-op side effect (#366).
-			if (!autoAccepted) {
-				const action = reviewAction({
-					generated: true,
-					shouldAutoAccept: this.shouldAutoAccept,
-					openProposalView: this.onOpenProposalView,
-					postOp: options?.postOp,
-				});
-				if (action) {
-					this.notifications.success('Title proposal ready', undefined, action);
-				}
+			// maybeAutoAccept applies + announces the rename when auto-accept is on.
+			await this.maybeAutoAccept(proposal);
+			// As in checkUntitled: gate the Review toast through the centralized
+			// helper — it yields an action only for a generated proposal when
+			// auto-accept is off and this isn't an automatic post-op side effect (#366).
+			const action = reviewAction({
+				generated: true,
+				shouldAutoAccept: this.shouldAutoAccept,
+				openProposalView: this.onOpenProposalView,
+				postOp: options?.postOp,
+			});
+			if (action) {
+				this.notifications.success('Title proposal ready', undefined, action);
 			}
 			await this.refreshView();
 		} catch (error) {
