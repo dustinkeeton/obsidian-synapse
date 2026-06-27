@@ -9,7 +9,7 @@ import {
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
-import { ProposalGenerator } from './proposer';
+import { ProposalGenerator, proposalContentKey } from './proposer';
 import { DetectionResult, Proposal } from './types';
 
 export type { DetectionReason, DetectionResult, Proposal } from './types';
@@ -120,6 +120,49 @@ export class ElaborationModule {
 	}
 
 	/**
+	 * Idempotency guard shared by every generate+save site. Returns the
+	 * precomputed content key to hand to the proposer, or a skip decision:
+	 *
+	 * - `duplicate`: a pending or accepted proposal with the same content key
+	 *   already exists, so re-generating would be a no-op — and would waste an
+	 *   AI call. A `rejected` proposal with the same key does NOT block: the user
+	 *   already declined that exact suggestion, so a fresh attempt is allowed.
+	 * - `cap`: the note already has `maxProposalsPerNote` pending proposals, so
+	 *   stop adding more until some are reviewed.
+	 *
+	 * The note body is read via `cachedRead` (already warm from detection), so
+	 * the key matches what `proposer.generate` would compute for the same inputs.
+	 */
+	private async guardProposal(
+		detection: DetectionResult
+	): Promise<{ skip: false; key?: string } | { skip: true; reason: 'duplicate' | 'cap' }> {
+		const file = this.plugin.app.vault.getAbstractFileByPath(detection.notePath);
+		// Missing/non-file: defer to proposer.generate, which surfaces the error
+		// exactly as it did before this guard existed.
+		if (!(file instanceof TFile)) return { skip: false };
+
+		const content = await this.plugin.app.vault.cachedRead(file);
+		const key = proposalContentKey(
+			detection.notePath,
+			content,
+			detection.reasons,
+			this.getSettings()
+		);
+		const existing = await this.store.loadByNote(detection.notePath);
+
+		if (existing.some(p => p.contentKey === key && (p.status === 'pending' || p.status === 'accepted'))) {
+			return { skip: true, reason: 'duplicate' };
+		}
+		if (
+			existing.filter(p => p.status === 'pending').length >=
+			this.getSettings().elaboration.proposal.maxProposalsPerNote
+		) {
+			return { skip: true, reason: 'cap' };
+		}
+		return { skip: false, key };
+	}
+
+	/**
 	 * Resume elaboration from a checkpoint (C1).
 	 * Re-generates proposals for the remaining detected files.
 	 */
@@ -147,7 +190,16 @@ export class ElaborationModule {
 				const result = await this.detector.detect(file);
 				if (!result) continue;
 
-				const proposal = await this.proposer.generate(result);
+				const guard = await this.guardProposal(result);
+				if (guard.skip) {
+					// Already proposed (unchanged note) or per-note cap reached:
+					// skip generate+save but still complete the item so resume
+					// advances past it.
+					await this.checkpointManager.completeItem(checkpoint.id, item.id);
+					continue;
+				}
+
+				const proposal = await this.proposer.generate(result, guard.key);
 				if (!proposal) {
 					// Link-only note whose links all failed: skip the fabricated
 					// proposal but still complete the item so resume advances.
@@ -275,7 +327,20 @@ export class ElaborationModule {
 				if (genOp.cancelled) break;
 
 				genOp.progress(i + 1, detected.length, 'Generating proposals');
-				const proposal = await this.proposer.generate(detected[i]);
+
+				const guard = await this.guardProposal(detected[i]);
+				if (guard.skip) {
+					// Already proposed (unchanged note) or per-note cap reached:
+					// skip generate+save (and the AI call) but still mark the item
+					// done so the checkpoint advances.
+					await this.checkpointManager.completeItem(
+						checkpoint.id,
+						checkpointItems[i].id
+					);
+					continue;
+				}
+
+				const proposal = await this.proposer.generate(detected[i], guard.key);
 				if (!proposal) {
 					// Link-only note whose links all failed: skip without creating a
 					// fabricated proposal, but still mark the item done so the
@@ -355,7 +420,21 @@ export class ElaborationModule {
 
 			if (result) {
 				op.update(`Generating proposal for ${file.basename}`);
-				const proposal = await this.proposer.generate(result);
+
+				const guard = await this.guardProposal(result);
+				if (guard.skip) {
+					// Nothing new to propose: either this exact note state was
+					// already proposed/accepted, or the per-note pending cap is
+					// reached. Finish honestly without spending an AI call.
+					op.finish(
+						guard.reason === 'cap'
+							? 'No new proposal -- this note already has the maximum pending proposals'
+							: 'No new proposal -- this note is unchanged since its last elaboration'
+					);
+					return;
+				}
+
+				const proposal = await this.proposer.generate(result, guard.key);
 				if (!proposal) {
 					// generate() returns null when the note is essentially just
 					// unreadable link(s): no proposal is created and the link-load

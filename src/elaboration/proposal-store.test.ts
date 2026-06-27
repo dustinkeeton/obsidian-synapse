@@ -104,6 +104,52 @@ describe('ProposalStore', () => {
 		expect(result[0].id).toBe('p1');
 	});
 
+	it('loadByNote returns only proposals whose sourceNotePath matches exactly', async () => {
+		const a1 = makeProposal({ id: 'a1', sourceNotePath: 'notes/a.md' });
+		const a2 = makeProposal({ id: 'a2', sourceNotePath: 'notes/a.md' });
+		const b1 = makeProposal({ id: 'b1', sourceNotePath: 'notes/b.md' });
+
+		mockAdapter.list.mockResolvedValue({
+			files: ['a1.json', 'a2.json', 'b1.json'],
+			folders: [],
+		});
+		mockAdapter.read
+			.mockResolvedValueOnce(JSON.stringify(a1))
+			.mockResolvedValueOnce(JSON.stringify(a2))
+			.mockResolvedValueOnce(JSON.stringify(b1));
+
+		const result = await store.loadByNote('notes/a.md');
+		expect(result.map(p => p.id).sort()).toEqual(['a1', 'a2']);
+	});
+
+	it('loadByNote does not prefix-match a different note that shares a name stem', async () => {
+		// 'notes/a.md' must not match 'notes/a-extra.md' — exact path only.
+		const a = makeProposal({ id: 'a', sourceNotePath: 'notes/a.md' });
+		const aExtra = makeProposal({ id: 'a-extra', sourceNotePath: 'notes/a-extra.md' });
+
+		mockAdapter.list.mockResolvedValue({ files: ['a.json', 'extra.json'], folders: [] });
+		mockAdapter.read
+			.mockResolvedValueOnce(JSON.stringify(a))
+			.mockResolvedValueOnce(JSON.stringify(aExtra));
+
+		const result = await store.loadByNote('notes/a.md');
+		expect(result.map(p => p.id)).toEqual(['a']);
+	});
+
+	it('still loads legacy proposals that predate the contentKey field', async () => {
+		// makeProposal omits contentKey; isProposal must keep accepting it so old
+		// proposal files continue to load.
+		const legacy = makeProposal({ id: 'legacy-1' });
+		expect('contentKey' in legacy).toBe(false);
+		mockAdapter.list.mockResolvedValue({ files: ['legacy.json'], folders: [] });
+		mockAdapter.read.mockResolvedValue(JSON.stringify(legacy));
+
+		const result = await store.loadAll();
+		expect(result).toHaveLength(1);
+		expect(result[0].id).toBe('legacy-1');
+		expect(result[0].contentKey).toBeUndefined();
+	});
+
 	it('loads all proposals including rejected', async () => {
 		const p1 = makeProposal({ id: 'p1', status: 'pending' });
 		const p2 = makeProposal({ id: 'p2', status: 'rejected' });

@@ -1,8 +1,37 @@
-import { App, TFile } from 'obsidian';
+import { App, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
-import { DetectionResult, Proposal } from './types';
+import { DetectionResult, DetectionReason, Proposal } from './types';
+
+/**
+ * Compute the deterministic content key for a proposal from its inputs.
+ *
+ * Keying on the *inputs* (note path + content + detection reasons + the AI
+ * settings that shape the request) rather than the model's *output* is what
+ * makes re-scanning an unchanged note idempotent: temperature > 0 sampling
+ * would otherwise yield different text — and thus a different key — every run.
+ *
+ * `detectionReasons` are sorted by `type` before serializing because detector
+ * order isn't guaranteed stable; an unstable serialization would change the key
+ * for an otherwise-identical note and defeat dedup.
+ */
+export function proposalContentKey(
+	notePath: string,
+	content: string,
+	reasons: DetectionReason[],
+	settings: SynapseSettings
+): string {
+	return contentKey([
+		normalizePath(notePath),
+		hashString(content),
+		JSON.stringify([...reasons].sort((a, b) => a.type.localeCompare(b.type))),
+		settings.ai.provider,
+		settings.ai.model,
+		String(settings.ai.temperature),
+		String(settings.ai.maxTokens),
+	]);
+}
 
 /**
  * Matches bare http(s) URLs in note text. Reserved for the `matchAll` in
@@ -24,7 +53,7 @@ export class ProposalGenerator {
 		this.imageAnalyzer = new ImageAnalyzer(app, getSettings);
 	}
 
-	async generate(detection: DetectionResult): Promise<Proposal | null> {
+	async generate(detection: DetectionResult, precomputedKey?: string): Promise<Proposal | null> {
 		// Vault API (not adapter) — vault notes must go through vault.cachedRead
 		// per the Obsidian plugin guidelines; the adapter is reserved for the
 		// plugin's own .synapse/ storage.
@@ -34,6 +63,10 @@ export class ProposalGenerator {
 		}
 		const content = await this.app.vault.cachedRead(noteFile);
 		const settings = this.getSettings();
+		// Reuse the caller's key when it already computed one for the dedup guard
+		// (avoids a second hash); otherwise derive it here so direct callers still
+		// get a deterministic id.
+		const key = precomputedKey ?? proposalContentKey(detection.notePath, content, detection.reasons, settings);
 
 		// Anti-fabrication guard (sibling to the link-dominated guard below): a note
 		// with no body offers only its title as signal. When that title is also
@@ -86,7 +119,8 @@ export class ProposalGenerator {
 		const proposedAdditions = stripCodeFences(sanitizeAIResponse(rawAdditions));
 
 		return {
-			id: this.generateId(),
+			id: key,
+			contentKey: key,
 			sourceNotePath: detection.notePath,
 			createdAt: new Date().toISOString(),
 			detectionReasons: detection.reasons,
@@ -281,16 +315,6 @@ export class ProposalGenerator {
 		}
 	}
 
-	private generateId(): string {
-		return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
-			/[xy]/g,
-			(c) => {
-				const r = (Math.random() * 16) | 0;
-				const v = c === 'x' ? r : (r & 0x3) | 0x8;
-				return v.toString(16);
-			}
-		);
-	}
 }
 
 /**

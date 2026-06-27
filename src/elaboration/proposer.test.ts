@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TFile, requestUrl } from '../__mocks__/obsidian';
-import { ProposalGenerator } from './proposer';
+import { ProposalGenerator, proposalContentKey } from './proposer';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { DetectionResult } from './types';
 import type { NotificationManager } from '../shared';
@@ -783,5 +783,107 @@ describe('ProposalGenerator -- note title as elaboration signal (#387)', () => {
 		expect(proposal).toBeNull();
 		expect(mockComplete).not.toHaveBeenCalled();
 		expect(notifications.info).toHaveBeenCalledOnce();
+	});
+});
+
+describe('proposalContentKey (deterministic proposal identity, #395)', () => {
+	it('returns the same key for identical inputs', () => {
+		const settings = makeSettings();
+		const key1 = proposalContentKey(
+			'notes/topic.md',
+			'# Topic\n\nSome body text.',
+			[{ type: 'short-note', wordCount: 5 }],
+			settings
+		);
+		const key2 = proposalContentKey(
+			'notes/topic.md',
+			'# Topic\n\nSome body text.',
+			[{ type: 'short-note', wordCount: 5 }],
+			settings
+		);
+		expect(key1).toBe(key2);
+		expect(key1).toMatch(/^[0-9a-f]{16}$/);
+	});
+
+	it('is independent of detection-reason ordering (sorted before hashing)', () => {
+		const settings = makeSettings();
+		const reasonsA = proposalContentKey('notes/x.md', 'body', [
+			{ type: 'short-note', wordCount: 5 },
+			{ type: 'todo-marker', markers: ['TODO'] },
+		], settings);
+		const reasonsB = proposalContentKey('notes/x.md', 'body', [
+			{ type: 'todo-marker', markers: ['TODO'] },
+			{ type: 'short-note', wordCount: 5 },
+		], settings);
+		expect(reasonsA).toBe(reasonsB);
+	});
+
+	it('changes when the note body changes', () => {
+		const settings = makeSettings();
+		const before = proposalContentKey('notes/x.md', 'original body', [{ type: 'user-requested' }], settings);
+		const after = proposalContentKey('notes/x.md', 'edited body', [{ type: 'user-requested' }], settings);
+		expect(before).not.toBe(after);
+	});
+
+	it('changes when the AI model settings change', () => {
+		const settings = makeSettings();
+		const baseline = proposalContentKey('notes/x.md', 'body', [{ type: 'user-requested' }], settings);
+		const swapped = makeSettings();
+		swapped.ai.model = `${settings.ai.model}-different`;
+		const changed = proposalContentKey('notes/x.md', 'body', [{ type: 'user-requested' }], swapped);
+		expect(baseline).not.toBe(changed);
+	});
+});
+
+describe('ProposalGenerator -- deterministic id (#395)', () => {
+	let generator: ProposalGenerator;
+
+	beforeEach(() => {
+		mockComplete.mockClear();
+		// Temperature > 0 sampling would vary the OUTPUT; keying on inputs keeps
+		// the id stable regardless, so vary the response between calls to prove
+		// the id does not depend on the model's output.
+		mockComplete
+			.mockResolvedValueOnce('First sampled expansion.')
+			.mockResolvedValueOnce('A totally different sampled expansion.');
+
+		const mockApp = {
+			vault: {
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue('# Note\n\nStable body content.'),
+				read: vi.fn(),
+				readBinary: vi.fn(),
+			},
+			metadataCache: {
+				getCache: vi.fn().mockReturnValue(null),
+				getFirstLinkpathDest: vi.fn().mockReturnValue(null),
+			},
+		};
+		const settings = makeSettings();
+		settings.elaboration.proposal.includeSourceContext = false;
+		settings.image.enabled = false;
+		generator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('sets id === contentKey and reproduces both for an unchanged note', async () => {
+		const detection: DetectionResult = {
+			notePath: 'notes/test.md',
+			reasons: [{ type: 'user-requested' }],
+		};
+
+		const first = await generator.generate(detection);
+		const second = await generator.generate(detection);
+
+		expect(first).not.toBeNull();
+		expect(second).not.toBeNull();
+		// id is the content key, and identical inputs reproduce it even though
+		// the mocked AI output differed between the two calls.
+		expect(first!.id).toBe(first!.contentKey);
+		expect(second!.id).toBe(first!.id);
+		expect(second!.contentKey).toBe(first!.contentKey);
 	});
 });
