@@ -73,6 +73,19 @@ export class ProposalStore {
 		return all.filter(p => p.status === 'pending');
 	}
 
+	/**
+	 * Load every proposal whose source note is exactly `notePath`.
+	 *
+	 * Implemented as loadAll + filter rather than a filename-prefix scan:
+	 * `proposalFileName` lossily maps `/` to `-`, so the on-disk name can't be
+	 * reversed to a unique note path and a prefix match would be unsafe. Counts
+	 * are tiny (the per-note cap is a handful), so a full scan is cheap.
+	 */
+	async loadByNote(notePath: string): Promise<Proposal[]> {
+		const all = await this.loadAll();
+		return all.filter(p => p.sourceNotePath === notePath);
+	}
+
 	async delete(id: string): Promise<void> {
 		const files = await this.listProposalFiles();
 		for (const filePath of files) {

@@ -14,6 +14,13 @@ export interface DetectionResult {
 
 export interface Proposal {
 	id: string;
+	/**
+	 * Deterministic hash of the inputs that produced this proposal (note path,
+	 * content, detection reasons, and AI settings). Used to dedup re-scans of an
+	 * unchanged note. Optional so proposal files written before this field
+	 * existed still satisfy the `isProposal` guard and keep loading.
+	 */
+	contentKey?: string;
 	sourceNotePath: string;
 	createdAt: string;
 	detectionReasons: DetectionReason[];

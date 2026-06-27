@@ -42,6 +42,10 @@ function buildMockVault() {
 
 	return {
 		read,
+		// Cached read of a vault note (the path proposer/elaboration uses). A
+		// distinct spy from `read` so call-count assertions on either stay
+		// independent.
+		cachedRead: vi.fn<(file: TFile) => Promise<string>>().mockResolvedValue(''),
 		modify: vi.fn().mockResolvedValue(undefined),
 		// Mimics Obsidian's atomic read -> transform -> write. The callback is
 		// synchronous and receives the file's fresh content; its return value is

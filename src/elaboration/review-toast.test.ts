@@ -37,6 +37,9 @@ vi.mock('./proposer', () => ({
 			})
 		);
 	},
+	// The dedup guard (index.ts) imports this from the real proposer; the mock
+	// must provide it so guardProposal can compute a key without the real impl.
+	proposalContentKey: vi.fn(() => 'mock-content-key'),
 }));
 
 function makeOp(cancelled = false) {
