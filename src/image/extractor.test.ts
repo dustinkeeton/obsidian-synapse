@@ -28,7 +28,7 @@ describe('ImageExtractor', () => {
 		mockChat.mockClear();
 		mockChat.mockResolvedValue('Extracted text from image');
 		settings = makeSettings();
-		extractor = new ImageExtractor(() => settings);
+		extractor = new ImageExtractor(() => settings, { info: vi.fn() } as any);
 	});
 
 	afterEach(() => {

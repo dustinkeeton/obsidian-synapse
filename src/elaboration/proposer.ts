@@ -21,7 +21,7 @@ export class ProposalGenerator {
 		private notifications: NotificationManager
 	) {
 		this.aiClient = new AIClient(getSettings);
-		this.imageAnalyzer = new ImageAnalyzer(app, getSettings);
+		this.imageAnalyzer = new ImageAnalyzer(app, getSettings, notifications);
 	}
 
 	async generate(detection: DetectionResult): Promise<Proposal | null> {

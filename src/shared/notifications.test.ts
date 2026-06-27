@@ -330,4 +330,84 @@ describe('NotificationManager', () => {
 			consoleSpy.mockRestore();
 		});
 	});
+
+	describe('equal-message throttling (#396)', () => {
+		// Date.now() is the throttle's time source; vitest fake timers mock it so
+		// advanceTimersByTime moves the dedup window deterministically.
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		/** Total Notices constructed so far (the mock records every one). */
+		function noticeCount(): number {
+			return (Notice as unknown as { instances: any[] }).instances.length;
+		}
+
+		it('suppresses a second identical info() within the 3s window', () => {
+			manager.info('Saved');
+			manager.info('Saved');
+			expect(noticeCount()).toBe(1);
+		});
+
+		it('keeps suppressing right up to the window edge (2999ms)', () => {
+			manager.info('Saved');
+			vi.advanceTimersByTime(2999);
+			manager.info('Saved');
+			expect(noticeCount()).toBe(1);
+		});
+
+		it('shows the message again once the window has elapsed (>3s)', () => {
+			manager.info('Saved');
+			vi.advanceTimersByTime(3001);
+			manager.info('Saved');
+			expect(noticeCount()).toBe(2);
+		});
+
+		it('does not throttle distinct messages within the window', () => {
+			manager.info('First message');
+			manager.info('Second message');
+			expect(noticeCount()).toBe(2);
+		});
+
+		it('does not collapse the same text across different levels', () => {
+			manager.info('Heads up');
+			manager.success('Heads up');
+			manager.error('Heads up');
+			expect(noticeCount()).toBe(3);
+		});
+
+		it('throttles repeated success() and error() the same way', () => {
+			manager.success('Done');
+			manager.success('Done'); // suppressed
+			manager.error('Boom');
+			manager.error('Boom'); // suppressed
+			expect(noticeCount()).toBe(2);
+		});
+
+		it('collapses a per-image downscale loop into a single toast', () => {
+			const msg = 'large image auto-downscaled to fit the API limit';
+			for (let i = 0; i < 5; i++) manager.info(msg);
+			expect(noticeCount()).toBe(1);
+		});
+
+		it('leaves startOperation (tracked ops) and confirm unaffected', () => {
+			// Two operations sharing a label still each create their own notice —
+			// the throttle never touches tracked-operation toasts...
+			manager.startOperation('Scanning', 'op-a');
+			manager.startOperation('Scanning', 'op-b');
+			// ...and a confirm snackbar carrying the same text shows regardless.
+			void manager.confirm('Scanning');
+			expect(noticeCount()).toBe(3);
+		});
+
+		it('clears the dedup window on dispose so the next show is not suppressed', () => {
+			manager.info('Reusable');
+			manager.dispose();
+			manager.info('Reusable');
+			expect(noticeCount()).toBe(2);
+		});
+	});
 });

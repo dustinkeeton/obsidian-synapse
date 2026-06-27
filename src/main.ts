@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Platform, Plugin, TFile } from 'obsidian';
+import { MarkdownView, Platform, Plugin, TFile } from 'obsidian';
 import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
 import { SynapseSettingTab } from './settings-tab';
 import { ElaborationModule } from './elaboration';
@@ -413,7 +413,7 @@ export default class SynapsePlugin extends Plugin {
 		this.intake = new IntakeModule(this, getSettings, this.notifications, {
 			fireOnFile: (file) => synapseRunner.fireOnFile(file),
 			transcribeUrlToNote: async (_url, _mediaType, _file) => {
-				new Notice('Synapse: URL transcription from intake is coming soon (#112)');
+				this.notifications.info('URL transcription from intake is coming soon (#112)');
 			},
 		});
 		if (this.settings.intake.enabled) {
@@ -549,7 +549,8 @@ export default class SynapsePlugin extends Plugin {
 				onTranscribeUrl: this.video
 					? (url, timeRange) => this.video!.transcribeUrlToActiveNote(url, timeRange)
 					: async () => { /* unreachable: video hidden on mobile */ },
-			}
+			},
+			this.notifications
 		).open();
 	}
 
@@ -587,6 +588,7 @@ export default class SynapsePlugin extends Plugin {
 					: async () => { /* unreachable: video hidden on mobile */ },
 				onExtractImages: (selected) => this.image.extractAndInsert(file, selected),
 			},
+			this.notifications,
 			ffmpegAvailable
 		).open();
 	}
@@ -666,7 +668,7 @@ export default class SynapsePlugin extends Plugin {
 		if (REGISTRY_BY_ID.get(id)?.context === 'note') {
 			const file = this.activeMarkdownFile();
 			if (!file) {
-				new Notice('Synapse: open a note first to use this action.');
+				this.notifications.info('open a note first to use this action.');
 				return;
 			}
 			const mdLeaf = this.app.workspace
@@ -902,8 +904,8 @@ export default class SynapsePlugin extends Plugin {
 			}
 
 			await adapter.rename(OLD_FOLDER, NEW_FOLDER);
-			new Notice(
-				`Synapse: migrated data folder from ${OLD_FOLDER}/ to ${NEW_FOLDER}/`
+			this.notifications.success(
+				`migrated data folder from ${OLD_FOLDER}/ to ${NEW_FOLDER}/`
 			);
 		} catch (error) {
 			console.error('[Synapse] Failed to migrate data folder:', error);

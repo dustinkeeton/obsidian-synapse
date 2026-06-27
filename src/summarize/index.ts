@@ -257,7 +257,8 @@ export class SummarizeModule {
 			{
 				includeNoteContent: settings.includeNoteContent,
 				combineSummaries: settings.combineSummaries,
-			}
+			},
+			this.notifications
 		).open();
 	}
 

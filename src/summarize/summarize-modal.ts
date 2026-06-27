@@ -1,5 +1,6 @@
-import { App, Modal, Notice, Setting } from 'obsidian';
+import { App, Modal, Setting } from 'obsidian';
 import { SummarizeTarget } from './types';
+import type { NotificationManager } from '../shared';
 
 export interface SummarizeModalDefaults {
 	/** Default state of the "Include note content" toggle (#367). */
@@ -20,7 +21,8 @@ export class SummarizeSelectionModal extends Modal {
 		app: App,
 		targets: SummarizeTarget[],
 		onSummarize: (targets: SummarizeTarget[], combine: boolean) => Promise<void>,
-		defaults: SummarizeModalDefaults
+		defaults: SummarizeModalDefaults,
+		private notifications: NotificationManager
 	) {
 		super(app);
 		// The note's own prose (#367) is presented as a dedicated toggle rather
@@ -93,7 +95,7 @@ export class SummarizeSelectionModal extends Modal {
 				.onClick(async () => {
 					const chosen = this.collectChosen();
 					if (chosen.length === 0) {
-						new Notice('Please select at least one item');
+						this.notifications.info('Please select at least one item');
 						return;
 					}
 					this.close();

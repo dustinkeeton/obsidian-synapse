@@ -24,7 +24,7 @@ export class ImageModule {
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager
 	) {
-		this.extractor = new ImageExtractor(getSettings);
+		this.extractor = new ImageExtractor(getSettings, notifications);
 	}
 
 	async onload(): Promise<void> {}

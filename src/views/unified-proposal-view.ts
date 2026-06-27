@@ -1,4 +1,4 @@
-import { ItemView, Notice, WorkspaceLeaf } from 'obsidian';
+import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type { Proposal } from '../elaboration';
 import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
@@ -218,7 +218,7 @@ export class UnifiedProposalView extends ItemView {
 		}
 
 		this.acceptAllInProgress = false;
-		new Notice(`${accepted} proposal${accepted === 1 ? '' : 's'} accepted`);
+		this.notifications.success(`${accepted} proposal${accepted === 1 ? '' : 's'} accepted`);
 		this.render();
 	}
 
@@ -324,7 +324,7 @@ export class UnifiedProposalView extends ItemView {
 		}
 
 		this.rejectAllInProgress = false;
-		new Notice(`${rejected} proposal${rejected === 1 ? '' : 's'} rejected`);
+		this.notifications.info(`${rejected} proposal${rejected === 1 ? '' : 's'} rejected`);
 		this.render();
 	}
 

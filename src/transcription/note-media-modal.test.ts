@@ -46,7 +46,7 @@ function openModal(n: number, ffmpeg: boolean) {
 		onTranscribeVideo: vi.fn().mockResolvedValue(undefined),
 		onExtractImages: vi.fn().mockResolvedValue(undefined),
 	};
-	const modal = new NoteMediaModal({} as any, audioEmbeds(n) as any, [], [], callbacks, ffmpeg);
+	const modal = new NoteMediaModal({} as any, audioEmbeds(n) as any, [], [], callbacks, { info: vi.fn() } as any, ffmpeg);
 	(modal as any).contentEl = stubEl();
 	modal.onOpen();
 	return modal;

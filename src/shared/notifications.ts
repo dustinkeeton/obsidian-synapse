@@ -71,6 +71,16 @@ const CLS = 'synapse-notice';
  */
 const ACTION_NOTICE_DURATION = 8000;
 
+/**
+ * Dedup window (ms) for fire-and-forget one-shot toasts (#396). A second
+ * identical toast — same level AND message — requested within this window of
+ * the first is suppressed, so a per-item loop (e.g. the per-image
+ * "auto-downscaled" notice) or a quickly-repeated action can't flood the user
+ * with a stack of identical toasts. Deliberately short so a genuinely later
+ * recurrence of the same message still surfaces.
+ */
+const NOTICE_THROTTLE_MS = 3000;
+
 /** Get the underlying DOM element from a Notice */
 function getNoticeEl(notice: Notice): HTMLElement {
 	return (notice as unknown as { noticeEl: HTMLElement }).noticeEl;
@@ -138,6 +148,13 @@ export class NotificationManager {
 	private operations = new Map<string, TrackedOperation>();
 	private statusBarEl: HTMLElement | null = null;
 	private idCounter = 0;
+	/**
+	 * Last-shown timestamps for fire-and-forget one-shot toasts, keyed
+	 * `${level}:${message}` (#396). Consulted by {@link isThrottled} to suppress
+	 * an identical toast requested again within {@link NOTICE_THROTTLE_MS}.
+	 * Cleared in {@link dispose}.
+	 */
+	private lastShown = new Map<string, number>();
 
 	setStatusBarEl(el: HTMLElement): void {
 		this.statusBarEl = el;
@@ -157,6 +174,9 @@ export class NotificationManager {
 			op.notice.hide();
 		}
 		this.operations.clear();
+		// Drop dedup timestamps too, so a re-enabled plugin starts with a clean
+		// throttle window rather than inheriting stale last-shown times (#396).
+		this.lastShown.clear();
 	}
 
 	/**
@@ -333,6 +353,33 @@ export class NotificationManager {
 	}
 
 	/**
+	 * Equal-message throttle for fire-and-forget one-shot toasts (#396). Returns
+	 * true when an identical toast — same `level` AND `message` — was shown within
+	 * {@link NOTICE_THROTTLE_MS}, signalling the caller to SUPPRESS the new toast.
+	 * Otherwise records `Date.now()` for this key and returns false so the caller
+	 * proceeds to build the Notice. Keyed on `${level}:${message}` so the same
+	 * text at different severities (e.g. info vs error) never collapses into one.
+	 *
+	 * Only the fire-and-forget one-shot entry points (info/success/error without
+	 * an action) consult this. Tracked-operation toasts, confirm(), and
+	 * interactive action notices (showActionNotice/infoSticky) deliberately do
+	 * NOT — their stateful/lifecycle behavior must never be silently dropped.
+	 *
+	 * `Date.now()` is the time source: correct in production, and vitest fake
+	 * timers mock it so tests can advance deterministically across the window.
+	 */
+	private isThrottled(level: NoticeLevel, message: string): boolean {
+		const key = `${level}:${message}`;
+		const now = Date.now();
+		const last = this.lastShown.get(key);
+		if (last !== undefined && now - last < NOTICE_THROTTLE_MS) {
+			return true;
+		}
+		this.lastShown.set(key, now);
+		return false;
+	}
+
+	/**
 	 * Show a one-shot informational notice (not tracked, dismissible).
 	 * When `action` is supplied the toast renders an action button (e.g. "Review").
 	 */
@@ -341,6 +388,9 @@ export class NotificationManager {
 			this.showActionNotice(message, 'info', Math.max(duration, ACTION_NOTICE_DURATION), action);
 			return;
 		}
+		// Suppress an identical info toast fired again within the dedup window
+		// (#396) — e.g. the same per-image message emitted once per loop iteration.
+		if (this.isThrottled('info', message)) return;
 		const notice = new Notice(`Synapse: ${message}`, duration);
 		styleNotice(notice, 'info');
 	}
@@ -365,6 +415,8 @@ export class NotificationManager {
 			this.showActionNotice(message, 'success', Math.max(duration, ACTION_NOTICE_DURATION), action);
 			return;
 		}
+		// Suppress an identical success toast fired again within the dedup window (#396).
+		if (this.isThrottled('success', message)) return;
 		const notice = new Notice(`Synapse: ${message}`, duration);
 		styleNotice(notice, 'success');
 	}
@@ -377,6 +429,11 @@ export class NotificationManager {
 	 * error object plus a context label.
 	 */
 	error(message: string): void {
+		// Throttle is applied HERE — at the one-shot error entry point — not inside
+		// showErrorNotice (#396). That keeps tracked-operation error toasts (via
+		// completeOperation) and contextual notifyError() unthrottled, since both
+		// reach showErrorNotice directly and are exempt per the dedup design.
+		if (this.isThrottled('error', message)) return;
 		this.showErrorNotice(message);
 	}
 
