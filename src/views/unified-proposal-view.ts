@@ -975,6 +975,14 @@ export class UnifiedProposalView extends ItemView {
 			cls: 'synapse-preview',
 		});
 
+		// Collision hint (#408): the proposed title already exists in this folder.
+		if (proposal.conflictsWith) {
+			card.createEl('small', {
+				text: `"${proposal.proposedTitle}" already exists here — add a suffix or merge.`,
+				cls: 'synapse-reasons synapse-title-conflict',
+			});
+		}
+
 		const actions = card.createDiv({ cls: 'synapse-actions' });
 
 		const viewBtn = actions.createEl('button', { text: 'Review' });
@@ -983,8 +991,17 @@ export class UnifiedProposalView extends ItemView {
 			this.render();
 		});
 
-		const acceptBtn = actions.createEl('button', { text: 'Accept' });
-		this.onClick(acceptBtn, () => this.callbacks.onTitleAccept(proposal.id), 'Accept title');
+		if (proposal.conflictsWith) {
+			// Replace the single Accept with the two collision resolutions (#408).
+			const suffixBtn = actions.createEl('button', { text: 'Add suffix' });
+			this.onClick(suffixBtn, () => this.callbacks.onTitleAccept(proposal.id, 'iterate'), 'Add suffix to title');
+
+			const mergeBtn = actions.createEl('button', { text: 'Merge into existing' });
+			this.onClick(mergeBtn, () => this.callbacks.onTitleAccept(proposal.id, 'merge'), 'Merge into existing note');
+		} else {
+			const acceptBtn = actions.createEl('button', { text: 'Accept' });
+			this.onClick(acceptBtn, () => this.callbacks.onTitleAccept(proposal.id), 'Accept title');
+		}
 
 		const rejectBtn = actions.createEl('button', { text: 'Reject' });
 		this.onClick(rejectBtn, () => this.callbacks.onTitleReject(proposal.id), 'Reject title');
@@ -1046,13 +1063,34 @@ export class UnifiedProposalView extends ItemView {
 			cls: 'synapse-organize-reasoning synapse-review-box--title',
 		});
 
+		// Collision hint (#408): the proposed title already exists in this folder.
+		if (proposal.conflictsWith) {
+			contentEl.createEl('small', {
+				text: `A note named "${proposal.proposedTitle}" already exists in this folder. Add a suffix to keep both, or merge into the existing note.`,
+				cls: 'synapse-review-reasons synapse-title-conflict',
+			});
+		}
+
 		// Action bar
 		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
-		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
-		acceptBtn.addEventListener('click', () => {
-			this.reviewingTitle = null;
-			fireAndForget(this.callbacks.onTitleAccept(proposal.id), 'Accept title');
-		});
+		if (proposal.conflictsWith) {
+			const suffixBtn = actionBar.createEl('button', { text: 'Add suffix', cls: 'mod-cta' });
+			suffixBtn.addEventListener('click', () => {
+				this.reviewingTitle = null;
+				fireAndForget(this.callbacks.onTitleAccept(proposal.id, 'iterate'), 'Add suffix to title');
+			});
+			const mergeBtn = actionBar.createEl('button', { text: 'Merge into existing' });
+			mergeBtn.addEventListener('click', () => {
+				this.reviewingTitle = null;
+				fireAndForget(this.callbacks.onTitleAccept(proposal.id, 'merge'), 'Merge into existing note');
+			});
+		} else {
+			const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
+			acceptBtn.addEventListener('click', () => {
+				this.reviewingTitle = null;
+				fireAndForget(this.callbacks.onTitleAccept(proposal.id), 'Accept title');
+			});
+		}
 		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
 		rejectBtn.addEventListener('click', () => {
 			this.reviewingTitle = null;

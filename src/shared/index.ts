@@ -14,6 +14,7 @@ export {
 	getMarkdownFiles,
 	getIncludedMarkdownFiles,
 	wordCount,
+	findAvailableVaultPath,
 } from './file-utils';
 export { arrayBufferToBase64, base64EncodedLength } from './encoding';
 export { redactSecrets } from './redact';

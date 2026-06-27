@@ -2,7 +2,7 @@ import type { Proposal } from '../elaboration';
 import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
-import type { TitleProposal } from '../title';
+import type { TitleProposal, TitleDuplicateStrategy } from '../title';
 import type { RemProposal } from '../rem';
 
 /**
@@ -60,8 +60,9 @@ export interface UnifiedViewCallbacks {
 	// Deep Dive
 	onDeepDiveAccept: (id: string) => Promise<void>;
 	onDeepDiveReject: (id: string) => Promise<void>;
-	// Title
-	onTitleAccept: (id: string) => Promise<void>;
+	// Title. `resolution` picks a duplicate-handling strategy when the proposed
+	// title collides with an existing file (#408); omitted for a plain accept.
+	onTitleAccept: (id: string, resolution?: TitleDuplicateStrategy) => Promise<void>;
 	onTitleReject: (id: string) => Promise<void>;
 	// REM
 	onRemAcceptSelected: (id: string, acceptedMatchTexts: string[]) => Promise<void>;
