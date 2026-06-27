@@ -164,7 +164,8 @@ export default class SynapsePlugin extends Plugin {
 				onOrganizeReject: (id) => this.organize.rejectProposal(id),
 				onDeepDiveAccept: (id) => this.deepDive.acceptProposal(id),
 				onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
-				onTitleAccept: (id) => this.title.acceptProposal(id),
+				onTitleAccept: (id, resolution) =>
+					this.title.acceptProposal(id, resolution ? { resolution } : undefined).then(() => {}),
 				onTitleReject: (id) => this.title.rejectProposal(id),
 				onRemAcceptSelected: (id, texts) => this.rem.acceptProposal(id, texts),
 				onRemReject: (id) => this.rem.rejectProposal(id),
