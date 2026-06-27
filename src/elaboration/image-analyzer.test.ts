@@ -31,7 +31,7 @@ describe('ImageAnalyzer.findImageReferences', () => {
 			vault: { readBinary: vi.fn() },
 			metadataCache: { getFirstLinkpathDest: vi.fn() },
 		};
-		analyzer = new ImageAnalyzer(mockApp as any, () => settings);
+		analyzer = new ImageAnalyzer(mockApp as any, () => settings, { info: vi.fn() } as any);
 	});
 
 	it('finds wiki-link images', () => {
@@ -139,7 +139,7 @@ describe('ImageAnalyzer.parseAnalysisResponse', () => {
 			vault: { readBinary: vi.fn() },
 			metadataCache: { getFirstLinkpathDest: vi.fn() },
 		};
-		analyzer = new ImageAnalyzer(mockApp as any, () => settings);
+		analyzer = new ImageAnalyzer(mockApp as any, () => settings, { info: vi.fn() } as any);
 	});
 
 	it('parses well-formed DESCRIPTION/LOCATION/METADATA response', () => {
@@ -213,7 +213,7 @@ describe('ImageAnalyzer.analyzeImagesInNote', () => {
 			},
 		};
 
-		analyzer = new ImageAnalyzer(mockApp as any, () => settings);
+		analyzer = new ImageAnalyzer(mockApp as any, () => settings, { info: vi.fn() } as any);
 	});
 
 	afterEach(() => {

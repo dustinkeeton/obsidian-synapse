@@ -3,7 +3,7 @@ import { SynapseSettings } from '../settings';
 import { AUDIO_EXTENSIONS } from '../audio';
 import { detectPlatform } from '../video';
 import { validateTimeRange, isPathExcluded } from '../shared';
-import type { TimeRange } from '../shared';
+import type { TimeRange, NotificationManager } from '../shared';
 import {
 	detectLocalFileDuration,
 	detectUrlDuration,
@@ -22,7 +22,8 @@ export class UnifiedTranscriptionModal extends Modal {
 		private callbacks: {
 			onTranscribeFile: (file: TFile, timeRange?: TimeRange) => Promise<void>;
 			onTranscribeUrl: (url: string, timeRange?: TimeRange) => Promise<void>;
-		}
+		},
+		private notifications: NotificationManager
 	) {
 		super(app);
 	}
@@ -120,12 +121,12 @@ export class UnifiedTranscriptionModal extends Modal {
 			await this.handleFileTranscribe(this.selectedFile);
 		} else if (this.url) {
 			if (!detectPlatform(this.url)) {
-				new Notice('Unsupported URL. Please use YouTube or TikTok.');
+				this.notifications.info('Unsupported URL. Please use YouTube or TikTok.');
 				return;
 			}
 			await this.handleUrlTranscribe(this.url);
 		} else {
-			new Notice('Please select a file or enter a URL');
+			this.notifications.info('Please select a file or enter a URL');
 		}
 	}
 
@@ -257,7 +258,7 @@ export class UnifiedTranscriptionModal extends Modal {
 				e.stopPropagation();
 				if (resolved) return;
 				if (!startValue || !endValue) {
-					new Notice('Both start and end times are required');
+					this.notifications.info('Both start and end times are required');
 					return;
 				}
 				try {
@@ -266,7 +267,7 @@ export class UnifiedTranscriptionModal extends Modal {
 					notice.hide();
 					resolve(range);
 				} catch (err) {
-					new Notice(err instanceof Error ? err.message : String(err));
+					this.notifications.info(err instanceof Error ? err.message : String(err));
 				}
 			});
 

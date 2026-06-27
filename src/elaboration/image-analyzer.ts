@@ -1,5 +1,5 @@
-import { App, Notice, TFile } from 'obsidian';
-import { AIClient, arrayBufferToBase64 } from '../shared';
+import { App, TFile } from 'obsidian';
+import { AIClient, arrayBufferToBase64, NotificationManager } from '../shared';
 import type { ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
 import { preprocessImage } from '../image';
@@ -27,7 +27,8 @@ export class ImageAnalyzer {
 
 	constructor(
 		private app: App,
-		private getSettings: () => SynapseSettings
+		private getSettings: () => SynapseSettings,
+		private notifications: NotificationManager
 	) {
 		this.aiClient = new AIClient(getSettings);
 	}
@@ -116,7 +117,9 @@ export class ImageAnalyzer {
 		const maxBytes = (settings.image.maxImageSizeMb || 5) * 1024 * 1024;
 		const processed = await preprocessImage(data, sourceMediaType, maxBytes);
 		if (processed.downscaled) {
-			new Notice('Synapse: large image auto-downscaled to fit the API limit');
+			// Routed through the manager so the 3s dedup collapses this otherwise
+			// once-per-image flood into a single toast (#396).
+			this.notifications.info('large image auto-downscaled to fit the API limit');
 		}
 		const base64 = arrayBufferToBase64(processed.data);
 		const mediaType = processed.mediaType;

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createEl, ToggleComponent, ButtonComponent, Notice } from '../__mocks__/obsidian';
-import { createSettingsSectionContext } from '../shared';
+import { createSettingsSectionContext, NotificationManager } from '../shared';
 import { renderVideoSettings } from './settings-section';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
@@ -44,7 +44,9 @@ function makeCtx(mutate?: (s: SynapseSettings) => void) {
 	const settings = structuredClone(DEFAULT_SETTINGS);
 	mutate?.(settings);
 	const saveSettings = vi.fn().mockResolvedValue(undefined);
-	const plugin = { settings, saveSettings, manifest: { version: '0.0.0-test' } };
+	// Real manager so the copy-failure path routes through it (#396); the routed
+	// info() prepends "Synapse: " and creates a real Notice under the mock.
+	const plugin = { settings, saveSettings, manifest: { version: '0.0.0-test' }, notifications: new NotificationManager() };
 	const containerEl = createEl();
 	const ctx = createSettingsSectionContext({
 		containerEl,
@@ -166,7 +168,7 @@ describe('renderVideoSettings', () => {
 		await Promise.resolve();
 		await Promise.resolve();
 
-		expect(Notice.instances.some((n) => n.message === "Couldn't copy to clipboard")).toBe(true);
+		expect(Notice.instances.some((n) => n.message === "Synapse: Couldn't copy to clipboard")).toBe(true);
 		expect(errSpy).toHaveBeenCalled();
 	});
 

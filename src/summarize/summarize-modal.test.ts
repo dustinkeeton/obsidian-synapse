@@ -46,7 +46,8 @@ function openModal(targets: SummarizeTarget[], defaults: SummarizeModalDefaults 
 		{} as any,
 		targets,
 		vi.fn().mockResolvedValue(undefined),
-		defaults
+		defaults,
+		{ info: vi.fn() } as any
 	);
 	(modal as any).contentEl = stubEl();
 	modal.onOpen();

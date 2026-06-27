@@ -1,7 +1,8 @@
-import { App, Modal, Notice, Setting } from 'obsidian';
+import { App, Modal, Setting } from 'obsidian';
 import { AudioEmbed } from '../audio';
 import { VideoUrlEmbed } from '../video';
 import { ImageEmbed } from '../image';
+import type { NotificationManager } from '../shared';
 
 export class NoteMediaModal extends Modal {
 	private selectedAudio: Set<string>;
@@ -19,6 +20,7 @@ export class NoteMediaModal extends Modal {
 			onTranscribeVideo: (embeds: VideoUrlEmbed[]) => Promise<void>;
 			onExtractImages: (embeds: ImageEmbed[]) => Promise<void>;
 		},
+		private notifications: NotificationManager,
 		private ffmpegAvailable = false
 	) {
 		super(app);
@@ -97,7 +99,7 @@ export class NoteMediaModal extends Modal {
 					const chosenImage = this.imageEmbeds.filter(e => this.selectedImage.has(e.fileName));
 
 					if (chosenAudio.length === 0 && chosenVideo.length === 0 && chosenImage.length === 0) {
-						new Notice('Please select at least one item');
+						this.notifications.info('Please select at least one item');
 						return;
 					}
 

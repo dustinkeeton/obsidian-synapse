@@ -1,5 +1,5 @@
-import { Setting, setIcon, Notice } from 'obsidian';
-import type { SettingsSectionContext } from '../shared';
+import { Setting, setIcon } from 'obsidian';
+import type { SettingsSectionContext, NotificationManager } from '../shared';
 
 /** A single copy-able install command shown in a path setting's help panel (#382/#383). */
 interface InstallCommand {
@@ -49,6 +49,7 @@ function buildInstallHelpPanel(
 	body: HTMLElement,
 	heading: string,
 	commands: InstallCommand[],
+	notifications: NotificationManager,
 ): HTMLElement {
 	const panel = body.createDiv({ cls: 'synapse-install-help' });
 	panel.createDiv({ cls: 'synapse-install-help-heading', text: heading });
@@ -80,7 +81,7 @@ function buildInstallHelpPanel(
 				})
 				.catch((err) => {
 					console.error('[Synapse] Could not copy install command:', err);
-					new Notice("Couldn't copy to clipboard");
+					notifications.info("Couldn't copy to clipboard");
 				});
 		});
 	}
@@ -105,7 +106,11 @@ interface PathSettingOptions {
  * panel. The `?` help button toggles the panel open/closed (#382/#383); the
  * panel is created as the row's sibling so it expands directly beneath the field.
  */
-function addPathSetting(body: HTMLElement, opts: PathSettingOptions): void {
+function addPathSetting(
+	body: HTMLElement,
+	opts: PathSettingOptions,
+	notifications: NotificationManager,
+): void {
 	let panel: HTMLElement;
 	let open = false;
 
@@ -131,7 +136,7 @@ function addPathSetting(body: HTMLElement, opts: PathSettingOptions): void {
 
 	// Sibling after the row so it expands beneath the field (closure above
 	// references it; the `?` handler only runs after this assignment).
-	panel = buildInstallHelpPanel(body, opts.heading, opts.commands);
+	panel = buildInstallHelpPanel(body, opts.heading, opts.commands, notifications);
 }
 
 /**
@@ -160,7 +165,7 @@ export function renderVideoSettings(ctx: SettingsSectionContext): void {
 		get: () => plugin.settings.video.ytDlpPath,
 		set: (value) => { plugin.settings.video.ytDlpPath = value; },
 		save: () => plugin.saveSettings(),
-	});
+	}, plugin.notifications);
 
 	addPathSetting(videoBody, {
 		name: 'ffmpeg path',
@@ -170,7 +175,7 @@ export function renderVideoSettings(ctx: SettingsSectionContext): void {
 		get: () => plugin.settings.video.ffmpegPath,
 		set: (value) => { plugin.settings.video.ffmpegPath = value; },
 		save: () => plugin.saveSettings(),
-	});
+	}, plugin.notifications);
 
 	new Setting(videoBody)
 		.setName('Video download folder')
