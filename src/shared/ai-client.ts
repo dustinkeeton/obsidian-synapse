@@ -3,6 +3,7 @@ import { SynapseSettings } from '../settings';
 import { ChatMessage, ContentBlock, TextContentBlock } from './types';
 import { redactSecrets } from './redact';
 import { isRecord } from './json-utils';
+import { contentKey } from './hash-utils';
 
 // Re-exported for back-compat: existing callers and tests import `redactSecrets`
 // from this module. The implementation now lives in ./redact (single source of
@@ -11,6 +12,22 @@ export { redactSecrets };
 
 /** Default timeout for AI API requests (2 minutes). */
 const AI_REQUEST_TIMEOUT_MS = 120_000;
+
+/**
+ * Upper bound on the per-instance response cache (#397). Keeps memory bounded
+ * for a long-lived client while comfortably covering a single re-scan pass.
+ */
+const AI_RESPONSE_CACHE_MAX = 50;
+
+/** Optional per-call controls threaded through {@link AIClient.complete}/{@link AIClient.chat}. */
+export interface AIRequestOptions {
+	/**
+	 * Force a fresh dispatch for "regenerate" actions: skip the cache read AND
+	 * the in-flight coalescing map, but still refresh the cache with the new
+	 * result when caching is active.
+	 */
+	bypassCache?: boolean;
+}
 
 async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse> {
 	// Race the request against a timeout to prevent indefinite hangs
@@ -270,18 +287,107 @@ function toOllamaMessage(role: string, blocks: ContentBlock[]): Record<string, u
 }
 
 export class AIClient {
+	/**
+	 * In-flight coalescing map (#397): keyed by the deterministic request key,
+	 * holds the live dispatch promise so a concurrent identical request shares
+	 * the single network call instead of issuing a second one. Entries are
+	 * removed in a `.finally()` once settled (success OR failure) so a rejection
+	 * never sticks — mirroring intake's in-flight discipline.
+	 */
+	private readonly inFlight = new Map<string, Promise<string>>();
+
+	/**
+	 * Opt-in response cache (#397): an insertion-ordered (LRU) map of request
+	 * key → successful response, bounded to {@link AI_RESPONSE_CACHE_MAX}.
+	 *
+	 * Scope is intentionally per-instance: it matches the long-lived `AIClient`
+	 * a `ProposalGenerator` owns, so a re-scan within one session hits the cache.
+	 * It does NOT coalesce across separate `new AIClient(...)` instances — a
+	 * shared-static cache is a deliberately deferred option.
+	 */
+	private readonly cache = new Map<string, string>();
+
 	constructor(private getSettings: () => SynapseSettings) {}
 
-	async complete(prompt: string, systemPrompt?: string): Promise<string> {
+	async complete(prompt: string, systemPrompt?: string, opts?: AIRequestOptions): Promise<string> {
 		const messages: ChatMessage[] = [];
 		if (systemPrompt) {
 			messages.push({ role: 'system', content: systemPrompt });
 		}
 		messages.push({ role: 'user', content: prompt });
-		return this.chat(messages);
+		return this.chat(messages, opts);
 	}
 
-	async chat(messages: ChatMessage[]): Promise<string> {
+	/**
+	 * Send a chat request, transparently coalescing concurrent identical calls
+	 * and (when enabled) serving/refreshing a response cache. The raw provider
+	 * dispatch lives in {@link dispatch}; this method is the caching wrapper.
+	 */
+	async chat(messages: ChatMessage[], opts?: AIRequestOptions): Promise<string> {
+		const { ai } = this.getSettings();
+
+		// Deterministic key over the fully-resolved request. `messages` already
+		// embeds the system prompt, so it is covered by the JSON serialization.
+		const key = contentKey([
+			JSON.stringify(messages),
+			ai.provider,
+			ai.model,
+			String(ai.temperature),
+			String(ai.maxTokens),
+		]);
+
+		// Cache participation is opt-in: automatic at temperature 0 (the response
+		// is meant to be deterministic), or whenever the user enables it.
+		const cacheable = ai.temperature === 0 || ai.cacheResponses === true;
+		const bypass = opts?.bypassCache === true;
+
+		// Cache read — skipped on bypass so a "regenerate" always re-dispatches.
+		if (cacheable && !bypass) {
+			const cached = this.cacheGet(key);
+			if (cached !== undefined) {
+				return cached;
+			}
+		}
+
+		// In-flight coalescing — a concurrent identical request joins the live
+		// dispatch. Bypass never joins (it must produce a fresh result).
+		if (!bypass) {
+			const existing = this.inFlight.get(key);
+			if (existing) {
+				return existing;
+			}
+		}
+
+		// Populate the cache only on success, INSIDE the `.then()`, so a rejected
+		// dispatch can never be cached. A bypass still refreshes the cache here.
+		const dispatchPromise = this.dispatch(messages).then((res) => {
+			if (cacheable) {
+				this.cacheSet(key, res);
+			}
+			return res;
+		});
+
+		if (bypass) {
+			return dispatchPromise;
+		}
+
+		// Register for coalescing and clear the entry once settled. The cleanup is
+		// chained onto the RETURNED promise so its possible rejection stays
+		// handled by the caller (no floating/unhandled rejection).
+		this.inFlight.set(key, dispatchPromise);
+		return dispatchPromise.finally(() => {
+			if (this.inFlight.get(key) === dispatchPromise) {
+				this.inFlight.delete(key);
+			}
+		});
+	}
+
+	/**
+	 * Raw provider dispatch — selects the provider and issues the network call.
+	 * Behavior is unchanged from the pre-cache `chat()`; the caching/coalescing
+	 * wrapper lives in {@link chat}.
+	 */
+	private async dispatch(messages: ChatMessage[]): Promise<string> {
 		const { ai } = this.getSettings();
 
 		switch (ai.provider) {
@@ -295,6 +401,38 @@ export class AIClient {
 				return this.callOllama(messages);
 			default:
 				throw new Error(`Unsupported AI provider: ${ai.provider}`);
+		}
+	}
+
+	/**
+	 * LRU read: return the cached value (moving it to most-recently-used) or
+	 * `undefined` when absent. Uses `has` so an empty-string response — a valid
+	 * cached value — is not mistaken for a miss.
+	 */
+	private cacheGet(key: string): string | undefined {
+		if (!this.cache.has(key)) {
+			return undefined;
+		}
+		const val = this.cache.get(key) as string;
+		this.cache.delete(key);
+		this.cache.set(key, val);
+		return val;
+	}
+
+	/**
+	 * LRU write: insert/refresh `key` as most-recently-used and evict the oldest
+	 * entry once the cache exceeds {@link AI_RESPONSE_CACHE_MAX}.
+	 */
+	private cacheSet(key: string, val: string): void {
+		if (this.cache.has(key)) {
+			this.cache.delete(key);
+		}
+		this.cache.set(key, val);
+		if (this.cache.size > AI_RESPONSE_CACHE_MAX) {
+			const oldest = this.cache.keys().next().value;
+			if (oldest !== undefined) {
+				this.cache.delete(oldest);
+			}
 		}
 	}
 
