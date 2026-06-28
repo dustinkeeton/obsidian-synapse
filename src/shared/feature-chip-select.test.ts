@@ -110,7 +110,7 @@ describe('renderFeatureChipSelect — add dropdown options', () => {
 	it('renders a disabled placeholder as the first option', () => {
 		const { container } = render([]);
 		const placeholder = byTag(container, 'OPTION')[0];
-		expect(placeholder.textContent).toBe('+ Add feature…');
+		expect(placeholder.textContent).toBe('+ add feature…');
 		expect(placeholder.value).toBe('');
 		expect(placeholder.disabled).toBe(true);
 		// An empty list still exposes the dropdown so the user can recover.

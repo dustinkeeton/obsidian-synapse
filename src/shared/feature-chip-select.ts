@@ -78,7 +78,7 @@ export function renderFeatureChipSelect(
 			attr: { 'aria-label': 'Add feature to exclusion scope' },
 		});
 
-		const placeholder = select.createEl('option', { text: '+ Add feature…' });
+		const placeholder = select.createEl('option', { text: '+ add feature…' });
 		placeholder.value = '';
 		placeholder.disabled = true;
 		placeholder.selected = true;

@@ -29,7 +29,7 @@ export class ProposalReviewView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return 'Synapse Proposals';
+		return 'Synapse proposals';
 	}
 
 	getIcon(): string {

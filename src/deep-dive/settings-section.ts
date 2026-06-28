@@ -73,10 +73,10 @@ export function renderDeepDiveSettings(ctx: SettingsSectionContext): void {
 
 	new Setting(deepDiveBody)
 		.setName('Note output folder')
-		.setDesc('Where to create new notes. Uses a subfolder per root note. (empty = same folder as source)')
+		.setDesc('Where to create new notes. Uses a subfolder per root note. (Empty = same folder as source)')
 		.addText((text) =>
 			text
-				.setPlaceholder('Deep Dives')
+				.setPlaceholder('Deep dives')
 				.setValue(plugin.settings.deepDive.noteOutputFolder)
 				.onChange(async (value) => {
 					plugin.settings.deepDive.noteOutputFolder = value;

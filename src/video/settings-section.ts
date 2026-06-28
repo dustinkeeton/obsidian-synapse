@@ -73,7 +73,7 @@ function buildInstallHelpPanel(
 					copyBtn.addClass('is-copied');
 					setIcon(copyBtn, 'check');
 					copyBtn.setAttribute('aria-label', 'Copied!');
-					setTimeout(() => {
+					window.setTimeout(() => {
 						copyBtn.removeClass('is-copied');
 						setIcon(copyBtn, 'copy');
 						copyBtn.setAttribute('aria-label', `Copy: ${cmd}`);
