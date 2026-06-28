@@ -56,6 +56,12 @@ jobs:
             exit 1
           fi
 
+      # Obsidian auto-reviews every release and silently pulls any that fails its
+      # guideline scan. Run the same local gate (eslint-plugin-obsidianmd, #389)
+      # here so a non-compliant release is never cut in the first place.
+      - name: Lint (Obsidian review gate)
+        run: npm run lint
+
       - name: Build
         run: node esbuild.config.mjs production
 

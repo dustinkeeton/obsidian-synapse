@@ -4,6 +4,21 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-28: Release/publish is already automatic; adopt the official Obsidian lint gate (#389)
+
+**Context**: #389 asked how to "automate publishing" to the community store, and its body proposed building release/submission automation. Reassessed: Synapse is already in the store, and — confirmed against Obsidian's 2026 "future of plugins" announcement — once a plugin is listed, **every new GitHub release is auto-reviewed and delivered to users within ~24h**, with no per-release submission, no dashboard button, and no `obsidianmd/obsidian-releases` PR. Our pipeline (`version-bump.mjs` → `tag-on-version-bump.yml` → `release.yml`) already does everything after a version-bump commit; the only manual step is the bump itself.
+
+**Decision**:
+- **Don't build release-publishing automation** (or an `obsidian-releases` PR bot) — it's already automatic. Document the real flow in `docs/RELEASING.md` and fix the stale "not yet published" README copy instead.
+- **Adopt `eslint-plugin-obsidianmd` as a blocking CI gate** (`eslint.config.mjs`) — the local mirror of the store's automated review, so a release is never silently pulled for a guideline violation. We lift **only** the `obsidianmd/*` rules from its `recommended` preset (33 rules), *not* the preset wholesale: it bundles `typescript-eslint/recommended-type-checked` + import/sdl/depend (100+ rules), which would balloon the green-gate — the same explicit-list reasoning behind the #296/#297 config. The two layers are orthogonal (`obsidianmd/*` vs `@typescript-eslint/*`) and coexist. Scoped to shipped `src` only (test infra isn't bundled/reviewed, per the #321 exemption).
+
+**Alternatives considered**:
+- **Adopt `obsidianmd.configs.recommended` as-is** — rejected; drags in a strict type-checked TS preset (hundreds of out-of-scope violations).
+- **`obsidianmd/ui/sentence-case` unconfigured** — rejected; it lowercases the brand name ("synapse"), acronyms, and product names. Kept on, with `brands`/`acronyms`/`ignoreRegex` allow-lists, after fixing the genuine Title-Case it found.
+- **Lint `manifest.json` (`validate-manifest`)** — left out: the rule only fires on a file named `manifest.json` and needs an ESTree `ObjectExpression` no standard parser yields from bare JSON (the official preset doesn't wire it either). Our manifest is already valid and is checked by Obsidian's own review; not worth a custom-parser hack.
+
+---
+
 ## 2026-06-28: Subscription plans can't replace API billing (documented; wontfix)
 
 **Context**: A recurring user request (#364) is to power Synapse with an existing Claude Pro/Max (or ChatGPT Plus / Gemini Advanced) **subscription** instead of metered, per-token **API** billing — the cost ask is one flat monthly fee, not a second usage-based bill.
@@ -115,6 +130,8 @@ Decisions listed in reverse chronological order.
 **Rationale**: A once-a-day, self-silencing nudge is the least-annoying way to close the "no auto-update channel" gap.
 
 **Impact**: `shared/update-checker.ts`; new `settings.updates` block (`enableUpdateNotifications`, `lastUpdateCheck`, `dismissedUpdateVersion`); a delayed (5 s) startup timer in `main.ts`.
+
+**Update (2026-06-28)**: Synapse is now in the community store, which delivers updates automatically — so this in-app checker is a *fallback/notice*, not the only update channel. See the 2026-06-28 release-automation entry (#389).
 
 ---
 

@@ -164,7 +164,7 @@ export function renderEnrichmentSettings(ctx: SettingsSectionContext): void {
 			.addText((text) =>
 				text
 					.setValue(entry.tags.join(', '))
-					.setPlaceholder('tag1, tag2, tag3')
+					.setPlaceholder('Tag1, tag2, tag3')
 					.onChange(async (value) => {
 						plugin.settings.enrichment.tagVocabulary[i].tags =
 							value.split(',').map(s => s.trim()).filter(Boolean);

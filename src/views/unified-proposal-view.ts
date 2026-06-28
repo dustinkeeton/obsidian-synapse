@@ -61,7 +61,7 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return 'Synapse Proposals';
+		return 'Synapse proposals';
 	}
 
 	getIcon(): string {

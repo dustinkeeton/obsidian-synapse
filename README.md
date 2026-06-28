@@ -172,7 +172,28 @@ This is the billing-model counterpart to the auth decision recorded in [`DECISIO
 
 ## Installation
 
-Synapse is not yet published to the Obsidian Community Plugin directory. To install manually:
+Synapse is available in the Obsidian Community Plugin directory.
+
+1. In Obsidian, open **Settings > Community plugins** and select **Browse**.
+2. Search for **Synapse** and select **Install**.
+3. Select **Enable**.
+
+New versions are delivered automatically through Obsidian as they are published -- there is no manual update step.
+
+### Install via BRAT (beta builds)
+
+To track pre-release builds ahead of the store:
+
+1. Install the [BRAT plugin](https://github.com/TfTHacker/obsidian42-brat) from the Obsidian Community Plugin directory.
+2. In BRAT settings, click **Add Beta Plugin**.
+3. Enter `dustinkeeton/obsidian-synapse` and click **Add Plugin**.
+4. Enable **Synapse** in **Settings > Community plugins**.
+
+BRAT will automatically check for updates and notify you when new versions are available.
+
+### Install from source
+
+To run an unreleased build, or for development:
 
 1. Clone the repository:
    ```sh
@@ -193,17 +214,6 @@ Synapse is not yet published to the Obsidian Community Plugin directory. To inst
    ```
 
 4. Open Obsidian, go to **Settings > Community plugins**, and enable **Synapse**.
-
-### Install via BRAT (Beta Reviewers Auto-update Tester)
-
-If you prefer automatic updates during the beta period:
-
-1. Install the [BRAT plugin](https://github.com/TfTHacker/obsidian42-brat) from the Obsidian Community Plugin directory.
-2. In BRAT settings, click **Add Beta Plugin**.
-3. Enter `dustinkeeton/obsidian-synapse` and click **Add Plugin**.
-4. Enable **Synapse** in **Settings > Community plugins**.
-
-BRAT will automatically check for updates and notify you when new versions are available.
 
 ### External tools (optional)
 
