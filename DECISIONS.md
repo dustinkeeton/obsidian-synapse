@@ -4,6 +4,14 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-28: Subscription plans can't replace API billing (documented; wontfix)
+
+**Context**: A recurring user request (#364) is to power Synapse with an existing Claude Pro/Max (or ChatGPT Plus / Gemini Advanced) **subscription** instead of metered, per-token **API** billing — the cost ask is one flat monthly fee, not a second usage-based bill.
+
+**Decision**: Document it as a canonical wontfix — it is blocked by provider policy, not by Synapse's architecture. A subscription authorizes the provider's own chat app, not third-party API access: Anthropic's Consumer Terms prohibit third-party use of subscription tokens (enforced with suspensions) and the Messages API rejects the `sk-ant-oat…` setup token; OpenAI "Sign in with ChatGPT" is identity-only; Google Gemini Advanced has no API, only AI Studio / Vertex (facts re-verified 2026-06). The supported, compliant cost answers are a pay-as-you-go provider API key and Ollama (local, free). The README **FAQ** is the canonical user-facing answer; this entry is its decision-log counterpart and the billing-model twin of the 2026-06-16 "Guided key onboarding + live validation (OAuth deferred)" entry (#335) — same provider-policy facts, viewed from cost rather than auth UX.
+
+---
+
 ## 2026-06-26: Idempotency foundation — scoping spike (#390)
 
 **Context**: Synapse has no shared notion of *idempotency* — same input → same outcome, repeating an operation doesn't multiply its effects. This spike investigated three layers and confirmed the current state against the live code (all citations verified in-tree):
