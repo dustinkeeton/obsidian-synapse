@@ -36,6 +36,15 @@ export const API_KEY_REQUIRED_DESC =
 	'Required — add your provider API key to activate AI features.';
 
 /**
+ * Note shown under the API key field for hosted providers (#364): a consumer
+ * subscription is not API access, so it cannot power Synapse. Points to the two
+ * paths that do work — a pay-as-you-go API key, or local/free Ollama. Brand
+ * voice: precise and dry, no hype. See the README FAQ for the full rationale.
+ */
+export const API_KEY_NO_SUBSCRIPTION_NOTE =
+	"Subscriptions (Claude Pro/Max, ChatGPT Plus, Gemini Advanced) can't be used here — use an API key, or Ollama for free local AI.";
+
+/**
  * Whether the configured provider still needs an API key. Ollama runs locally
  * and authenticates against a URL endpoint, so it never counts as missing — only
  * the hosted providers (OpenAI, Anthropic, Gemini) require a key here.

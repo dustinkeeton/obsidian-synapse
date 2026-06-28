@@ -33,7 +33,7 @@ import { renderOrganizeSettings } from './organize';
 import { renderDeepDiveSettings } from './deep-dive';
 import { renderTitleSettings } from './title';
 import { renderRemSettings } from './rem';
-import { applyApiKeyEmphasis } from './onboarding';
+import { applyApiKeyEmphasis, API_KEY_NO_SUBSCRIPTION_NOTE } from './onboarding';
 import { foldActiveNoteProperties } from './properties-fold';
 import { ChangelogModal } from './changelog-modal';
 
@@ -300,6 +300,13 @@ export class SynapseSettingTab extends PluginSettingTab {
 				setting: apiKeySetting,
 				provider: cred,
 				getKey: () => this.plugin.settings.ai.apiKey,
+			});
+			// The recurring "can I use my Pro/Max subscription instead?" question
+			// answered at the point of confusion (#364). Hosted-only — the "or use
+			// Ollama" advice is moot once Ollama (which needs no key) is selected.
+			aiBody.createDiv({
+				cls: 'setting-item-description synapse-api-key-note',
+				text: API_KEY_NO_SUBSCRIPTION_NOTE,
 			});
 		}
 

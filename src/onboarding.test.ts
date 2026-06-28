@@ -9,6 +9,7 @@ import {
 	REQUIRED_FIELD_CLASS,
 	API_KEY_DESC,
 	API_KEY_REQUIRED_DESC,
+	API_KEY_NO_SUBSCRIPTION_NOTE,
 } from './onboarding';
 
 function makeSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
@@ -117,5 +118,23 @@ describe('WELCOME_MESSAGE copy (#89)', () => {
 		// Brand voice: no exclamation points, no emoji (an em dash is fine).
 		expect(WELCOME_MESSAGE).not.toContain('!');
 		expect(WELCOME_MESSAGE).not.toMatch(/\p{Extended_Pictographic}/u);
+	});
+});
+
+describe('API_KEY_NO_SUBSCRIPTION_NOTE copy (#364)', () => {
+	it('names the three subscription products it rules out', () => {
+		expect(API_KEY_NO_SUBSCRIPTION_NOTE).toMatch(/Pro\/Max/);
+		expect(API_KEY_NO_SUBSCRIPTION_NOTE).toMatch(/ChatGPT Plus/);
+		expect(API_KEY_NO_SUBSCRIPTION_NOTE).toMatch(/Gemini Advanced/);
+	});
+
+	it('points to both supported paths — an API key and Ollama', () => {
+		expect(API_KEY_NO_SUBSCRIPTION_NOTE.toLowerCase()).toContain('api key');
+		expect(API_KEY_NO_SUBSCRIPTION_NOTE).toContain('Ollama');
+	});
+
+	it('stays in brand voice: no exclamation points, no emoji', () => {
+		expect(API_KEY_NO_SUBSCRIPTION_NOTE).not.toContain('!');
+		expect(API_KEY_NO_SUBSCRIPTION_NOTE).not.toMatch(/\p{Extended_Pictographic}/u);
 	});
 });

@@ -75,6 +75,21 @@ function findAnchors(el: any, out: any[] = []): any[] {
 	return out;
 }
 
+/**
+ * Recursively collect stub elements whose own text contains `needle`. The mock's
+ * `textContent` is per-element (it does not aggregate descendants), so a match is
+ * the element that was created with that text — not an ancestor.
+ */
+function findByText(el: any, needle: string, out: any[] = []): any[] {
+	for (const child of el?.children ?? []) {
+		if (typeof child.textContent === 'string' && child.textContent.includes(needle)) {
+			out.push(child);
+		}
+		findByText(child, needle, out);
+	}
+	return out;
+}
+
 describe('SynapseSettingTab — Auto-Accept disabled state', () => {
 	beforeEach(() => {
 		ToggleComponent.instances.length = 0;
@@ -443,5 +458,35 @@ describe('SynapseSettingTab — General section / auto-fold properties (#381)', 
 		await updateToggle()._trigger(false);
 		expect(plugin.settings.updates.enableUpdateNotifications).toBe(false);
 		expect(saveSettings).toHaveBeenCalled();
+	});
+});
+
+describe('SynapseSettingTab — no-subscription note in AI Configuration (#364)', () => {
+	beforeEach(() => {
+		ToggleComponent.instances.length = 0;
+	});
+
+	function subscriptionNotes(tab: SynapseSettingTab): any[] {
+		const container = (tab as unknown as { containerEl: any }).containerEl;
+		return findByText(container, 'Subscriptions');
+	}
+
+	it.each(['openai', 'anthropic', 'gemini'] as const)(
+		'shows the no-subscription note for hosted provider %s',
+		(provider) => {
+			const { tab } = makeTab((s) => {
+				s.ai.provider = provider;
+			});
+			tab.display();
+			expect(subscriptionNotes(tab).length).toBeGreaterThan(0);
+		},
+	);
+
+	it('omits the note when the local Ollama provider is selected', () => {
+		const { tab } = makeTab((s) => {
+			s.ai.provider = 'ollama';
+		});
+		tab.display();
+		expect(subscriptionNotes(tab)).toHaveLength(0);
 	});
 });

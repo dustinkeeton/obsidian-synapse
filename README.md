@@ -151,6 +151,25 @@ These are the only services Synapse contacts, what each one is used for, and wha
 
 Synapse proposes, you decide -- and that holds for the network too: nothing is requested until you ask for it.
 
+## FAQ
+
+### Can I use my Claude Pro/Max plan (or ChatGPT Plus / Gemini Advanced) instead of an API key?
+
+No. A consumer subscription pays for the provider's own chat app -- it is not API access, which every provider authorizes and bills separately. Synapse talks to each provider's API, so it needs an API key, not a subscription login.
+
+- **Anthropic (Claude Pro/Max)** -- third-party use of subscription tokens is prohibited by the Consumer Terms of Service (updated 2026-02-19) and enforced with account suspensions. The `sk-ant-oat01-…` setup token works only in Claude Code and is rejected by the Messages API.
+- **OpenAI (ChatGPT Plus/Pro)** -- "Sign in with ChatGPT" is identity only; the subscription includes no API access. API usage is metered separately.
+- **Google (Gemini Advanced / AI Pro)** -- a consumer chat product with no API access; the Gemini API bills separately through AI Studio or Vertex.
+
+Reverse-engineering subscription credentials is both blocked technically and a Terms violation that risks *your* account -- so Synapse won't do it.
+
+**What does work -- and answers the cost concern:**
+
+- A provider **API key** (OpenAI, Anthropic, or Google Gemini) -- pay-as-you-go, for only what you use.
+- **Ollama** -- fully local and free, already a first-class provider. Set **Settings > Synapse > AI provider** to **Ollama** (default endpoint `http://localhost:11434`, no key, nothing leaves your machine).
+
+This is the billing-model counterpart to the auth decision recorded in [`DECISIONS.md`](DECISIONS.md), which chose guided API-key onboarding over a one-click OAuth "connect" button for the same provider-policy reasons.
+
 ## Installation
 
 Synapse is not yet published to the Obsidian Community Plugin directory. To install manually:
@@ -213,7 +232,7 @@ Open **Settings > Synapse** to configure the plugin. All features can be individ
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| AI provider | OpenAI, Anthropic, or Ollama (local) | OpenAI |
+| AI provider | OpenAI, Anthropic, Google Gemini, or Ollama (local) | OpenAI |
 | API key | Your API key for the selected provider | -- |
 | Ollama endpoint | URL for local Ollama server (shown when Ollama selected) | `http://localhost:11434` |
 | Model | AI model for the selected provider | GPT-4o |
