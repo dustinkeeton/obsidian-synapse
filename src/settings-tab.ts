@@ -31,6 +31,7 @@ import { renderSummarizeSettings } from './summarize';
 import { renderTidySettings } from './tidy';
 import { renderOrganizeSettings } from './organize';
 import { renderDeepDiveSettings } from './deep-dive';
+import { renderTitleSettings } from './title';
 import { renderRemSettings } from './rem';
 import { applyApiKeyEmphasis } from './onboarding';
 import { foldActiveNoteProperties } from './properties-fold';
@@ -110,6 +111,7 @@ const FEATURE_SECTION_RENDERERS: Array<(ctx: SettingsSectionContext) => void> = 
 	renderTidySettings,
 	renderOrganizeSettings,
 	renderDeepDiveSettings,
+	renderTitleSettings,
 	renderRemSettings,
 ];
 

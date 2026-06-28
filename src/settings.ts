@@ -4,6 +4,8 @@ import type { ProposalKind } from './views/types';
 // Type-only import of the exclusion model (centralized in shared/exclusions.ts).
 // Erased at compile time; the DEFAULT_SETTINGS values below are plain literals.
 import type { ExclusionRule } from './shared/exclusions';
+// Type-only import. title/types.ts has no imports, so this never forms a cycle.
+import type { TitleDuplicateStrategy } from './title/types';
 
 export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
@@ -218,6 +220,12 @@ export interface TitleSettings {
 	enabled: boolean;
 	proposalFolderPath: string;
 	checkAfterOperations: boolean;
+	/**
+	 * How to resolve a proposed title that collides with an existing file in the
+	 * same folder (#408). Drives auto-accept and the settings dropdown; the
+	 * proposal card always offers both choices regardless of this default.
+	 */
+	duplicateHandling: TitleDuplicateStrategy;
 }
 
 export interface IntakeSettings {
@@ -475,6 +483,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		enabled: true,
 		proposalFolderPath: '.synapse/title-proposals',
 		checkAfterOperations: true,
+		duplicateHandling: 'iterate',
 	},
 	rem: {
 		enabled: true,

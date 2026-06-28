@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { getIncludedMarkdownFiles } from './file-utils';
+import { getIncludedMarkdownFiles, findAvailableVaultPath } from './file-utils';
 import { TFile } from '../__mocks__/obsidian';
 import type { ExclusionRule } from './exclusions';
 
@@ -65,5 +65,50 @@ describe('getIncludedMarkdownFiles', () => {
 			'Notes'
 		);
 		expect(result).toEqual([inFolder]);
+	});
+});
+
+/** App stub whose vault reports a fixed set of taken paths. */
+function appWithPaths(taken: string[]) {
+	const set = new Set(taken);
+	return {
+		vault: {
+			getAbstractFileByPath: vi.fn((path: string) =>
+				set.has(path) ? new TFile(path) : null
+			),
+		},
+	} as any;
+}
+
+describe('findAvailableVaultPath', () => {
+	it('returns the desired path unchanged when it is free', () => {
+		const app = appWithPaths([]);
+		expect(findAvailableVaultPath(app, 'Notes/Idea.md')).toBe('Notes/Idea.md');
+	});
+
+	it('appends -1 before the extension on a single collision', () => {
+		const app = appWithPaths(['Notes/Idea.md']);
+		expect(findAvailableVaultPath(app, 'Notes/Idea.md')).toBe('Notes/Idea-1.md');
+	});
+
+	it('skips to -2 when both the base and -1 are taken', () => {
+		const app = appWithPaths(['Notes/Idea.md', 'Notes/Idea-1.md']);
+		expect(findAvailableVaultPath(app, 'Notes/Idea.md')).toBe('Notes/Idea-2.md');
+	});
+
+	it('suffixes the whole name when the path has no extension', () => {
+		const app = appWithPaths(['Notes/Idea']);
+		expect(findAvailableVaultPath(app, 'Notes/Idea')).toBe('Notes/Idea-1');
+	});
+
+	it('treats a dot in a folder name (not the basename) as part of the path, not an extension', () => {
+		// `my.notes/file` has no real extension: the last dot is in the folder.
+		const app = appWithPaths(['my.notes/file']);
+		expect(findAvailableVaultPath(app, 'my.notes/file')).toBe('my.notes/file-1');
+	});
+
+	it('suffixes before the extension even when the folder also contains a dot', () => {
+		const app = appWithPaths(['my.notes/file.md']);
+		expect(findAvailableVaultPath(app, 'my.notes/file.md')).toBe('my.notes/file-1.md');
 	});
 });
