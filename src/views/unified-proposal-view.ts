@@ -954,6 +954,22 @@ export class UnifiedProposalView extends ItemView {
 
 	// ── Title Card ───────────────────────────────────────────
 
+	/**
+	 * Describe a title collision for user-facing copy (#414). From the full
+	 * vault path in {@link TitleProposal.conflictsWith}, derive the existing
+	 * note's display `name` (basename without the `.md` extension) and the
+	 * `folder` it lives in — rendered as the literal "the vault root" when the
+	 * note sits at the top level so the copy never says "in ".
+	 */
+	private describeConflict(conflictsWith: string): { name: string; folder: string } {
+		const slashIndex = conflictsWith.lastIndexOf('/');
+		const base = slashIndex >= 0 ? conflictsWith.slice(slashIndex + 1) : conflictsWith;
+		const name = base.replace(/\.md$/i, '');
+		const dir = slashIndex >= 0 ? conflictsWith.slice(0, slashIndex) : '';
+		const folder = dir === '' || dir === '.' ? 'the vault root' : dir;
+		return { name, folder };
+	}
+
 	private renderTitleCard(container: HTMLElement, proposal: TitleProposal): void {
 		const card = container.createDiv({
 			cls: `synapse-proposal-card ${cardClass('title')}`,
@@ -963,6 +979,12 @@ export class UnifiedProposalView extends ItemView {
 			text: 'Title',
 			cls: `synapse-badge ${badgeClass('title')}`,
 		});
+
+		// Second badge so the collision is obvious at a glance (#414). 'conflict'
+		// is not a ProposalKind, so the literal class is used (not badgeClass()).
+		if (proposal.conflictsWith) {
+			card.createEl('span', { text: 'Conflict', cls: 'synapse-badge synapse-badge--conflict' });
+		}
 
 		const triggerLabel = proposal.trigger === 'untitled' ? 'Untitled note' : 'Content mismatch';
 		card.createEl('small', {
@@ -975,11 +997,14 @@ export class UnifiedProposalView extends ItemView {
 			cls: 'synapse-preview',
 		});
 
-		// Collision hint (#408): the proposed title already exists in this folder.
+		// Collision callout (#414): name the existing note + warn that merge is destructive.
 		if (proposal.conflictsWith) {
-			card.createEl('small', {
-				text: `"${proposal.proposedTitle}" already exists here — add a suffix or merge.`,
-				cls: 'synapse-reasons synapse-title-conflict',
+			const { name, folder } = this.describeConflict(proposal.conflictsWith);
+			const callout = card.createDiv({ cls: 'synapse-title-conflict' });
+			callout.createEl('div', { text: '⚠ Conflict', cls: 'synapse-title-conflict-heading' });
+			callout.createEl('small', {
+				text: `A note named "${name}" already exists in ${folder}. "Add suffix" keeps both; "Merge into existing" moves this note's content there and trashes this note (recoverable).`,
+				cls: 'synapse-title-conflict-body',
 			});
 		}
 
@@ -1024,6 +1049,11 @@ export class UnifiedProposalView extends ItemView {
 		});
 		titleLink.addEventListener('click', () => this.openNote(proposal.sourceNotePath));
 
+		// Header marker so a colliding proposal reads as a distinct state (#414).
+		if (proposal.conflictsWith) {
+			header.createEl('span', { text: 'Conflict', cls: 'synapse-badge synapse-badge--conflict' });
+		}
+
 		const triggerLabel = proposal.trigger === 'untitled' ? 'Untitled note detected' : 'Title/content mismatch detected';
 		contentEl.createEl('small', {
 			text: `${triggerLabel} | ${proposal.createdAt.split('T')[0]}`,
@@ -1063,11 +1093,14 @@ export class UnifiedProposalView extends ItemView {
 			cls: 'synapse-organize-reasoning synapse-review-box--title',
 		});
 
-		// Collision hint (#408): the proposed title already exists in this folder.
+		// Collision callout (#414): name the existing note + warn that merge is destructive.
 		if (proposal.conflictsWith) {
-			contentEl.createEl('small', {
-				text: `A note named "${proposal.proposedTitle}" already exists in this folder. Add a suffix to keep both, or merge into the existing note.`,
-				cls: 'synapse-review-reasons synapse-title-conflict',
+			const { name, folder } = this.describeConflict(proposal.conflictsWith);
+			const callout = contentEl.createDiv({ cls: 'synapse-title-conflict' });
+			callout.createEl('div', { text: '⚠ Conflict', cls: 'synapse-title-conflict-heading' });
+			callout.createEl('small', {
+				text: `A note named "${name}" already exists in ${folder}. Choose "Add suffix" to keep both notes, or "Merge into existing" to fold this note's content into "${name}" and trash the current note (recoverable from trash).`,
+				cls: 'synapse-title-conflict-body',
 			});
 		}
 

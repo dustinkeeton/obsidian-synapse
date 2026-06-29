@@ -5,6 +5,8 @@ import type { Proposal } from '../elaboration';
 import type { EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
+import type { TitleProposal } from '../title';
+import { createEl } from '../__mocks__/obsidian';
 
 // --- Helpers ----------------------------------------------------------------
 
@@ -104,6 +106,46 @@ function makeDeepDiveItem(id = 'dd-1'): UnifiedItem {
 		} as DeepDiveProposal,
 	};
 }
+
+/** Minimal title proposal; pass a vault path to simulate a filename collision. */
+function makeTitleProposal(conflictsWith?: string): TitleProposal {
+	return {
+		id: 'title-1',
+		sourceNotePath: 'notes/test.md',
+		currentTitle: 'Untitled',
+		proposedTitle: 'Q3 Plan',
+		trigger: 'untitled',
+		reasoning: 'AI suggests a clearer title.',
+		createdAt: '2024-01-01T00:00:00Z',
+		status: 'pending',
+		...(conflictsWith ? { conflictsWith } : {}),
+	};
+}
+
+// DOM-assertion harness mirroring changelog.test.ts: the centralized obsidian
+// mock faithfully tracks `cls`/`text` on createEl-built elements, so walking the
+// tree by class/tag and reading textContent are reliable here (plain DOM, not a
+// Notice — the inner-element gotcha does not apply).
+
+/** Recursively collect every element in a createEl() stub tree. */
+function walkEls(el: any, out: any[] = []): any[] {
+	for (const child of el?.children ?? []) {
+		out.push(child);
+		walkEls(child, out);
+	}
+	return out;
+}
+// Split on className rather than classList.contains(): the obsidian mock stores
+// a multi-class `cls` string (e.g. "synapse-badge synapse-badge--conflict") as a
+// single combined entry, so contains() of an individual token misses. className
+// rejoins+splits cleanly and works for single- and multi-class elements alike.
+const elsWithClass = (root: any, cls: string): any[] =>
+	walkEls(root).filter((e) => String(e.className ?? '').split(/\s+/).includes(cls));
+const elsWithTag = (root: any, tag: string): any[] =>
+	walkEls(root).filter((e) => e.tagName === tag);
+/** Concatenate an element's own text with all descendant text. */
+const textOf = (el: any): string =>
+	[el?.textContent ?? '', ...walkEls(el).map((c) => c.textContent ?? '')].join(' ');
 
 // --- Tests ------------------------------------------------------------------
 
@@ -276,6 +318,71 @@ describe('UnifiedProposalView reject-all', () => {
 			await view.acceptAll();
 
 			expect(callbacks.onElaborationAccept).not.toHaveBeenCalled();
+		});
+	});
+});
+
+describe('UnifiedProposalView title collision UI (#414)', () => {
+	/** Fresh view; cast to any to reach the private render methods. */
+	function makeView(): any {
+		return new UnifiedProposalView(mockLeaf(), mockCallbacks(), new NotificationManager());
+	}
+
+	describe('renderTitleCard', () => {
+		it('shows one conflict callout + Conflict badge (Title badge kept) when conflictsWith is set', () => {
+			const container = createEl();
+			makeView().renderTitleCard(container, makeTitleProposal('Projects/Roadmap.md'));
+
+			const callouts = elsWithClass(container, 'synapse-title-conflict');
+			expect(callouts).toHaveLength(1);
+			expect(elsWithClass(container, 'synapse-badge--conflict')).toHaveLength(1);
+			// The proposal kind stays legible: the Title badge is still present.
+			expect(elsWithClass(container, 'synapse-badge--title')).toHaveLength(1);
+
+			const text = textOf(callouts[0]);
+			expect(text).toContain('Roadmap'); // existing note name (derived from conflictsWith)
+			expect(text).toContain('Projects'); // its folder
+			expect(text).toContain('trash'); // merge is destructive
+		});
+
+		it('shows no conflict UI and a plain Accept button when conflictsWith is unset', () => {
+			const container = createEl();
+			makeView().renderTitleCard(container, makeTitleProposal());
+
+			expect(elsWithClass(container, 'synapse-title-conflict')).toHaveLength(0);
+			expect(elsWithClass(container, 'synapse-badge--conflict')).toHaveLength(0);
+			const buttons = elsWithTag(container, 'BUTTON').map((b) => b.textContent);
+			expect(buttons).toContain('Accept');
+		});
+	});
+
+	describe('renderTitleReview', () => {
+		it('shows one conflict callout + Conflict header badge when conflictsWith is set', () => {
+			const view = makeView();
+			view.contentEl = createEl();
+			view.renderTitleReview(makeTitleProposal('Projects/Roadmap.md'));
+			const { contentEl } = view;
+
+			const callouts = elsWithClass(contentEl, 'synapse-title-conflict');
+			expect(callouts).toHaveLength(1);
+			expect(elsWithClass(contentEl, 'synapse-badge--conflict')).toHaveLength(1);
+
+			const text = textOf(callouts[0]);
+			expect(text).toContain('Roadmap');
+			expect(text).toContain('Projects');
+			expect(text).toContain('trash');
+		});
+
+		it('shows no conflict UI and a plain Accept button when conflictsWith is unset', () => {
+			const view = makeView();
+			view.contentEl = createEl();
+			view.renderTitleReview(makeTitleProposal());
+			const { contentEl } = view;
+
+			expect(elsWithClass(contentEl, 'synapse-title-conflict')).toHaveLength(0);
+			expect(elsWithClass(contentEl, 'synapse-badge--conflict')).toHaveLength(0);
+			const buttons = elsWithTag(contentEl, 'BUTTON').map((b) => b.textContent);
+			expect(buttons).toContain('Accept');
 		});
 	});
 });
