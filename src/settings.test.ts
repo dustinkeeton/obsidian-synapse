@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_SETTINGS, MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
 import { PROPOSAL_KINDS } from './views/types';
+import { CURRENT_SETTINGS_VERSION } from './shared/settings-migrations';
 
 describe('autoAccept settings (#228)', () => {
 	it('defines an autoAccept flag for every proposal kind', () => {
@@ -109,5 +110,11 @@ describe('exclusions settings (#307)', () => {
 		expect(DEFAULT_SETTINGS.summarize.excludeTags).toContain('no-summarize');
 		expect(DEFAULT_SETTINGS.organize.excludeTags).toContain('no-organize');
 		expect(DEFAULT_SETTINGS.deepDive.excludeTags).toContain('no-deep-dive');
+	});
+});
+
+describe('settings version stamp (#93)', () => {
+	it('stamps DEFAULT_SETTINGS with the current schema version', () => {
+		expect(DEFAULT_SETTINGS.settingsVersion).toBe(CURRENT_SETTINGS_VERSION);
 	});
 });

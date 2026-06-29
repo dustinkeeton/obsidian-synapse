@@ -6,6 +6,11 @@ import type { ProposalKind } from './views/types';
 import type { ExclusionRule } from './shared/exclusions';
 // Type-only import. title/types.ts has no imports, so this never forms a cycle.
 import type { TitleDuplicateStrategy } from './title/types';
+// Runtime value import — the sanctioned `settings → shared` direction. Imported
+// DIRECTLY from the module (not via the `./shared` barrel) to stay clear of any
+// barrel import cycle; settings-migrations only depends on shared/exclusions, so
+// the graph stays acyclic.
+import { CURRENT_SETTINGS_VERSION } from './shared/settings-migrations';
 
 export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
@@ -325,6 +330,13 @@ export interface OnboardingSettings {
 export type AutoAcceptSettings = Record<ProposalKind, boolean>;
 
 export interface SynapseSettings {
+	/**
+	 * Schema version of the persisted settings (#93). Stamped to
+	 * {@link CURRENT_SETTINGS_VERSION} on save; drives the version-gated migration
+	 * runner in `shared/settings-migrations.ts`, which replays every newer
+	 * migration over the raw `data.json` before defaults are merged in.
+	 */
+	settingsVersion: number;
 	ai: AISettings;
 	elaboration: ElaborationSettings;
 	audio: AudioSettings;
@@ -353,6 +365,7 @@ export interface SynapseSettings {
 }
 
 export const DEFAULT_SETTINGS: SynapseSettings = {
+	settingsVersion: CURRENT_SETTINGS_VERSION,
 	ai: {
 		provider: 'openai',
 		apiKey: '',
