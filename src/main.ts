@@ -17,8 +17,8 @@ import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID } f
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
-import { FolderPickerModal, NotificationManager, CheckpointManager, UpdateChecker, fireAndForget, buildMigratedExclusions } from './shared';
-import type { DeferredTask, LegacyModuleExclusions } from './shared';
+import { FolderPickerModal, NotificationManager, CheckpointManager, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION } from './shared';
+import type { DeferredTask } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
 import { findVideoUrls } from './video';
@@ -475,38 +475,40 @@ export default class SynapsePlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		// `loadData()` returns `any`; narrow it to the persisted-settings shape so
-		// the fresh-install check and merge are type-safe. Persisted data is a
-		// (possibly partial / older-schema) settings object, or null on first run.
-		const data = (await this.loadData()) as Partial<SynapseSettings> | null;
+		// `loadData()` returns `any`; narrow it to a raw record so the migration
+		// runner and merge stay type-safe. Persisted data is a (possibly partial /
+		// older-schema) settings object, or null on first run.
+		const raw = (await this.loadData()) as Record<string, unknown> | null;
 		// No persisted data (null) or an empty object means this is the plugin's
 		// first run in this vault — used to gate the first-run welcome (#89).
-		this.isFreshInstall = !data || Object.keys(data).length === 0;
-		// A partial settings object satisfies deepMerge's `Record<string, unknown>`
-		// source param directly — no boundary cast needed. deepMerge itself is
-		// left untouched (its prototype-pollution-safe recursion is out of scope).
-		this.settings = this.deepMerge(DEFAULT_SETTINGS, data ?? {});
-
-		// One-time migration of the legacy per-module `excludeFolders` lists into
-		// the centralized `exclusions` list (#307). Gated on the RAW persisted
-		// data lacking an `exclusions` key (no settings-version system exists —
-		// that's #93), so it runs exactly once and never re-runs even if the user
-		// later empties the list. Fresh installs already get the default
-		// exclusions from DEFAULT_SETTINGS, so they skip migration entirely.
-		if (!this.isFreshInstall && data && data.exclusions === undefined) {
+		this.isFreshInstall = !raw || Object.keys(raw).length === 0;
+		// Version-stamped migration framework (#93): replay every migration newer
+		// than the persisted `settingsVersion` over the RAW object BEFORE merging
+		// defaults. Version 0 is the pre-versioning baseline (absent/invalid
+		// `settingsVersion`); fresh installs already carry CURRENT_SETTINGS_VERSION
+		// from DEFAULT_SETTINGS and skip migration entirely.
+		const fromVersion = readSettingsVersion(raw);
+		let migrated: Record<string, unknown> = raw ?? {};
+		if (!this.isFreshInstall && raw) {
 			try {
-				// Read legacy folders off the raw object via a narrow read type
-				// (the fields no longer exist on SynapseSettings).
-				const migrated = buildMigratedExclusions(data as LegacyModuleExclusions);
-				// Atomic assign of the fully-built list, then persist so the
-				// `exclusions` key is present on the next load.
-				this.settings.exclusions = migrated;
-				await this.saveData(this.settings);
+				migrated = migrateSettings(raw, fromVersion);
 			} catch (error) {
-				// Swallow-and-warn (mirrors migrateDataFolder): on failure keep the
-				// merged default exclusions rather than breaking load.
-				console.warn('[Synapse] Failed to migrate excludeFolders to exclusions:', error);
+				// Resilient fallback — load must never break. migrateSettings clones
+				// before mutating, so `raw` is still the untouched original here.
+				console.warn('[Synapse] settings migration failed:', error);
+				migrated = raw;
 			}
+		}
+		// deepMerge treats arrays as leaf values, so a migrated `exclusions` array
+		// cleanly overrides DEFAULT_SETTINGS.exclusions — same end state as the old
+		// post-merge assignment. deepMerge itself is left untouched (its
+		// prototype-pollution-safe recursion is out of scope).
+		this.settings = this.deepMerge(DEFAULT_SETTINGS, migrated);
+		this.settings.settingsVersion = CURRENT_SETTINGS_VERSION;
+		// One-time stamp/persist on upgrade so the new schema version (and any
+		// migrated data) lands in data.json and migrations don't re-run next load.
+		if (!this.isFreshInstall && fromVersion < CURRENT_SETTINGS_VERSION) {
+			await this.saveData(this.settings);
 		}
 	}
 

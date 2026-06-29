@@ -105,6 +105,13 @@ export {
 } from './exclusions';
 export type { FeatureId, ExclusionRule, LegacyModuleExclusions, ExclusionSettings } from './exclusions';
 export {
+	migrateSettings,
+	readSettingsVersion,
+	CURRENT_SETTINGS_VERSION,
+	SETTINGS_MIGRATIONS,
+} from './settings-migrations';
+export type { SettingsMigration } from './settings-migrations';
+export {
 	CONTENT_SCHEMAS,
 	detectSchemaFor,
 	isRecipeContent,
