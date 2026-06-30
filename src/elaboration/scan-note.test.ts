@@ -5,18 +5,22 @@ import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager } from '../shared';
 import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import { requestUrl } from '../__mocks__/obsidian';
-import { DetectionResult } from './types';
+import type { App, Plugin, TFile } from 'obsidian';
+import type { CheckpointManager } from '../shared';
+import { DetectionResult, Proposal } from './types';
 
 // Shared mock function that all MockAIClient instances delegate to.
 // Tests can swap this to capture prompts or change responses.
-const sharedCompleteMock = vi.fn().mockResolvedValue('AI-generated elaboration content');
+const sharedCompleteMock = vi
+	.fn<(...args: unknown[]) => Promise<string>>()
+	.mockResolvedValue('AI-generated elaboration content');
 
 // Mock the shared module's AIClient (used by ProposalGenerator).
 // Must be a real class so that `new AIClient(...)` works in ProposalGenerator.
 vi.mock('../shared/ai-client', () => ({
 	AIClient: class MockAIClient {
-		constructor(_getSettings: any) {}
-		complete(...args: any[]) {
+		constructor(_getSettings: unknown) {}
+		complete(...args: unknown[]) {
 			return sharedCompleteMock(...args);
 		}
 	},
@@ -88,11 +92,11 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		notifications = new NotificationManager();
 
 		module = new ElaborationModule(
-			mockPlugin as any,
+			mockPlugin as unknown as Plugin,
 			() => settings,
 			notifications,
-			createMockCheckpointManager() as any,
-			new CommandRegistrar(mockPlugin as any)
+			createMockCheckpointManager() as unknown as CheckpointManager,
+			new CommandRegistrar(mockPlugin)
 		);
 	});
 
@@ -107,7 +111,7 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		mockPlugin.app.vault.cachedRead.mockResolvedValue(longContent);
 
 		const file = mockFile('notes/architecture.md');
-		await module.scanNote(file as any);
+		await module.scanNote(file as unknown as TFile);
 
 		// The proposer should have been called (cachedRead is called by proposer.generate)
 		expect(mockPlugin.app.vault.cachedRead).toHaveBeenCalledWith(
@@ -117,9 +121,9 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 
 	it('creates a synthetic detection result with user-requested reason', async () => {
 		// Spy on the proposal store to capture what gets saved
-		const savedProposals: any[] = [];
+		const savedProposals: Proposal[] = [];
 		mockPlugin.app.vault.adapter.write.mockImplementation(async (_path: string, content: string) => {
-			try { savedProposals.push(JSON.parse(content)); } catch { /* not JSON */ }
+			try { savedProposals.push(JSON.parse(content) as Proposal); } catch { /* not JSON */ }
 		});
 
 		const longContent = '# Well-Written Note\n\n' + 'Comprehensive content here. '.repeat(20);
@@ -127,7 +131,7 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		mockPlugin.app.vault.cachedRead.mockResolvedValue(longContent);
 
 		const file = mockFile('notes/complete.md');
-		await module.scanNote(file as any);
+		await module.scanNote(file as unknown as TFile);
 
 		// A proposal should have been saved
 		expect(savedProposals.length).toBe(1);
@@ -141,18 +145,18 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		mockPlugin.app.vault.read.mockResolvedValue(shortContent);
 		mockPlugin.app.vault.cachedRead.mockResolvedValue(shortContent);
 
-		const savedProposals: any[] = [];
+		const savedProposals: Proposal[] = [];
 		mockPlugin.app.vault.adapter.write.mockImplementation(async (_path: string, content: string) => {
-			try { savedProposals.push(JSON.parse(content)); } catch { /* not JSON */ }
+			try { savedProposals.push(JSON.parse(content) as Proposal); } catch { /* not JSON */ }
 		});
 
 		const file = mockFile('notes/stub.md');
-		await module.scanNote(file as any);
+		await module.scanNote(file as unknown as TFile);
 
 		expect(savedProposals.length).toBe(1);
 		// Should contain the actual detector reasons, not user-requested
 		const reasons = savedProposals[0].detectionReasons;
-		const reasonTypes = reasons.map((r: any) => r.type);
+		const reasonTypes = reasons.map((r) => r.type);
 		expect(reasonTypes).not.toContain('user-requested');
 		// Should have real detection reasons like short-note or todo-marker
 		expect(reasonTypes.length).toBeGreaterThan(0);
@@ -165,7 +169,7 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 
 		const file = mockFile('notes/complete.md');
 		// Explicitly pass userInvoked = false (simulating auto-scan behavior)
-		await module.scanNote(file as any, false);
+		await module.scanNote(file as unknown as TFile, false);
 
 		// The proposer should NOT have been called since detector found nothing
 		// and userInvoked is false
@@ -179,7 +183,7 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 
 		const file = mockFile('notes/full.md');
 		// Call without second argument — should default to userInvoked=true
-		await module.scanNote(file as any);
+		await module.scanNote(file as unknown as TFile);
 
 		// Should still generate because userInvoked defaults to true
 		expect(mockPlugin.app.vault.cachedRead).toHaveBeenCalledWith(
@@ -194,13 +198,13 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		mockPlugin.app.vault.cachedRead.mockResolvedValue(urlOnly);
 		vi.mocked(requestUrl).mockRejectedValue(new Error('Too Many Requests'));
 
-		const savedProposals: any[] = [];
+		const savedProposals: Proposal[] = [];
 		mockPlugin.app.vault.adapter.write.mockImplementation(async (_path: string, content: string) => {
-			try { savedProposals.push(JSON.parse(content)); } catch { /* not JSON */ }
+			try { savedProposals.push(JSON.parse(content) as Proposal); } catch { /* not JSON */ }
 		});
 
 		const file = mockFile('notes/link-only.md');
-		await module.scanNote(file as any);
+		await module.scanNote(file as unknown as TFile);
 
 		// generate() returns null -> scanNote must NOT save an invented proposal.
 		expect(savedProposals.length).toBe(0);
@@ -234,7 +238,7 @@ describe('ProposalGenerator — user-requested reason handling', () => {
 		};
 
 		const settings = structuredClone(DEFAULT_SETTINGS);
-		const generator = new ProposalGenerator(mockApp as any, () => settings, { info: vi.fn() } as unknown as NotificationManager);
+		const generator = new ProposalGenerator(mockApp as unknown as App, () => settings, { info: vi.fn() } as unknown as NotificationManager);
 
 		const detection: DetectionResult = {
 			notePath: 'notes/test.md',
@@ -267,7 +271,7 @@ describe('ProposalGenerator — user-requested reason handling', () => {
 		// Disable context gathering to simplify the test
 		settings.elaboration.proposal.includeSourceContext = false;
 
-		const generator = new ProposalGenerator(mockApp as any, () => settings, { info: vi.fn() } as unknown as NotificationManager);
+		const generator = new ProposalGenerator(mockApp as unknown as App, () => settings, { info: vi.fn() } as unknown as NotificationManager);
 
 		const userDetection: DetectionResult = {
 			notePath: 'notes/user.md',

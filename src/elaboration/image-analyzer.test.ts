@@ -1,11 +1,16 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { TFile } from '../__mocks__/obsidian';
 import { ImageAnalyzer, MAX_IMAGES_PER_NOTE } from './image-analyzer';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
+import type { App } from 'obsidian';
+import type { NotificationManager } from '../shared';
+import type { ChatMessage, ContentBlock, ImageContentBlock, TextContentBlock } from '../shared/types';
 
-const mockChat = vi.fn().mockResolvedValue(
-	'DESCRIPTION: A sunset over mountains\n\nLOCATION: Rocky Mountain range, Colorado\n\nMETADATA: Taken during golden hour, approximately 6pm'
-);
+const mockChat = vi
+	.fn<(messages: ChatMessage[], opts?: unknown) => Promise<string>>()
+	.mockResolvedValue(
+		'DESCRIPTION: A sunset over mountains\n\nLOCATION: Rocky Mountain range, Colorado\n\nMETADATA: Taken during golden hour, approximately 6pm'
+	);
 
 vi.mock('../shared/ai-client', () => ({
 	AIClient: class MockAIClient {
@@ -22,6 +27,12 @@ function makeImageBuffer(): ArrayBuffer {
 	return data.buffer;
 }
 
+/** The slice of `App` the analyzer reads; mocked members stay spy-typed. */
+interface MockImageApp {
+	vault: { readBinary: Mock<(...args: unknown[]) => Promise<ArrayBuffer>> };
+	metadataCache: { getFirstLinkpathDest: Mock<(...args: unknown[]) => TFile | null> };
+}
+
 describe('ImageAnalyzer.findImageReferences', () => {
 	let analyzer: ImageAnalyzer;
 
@@ -31,7 +42,11 @@ describe('ImageAnalyzer.findImageReferences', () => {
 			vault: { readBinary: vi.fn() },
 			metadataCache: { getFirstLinkpathDest: vi.fn() },
 		};
-		analyzer = new ImageAnalyzer(mockApp as any, () => settings, { info: vi.fn() } as any);
+		analyzer = new ImageAnalyzer(
+			mockApp as unknown as App,
+			() => settings,
+			{ info: vi.fn() } as unknown as NotificationManager
+		);
 	});
 
 	it('finds wiki-link images', () => {
@@ -139,7 +154,11 @@ describe('ImageAnalyzer.parseAnalysisResponse', () => {
 			vault: { readBinary: vi.fn() },
 			metadataCache: { getFirstLinkpathDest: vi.fn() },
 		};
-		analyzer = new ImageAnalyzer(mockApp as any, () => settings, { info: vi.fn() } as any);
+		analyzer = new ImageAnalyzer(
+			mockApp as unknown as App,
+			() => settings,
+			{ info: vi.fn() } as unknown as NotificationManager
+		);
 	});
 
 	it('parses well-formed DESCRIPTION/LOCATION/METADATA response', () => {
@@ -192,7 +211,7 @@ describe('ImageAnalyzer.parseAnalysisResponse', () => {
 describe('ImageAnalyzer.analyzeImagesInNote', () => {
 	let analyzer: ImageAnalyzer;
 	let settings: SynapseSettings;
-	let mockApp: any;
+	let mockApp: MockImageApp;
 
 	beforeEach(() => {
 		mockChat.mockClear();
@@ -213,7 +232,11 @@ describe('ImageAnalyzer.analyzeImagesInNote', () => {
 			},
 		};
 
-		analyzer = new ImageAnalyzer(mockApp as any, () => settings, { info: vi.fn() } as any);
+		analyzer = new ImageAnalyzer(
+			mockApp as unknown as App,
+			() => settings,
+			{ info: vi.fn() } as unknown as NotificationManager
+		);
 	});
 
 	afterEach(() => {
@@ -260,15 +283,15 @@ describe('ImageAnalyzer.analyzeImagesInNote', () => {
 		expect(messages[0].role).toBe('system');
 		expect(messages[0].content).toContain('image analysis assistant');
 
-		const content = messages[1].content;
+		const content = messages[1].content as ContentBlock[];
 		expect(Array.isArray(content)).toBe(true);
 		expect(content).toHaveLength(2);
 		expect(content[0].type).toBe('image');
-		expect(content[0].mediaType).toBe('image/png');
+		expect((content[0] as ImageContentBlock).mediaType).toBe('image/png');
 		expect(content[1].type).toBe('text');
-		expect(content[1].text).toContain('DESCRIPTION');
-		expect(content[1].text).toContain('LOCATION');
-		expect(content[1].text).toContain('METADATA');
+		expect((content[1] as TextContentBlock).text).toContain('DESCRIPTION');
+		expect((content[1] as TextContentBlock).text).toContain('LOCATION');
+		expect((content[1] as TextContentBlock).text).toContain('METADATA');
 	});
 
 	it('skips images that cannot be resolved', async () => {

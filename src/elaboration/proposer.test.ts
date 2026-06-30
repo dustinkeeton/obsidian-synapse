@@ -1,11 +1,14 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { TFile, requestUrl } from '../__mocks__/obsidian';
 import { ProposalGenerator, proposalContentKey } from './proposer';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { DetectionResult } from './types';
+import type { App } from 'obsidian';
 import type { NotificationManager } from '../shared';
 
-const mockComplete = vi.fn().mockResolvedValue('Expanded content here.');
+const mockComplete = vi
+	.fn<(prompt: string, systemPrompt?: string, opts?: unknown) => Promise<string>>()
+	.mockResolvedValue('Expanded content here.');
 const mockChat = vi.fn().mockResolvedValue(
 	'DESCRIPTION: A photo of mountains\n\nLOCATION: Rocky Mountains\n\nMETADATA: No metadata observations.'
 );
@@ -46,8 +49,8 @@ function makeSettings(): SynapseSettings {
  */
 function makeNotifications() {
 	return { info: vi.fn(), error: vi.fn() } as unknown as NotificationManager & {
-		info: ReturnType<typeof vi.fn>;
-		error: ReturnType<typeof vi.fn>;
+		info: Mock<(message: string) => void>;
+		error: Mock<(message: string) => void>;
 	};
 }
 
@@ -76,7 +79,7 @@ describe('ProposalGenerator -- image embed preservation (no images)', () => {
 		settings.elaboration.proposal.includeSourceContext = false;
 		// Disable image analysis so these tests stay focused on original behavior
 		settings.image.enabled = false;
-		generator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
+		generator = new ProposalGenerator(mockApp as unknown as App, () => settings, makeNotifications());
 	});
 
 	afterEach(() => {
@@ -146,7 +149,7 @@ describe('ProposalGenerator -- image analysis integration', () => {
 		settings = makeSettings();
 		settings.elaboration.proposal.includeSourceContext = false;
 		settings.image.enabled = true;
-		generator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
+		generator = new ProposalGenerator(mockApp as unknown as App, () => settings, makeNotifications());
 	});
 
 	afterEach(() => {
@@ -212,7 +215,7 @@ describe('ProposalGenerator -- image analysis integration', () => {
 			},
 		};
 
-		const noImageGenerator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
+		const noImageGenerator = new ProposalGenerator(mockApp as unknown as App, () => settings, makeNotifications());
 
 		const detection: DetectionResult = {
 			notePath: 'notes/plain.md',
@@ -306,14 +309,14 @@ describe('ProposalGenerator -- Twitter URL external context', () => {
 		const settings = makeSettings();
 		settings.elaboration.proposal.includeSourceContext = false;
 		settings.image.enabled = false;
-		generator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
+		generator = new ProposalGenerator(mockApp as unknown as App, () => settings, makeNotifications());
 
 		mockRequestUrl.mockResolvedValue({
 			text: JSON.stringify({
 				html: '<blockquote class="twitter-tweet"><p lang="en" dir="ltr">This is the tweet text</p></blockquote>',
 				author_name: 'elonmusk',
 			}),
-		} as never);
+		});
 	});
 
 	afterEach(() => {
@@ -374,7 +377,7 @@ describe('ProposalGenerator -- article URL external context', () => {
 		settings.image.enabled = false;
 		const notifications = makeNotifications();
 		return {
-			generator: new ProposalGenerator(mockApp as any, () => settings, notifications),
+			generator: new ProposalGenerator(mockApp as unknown as App, () => settings, notifications),
 			notifications,
 		};
 	}
@@ -490,7 +493,7 @@ describe('ProposalGenerator -- Reddit URL external context', () => {
 		settings.image.enabled = false;
 		const notifications = makeNotifications();
 		return {
-			generator: new ProposalGenerator(mockApp as any, () => settings, notifications),
+			generator: new ProposalGenerator(mockApp as unknown as App, () => settings, notifications),
 			notifications,
 		};
 	}
@@ -518,7 +521,7 @@ describe('ProposalGenerator -- Reddit URL external context', () => {
 				'<title>Immich backup tips</title>' +
 				'<content type="html">&lt;p&gt;Use the CLI for bulk uploads.&lt;/p&gt;</content>' +
 				'</entry></feed>',
-		} as never);
+		});
 
 		const { generator } = makeGenerator(
 			'# Notes\n\nSaw this: https://www.reddit.com/r/immich/comments/abc123/title/'
@@ -586,7 +589,7 @@ describe('ProposalGenerator -- link-dominated notes (anti-fabrication)', () => {
 		settings.image.enabled = false;
 		const notifications = makeNotifications();
 		return {
-			generator: new ProposalGenerator(mockApp as any, () => settings, notifications),
+			generator: new ProposalGenerator(mockApp as unknown as App, () => settings, notifications),
 			notifications,
 		};
 	}
@@ -611,7 +614,7 @@ describe('ProposalGenerator -- link-dominated notes (anti-fabrication)', () => {
 				'<title>What is rcon.ip and rcon.port used for?</title>' +
 				'<content type="html">&lt;p&gt;Running RustDedicated on Ubuntu in a VM.&lt;/p&gt;</content>' +
 				'</entry></feed>',
-		} as never);
+		});
 
 		const { generator } = makeGenerator(REDDIT_URL);
 		const proposal = await generator.generate({
@@ -702,7 +705,7 @@ describe('ProposalGenerator -- note title as elaboration signal (#387)', () => {
 		settings.image.enabled = false;
 		const notifications = makeNotifications();
 		return {
-			generator: new ProposalGenerator(mockApp as any, () => settings, notifications),
+			generator: new ProposalGenerator(mockApp as unknown as App, () => settings, notifications),
 			notifications,
 		};
 	}
@@ -862,7 +865,7 @@ describe('ProposalGenerator -- deterministic id (#395)', () => {
 		const settings = makeSettings();
 		settings.elaboration.proposal.includeSourceContext = false;
 		settings.image.enabled = false;
-		generator = new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
+		generator = new ProposalGenerator(mockApp as unknown as App, () => settings, makeNotifications());
 	});
 
 	afterEach(() => {
@@ -905,7 +908,7 @@ describe('ProposalGenerator -- prompt-injection gating for fetched content (#398
 		const settings = makeSettings();
 		settings.elaboration.proposal.includeSourceContext = false;
 		settings.image.enabled = false;
-		return new ProposalGenerator(mockApp as any, () => settings, makeNotifications());
+		return new ProposalGenerator(mockApp as unknown as App, () => settings, makeNotifications());
 	}
 
 	beforeEach(() => {

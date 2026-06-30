@@ -21,6 +21,8 @@ vi.mock('./proposer', () => ({ ProposalGenerator: class {} }));
 import { ElaborationModule } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
+import type { Plugin } from 'obsidian';
+import type { NotificationManager, CheckpointManager } from '../shared';
 
 describe('ElaborationModule — startup flow gate', () => {
 	let settings: typeof DEFAULT_SETTINGS;
@@ -48,8 +50,14 @@ describe('ElaborationModule — startup flow gate', () => {
 	});
 
 	function makeModule(): ElaborationModule {
-		const plugin = { app: {} } as any;
-		return new ElaborationModule(plugin, () => settings, {} as any, {} as any, new CommandRegistrar(plugin as any));
+		const plugin = { app: {} } as unknown as Plugin;
+		return new ElaborationModule(
+			plugin,
+			() => settings,
+			{} as unknown as NotificationManager,
+			{} as unknown as CheckpointManager,
+			new CommandRegistrar(plugin)
+		);
 	}
 
 	it('schedules the startup + interval scans when scan-vault is in the startup flow', async () => {
