@@ -3,7 +3,9 @@ import { NoteGenerator } from './note-generator';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { ExtractedTopic } from './types';
 
-const mockComplete = vi.fn().mockResolvedValue('---\ntags: [topic]\n---\n\n## Overview\n\nGenerated content.');
+const mockComplete = vi
+	.fn<(prompt: string, systemPrompt?: string, opts?: unknown) => Promise<string>>()
+	.mockResolvedValue('---\ntags: [topic]\n---\n\n## Overview\n\nGenerated content.');
 
 vi.mock('../shared/ai-client', () => ({
 	AIClient: class MockAIClient {

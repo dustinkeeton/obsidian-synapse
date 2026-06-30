@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Summarizer } from './summarizer';
-import type { SynapseSettings } from '../settings';
 import { DEFAULT_SETTINGS } from '../settings';
 
-const mockComplete = vi.fn().mockResolvedValue('- Key point 1\n- Key point 2');
+const mockComplete = vi
+	.fn<(prompt: string, systemPrompt?: string, opts?: unknown) => Promise<string>>()
+	.mockResolvedValue('- Key point 1\n- Key point 2');
 
 // Mock the AIClient as a class (required by vitest)
 vi.mock('../shared/ai-client', () => ({
@@ -18,7 +19,7 @@ describe('Summarizer', () => {
 	beforeEach(() => {
 		mockComplete.mockReset();
 		mockComplete.mockResolvedValue('- Key point 1\n- Key point 2');
-		summarizer = new Summarizer(() => DEFAULT_SETTINGS as SynapseSettings);
+		summarizer = new Summarizer(() => DEFAULT_SETTINGS);
 	});
 
 	it('calls AI with content and source', async () => {

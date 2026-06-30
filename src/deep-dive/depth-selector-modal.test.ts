@@ -3,6 +3,16 @@ import { DepthSelectorModal, MIN_DEPTH, MAX_DEPTH, selectDepth } from './depth-s
 
 vi.mock('obsidian');
 
+/** Typed view of the modal's private confirm internals the UI callbacks drive. */
+function internals(
+	modal: DepthSelectorModal,
+): { resolved: boolean; resolve: (depth: number | null) => void } {
+	return modal as unknown as {
+		resolved: boolean;
+		resolve: (depth: number | null) => void;
+	};
+}
+
 describe('DepthSelectorModal', () => {
 	const mockApp = {} as ConstructorParameters<typeof DepthSelectorModal>[0];
 
@@ -12,8 +22,8 @@ describe('DepthSelectorModal', () => {
 		modal.setResolver(resolve);
 
 		// Simulate the confirm button callback
-		(modal as any).resolved = true;
-		(modal as any).resolve(5);
+		internals(modal).resolved = true;
+		internals(modal).resolve(5);
 
 		expect(resolve).toHaveBeenCalledWith(5);
 	});
@@ -23,8 +33,8 @@ describe('DepthSelectorModal', () => {
 		const resolve = vi.fn();
 		modal.setResolver(resolve);
 
-		(modal as any).resolved = true;
-		(modal as any).resolve(3);
+		internals(modal).resolved = true;
+		internals(modal).resolve(3);
 
 		expect(resolve).toHaveBeenCalledWith(3);
 	});
@@ -45,8 +55,8 @@ describe('DepthSelectorModal', () => {
 		modal.setResolver(resolve);
 
 		// Simulate confirm
-		(modal as any).resolved = true;
-		(modal as any).resolve(5);
+		internals(modal).resolved = true;
+		internals(modal).resolve(5);
 
 		// Then close fires
 		modal.onClose();

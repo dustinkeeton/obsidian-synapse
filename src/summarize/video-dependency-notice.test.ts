@@ -1,9 +1,36 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { SummarizeModule, TranscribeUrlFn } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import type { Plugin } from 'obsidian';
+import type { NotificationManager, CheckpointManager } from '../shared';
+
+/** The slice of an Obsidian Command the test reads back off addCommand. */
+interface MockCommand {
+	id: string;
+	name: string;
+	editorCallback?: (editor: unknown, ctx: unknown) => unknown;
+}
+
+/** Typed shape of the hand-built plugin stub the module + registrar consume. */
+interface MockPlugin {
+	app: {
+		vault: {
+			read: Mock<(file: unknown) => Promise<string>>;
+			process: Mock<(file: unknown, fn: (data: string) => string) => Promise<string>>;
+			create: ReturnType<typeof vi.fn>;
+			getAbstractFileByPath: ReturnType<typeof vi.fn>;
+		};
+		metadataCache: { getFileCache: ReturnType<typeof vi.fn> };
+		workspace: { getActiveFile: ReturnType<typeof vi.fn> };
+		setting?: { open: ReturnType<typeof vi.fn>; openTabById: ReturnType<typeof vi.fn> };
+	};
+	saveSettings: ReturnType<typeof vi.fn>;
+	addCommand: Mock<(cmd: MockCommand) => void>;
+	registerEvent: ReturnType<typeof vi.fn>;
+}
 
 // Video-dependency onboarding (#382): a failed video-URL transcription whose
 // cause is a missing yt-dlp/ffmpeg must surface an actionable "Open settings"
@@ -74,7 +101,7 @@ function createMockNotifications() {
 	};
 	return {
 		startOperation: vi.fn().mockReturnValue(handle),
-		info: vi.fn(),
+		info: vi.fn<(message: string, duration?: number, action?: NoticeAction) => void>(),
 		success: vi.fn(),
 		error: vi.fn(),
 		notifyError: vi.fn(),
@@ -92,7 +119,7 @@ function depError(tool: 'yt-dlp' | 'ffmpeg', message: string): Error {
 
 describe('SummarizeModule video-dependency onboarding (#382)', () => {
 	let module: SummarizeModule;
-	let mockPlugin: any;
+	let mockPlugin: MockPlugin;
 	let notifications: ReturnType<typeof createMockNotifications>;
 	let settings: typeof DEFAULT_SETTINGS;
 	let settingOpen: ReturnType<typeof vi.fn>;
@@ -101,11 +128,13 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 
 	function build(transcribeUrl: TranscribeUrlFn): SummarizeModule {
 		return new SummarizeModule(
-			mockPlugin,
+			mockPlugin as unknown as Plugin,
 			() => settings,
-			notifications as any,
-			createMockCheckpointManager() as any,
-			new CommandRegistrar(mockPlugin),
+			notifications as unknown as NotificationManager,
+			createMockCheckpointManager() as unknown as CheckpointManager,
+			new CommandRegistrar(
+				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+			),
 			transcribeUrl,
 		);
 	}
@@ -113,9 +142,9 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 	async function runSummarize(file = new TFile('notes/video.md')): Promise<void> {
 		await module.onload();
 		const cmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
-		await cmd.editorCallback({}, { file });
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
+		await cmd.editorCallback?.({}, { file });
 	}
 
 	beforeEach(() => {
@@ -127,8 +156,10 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 		mockPlugin = {
 			app: {
 				vault: {
-					read: vi.fn().mockResolvedValue(`# Note\n\n${VIDEO_URL}\n`),
-					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+					read: vi
+						.fn<(file: unknown) => Promise<string>>()
+						.mockResolvedValue(`# Note\n\n${VIDEO_URL}\n`),
+					process: vi.fn(async (file: unknown, fn: (data: string) => string) =>
 						fn(await mockPlugin.app.vault.read(file))
 					),
 					create: vi.fn().mockResolvedValue(new TFile()),
@@ -139,7 +170,7 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 				setting: { open: settingOpen, openTabById },
 			},
 			saveSettings,
-			addCommand: vi.fn(),
+			addCommand: vi.fn<(cmd: MockCommand) => void>(),
 			registerEvent: vi.fn(),
 		};
 
@@ -156,9 +187,9 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 		// Routed to the actionable info notice, NOT the plain persistent error.
 		const actionCall = notifications.info.mock.calls.find((c) => c[2] !== undefined);
 		expect(actionCall).toBeDefined();
-		const [message, , action] = actionCall as [string, number, NoticeAction];
+		const [message, , action] = actionCall!;
 		expect(message).toMatch(/yt-dlp not found/);
-		expect(action.label).toBe('Open settings');
+		expect(action!.label).toBe('Open settings');
 		expect(notifications.error).not.toHaveBeenCalled();
 		expect(notifications.notifyError).not.toHaveBeenCalled();
 	});
@@ -172,8 +203,8 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 
 		const actionCall = notifications.info.mock.calls.find((c) => c[2] !== undefined);
 		expect(actionCall).toBeDefined();
-		expect((actionCall as any)[0]).toMatch(/ffmpeg\/ffprobe not found/);
-		expect((actionCall as any)[2].label).toBe('Open settings');
+		expect(actionCall![0]).toMatch(/ffmpeg\/ffprobe not found/);
+		expect(actionCall![2]!.label).toBe('Open settings');
 	});
 
 	it('keeps the plain link-load error notice for a non-dependency failure', async () => {

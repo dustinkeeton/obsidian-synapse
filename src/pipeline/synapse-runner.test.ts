@@ -3,6 +3,8 @@ import { SynapseRunner } from './synapse-runner';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { PipelineModuleMap, PipelineScanFn } from './types';
 import { TFile, TFolder } from '../__mocks__/obsidian';
+import type { TFile as ObsidianTFile } from 'obsidian';
+import type { NotificationManager } from '../shared';
 
 function createMockNotifications() {
 	const handle = {
@@ -53,7 +55,7 @@ describe('SynapseRunner', () => {
 		runner = new SynapseRunner(
 			mockModules,
 			() => settings,
-			mockNotifications as any,
+			mockNotifications as unknown as NotificationManager,
 		);
 	});
 
@@ -209,13 +211,13 @@ describe('SynapseRunner', () => {
 	});
 
 	describe('fireOnFile (per-note scoping, #111)', () => {
-		// Returns `any`: the mock TFile is structurally compatible with the
-		// real obsidian.TFile that fireOnFile expects, but its `vault: unknown`
-		// trips strict assignability — the established pattern is to cast.
-		function fileIn(folder: string, name: string): any {
+		// The mock TFile is structurally compatible with the real obsidian.TFile
+		// that fireOnFile expects, but its `vault: unknown` trips strict
+		// assignability — the established pattern is a single `as unknown as` cast.
+		function fileIn(folder: string, name: string): ObsidianTFile {
 			const file = new TFile(`${folder}/${name}`);
 			file.parent = new TFolder(folder);
-			return file;
+			return file as unknown as ObsidianTFile;
 		}
 
 		it('runs each active phase exactly once for the file', async () => {
@@ -239,10 +241,10 @@ describe('SynapseRunner', () => {
 		});
 
 		it('passes undefined folderPath for a root-level note', async () => {
-			const file: any = new TFile('note.md');
+			const file = new TFile('note.md');
 			file.parent = new TFolder('/'); // root
 
-			await runner.fireOnFile(file);
+			await runner.fireOnFile(file as unknown as ObsidianTFile);
 
 			expect(mockModules.elaboration).toHaveBeenCalledWith(undefined, true, file);
 		});

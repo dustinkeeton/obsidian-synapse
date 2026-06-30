@@ -1,10 +1,51 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { SummarizeModule, TranscribeAudioFn } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import { SummarizeTarget } from './types';
+import type { Plugin } from 'obsidian';
+import type { NotificationManager, CheckpointManager } from '../shared';
+import type { AudioEmbed } from '../audio';
+
+/** Typed shape of the hand-built plugin stub the module consumes. */
+interface MockPlugin {
+	app: {
+		vault: {
+			read: Mock<(file: unknown) => Promise<string>>;
+			modify: ReturnType<typeof vi.fn>;
+			process: Mock<(file: unknown, fn: (data: string) => string) => Promise<string>>;
+			create: ReturnType<typeof vi.fn>;
+			getAbstractFileByPath: ReturnType<typeof vi.fn>;
+			readBinary: ReturnType<typeof vi.fn>;
+		};
+		metadataCache: {
+			getFileCache: ReturnType<typeof vi.fn>;
+			getFirstLinkpathDest: ReturnType<typeof vi.fn>;
+		};
+		workspace: { getActiveFile: ReturnType<typeof vi.fn> };
+	};
+	addCommand: ReturnType<typeof vi.fn>;
+	registerEvent: ReturnType<typeof vi.fn>;
+}
+
+/** Typed view of the private combined-summary entry point the tests drive. */
+function internals(module: SummarizeModule): {
+	processTargetsCombined: (
+		file: TFile,
+		targets: SummarizeTarget[],
+		content: string,
+	) => Promise<void>;
+} {
+	return module as unknown as {
+		processTargetsCombined: (
+			file: TFile,
+			targets: SummarizeTarget[],
+			content: string,
+		) => Promise<void>;
+	};
+}
 
 vi.mock('./summarizer', () => ({
 	Summarizer: class MockSummarizer {
@@ -17,9 +58,12 @@ vi.mock('./note-scanner', async (importOriginal) => {
 	return { ...actual };
 });
 
-const mockFindAudioEmbeds = vi.fn().mockReturnValue([]);
+const mockFindAudioEmbeds = vi
+	.fn<(content: string, sourcePath: string, metadataCache: unknown) => AudioEmbed[]>()
+	.mockReturnValue([]);
 vi.mock('../audio', () => ({
-	findAudioEmbeds: (...args: any[]) => mockFindAudioEmbeds(...args),
+	findAudioEmbeds: (content: string, sourcePath: string, metadataCache: unknown) =>
+		mockFindAudioEmbeds(content, sourcePath, metadataCache),
 }));
 
 vi.mock('../shared', async () => ({
@@ -69,7 +113,7 @@ function createMockNotifications() {
 		startOperation: vi.fn().mockReturnValue(handle),
 		info: vi.fn(),
 		success: vi.fn(),
-		error: vi.fn(),
+		error: vi.fn<(message: string) => void>(),
 		notifyError: vi.fn(),
 		confirm: vi.fn().mockResolvedValue(true),
 		_handle: handle,
@@ -80,10 +124,10 @@ const NOTE = '# Lecture\n\n![[part1.mp3]]\n\n![[part2.wav]]\n';
 
 describe('SummarizeModule combined summarization (#367)', () => {
 	let module: SummarizeModule;
-	let mockPlugin: any;
+	let mockPlugin: MockPlugin;
 	let notifications: ReturnType<typeof createMockNotifications>;
 	let settings: typeof DEFAULT_SETTINGS;
-	let transcribeAudio: TranscribeAudioFn & ReturnType<typeof vi.fn>;
+	let transcribeAudio: Mock<TranscribeAudioFn>;
 
 	const part1 = new TFile('audio/part1.mp3');
 	const part2 = new TFile('audio/part2.wav');
@@ -93,15 +137,15 @@ describe('SummarizeModule combined summarization (#367)', () => {
 		mockFindAudioEmbeds.mockReset();
 		mockFindAudioEmbeds.mockReturnValue([]);
 
-		transcribeAudio = vi.fn().mockResolvedValue('single transcript') as any;
+		transcribeAudio = vi.fn<TranscribeAudioFn>().mockResolvedValue('single transcript');
 
 		mockPlugin = {
 			app: {
 				vault: {
-					read: vi.fn().mockResolvedValue(NOTE),
+					read: vi.fn<(file: unknown) => Promise<string>>().mockResolvedValue(NOTE),
 					modify: vi.fn().mockResolvedValue(undefined),
 					// Atomic read -> transform -> write (mirrors Vault.process).
-					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+					process: vi.fn(async (file: unknown, fn: (data: string) => string) =>
 						fn(await mockPlugin.app.vault.read(file))
 					),
 					create: vi.fn().mockResolvedValue(new TFile()),
@@ -124,13 +168,15 @@ describe('SummarizeModule combined summarization (#367)', () => {
 
 		notifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin,
+			mockPlugin as unknown as Plugin,
 			() => settings,
-			notifications as any,
-			createMockCheckpointManager() as any,
-			new CommandRegistrar(mockPlugin as any),
+			notifications as unknown as NotificationManager,
+			createMockCheckpointManager() as unknown as CheckpointManager,
+			new CommandRegistrar(
+				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+			),
 			undefined,
-			transcribeAudio
+			transcribeAudio,
 		);
 	});
 
@@ -143,7 +189,7 @@ describe('SummarizeModule combined summarization (#367)', () => {
 	}
 
 	it('transcribes each selected audio once and writes a single combined summary', async () => {
-		await (module as any).processTargetsCombined(file(), [audio('part1.mp3', 2), audio('part2.wav', 4)], NOTE);
+		await internals(module).processTargetsCombined(file(), [audio('part1.mp3', 2), audio('part2.wav', 4)], NOTE);
 
 		// One transcription per file -- no combined-file transcription pass.
 		expect(transcribeAudio).toHaveBeenCalledTimes(2);
@@ -157,14 +203,14 @@ describe('SummarizeModule combined summarization (#367)', () => {
 	});
 
 	it('appends the combined callout at the end of the note', async () => {
-		await (module as any).processTargetsCombined(file(), [audio('part1.mp3', 2), audio('part2.wav', 4)], NOTE);
+		await internals(module).processTargetsCombined(file(), [audio('part1.mp3', 2), audio('part2.wav', 4)], NOTE);
 
 		const out = await written();
 		expect(out.indexOf('Combined summary')).toBeGreaterThan(out.indexOf('part2.wav'));
 	});
 
 	it('falls back to a per-item summary for a single selected item', async () => {
-		await (module as any).processTargetsCombined(file(), [audio('part1.mp3', 2)], '# Lecture\n\n![[part1.mp3]]\n');
+		await internals(module).processTargetsCombined(file(), [audio('part1.mp3', 2)], '# Lecture\n\n![[part1.mp3]]\n');
 
 		expect(transcribeAudio).toHaveBeenCalledTimes(1);
 		const out = await written();
@@ -176,7 +222,7 @@ describe('SummarizeModule combined summarization (#367)', () => {
 		const transcription: SummarizeTarget = {
 			type: 'transcription', source: 'clip.mp4', line: 1, endLine: 3, content: 'existing transcript text',
 		};
-		await (module as any).processTargetsCombined(file(), [transcription, audio('part1.mp3', 5)], NOTE);
+		await internals(module).processTargetsCombined(file(), [transcription, audio('part1.mp3', 5)], NOTE);
 
 		// Only the audio target is transcribed; the transcription block is reused.
 		expect(transcribeAudio).toHaveBeenCalledTimes(1);
@@ -191,7 +237,7 @@ describe('SummarizeModule combined summarization (#367)', () => {
 			type: 'note-content', source: 'lecture', line: 9, endLine: 9, content: 'The lecture covered A and B.',
 		};
 		const url: SummarizeTarget = { type: 'url', source: 'https://example.com', line: 2, endLine: 2 };
-		await (module as any).processTargetsCombined(file(), [noteContent, url], NOTE);
+		await internals(module).processTargetsCombined(file(), [noteContent, url], NOTE);
 
 		// Prose is reused (never transcribed); the URL is fetched.
 		expect(transcribeAudio).not.toHaveBeenCalled();
@@ -209,12 +255,12 @@ describe('SummarizeModule combined summarization (#367)', () => {
 
 		const url1: SummarizeTarget = { type: 'url', source: 'https://example.com/a', line: 2, endLine: 2 };
 		const url2: SummarizeTarget = { type: 'url', source: 'https://example.com/b', line: 3, endLine: 3 };
-		await (module as any).processTargetsCombined(file(), [url1, url2], NOTE);
+		await internals(module).processTargetsCombined(file(), [url1, url2], NOTE);
 
 		// Both failure shapes (thrown + empty) now use notifications.error(linkLoadError(...)),
 		// matching the per-item summarize path and Elaborate -- NOT the old notifyError.
 		expect(notifications.notifyError).not.toHaveBeenCalled();
-		const messages = notifications.error.mock.calls.map((c: any[]) => c[0]);
+		const messages = notifications.error.mock.calls.map((c) => c[0]);
 		expect(messages).toContain('Could not load content from https://example.com/a: Reddit returned HTTP 429');
 		expect(messages).toContain('Could not load content from https://example.com/b: page returned no readable text');
 	});
