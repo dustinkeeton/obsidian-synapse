@@ -27,3 +27,22 @@ const SECRET_PATTERN =
 export function redactSecrets(text: string): string {
 	return text.replace(SECRET_PATTERN, '[REDACTED]');
 }
+
+/**
+ * Convert an arbitrary caught value into a redacted, log-safe string.
+ *
+ * {@link redactSecrets} only operates on strings, so a console sink that logs an
+ * Error object directly (`console.error(label, err)`) bypasses redaction — a
+ * secret echoed into the error's `message` (or its `stack`, which embeds the
+ * message) would reach the console verbatim. This is the single sanctioned way
+ * to render a caught error for a log sink: it prefers the stack (already
+ * includes the message and call frames), falls back to `name: message`, and
+ * runs the result through {@link redactSecrets}. Route every raw-error console
+ * sink through here so redact.ts stays the one place secrets are stripped.
+ */
+export function redactError(value: unknown): string {
+	if (value instanceof Error) {
+		return redactSecrets(value.stack ?? `${value.name}: ${value.message}`);
+	}
+	return redactSecrets(typeof value === 'string' ? value : String(value));
+}

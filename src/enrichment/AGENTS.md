@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # Enrichment Module
@@ -30,7 +30,7 @@ class EnrichmentModule {
   onload(): Promise<void>
   onunload(): void
 
-  enrich(filePath: string, trigger: EnrichmentTrigger): Promise<void>
+  enrich(filePath: string, trigger: EnrichmentTrigger, options?: { postOp?: boolean }): Promise<void>  // postOp suppresses chained-auto-enrich Review toast (#366)
   scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   getPendingProposals(): Promise<EnrichmentProposal[]>
@@ -38,7 +38,7 @@ class EnrichmentModule {
   rejectFromView(id: string): Promise<void>
 }
 
-function renderEnrichmentSettings(ctx: SettingsSectionContext): void  // re-exported (index.ts:684)
+function renderEnrichmentSettings(ctx: SettingsSectionContext): void  // re-exported (index.ts:704)
 ```
 
 Types re-exported from the `index.ts` barrel (`index.ts:19-28`):
@@ -111,7 +111,7 @@ Note: `TagVocabularyEntry`, `EnrichmentSettings`, and `EnrichmentWeightSettings`
 | `enrichment-applier.ts` | `EnrichmentApplier` | Applies/undoes accepted enrichments to note content non-destructively via `vault.process` |
 | `enrichment-modal.ts` | `EnrichmentDetailModal` | Per-item toggle modal for reviewing a single proposal |
 | `settings-section.ts` | `renderEnrichmentSettings` | Settings UI accordion for the enrichment feature (#243) |
-| `*.test.ts` | Co-located Vitest suites | `vault-analyzer`, `weight-calculator`, `metadata-classifier`, `topic-extractor`, `link-resolver`, `prompt-builder`, `enrichment-store`, `enrichment-applier`, `settings-section`, `auto-accept` (#228) |
+| `*.test.ts` | Co-located Vitest suites | `vault-analyzer`, `weight-calculator`, `metadata-classifier`, `topic-extractor`, `link-resolver`, `prompt-builder`, `enrichment-store`, `enrichment-applier`, `settings-section`, `auto-accept` (#228), `review-toast` (#366) |
 
 ## Internal Class Signatures
 
@@ -191,7 +191,7 @@ Registered in `EnrichmentModule.onload` via `registrar.register(id, condition, c
 ## Dependencies
 
 In (consumed by this module):
-- `src/shared`: `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `getIncludedMarkdownFiles`, `getMarkdownFiles`, `NotificationManager`, `CheckpointManager`, `FolderPickerModal`, `AIClient`, `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `asStringArray`, `buildCallout`, `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `sanitizeAIResponse`, `parseJson`, `isRecord`, `generateId`, `isTwitterUrl`, `fetchTweetContent`, `fireAndForget`, `ensureFolder`, `readJsonFile`, `addEnhancedSlider`; types `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `SettingsSectionContext`
+- `src/shared`: `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction`, `getIncludedMarkdownFiles`, `getMarkdownFiles`, `NotificationManager`, `CheckpointManager`, `FolderPickerModal`, `AIClient`, `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `asStringArray`, `buildCallout`, `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `sanitizeAIResponse`, `parseJson`, `isRecord`, `generateId`, `isTwitterUrl`, `fetchTweetContent`, `fireAndForget`, `ensureFolder`, `readJsonFile`, `addEnhancedSlider`; types `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `SettingsSectionContext`
 - `src/commands`: `CommandRegistrar`
 - `src/settings`: `SynapseSettings`, `TagVocabularyEntry`, `EnrichmentWeightSettings`
 
@@ -203,7 +203,7 @@ No feature-module dependencies (enrichment does not import from elaboration, tra
 ## Data Flow
 
 ```
-enrich(filePath, trigger)
+enrich(filePath, trigger, options?)
   └─ getAbstractFileByPath → TFile guard
   └─ isExcluded(file)  ← isPathExcluded('enrichment', settings) || matchesExcludeTag
   │    └─ if trigger === 'manual' && excluded → Notice naming findMatchingRule(); else silent (#307)
@@ -215,7 +215,7 @@ enrich(filePath, trigger)
        ├─ PromptBuilder.suggestFrontmatter()        → FrontmatterEnrichment[]
        ├─ LinkResolver.mergeTopicCandidates(topicLinks, graphLinks)
        └─ EnrichmentStore.save(proposal)  [skipped when totalItems === 0 → returns null]
-  └─ topicExtractor.clearPending(); maybeAutoAccept(id)  [if shouldAutoAccept()]
+  └─ topicExtractor.clearPending(); op.finish(reviewAction(...)) [Review toast unless postOp/auto-accept #366]; maybeAutoAccept(id) [if shouldAutoAccept()]
   └─ refreshView() → onViewRefreshNeeded()
 ```
 
@@ -245,7 +245,7 @@ User review (UnifiedProposalView / EnrichmentDetailModal):
 Exclusion uses the centralized `src/shared/exclusions.ts` API. Per-module `excludeFolders` was removed; path exclusions live in `settings.exclusions: ExclusionRule[]` at the top level, scoped by feature name.
 
 ```ts
-// index.ts:636-642
+// index.ts:656-662
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (
@@ -255,11 +255,11 @@ private isExcluded(file: TFile): boolean {
 }
 ```
 
-`findMatchingRule(file.path, 'enrichment', settings)` is called only on the manual-trigger path to surface the matching rule pattern in the user-facing notice (`index.ts:393-403`).
+`findMatchingRule(file.path, 'enrichment', settings)` is called only on the manual-trigger path to surface the matching rule pattern in the user-facing notice (`index.ts:407-417`).
 
 ## Settings Keys
 
-All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:133-148`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:405-431`).
+All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:147-162`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:434-460`).
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -280,8 +280,7 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:13
 | `settings.exclusions` (top-level) | `ExclusionRule[]` | — | Path/glob exclusions scoped by feature `'enrichment'`; replaces removed `excludeFolders` |
 | `settings.autoAccept.enrichment` (top-level) | `boolean` | — | Wired to the `shouldAutoAccept` constructor param (#228) |
 
-`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:127-131`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book).
-`EnrichmentWeightSettings` defaults (`settings.ts:419-426`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
+`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:141-145`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book). `EnrichmentWeightSettings` defaults (`settings.ts:449-454`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
 
 ## Invariants
 
@@ -293,7 +292,8 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:13
 - Tag format `^[a-zA-Z0-9][a-zA-Z0-9_/-]{0,49}$`; only vocabulary tags accepted, hallucinated tags dropped (`metadata-classifier.ts:L5,L48-51`).
 - External URL validation: HTTP/HTTPS only, in both proposal generation (`prompt-builder.ts:L19-26`) and write-out (`enrichment-applier.ts:L196-205`).
 - New-note topic threshold: a topic must be surfaced by 2+ notes during a vault scan to become a suggestion; new-note candidate `relevanceScore` = `0.5` (`topic-extractor.ts:L122,L127`).
-- Double-acceptance guard: `acceptSelected` and `maybeAutoAccept` bail if `proposal.status !== 'pending'` (`index.ts:L546,L570`).
-- Empty proposals skipped: `enrichFile` returns `null` when no items are produced (`index.ts:L497`).
+- Double-acceptance guard: `acceptSelected` and `maybeAutoAccept` bail if `proposal.status !== 'pending'` (`index.ts:L590,L566`).
+- Empty proposals skipped: `enrichFile` returns `null` when no items are produced (`index.ts:L517`).
+- Review toast (#366): completion notices attach an optional Review action via `reviewAction({ generated, shouldAutoAccept, openProposalView, postOp })` (`src/shared`), surfaced only when proposals were generated AND enrichment auto-accept is off; `postOp` (chained auto-enrich) suppresses it. Used by `enrich` (`index.ts:L433`), `scanVault` (`index.ts:L369`), `resumeFromCheckpoint` (`index.ts:L187`).
 - Proposal JSON filename: `<sanitized-path>-enrich-<8charId>.json`; null bytes and `..` stripped (`enrichment-store.ts:L113-122`).
 - `VaultAnalyzer` caches invalidate on the `metadataCache 'resolved'` event (`index.ts:L75-79`).

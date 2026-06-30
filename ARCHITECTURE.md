@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Last updated**: 2026-06-25 · **Version**: 1.0.6
+**Last updated**: 2026-06-29 · **Version**: 1.0.7
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, and in-place wikilink discovery (REM). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile (video and media-clipping features are desktop-only).
 
@@ -205,15 +205,21 @@ src/
 │   └── index.ts            #   DeepDiveModule orchestrator
 │
 ├── title/                  # Note title suggestions
-│   ├── title-module.ts     #   Title checking, proposal lifecycle
+│   ├── title-module.ts     #   Title checking, proposal lifecycle, collision resolution (iterate/merge, #408)
 │   ├── title-suggester.ts  #   AI title generation + mismatch detection
 │   ├── title-proposal-store.ts # JSON persistence
-│   ├── types.ts            #   TitleProposal, trigger/status types
+│   ├── content-key.ts      #   titleContentKey() — input-keyed dedup so a rejected title isn't re-proposed (#408)
+│   ├── settings-section.ts #   Settings UI: enabled toggle + duplicate-handling dropdown
+│   ├── types.ts            #   TitleProposal, trigger/status types, TitleDuplicateStrategy
 │   └── index.ts            #   Re-exports module, types, isUntitled
 │
 ├── shared/                 # Cross-cutting utilities (base layer)
-│   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); re-exports redactSecrets
-│   ├── redact.ts           #   redactSecrets() — single source of truth for API-key/token redaction
+│   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); per-instance LRU response cache + in-flight coalescing (#397); re-exports redactSecrets
+│   ├── redact.ts           #   redactSecrets() (strings) + redactError() (raw caught errors) — single source of truth for API-key/token redaction
+│   ├── settings-migrations.ts # Version-stamped migration runner (#93): migrateSettings/readSettingsVersion/CURRENT_SETTINGS_VERSION
+│   ├── hash-utils.ts       #   hashString/contentKey — dependency-free input-keyed hashing for idempotency (#395)
+│   ├── untrusted-content.ts#   wrapUntrusted() — structural prompt-injection fence for fetched external content (#398)
+│   ├── review-action.ts    #   reviewAction() — centralized "Review" completion-toast gate (#366)
 │   ├── node-loader.ts      #   loadNodeModules/assertDesktop/DesktopOnlyError/shellEnv — the ONE guarded Node-builtin site
 │   ├── exclusions.ts       #   Centralized path-exclusion model + glob matcher (#307); tag-exclusion helper
 │   ├── credential-validator.ts # validateCredentials() — one minimal authenticated probe per provider (#335)
@@ -225,7 +231,8 @@ src/
 │   ├── checkpoint-types.ts #   Checkpoint type definitions
 │   ├── id-utils.ts         #   ID generation and validation
 │   ├── notifications.ts    #   Centralized notifications: progress, cancellation, action buttons, dispose() teardown
-│   │                       #   every error sink (error/notifyError/operation-error console) routes through redactSecrets
+│   │                       #   every error sink routes through redactSecrets; equal-message throttle for one-shot toasts (#396)
+│   ├── fire-and-forget.ts  #   fireAndForget() — rejection handling for un-awaited promises; sinks route through redactError
 │   ├── update-checker.ts   #   UpdateChecker/isNewerVersion — once/24h GitHub Releases poll, sticky notice (#365)
 │   ├── title-detector.ts   #   isUntitled/isGenericTitle predicates (shared by title/ and elaboration/)
 │   ├── validation.ts       #   URL, path, AI response sanitization
@@ -236,6 +243,15 @@ src/
 │   ├── slider-helper.ts    #   Settings UI helper for range sliders
 │   ├── folder-picker-modal.ts # Modal for folder selection
 │   ├── api-utils.ts        #   Retry logic + error handling helpers
+│   ├── json-utils.ts       #   Safe JSON parse + record/string-array guards + readJsonFile
+│   ├── content-fetcher.ts  #   HTTP fetch + HTML-to-text + JSON-LD recipe extraction
+│   ├── tweet-fetcher.ts    #   Tweet/X content fetch (untrusted-wrapped by callers)
+│   ├── reddit-fetcher.ts   #   Reddit post fetch + canonical-URL extraction
+│   ├── url-classifier.ts   #   Classify a URL (article / media / unknown) for intake routing
+│   ├── content-schemas.ts  #   Content-type detection registry (recipe / receipt / lyrics)
+│   ├── collapsible-section.ts # Settings UI: collapsible accordion section
+│   ├── feature-chip-select.ts # Settings UI: multi-feature chip selector (exclusions)
+│   ├── settings-section.ts #   Settings UI: shared per-section context + collapse persistence
 │   ├── markdown.d.ts       #   Ambient `declare module '*.md'` so esbuild can inline CHANGELOG.md (#375)
 │   └── index.ts            #   Barrel export
 │
@@ -333,6 +349,7 @@ graph TD
 
 Key constraints:
 - **Acyclic graph.** `shared` and `commands` are base layers depending on no feature module. The former `shared ⇄ video` cycle was removed on 2026-06-08 by moving `url-detector.ts` into `shared` — the edge is now one-directional `video → shared`.
+- **`settings` → `shared` is one sanctioned edge.** `settings.ts` imports the runtime value `CURRENT_SETTINGS_VERSION` from `shared/settings-migrations.ts` (#93), which depends only on `shared/exclusions.ts` and never on `../settings` — so `settings → settings-migrations → exclusions` stays acyclic. (`settings.ts` also type-only-imports `ProposalKind`, `ExclusionRule`, `TitleDuplicateStrategy`, all erased at compile time.)
 - **`commands` imports nothing in `src/`.** `pipeline` imports `commands` (for flow gating) but never the feature modules — `main.ts` injects them via `PipelineModuleMap`.
 - **`intake` imports only `obsidian` + `shared`.** All cross-module work routes through an injected `IntakeDeps` (notably `fireOnFile`).
 - **Video depends on Audio** — reuses the transcription pipeline (runtime edge `video → audio`).
@@ -410,7 +427,7 @@ sequenceDiagram
     participant CK as CheckpointManager
 
     O->>M: onload()
-    M->>M: loadSettings() (deep-merge + one-time excludeFolders→exclusions migration, #307)
+    M->>M: loadSettings() (version-stamped migrateSettings replay → deep-merge → stamp settingsVersion, #93; v1 excludeFolders→exclusions #307, v2 drop rem.semanticMatching)
     M->>M: registerSynapseIcons() (brand S-Signal mark + feature glyphs, before any ribbon/setIcon use)
     M->>M: migrateDataFolder() (.auto-notes -> .synapse)
     M->>M: addSettingTab()
@@ -474,8 +491,19 @@ interface ExclusionRule { pattern: string; features: 'all' | FeatureId[] }
 - **First-match-wins.** `findMatchingRule(path, featureId, settings)` walks `exclusions` in order and returns the first rule that applies to the feature *and* matches the path; `isPathExcluded(...)` is the boolean wrapper.
 - **Glob forms.** `dir/**` (folder + all descendants), `dir/*` (direct children), a bare token (recursive prefix), or an exact `dir/file.md` path. Patterns are normalized and anchored; `.` is escaped so `.synapse/**` can't over-match.
 - **Defaults.** Fresh installs get `[{ pattern: '.synapse/**', features: 'all' }, { pattern: 'templates/**', features: 'all' }]`.
-- **One-time migration.** `loadSettings()` runs `buildMigratedExclusions()` for upgraders whose persisted data lacks an `exclusions` key, preserving their old per-module folders exactly (a folder excluded by *every* legacy feature collapses to `features: 'all'`).
+- **One-time migration.** The `excludeFolders → exclusions` fold now runs as **migration v1** of the version-stamped settings framework (#93, below), still guarded so a user who deliberately cleared exclusions to `[]` keeps `[]`.
 - **Tags stay per-module.** `excludeTags` remains per feature but routes through a shared `matchesExcludeTag` helper (handles inline + frontmatter tags, case-insensitively).
+
+---
+
+## Settings Migrations (#93)
+
+Settings evolve through a version-stamped, append-only migration chain in `shared/settings-migrations.ts`, replacing the old scattered presence-guarded one-offs.
+
+- **One stamp, ordered replay.** A persisted `settingsVersion` records the schema version of `data.json`. On load, `migrateSettings(raw, from)` clones the raw object once and applies every migration whose `to > from` in ascending order, *before* the deep-merge over `DEFAULT_SETTINGS`. `main.loadSettings()` then stamps `settingsVersion = CURRENT_SETTINGS_VERSION` and saves once on upgrade.
+- **Pure & tested.** Each step is a pure `Record<string, unknown> → Record<string, unknown>` function; a drift-guard test asserts `CURRENT_SETTINGS_VERSION` equals the highest migration `to`.
+- **Current chain (v2):** `v1` folds legacy `excludeFolders` into `exclusions` (#307); `v2` drops the inert `rem.semanticMatching` flag left by the always-on REM change (#380).
+- **Layering.** Lives in `shared/`, imports only `shared/exclusions.ts`, never `../settings` — so the sanctioned `settings → settings-migrations → exclusions` edge stays acyclic.
 
 ---
 
@@ -633,7 +661,7 @@ Six modules generate proposals that appear in the unified sidebar. Each has a di
 | Enrichment | Tags, links, refs, frontmatter | Per-item checkboxes | Cherry-pick items, apply with markers |
 | Organize | New directory suggestion | Directory path + AI reasoning | Create directory, move file |
 | Deep Dive | Generated child note | Read-only content preview | Create note at proposed path |
-| Title | Rename suggestion | Current vs proposed title + reasoning | Rename file |
+| Title | Rename suggestion (distinct state on collision) | Current vs proposed title + reasoning | Rename file; on filename collision resolve via `iterate`/`merge` (#408) |
 | REM | `[[wikilink]]` insertions | Per-match checkboxes | **Rewrites note body** (snapshot kept for undo) |
 
 ### Proposal States
@@ -649,6 +677,11 @@ Generated --> Pending --+--> Accepted
 Each proposal kind has an `autoAccept.{kind}` setting (all default `false`). When on, a freshly generated proposal is accepted in full as generated, skipping the sidebar. **REM is the cautionary case**: its accept rewrites note prose (inserting wikilinks), whereas the others only add a separate section — so enabling REM auto-accept is a more consequential choice.
 
 Tidy, Summarize, and Image do NOT use proposals — they apply changes immediately (tidy has undo via snapshots; image OCR inserts callouts inline).
+
+### Idempotency & the Review gate
+
+- **Dedup by content key (#395).** Stores record each proposal's `contentKey` (hashed from inputs: note path + content hash + detection/AI settings). Re-scanning an unchanged note skips re-proposing the same item, so "scan twice" no longer duplicates proposals; the per-note `maxProposalsPerNote` cap is now enforced. Editing the note changes the hash and allows a fresh proposal.
+- **Centralized Review toast (#366).** A completion toast shows its "Review" button only when something was generated, auto-accept is off for that kind, and the run is not an automatic post-op side effect — decided in one shared `reviewAction()` gate so all six flows behave consistently.
 
 ### Deep Dive: Cascade Rejection
 
@@ -801,6 +834,14 @@ graph TB
     AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout<br/>Error extraction · Secret redaction (shared/redact.ts)"]
 ```
 
+### Caching & Coalescing (#397)
+
+`AIClient.chat()` wraps the raw provider dispatch with idempotency support, keyed by a deterministic `contentKey([messages, provider, model, temperature, maxTokens])` (inputs only):
+
+- **In-flight coalescing** — a concurrent identical request joins the live dispatch promise (in-flight `Map`, entry cleared in `.finally()`) instead of issuing a second network call.
+- **Response cache** — a per-instance, bounded LRU of request key → successful response. Participates when `temperature === 0` (deterministic) **or** the user opts in via `ai.cacheResponses`; populated **only on success** (errors are never cached).
+- **Bypass** — a `bypassCache` option skips both the cache read and coalescing so a "regenerate" action always re-dispatches.
+
 ### Multi-Modal Vision Support
 
 `AIClient.chat()` accepts `ChatMessage[]` where `content` can be `string | ContentBlock[]`:
@@ -845,7 +886,9 @@ All AI-generated content uses Obsidian callouts from a shared registry:
 
 ```
 SynapseSettings
-+-- ai              -> Provider, API key, model, temperature, max tokens
++-- settingsVersion -> Persisted schema version (#93); drives the migration runner, stamped to CURRENT_SETTINGS_VERSION on save
++-- ai              -> Provider, API key, model, temperature, max tokens,
+|                     cacheResponses (#397, opt-in; caching automatic at temperature 0)
 +-- elaboration     -> Detection thresholds, scan behavior, proposal storage
 |   +-- detection   -> Word threshold, TODO markers, empty sections, exclude tags
 |   +-- proposal    -> Max per note, preserve frontmatter, include context
@@ -864,7 +907,8 @@ SynapseSettings
 +-- organize        -> Proposal/snapshot folder paths, confidence threshold, exclude tags
 +-- deepDive        -> Max depth, quality threshold, max notes, output folder,
 |                     nesting mode, auto-enrich/organize on accept, exclude tags
-+-- title           -> Enabled, proposal folder path, check after operations
++-- title           -> Enabled, proposal folder path, check after operations,
+|                     duplicateHandling (#408, 'iterate' | 'merge'; default resolution for filename collisions)
 +-- rem             -> Enabled, title-match weight (#380, no UI), semantic confidence
 |                     threshold, max links per note, proposal folder path
 +-- intake          -> Enabled, watched folder, mark-processed, move-when-done,
@@ -894,7 +938,8 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Desktop gating | `assertDesktop()`/`loadNodeModules()` — Node builtins resolve only on desktop, behind one guarded site; keeps `isDesktopOnly: false` mobile-safe | `shared/node-loader.ts` |
 | Temp-path hardening | Vault-derived basenames sanitized before composing temp paths (2026-06-08) | `transcription/duration-detector.ts` |
 | Multipart header hardening | Vault-/settings-derived field + file names sanitized (`sanitizeMultipartHeaderValue`: strip CR/LF, replace `"`/`\`) before `Content-Disposition` lines — blocks multipart/header injection (2026-06-11) | `audio/transcriber.ts` |
-| API key protection | `redactSecrets()` — **single source of truth** scrubbing keys from error messages/console on **every error path**; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts`, `credential-validator.ts`, and all of `notifications.ts` — `error`/`notifyError`/operation-error `console.error`) |
+| API key protection | `redactSecrets()` (strings) + `redactError()` (raw caught errors — Error `.stack`/`.message`) — **single source of truth** scrubbing keys from error messages/console on **every error path**; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts`, `credential-validator.ts`, all of `notifications.ts`; `redactError` at audio/index, rem/semantic-matcher, elaboration/image-analyzer + proposer, shared/fire-and-forget) |
+| Prompt-injection defense | `wrapUntrusted()` fences fetched untrusted content (article/tweet/Reddit, image analysis) in labeled delimiters + data-not-instructions frame + anti-breakout scrub — structural, not lexical (#398); Gemini audio instruction in `system_instruction` | `shared/untrusted-content.ts` (used by `elaboration/proposer.ts`), `audio/transcriber.ts` |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
 | Credential validation | Live key probe is one minimal authenticated GET; result is **ephemeral** (never persisted) and routed through `redactSecrets` so an echoed key can't reach the status chip | `shared/credential-validator.ts`, `shared/provider-metadata.ts` |
@@ -902,7 +947,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
 | Lifecycle hygiene | `NotificationManager.dispose()` tears down in-flight ellipsis timers + hides notices on unload (no orphaned `setInterval`) | `shared/notifications.ts`, `main.ts:onunload()` |
 
-**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). The 2026-06-25 audit pass (v1.0.6) brought the per-operation error `console.error` under `redactSecrets`, so the single redaction source now guards **every** error sink in `notifications.ts`. `data.json` (live API keys) is gitignored and never committed.
+**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). The 2026-06-25 audit pass (v1.0.6) brought the per-operation error `console.error` under `redactSecrets`, so the single redaction source now guards **every** error sink in `notifications.ts`. The 2026-06-29 audit pass (v1.0.7) added `redactError()` so raw caught errors logged directly to the console get the same scrub (five direct error sinks routed through it); the idempotency bundle also landed a structural prompt-injection fence (`wrapUntrusted`, #398) for fetched external content. `data.json` (live API keys) is gitignored and never committed.
 
 **Known posture / not-yet-enforced:**
 - `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths** — there is no active vault-boundary enforcement on writes today.

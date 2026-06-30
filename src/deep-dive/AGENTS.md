@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # deep-dive module
@@ -61,7 +61,7 @@ Re-exported settings renderer: `renderDeepDiveSettings` (from `./settings-sectio
 
 | File | Class/Function | Role |
 |------|---------------|------|
-| `index.ts` | `DeepDiveModule` (L51), `buildDeepDivePath` (L681) | Module entry point and public API |
+| `index.ts` | `DeepDiveModule` (L51), `buildDeepDivePath` (L683) | Module entry point and public API |
 | `topic-analyzer.ts` | `TopicAnalyzer` (L10) | AI topic extraction; matches titles against included vault notes |
 | `note-generator.ts` | `NoteGenerator` (L8) | AI content generation for a topic given parent title+content |
 | `quality-scorer.ts` | `scoreQuality` (L30) | Local heuristic scoring: topic count, word count, genericity, overlap, depth decay |
@@ -103,6 +103,7 @@ deepDive(file)  [private, called by command]
     --> DeepDiveStore.saveRun()
     --> on cancel: checkpointManager.discard()
     --> on success: checkpointManager.complete(), dispatch deferred tasks
+    --> on success: genOp.finish(summary, reviewAction({generated, shouldAutoAccept, openProposalView}))  [Review button only if generated && !shouldAutoAccept() (#366); opens via onOpenProposalView]
     --> on error: checkpointManager.discard()
     --> maybeAutoAcceptRun(run.proposalIds)  [if shouldAutoAccept()]
 
@@ -219,7 +220,7 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 ## Dependencies
 
-In: `shared/` (NotificationManager, readNote, writeNote, wordCount, CheckpointManager, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, Checkpoint, CheckpointWorkItem, DeferredTask), `organize/` (ContentAnalyzer, DirectoryMatcher — auto-organize mode only), `settings.ts` (SynapseSettings, DeepDiveNestingMode), `commands.ts` (CommandRegistrar)
+In: `shared/` (NotificationManager, readNote, writeNote, wordCount, CheckpointManager, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, Checkpoint, CheckpointWorkItem, DeferredTask), `organize/` (ContentAnalyzer, DirectoryMatcher — auto-organize mode only), `settings.ts` (SynapseSettings, DeepDiveNestingMode), `commands/` (CommandRegistrar)
 
 Out: Nothing consumed by other feature modules.
 
@@ -234,11 +235,11 @@ Out: Nothing consumed by other feature modules.
 | Depth modal dismissed / user declines confirm | info Notice "Deep dive cancelled"; abort (L283, L294) |
 | Child topic extraction throws (per-node) | caught; `childTopics = []`, score from content alone, recursion stops for that branch (L409) |
 | User cancels mid-generation (`genOp.cancelled`) | run.status='cancelled', `checkpointManager.discard`, info Notice; partial proposals stay saved (L482) |
-| Generation loop throws | run.status='cancelled', `checkpointManager.discard`, `genOp.error(...)` (L509) |
+| Generation loop throws | run.status='cancelled', `checkpointManager.discard`, `genOp.error(...)` (L511) |
 | `acceptProposal` on missing proposal | info Notice "Proposal not found"; no-op (L139) |
 | `acceptProposal` on non-pending proposal | silent no-op (double-accept guard) (L145) |
 | `acceptProposal` write failure | `notifyError`, then rethrows `Accept proposal failed: <msg>` (L173) |
-| auto-organize AI failure or top score < 0.6 | caught; falls back to `buildDeepDivePath` (nested) (L632, L637) |
+| auto-organize AI failure or top score < 0.6 | caught; falls back to `buildDeepDivePath` (nested) (L634, L639) |
 
 ## Invariants / Gotchas
 

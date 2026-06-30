@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # Audio Module
@@ -8,7 +8,7 @@ Transcribes audio files from the vault using configurable providers (Whisper API
 
 ## Public API
 
-Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry`. `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
+Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTranscriptionCredentials`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry`. `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
 
 ```ts
 class AudioModule {
@@ -24,6 +24,7 @@ class AudioModule {
 }
 
 function renderAudioSettings(ctx: SettingsSectionContext): void   // settings UI; from settings-section.ts
+function renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext): void   // re-exported on the barrel (#332/#335); from transcription-credentials.ts; settings-tab.ts imports it via `./audio`
 function findAudioEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): AudioEmbed[]
 
 // transcriber.ts (module-internal: imported directly, NOT via the barrel)
@@ -65,10 +66,10 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 | `transcriber.test.ts` | Tests | Transcriber + multipart + provider routing tests |
 | `post-processor.ts` | `PostProcessor` | AI transcript cleanup via `AIClient` |
 | `settings-section.ts` | `renderAudioSettings` | Audio settings UI section |
-| `transcription-credentials.ts` | `renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext)` | Transcription-provider dropdown + per-provider API-key fields rendered into the AI Configuration section (#332/#335). Imports `PROVIDER_METADATA`/`decorateCredentialField` and types `CredentialProvider`/`CredentialFieldHandle`/`SettingsSectionContext` via the `../shared` barrel (audit Stage-1 barrel-import refactor — no deep `../shared/<file>` imports) |
+| `transcription-credentials.ts` | `renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext)` | Transcription-provider dropdown + per-provider API-key fields rendered into the AI Configuration section (#332/#335). Re-exported from `index.ts` (the module's public API) so `settings-tab.ts` wires it through the `./audio` barrel rather than deep-importing this file. Imports `PROVIDER_METADATA`/`decorateCredentialField` and types `CredentialProvider`/`CredentialFieldHandle`/`SettingsSectionContext` via the `../shared` barrel (no deep `../shared/<file>` imports) |
 | `note-scanner.ts` | `findAudioEmbeds`, `hasTranscriptionBelow`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` | Scan note content for audio embeds |
 | `note-scanner.test.ts` | Tests | Note scanner tests |
-| `index.ts` | `AudioModule` (+ note-scanner & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307) |
+| `index.ts` | `AudioModule` (+ `renderAudioSettings`, `renderTranscriptionCredentials`, note-scanner & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307); schema-reformat failures log through shared `redactError` |
 
 ## Data Flow
 

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # REM Module
@@ -97,6 +97,7 @@ interface RemSettings {
 | `semantic-matcher.test.ts` | Tests | SemanticMatcher tests |
 | `index.test.ts` | Tests | RemModule integration tests |
 | `settings-section.test.ts` | Tests | Settings section tests |
+| `review-toast.test.ts` | Tests | Review-toast action: forwarded when auto-accept off, omitted when on (#366) |
 
 ## Data Flow
 
@@ -108,8 +109,8 @@ remScanNote(filePath)
         SemanticMatcher.match(...) always-on, filtered by confidenceThreshold
         merge + re-rank by confidence desc + cap at maxLinksPerNote
   --> RemProposal { candidates, status: 'pending' } --> RemStore.save
+  --> success Notice + reviewAction({ generated, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366)
   --> maybeAutoAccept(proposal)   (#228, when shouldAutoAccept())
-  --> onOpenProposalView callback offered in Notice (when NOT auto-accepting)
   --> refreshView()
 
 remScanDirectory(folderPath?, skipConfirmation?, onlyFile?)
@@ -121,7 +122,7 @@ remScanDirectory(folderPath?, skipConfirmation?, onlyFile?)
   --> on error: rejectProposalBatch(createdIds) + return 0
   --> on cancel: discard() + rejectProposalBatch()
   --> on success: complete() + dispatchDeferredTasks
-  --> Review action shown in finish Notice only when pending proposals remain
+  --> finish Notice + reviewAction({ generated: created>0, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366); separate "Auto-accepted ..." info Notice when autoAcceptedCount > 0
 
 acceptProposal(id, acceptedMatchTexts, options?)
   --> guard: only 'pending' proposals (cascade safety)
@@ -160,7 +161,7 @@ Resume re-checks exclusion rules silently (a path may have been excluded after c
 ## Exclusion Rules
 
 ```ts
-// index.ts:L476-482
+// index.ts:L484-490
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (
@@ -179,7 +180,7 @@ Single-note command (`rem-current-note`) names the matched rule in the Notice. D
 
 All under `settings.rem` (`RemSettings`):
 
-Defaults from `settings.ts:L471-477`.
+Defaults from `settings.ts:L501-507`.
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -195,7 +196,7 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 
 | Import | From |
 |--------|------|
-| `generateId`, `getMarkdownFiles`, `FolderPickerModal`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule` | `../shared` |
+| `generateId`, `getMarkdownFiles`, `FolderPickerModal`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction` | `../shared` |
 | `NotificationManager`, `CheckpointManager`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` | `../shared` (type-only) |
 | `CommandRegistrar` | `../commands` (type-only) |
 | `SynapseSettings`, `RemSettings` | `../settings` (type-only) |
@@ -203,3 +204,5 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 | `SemanticMatcher` | `./semantic-matcher` |
 | `RemApplier` | `./rem-applier` |
 | `RemStore` | `./rem-store` |
+
+Internal-file shared imports: `semantic-matcher.ts` imports `AIClient`, `isRecord`, `parseJson`, `getIncludedMarkdownFiles`, `redactError` from `../shared`. Its AI-call failure sink routes `console.warn` through `redactError` (redaction single-source-of-truth); the JSON-parse failure path logs a static message with no error payload. `rem-store.ts` imports `ensureFolder`, `isRecord`, `readJsonFile`; `settings-section.ts` imports `addEnhancedSlider`, `SettingsSectionContext`.

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # Shared Module
@@ -8,7 +8,7 @@ Cross-cutting base layer used by all feature modules: AI client, secret redactio
 
 Canonical homes (re-exported elsewhere for back-compat — import from the `shared` barrel, never an internal file):
 - `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) — moved here from `src/video/` to break the former shared⇄video import cycle; `video` re-exports for back-compat.
-- `redact.ts` (`redactSecrets`) — single source of truth for API-key/token redaction; `ai-client.ts` re-exports it. Consumed by `ai-client.ts`, `credential-validator.ts`, and `notifications.ts` (operation-error + notifyError paths). Previously `ai-client` and the former `api-utils.notifyError` each kept inline copies that drifted (the `notifyError` copy lacked the Google `AIza` pattern).
+- `redact.ts` (`redactSecrets`, `redactError`) — single source of truth for API-key/token redaction; `ai-client.ts` re-exports `redactSecrets` (only). `redactSecrets` is consumed by `ai-client.ts`, `credential-validator.ts`, and `notifications.ts` (operation-error + notifyError paths). `redactError(value)` renders a caught error to a redacted, log-safe string (prefers `.stack`, falls back to `name: message`, then `redactSecrets`); it is the one sanctioned way to log a raw error, routed through by every raw-error console sink (audio, rem/semantic-matcher, elaboration/image-analyzer, elaboration/proposer, shared/fire-and-forget). Previously `ai-client` and the former `api-utils.notifyError` each kept inline copies that drifted (the `notifyError` copy lacked the Google `AIza` pattern).
 - `encoding.ts` (`arrayBufferToBase64`, `base64EncodedLength`) — base64 helpers; `image/preprocess.ts` re-exports them so audio + image + elaboration share one implementation.
 - `title-detector.ts` (`isUntitled`, `isGenericTitle`) — note-title predicates; lives here (not in `title/`) so non-title features can reuse them without a cross-feature import. `title/title-detector.ts` re-exports `isUntitled`.
 
@@ -18,16 +18,22 @@ Exported from `index.ts`:
 
 ```ts
 // ai-client.ts
+interface AIRequestOptions { bypassCache?: boolean }   // exported from ai-client.ts (NOT the barrel); forces fresh dispatch for "regenerate"
 class AIClient {
   constructor(getSettings: () => SynapseSettings)
-  complete(prompt: string, systemPrompt?: string): Promise<string>
-  chat(messages: ChatMessage[]): Promise<string>   // providers: openai | anthropic | gemini | ollama
+  complete(prompt: string, systemPrompt?: string, opts?: AIRequestOptions): Promise<string>
+  chat(messages: ChatMessage[], opts?: AIRequestOptions): Promise<string>   // providers: openai | anthropic | gemini | ollama
 }
 function extractGeminiResponseText(json: unknown): string  // throws on blocked/empty 200 shapes
-export { redactSecrets }                              // re-export of redact.ts (back-compat)
+export { redactSecrets }                              // re-export of redact.ts (back-compat; redactError is NOT re-exported here)
+// chat()/complete() wrap a private dispatch() with an opt-in per-instance LRU response cache (max 50)
+// + in-flight coalescing (#397). Cacheable when ai.temperature === 0 OR ai.cacheResponses === true.
+// Key = contentKey([JSON(messages), provider, model, temperature, maxTokens]); bypassCache skips the
+// cache read + coalescing but still refreshes the cache; only successful dispatches are cached.
 
 // redact.ts (single source of truth for secret redaction)
 function redactSecrets(text: string): string         // replaces sk-/key-/dg-/Bearer/Token/anthropic-/AIza secrets with [REDACTED]
+function redactError(value: unknown): string         // render a caught value to a redacted, log-safe string: Error -> (stack ?? `name: message`), else String(value); then redactSecrets. Sanctioned raw-error console sink.
 
 // encoding.ts
 function arrayBufferToBase64(buffer: ArrayBuffer): string
@@ -87,6 +93,7 @@ function writeNote(app: App, path: string, content: string): Promise<TFile>
 function getMarkdownFiles(app: App, folder?: string): TFile[]
 function getIncludedMarkdownFiles(app: App, feature: FeatureId, settings: ExclusionSettings, folder?: string): TFile[]
 function wordCount(text: string): number
+function findAvailableVaultPath(app: App, desiredPath: string): string   // Obsidian-style de-dup: appends -1,-2,... before the extension until free
 
 // api-utils.ts (notifyError now lives on NotificationManager, not here)
 function withRetry<T>(fn: () => Promise<T>, maxRetries?: number, delayMs?: number, shouldRetry?: (error: unknown) => boolean): Promise<T>   // defaults: maxRetries 3, delayMs 1000, shouldRetry () => true; exponential backoff
@@ -270,6 +277,26 @@ interface FireAndForgetOptions {
 }
 function fireAndForget(promise: Promise<unknown>, label: string, options?: FireAndForgetOptions): void
 
+// review-action.ts (#366: centralized "Review" completion-toast gate)
+interface ReviewActionOptions { generated: boolean; shouldAutoAccept: () => boolean; openProposalView: (() => void) | null; postOp?: boolean }
+function reviewAction(opts: ReviewActionOptions): NoticeAction | undefined   // Review action iff generated && !shouldAutoAccept() && !postOp; else undefined
+
+// hash-utils.ts (browser-safe FNV-1a content hashing; content-addressing only, NOT security)
+function hashString(input: string): string            // 16-char lowercase hex digest (two 32-bit FNV-1a lanes)
+function contentKey(parts: string[]): string          // length-prefixed (netstring) join of parts, then hashString
+
+// untrusted-content.ts (structural prompt-injection defense for fetched external text)
+const UNTRUSTED_OPEN_TAG: string                       // 'UNTRUSTED_EXTERNAL_CONTENT'
+const UNTRUSTED_CLOSE_FENCE: string                    // '<<<END_UNTRUSTED_EXTERNAL_CONTENT>>>'
+function wrapUntrusted(content: string, source?: string): string   // fence content in labeled delimiters + anti-breakout sanitization
+
+// settings-migrations.ts (#93: version-stamped settings migration runner)
+interface SettingsMigration { to: number; migrate: (raw: Record<string, unknown>) => Record<string, unknown> }
+const CURRENT_SETTINGS_VERSION: number                 // 2 (highest migration `to`; DEFAULT_SETTINGS stamps this)
+const SETTINGS_MIGRATIONS: SettingsMigration[]         // ordered chain: v1 excludeFolders->exclusions (#307), v2 drop inert rem.semanticMatching
+function readSettingsVersion(raw: Record<string, unknown> | null | undefined): number   // 0 when absent/non-numeric
+function migrateSettings(raw: Record<string, unknown>, fromVersion: number): Record<string, unknown>   // clones, replays migrations with to > fromVersion
+
 // json-utils.ts
 function parseJson(text: string): unknown                                         // throws SyntaxError on malformed input
 function isRecord(v: unknown): v is Record<string, unknown>
@@ -336,17 +363,17 @@ function scoreLyricsContent(content: string): number
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `ai-client.ts` | `AIClient`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support; `safeRequest`, `resolveModelId`, `toOpenAIContent`, `toAnthropicContent`, `toGeminiContent`, `toOllamaMessage` (internal). Imports `redactSecrets` from `redact.ts` |
-| `redact.ts` | `redactSecrets` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). Consumed by `ai-client.ts`, `credential-validator.ts`, `notifications.ts`; redaction behavior covered by `redact.test.ts` |
+| `ai-client.ts` | `AIClient`, `AIRequestOptions`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support. `chat()`/`complete()` accept `opts?: AIRequestOptions` and wrap a private `dispatch()` with an opt-in per-instance LRU response cache (max 50) + in-flight coalescing (#397; key via `contentKey`); `safeRequest`, `resolveModelId`, `cacheGet`/`cacheSet`, `to*Content` (internal). Imports `redactSecrets` from `redact.ts`, `contentKey` from `hash-utils.ts` |
+| `redact.ts` | `redactSecrets`, `redactError` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). `redactSecrets` consumed by `ai-client.ts`, `credential-validator.ts`, `notifications.ts`; `redactError(value)` renders a caught error to a redacted log-safe string (stack ?? `name: message` -> redactSecrets) for every raw-error console sink (audio, rem, elaboration x2, fire-and-forget). Behavior covered by `redact.test.ts` |
 | `redact.test.ts` | Tests | Redaction pattern tests |
 | `encoding.ts` | `arrayBufferToBase64`, `base64EncodedLength` | Base64 encode + exact encoded-length calc; canonical home reused by audio/image/elaboration |
 | `encoding.test.ts` | Tests | Encoding tests |
 | `types.ts` | `ChatMessage`, `ContentBlock`, `TextContentBlock`, `ImageContentBlock` | Shared types including multi-modal content blocks |
-| `notifications.ts` | `NotificationManager`, `linkLoadError`, `OperationHandle`, `NoticeAction` (barrel); `NoticeLevel` (module-local, not re-exported) | Centralized notifications with cancellation, progress, confirmation snackbars, and action buttons. `dispose()` tears down all in-flight operations (called from `main.ts` `onunload()`). `info()`/`success()` accept optional `action?: NoticeAction`; `infoSticky()` shows a duration-0 dismissible action toast; `error()`/`notifyError()`/operation-error `console.error` all route through `redactSecrets` (single redaction source). `linkLoadError(source, reason)` builds the shared external-link failure message used by Elaborate + Summarize |
+| `notifications.ts` | `NotificationManager`, `linkLoadError`, `OperationHandle`, `NoticeAction` (barrel); `NoticeLevel` (module-local, not re-exported) | Centralized notifications with cancellation, progress, confirmation snackbars, and action buttons. `dispose()` tears down all in-flight operations (called from `main.ts` `onunload()`). `info()`/`success()` accept optional `action?: NoticeAction`; `infoSticky()` shows a duration-0 dismissible action toast; `error()`/`notifyError()`/operation-error `console.error` all route through `redactSecrets` (single redaction source). One-shot `info()`/`success()`/`error()` (no action) are equal-message throttled within 3s (#396) to prevent per-item toast floods; tracked-operation, `confirm()`, action, and `notifyError()` toasts are exempt. `linkLoadError(source, reason)` builds the shared external-link failure message used by Elaborate + Summarize |
 | `notifications.test.ts` | Tests | NotificationManager tests |
 | `update-checker.ts` | `UpdateChecker`, `isNewerVersion`, `UpdateCheckerDeps` | In-app "newer Synapse available" check (#365). Polls the plugin's own public GitHub Releases API at most once/24h (gated on `settings.updates.enableUpdateNotifications`), compares the latest tag to the running version, and shows a sticky notice via `notifications.infoSticky` whose button opens Settings → Community plugins. Fails silently (offline/non-200/malformed → logged `null`); records the shown version so it never nags twice. `isNewerVersion` is pure semver gt |
 | `update-checker.test.ts` | Tests | UpdateChecker + isNewerVersion tests |
-| `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `getIncludedMarkdownFiles`, `wordCount` | Vault file operations. `getIncludedMarkdownFiles` drops notes excluded by centralized exclusion rules for a given `FeatureId` |
+| `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `getIncludedMarkdownFiles`, `wordCount`, `findAvailableVaultPath` | Vault file operations. `getIncludedMarkdownFiles` drops notes excluded by centralized exclusion rules for a given `FeatureId`. `findAvailableVaultPath` resolves a non-colliding vault path (Obsidian-style `-1`/`-2` suffix before the extension); used by video re-downloads + title duplicate "iterate" resolution (#408) |
 | `api-utils.ts` | `withRetry`, `sleep`, `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError` | Retry with exponential backoff + per-error `shouldRetry` gate, network-error classification/disclosure. `notifyError` no longer lives here — error display moved to `NotificationManager` |
 | `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
 | `validation.test.ts` | Tests | Validation tests |
@@ -385,7 +412,15 @@ function scoreLyricsContent(content: string): number
 | `credential-validator.ts` | `validateCredentials`, `ValidationResult`, `ValidationStatus`, `ValidateOptions` | Live credential validation via provider probe; 10s timeout; never throws; redacts secrets from all error messages. Status: `valid`/`invalid`/`error`/`skipped` |
 | `credential-field.ts` | `decorateCredentialField`, `CredentialFieldOptions`, `CredentialFieldHandle` | Decorates a Setting row with a Test button, get-key deep link, and live status chip. Result applied via `setTimeout(0)` (macrotask) to avoid Obsidian settings DOM freeze (#335) |
 | `feature-chip-select.ts` | `renderFeatureChipSelect`, `FeatureChipSelectOptions` | Renders a chip multi-select for exclusion rule feature scope. Self-redraws its container on every edit; caller's `onChange` only needs to persist |
-| `fire-and-forget.ts` | `fireAndForget`, `FireAndForgetOptions` | Attaches rejection handling to an intentionally un-awaited promise. Routes errors through `NotificationManager.notifyError` when available; supports background mode (log only, no toast) |
+| `fire-and-forget.ts` | `fireAndForget`, `FireAndForgetOptions` | Attaches rejection handling to an intentionally un-awaited promise. Routes errors through `NotificationManager.notifyError` when available; both the background-mode and no-manager-fallback `console.error` sinks route through `redactError` (single redaction source). Supports background mode (log only, no toast) |
+| `review-action.ts` | `reviewAction`, `ReviewActionOptions` | Centralized "Review" completion-toast gate (#366): returns a `NoticeAction` opening the unified proposal view iff something was generated, auto-accept is off for the kind, and it is not an automatic post-op side effect. Shared by elaboration, enrichment, organize, deep-dive, title, rem |
+| `review-action.test.ts` | Tests | reviewAction gate tests |
+| `hash-utils.ts` | `hashString`, `contentKey` | Browser-safe FNV-1a string hashing (no Node `crypto`); content-addressing only, NOT security. `hashString` -> 16-char hex; `contentKey` length-prefixes parts before hashing. Used by ai-client cache key, elaboration proposal dedup, title content keys |
+| `hash-utils.test.ts` | Tests | Hash + content-key tests |
+| `untrusted-content.ts` | `wrapUntrusted`, `UNTRUSTED_OPEN_TAG`, `UNTRUSTED_CLOSE_FENCE` | Structural prompt-injection defense: fences fetched external text (article/tweet/Reddit bodies, image analysis) in labeled delimiters with a data-not-instructions frame + anti-breakout sentinel scrubbing. Used by elaboration/proposer |
+| `untrusted-content.test.ts` | Tests | Fence/sanitization tests |
+| `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag |
+| `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
 | `json-utils.ts` | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` | Type-safe JSON helpers. `parseJson` returns `unknown` (not `any`). `readJsonFile` reads via `DataAdapter`, validates with a type guard, returns `null` on any failure |
 | `node-loader.ts` | `loadNodeModules`, `assertDesktop`, `shellEnv`, `DesktopOnlyError`, `NodeModules` | Single sanctioned entry point for desktop-only Node.js builtins (os/path/fs/child_process). Lazy-loads inside function body so importing never triggers a module load on mobile. `shellEnv()` builds a narrowed subprocess environment with PATH augmented for common tool install locations |
 | `settings-section.ts` | `createSettingsSectionContext`, `isSectionCollapsed`, `persistCollapse`, `SettingsSectionContext`, `SettingsSectionContextOptions` | Shared accordion plumbing for the settings tab (#243). Feature renderers receive a `SettingsSectionContext` and call `featureSection()`/`configSection()` to build accordions without importing `settings-tab.ts` |
@@ -394,8 +429,11 @@ function scoreLyricsContent(content: string): number
 
 ## AIClient Provider Routing
 
+`chat()` is the cache/coalescing wrapper (#397, see Public API); on a cache miss or `bypassCache` it calls
+the private `dispatch()` shown below (behavior unchanged from the pre-cache `chat()`).
+
 ```
-AIClient.chat(messages)
+AIClient.chat(messages) --> dispatch(messages)
 |-- resolveModelId(provider, model)
 |     Anthropic: opus->claude-opus-4-6, sonnet->claude-sonnet-4-6, haiku->claude-haiku-4-5-20251001
 |     Others: pass-through
@@ -458,6 +496,7 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 - `error(message)` — persistent (until clicked) error toast; clicking copies the redacted text to the clipboard. `notifyError(context, error)` wraps an error object + context label through the same sink
 - `OperationHandle.finish(message?, action?)` accepts optional `action?: NoticeAction` — completion toast includes a button that runs `action.onClick()` then hides the toast
 - `dispose()` — tears down every in-flight tracked operation (stops its `setInterval` + hides its notice, clears the map). Called from `main.ts` `onunload()` so disabling the plugin mid-operation never leaves an orphaned 400ms timer firing against a detached toast. Source ref: `notifications.ts:L153`
+- One-shot `info()`/`success()`/`error()` calls WITHOUT an action are equal-message throttled within `NOTICE_THROTTLE_MS` (3s) via private `isThrottled` (#396): a second identical `${level}:${message}` toast inside the window is dropped (prevents per-item loop floods, e.g. a per-image notice). Tracked-operation toasts, `confirm()`, action notices (`showActionNotice`/`infoSticky`), and `notifyError()` are exempt. `dispose()` also clears the `lastShown` dedup map
 
 ## Validation Rules
 
@@ -495,6 +534,12 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 |---------|---------|
 | `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `redactSecrets` | ai-client (safeRequest error bodies + API-error wrap), credential-validator (probe error messages), notifications (`error`/`notifyError`/operation-error toast + console paths) |
+| `redactError` | elaboration/proposer, elaboration/image-analyzer, audio/index, rem/semantic-matcher, fire-and-forget (every raw-error `console.warn`/`console.error` sink) |
+| `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
+| `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
+| `wrapUntrusted` | elaboration/proposer (fetched-link content + image-analysis prompt fencing) |
+| `findAvailableVaultPath` | video/index (same-day re-download), title/index (duplicate "iterate" resolution, #408) |
+| `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
 | `extractGeminiResponseText` | ai-client (callGemini), audio/transcriber (Gemini provider) |
 | `arrayBufferToBase64` / `base64EncodedLength` | image/preprocess (re-exports), audio/transcriber (Gemini inline audio), elaboration/image-analyzer |
 | `classifyNetworkError` / `describeNetworkError` | audio/transcriber (retry gating + failure disclosure) |

@@ -68,7 +68,11 @@ describe('fireAndForget', () => {
 			const [message, loggedErr] = consoleErrorSpy.mock.calls[0];
 			expect(message).toContain('Enrich note');
 			expect(message).toContain('[Synapse]');
-			expect(loggedErr).toBe(err);
+			// The error is logged as a redacted STRING (via redactError), not the
+			// raw Error object — so a secret in the message/stack can never reach
+			// the console. The error detail is still preserved for debugging.
+			expect(typeof loggedErr).toBe('string');
+			expect(loggedErr).toContain('boom');
 		});
 
 		it('does not let the rejection escape as an unhandled rejection', async () => {
@@ -96,6 +100,36 @@ describe('fireAndForget', () => {
 			expect(Notice).not.toHaveBeenCalled();
 			expect(notifyError).toHaveBeenCalledTimes(1);
 			expect(notifyError).toHaveBeenCalledWith('Organize note', err);
+		});
+	});
+
+	describe('secret redaction at the console sink', () => {
+		// A secret can only reach these console sinks via a rejection whose error
+		// message/stack carries one. redactError() must strip it before it lands in
+		// the console, in BOTH no-manager paths (fallback + background) — the manager
+		// path is covered by notifyError's own redaction. (#393 pass-1 class of bug.)
+		const SECRET = 'sk-abcdef1234567890';
+
+		it('redacts a secret in the fallback (no manager) console log', async () => {
+			fireAndForget(Promise.reject(new Error(`upstream refused key ${SECRET}`)), 'Enrich note');
+			await flushMicrotasks();
+
+			expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+			const logged = String(consoleErrorSpy.mock.calls[0][1]);
+			expect(logged).not.toContain(SECRET);
+			expect(logged).toContain('[REDACTED]');
+		});
+
+		it('redacts a secret in the background console log', async () => {
+			fireAndForget(Promise.reject(new Error(`upstream refused key ${SECRET}`)), 'Refresh sidebar', {
+				background: true,
+			});
+			await flushMicrotasks();
+
+			expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+			const logged = String(consoleErrorSpy.mock.calls[0][1]);
+			expect(logged).not.toContain(SECRET);
+			expect(logged).toContain('[REDACTED]');
 		});
 	});
 

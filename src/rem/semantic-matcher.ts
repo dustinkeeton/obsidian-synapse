@@ -1,7 +1,7 @@
 import type { App, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { RemLinkCandidate, RemOccurrence } from './types';
-import { AIClient, isRecord, parseJson, getIncludedMarkdownFiles } from '../shared';
+import { AIClient, isRecord, parseJson, getIncludedMarkdownFiles, redactError } from '../shared';
 
 /** One conceptual match the AI is expected to return, after validation. */
 interface SemanticMatch {
@@ -89,7 +89,7 @@ export class SemanticMatcher {
 		try {
 			rawResponse = await this.aiClient.complete(userPrompt, systemPrompt);
 		} catch (error) {
-			console.warn('[Synapse REM] Semantic matching failed:', error);
+			console.warn('[Synapse REM] Semantic matching failed:', redactError(error));
 			return [];
 		}
 
