@@ -1,18 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { getIncludedMarkdownFiles, findAvailableVaultPath } from './file-utils';
 import { TFile } from '../__mocks__/obsidian';
+import { createMockApp } from '../__test-utils__/mock-factories';
+import type { App } from 'obsidian';
 import type { ExclusionRule } from './exclusions';
 
 function settingsWith(exclusions: ExclusionRule[]) {
 	return { exclusions };
 }
 
-function appWith(files: TFile[]) {
-	return {
-		vault: {
-			getMarkdownFiles: vi.fn().mockReturnValue(files),
-		},
-	} as any;
+function appWith(files: TFile[]): App {
+	const app = createMockApp();
+	app.vault.getMarkdownFiles.mockReturnValue(files);
+	return app as unknown as App;
 }
 
 describe('getIncludedMarkdownFiles', () => {
@@ -69,15 +69,13 @@ describe('getIncludedMarkdownFiles', () => {
 });
 
 /** App stub whose vault reports a fixed set of taken paths. */
-function appWithPaths(taken: string[]) {
+function appWithPaths(taken: string[]): App {
 	const set = new Set(taken);
-	return {
-		vault: {
-			getAbstractFileByPath: vi.fn((path: string) =>
-				set.has(path) ? new TFile(path) : null
-			),
-		},
-	} as any;
+	const app = createMockApp();
+	app.vault.getAbstractFileByPath.mockImplementation((path: string) =>
+		set.has(path) ? new TFile(path) : null
+	);
+	return app as unknown as App;
 }
 
 describe('findAvailableVaultPath', () => {

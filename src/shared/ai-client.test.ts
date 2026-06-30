@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { requestUrl } from '../__mocks__/obsidian';
+import { requestUrl, type RequestUrlParam } from '../__mocks__/obsidian';
 import { AIClient, redactSecrets } from './ai-client';
 import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 import type { ChatMessage, ContentBlock } from './types';
@@ -22,9 +22,22 @@ function geminiResponse(text: string) {
 	};
 }
 
-function lastRequestBody(): Record<string, any> {
-	const call = mockRequestUrl.mock.calls[0][0] as any;
-	return JSON.parse(call.body);
+/** Shape of the JSON request bodies these provider tests introspect. */
+interface ParsedRequestBody {
+	model?: string;
+	max_tokens?: number;
+	temperature?: number;
+	stream?: boolean;
+	system?: string;
+	system_instruction?: unknown;
+	generationConfig?: unknown;
+	contents: Array<{ role: string; parts: unknown }>;
+	messages: Array<{ role?: string; content: unknown }>;
+}
+
+function lastRequestBody(): ParsedRequestBody {
+	const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+	return JSON.parse(call.body as string) as ParsedRequestBody;
 }
 
 describe('redactSecrets', () => {
@@ -73,13 +86,13 @@ describe('AIClient — Gemini provider', () => {
 		const result = await client.complete('Hello');
 
 		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
-		const call = mockRequestUrl.mock.calls[0][0] as any;
+		const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 		expect(call.url).toBe(
 			'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent'
 		);
 		expect(call.method).toBe('POST');
-		expect(call.headers['x-goog-api-key']).toBe('AIzaSyTestKey1234567890123456789012345');
-		expect(call.headers['Content-Type']).toBe('application/json');
+		expect(call.headers?.['x-goog-api-key']).toBe('AIzaSyTestKey1234567890123456789012345');
+		expect(call.headers?.['Content-Type']).toBe('application/json');
 		expect(result).toBe('hi there');
 	});
 
@@ -184,7 +197,7 @@ describe('AIClient — Gemini provider', () => {
 			headers: {},
 		});
 
-		const err: Error = await client.complete('Hello').catch((e) => e);
+		const err = (await client.complete('Hello').catch((e: unknown) => e)) as Error;
 		expect(err).toBeInstanceOf(Error);
 		expect(err.message).toContain('MAX_TOKENS');
 		expect(err.message).toMatch(/max tokens/i);
@@ -211,7 +224,7 @@ describe('AIClient — Gemini provider', () => {
 			headers: {},
 		});
 
-		const err: Error = await client.complete('Hello').catch((e) => e);
+		const err = (await client.complete('Hello').catch((e: unknown) => e)) as Error;
 		expect(err).toBeInstanceOf(Error);
 		expect(err.message).toContain('API error (400)');
 		expect(err.message).toContain('[REDACTED]');
@@ -272,10 +285,10 @@ describe('AIClient — OpenAI provider', () => {
 
 		const result = await client.complete('Hi', 'Be brief.');
 
-		const call = mockRequestUrl.mock.calls[0][0] as any;
+		const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 		expect(call.url).toBe('https://api.openai.com/v1/chat/completions');
 		expect(call.method).toBe('POST');
-		expect(call.headers['Authorization']).toBe('Bearer sk-test123456789012345');
+		expect(call.headers?.['Authorization']).toBe('Bearer sk-test123456789012345');
 		const body = lastRequestBody();
 		expect(body.model).toBe('gpt-4o');
 		expect(body.max_tokens).toBe(512);
@@ -326,10 +339,10 @@ describe('AIClient — Anthropic provider', () => {
 
 		const result = await client.complete('Hello', 'You are terse.');
 
-		const call = mockRequestUrl.mock.calls[0][0] as any;
+		const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 		expect(call.url).toBe('https://api.anthropic.com/v1/messages');
-		expect(call.headers['x-api-key']).toBe('anthropic-key-1234567890');
-		expect(call.headers['anthropic-version']).toBe('2023-06-01');
+		expect(call.headers?.['x-api-key']).toBe('anthropic-key-1234567890');
+		expect(call.headers?.['anthropic-version']).toBe('2023-06-01');
 		const body = lastRequestBody();
 		expect(body.model).toBe('claude-sonnet-4-6');
 		// system message is lifted out of messages into the top-level system field
@@ -385,7 +398,7 @@ describe('AIClient — Ollama provider', () => {
 
 		const result = await client.complete('Hi');
 
-		const call = mockRequestUrl.mock.calls[0][0] as any;
+		const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 		expect(call.url).toBe('http://localhost:11434/api/chat');
 		const body = lastRequestBody();
 		expect(body.model).toBe('llama3');

@@ -1,8 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { fetchTweetContent, isTwitterUrl } from './tweet-fetcher';
+import { requestUrl, type RequestUrlParam, type RequestUrlResponse } from '../__mocks__/obsidian';
 
-function mockOEmbedResponse(authorName: string, tweetHtml: string) {
+/**
+ * The `requestUrl` mock viewed with a precise async signature. The shared mock is
+ * loosely typed (`vi.fn()`), so `mockImplementation(async …)` would otherwise be
+ * seen as a void-returning callback and trip no-misused-promises. The view also
+ * lets stubs return partial responses (only the fields the fetcher reads).
+ */
+const mockRequestUrl = vi.mocked(requestUrl) as unknown as Mock<
+	(params: RequestUrlParam | string) => Promise<Partial<RequestUrlResponse>>
+>;
+
+function mockOEmbedResponse(authorName: string, tweetHtml: string): RequestUrlResponse {
 	return {
+		status: 200,
+		headers: {},
+		json: null,
 		text: JSON.stringify({
 			html: tweetHtml,
 			author_name: authorName,
@@ -36,12 +50,11 @@ describe('fetchTweetContent', () => {
 	});
 
 	it('succeeds on first try via oEmbed', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
+		mockRequestUrl.mockResolvedValue(
 			mockOEmbedResponse(
 				'testuser',
 				'<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Hello world!</p></blockquote>'
-			) as never
+			)
 		);
 
 		const result = await fetchTweetContent('https://twitter.com/testuser/status/123', 10000);
@@ -51,12 +64,11 @@ describe('fetchTweetContent', () => {
 	});
 
 	it('falls back to fxtwitter when oEmbed returns 503', async () => {
-		const { requestUrl } = await import('obsidian');
 		const error503 = new Error('Request failed: 503');
 
 		// oEmbed fails on both retry attempts (withRetry makes 2 attempts)
 		let callCount = 0;
-		(vi.mocked(requestUrl) as any).mockImplementation(async (params: any) => {
+		mockRequestUrl.mockImplementation(async (params) => {
 			const url = typeof params === 'string' ? params : params.url;
 			if (url.includes('publish.twitter.com')) {
 				callCount++;
@@ -78,10 +90,9 @@ describe('fetchTweetContent', () => {
 	});
 
 	it('falls back to vxtwitter when oEmbed and fxtwitter both fail', async () => {
-		const { requestUrl } = await import('obsidian');
 		const error503 = new Error('Request failed: 503');
 
-		(vi.mocked(requestUrl) as any).mockImplementation(async (params: any) => {
+		mockRequestUrl.mockImplementation(async (params) => {
 			const url = typeof params === 'string' ? params : params.url;
 			if (url.includes('publish.twitter.com') || url.includes('fxtwitter.com/oembed')) {
 				throw error503;
@@ -103,18 +114,16 @@ describe('fetchTweetContent', () => {
 	});
 
 	it('throws when all endpoints fail', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockRejectedValue(new Error('Network error'));
+		mockRequestUrl.mockRejectedValue(new Error('Network error'));
 
 		await expect(fetchTweetContent('https://x.com/user/status/000', 10000))
 			.rejects.toThrow('Failed to fetch tweet from all sources');
 	});
 
 	it('retries oEmbed once before falling through', async () => {
-		const { requestUrl } = await import('obsidian');
 		let oembedCalls = 0;
 
-		(vi.mocked(requestUrl) as any).mockImplementation(async (params: any) => {
+		mockRequestUrl.mockImplementation(async (params) => {
 			const url = typeof params === 'string' ? params : params.url;
 			if (url.includes('publish.twitter.com')) {
 				oembedCalls++;
@@ -135,12 +144,11 @@ describe('fetchTweetContent', () => {
 	});
 
 	it('truncates to maxLength', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
+		mockRequestUrl.mockResolvedValue(
 			mockOEmbedResponse(
 				'user',
 				'<blockquote class="twitter-tweet"><p lang="en" dir="ltr">A very long tweet content here</p></blockquote>'
-			) as never
+			)
 		);
 
 		const result = await fetchTweetContent('https://x.com/user/status/999', 20);
@@ -148,12 +156,11 @@ describe('fetchTweetContent', () => {
 	});
 
 	it('calls sanitizeUrl on input', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
+		mockRequestUrl.mockResolvedValue(
 			mockOEmbedResponse(
 				'user',
 				'<blockquote class="twitter-tweet"><p lang="en" dir="ltr">test</p></blockquote>'
-			) as never
+			)
 		);
 
 		// sanitizeUrl rejects non-HTTP URLs
@@ -162,12 +169,11 @@ describe('fetchTweetContent', () => {
 	});
 
 	it('handles HTML entities in tweet text', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
+		mockRequestUrl.mockResolvedValue(
 			mockOEmbedResponse(
 				'user',
 				'<blockquote class="twitter-tweet"><p lang="en" dir="ltr">Tom &amp; Jerry &lt;3</p></blockquote>'
-			) as never
+			)
 		);
 
 		const result = await fetchTweetContent('https://x.com/user/status/456', 10000);

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Notice } from 'obsidian';
+import { Notice, type StubEl } from '../__mocks__/obsidian';
 import { NotificationManager } from './notifications';
 
 /** Recursively locate the first <button> element in a stub-element tree. */
-function findButton(el: any): any | null {
-	for (const child of el.children ?? []) {
+function findButton(el: StubEl): StubEl | null {
+	for (const child of el.children as unknown as StubEl[]) {
 		if (child.tagName === 'BUTTON') return child;
 		const nested = findButton(child);
 		if (nested) return nested;
@@ -13,8 +13,8 @@ function findButton(el: any): any | null {
 }
 
 /** The most recently constructed Notice (the visible completion/success toast). */
-function lastNotice(): any {
-	return (Notice as unknown as { instances: any[] }).instances.at(-1);
+function lastNotice(): Notice {
+	return Notice.instances.at(-1)!;
 }
 
 /**
@@ -31,7 +31,7 @@ describe('NotificationManager', () => {
 
 	beforeEach(() => {
 		manager = new NotificationManager();
-		(Notice as unknown as { instances: any[] }).instances.length = 0;
+		Notice.instances.length = 0;
 		// Error toasts copy to the clipboard on click; the node test env has no
 		// navigator.clipboard, so stub a resolving one. Individual tests can
 		// override writeText (e.g. mockRejectedValueOnce) to exercise failure.
@@ -130,36 +130,40 @@ describe('NotificationManager', () => {
 
 	describe('status bar', () => {
 		it('shows idle text when no operations are running', () => {
-			const mockEl = { setText: vi.fn() } as unknown as HTMLElement;
+			const setText = vi.fn<(text: string) => void>();
+			const mockEl = { setText } as unknown as HTMLElement;
 			manager.setStatusBarEl(mockEl);
-			expect((mockEl as any).setText).toHaveBeenCalledWith('Synapse');
+			expect(setText).toHaveBeenCalledWith('Synapse');
 		});
 
 		it('shows operation label when one operation is running', () => {
-			const mockEl = { setText: vi.fn() } as unknown as HTMLElement;
+			const setText = vi.fn<(text: string) => void>();
+			const mockEl = { setText } as unknown as HTMLElement;
 			manager.setStatusBarEl(mockEl);
 			manager.startOperation('Scanning vault', 'sb-test');
-			expect((mockEl as any).setText).toHaveBeenCalledWith(
+			expect(setText).toHaveBeenCalledWith(
 				'Synapse: Scanning vault'
 			);
 		});
 
 		it('shows task count when multiple operations are running', () => {
-			const mockEl = { setText: vi.fn() } as unknown as HTMLElement;
+			const setText = vi.fn<(text: string) => void>();
+			const mockEl = { setText } as unknown as HTMLElement;
 			manager.setStatusBarEl(mockEl);
 			manager.startOperation('Op A', 'sb-a');
 			manager.startOperation('Op B', 'sb-b');
-			expect((mockEl as any).setText).toHaveBeenCalledWith(
+			expect(setText).toHaveBeenCalledWith(
 				'Synapse: 2 tasks running'
 			);
 		});
 
 		it('returns to idle after operations finish', () => {
-			const mockEl = { setText: vi.fn() } as unknown as HTMLElement;
+			const setText = vi.fn<(text: string) => void>();
+			const mockEl = { setText } as unknown as HTMLElement;
 			manager.setStatusBarEl(mockEl);
 			const handle = manager.startOperation('Work', 'sb-done');
 			handle.finish();
-			expect((mockEl as any).setText).toHaveBeenLastCalledWith('Synapse');
+			expect(setText).toHaveBeenLastCalledWith('Synapse');
 		});
 	});
 
@@ -171,11 +175,11 @@ describe('NotificationManager', () => {
 			const notice = lastNotice();
 			const button = findButton(notice.noticeEl);
 			expect(button).not.toBeNull();
-			expect(button.textContent).toBe('Review');
-			expect(button.classList.contains('mod-cta')).toBe(true);
+			expect(button!.textContent).toBe('Review');
+			expect(button!.classList.contains('mod-cta')).toBe(true);
 
 			// Clicking invokes the handler exactly once, then hides the toast.
-			button.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+			button!.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
 			expect(onClick).toHaveBeenCalledTimes(1);
 			expect(notice.hide).toHaveBeenCalledTimes(1);
 		});
@@ -194,7 +198,7 @@ describe('NotificationManager', () => {
 			const button = findButton(notice.noticeEl);
 			expect(button?.textContent).toBe('Review');
 
-			button.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+			button?.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
 			expect(onClick).toHaveBeenCalledTimes(1);
 			expect(notice.hide).toHaveBeenCalledTimes(1);
 		});
@@ -228,7 +232,7 @@ describe('NotificationManager', () => {
 			manager.infoSticky('Update available', { label: 'Update', onClick });
 
 			const notice = lastNotice();
-			findButton(notice.noticeEl).dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+			findButton(notice.noticeEl)?.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
 
 			expect(onClick).toHaveBeenCalledTimes(1);
 			expect(notice.hide).toHaveBeenCalledTimes(1);
@@ -262,7 +266,7 @@ describe('NotificationManager', () => {
 		}
 		/** The stubbed clipboard writer (see top-level beforeEach). */
 		function writeText() {
-			return navigator.clipboard.writeText as unknown as ReturnType<typeof vi.fn>;
+			return vi.mocked(navigator.clipboard.writeText);
 		}
 
 		it('builds a persistent (duration 0) error toast on op.error()', () => {
@@ -343,7 +347,7 @@ describe('NotificationManager', () => {
 
 		/** Total Notices constructed so far (the mock records every one). */
 		function noticeCount(): number {
-			return (Notice as unknown as { instances: any[] }).instances.length;
+			return Notice.instances.length;
 		}
 
 		it('suppresses a second identical info() within the 3s window', () => {

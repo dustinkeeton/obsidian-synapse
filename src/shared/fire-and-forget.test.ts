@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { Notice } from 'obsidian';
 import { fireAndForget } from './fire-and-forget';
 import type { NotificationManager } from './notifications';
@@ -29,7 +29,7 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('fireAndForget', () => {
-	let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+	let consoleErrorSpy: MockInstance<(...args: unknown[]) => void>;
 
 	beforeEach(() => {
 		vi.mocked(Notice).mockClear();

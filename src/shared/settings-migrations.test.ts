@@ -71,7 +71,7 @@ describe('migrateSettings — ordering (#93)', () => {
 			enrichment: { excludeFolders: ['Templates'] },
 			rem: { semanticMatching: true, titleMatchWeight: 0.6 },
 		};
-		const snapshot = JSON.parse(JSON.stringify(raw));
+		const snapshot: unknown = JSON.parse(JSON.stringify(raw));
 		migrateSettings(raw, 0);
 		// Deep-equal to its pre-call snapshot: no field added or removed.
 		expect(raw).toEqual(snapshot);

@@ -1,81 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createEl, ToggleComponent, type StubEl } from '../__mocks__/obsidian';
 import { addCollapsibleSection } from './collapsible-section';
 
 /**
- * Recursive stub element mirroring the Obsidian DOM augmentation, with enough
- * introspection (classes, attributes, children, listeners) to assert accordion
- * behavior. Matches the shape produced by the obsidian mock's createStubEl.
+ * Dispatch a synthetic event on a stub element. The stub's `dispatchEvent`
+ * accepts a plain `{ type, ... }` payload rather than a real-DOM `Event`.
  */
-function stubEl(tag = 'div'): any {
-	const classes = new Set<string>();
-	const attributes: Record<string, string> = {};
-	const listeners: Record<string, Array<(evt: any) => void>> = {};
-	const children: any[] = [];
-
-	const apply = (child: any, info?: any) => {
-		if (info && typeof info === 'object') {
-			if (info.cls) {
-				(Array.isArray(info.cls) ? info.cls : [info.cls]).forEach((c: string) =>
-					child.classList.add(c),
-				);
-			}
-			if (info.text != null) child.textContent = String(info.text);
-		}
-		return child;
-	};
-	const make = (t: string) => (info?: any, cb?: (el: any) => void) => {
-		const child = stubEl(t);
-		apply(child, info);
-		children.push(child);
-		if (cb) cb(child);
-		return child;
-	};
-
-	const el: any = {
-		tagName: tag.toUpperCase(),
-		textContent: '',
-		children,
-		classList: {
-			add: (...c: string[]) => c.forEach((x) => classes.add(x)),
-			remove: (...c: string[]) => c.forEach((x) => classes.delete(x)),
-			contains: (c: string) => classes.has(c),
-		},
-		hasClass: (c: string) => classes.has(c),
-		addClass: (...c: string[]) => c.forEach((x) => classes.add(x)),
-		removeClass: (...c: string[]) => c.forEach((x) => classes.delete(x)),
-		setText: (t: string) => {
-			el.textContent = t;
-		},
-		setAttribute: (k: string, v: string) => {
-			attributes[k] = v;
-		},
-		getAttribute: (k: string) => (k in attributes ? attributes[k] : null),
-		createDiv: make('div'),
-		createSpan: make('span'),
-		createEl: (t: string, info?: any, cb?: (el: any) => void) => make(t)(info, cb),
-		addEventListener: (type: string, cb: (evt: any) => void) => {
-			(listeners[type] ??= []).push(cb);
-		},
-		dispatchEvent: (evt: { type: string; [k: string]: unknown }) => {
-			(listeners[evt.type] ?? []).forEach((cb) => cb(evt));
-			return true;
-		},
-	};
-	return el;
-}
-
-/**
- * Dispatch a synthetic event on a stub element. Casts away the real-DOM
- * `Event` type since stub elements accept plain `{ type, ... }` payloads.
- */
-function fire(el: any, evt: Record<string, unknown> & { type: string }): void {
+function fire(el: StubEl, evt: Record<string, unknown> & { type: string }): void {
 	el.dispatchEvent(evt);
 }
 
 /** Recursively find the first descendant element whose class set contains `cls`. */
-function findByClass(root: any, cls: string): any | undefined {
-	for (const child of root.children ?? []) {
-		if (child.hasClass?.(cls)) return child;
+function findByClass(root: HTMLElement, cls: string): HTMLElement | undefined {
+	for (const child of root.children as unknown as StubEl[]) {
+		if (child.hasClass(cls)) return child;
 		const nested = findByClass(child, cls);
 		if (nested) return nested;
 	}
@@ -83,10 +21,10 @@ function findByClass(root: any, cls: string): any | undefined {
 }
 
 describe('addCollapsibleSection', () => {
-	let container: any;
+	let container: StubEl;
 
 	beforeEach(() => {
-		container = stubEl();
+		container = createEl();
 	});
 
 	describe('structure', () => {
@@ -230,7 +168,7 @@ describe('addCollapsibleSection', () => {
 				onCollapseChange,
 			});
 
-			await (section.toggle as any)._trigger(false);
+			await (section.toggle as unknown as ToggleComponent)._trigger(false);
 
 			expect(section.isCollapsed()).toBe(true);
 			expect(onCollapseChange).toHaveBeenCalledWith(true);
@@ -248,7 +186,7 @@ describe('addCollapsibleSection', () => {
 				onCollapseChange,
 			});
 
-			await (section.toggle as any)._trigger(true);
+			await (section.toggle as unknown as ToggleComponent)._trigger(true);
 
 			expect(section.isCollapsed()).toBe(false);
 			expect(onCollapseChange).toHaveBeenCalledWith(false);
@@ -268,7 +206,7 @@ describe('addCollapsibleSection', () => {
 				},
 			});
 
-			await (section.toggle as any)._trigger(false);
+			await (section.toggle as unknown as ToggleComponent)._trigger(false);
 
 			expect(order).toEqual(['collapseChange', 'toggle:collapsed=true']);
 		});
