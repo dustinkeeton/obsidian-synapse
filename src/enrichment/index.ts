@@ -2,9 +2,9 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
-	FolderPickerModal, getMarkdownFiles, NotificationManager, parseFrontmatter,
+	getMarkdownFiles, NotificationManager, parseFrontmatter,
 	CheckpointManager, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
-	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction,
+	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
@@ -88,18 +88,9 @@ export class EnrichmentModule {
 
 		this.registrar.register('scan-vault-enrichment', this.getSettings().enrichment.enabled, {
 			callback: () => {
-				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
-				new FolderPickerModal(
-					this.plugin.app,
-					(folder) => {
-						fireAndForget(
-							this.scanVault(folder.isRoot() ? undefined : folder.path),
-							'Scan folder for enrichment',
-							{ notifications: this.notifications },
-						);
-					},
-					defaultPath
-				).open();
+				openScanFolderPicker(this.plugin.app, (path) => {
+					fireAndForget(this.scanVault(path), 'Scan folder for enrichment', { notifications: this.notifications });
+				});
 			},
 		});
 

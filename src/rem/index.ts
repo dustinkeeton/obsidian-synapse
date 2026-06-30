@@ -5,7 +5,7 @@ import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, FolderPickerModal, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction } from '../shared';
+import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction } from '../shared';
 import { MentionScanner } from './mention-scanner';
 import { SemanticMatcher } from './semantic-matcher';
 import { RemApplier } from './rem-applier';
@@ -67,15 +67,9 @@ export class RemModule {
 		// Command: scan directory
 		this.registrar.register('rem-directory', this.getSettings().rem.enabled, {
 			callback: () => {
-				new FolderPickerModal(
-					this.plugin.app,
-					(folder) => {
-						const path = folder.isRoot() ? undefined : folder.path;
-						fireAndForget(this.remScanDirectory(path), 'Discover REM links in folder', {
-							notifications: this.notifications,
-						});
-					}
-				).open();
+				openScanFolderPicker(this.plugin.app, (path) => {
+					fireAndForget(this.remScanDirectory(path), 'Discover REM links in folder', { notifications: this.notifications });
+				});
 			},
 		});
 	}
