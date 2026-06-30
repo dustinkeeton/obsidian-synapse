@@ -1010,6 +1010,31 @@
   border-color: var(--synapse-color-title);
 }
 
+/* ── Title collision (#414) ── */
+.synapse-badge--conflict {
+  background: var(--color-orange);
+  color: var(--text-on-accent);
+}
+.synapse-title-conflict {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  border-left: 3px solid var(--color-orange);
+}
+.synapse-title-conflict-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-orange);
+  margin-bottom: 4px;
+}
+.synapse-title-conflict-body {
+  display: block;
+  color: var(--text-muted);
+}
+
 /* ── Checkpoint Banner ── */
 .synapse-checkpoint-banner {
   margin-bottom: 12px;

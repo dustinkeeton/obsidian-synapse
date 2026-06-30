@@ -78,3 +78,15 @@ describe('class-name helpers (#342)', () => {
 		}
 	});
 });
+
+describe('title collision styles (#414)', () => {
+	it('defines the previously-dead conflict classes so the callout actually renders', () => {
+		// Regression guard for #414: `.synapse-title-conflict` shipped with zero
+		// rules, so the collision hint rendered as ordinary muted text. The callout
+		// box, its heading, body, and the Conflict badge modifier must all exist.
+		expect(stylesCss).toContain('.synapse-title-conflict {');
+		expect(stylesCss).toContain('.synapse-title-conflict-heading');
+		expect(stylesCss).toContain('.synapse-title-conflict-body');
+		expect(stylesCss).toContain('.synapse-badge--conflict');
+	});
+});
