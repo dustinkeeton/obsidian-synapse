@@ -28,7 +28,7 @@ describe('mobile safety — no top-level Node.js requires', () => {
 			if (nodeBuiltins.includes(id)) {
 				trapped.push(id);
 			}
-			return originalRequire(id);
+			return originalRequire(id) as unknown;
 		}) as NodeRequire;
 		// Copy properties (cache, resolve, …) from the original require.
 		Object.assign(wrappedRequire, originalRequire);

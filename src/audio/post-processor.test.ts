@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { PostProcessor } from './post-processor';
 import { AIClient } from '../shared';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
@@ -10,7 +10,7 @@ function makeSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
 }
 
 describe('PostProcessor', () => {
-	let completeSpy: ReturnType<typeof vi.spyOn>;
+	let completeSpy: MockInstance<typeof AIClient.prototype.complete>;
 
 	beforeEach(() => {
 		completeSpy = vi.spyOn(AIClient.prototype, 'complete').mockResolvedValue('processed');

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -21,9 +21,28 @@ vi.mock('./post-processor', () => ({
 import { AudioModule } from './index';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
+import type { NotificationManager, CheckpointManager } from '../shared';
+import type { AudioExtractor } from '../video';
+import type { AudioEmbed } from './types';
+import type { SynapseSettings } from '../settings';
 
-// Mock TFile's `vault` is typed `unknown`; cast for typed method signatures.
-const tfile = (p: string): any => new TFile(p);
+/** Typed shape of the hand-built plugin stub the module consumes. */
+interface MockPlugin {
+	app: {
+		vault: {
+			read: Mock<(file: unknown) => Promise<string>>;
+			modify: ReturnType<typeof vi.fn>;
+			process: Mock<(file: unknown, fn: (data: string) => string) => Promise<string>>;
+			readBinary: ReturnType<typeof vi.fn>;
+		};
+		workspace: { getActiveFile: ReturnType<typeof vi.fn> };
+	};
+}
+
+// Mock TFile's `vault` is typed `unknown`; bridge to the real obsidian TFile the
+// module's method signatures expect via a single boundary cast.
+const tfile = (p: string): ObsidianTFile => new TFile(p) as unknown as ObsidianTFile;
 
 function createMockNotifications() {
 	const handle = {
@@ -57,7 +76,7 @@ function createFakeExtractor(byteSize = 1024) {
 }
 
 describe('AudioModule.transcribeAndInsertCombined', () => {
-	let mockPlugin: any;
+	let mockPlugin: MockPlugin;
 	let notifications: ReturnType<typeof createMockNotifications>;
 	let extractor: ReturnType<typeof createFakeExtractor>;
 
@@ -73,7 +92,7 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 					modify: vi.fn().mockResolvedValue(undefined),
 					// Atomic read -> transform -> write; the callback's return
 					// value is the written content (mirrors Vault.process).
-					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+					process: vi.fn(async (file: unknown, fn: (data: string) => string) =>
 						fn(await mockPlugin.app.vault.read(file))
 					),
 					readBinary: vi.fn().mockResolvedValue(new ArrayBuffer(64)),
@@ -83,20 +102,24 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		};
 	});
 
-	function makeModule(ex: any = extractor, provider = 'whisper-api') {
+	function makeModule(
+		ex: ReturnType<typeof createFakeExtractor> | null = extractor,
+		provider = 'whisper-api',
+	) {
 		return new AudioModule(
-			mockPlugin,
-			() => ({
-				video: { ffmpegPath: 'ffmpeg' },
-				audio: { transcriptionProvider: provider },
-			}) as any,
-			notifications as any,
-			createMockCheckpointManager() as any,
-			ex
+			mockPlugin as unknown as Plugin,
+			() =>
+				({
+					video: { ffmpegPath: 'ffmpeg' },
+					audio: { transcriptionProvider: provider },
+				}) as unknown as SynapseSettings,
+			notifications as unknown as NotificationManager,
+			createMockCheckpointManager() as unknown as CheckpointManager,
+			ex as unknown as AudioExtractor | undefined
 		);
 	}
 
-	function embeds(): any[] {
+	function embeds(): AudioEmbed[] {
 		return [
 			{ fileName: 'part1.mp3', file: tfile('audio/part1.mp3'), line: 2 },
 			{ fileName: 'part2.wav', file: tfile('audio/part2.wav'), line: 4 },
@@ -148,7 +171,7 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		// Combined output cleaned up.
 		for (const p of combinedPaths) expect(fs.existsSync(p)).toBe(false);
 		// Input temp files cleaned up.
-		const inputs = extractor.concatAudio.mock.calls[0][0] as string[];
+		const inputs = extractor.concatAudio.mock.calls[0][0];
 		for (const i of inputs) expect(fs.existsSync(i)).toBe(false);
 	});
 
@@ -190,7 +213,7 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 
 	it('combines via per-file transcription when ffmpeg/extractor is unavailable', async () => {
 		const module = makeModule(null); // mobile: no ffmpeg
-		(module as any).interFileDelayMs = 0; // skip rate-limit delay in tests
+		(module as unknown as { interFileDelayMs: number }).interFileDelayMs = 0; // skip rate-limit delay in tests
 
 		await module.transcribeAndInsertCombined(tfile('notes/lecture.md'), embeds());
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 // Hoisted so the transcriber mock factory (lifted above imports) can use it.
 const fixtures = vi.hoisted(() => ({
@@ -54,7 +54,7 @@ function makeModule(autoFormatLyrics: boolean): AudioModule {
 }
 
 describe('AudioModule.transcribe lyrics reformatting (#234)', () => {
-	let completeSpy: ReturnType<typeof vi.spyOn>;
+	let completeSpy: MockInstance<typeof AIClient.prototype.complete>;
 
 	beforeEach(() => {
 		completeSpy = vi.spyOn(AIClient.prototype, 'complete').mockResolvedValue(REFORMATTED);

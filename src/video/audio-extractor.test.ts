@@ -8,7 +8,9 @@ import { DEFAULT_SETTINGS } from '../settings';
 // lazily resolves its node deps through a private `_node` field, so we inject a
 // stub execFile directly (a runtime require() of 'child_process' is not
 // intercepted by vi.mock).
-const execFileMock = vi.fn();
+const execFileMock = vi.fn<
+	(cmd: string, args: string[], opts: unknown, cb: (e: unknown, o: string, s: string) => void) => void
+>();
 
 describe('AudioExtractor.concatAudio', () => {
 	beforeEach(() => {
@@ -38,7 +40,7 @@ describe('AudioExtractor.concatAudio', () => {
 		expect(cmd).toBe('ffmpeg');
 
 		// One -i per input file, each input present.
-		expect((args as string[]).filter((a) => a === '-i')).toHaveLength(3);
+		expect(args.filter((a) => a === '-i')).toHaveLength(3);
 		expect(args).toContain('/a/one.mp3');
 		expect(args).toContain('/b/two.wav');
 		expect(args).toContain('/c/three.m4a');
@@ -48,7 +50,7 @@ describe('AudioExtractor.concatAudio', () => {
 		const ex = makeExtractor();
 		await ex.concatAudio(['/a/one.mp3', '/b/two.wav']);
 
-		const args = execFileMock.mock.calls[0][1] as string[];
+		const args = execFileMock.mock.calls[0][1];
 		const fcIdx = args.indexOf('-filter_complex');
 		expect(fcIdx).toBeGreaterThan(-1);
 		expect(args[fcIdx + 1]).toBe('[0:a][1:a]concat=n=2:v=0:a=1[out]');
@@ -67,7 +69,7 @@ describe('AudioExtractor.concatAudio', () => {
 		const ex = makeExtractor();
 		await ex.concatAudio(['/1.mp3', '/2.mp3', '/3.ogg', '/4.flac']);
 
-		const args = execFileMock.mock.calls[0][1] as string[];
+		const args = execFileMock.mock.calls[0][1];
 		const filter = args[args.indexOf('-filter_complex') + 1];
 		expect(filter).toBe('[0:a][1:a][2:a][3:a]concat=n=4:v=0:a=1[out]');
 	});
@@ -140,7 +142,7 @@ describe('AudioExtractor.runCommand error classification', () => {
 		expect((thrown as DependencyMissingError).tool).toBe('yt-dlp');
 		// A missing binary must NOT trigger the looser-format retry (only the
 		// metadata dump + the single failed extraction attempt ran).
-		expect(execFileMock.mock.calls.filter((c) => !(c[1] as string[]).includes('--dump-json')))
+		expect(execFileMock.mock.calls.filter((c) => !c[1].includes('--dump-json')))
 			.toHaveLength(1);
 	});
 
@@ -263,7 +265,7 @@ describe('AudioExtractor.extractFromUrl ffmpeg-location & fallback', () => {
 
 	function extractCalls(): unknown[][] {
 		return execFileMock.mock.calls.filter(
-			(c) => !(c[1] as string[]).includes('--dump-json')
+			(c) => !c[1].includes('--dump-json')
 		);
 	}
 

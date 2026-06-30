@@ -1,8 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ImageExtractor } from './extractor';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
+import type {
+	NotificationManager,
+	ChatMessage,
+	ContentBlock,
+	ImageContentBlock,
+	TextContentBlock,
+} from '../shared';
 
-const mockChat = vi.fn().mockResolvedValue('Extracted text from image');
+const mockChat = vi
+	.fn<(messages: ChatMessage[]) => Promise<string>>()
+	.mockResolvedValue('Extracted text from image');
 
 vi.mock('../shared/ai-client', () => ({
 	AIClient: class MockAIClient {
@@ -28,7 +37,7 @@ describe('ImageExtractor', () => {
 		mockChat.mockClear();
 		mockChat.mockResolvedValue('Extracted text from image');
 		settings = makeSettings();
-		extractor = new ImageExtractor(() => settings, { info: vi.fn() } as any);
+		extractor = new ImageExtractor(() => settings, { info: vi.fn() } as unknown as NotificationManager);
 	});
 
 	afterEach(() => {
@@ -49,14 +58,14 @@ describe('ImageExtractor', () => {
 
 		// User message should have ContentBlock[] with image and text blocks
 		expect(messages[1].role).toBe('user');
-		const content = messages[1].content;
+		const content = messages[1].content as ContentBlock[];
 		expect(Array.isArray(content)).toBe(true);
 		expect(content).toHaveLength(2);
 		expect(content[0].type).toBe('image');
-		expect(content[0].mediaType).toBe('image/png');
-		expect(typeof content[0].data).toBe('string'); // base64
+		expect((content[0] as ImageContentBlock).mediaType).toBe('image/png');
+		expect(typeof (content[0] as ImageContentBlock).data).toBe('string'); // base64
 		expect(content[1].type).toBe('text');
-		expect(content[1].text).toContain('Extract all visible text');
+		expect((content[1] as TextContentBlock).text).toContain('Extract all visible text');
 	});
 
 	it('returns OCR result with text and source name', async () => {
@@ -103,32 +112,32 @@ describe('ImageExtractor', () => {
 		const buffer = makeImageBuffer();
 		await extractor.extract(buffer, 'photo.jpeg');
 
-		const content = mockChat.mock.calls[0][0][1].content;
-		expect(content[0].mediaType).toBe('image/jpeg');
+		const content = mockChat.mock.calls[0][0][1].content as ContentBlock[];
+		expect((content[0] as ImageContentBlock).mediaType).toBe('image/jpeg');
 	});
 
 	it('maps jpg extension to correct media type', async () => {
 		const buffer = makeImageBuffer();
 		await extractor.extract(buffer, 'photo.jpg');
 
-		const content = mockChat.mock.calls[0][0][1].content;
-		expect(content[0].mediaType).toBe('image/jpeg');
+		const content = mockChat.mock.calls[0][0][1].content as ContentBlock[];
+		expect((content[0] as ImageContentBlock).mediaType).toBe('image/jpeg');
 	});
 
 	it('maps webp extension to correct media type', async () => {
 		const buffer = makeImageBuffer();
 		await extractor.extract(buffer, 'photo.webp');
 
-		const content = mockChat.mock.calls[0][0][1].content;
-		expect(content[0].mediaType).toBe('image/webp');
+		const content = mockChat.mock.calls[0][0][1].content as ContentBlock[];
+		expect((content[0] as ImageContentBlock).mediaType).toBe('image/webp');
 	});
 
 	it('defaults to image/png for unknown extensions', async () => {
 		const buffer = makeImageBuffer();
 		await extractor.extract(buffer, 'photo.xyz');
 
-		const content = mockChat.mock.calls[0][0][1].content;
-		expect(content[0].mediaType).toBe('image/png');
+		const content = mockChat.mock.calls[0][0][1].content as ContentBlock[];
+		expect((content[0] as ImageContentBlock).mediaType).toBe('image/png');
 	});
 
 	it('restores model even if chat throws', async () => {
