@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createEl, ToggleComponent, Setting } from './__mocks__/obsidian';
+import { createEl, ToggleComponent, Setting, type StubEl } from './__mocks__/obsidian';
 
 // Mock the changelog modal so this suite never resolves the real CHANGELOG.md
 // import (a build-time `.md` text import that Vitest can't transform), and so
@@ -67,8 +67,8 @@ function lastSetDisabledArg(row: Setting): boolean {
 }
 
 /** Recursively collect all anchor elements rendered into a stub element tree. */
-function findAnchors(el: any, out: any[] = []): any[] {
-	for (const child of el?.children ?? []) {
+function findAnchors(el: StubEl, out: StubEl[] = []): StubEl[] {
+	for (const child of el.children as unknown as StubEl[]) {
 		if (child.tagName === 'A') out.push(child);
 		findAnchors(child, out);
 	}
@@ -80,8 +80,8 @@ function findAnchors(el: any, out: any[] = []): any[] {
  * `textContent` is per-element (it does not aggregate descendants), so a match is
  * the element that was created with that text — not an ancestor.
  */
-function findByText(el: any, needle: string, out: any[] = []): any[] {
-	for (const child of el?.children ?? []) {
+function findByText(el: StubEl, needle: string, out: StubEl[] = []): StubEl[] {
+	for (const child of el.children as unknown as StubEl[]) {
 		if (typeof child.textContent === 'string' && child.textContent.includes(needle)) {
 			out.push(child);
 		}
@@ -198,7 +198,7 @@ describe('SynapseSettingTab — About support links (#274)', () => {
 		const { tab } = makeTab();
 		tab.display();
 
-		const containerEl = (tab as unknown as { containerEl: any }).containerEl;
+		const containerEl = (tab as unknown as { containerEl: StubEl }).containerEl;
 		const anchors = findAnchors(containerEl);
 		const byHref = new Map(
 			anchors.map((a) => [a.getAttribute('href'), a.textContent]),
@@ -222,7 +222,7 @@ describe('SynapseSettingTab — About "What\'s new" changelog link (#375)', () =
 		const { tab } = makeTab();
 		tab.display();
 
-		const containerEl = (tab as unknown as { containerEl: any }).containerEl;
+		const containerEl = (tab as unknown as { containerEl: StubEl }).containerEl;
 		const link = findAnchors(containerEl).find((a) => a.textContent === "What's new");
 		expect(link).toBeDefined();
 
@@ -236,17 +236,17 @@ describe('SynapseSettingTab — About "What\'s new" changelog link (#375)', () =
 });
 
 /** Recursively collect every element in a stub tree. */
-function walkEls(el: any, out: any[] = []): any[] {
-	for (const child of el?.children ?? []) {
+function walkEls(el: StubEl, out: StubEl[] = []): StubEl[] {
+	for (const child of el.children as unknown as StubEl[]) {
 		out.push(child);
 		walkEls(child, out);
 	}
 	return out;
 }
-function elsWithClass(root: any, cls: string): any[] {
-	return walkEls(root).filter((e) => e.classList?.contains(cls));
+function elsWithClass(root: StubEl, cls: string): StubEl[] {
+	return walkEls(root).filter((e) => e.classList.contains(cls));
 }
-function elsWithTag(root: any, tag: string): any[] {
+function elsWithTag(root: StubEl, tag: string): StubEl[] {
 	return walkEls(root).filter((e) => e.tagName === tag);
 }
 
@@ -256,11 +256,11 @@ describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
 	 * add-folder and add-pattern scope pickers. (The mocked `Setting` rows are not
 	 * appended to the container, so only these chip divs are introspectable.)
 	 */
-	function chipContainers(tab: SynapseSettingTab): any[] {
-		const containerEl = (tab as unknown as { containerEl: any }).containerEl;
+	function chipContainers(tab: SynapseSettingTab): StubEl[] {
+		const containerEl = (tab as unknown as { containerEl: StubEl }).containerEl;
 		return elsWithClass(containerEl, 'synapse-exclusion-chips');
 	}
-	const chipLabels = (container: any): string[] =>
+	const chipLabels = (container: StubEl): (string | null)[] =>
 		elsWithClass(container, 'synapse-chip-label').map((e) => e.textContent);
 
 	/**
@@ -270,14 +270,14 @@ describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
 	 * the chip div.
 	 */
 	function assertChipsNestedInSettingItem(tab: SynapseSettingTab): void {
-		const containerEl = (tab as unknown as { containerEl: any }).containerEl;
+		const containerEl = (tab as unknown as { containerEl: StubEl }).containerEl;
 		const hosts = walkEls(containerEl).filter(
 			(e) =>
-				e.classList?.contains('setting-item') &&
-				e.classList?.contains('synapse-setting--has-helper'),
+				e.classList.contains('setting-item') &&
+				e.classList.contains('synapse-setting--has-helper'),
 		);
 		for (const chip of chipContainers(tab)) {
-			const host = hosts.find((h) => h.children.includes(chip));
+			const host = hosts.find((h) => (h.children as unknown as StubEl[]).includes(chip));
 			expect(host).toBeDefined();
 		}
 	}
@@ -326,7 +326,7 @@ describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
 		const removeBtn = elsWithClass(chipContainers(tab)[0], 'synapse-chip-remove').find(
 			(b) => b.getAttribute('aria-label') === 'Remove Organize',
 		);
-		removeBtn.dispatchEvent({ type: 'click' });
+		removeBtn!.dispatchEvent({ type: 'click' });
 
 		expect(plugin.settings.exclusions[0].features).toEqual(['summarize']);
 		expect(plugin.saveSettings).toHaveBeenCalled();
@@ -466,8 +466,8 @@ describe('SynapseSettingTab — no-subscription note in AI Configuration (#364)'
 		ToggleComponent.instances.length = 0;
 	});
 
-	function subscriptionNotes(tab: SynapseSettingTab): any[] {
-		const container = (tab as unknown as { containerEl: any }).containerEl;
+	function subscriptionNotes(tab: SynapseSettingTab): StubEl[] {
+		const container = (tab as unknown as { containerEl: StubEl }).containerEl;
 		return findByText(container, 'Subscriptions');
 	}
 

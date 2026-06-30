@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createEl } from './__mocks__/obsidian';
+import { createEl, type StubEl } from './__mocks__/obsidian';
 import {
 	parseChangelog,
 	renderChangelog,
@@ -31,17 +31,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 `;
 
 /** Recursively collect every element in a stub tree. */
-function walkEls(el: any, out: any[] = []): any[] {
-	for (const child of el?.children ?? []) {
+function walkEls(el: StubEl, out: StubEl[] = []): StubEl[] {
+	for (const child of el.children as unknown as StubEl[]) {
 		out.push(child);
 		walkEls(child, out);
 	}
 	return out;
 }
-const elsWithTag = (root: any, tag: string): any[] =>
+const elsWithTag = (root: StubEl, tag: string): StubEl[] =>
 	walkEls(root).filter((e) => e.tagName === tag);
-const elsWithClass = (root: any, cls: string): any[] =>
-	walkEls(root).filter((e) => e.classList?.contains(cls));
+const elsWithClass = (root: StubEl, cls: string): StubEl[] =>
+	walkEls(root).filter((e) => e.classList.contains(cls));
 
 describe('stripInlineMarkdown', () => {
 	it('unwraps bold, code, and links to their visible text', () => {

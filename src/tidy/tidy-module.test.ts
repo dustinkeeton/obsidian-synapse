@@ -1,8 +1,45 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { TidyModule } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
+import type { Plugin, Command, TFile as ObsidianTFile } from 'obsidian';
+import type { NotificationManager } from '../shared';
+
+/** The mock TFile and obsidian's real TFile differ structurally; tests only need
+ *  the runtime instance, so cross the boundary once here. */
+const tfile = (path: string): ObsidianTFile => new TFile(path) as unknown as ObsidianTFile;
+
+/** Reach TidyModule's private undo path without widening to `any`. */
+function internals(m: TidyModule): { undoTidy(file: ObsidianTFile): Promise<void> } {
+	return m as unknown as { undoTidy(file: ObsidianTFile): Promise<void> };
+}
+
+/** Spy-backed stand-ins for the Vault/adapter/FileManager/Plugin surfaces TidyModule uses. */
+interface MockAdapter {
+	write: Mock<(path: string, data: string) => Promise<void>>;
+	exists: Mock<(path: string) => Promise<boolean>>;
+}
+interface MockVault {
+	read: Mock<(file: ObsidianTFile) => Promise<string>>;
+	modify: Mock<(file: ObsidianTFile, data: string) => Promise<void>>;
+	// Default stub returns the transformed content (string); one test overrides it
+	// to a bare order-tracking resolve — `unknown` accommodates both at the boundary.
+	process: Mock<(file: ObsidianTFile, fn: (data: string) => string) => Promise<unknown>>;
+	create: Mock<(path: string, data: string) => Promise<TFile>>;
+	createFolder: Mock<(path: string) => Promise<void>>;
+	getAbstractFileByPath: Mock<(path: string) => TFile | null>;
+	getMarkdownFiles?: Mock<() => TFile[]>;
+	adapter: MockAdapter;
+}
+interface MockFileManager {
+	trashFile: Mock<(file: ObsidianTFile) => Promise<void>>;
+}
+interface MockPlugin {
+	app: { vault: MockVault; fileManager: MockFileManager };
+	addCommand: Mock<(command: Command) => unknown>;
+	registerEvent: Mock<(ref: unknown) => void>;
+}
 
 // Mock the AI client
 vi.mock('../shared/ai-client', () => ({
@@ -37,7 +74,7 @@ function createMockNotifications() {
 
 describe('TidyModule', () => {
 	let module: TidyModule;
-	let mockPlugin: any;
+	let mockPlugin: MockPlugin;
 	let mockNotifications: ReturnType<typeof createMockNotifications>;
 	let settings: typeof DEFAULT_SETTINGS;
 
@@ -49,12 +86,12 @@ describe('TidyModule', () => {
 			exists: vi.fn().mockResolvedValue(true),
 		};
 
-		const vault: any = {
+		const vault: MockVault = {
 			read: vi.fn().mockResolvedValue('# Test\n\nSome contnt with typos.'),
 			modify: vi.fn().mockResolvedValue(undefined),
 			// Atomic read -> transform -> write; the callback's return value is
 			// the written content (mirrors Obsidian's Vault.process).
-			process: vi.fn(async (file: any, fn: (data: string) => string) =>
+			process: vi.fn(async (file: ObsidianTFile, fn: (data: string) => string) =>
 				fn(await vault.read(file))
 			),
 			create: vi.fn().mockResolvedValue(new TFile()),
@@ -65,7 +102,7 @@ describe('TidyModule', () => {
 
 		// Snapshot cleanup goes through FileManager.trashFile (recoverable),
 		// not vault.delete (permanent).
-		const fileManager: any = {
+		const fileManager: MockFileManager = {
 			trashFile: vi.fn().mockResolvedValue(undefined),
 		};
 
@@ -77,10 +114,10 @@ describe('TidyModule', () => {
 
 		mockNotifications = createMockNotifications();
 		module = new TidyModule(
-			mockPlugin as any,
+			mockPlugin as unknown as Plugin,
 			() => settings,
-			mockNotifications as any,
-			new CommandRegistrar(mockPlugin as any)
+			mockNotifications as unknown as NotificationManager,
+			new CommandRegistrar(mockPlugin)
 		);
 	});
 
@@ -91,7 +128,7 @@ describe('TidyModule', () => {
 			// `undo-tidy` ships as `status: 'disabled'` in COMMAND_REGISTRY, so
 			// the registrar gates it out — only the active tidy command registers.
 			expect(mockPlugin.addCommand).toHaveBeenCalledTimes(1);
-			const commands = mockPlugin.addCommand.mock.calls.map((c: any) => c[0].id);
+			const commands = mockPlugin.addCommand.mock.calls.map((c) => c[0].id);
 			expect(commands).toContain('tidy-current-note');
 			expect(commands).not.toContain('undo-tidy');
 		});
@@ -99,7 +136,7 @@ describe('TidyModule', () => {
 
 	describe('tidy', () => {
 		it('reads note, calls AI, and writes tidied content', async () => {
-			const file = new TFile('notes/test.md') as any;
+			const file = tfile('notes/test.md');
 			await module.tidy(file);
 
 			expect(mockPlugin.app.vault.process).toHaveBeenCalledWith(
@@ -111,7 +148,7 @@ describe('TidyModule', () => {
 		});
 
 		it('saves a snapshot before modifying', async () => {
-			const file = new TFile('notes/test.md') as any;
+			const file = tfile('notes/test.md');
 			const writeOrder: string[] = [];
 
 			mockPlugin.app.vault.adapter.write.mockImplementation(() => {
@@ -133,7 +170,7 @@ describe('TidyModule', () => {
 			const body = 'Some contnt.';
 			mockPlugin.app.vault.read.mockResolvedValue(frontmatter + body);
 
-			const file = new TFile('notes/test.md') as any;
+			const file = tfile('notes/test.md');
 			await module.tidy(file);
 
 			const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
@@ -144,7 +181,7 @@ describe('TidyModule', () => {
 		it('finishes early for empty notes', async () => {
 			mockPlugin.app.vault.read.mockResolvedValue('---\ntitle: Empty\n---\n');
 
-			const file = new TFile('notes/empty.md') as any;
+			const file = tfile('notes/empty.md');
 			await module.tidy(file);
 
 			expect(mockNotifications._handle.finish).toHaveBeenCalledWith(
@@ -155,11 +192,11 @@ describe('TidyModule', () => {
 
 		it('strips code fences from AI response', async () => {
 			// Access the AIClient instance through the module internals
-			const file = new TFile('notes/test.md') as any;
+			const file = tfile('notes/test.md');
 
 			// Override the AI response for this test via withRetry mock
 			const { withRetry } = await import('../shared/api-utils');
-			(withRetry as any).mockImplementationOnce(() =>
+			vi.mocked(withRetry).mockImplementationOnce(() =>
 				Promise.resolve('```markdown\n# Clean content\n\nFixed text.\n```')
 			);
 
@@ -171,10 +208,10 @@ describe('TidyModule', () => {
 		});
 
 		it('reports error on AI failure', async () => {
-			const file = new TFile('notes/test.md') as any;
+			const file = tfile('notes/test.md');
 
 			const { withRetry } = await import('../shared/api-utils');
-			(withRetry as any).mockImplementationOnce(() =>
+			vi.mocked(withRetry).mockImplementationOnce(() =>
 				Promise.reject(new Error('API error (500): Internal server error'))
 			);
 
@@ -186,7 +223,7 @@ describe('TidyModule', () => {
 		});
 
 		it('shows progress updates during operation', async () => {
-			const file = new TFile('notes/test.md') as any;
+			const file = tfile('notes/test.md');
 			await module.tidy(file);
 
 			expect(mockNotifications.startOperation).toHaveBeenCalledWith(
@@ -208,11 +245,11 @@ describe('TidyModule', () => {
 			mockPlugin.app.vault.getMarkdownFiles = vi.fn().mockReturnValue([a, b, c]);
 
 			const tidied: string[] = [];
-			vi.spyOn(module, 'tidy').mockImplementation(async (f: any) => {
+			vi.spyOn(module, 'tidy').mockImplementation(async (f: ObsidianTFile) => {
 				tidied.push(f.path);
 			});
 
-			const count = await module.scanVault('Inbox', true, b as any);
+			const count = await module.scanVault('Inbox', true, b as unknown as ObsidianTFile);
 
 			expect(count).toBe(1);
 			expect(tidied).toEqual(['Inbox/b.md']);
@@ -224,7 +261,7 @@ describe('TidyModule', () => {
 			mockPlugin.app.vault.getMarkdownFiles = vi.fn().mockReturnValue([a, b]);
 
 			const tidied: string[] = [];
-			vi.spyOn(module, 'tidy').mockImplementation(async (f: any) => {
+			vi.spyOn(module, 'tidy').mockImplementation(async (f: ObsidianTFile) => {
 				tidied.push(f.path);
 			});
 
@@ -237,7 +274,7 @@ describe('TidyModule', () => {
 
 	describe('undoTidy', () => {
 		it('restores original content from snapshot', async () => {
-			const file = new TFile('notes/test.md') as any;
+			const file = tfile('notes/test.md');
 			const snapshot = {
 				id: 'snap-1',
 				filePath: 'notes/test.md',
@@ -253,7 +290,7 @@ describe('TidyModule', () => {
 			// undo-tidy is gated off as a palette command (registry master switch), so
 			// invoke the still-present undo logic directly.
 			await module.onload();
-			await (module as any).undoTidy(file);
+			await internals(module).undoTidy(file);
 
 			expect(mockPlugin.app.vault.process).toHaveBeenCalledWith(
 				file,
@@ -265,11 +302,11 @@ describe('TidyModule', () => {
 		});
 
 		it('informs user when no snapshot exists', async () => {
-			const file = new TFile('notes/test.md') as any;
+			const file = tfile('notes/test.md');
 			mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(null);
 
 			await module.onload();
-			await (module as any).undoTidy(file);
+			await internals(module).undoTidy(file);
 
 			expect(mockNotifications.info).toHaveBeenCalledWith(
 				'No tidy to undo for this note'
@@ -278,7 +315,7 @@ describe('TidyModule', () => {
 		});
 
 		it('removes snapshot after undo', async () => {
-			const file = new TFile('notes/test.md') as any;
+			const file = tfile('notes/test.md');
 			const snapshot = {
 				id: 'snap-1',
 				filePath: 'notes/test.md',
@@ -291,7 +328,7 @@ describe('TidyModule', () => {
 			mockPlugin.app.vault.read.mockResolvedValue(JSON.stringify(snapshot));
 
 			await module.onload();
-			await (module as any).undoTidy(file);
+			await internals(module).undoTidy(file);
 
 			expect(mockPlugin.app.fileManager.trashFile).toHaveBeenCalled();
 		});

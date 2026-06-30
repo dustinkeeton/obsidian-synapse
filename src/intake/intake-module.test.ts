@@ -2,6 +2,26 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { IntakeModule } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile, TFolder } from '../__mocks__/obsidian';
+import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
+import type { NotificationManager } from '../shared';
+
+/** Spy-backed stand-ins for the in-memory vault/fileManager/Plugin surfaces. */
+interface MockVault {
+	on: Mock<(event: string, cb: (file: ObsidianTFile) => void) => { event: string }>;
+	read: Mock<(file: ObsidianTFile) => Promise<string>>;
+	modify: Mock<(file: ObsidianTFile, content: string) => Promise<void>>;
+	process: Mock<(file: ObsidianTFile, fn: (data: string) => string) => Promise<string>>;
+	create: Mock<(path: string, content: string) => Promise<ObsidianTFile>>;
+	createFolder: Mock<(path: string) => Promise<void>>;
+	getAbstractFileByPath: Mock<(path: string) => ObsidianTFile | null>;
+}
+interface MockFileManager {
+	renameFile: Mock<(file: ObsidianTFile, newPath: string) => Promise<void>>;
+}
+interface MockPlugin {
+	app: { vault: MockVault; fileManager: MockFileManager };
+	registerEvent: Mock<(ref: unknown) => void>;
+}
 
 // Mock only the article fetcher from shared; everything else (parseFrontmatter,
 // serializeFrontmatter, ensureFolder, classifyUrl, extractUrls) uses the real
@@ -41,31 +61,31 @@ function createMockNotifications() {
  * Build a TFile whose `.parent` is a real TFolder, mirroring how Obsidian
  * populates events. extension/name/basename are derived by the mock TFile ctor.
  */
-function makeFile(path: string): TFile {
+function makeFile(path: string): ObsidianTFile {
 	const file = new TFile(path);
 	const slash = path.lastIndexOf('/');
 	if (slash >= 0) {
 		file.parent = new TFolder(path.slice(0, slash));
 	}
-	return file;
+	return file as unknown as ObsidianTFile;
 }
 
 describe('IntakeModule', () => {
 	let module: IntakeModule;
-	let plugin: any;
+	let plugin: MockPlugin;
 	let notifications: ReturnType<typeof createMockNotifications>;
 	let settings: SynapseSettings;
 	let deps: {
 		// Typed with their real Promise-returning signatures (mirroring IntakeDeps)
 		// so `mockImplementation` accepts async bodies — an untyped `vi.fn()` infers
 		// a `void` return, which trips `@typescript-eslint/no-misused-promises`.
-		fireOnFile: Mock<(file: any) => Promise<void>>;
+		fireOnFile: Mock<(file: ObsidianTFile) => Promise<void>>;
 		transcribeUrlToNote: Mock<
-			(url: string, mediaType: 'video' | 'audio', file: any) => Promise<void>
+			(url: string, mediaType: 'video' | 'audio', file: ObsidianTFile) => Promise<void>
 		>;
 	};
 	/** Captured vault event handlers, keyed by event name. */
-	let handlers: Record<string, (file: any) => void>;
+	let handlers: Record<string, (file: ObsidianTFile) => void>;
 	/** In-memory file content, keyed by path. */
 	let store: Map<string, string>;
 
@@ -87,18 +107,18 @@ describe('IntakeModule', () => {
 		handlers = {};
 		store = new Map();
 
-		const vault = {
-			on: vi.fn((event: string, cb: (file: any) => void) => {
+		const vault: MockVault = {
+			on: vi.fn((event: string, cb: (file: ObsidianTFile) => void) => {
 				handlers[event] = cb;
 				return { event };
 			}),
-			read: vi.fn(async (file: any) => store.get(file.path) ?? ''),
-			modify: vi.fn(async (file: any, content: string) => {
+			read: vi.fn(async (file: ObsidianTFile) => store.get(file.path) ?? ''),
+			modify: vi.fn(async (file: ObsidianTFile, content: string) => {
 				store.set(file.path, content);
 			}),
 			// Atomic read -> transform -> write against the in-memory store
 			// (mirrors Obsidian's Vault.process).
-			process: vi.fn(async (file: any, fn: (data: string) => string) => {
+			process: vi.fn(async (file: ObsidianTFile, fn: (data: string) => string) => {
 				const result = fn(store.get(file.path) ?? '');
 				store.set(file.path, result);
 				return result;
@@ -114,8 +134,8 @@ describe('IntakeModule', () => {
 			}),
 		};
 
-		const fileManager = {
-			renameFile: vi.fn(async (file: any, newPath: string) => {
+		const fileManager: MockFileManager = {
+			renameFile: vi.fn(async (file: ObsidianTFile, newPath: string) => {
 				const content = store.get(file.path);
 				store.delete(file.path);
 				if (content !== undefined) store.set(newPath, content);
@@ -134,9 +154,14 @@ describe('IntakeModule', () => {
 			transcribeUrlToNote: vi.fn().mockResolvedValue(undefined),
 		};
 
-		module = new IntakeModule(plugin, () => settings, notifications as any, deps as any);
-		(fetchArticleContent as any).mockClear();
-		(fetchArticleContent as any).mockResolvedValue('FETCHED ARTICLE BODY');
+		module = new IntakeModule(
+			plugin as unknown as Plugin,
+			() => settings,
+			notifications as unknown as NotificationManager,
+			deps,
+		);
+		vi.mocked(fetchArticleContent).mockClear();
+		vi.mocked(fetchArticleContent).mockResolvedValue('FETCHED ARTICLE BODY');
 	});
 
 	afterEach(() => {
@@ -165,7 +190,7 @@ describe('IntakeModule', () => {
 	 * place (low confidence → proposal / no-op) — content/path are untouched.
 	 */
 	function organizeMovesTo(newPath: string | null) {
-		deps.fireOnFile.mockImplementation(async (file: any) => {
+		deps.fireOnFile.mockImplementation(async (file: ObsidianTFile) => {
 			if (newPath === null || newPath === file.path) return;
 			const content = store.get(file.path);
 			store.delete(file.path);
@@ -339,7 +364,7 @@ describe('IntakeModule', () => {
 		it('falls back to a sane window when settleSeconds is invalid', async () => {
 			// A malformed setting (0 / NaN / undefined) must not disable the
 			// watcher — it falls back to DEBOUNCE_MS (5000ms).
-			(settings.intake as any).settleSeconds = 0;
+			settings.intake.settleSeconds = 0;
 			const path = 'Inbox/fallback.md';
 			store.set(path, 'hello prose');
 			handlers['create'](makeFile(path));
@@ -473,13 +498,13 @@ describe('IntakeModule', () => {
 			settings.intake.moveWhenDone = 'Processed';
 			const order: string[] = [];
 
-			plugin.app.vault.process.mockImplementation(async (file: any, fn: (data: string) => string) => {
+			plugin.app.vault.process.mockImplementation(async (file: ObsidianTFile, fn: (data: string) => string) => {
 				const content = fn(store.get(file.path) ?? '');
 				if (content.includes('synapse-processed: true')) order.push('stamp');
 				store.set(file.path, content);
 				return content;
 			});
-			plugin.app.fileManager.renameFile.mockImplementation(async (file: any, newPath: string) => {
+			plugin.app.fileManager.renameFile.mockImplementation(async (file: ObsidianTFile, newPath: string) => {
 				order.push('move');
 				const content = store.get(file.path);
 				store.delete(file.path);

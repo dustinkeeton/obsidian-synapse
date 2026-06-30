@@ -1,7 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { TitleModule } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile, TFolder } from '../__mocks__/obsidian';
+import type { NoticeAction } from '../shared';
+
+/** Spy-backed stand-in for the NotificationManager surface the module calls. */
+interface MockNotifications {
+	info: Mock<(message: string, duration?: number, action?: NoticeAction) => void>;
+	success: Mock<(message: string, duration?: number, action?: NoticeAction) => void>;
+	notifyError: Mock<(context: string, error: unknown) => void>;
+}
 
 // Stub the title suggester so checkUntitled produces a deterministic proposal
 // without any AI/network call.
@@ -54,7 +62,7 @@ describe('TitleModule Review toast action (#340)', () => {
 	let adapter: ReturnType<typeof createMemoryAdapter>;
 	let mockPlugin: { app: { vault: Record<string, unknown>; metadataCache: Record<string, unknown> } };
 	let settings: SynapseSettings;
-	let notifications: { info: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn>; notifyError: ReturnType<typeof vi.fn> };
+	let notifications: MockNotifications;
 	let untitledFile: TFile;
 
 	beforeEach(() => {
@@ -107,7 +115,7 @@ describe('TitleModule Review toast action (#340)', () => {
 			expect.objectContaining({ label: 'Review' })
 		);
 		// The action opens the unified proposal view.
-		notifications.success.mock.calls[0][2].onClick();
+		notifications.success.mock.calls[0][2]!.onClick();
 		expect(openSpy).toHaveBeenCalledTimes(1);
 
 		// Nothing was renamed (proposal left pending for review).

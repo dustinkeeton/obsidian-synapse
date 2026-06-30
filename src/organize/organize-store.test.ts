@@ -1,7 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { OrganizeStore } from './organize-store';
 import { OrganizeProposal, OrganizeSnapshot } from './types';
 import { DEFAULT_SETTINGS } from '../settings';
+import type { App } from 'obsidian';
+
+/** Spy-backed stand-in for the Vault adapter surface the store reads/writes through. */
+interface MockAdapter {
+	read: Mock<(path: string) => Promise<string>>;
+	write: Mock<(path: string, data: string) => Promise<void>>;
+	exists: Mock<(path: string) => Promise<boolean>>;
+	remove: Mock<(path: string) => Promise<void>>;
+	list: Mock<(path: string) => Promise<{ files: string[]; folders: string[] }>>;
+}
 
 function makeProposal(overrides: Partial<OrganizeProposal> = {}): OrganizeProposal {
 	return {
@@ -27,7 +37,7 @@ function makeSnapshot(overrides: Partial<OrganizeSnapshot> = {}): OrganizeSnapsh
 
 describe('OrganizeStore', () => {
 	let store: OrganizeStore;
-	let mockAdapter: any;
+	let mockAdapter: MockAdapter;
 
 	beforeEach(() => {
 		mockAdapter = {
@@ -44,7 +54,7 @@ describe('OrganizeStore', () => {
 				createFolder: vi.fn().mockResolvedValue(undefined),
 				getAbstractFileByPath: vi.fn().mockReturnValue(null),
 			},
-		} as any;
+		} as unknown as App;
 
 		const getSettings = () => structuredClone(DEFAULT_SETTINGS);
 		store = new OrganizeStore(app, getSettings);
@@ -110,7 +120,7 @@ describe('OrganizeStore', () => {
 			await store.updateProposalStatus('update-me', 'accepted');
 
 			expect(mockAdapter.write).toHaveBeenCalled();
-			const written = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+			const written = JSON.parse(mockAdapter.write.mock.calls[0][1]) as OrganizeProposal;
 			expect(written.status).toBe('accepted');
 		});
 

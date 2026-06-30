@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ContentAnalyzer } from './content-analyzer';
 import { createMockApp } from '../__test-utils__/mock-factories';
 import { DEFAULT_SETTINGS } from '../settings';
+import type { App } from 'obsidian';
 
 const mockComplete = vi.fn().mockResolvedValue('[{"label": "test", "confidence": 0.5}]');
 
@@ -18,7 +19,7 @@ vi.mock('../shared/ai-client', () => ({
  */
 describe('ContentAnalyzer', () => {
 	function makeAnalyzer() {
-		const app = createMockApp() as any;
+		const app = createMockApp() as unknown as App;
 		const getSettings = () => structuredClone(DEFAULT_SETTINGS);
 		return new ContentAnalyzer(app, getSettings);
 	}

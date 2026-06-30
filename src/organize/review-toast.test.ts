@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockApp, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
-import type { OrganizeProposal } from './types';
+import type { NoticeAction } from '../shared';
 
 // Analyzer finds a topic; matcher proposes a NEW directory — the only path that
 // creates an organize proposal (a reviewable item).
@@ -34,7 +34,13 @@ vi.mock('./directory-matcher', () => ({
 }));
 
 function makeOp(cancelled = false) {
-	return { progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled };
+	return {
+		progress: vi.fn<(current: number, total: number, label?: string) => void>(),
+		update: vi.fn<(message: string) => void>(),
+		finish: vi.fn<(message?: string, action?: NoticeAction) => void>(),
+		error: vi.fn<(message: string) => void>(),
+		cancelled,
+	};
 }
 
 describe('OrganizeModule Review toast action (#340)', () => {
@@ -94,7 +100,7 @@ describe('OrganizeModule Review toast action (#340)', () => {
 					reasoning: 'Note is about machine learning',
 					createdAt: '2026-06-11T00:00:00.000Z',
 					status: 'pending',
-				}) as OrganizeProposal
+				})
 		);
 	});
 
@@ -126,7 +132,7 @@ describe('OrganizeModule Review toast action (#340)', () => {
 			expect.objectContaining({ label: 'Review' })
 		);
 		// The action opens the unified proposal view.
-		genOp.finish.mock.calls.at(-1)![1].onClick();
+		genOp.finish.mock.calls.at(-1)![1]!.onClick();
 		expect(openSpy).toHaveBeenCalledTimes(1);
 	});
 
@@ -160,7 +166,7 @@ describe('OrganizeModule Review toast action (#340)', () => {
 			'Proposal created for new directory',
 			expect.objectContaining({ label: 'Review' })
 		);
-		scanOp.finish.mock.calls.at(-1)![1].onClick();
+		scanOp.finish.mock.calls.at(-1)![1]!.onClick();
 		expect(openSpy).toHaveBeenCalledTimes(1);
 		// Nothing moved — the proposal is left pending for review.
 		expect((app.vault as unknown as { rename: ReturnType<typeof vi.fn> }).rename).not.toHaveBeenCalled();
