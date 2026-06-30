@@ -2,9 +2,9 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
-	FolderPickerModal, getMarkdownFiles, NotificationManager, buildCallout,
+	getMarkdownFiles, NotificationManager, buildCallout,
 	CALLOUT_TYPES, CheckpointManager, generateId, fireAndForget,
-	isPathExcluded, matchesExcludeTag, detectSchemaFor,
+	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { OperationHandle } from '../shared';
@@ -144,18 +144,9 @@ export class SummarizeModule {
 
 		this.registrar.register('scan-vault-summarize', this.getSettings().summarize.enabled, {
 			callback: () => {
-				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
-				new FolderPickerModal(
-					this.plugin.app,
-					(folder) => {
-						fireAndForget(
-							this.scanVault(folder.isRoot() ? undefined : folder.path),
-							'Scan folder for notes to summarize',
-							{ notifications: this.notifications },
-						);
-					},
-					defaultPath
-				).open();
+				openScanFolderPicker(this.plugin.app, (path) => {
+					fireAndForget(this.scanVault(path), 'Scan folder for notes to summarize', { notifications: this.notifications });
+				});
 			},
 		});
 	}

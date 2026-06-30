@@ -17,7 +17,7 @@ import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID } f
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
-import { FolderPickerModal, NotificationManager, CheckpointManager, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION } from './shared';
+import { openScanFolderPicker, NotificationManager, CheckpointManager, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION } from './shared';
 import type { DeferredTask } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
@@ -423,18 +423,9 @@ export default class SynapsePlugin extends Plugin {
 
 		registrar.register('fire', true, {
 			callback: () => {
-				const defaultPath = this.app.workspace.getActiveFile()?.parent?.path || '';
-				new FolderPickerModal(
-					this.app,
-					(folder) => {
-						fireAndForget(
-							synapseRunner.fire(folder.isRoot() ? undefined : folder.path),
-							'Run all features on a folder',
-							{ notifications: this.notifications },
-						);
-					},
-					defaultPath,
-				).open();
+				openScanFolderPicker(this.app, (path) => {
+					fireAndForget(synapseRunner.fire(path), 'Run all features on a folder', { notifications: this.notifications });
+				});
 			},
 		});
 

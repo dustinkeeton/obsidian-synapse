@@ -2,9 +2,9 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar, isInFlow } from '../commands';
 import {
-	buildCallout, CALLOUT_TYPES, FolderPickerModal, getMarkdownFiles,
+	buildCallout, CALLOUT_TYPES, getMarkdownFiles,
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager, generateId,
-	fireAndForget, reviewAction,
+	fireAndForget, reviewAction, openScanFolderPicker,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { PlaceholderDetector } from './detector';
@@ -56,18 +56,9 @@ export class ElaborationModule {
 
 		this.registrar.register('scan-vault', this.getSettings().elaboration.enabled, {
 			callback: () => {
-				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
-				new FolderPickerModal(
-					this.plugin.app,
-					(folder) => {
-						fireAndForget(
-							this.scanVault(folder.isRoot() ? undefined : folder.path),
-							'Scan folder for stub notes',
-							{ notifications: this.notifications },
-						);
-					},
-					defaultPath
-				).open();
+				openScanFolderPicker(this.plugin.app, (path) => {
+					fireAndForget(this.scanVault(path), 'Scan folder for stub notes', { notifications: this.notifications });
+				});
 			},
 		});
 

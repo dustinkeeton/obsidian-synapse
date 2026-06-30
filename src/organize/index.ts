@@ -2,9 +2,9 @@ import { Plugin, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
-	FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder,
+	getMarkdownFiles, NotificationManager, ensureFolder,
 	writeNote, generateOrganizeSummary, CheckpointManager, generateId, fireAndForget,
-	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction,
+	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import type { MoveRecord } from '../shared';
@@ -71,18 +71,9 @@ export class OrganizeModule {
 
 		this.registrar.register('scan-directory-organize', this.getSettings().organize.enabled, {
 			callback: () => {
-				const defaultPath = this.plugin.app.workspace.getActiveFile()?.parent?.path || '';
-				new FolderPickerModal(
-					this.plugin.app,
-					(folder) => {
-						fireAndForget(
-							this.scanDirectory(folder.isRoot() ? undefined : folder.path),
-							'Scan folder for organization',
-							{ notifications: this.notifications },
-						);
-					},
-					defaultPath
-				).open();
+				openScanFolderPicker(this.plugin.app, (path) => {
+					fireAndForget(this.scanDirectory(path), 'Scan folder for organization', { notifications: this.notifications });
+				});
 			},
 		});
 
