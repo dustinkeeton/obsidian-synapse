@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager } from '../shared';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import type { EnrichmentProposal, AcceptedItems } from './types';
 
 // Deterministic enrichment result: one tag, one internal link, one frontmatter key.
 vi.mock('./vault-analyzer', () => ({
@@ -57,7 +58,9 @@ vi.mock('./prompt-builder', () => ({
 }));
 
 // The applier is the side effect we assert on for auto-accept.
-const applySpy = vi.fn().mockResolvedValue(undefined);
+const applySpy = vi
+	.fn<(proposal: EnrichmentProposal, accepted: AcceptedItems) => Promise<void>>()
+	.mockResolvedValue(undefined);
 vi.mock('./enrichment-applier', () => ({
 	EnrichmentApplier: class MockEnrichmentApplier {
 		constructor(_app: unknown, _getSettings: unknown) {}

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock, type MockInstance } from 'vitest';
 import { RemModule } from './index';
 import { RemStore } from './rem-store';
 import { MentionScanner } from './mention-scanner';
@@ -6,11 +6,14 @@ import { SemanticMatcher } from './semantic-matcher';
 import { RemProposal, RemLinkCandidate } from './types';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
-import type { Plugin } from 'obsidian';
+import type { Plugin, TFile } from 'obsidian';
+import type { CheckpointManager, NotificationManager, NoticeAction, Checkpoint } from '../shared';
+import type { CommandRegistrar } from '../commands';
 
-// Mock TFile vs the real obsidian TFile type differ structurally; tests only
-// need the runtime instance, so widen to `any` at the boundary.
-const mockFile = (path: string): any => rawFile(path);
+// The mock TFile (from __test-utils__) and obsidian's real TFile differ
+// structurally; tests only need the runtime instance, so cross the boundary
+// once here with a typed cast.
+const mockFile = (path: string): TFile => rawFile(path) as unknown as TFile;
 
 function makeSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
 	const s = structuredClone(DEFAULT_SETTINGS);
@@ -19,7 +22,25 @@ function makeSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
 }
 
 function makeOp(cancelled = false) {
-	return { progress: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled };
+	return {
+		progress: vi.fn<(current: number, total: number, label?: string) => void>(),
+		finish: vi.fn<(message?: string, action?: NoticeAction) => void>(),
+		error: vi.fn<(message: string) => void>(),
+		cancelled,
+	};
+}
+
+/** Spy-backed stand-in for the NotificationManager surface the module calls. */
+interface MockNotifications {
+	info: Mock<(message: string, duration?: number, action?: NoticeAction) => void>;
+	success: Mock<(message: string, duration?: number, action?: NoticeAction) => void>;
+	notifyError: Mock<(context: string, error: unknown) => void>;
+	startOperation: Mock<(label: string, id?: string) => ReturnType<typeof makeOp>>;
+}
+
+/** Spy-backed stand-in for the CommandRegistrar the module registers against. */
+interface MockRegistrar {
+	register: Mock<(id: string, userEnabled: boolean, spec: unknown) => void>;
 }
 
 function candidate(matchedText: string, line = 0): RemLinkCandidate {
@@ -36,23 +57,23 @@ function candidate(matchedText: string, line = 0): RemLinkCandidate {
 describe('RemModule', () => {
 	let app: ReturnType<typeof createMockApp>;
 	let plugin: Plugin;
-	let notifications: any;
+	let notifications: MockNotifications;
 	let checkpointManager: ReturnType<typeof createMockCheckpointManager>;
-	let registrar: any;
+	let registrar: MockRegistrar;
 	let settings: SynapseSettings;
 
 	// Collaborator spies
-	let initSpy: ReturnType<typeof vi.spyOn>;
-	let saveSpy: ReturnType<typeof vi.spyOn>;
-	let loadSpy: ReturnType<typeof vi.spyOn>;
-	let updateStatusSpy: ReturnType<typeof vi.spyOn>;
-	let scanSpy: ReturnType<typeof vi.spyOn>;
-	let matchSpy: ReturnType<typeof vi.spyOn>;
-	let loadPendingSpy: ReturnType<typeof vi.spyOn>;
+	let initSpy: MockInstance<typeof RemStore.prototype.init>;
+	let saveSpy: MockInstance<typeof RemStore.prototype.save>;
+	let loadSpy: MockInstance<typeof RemStore.prototype.load>;
+	let updateStatusSpy: MockInstance<typeof RemStore.prototype.updateStatus>;
+	let scanSpy: MockInstance<typeof MentionScanner.prototype.scan>;
+	let matchSpy: MockInstance<typeof SemanticMatcher.prototype.match>;
+	let loadPendingSpy: MockInstance<typeof RemStore.prototype.loadPending>;
 
 	beforeEach(() => {
 		app = createMockApp();
-		(app.metadataCache as any).getFileCache = vi.fn().mockReturnValue(null);
+		app.metadataCache.getFileCache = vi.fn().mockReturnValue(null);
 		plugin = { app } as unknown as Plugin;
 		settings = makeSettings();
 		notifications = {
@@ -79,9 +100,9 @@ describe('RemModule', () => {
 		const module = new RemModule(
 			plugin,
 			() => settings,
-			notifications,
-			checkpointManager as any,
-			registrar,
+			notifications as unknown as NotificationManager,
+			checkpointManager as unknown as CheckpointManager,
+			registrar as unknown as CommandRegistrar,
 			shouldAutoAccept
 		);
 		await module.onload();
@@ -92,7 +113,7 @@ describe('RemModule', () => {
 		it('initializes the store and registers both REM commands', async () => {
 			await loadedModule();
 			expect(initSpy).toHaveBeenCalled();
-			const ids = registrar.register.mock.calls.map((c: any[]) => c[0]);
+			const ids = registrar.register.mock.calls.map((c) => c[0]);
 			expect(ids).toContain('rem-current-note');
 			expect(ids).toContain('rem-directory');
 		});
@@ -299,7 +320,7 @@ describe('RemModule', () => {
 			);
 			// The action opens the unified proposal view.
 			const action = notifications.success.mock.calls[0][2];
-			action.onClick();
+			action!.onClick();
 			expect(openSpy).toHaveBeenCalledTimes(1);
 		});
 
@@ -319,7 +340,7 @@ describe('RemModule', () => {
 				expect.stringContaining('REM scan complete'),
 				expect.objectContaining({ label: 'Review' })
 			);
-			op.finish.mock.calls.at(-1)![1].onClick();
+			op.finish.mock.calls.at(-1)![1]!.onClick();
 			expect(openSpy).toHaveBeenCalledTimes(1);
 		});
 
@@ -441,7 +462,7 @@ describe('RemModule', () => {
 	});
 
 	describe('resumeFromCheckpoint', () => {
-		const checkpointWith = (filePaths: string[]): any => ({
+		const checkpointWith = (filePaths: string[]): Checkpoint => ({
 			id: 'cp1',
 			module: 'rem',
 			operationLabel: 'REM scan',
@@ -483,7 +504,7 @@ describe('RemModule', () => {
 
 	describe('getPendingProposals', () => {
 		it('delegates to the store', async () => {
-			const pending = [{ id: 'p1' }] as any;
+			const pending = [{ id: 'p1' }] as unknown as RemProposal[];
 			loadPendingSpy.mockResolvedValue(pending);
 			const module = await loadedModule();
 
@@ -495,7 +516,7 @@ describe('RemModule', () => {
 		it('excludes a note carrying an excluded frontmatter tag', async () => {
 			settings.enrichment.excludeTags = ['#private'];
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/Secret.md'));
-			(app.metadataCache as any).getFileCache.mockReturnValue({
+			app.metadataCache.getFileCache.mockReturnValue({
 				frontmatter: { tags: ['private'] },
 			});
 			const module = await loadedModule();

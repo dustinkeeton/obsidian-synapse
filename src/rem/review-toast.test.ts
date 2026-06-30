@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { RemModule } from './index';
 import { RemStore } from './rem-store';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockApp, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
+import type { NoticeAction } from '../shared';
 import type { RemLinkCandidate } from './types';
 
 function candidate(): RemLinkCandidate {
@@ -24,7 +25,7 @@ describe('RemModule Review toast action (#366)', () => {
 	let settings: SynapseSettings;
 	let notifications: {
 		info: ReturnType<typeof vi.fn>;
-		success: ReturnType<typeof vi.fn>;
+		success: Mock<(message: string, duration?: number, action?: NoticeAction) => void>;
 		notifyError: ReturnType<typeof vi.fn>;
 		startOperation: ReturnType<typeof vi.fn>;
 	};
@@ -86,7 +87,7 @@ describe('RemModule Review toast action (#366)', () => {
 			undefined,
 			expect.objectContaining({ label: 'Review' })
 		);
-		notifications.success.mock.calls.at(-1)![2].onClick();
+		notifications.success.mock.calls.at(-1)![2]!.onClick();
 		expect(openSpy).toHaveBeenCalledTimes(1);
 	});
 

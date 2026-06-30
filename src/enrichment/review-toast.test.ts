@@ -5,10 +5,17 @@ import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockApp, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
+import type { NoticeAction } from '../shared';
 import type { EnrichmentProposal } from './types';
 
 function makeOp(cancelled = false) {
-	return { progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled };
+	return {
+		progress: vi.fn(),
+		update: vi.fn(),
+		finish: vi.fn<(message?: string, action?: NoticeAction) => void>(),
+		error: vi.fn(),
+		cancelled,
+	};
 }
 
 /** A pending proposal with an empty-but-valid result, for the auto-accept path. */
@@ -89,7 +96,7 @@ describe('EnrichmentModule Review toast action (#366)', () => {
 			'Enrichment proposal created',
 			expect.objectContaining({ label: 'Review' })
 		);
-		op.finish.mock.calls.at(-1)![1].onClick();
+		op.finish.mock.calls.at(-1)![1]!.onClick();
 		expect(openSpy).toHaveBeenCalledTimes(1);
 	});
 

@@ -3,10 +3,13 @@ import { LinkResolver } from './link-resolver';
 import { InternalLinkCandidate } from './types';
 import { DEFAULT_SETTINGS } from '../settings';
 import { mockFile as rawFile } from '../__test-utils__/mock-factories';
+import type { App, TFile } from 'obsidian';
+import type { VaultAnalyzer } from './vault-analyzer';
 
-// Mock TFile vs the real obsidian TFile type differ structurally; tests only
-// need the runtime instance, so widen to `any` at the boundary.
-const mockFile = (path: string): any => rawFile(path);
+// The mock TFile (from __test-utils__) and obsidian's real TFile differ
+// structurally; tests only need the runtime instance, so cross the boundary
+// once here with a typed cast.
+const mockFile = (path: string): TFile => rawFile(path) as unknown as TFile;
 
 vi.mock('./weight-calculator', () => ({
 	computeProximityWeight: () => 0.8,
@@ -20,9 +23,9 @@ function makeSettings(overrides?: Partial<typeof DEFAULT_SETTINGS.enrichment>) {
 }
 
 function makeMockApp(files: Array<{ path: string }> = []) {
-	const TFile = class {};
-	const fileInstances = files.map(f => {
-		const inst = Object.create(TFile.prototype);
+	const LocalTFile = class {};
+	const fileInstances = files.map((f) => {
+		const inst = Object.create(LocalTFile.prototype) as { path: string };
 		inst.path = f.path;
 		return inst;
 	});
@@ -31,16 +34,16 @@ function makeMockApp(files: Array<{ path: string }> = []) {
 		vault: {
 			getMarkdownFiles: () => fileInstances,
 			getAbstractFileByPath: (path: string) =>
-				fileInstances.find((f: any) => f.path === path) ?? null,
+				fileInstances.find((f) => f.path === path) ?? null,
 		},
 		metadataCache: {
-			fileToLinktext: (file: any, _source: string) => {
+			fileToLinktext: (file: { path: string }, _source: string) => {
 				const basename = file.path.replace(/.*\//, '').replace(/\.md$/, '');
 				return basename;
 			},
 		},
-		_TFile: TFile,
-	} as any;
+		_TFile: LocalTFile,
+	} as unknown as App;
 }
 
 function makeMockAnalyzer(opts: {
@@ -56,7 +59,7 @@ function makeMockAnalyzer(opts: {
 		}),
 		getOutgoingLinks: (path: string) => opts.outgoing?.get(path) ?? [],
 		getIncomingLinks: (path: string) => opts.incoming?.get(path) ?? [],
-	} as any;
+	} as unknown as VaultAnalyzer;
 }
 
 // ── mergeTopicCandidates ──
@@ -158,9 +161,9 @@ function makeTFileApp(markdownPaths: string[] = []) {
 			getAbstractFileByPath: (path: string) => mockFile(path),
 		},
 		metadataCache: {
-			fileToLinktext: (file: any) => file.basename,
+			fileToLinktext: (file: TFile) => file.basename,
 		},
-	} as any;
+	} as unknown as App;
 }
 
 describe('LinkResolver.findInternalLinks', () => {
