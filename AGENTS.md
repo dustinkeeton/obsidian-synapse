@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # Synapse — Agent Reference
@@ -41,7 +41,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes | `OrganizeModule`, types |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
 | title | `src/title/` | AI title suggestions for untitled/mismatched notes | `TitleModule`, types |
-| shared | `src/shared/` | AI client (multi-modal), file utils, validation, notifications, callouts, frontmatter, checkpoints, credential metadata + validation, secret redaction, update check, title predicates | `AIClient`, `NotificationManager`, `CheckpointManager`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, file/validation utils, callout registry, id-utils |
+| shared | `src/shared/` | AI client (multi-modal + opt-in response cache), file utils, validation, notifications, callouts, frontmatter, checkpoints, credential metadata + validation, secret redaction, settings migrations, content hashing, untrusted-content wrapping, review-toast gate, update check, title predicates | `AIClient`, `NotificationManager`, `CheckpointManager`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `redactError`, `reviewAction`, `migrateSettings`, `hashString`/`contentKey`, `wrapUntrusted`, `findAvailableVaultPath`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, file/validation utils, callout registry, id-utils |
 | views | `src/views/` | Unified proposal/checkpoint sidebar + registry-driven Synapse actions sidebar | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `SynapseActionsView`, `SYNAPSE_ACTIONS_VIEW_TYPE` |
 | onboarding | `src/onboarding.ts` | First-run welcome gate + required-API-key emphasis (#89) | `needsApiKey`, `planFirstRun`, `applyApiKeyEmphasis`, `FirstRunPlan`, `WELCOME_MESSAGE` |
 | brand-icons | `src/brand-icons.ts` | Registers Synapse SVG icons (S-Signal identity mark + feature glyphs) | `registerSynapseIcons`, `SYNAPSE_ICONS`, `SYNAPSE_ICON_SVG` |
@@ -52,7 +52,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 
 ```
 main.ts
-  |-- settings.ts  (type-only imports only: ProposalKind from views/types, ExclusionRule from shared/exclusions; both erased at compile time, no runtime cycle)
+  |-- settings.ts  (type-only: ProposalKind from views/types, ExclusionRule from shared/exclusions, TitleDuplicateStrategy from title/types — all erased; PLUS runtime value CURRENT_SETTINGS_VERSION from shared/settings-migrations, the sanctioned settings->shared edge — no cycle, settings-migrations only depends on shared/exclusions)
   |-- settings-tab.ts
   |-- commands/   (depends on NOTHING in src/ — never in a cycle)
   |-- shared/     (base layer: depends on NO feature module; owns url-detector)
@@ -95,7 +95,7 @@ Key constraints:
 
 ```
 onload()
-  |-- loadSettings()  (deepMerge over DEFAULT_SETTINGS; one-time excludeFolders -> exclusions migration, #307)
+  |-- loadSettings()  (#93 version-stamped migrations: readSettingsVersion(raw) -> migrateSettings(raw, from) replays every migration with to>from [v1 excludeFolders -> exclusions #307, v2 drop inert rem.semanticMatching] -> deepMerge over DEFAULT_SETTINGS -> stamp settingsVersion = CURRENT_SETTINGS_VERSION -> saveData once on upgrade)
   |-- registerSynapseIcons()  (brand-icons.ts; registers all synapse-* glyphs before any ribbon/setIcon/view use)
   |-- migrateDataFolder()  (.auto-notes -> .synapse, one-time)
   |-- new NotificationManager(); status bar attached on desktop only
@@ -191,6 +191,7 @@ All AI-generated content uses Obsidian callouts. Registry in `src/shared/callout
 
 ```ts
 SynapseSettings {
+  settingsVersion: number                           // #93; persisted schema version, stamped to CURRENT_SETTINGS_VERSION (2) on save; drives the migration runner
   ai: AISettings {
     provider: 'openai' | 'anthropic' | 'gemini' | 'ollama'   // AIProvider, default: 'openai'
     apiKey: string                                  // default: ''
@@ -198,6 +199,7 @@ SynapseSettings {
     model: string                                   // default: 'gpt-4o' (dropdown values per provider in MODEL_OPTIONS)
     maxTokens: number                               // default: 2048
     temperature: number                             // default: 0.7
+    cacheResponses: boolean                         // default: false (#397; opt-in AI response cache; caching is automatic at temperature 0)
   }
   elaboration: ElaborationSettings {
     enabled: boolean                                // default: true
@@ -309,6 +311,7 @@ SynapseSettings {
     enabled: boolean                                // default: true
     proposalFolderPath: string                      // default: '.synapse/title-proposals'
     checkAfterOperations: boolean                   // default: true
+    duplicateHandling: 'iterate' | 'merge'          // TitleDuplicateStrategy, default: 'iterate' (#408; resolve a proposed title colliding with an existing file)
   }
   rem: RemSettings {
     enabled: boolean                                // default: true
@@ -435,6 +438,8 @@ Summarize organize wired when `summarize.autoOrganizeOnSummarize && organize.ena
 Title checks wired when `title.enabled && title.checkAfterOperations`.
 Auto-accept getters wired for elaboration, enrichment, organize, deep-dive, title, rem (default `false`).
 
+Automatic post-op chained calls pass `{ postOp: true }` (`enrichment.enrich(path, trigger, { postOp: true })`, `title.checkTitle(path, { postOp: true })`) so the secondary auto-run never surfaces an extra "Review" toast — the centralized `reviewAction` gate (#366) suppresses the affordance on post-op runs. `onTitleAccept(id, resolution?)` forwards the user's duplicate-resolution choice (`'iterate'` | `'merge'`, #408) into `title.acceptProposal`.
+
 ## Checkpoint System
 
 All vault-scan operations (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) use `CheckpointManager` for resumable operations:
@@ -508,10 +513,11 @@ Framework: Vitest, globals enabled, node environment.
 - URLs validated via `sanitizeUrl()` before external tool invocation
 - Paths validated via `sanitizePath()` (rejects `..`, null bytes, shell metacharacters)
 - AI output sanitized via `sanitizeAIResponse()` before vault writes
-- Secret redaction centralized in `shared/redact.ts` (`redactSecrets`); the AI client (`ai-client.ts`, upstream error bodies), the notification manager (`notifications.ts` — every error sink: the operation-error `console.error`, `showErrorNotice`, and the `NotificationManager.notifyError` method), and credential validation (`credential-validator.ts`, probe error bodies) all route through it — single source of truth, re-exported from `ai-client` and the `shared` barrel. Covers `sk-`/`sk-ant-`, `key-`, Deepgram `dg-`, `Bearer `/`Token ` headers, `anthropic-`, and Google `AIza` keys
+- Secret redaction centralized in `shared/redact.ts` (`redactSecrets`); the AI client (`ai-client.ts`, upstream error bodies), the notification manager (`notifications.ts` — every error sink: the operation-error `console.error`, `showErrorNotice`, and the `NotificationManager.notifyError` method), and credential validation (`credential-validator.ts`, probe error bodies) all route through it — single source of truth, re-exported from `ai-client` and the `shared` barrel. Covers `sk-`/`sk-ant-`, `key-`, Deepgram `dg-`, `Bearer `/`Token ` headers, `anthropic-`, and Google `AIza` keys. `redactError(value)` (also `shared/redact.ts`) extends this to raw caught errors: every direct error console sink (audio, rem/semantic-matcher, elaboration/image-analyzer + proposer, shared/fire-and-forget) renders the error through it so a secret echoed into an error message/stack never reaches the console verbatim
 - Credential validation (`shared/credential-validator.ts`, `validateCredentials`) probes each provider with a single minimal GET (probe specs in `shared/provider-metadata.ts`); every result message routes through `redactSecrets`, so a key echoed in a 401/400 body cannot reach the status chip. One-shot (no retry), 10s timeout, `throw:false`. Validation state is ephemeral (never persisted to settings)
 - Multipart transcription bodies (`audio/transcriber.ts:buildMultipartBody`) sanitize vault-/settings-derived field names and file names via `sanitizeMultipartHeaderValue` (strips CR/LF, replaces `"`/`\` with `_`) to block `Content-Disposition` header / multipart injection
 - Gemini audio transcription places its instruction in `system_instruction` (not the user turn beside the audio) so speech inside untrusted audio cannot override the prompt (prompt-injection hardening)
+- Untrusted external content (article/tweet/Reddit bodies, image analysis) is fenced via `shared/untrusted-content.ts` `wrapUntrusted(content, source)` before splicing into a prompt — labeled delimiters + a data-not-instructions frame + anti-breakout sentinel scrubbing; a structural (not lexical) prompt-injection defense. Used by elaboration/proposer
 - Ollama endpoint: HTTPS required (HTTP for localhost only)
 - External commands use `execFile` with argument arrays (no shell interpolation)
 - Frontmatter keys validated against allowlist pattern + forbidden keys blocklist

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # Video Module
@@ -50,7 +50,7 @@ interface UrlDetectionResult { platform: Platform; videoId: string; url: string 
 
 // Owned by this module
 function findVideoUrls(content: string): VideoUrlEmbed[]   // re-exported via index.ts:L25
-function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:L432
+function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:L403
 
 // Types (re-exported index.ts:L15-L22)
 interface VideoProcessOptions {
@@ -177,7 +177,7 @@ class FrameExtractor {                          // frame-extractor.ts:L6 — pla
 
 Registered via `registrar.register('check-dependencies', ...)` (index.ts:L50); Obsidian prefixes the manifest id with `synapse:`. The handler reports yt-dlp/ffmpeg presence and brew install hints. Transcription palette commands (`transcribe-media`, `transcribe-note-media`) are wired in `main.ts`, not here.
 
-## Settings Keys (VideoSettings, settings.ts:L100)
+## Settings Keys (VideoSettings, settings.ts:L114)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -192,7 +192,7 @@ Registered via `registrar.register('check-dependencies', ...)` (index.ts:L50); O
 | `video.frameExtraction.visionModel` | `string` | `'gpt-4o'` | Vision model for frame analysis |
 | `video.frameExtraction.maxFrames` | `number` | `20` | Max frames to extract |
 
-Settings UI: `renderVideoSettings` (`settings-section.ts:L144`) renders the accordion; `addPathSetting` attaches per-OS install-help panels (#382/#383) to the yt-dlp and ffmpeg path fields. Invoked only on desktop by `settings-tab.ts`.
+Settings UI: `renderVideoSettings` (`settings-section.ts:L149`) renders the accordion; `addPathSetting` attaches per-OS install-help panels (#382/#383) to the yt-dlp and ffmpeg path fields. Invoked only on desktop by `settings-tab.ts`.
 
 ## External Runtime Dependencies
 
@@ -208,7 +208,7 @@ Settings UI: `renderVideoSettings` (`settings-section.ts:L144`) renders the acco
 In:
 - `../audio` — `AudioModule` (runtime value edge: reuses the transcription pipeline), `TranscriptionResult` (type)
 - `../commands` — `CommandRegistrar`
-- `../shared` — `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `formatTimeRange`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findMatchingRule`, `TimeRange`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` (index.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES` (note-scanner.ts); `SettingsSectionContext` (settings-section.ts)
+- `../shared` — `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `formatTimeRange`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findMatchingRule`, `findAvailableVaultPath`, `TimeRange`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` (index.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
 - `../settings` — `SynapseSettings`, `VideoSettings`, `FrameExtractionSettings` (types)
 
 Out (consumed by):
@@ -238,7 +238,7 @@ VideoModule → AudioModule is the one documented cross-feature runtime dependen
 - `FrameExtractor` (`frame-extractor.ts`) is a placeholder: `extractFrames` returns `[]` when disabled, otherwise throws "not yet implemented".
 - `AudioExtractor.concatAudio` re-encodes via the ffmpeg concat filter (handles mixed mp3/wav/m4a/ogg/flac/webm/aac).
 - `--ffmpeg-location` is emitted only when `ffmpegPath` is a concrete path (contains `/` or `\`); a bare name relies on PATH discovery.
-- `downloadVideoToVault` uses `vault.createBinary()` (not the adapter API); collision-safe naming appends `-1`, `-2`, ... before the extension.
+- `downloadVideoToVault` uses `vault.createBinary()` (not the adapter API); collision-safe naming is delegated to `findAvailableVaultPath` (shared) on a `normalizePath`-ed target, appending `-1`, `-2`, ... before the extension.
 - Back-compat re-exports (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) come from `../shared`; prefer direct `shared` imports in new code.
 
 ## Security

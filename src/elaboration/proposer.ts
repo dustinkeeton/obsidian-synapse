@@ -1,6 +1,6 @@
 import { App, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, redactError } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import { DetectionResult, DetectionReason, Proposal } from './types';
 
@@ -322,7 +322,7 @@ export class ProposalGenerator {
 			// reaches the elaboration prompt.
 			return { context: wrapUntrusted(parts.join('\n\n'), 'image analysis'), analyses };
 		} catch (error) {
-			console.warn('[Synapse] Failed to gather image context:', error);
+			console.warn('[Synapse] Failed to gather image context:', redactError(error));
 			return { context: '', analyses: [] };
 		}
 	}

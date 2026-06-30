@@ -1,5 +1,5 @@
 import { App, TFile } from 'obsidian';
-import { AIClient, arrayBufferToBase64, NotificationManager } from '../shared';
+import { AIClient, arrayBufferToBase64, NotificationManager, redactError } from '../shared';
 import type { ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
 import { preprocessImage } from '../image';
@@ -87,7 +87,7 @@ export class ImageAnalyzer {
 					results.push(analysis);
 				}
 			} catch (error) {
-				console.warn(`[Synapse] Failed to analyze image ${ref.path}:`, error);
+				console.warn(`[Synapse] Failed to analyze image ${ref.path}:`, redactError(error));
 				// Graceful degradation -- skip this image and continue
 			}
 		}

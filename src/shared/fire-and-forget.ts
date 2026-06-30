@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 import type { NotificationManager } from './notifications';
+import { redactError } from './redact';
 
 /**
  * Options for {@link fireAndForget}.
@@ -49,9 +50,12 @@ export function fireAndForget(
 	options: FireAndForgetOptions = {},
 ): void {
 	void promise.catch((err: unknown) => {
-		// Background work: log only, never surface a toast.
+		// Background work: log only, never surface a toast. Redact the error
+		// before the console sink — logging a raw error here would bypass
+		// redact.ts (the single source of truth), the one spot a secret echoed
+		// into an error could still leak to the console.
 		if (options.background) {
-			console.error(`[Synapse] ${label} failed`, err);
+			console.error(`[Synapse] ${label} failed`, redactError(err));
 			return;
 		}
 		// Prefer the notification manager — it redacts secrets from the error,
@@ -61,7 +65,8 @@ export function fireAndForget(
 			return;
 		}
 		// Fallback when no manager is available: plain notice + console log.
+		// Redact the error before logging (single-source-of-truth contract).
 		new Notice(`Synapse: ${label} failed`);
-		console.error(`[Synapse] ${label} failed`, err);
+		console.error(`[Synapse] ${label} failed`, redactError(err));
 	});
 }

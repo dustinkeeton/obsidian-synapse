@@ -4,7 +4,7 @@ import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, calloutForTranscriptionResult,
 	sanitizeAIResponse, AIClient, detectSchemaFor,
 	CheckpointManager, generateId, formatTimeRange, loadNodeModules,
-	isPathExcluded, findMatchingRule,
+	isPathExcluded, findMatchingRule, redactError,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask, TimeRange } from '../shared';
 import { AudioEmbed } from './types';
@@ -119,7 +119,7 @@ export class AudioModule {
 		} catch (error) {
 			// Graceful fallback (#234): keep the raw/cleaned transcript on any
 			// failure (e.g. the provider refuses or truncates a long song).
-			console.warn('[Synapse] Schema reformat failed; keeping transcript', error);
+			console.warn('[Synapse] Schema reformat failed; keeping transcript', redactError(error));
 		}
 	}
 
@@ -488,3 +488,7 @@ export class AudioModule {
 
 // Settings section renderer (#243)
 export { renderAudioSettings } from './settings-section';
+// Transcription-provider credential renderer. Re-exported on the module's
+// public API so consumers (settings-tab.ts) wire it through the `./audio`
+// barrel rather than deep-importing the internal file (index = public API).
+export { renderTranscriptionCredentials } from './transcription-credentials';

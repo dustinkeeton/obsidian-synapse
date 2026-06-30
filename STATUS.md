@@ -1,9 +1,9 @@
 # Project Status
 
-**Last updated**: 2026-06-25
-**Version**: 1.0.6
-**Branch**: `chore/codebase-audit-2026-06-25`
-**Health**: Green — `tsc` clean, **1692/1692 tests passing (123 files)**, dependency graph acyclic, no critical/high security findings.
+**Last updated**: 2026-06-29
+**Version**: 1.0.7
+**Branch**: `chore/codebase-audit-2026-06-29`
+**Health**: Green — `tsc` clean, **1819/1819 tests passing (135 files)**, dependency graph acyclic, no critical/high security findings.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
@@ -17,6 +17,8 @@
 - All AI output is reviewed in one **unified proposal sidebar**; per-feature **auto-accept** (#228) is available and defaults off. A second **Synapse actions sidebar** (#289) gives touch-friendly buttons for every enabled command.
 - **REM** now runs semantic matching **always-on**, down-weighting literal title matches (#380); **elaboration** uses the note title as a signal with anti-fabrication guards (#387).
 - **Summarize** can include a note's own prose and emit one combined summary (#367, both default on).
+- **Idempotency bundle** (#395–#398): proposals dedup by content key (`maxProposalsPerNote` now enforced), duplicate notices are throttled, AI requests coalesce + cache (opt-in via `ai.cacheResponses`, automatic at temperature 0), and fetched external content is fenced against prompt injection (`wrapUntrusted`).
+- A **version-stamped settings-migration framework** (#93) replays ordered, tested migrations on load; **title rename collisions** resolve via `iterate`/`merge` and surface as a distinct review state (#408, #414).
 - An **in-app update check** (#365) and a **"What's new" changelog modal** (#375) keep users current; **on-brand icons** appear throughout (1.0.5).
 
 ---
@@ -35,12 +37,12 @@
 | tidy | `src/tidy/` | Spelling/formatting fixes (+ undo) | Working |
 | organize | `src/organize/` | AI directory structuring, folder coalescing (#172) | Working |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction + child notes | Working |
-| title | `src/title/` | Untitled/mismatch detection → rename | Working |
+| title | `src/title/` | Untitled/mismatch detection → rename; filename-collision handling `iterate`/`merge` (#408, #414) | Working |
 | rem | `src/rem/` | In-place `[[wikilink]]` discovery; always-on semantic matching (#380) | Working |
 | intake | `src/intake/` | Watch folder, auto-process notes (#111) | Working (media branch stubbed, #112) |
 | pipeline | `src/pipeline/` | Fire Synapse ordered multi-phase runner | Working |
 | commands | `src/commands/` | Command registry + registrar + drift audit | Working |
-| shared | `src/shared/` | AIClient, validation, checkpoints, callouts, URL detection, exclusions, node-loader, credential validation, secret redaction, update checker | Working (base layer) |
+| shared | `src/shared/` | AIClient (+ response cache/coalescing, #397), validation, checkpoints, callouts, URL detection, exclusions, node-loader, credential validation, secret redaction (`redactSecrets`/`redactError`), settings migrations (#93), content hashing (#395), untrusted-content fence (#398), review-action gate (#366), update checker | Working (base layer) |
 | views | `src/views/` | Unified proposal sidebar + Synapse actions sidebar | Working |
 
 Top-level helpers: `onboarding.ts` (first-run welcome, #89), `brand-icons.ts` (Synapse SVG icons), `changelog.ts`/`changelog-modal.ts` ("What's new" modal, #375), `properties-fold.ts` (auto-fold Properties, #381).
@@ -49,8 +51,8 @@ Top-level helpers: `onboarding.ts` (first-run welcome, #89), `brand-icons.ts` (S
 
 ## Current Focus
 
-- **Codebase audit (2026-06-25)** — refreshed all 18 `AGENTS.md` files and these human docs against the live code. Two small fixes: secret redaction now also guards the per-operation error `console.error` sink (so the single redaction source covers *every* error path in `notifications.ts`), and one command name was normalized for palette consistency. `tsc` clean, 1692 tests green, graph acyclic, no critical/high security findings.
-- **Recent feature work (1.0.4–1.0.6 and since)**: combined / note-content summaries (#367); in-app update check (#365); "What's new" changelog modal (#375); auto-fold Properties (#381); video-dependency onboarding notice (#382); always-on REM semantic matching (#380); elaboration title signal + anti-fabrication guards (#387); persistent copy-on-dismiss error notices + softer color (1.0.6); on-brand icon system (1.0.5).
+- **Codebase audit (2026-06-29)** — regrounded all 14 `AGENTS.md` files (root + per-feature) and these human docs against the live code. One defense-in-depth fix: a new `redactError(value)` helper (`shared/redact.ts`) extends secret redaction to **raw caught errors**, and five raw-error console sinks (audio, rem, elaboration ×2, fire-and-forget) now route through it. Also surfaced `renderTranscriptionCredentials` on the `audio` public API (consumed by `settings-tab.ts` via the barrel). `tsc` clean, 1819 tests green, graph acyclic, no critical/high security findings.
+- **Recent feature work (since 1.0.6)**: idempotency bundle — proposal dedup + `maxProposalsPerNote` (#395), notice throttle (#396), AI cache/coalescing (#397), prompt-injection fence (#398); version-stamped settings migrations (#93); title collision handling (#408, #414); centralized Review-toast gate (#366); combined / note-content summaries (#367); in-app update check (#365) + "What's new" modal (#375); always-on REM semantic matching (#380); elaboration title signal + anti-fabrication guards (#387).
 
 ---
 
@@ -59,9 +61,10 @@ Top-level helpers: `onboarding.ts` (first-run welcome, #89), `brand-icons.ts` (S
 - The full audit found **no critical or high vulnerabilities**; the codebase is security-mature.
 - API keys live in `data.json`, which is **gitignored and never committed** — no secrets in the repo.
 - Subprocess calls use `execFile` with argument arrays (no shell); API auth is header-based and HTTPS-only; AI responses are sanitized before being written to notes.
-- Secret redaction has a single source of truth (`shared/redact.ts`), now used on **every error path** — the AI client, credential validation, and all of `notifications.ts` (the error toast, `notifyError`, and the per-operation error `console.error`). Covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Google `AIza` keys.
+- Secret redaction has a single source of truth (`shared/redact.ts`), used on **every error path** — the AI client, credential validation, and all of `notifications.ts` (error toast, `notifyError`, per-operation `console.error`). `redactError(value)` extends the same scrub to **raw caught errors** (Error `.stack`/`.message`) at the five direct error console sinks. Covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Google `AIza` keys.
+- **Prompt-injection fence** (#398): fetched untrusted content (article/tweet/Reddit bodies, image analysis) is wrapped via `wrapUntrusted` — labeled delimiters + data-not-instructions frame + anti-breakout scrubbing — a structural (not lexical) defense. Gemini audio instructions also go in `system_instruction`.
 - Credential validation (#335) probes each provider with one minimal GET; results route through redaction and are **ephemeral** (never persisted).
-- Multipart Whisper bodies sanitize vault-derived field/file names (`sanitizeMultipartHeaderValue`); Gemini audio places its instruction in `system_instruction` (prompt-injection hardening).
+- Multipart Whisper bodies sanitize vault-derived field/file names (`sanitizeMultipartHeaderValue`).
 - Desktop-only Node access is gated behind `assertDesktop()`/`loadNodeModules()` (`shared/node-loader.ts`), keeping `isDesktopOnly: false` mobile-safe. Notification ellipsis timers are torn down on unload.
 - **Accepted risk**: `sanitizeUrl` permits arbitrary hosts (an SSRF surface) — accepted because URLs are author-supplied within the user's own vault.
 - **Not yet wired**: an `ensureWithinVault` helper exists but is **not** yet enforced on write paths.
@@ -105,5 +108,5 @@ No npm runtime dependencies.
 |---------|---------|
 | `npm run dev` | esbuild watch (development) |
 | `npm run build` | `tsc -noEmit -skipLibCheck` + esbuild production bundle |
-| `npm test` | Vitest — **1692/1692 passing** (123 files) |
+| `npm test` | Vitest — **1819/1819 passing** (135 files) |
 | `npm run test:coverage` | Vitest with coverage |

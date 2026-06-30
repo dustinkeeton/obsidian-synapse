@@ -4,6 +4,22 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-06-29: Raw caught errors get the same redaction as strings (`redactError`)
+
+**Context**: `redactSecrets()` — the single redaction source (`shared/redact.ts`) — only operates on **strings**. Several console sinks log a caught value directly (`console.warn('…failed', err)` / `console.error('…', err)`), handing the bare `Error` object — and its `.stack`, which embeds `.message` — to the console. A secret echoed into an error message by an upstream API or a thrown exception would reach the console **verbatim**, bypassing redaction. This audit found five such raw-error sinks across audio, rem, elaboration, and shared.
+
+**Decision**: Add `redactError(value: unknown): string` to `shared/redact.ts` (exported via the `shared` barrel) as the **one sanctioned way** to render a caught value for a log sink. It prefers the error's `stack` (already includes message + call frames), falls back to `name: message`, stringifies non-Errors, then runs the result through `redactSecrets`. Route every raw-error console sink through it: `audio/index.ts`, `rem/semantic-matcher.ts`, `elaboration/image-analyzer.ts`, `elaboration/proposer.ts`, and both sinks in `shared/fire-and-forget.ts`.
+
+**Alternatives considered**:
+- **Stringify inline at each call site (`String(err)`), then `redactSecrets`** — rejected; that re-scatters the discipline `redact.ts` exists to centralize, and a missed `.stack` at one site silently re-opens the hole.
+- **Make `redactSecrets` accept `unknown`** — rejected; it has one job (scrub a string) and many callers already pass known strings. A separate, clearly-named helper keeps each function's responsibility sharp.
+
+**Rationale**: `redact.ts` is the single source of truth only if *every* path that can surface a secret goes through it. Error objects were the one class of value that slipped past — `redactError` closes that gap without spreading redaction logic into feature modules.
+
+**Impact**: `shared/redact.ts` (+ `redact.test.ts`), `shared/index.ts` (barrel export), and the five sinks above. Defense-in-depth only — no success-path behavior change; redacted console output is the sole observable difference, and only when an error actually carries a key.
+
+---
+
 ## 2026-06-28: Release/publish is already automatic; adopt the official Obsidian lint gate (#389)
 
 **Context**: #389 asked how to "automate publishing" to the community store, and its body proposed building release/submission automation. Reassessed: Synapse is already in the store, and — confirmed against Obsidian's 2026 "future of plugins" announcement — once a plugin is listed, **every new GitHub release is auto-reviewed and delivered to users within ~24h**, with no per-release submission, no dashboard button, and no `obsidianmd/obsidian-releases` PR. Our pipeline (`version-bump.mjs` → `tag-on-version-bump.yml` → `release.yml`) already does everything after a version-bump commit; the only manual step is the bump itself.
@@ -24,6 +40,88 @@ Decisions listed in reverse chronological order.
 **Context**: A recurring user request (#364) is to power Synapse with an existing Claude Pro/Max (or ChatGPT Plus / Gemini Advanced) **subscription** instead of metered, per-token **API** billing — the cost ask is one flat monthly fee, not a second usage-based bill.
 
 **Decision**: Document it as a canonical wontfix — it is blocked by provider policy, not by Synapse's architecture. A subscription authorizes the provider's own chat app, not third-party API access: Anthropic's Consumer Terms prohibit third-party use of subscription tokens (enforced with suspensions) and the Messages API rejects the `sk-ant-oat…` setup token; OpenAI "Sign in with ChatGPT" is identity-only; Google Gemini Advanced has no API, only AI Studio / Vertex (facts re-verified 2026-06). The supported, compliant cost answers are a pay-as-you-go provider API key and Ollama (local, free). The README **FAQ** is the canonical user-facing answer; this entry is its decision-log counterpart and the billing-model twin of the 2026-06-16 "Guided key onboarding + live validation (OAuth deferred)" entry (#335) — same provider-policy facts, viewed from cost rather than auth UX.
+
+---
+
+## 2026-06-28: Title-proposal filename collisions → `iterate` | `merge`, surfaced as a distinct UI state (#408, #414)
+
+**Context**: When the title module proposes renaming a note to a title that **already exists** as a file, a blind rename would either fail or clobber. Auto-accept made this worse — it could silently resolve a collision the user never saw.
+
+**Decision**:
+- Pre-check the target path before accepting a title proposal. On a collision, resolve by a configurable **`title.duplicateHandling`** strategy (`TitleDuplicateStrategy = 'iterate' | 'merge'`, default `'iterate'`):
+  - **`iterate`** — append a numeric suffix to find a free path (`findAvailableVaultPath`).
+  - **`merge`** — merge the note into the existing target when it's a real `TFile`; if there's nothing to merge into, fall back to a suffixed rename.
+- Surface the collision as a **distinct proposal UI state** (#414) rather than a generic error, so a user reviewing manually sees the conflict and chooses, while auto-accept applies the configured default.
+- `onTitleAccept(id, resolution?)` forwards the user's per-proposal choice into `title.acceptProposal`; the accept outcome reports `{ status: 'renamed' | 'merged', … }`.
+
+**Alternatives considered**:
+- **Always suffix (never merge)** — rejected; users consolidating duplicate notes want a real merge, not `Note 2.md`.
+- **Fail the proposal on any collision** — rejected; collisions are common and expected (two stubs about the same topic), so a dead-end error is poor UX.
+
+**Rationale**: A rename that can overwrite or fail needs an explicit, user-visible policy. Making it a setting with a safe `iterate` default keeps auto-accept non-destructive while letting power users opt into merging.
+
+**Impact**: `title/` (types `TitleDuplicateStrategy`/`TitleAcceptOutcome`, collision pre-check, `settings-section.ts` dropdown, `content-key.ts`), `views/` (distinct collision state), `main.ts` (resolution forwarding). New `title.duplicateHandling` setting.
+
+---
+
+## 2026-06-28: Version-stamped settings-migration framework (#93)
+
+**Context**: Settings evolved through ad-hoc, presence-guarded one-offs — e.g. the #307 `excludeFolders → exclusions` fold ran "only if the `exclusions` key is absent." That works for a single migration but doesn't compose: nothing recorded *which* schema version a stored `data.json` was at, so each new migration had to invent its own idempotency guard. The 2026-06-14 #307 entry explicitly **deferred** a real versioning system to #93.
+
+**Decision**: Add a small, pure, version-stamped migration runner in `shared/settings-migrations.ts`:
+- A persisted **`settingsVersion`** field; `readSettingsVersion(raw)` treats absent/non-numeric as version `0` (the pre-versioning baseline, so a legacy file replays everything).
+- An ordered `SETTINGS_MIGRATIONS` chain of `{ to, migrate }` steps; `migrateSettings(raw, from)` clones the raw object once (JSON round-trip, so a throwing step can't half-mutate the caller's fallback) and replays **every migration whose `to > from`** in ascending order, *before* the deep-merge over `DEFAULT_SETTINGS`. On upgrade, `main.loadSettings()` stamps `settingsVersion = CURRENT_SETTINGS_VERSION` and saves once.
+- Seeded with two steps: **v1** folds legacy `excludeFolders` into `exclusions` (wrapping the existing `buildMigratedExclusions`, keeping the presence guard so a deliberately-cleared `[]` stays `[]`); **v2** deletes the inert `rem.semanticMatching` flag left by the always-on REM change (#380).
+- A drift-guard test asserts `CURRENT_SETTINGS_VERSION` always equals the highest migration `to`.
+
+**Layering**: `settings-migrations.ts` lives in `shared/` and imports `exclusions` directly (same layer); it must **never** import `../settings`. `settings.ts` takes one runtime value (`CURRENT_SETTINGS_VERSION`) from it — the single sanctioned `settings → shared` edge — and the graph stays acyclic.
+
+**Alternatives considered**:
+- **Keep presence-guarded one-offs** — rejected; doesn't compose, can't express "drop a key," and re-derives idempotency every time.
+- **A migration library** — rejected; the plugin has no runtime dependencies and the need is a dozen lines of pure transforms.
+- **Map `semanticMatching` onto `titleMatchWeight`** — rejected; the old boolean has no faithful weight target now that REM is always-on, so deleting it is the honest migration.
+
+**Rationale**: A version stamp + ordered replay turns settings evolution into an append-only list of pure, individually tested functions with one provable "current version" — far safer than scattered guards as the schema grows.
+
+**Impact**: New `shared/settings-migrations.ts` (+ tests), `settings.settingsVersion` field, `main.loadSettings()` rewired to the runner. Supersedes the "settings-version system deferred (#93)" note in the 2026-06-14 #307 entry.
+
+---
+
+## 2026-06-27: Idempotency bundle shipped — proposal dedup, notice throttle, AI cache, prompt-injection fence (#395–#398)
+
+**Context**: The 2026-06-26 idempotency spike (#390, below) mapped the design and filed #395–#398. This entry records the **implementation** landing per that plan; the spike holds the full design rationale, so only implementation-specific choices are captured here.
+
+**Decision** — one shared primitive, four enforcement points:
+- **Shared hashing/keying primitive** (`shared/hash-utils.ts`): dependency-free `hashString` + `contentKey(parts[])`, keyed on **inputs only** (never model output), so an unchanged note re-keys identically even at temperature > 0.
+- **#395 Proposal dedup + revive `maxProposalsPerNote`.** Stores skip re-proposing for an unchanged content key (`proposalContentKey` in elaboration, `titleContentKey` in title; the store records each proposal's `contentKey`), killing the "scan twice → duplicate proposal" bug. The long-dead `maxProposalsPerNote` setting is now enforced as a per-note pending cap.
+- **#396 Notice equal-message throttle.** A `level:message` dedup window suppresses identical **fire-and-forget one-shot** toasts (e.g. the same per-image message each loop iteration), and ad-hoc `new Notice` sites are centralized. **Tracked-operation** error toasts and contextual `notifyError()` stay **unthrottled** — they carry per-run context worth repeating.
+- **#397 AI response cache + in-flight coalescing.** `AIClient` coalesces concurrent identical requests through an in-flight `Map` (entry cleared in `.finally()`, mirroring intake's discipline) and keeps a **per-instance, bounded LRU** response cache. The cache participates when **`temperature === 0`** (deterministic) **or** the user opts in via **`ai.cacheResponses`**; it is populated **only on success**; a `bypassCache` option forces a fresh dispatch for "regenerate."
+- **#398 Structural prompt-injection fence.** `shared/untrusted-content.ts` `wrapUntrusted(content, source)` fences fetched external text (article/tweet/Reddit bodies, image analysis) in labeled delimiters with a data-not-instructions frame and anti-breakout sentinel scrubbing; used by `elaboration/proposer`.
+
+**Alternatives considered** (implementation-level; design-level alternatives are in the spike):
+- **Lexical injection stripping** (regex out "ignore previous instructions") for #398 — rejected; brittle, false-positives on legitimate articles (e.g. one *about* prompt injection), and breeds false confidence. The defense is **structural** (delimiter + label + fence-scrub), paired with a system-prompt clause.
+- **Cache AI responses unconditionally** — rejected; at temperature > 0 that freezes a single sample. Gated on temp 0 or explicit opt-in, never caching errors.
+- **Process-wide static AI cache** — deferred; per-instance scope matches the long-lived `AIClient` a generator owns and avoids cross-session staleness.
+
+**Rationale**: Keying on **inputs** makes idempotency hold despite a non-deterministic model; each layer enforces at the point where duplication is expensive (generate+save, render, network) without doubling up.
+
+**Impact**: New `shared/hash-utils.ts` and `shared/untrusted-content.ts`; `ai-client.ts` (cache/coalesce + new `ai.cacheResponses` setting, default `false`), `notifications.ts` (throttle), elaboration/title stores (content-key dedup), `elaboration/proposer` (`wrapUntrusted`). Re-running a command on unchanged inputs now produces no new proposal and no new equal one-shot notice.
+
+---
+
+## 2026-06-26: Centralized "Review" completion-toast gate (`reviewAction`, #366)
+
+**Context**: The 2026-06-19 #340 work added a "Review" button to proposal-generation toasts, but each proposal-producing module re-derived *when* to show it in its own way (setting-based, per-proposal `!autoAccepted`, `proposalCount - autoAcceptedCount > 0`) — four divergent rules. Worse, an **automatic post-op** run (a chained `enrich()`/`checkTitle()` after the primary action) surfaced its own "Review" toast every time, nagging the user about a secondary action they never invoked.
+
+**Decision**: Add one shared gate, `shared/review-action.ts` `reviewAction(opts)`, that every flow calls. It returns a Review `NoticeAction` **iff** (1) something was generated, (2) auto-accept is OFF for that action's own kind (read through a live getter, not a captured boolean), and (3) the run is **not** a post-op side effect (`!postOp`). Post-op chained calls pass `{ postOp: true }`, so auto-accepting a primary action never raises an unrelated secondary Review prompt.
+
+**Alternatives considered**:
+- **Leave each module's bespoke rule** — rejected; four implementations of one policy drift, and the post-op nag bug lived in the gaps between them.
+- **Suppress post-op toasts entirely** — rejected; the toast still usefully reports completion; only the *Review affordance* should be gated off.
+
+**Rationale**: A single predicate keeps the six proposal flows consistent and fixes the post-op double-prompt at the source instead of patching each call site.
+
+**Impact**: New `shared/review-action.ts` (+ tests), consumed by all proposal-producing modules; post-op callers (`enrich`/`checkTitle`) pass `{ postOp: true }`. Generalizes the deep-dive `totalProposals > 0 && !shouldAutoAccept()` pattern.
 
 ---
 

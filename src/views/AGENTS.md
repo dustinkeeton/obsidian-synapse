@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # Views Module
@@ -23,7 +23,7 @@ class UnifiedProposalView extends ItemView {
   setItems(items: UnifiedItem[]): void           // replace list; exits stale review mode
   setCheckpoints(checkpoints: Checkpoint[]): void // banner data for interrupted ops
   getViewType(): string    // 'synapse-proposals'
-  getDisplayText(): string // 'Synapse Proposals'
+  getDisplayText(): string // 'Synapse proposals'
   getIcon(): string        // 'synapse'  (brand S-Signal mark; not 'sparkles')
 }
 
@@ -68,7 +68,7 @@ interface UnifiedViewCallbacks {
   onOrganizeReject: (id: string) => Promise<void>
   onDeepDiveAccept: (id: string) => Promise<void>
   onDeepDiveReject: (id: string) => Promise<void>
-  onTitleAccept: (id: string) => Promise<void>
+  onTitleAccept: (id: string, resolution?: TitleDuplicateStrategy) => Promise<void>
   onTitleReject: (id: string) => Promise<void>
   onRemAcceptSelected: (id: string, acceptedMatchTexts: string[]) => Promise<void>
   onRemReject: (id: string) => Promise<void>
@@ -103,7 +103,7 @@ No legacy views exist in this directory; only the two registered `ItemView`s abo
 
 | View type id | Class | getIcon | getDisplayText | Source |
 |--------------|-------|---------|----------------|--------|
-| `synapse-proposals` | `UnifiedProposalView` | `synapse` | `Synapse Proposals` | `unified-proposal-view.ts:L15` |
+| `synapse-proposals` | `UnifiedProposalView` | `synapse` | `Synapse proposals` | `unified-proposal-view.ts:L15` |
 | `synapse-actions` | `SynapseActionsView` | `synapse-actions` | `Synapse actions` | `synapse-actions-view.ts:L6` |
 
 ## Compile-Time Guards
@@ -135,7 +135,7 @@ No legacy views exist in this directory; only the two registered `ItemView`s abo
 4. Enrichment review: per-item checkboxes (tags / internalLinks / externalLinks / frontmatter); Accept selected / All / None / Reject.
 5. Organize review: proposed directory + reasoning; Accept/Reject.
 6. Deep-dive review: title, depth + quality badges, proposed path, read-only content preview, cascade warning when `childProposalIds.length > 0`; Accept/Reject.
-7. Title review: current vs proposed title, trigger (`untitled` | `mismatch`), reasoning; Accept (rename)/Reject.
+7. Title review: current vs proposed title, trigger (`untitled` | `content-mismatch`), reasoning. No collision: single Accept (rename)/Reject. Collision (`data.conflictsWith` set, #414): a "Conflict" badge + callout (`describeConflict()` `:L964`) name the existing note/folder, and Accept is replaced by "Add suffix" (`onTitleAccept(id, 'iterate')`) and "Merge into existing" (`onTitleAccept(id, 'merge')`) (#408); the same badge/callout/split-buttons also render on the title list card.
 8. REM review: per-candidate checkboxes with match-type badge (`title`/`alias`/`semantic`, semantic shows confidence %); Accept selected / All / None / Reject.
 
 ## Bulk Operations (UnifiedProposalView)
@@ -169,7 +169,8 @@ new UnifiedProposalView(leaf, {
   onOrganizeReject: (id) => this.organize.rejectProposal(id),
   onDeepDiveAccept: (id) => this.deepDive.acceptProposal(id),
   onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
-  onTitleAccept: (id) => this.title.acceptProposal(id),
+  onTitleAccept: (id, resolution) =>
+    this.title.acceptProposal(id, resolution ? { resolution } : undefined).then(() => {}),
   onTitleReject: (id) => this.title.rejectProposal(id),
   onRemAcceptSelected: (id, texts) => this.rem.acceptProposal(id, texts),
   onRemReject: (id) => this.rem.rejectProposal(id),
@@ -178,7 +179,7 @@ new UnifiedProposalView(leaf, {
 }, this.notifications);
 ```
 
-`main.ts:L182-L186` registers `SYNAPSE_ACTIONS_VIEW_TYPE`:
+`main.ts:L183-L187` registers `SYNAPSE_ACTIONS_VIEW_TYPE`:
 
 ```ts
 new SynapseActionsView(leaf, {
@@ -196,7 +197,7 @@ new SynapseActionsView(leaf, {
 | `AcceptedItems`, `EnrichmentProposal` | `../enrichment` | type only |
 | `OrganizeProposal` | `../organize` | type only |
 | `DeepDiveProposal` | `../deep-dive` | type only |
-| `TitleProposal` | `../title` | type only |
+| `TitleProposal`, `TitleDuplicateStrategy` | `../title` | type only |
 | `RemProposal` | `../rem` | type only |
 | `Checkpoint`, `NotificationManager` | `../shared` | type only |
 | `fireAndForget` | `../shared` | runtime value |

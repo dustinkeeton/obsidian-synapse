@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # Image Module
@@ -45,9 +45,9 @@ interface OCRResult  { text: string; sourceName?: string }
 ## File-level exports (NOT in the index.ts barrel)
 
 ```ts
-// extractor.ts:8 — internal class, constructed by ImageModule
+// extractor.ts:7 — internal class, constructed by ImageModule
 class ImageExtractor {
-  constructor(getSettings: () => SynapseSettings)
+  constructor(getSettings: () => SynapseSettings, notifications: NotificationManager)
   extract(imageData: ArrayBuffer, fileName: string): Promise<OCRResult>
 }
 
@@ -89,10 +89,10 @@ function hasExtractionBelow(lines: string[], embedLine: number, fileName: string
    vault.process(noteFile, splice all inserts at line+1) -> onExtractionComplete
    cancelled -> checkpointManager.discard ; else complete + dispatchDeferredTasks + op.finish
 
-3. ImageExtractor.extract(imageData, fileName)  -- extractor.ts:15
+3. ImageExtractor.extract(imageData, fileName)  -- extractor.ts:17
    getMediaType(fileName) -> MIME from extension (default image/png)
    maxBytes = (image.maxImageSizeMb || 5) * 1024 * 1024
-   preprocessImage(data, mediaType, maxBytes); downscaled -> Notice (auto-downscaled)
+   preprocessImage(data, mediaType, maxBytes); downscaled -> notifications.info (deduped, #396)
    arrayBufferToBase64(processed.data)
    ContentBlock[] = [ { type:'image', data, mediaType }, { type:'text', text: OCR prompt } ]
    visionModel = image.visionModel || ai.model; override ai.model if differs; restore in finally
@@ -114,7 +114,7 @@ Output callout (collapsed):
 
 ## Vision Model Override
 
-`ImageExtractor.extract()` (extractor.ts:41) computes `visionModel = image.visionModel || ai.model`. It mutates `settings.ai.model` only when `visionModel !== ai.model`, and restores the original in a `finally` block. Empty `visionModel` means no override (uses `ai.model`).
+`ImageExtractor.extract()` (extractor.ts:45) computes `visionModel = image.visionModel || ai.model`. It mutates `settings.ai.model` only when `visionModel !== ai.model`, and restores the original in a `finally` block. Empty `visionModel` means no override (uses `ai.model`).
 
 ## Exclusion Behavior
 
@@ -131,7 +131,7 @@ Path exclusions use the centralized `settings.exclusions: ExclusionRule[]`:
 
 ## Settings
 
-`ImageSettings` (settings.ts:110); defaults at settings.ts:399. All under `settings.image`:
+`ImageSettings` (settings.ts:124); defaults at settings.ts:428. All under `settings.image`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -154,7 +154,7 @@ All cross-module imports resolve through the `../shared` barrel, never an intern
 
 | Import | From |
 |--------|------|
-| `AIClient`, `ContentBlock` | `shared` (extractor.ts) |
+| `AIClient`, `ContentBlock`, `NotificationManager` | `shared` (extractor.ts) |
 | `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `sanitizeAIResponse`, `generateId` | `shared` (index.ts) |
 | `CheckpointManager`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `shared` (index.ts) |
 | `isPathExcluded`, `findMatchingRule` | `shared` (index.ts) |
@@ -180,7 +180,7 @@ Downscale path re-encodes to JPEG. Lossless sources (`image/png`, `image/bmp`, `
 | `extractFromFile` | extract throws | `op.error("OCR extraction failed -- <msg>")` |
 | `extractAndInsert` | per-embed extract throws | `notifications.notifyError(...)`; continue to next embed |
 | `extractAndInsert` | user cancels | write partial inserts, discard checkpoint |
-| `extract` | payload downscaled | Notice "Synapse: large image auto-downscaled to fit the API limit" |
+| `extract` | payload downscaled | `notifications.info('large image auto-downscaled to fit the API limit')` (3s dedup, #396) |
 | `preprocessImage` | canvas/DOM unavailable or downscale throws | console.warn; return original bytes, `downscaled: false` |
 
 ## Invariants / Gotchas
