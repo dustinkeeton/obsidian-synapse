@@ -5,6 +5,28 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.8] - 2026-06-29
+
+### Added
+
+- Optional response caching for AI requests — with automatic coalescing of identical in-flight requests — so repeated work on the same content doesn't call the model again (toggle in Settings)
+- Proposed titles that would collide with an existing file are now surfaced as a distinct state, letting you add a suffix or merge into the existing note instead of failing
+
+### Changed
+
+- Note elaboration no longer adds duplicate proposals for content it has already suggested, and respects a per-note limit on how many proposals it creates
+- Repeated notifications are throttled and de-duplicated, so identical messages no longer stack up
+- Synapse settings now migrate automatically when you update the plugin, so older configurations carry forward cleanly
+
+### Fixed
+
+- The Review button now respects each action's auto-accept setting instead of always accepting immediately
+
+### Security
+
+- External page content fetched for note elaboration is now treated as untrusted, guarding against prompt-injection from linked pages
+- Broadened secret-key redaction to cover more of the error messages Synapse writes to the console
+
 ## [1.0.7] - 2026-06-25
 
 ### Added
