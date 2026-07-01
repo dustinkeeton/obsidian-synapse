@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { PromptBuilder } from './prompt-builder';
 import { AIClient } from '../shared';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
@@ -11,7 +11,7 @@ function makeSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
 
 describe('PromptBuilder', () => {
 	let settings: SynapseSettings;
-	let completeSpy: ReturnType<typeof vi.spyOn>;
+	let completeSpy: MockInstance<typeof AIClient.prototype.complete>;
 	let builder: PromptBuilder;
 
 	beforeEach(() => {
@@ -90,7 +90,7 @@ describe('PromptBuilder', () => {
 			completeSpy.mockResolvedValue('[]');
 
 			await builder.suggestExternalLinks('text', ['https://existing.com']);
-			const prompt = completeSpy.mock.calls[0][0] as string;
+			const prompt = completeSpy.mock.calls[0][0];
 			expect(prompt).toContain('https://existing.com');
 		});
 

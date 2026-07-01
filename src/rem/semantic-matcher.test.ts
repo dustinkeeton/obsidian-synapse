@@ -1,13 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { SemanticMatcher } from './semantic-matcher';
 import { AIClient } from '../shared';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile } from '../__test-utils__/mock-factories';
-import type { App } from 'obsidian';
+import type { App, TFile } from 'obsidian';
 
-// Mock TFile vs the real obsidian TFile type differ structurally; tests only
-// need the runtime instance, so widen to `any` at the boundary.
-const mockFile = (path: string): any => rawFile(path);
+// The mock TFile (from __test-utils__) and obsidian's real TFile differ
+// structurally; tests only need the runtime instance, so cross the boundary
+// once here with a typed cast.
+const mockFile = (path: string): TFile => rawFile(path) as unknown as TFile;
 
 function makeSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
 	const s = structuredClone(DEFAULT_SETTINGS);
@@ -18,7 +19,7 @@ function makeSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
 describe('SemanticMatcher', () => {
 	let app: ReturnType<typeof createMockApp>;
 	let settings: SynapseSettings;
-	let completeSpy: ReturnType<typeof vi.spyOn>;
+	let completeSpy: MockInstance<typeof AIClient.prototype.complete>;
 
 	beforeEach(() => {
 		app = createMockApp();
@@ -55,7 +56,7 @@ describe('SemanticMatcher', () => {
 
 		await makeMatcher().match(source, 'about deep learning', new Set(['notes/Already.md']), 10);
 
-		const userPrompt = completeSpy.mock.calls[0][0] as string;
+		const userPrompt = completeSpy.mock.calls[0][0];
 		expect(userPrompt).toContain('Neural Networks');
 		expect(userPrompt).not.toContain('Already');
 		expect(userPrompt).not.toContain('Source');

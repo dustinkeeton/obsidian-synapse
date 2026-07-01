@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { VaultAnalyzer } from './vault-analyzer';
 import { TFile } from '../__mocks__/obsidian';
+import type { App, TFile as ObsidianTFile } from 'obsidian';
+import type { SynapseSettings } from '../settings';
 
-const noExclusions = () => ({ exclusions: [] }) as any;
-const settingsWith = (exclusions: unknown[]) => () => ({ exclusions }) as any;
+const noExclusions = () => ({ exclusions: [] }) as unknown as SynapseSettings;
+const settingsWith = (exclusions: unknown[]) => () =>
+	({ exclusions }) as unknown as SynapseSettings;
 
-function createMockApp(files: TFile[], caches: Map<string, any>, resolvedLinks: Record<string, Record<string, number>> = {}) {
+/** The slice of Obsidian's `CachedMetadata` these tests stub for tag extraction. */
+type TestFileCache = { tags?: Array<{ tag: string }> };
+
+function createMockApp(files: TFile[], caches: Map<string, TestFileCache>, resolvedLinks: Record<string, Record<string, number>> = {}) {
 	return {
 		vault: {
 			getMarkdownFiles: vi.fn().mockReturnValue(files),
@@ -14,7 +20,7 @@ function createMockApp(files: TFile[], caches: Map<string, any>, resolvedLinks: 
 			getFileCache: vi.fn().mockImplementation((file: TFile) => caches.get(file.path) || null),
 			resolvedLinks,
 		},
-	} as any;
+	} as unknown as App;
 }
 
 describe('VaultAnalyzer', () => {
@@ -23,7 +29,7 @@ describe('VaultAnalyzer', () => {
 			const file1 = new TFile('notes/a.md');
 			const file2 = new TFile('notes/b.md');
 
-			const caches = new Map();
+			const caches = new Map<string, TestFileCache>();
 			caches.set('notes/a.md', {
 				tags: [{ tag: '#python' }, { tag: '#ml' }],
 			});
@@ -52,7 +58,7 @@ describe('VaultAnalyzer', () => {
 		it('omits files in folders excluded for enrichment (#323)', () => {
 			const included = new TFile('notes/a.md');
 			const excluded = new TFile('Templates/t.md');
-			const caches = new Map();
+			const caches = new Map<string, TestFileCache>();
 			caches.set('notes/a.md', { tags: [{ tag: '#python' }] });
 			caches.set('Templates/t.md', { tags: [{ tag: '#tpl' }] });
 
@@ -69,7 +75,7 @@ describe('VaultAnalyzer', () => {
 
 		it('returns empty index for vault with no tags', () => {
 			const file = new TFile('empty.md');
-			const caches = new Map();
+			const caches = new Map<string, TestFileCache>();
 			caches.set('empty.md', {});
 
 			const app = createMockApp([file], caches);
@@ -81,7 +87,7 @@ describe('VaultAnalyzer', () => {
 
 		it('caches results and invalidates on call', () => {
 			const file = new TFile('note.md');
-			const caches = new Map();
+			const caches = new Map<string, TestFileCache>();
 			caches.set('note.md', { tags: [{ tag: '#test' }] });
 
 			const app = createMockApp([file], caches);
@@ -104,7 +110,7 @@ describe('VaultAnalyzer', () => {
 				'b.md': { 'c.md': 1 },
 			};
 
-			const app = createMockApp([], new Map(), resolvedLinks);
+			const app = createMockApp([], new Map<string, TestFileCache>(), resolvedLinks);
 			const analyzer = new VaultAnalyzer(app, noExclusions);
 			const graph = analyzer.buildLinkGraph();
 
@@ -118,7 +124,7 @@ describe('VaultAnalyzer', () => {
 		});
 
 		it('handles empty resolved links', () => {
-			const app = createMockApp([], new Map(), {});
+			const app = createMockApp([], new Map<string, TestFileCache>(), {});
 			const analyzer = new VaultAnalyzer(app, noExclusions);
 			const graph = analyzer.buildLinkGraph();
 
@@ -130,7 +136,7 @@ describe('VaultAnalyzer', () => {
 	describe('getFileTags', () => {
 		it('returns normalized tags for a file', () => {
 			const file = new TFile('note.md');
-			const caches = new Map();
+			const caches = new Map<string, TestFileCache>();
 			caches.set('note.md', {
 				tags: [{ tag: '#Python' }, { tag: '#ML' }],
 			});
@@ -138,15 +144,15 @@ describe('VaultAnalyzer', () => {
 			const app = createMockApp([file], caches);
 			const analyzer = new VaultAnalyzer(app, noExclusions);
 
-			expect(analyzer.getFileTags(file as any)).toEqual(['#python', '#ml']);
+			expect(analyzer.getFileTags(file as unknown as ObsidianTFile)).toEqual(['#python', '#ml']);
 		});
 
 		it('returns empty array for file with no cache', () => {
 			const file = new TFile('uncached.md');
-			const app = createMockApp([file], new Map());
+			const app = createMockApp([file], new Map<string, TestFileCache>());
 			const analyzer = new VaultAnalyzer(app, noExclusions);
 
-			expect(analyzer.getFileTags(file as any)).toEqual([]);
+			expect(analyzer.getFileTags(file as unknown as ObsidianTFile)).toEqual([]);
 		});
 	});
 
@@ -157,7 +163,7 @@ describe('VaultAnalyzer', () => {
 				'b.md': { 'a.md': 1, 'c.md': 1 },
 			};
 
-			const app = createMockApp([], new Map(), resolvedLinks);
+			const app = createMockApp([], new Map<string, TestFileCache>(), resolvedLinks);
 			const analyzer = new VaultAnalyzer(app, noExclusions);
 
 			expect(analyzer.getOutgoingLinks('a.md')).toEqual(['b.md']);
@@ -166,7 +172,7 @@ describe('VaultAnalyzer', () => {
 		});
 
 		it('returns empty for unknown files', () => {
-			const app = createMockApp([], new Map(), {});
+			const app = createMockApp([], new Map<string, TestFileCache>(), {});
 			const analyzer = new VaultAnalyzer(app, noExclusions);
 
 			expect(analyzer.getOutgoingLinks('unknown.md')).toEqual([]);

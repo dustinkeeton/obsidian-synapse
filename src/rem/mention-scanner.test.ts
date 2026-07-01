@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MentionScanner } from './mention-scanner';
-import type { TFile, CachedMetadata } from 'obsidian';
+import type { App, TFile, CachedMetadata } from 'obsidian';
+import type { SynapseSettings } from '../settings';
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -21,11 +22,12 @@ function makeApp(files: TFile[], cacheMap: Map<string, Partial<CachedMetadata>> 
 		metadataCache: {
 			getFileCache: (file: TFile) => cacheMap.get(file.path) ?? null,
 		},
-	} as any;
+	} as unknown as App;
 }
 
-const noExclusions = () => ({ exclusions: [] }) as any;
-const settingsWith = (exclusions: unknown[]) => () => ({ exclusions }) as any;
+const noExclusions = () => ({ exclusions: [] }) as unknown as SynapseSettings;
+const settingsWith = (exclusions: unknown[]) => () =>
+	({ exclusions }) as unknown as SynapseSettings;
 
 // ── Tests ────────────────────────────────────────────────────
 

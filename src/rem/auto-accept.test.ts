@@ -80,10 +80,12 @@ describe('RemModule auto-accept (#228)', () => {
 		adapter = createMemoryAdapter();
 		settings = structuredClone(DEFAULT_SETTINGS);
 		notifications = new NotificationManager();
-		const readSpy = vi.fn().mockResolvedValue('# ML\n\nThis note is about backpropagation in depth.');
+		const readSpy = vi
+			.fn<(file: unknown) => Promise<string>>()
+			.mockResolvedValue('# ML\n\nThis note is about backpropagation in depth.');
 		// Atomic read -> transform -> write; the callback's return value is the
 		// written content (mirrors Obsidian's Vault.process).
-		processSpy = vi.fn(async (file: any, fn: (data: string) => string) =>
+		processSpy = vi.fn(async (file: unknown, fn: (data: string) => string) =>
 			fn(await readSpy(file))
 		);
 		sourceFile = new TFile('notes/ml.md');

@@ -1,7 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { EnrichmentStore } from './enrichment-store';
 import { EnrichmentProposal } from './types';
 import { DEFAULT_SETTINGS } from '../settings';
+import type { App } from 'obsidian';
+
+/** Spy-backed stand-in for the vault DataAdapter the store persists through. */
+interface MockAdapter {
+	read: Mock<(path: string) => Promise<string>>;
+	write: Mock<(path: string, data: string) => Promise<void>>;
+	exists: Mock<(path: string) => Promise<boolean>>;
+	remove: Mock<(path: string) => Promise<void>>;
+	list: Mock<(path: string) => Promise<{ files: string[]; folders: string[] }>>;
+}
 
 function makeProposal(overrides: Partial<EnrichmentProposal> = {}): EnrichmentProposal {
 	return {
@@ -22,7 +32,7 @@ function makeProposal(overrides: Partial<EnrichmentProposal> = {}): EnrichmentPr
 
 describe('EnrichmentStore', () => {
 	let store: EnrichmentStore;
-	let mockAdapter: any;
+	let mockAdapter: MockAdapter;
 
 	beforeEach(() => {
 		mockAdapter = {
@@ -39,7 +49,7 @@ describe('EnrichmentStore', () => {
 				createFolder: vi.fn().mockResolvedValue(undefined),
 				getAbstractFileByPath: vi.fn().mockReturnValue(null),
 			},
-		} as any;
+		} as unknown as App;
 
 		const getSettings = () => ({ ...DEFAULT_SETTINGS });
 		store = new EnrichmentStore(app, getSettings);
@@ -124,9 +134,9 @@ describe('EnrichmentStore', () => {
 		});
 
 		expect(mockAdapter.write).toHaveBeenCalled();
-		const written = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+		const written = JSON.parse(mockAdapter.write.mock.calls[0][1]) as EnrichmentProposal;
 		expect(written.status).toBe('accepted');
-		expect(written.acceptedItems.tags).toEqual(['#test']);
+		expect(written.acceptedItems!.tags).toEqual(['#test']);
 	});
 
 	it('deletes a proposal by id', async () => {

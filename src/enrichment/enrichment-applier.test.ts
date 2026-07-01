@@ -52,7 +52,10 @@ describe('EnrichmentApplier', () => {
 		app.vault.getAbstractFileByPath.mockReturnValue(file);
 		app.vault.read.mockResolvedValue(content);
 		await applier.apply(proposal, accepted);
-		return app.vault.process.mock.results[0].value as Promise<string> as unknown as string;
+		// `process` is the atomic read->transform->write mock; its first call's
+		// result value is the written content (vitest types it as `any`).
+		const written = (await app.vault.process.mock.results[0].value) as unknown as string;
+		return written;
 	}
 
 	describe('apply', () => {
