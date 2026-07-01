@@ -11,6 +11,8 @@ import {
 	PROVIDER_METADATA,
 	aiProviderToCredential,
 	decorateCredentialField,
+	ConfirmModal,
+	applyResetAll,
 } from './shared';
 import type {
 	SettingsSectionContext,
@@ -682,5 +684,34 @@ export class SynapseSettingTab extends PluginSettingTab {
 			evt.preventDefault();
 			new ChangelogModal(this.app, this.plugin).open();
 		});
+
+		// ── Reset all settings (#420) ──
+		// The global counterpart to the per-section reset icon. Gated behind a
+		// confirmation modal; preserves install bookkeeping (see applyResetAll).
+		new Setting(aboutBody)
+			.setName('Reset all settings')
+			.setDesc(
+				'Restore every Synapse setting to its shipped defaults, including your ' +
+				'API keys. This cannot be undone. Your notes and proposals are not affected.',
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText('Reset all settings')
+					.setWarning()
+					.onClick(async () => {
+						const confirmed = await new ConfirmModal(this.app, {
+							title: 'Reset all settings?',
+							message:
+								'This restores every Synapse setting to its defaults, including ' +
+								'your API keys, and cannot be undone. Your notes and proposals ' +
+								'are not affected.',
+							confirmLabel: 'Reset all settings',
+						}).openAndConfirm();
+						if (!confirmed) return;
+						this.plugin.settings = applyResetAll(this.plugin.settings);
+						await this.plugin.saveSettings();
+						ctx.rerender();
+					}),
+			);
 	}
 }

@@ -1,5 +1,7 @@
 import type SynapsePlugin from '../main';
 import { addCollapsibleSection } from './collapsible-section';
+import { ConfirmModal } from './confirm-modal';
+import { applySectionReset, sectionHasReset } from './settings-reset';
 
 /**
  * Shared accordion plumbing for the settings tab (#243).
@@ -99,6 +101,30 @@ export function createSettingsSectionContext(
 	options: SettingsSectionContextOptions,
 ): SettingsSectionContext {
 	const { containerEl, plugin, onFeatureToggle, rerender } = options;
+	const doRerender = rerender ?? (() => {});
+
+	/**
+	 * Build the per-section reset handler for a section KEY, or `undefined` when
+	 * the section has no reset control (e.g. `about`). Confirmed via a modal, the
+	 * handler restores just this section's subtree, persists, and re-renders.
+	 */
+	function makeSectionReset(
+		key: string,
+		title: string,
+	): (() => Promise<void>) | undefined {
+		if (!sectionHasReset(key)) return undefined;
+		return async () => {
+			const confirmed = await new ConfirmModal(plugin.app, {
+				title: `Reset ${title}?`,
+				message: `This restores the ${title} settings to their defaults. Your other settings are left unchanged.`,
+				confirmLabel: 'Reset',
+			}).openAndConfirm();
+			if (!confirmed) return;
+			applySectionReset(plugin.settings, key);
+			await plugin.saveSettings();
+			doRerender();
+		};
+	}
 
 	function featureSection(
 		key: string,
@@ -113,6 +139,8 @@ export function createSettingsSectionContext(
 			enabled,
 			collapsed: isSectionCollapsed(plugin, key, enabled),
 			toggleAriaLabel: toggleDesc ?? `Enable ${title}`,
+			onReset: makeSectionReset(key, title),
+			resetTooltip: `Reset ${title} to defaults`,
 			onToggle: async (value) => {
 				setEnabled(value);
 				await plugin.saveSettings();
@@ -133,6 +161,8 @@ export function createSettingsSectionContext(
 		const { bodyEl } = addCollapsibleSection(containerEl, {
 			title,
 			collapsed: isSectionCollapsed(plugin, key, null),
+			onReset: makeSectionReset(key, title),
+			resetTooltip: `Reset ${title} to defaults`,
 			onCollapseChange: async (collapsed) => {
 				await persistCollapse(plugin, key, collapsed);
 			},
@@ -145,6 +175,6 @@ export function createSettingsSectionContext(
 		plugin,
 		featureSection,
 		configSection,
-		rerender: rerender ?? (() => {}),
+		rerender: doRerender,
 	};
 }

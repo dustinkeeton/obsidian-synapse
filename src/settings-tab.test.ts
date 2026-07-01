@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createEl, ToggleComponent, Setting, type StubEl } from './__mocks__/obsidian';
+import { createEl, ToggleComponent, ButtonComponent, Setting, type StubEl } from './__mocks__/obsidian';
 
 // Mock the changelog modal so this suite never resolves the real CHANGELOG.md
 // import (a build-time `.md` text import that Vitest can't transform), and so
@@ -13,7 +13,19 @@ vi.mock('./changelog-modal', () => ({
 	}),
 }));
 
+// Mock the confirm modal (used by both the per-section reset and the global
+// reset-all) so its confirm/cancel outcome is controllable via `confirmResult`
+// without opening a real modal (#420). Mocking the leaf module also covers the
+// `./shared` barrel re-export that settings-tab imports.
+const { confirmResult } = vi.hoisted(() => ({ confirmResult: vi.fn() }));
+vi.mock('./shared/confirm-modal', () => ({
+	ConfirmModal: vi.fn(function (this: { openAndConfirm: () => Promise<boolean> }) {
+		this.openAndConfirm = confirmResult;
+	}),
+}));
+
 import { ChangelogModal } from './changelog-modal';
+import { ConfirmModal } from './shared/confirm-modal';
 import { SynapseSettingTab } from './settings-tab';
 import { DEFAULT_SETTINGS } from './settings';
 import type { SynapseSettings } from './settings';
@@ -488,5 +500,166 @@ describe('SynapseSettingTab — no-subscription note in AI Configuration (#364)'
 		});
 		tab.display();
 		expect(subscriptionNotes(tab)).toHaveLength(0);
+	});
+});
+
+/** Drain pending microtasks so a floating `void onReset()` handler completes. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('SynapseSettingTab — per-section reset controls (#420)', () => {
+	beforeEach(() => {
+		ToggleComponent.instances.length = 0;
+		(ConfirmModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+		confirmResult.mockReset();
+	});
+
+	/** All accordion section wrappers, in DOM order. */
+	function accordions(tab: SynapseSettingTab): StubEl[] {
+		const container = (tab as unknown as { containerEl: StubEl }).containerEl;
+		return elsWithClass(container, 'synapse-accordion');
+	}
+
+	/** The accordion whose header title matches `title`. */
+	function sectionByTitle(tab: SynapseSettingTab, title: string): StubEl | undefined {
+		return accordions(tab).find((acc) =>
+			elsWithClass(acc, 'synapse-accordion-title').some((t) => t.textContent === title),
+		);
+	}
+
+	/** The reset icon button within a section (located by class, never by icon). */
+	function resetBtn(section: StubEl): StubEl | undefined {
+		return elsWithClass(section, 'synapse-accordion-reset')[0];
+	}
+
+	it('renders a reset control (data-icon rotate-ccw) in feature and config section headers', () => {
+		const { tab } = makeTab();
+		tab.display();
+
+		const elaboration = sectionByTitle(tab, 'Note elaboration');
+		const ai = sectionByTitle(tab, 'AI configuration');
+		expect(resetBtn(elaboration!)?.getAttribute('data-icon')).toBe('rotate-ccw');
+		expect(resetBtn(ai!)?.getAttribute('data-icon')).toBe('rotate-ccw');
+	});
+
+	it('does not render a reset control in the About section', () => {
+		const { tab } = makeTab();
+		tab.display();
+
+		const about = sectionByTitle(tab, 'About');
+		expect(about).toBeDefined();
+		expect(resetBtn(about!)).toBeUndefined();
+	});
+
+	it('restores the section subtree, saves, and re-renders when confirmed', async () => {
+		confirmResult.mockResolvedValue(true);
+		const { tab, plugin } = makeTab((s) => {
+			s.elaboration.enabled = false;
+			s.elaboration.proposalFolderPath = 'custom/path';
+		});
+		const displaySpy = vi.spyOn(tab, 'display');
+		tab.display();
+
+		const btn = resetBtn(sectionByTitle(tab, 'Note elaboration')!)!;
+		btn.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+		await flush();
+
+		expect(plugin.settings.elaboration).toEqual(DEFAULT_SETTINGS.elaboration);
+		expect(plugin.saveSettings).toHaveBeenCalled();
+		// Initial render + the post-reset re-render.
+		expect(displaySpy).toHaveBeenCalledTimes(2);
+	});
+
+	it('leaves settings untouched (no save) when the confirmation is cancelled', async () => {
+		confirmResult.mockResolvedValue(false);
+		const { tab, plugin } = makeTab((s) => {
+			s.elaboration.enabled = false;
+		});
+		tab.display();
+
+		const btn = resetBtn(sectionByTitle(tab, 'Note elaboration')!)!;
+		btn.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+		await flush();
+
+		expect(plugin.settings.elaboration.enabled).toBe(false);
+		expect(plugin.saveSettings).not.toHaveBeenCalled();
+	});
+
+	it('scopes the Audio section reset so transcription credentials survive', async () => {
+		confirmResult.mockResolvedValue(true);
+		const { tab, plugin } = makeTab((s) => {
+			s.audio.enabled = false;
+			s.audio.language = 'es';
+			s.audio.deepgramApiKey = 'dg-key';
+			s.audio.whisperApiKey = 'sk-whisper';
+		});
+		tab.display();
+
+		const btn = resetBtn(sectionByTitle(tab, 'Audio transcription')!)!;
+		btn.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+		await flush();
+
+		// Behavior restored…
+		expect(plugin.settings.audio.enabled).toBe(DEFAULT_SETTINGS.audio.enabled);
+		expect(plugin.settings.audio.language).toBe(DEFAULT_SETTINGS.audio.language);
+		// …credentials preserved.
+		expect(plugin.settings.audio.deepgramApiKey).toBe('dg-key');
+		expect(plugin.settings.audio.whisperApiKey).toBe('sk-whisper');
+	});
+});
+
+describe('SynapseSettingTab — global reset all (#420)', () => {
+	beforeEach(() => {
+		ButtonComponent.instances.length = 0;
+		(ConfirmModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+		confirmResult.mockReset();
+	});
+
+	function resetAllButton(): ButtonComponent | undefined {
+		return ButtonComponent.instances.find((b) => b.buttonText === 'Reset all settings');
+	}
+
+	it('renders a "Reset all settings" warning button in About', () => {
+		const { tab } = makeTab();
+		tab.display();
+
+		const btn = resetAllButton();
+		expect(btn).toBeDefined();
+		expect(btn!.setWarning).toHaveBeenCalled();
+	});
+
+	it('restores all settings and preserves bookkeeping when confirmed', async () => {
+		confirmResult.mockResolvedValue(true);
+		const { tab, plugin } = makeTab((s) => {
+			s.ai.apiKey = 'sk';
+			s.elaboration.enabled = false;
+			s.onboarding.hasSeenWelcome = true;
+			s.ui.collapsedSections = { audio: true };
+			s.settingsVersion = 3;
+		});
+		tab.display();
+
+		await resetAllButton()!._click();
+
+		// Everything reset to defaults…
+		expect(plugin.settings.ai.apiKey).toBe('');
+		expect(plugin.settings.elaboration.enabled).toBe(true);
+		// …except the preserved install bookkeeping.
+		expect(plugin.settings.onboarding.hasSeenWelcome).toBe(true);
+		expect(plugin.settings.ui.collapsedSections).toEqual({ audio: true });
+		expect(plugin.settings.settingsVersion).toBe(3);
+		expect(plugin.saveSettings).toHaveBeenCalled();
+	});
+
+	it('does nothing when the reset-all confirmation is cancelled', async () => {
+		confirmResult.mockResolvedValue(false);
+		const { tab, plugin } = makeTab((s) => {
+			s.ai.apiKey = 'sk';
+		});
+		tab.display();
+
+		await resetAllButton()!._click();
+
+		expect(plugin.settings.ai.apiKey).toBe('sk');
+		expect(plugin.saveSettings).not.toHaveBeenCalled();
 	});
 });
