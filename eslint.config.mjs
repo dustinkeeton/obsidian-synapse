@@ -19,11 +19,11 @@ import obsidianmd from 'eslint-plugin-obsidianmd';
  * import/@microsoft-sdl/depend — 100+ rules — so we lift ONLY its `obsidianmd/*`
  * entries (at the maintainers' chosen severities, tracked from upstream).
  *
- * The `no-unsafe-*` family and `no-unnecessary-type-assertion` are enforced on
- * shipped code only; test infrastructure (mocks/factories/`*.test.ts`) is
- * exempted in a later override block because it relies on intentionally loose
- * `any`-typed mocks — typing those out is tracked separately in #321. The
- * `obsidianmd/*` rules likewise target shipped code, not the test harness.
+ * The `no-unsafe-*` family and `no-unnecessary-type-assertion` are enforced
+ * repo-wide — test infrastructure (mocks/factories/`*.test.ts`) included. The
+ * override block that once exempted the test harness (for its intentionally
+ * loose `any`-typed mocks) was removed once those mocks were typed out (#321).
+ * Only the `obsidianmd/*` rules stay scoped to shipped code, not the test harness.
  *
  * Type-aware rules need type information, supplied via `projectService` +
  * `tsconfigRootDir`. The lint glob (`src/**`) is aligned with the tsconfig's
@@ -108,10 +108,10 @@ export default tseslint.config(
 	},
 	{
 		// Obsidian guideline gate (#389) — the local mirror of the store's automated
-		// review (a release that fails it is silently pulled within 24h). Applied to
-		// SHIPPED code only: test infra isn't bundled into main.js, so it's never
-		// reviewed (same rationale as the #321 test exemption below). Inherits the
-		// type-aware parser from the src block above.
+		// review (a release that fails it is silently pulled within 24h). Scoped to
+		// SHIPPED code only via the `ignores` below: test infra isn't bundled into
+		// main.js, so Obsidian never reviews it. Inherits the type-aware parser from
+		// the src block above.
 		files: ['src/**/*.ts'],
 		ignores: ['**/*.test.ts', 'src/__mocks__/**', 'src/__test-utils__/**'],
 		plugins: {
