@@ -5,6 +5,12 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.9] - 2026-06-30
+
+### Changed
+
+- Every folder-scan picker — across elaboration, organize, summarize, enrichment, REM link discovery, and the all-features run — now behaves identically and defaults to the vault root, so pressing Enter as the picker opens scans your entire vault
+
 ## [1.0.8] - 2026-06-29
 
 ### Added
