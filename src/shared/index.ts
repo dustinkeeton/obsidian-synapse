@@ -97,6 +97,13 @@ export type {
 	SettingsSectionContext,
 	SettingsSectionContextOptions,
 } from './settings-section';
+export { ConfirmModal } from './confirm-modal';
+export type { ConfirmModalOptions } from './confirm-modal';
+export {
+	sectionHasReset,
+	applySectionReset,
+	applyResetAll,
+} from './settings-reset';
 export {
 	findMatchingRule,
 	isPathExcluded,
