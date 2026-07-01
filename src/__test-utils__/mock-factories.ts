@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import { TFile, TFolder } from '../__mocks__/obsidian';
 
 /**
@@ -92,9 +92,26 @@ export function createMockApp(): MockApp {
 }
 
 /**
+ * Shape returned by {@link createMockPlugin}. Mirrors the {@link MockApp}
+ * pattern: a named contract pinning the spy-backed Plugin surface the tests
+ * use, so consumers reference a stable, non-`any` type. `app` is the
+ * {@link MockApp} bag; the rest are the registered-lifecycle spies.
+ */
+export interface MockPlugin {
+	app: MockApp;
+	addCommand: Mock;
+	addRibbonIcon: Mock;
+	addSettingTab: Mock;
+	registerView: Mock;
+	registerEvent: Mock;
+	loadData: Mock;
+	saveData: Mock;
+}
+
+/**
  * Create a mock Plugin with a settings getter.
  */
-export function createMockPlugin(settingsOverrides?: Record<string, unknown>) {
+export function createMockPlugin(settingsOverrides?: Record<string, unknown>): MockPlugin {
 	const app = createMockApp();
 
 	return {
@@ -114,7 +131,7 @@ export function createMockPlugin(settingsOverrides?: Record<string, unknown>) {
  * Import DEFAULT_SETTINGS from settings.ts to use this.
  */
 export function makeSettings<T>(defaults: T, overrides?: Partial<T>): T {
-	return { ...structuredClone(defaults), ...overrides } as T;
+	return { ...structuredClone(defaults), ...overrides };
 }
 
 /**

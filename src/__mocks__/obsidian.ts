@@ -71,6 +71,48 @@ export class Modal {
 	onClose(): void {}
 }
 
+/** Synthetic event accepted by the stub's `dispatchEvent` test helper. */
+interface StubEvent {
+	type: string;
+	[key: string]: unknown;
+}
+
+/**
+ * The `cls`/`text`/`attr` subset of Obsidian's `DomElementInfo` the stub
+ * actually applies (see {@link createStubEl}). Other `DomElementInfo` keys a
+ * caller may pass are ignored at runtime; the consumer-facing `createEl`/
+ * `createDiv`/`createSpan` signatures come from the global Obsidian
+ * augmentation on `HTMLElement`, not from this internal helper type.
+ */
+type StubElInfo =
+	| string
+	| {
+			cls?: string | string[];
+			text?: string | number;
+			attr?: Record<string, string | number | boolean>;
+	  };
+
+/**
+ * Concrete type for the DOM stub produced by {@link createStubEl} /
+ * {@link createEl}.
+ *
+ * It extends the (Obsidian-augmented) global `HTMLElement` so a stub is
+ * accepted anywhere shipped code expects a real `containerEl: HTMLElement`
+ * (e.g. `renderFeatureChipSelect(container: HTMLElement)`), which is how the
+ * ~56 consuming `*.test.ts` files feed it in. The augmentation already supplies
+ * `createEl`/`createDiv`/`createSpan`/`empty`/`setText`/`addClass`/… with their
+ * real return types, so tests keep introspecting the stub tree without `any`.
+ * Only the deltas from a real element are declared here: an optional `value`
+ * (read off `<option>`/input stubs) and a `dispatchEvent` widened to accept the
+ * synthetic {@link StubEvent} payloads tests fire.
+ */
+export interface StubEl extends HTMLElement {
+	/** Present on `<option>`/input stubs; absent on plain elements. */
+	value?: string;
+	/** Test helper: dispatch accepts a synthetic `{ type, … }`, not only `Event`. */
+	dispatchEvent(evt: Event | StubEvent): boolean;
+}
+
 /**
  * Helper to create a stub DOM element with Obsidian's augmented methods.
  *
@@ -78,19 +120,19 @@ export class Modal {
  * plugin. Class state, attributes, children, and event listeners are tracked
  * so tests can introspect structure and dispatch synthetic events.
  */
-function createStubEl(tag = 'div'): any {
+function createStubEl(tag = 'div'): StubEl {
 	const classes = new Set<string>();
 	const attributes: Record<string, string> = {};
-	const listeners: Record<string, Array<(evt: any) => void>> = {};
-	const children: any[] = [];
+	const listeners: Record<string, Array<(evt: StubEvent) => void>> = {};
+	const children: StubEl[] = [];
 
-	const applyInfo = (child: any, info?: any): any => {
+	const applyInfo = (child: StubEl, info?: StubElInfo): StubEl => {
 		if (typeof info === 'string') {
-			info.split(/\s+/).filter(Boolean).forEach((c: string) => child.classList.add(c));
+			info.split(/\s+/).filter(Boolean).forEach((c) => child.classList.add(c));
 		} else if (info && typeof info === 'object') {
 			if (info.cls) {
 				const clsList = Array.isArray(info.cls) ? info.cls : [info.cls];
-				clsList.forEach((c: string) => child.classList.add(c));
+				clsList.forEach((c) => child.classList.add(c));
 			}
 			if (info.text != null) child.textContent = String(info.text);
 			if (info.attr) {
@@ -100,15 +142,17 @@ function createStubEl(tag = 'div'): any {
 		return child;
 	};
 
-	const make = (childTag: string) => (info?: any, cb?: (el: any) => void) => {
-		const child = createStubEl(childTag);
-		applyInfo(child, info);
-		children.push(child);
-		if (cb) cb(child);
-		return child;
-	};
+	const make =
+		(childTag: string) =>
+		(info?: StubElInfo, cb?: (el: StubEl) => void): StubEl => {
+			const child = createStubEl(childTag);
+			applyInfo(child, info);
+			children.push(child);
+			if (cb) cb(child);
+			return child;
+		};
 
-	const el: any = {
+	const el: StubEl = {
 		tagName: tag.toUpperCase(),
 		classList: {
 			add: vi.fn((...c: string[]) => c.forEach((x) => classes.add(x))),
@@ -131,7 +175,7 @@ function createStubEl(tag = 'div'): any {
 		empty: vi.fn(() => {
 			children.length = 0;
 		}),
-		createEl: vi.fn((t: string, info?: any, cb?: (el: any) => void) =>
+		createEl: vi.fn((t: string, info?: StubElInfo, cb?: (el: StubEl) => void) =>
 			make(t)(info, cb),
 		),
 		createDiv: vi.fn(make('div')),
@@ -152,18 +196,18 @@ function createStubEl(tag = 'div'): any {
 		removeAttribute: vi.fn((k: string) => {
 			delete attributes[k];
 		}),
-		addEventListener: vi.fn((type: string, cb: (evt: any) => void) => {
+		addEventListener: vi.fn((type: string, cb: (evt: StubEvent) => void) => {
 			(listeners[type] ??= []).push(cb);
 		}),
 		removeEventListener: vi.fn(),
 		/** Test helper: synchronously invoke registered listeners for an event. */
-		dispatchEvent: (evt: { type: string; [k: string]: unknown }) => {
+		dispatchEvent: (evt: StubEvent) => {
 			(listeners[evt.type] ?? []).forEach((cb) => cb(evt));
 			return true;
 		},
 		closest: vi.fn().mockReturnValue(null),
 		style: {},
-	};
+	} as unknown as StubEl;
 	return el;
 }
 
@@ -172,19 +216,18 @@ function createStubEl(tag = 'div'): any {
  * helpers (createDiv/createSpan/createEl/empty/classList/…). Useful for
  * rendering components that expect a real `containerEl`.
  */
-export function createEl(tag = 'div'): any {
+export function createEl(tag = 'div'): StubEl {
 	return createStubEl(tag);
 }
 
 export class Notice {
 	/** Test helper: every Notice ever constructed (clear between tests). */
 	static instances: Notice[] = [];
-	noticeEl: any;
+	noticeEl = createStubEl();
 	duration?: number;
 	/** Test helper: the raw string message the Notice was constructed with. */
 	message?: string;
 	constructor(_message: string | DocumentFragment, _duration?: number) {
-		this.noticeEl = createStubEl();
 		this.duration = _duration;
 		if (typeof _message === 'string') {
 			this.message = _message;
@@ -218,8 +261,8 @@ export class MarkdownView {
 	app: unknown = {};
 	leaf: unknown;
 	file: TFile | null = null;
-	contentEl: any = createStubEl();
-	containerEl: any = createStubEl();
+	contentEl = createStubEl();
+	containerEl = createStubEl();
 	constructor(leaf?: unknown) {
 		this.leaf = leaf;
 	}
@@ -248,7 +291,7 @@ export class ItemView {
 
 export class SuggestModal<T = unknown> {
 	app: unknown;
-	inputEl: any = { value: '', focus: vi.fn() };
+	inputEl = { value: '', focus: vi.fn() };
 	constructor(app: unknown) {
 		this.app = app;
 	}
@@ -266,7 +309,7 @@ export class SuggestModal<T = unknown> {
 export class ToggleComponent {
 	/** Test helper: every instance ever constructed (clear between tests). */
 	static instances: ToggleComponent[] = [];
-	toggleEl: any = createStubEl();
+	toggleEl = createStubEl();
 	tooltip = '';
 	private value = false;
 	private changeCb: ((value: boolean) => unknown) | undefined;
@@ -339,10 +382,10 @@ export class Setting {
 	 * container in tests. Falls back to an orphan stub when no container is passed
 	 * (e.g. credential-field.test.ts passes `{}` and inspects the stub directly).
 	 */
-	settingEl: any;
+	settingEl: StubEl;
 	/** Child components created via add*, mirroring Obsidian's `components`. */
 	components: ToggleComponent[] = [];
-	constructor(containerEl?: any) {
+	constructor(containerEl?: { createDiv?: (cls: string) => StubEl }) {
 		this.settingEl = containerEl?.createDiv?.('setting-item') ?? createStubEl();
 	}
 	setName = vi.fn().mockReturnThis();
@@ -377,7 +420,13 @@ export class WorkspaceLeaf {
 
 // --- Metadata helpers ---
 
-export function getAllTags(cache: any): string[] | null {
+/** The slice of Obsidian's `CachedMetadata` this stub reads tags out of. */
+interface TagsCache {
+	tags?: Array<{ tag: string }>;
+	frontmatter?: { tags?: string | string[] };
+}
+
+export function getAllTags(cache: TagsCache | null | undefined): string[] | null {
 	const tags: string[] = [];
 	if (cache?.tags) {
 		for (const t of cache.tags) tags.push(t.tag);
@@ -393,9 +442,9 @@ export function getAllTags(cache: any): string[] | null {
 	return tags.length > 0 ? tags : null;
 }
 
-export function parseYaml(yaml: string): any {
+export function parseYaml(yaml: string): Record<string, unknown> {
 	// Simple YAML parser for tests — handles key: value lines
-	const result: Record<string, any> = {};
+	const result: Record<string, unknown> = {};
 	for (const line of yaml.split('\n')) {
 		const match = line.match(/^(\w[\w-]*)\s*:\s*(.+)/);
 		if (match) {
@@ -411,14 +460,14 @@ export function parseYaml(yaml: string): any {
 	return result;
 }
 
-export function stringifyYaml(obj: any): string {
+export function stringifyYaml(obj: Record<string, unknown>): string {
 	const lines: string[] = [];
 	for (const [key, value] of Object.entries(obj)) {
 		if (Array.isArray(value)) {
 			lines.push(`${key}:`);
-			for (const item of value) lines.push(`  - ${item}`);
+			for (const item of value) lines.push(`  - ${String(item)}`);
 		} else {
-			lines.push(`${key}: ${value}`);
+			lines.push(`${key}: ${String(value)}`);
 		}
 	}
 	return lines.join('\n') + '\n';
@@ -444,7 +493,7 @@ export const Platform = {
 // --- SliderComponent (stub for slider-helper.ts) ---
 
 export class SliderComponent {
-	sliderEl: any = createStubEl();
+	sliderEl = createStubEl();
 	setLimits = vi.fn().mockReturnThis();
 	setValue = vi.fn().mockReturnThis();
 	setDynamicTooltip = vi.fn().mockReturnThis();
