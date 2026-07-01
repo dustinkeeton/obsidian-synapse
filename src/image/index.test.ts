@@ -1,14 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock, type MockInstance } from 'vitest';
 import { ImageModule } from './index';
 import { ImageExtractor } from './extractor';
-import { ImageEmbed } from './types';
+import { ImageEmbed, OCRResult } from './types';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
-import type { Plugin } from 'obsidian';
+import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
+import type { NotificationManager, CheckpointManager, Checkpoint } from '../shared';
 
-// Mock TFile vs the real obsidian TFile type differ structurally; tests only
-// need the runtime instance, so widen to `any` at the boundary.
-const mockFile = (path: string): any => rawFile(path);
+/** The notification-manager surface the module touches in these tests. */
+interface MockNotifications {
+	info: ReturnType<typeof vi.fn>;
+	notifyError: ReturnType<typeof vi.fn>;
+	startOperation: ReturnType<typeof vi.fn>;
+}
+
+// Mock TFile bridges to the real obsidian TFile the module signatures expect via
+// a single boundary cast (the mock's loose `vault` blocks strict assignability).
+const mockFile = (path: string): ObsidianTFile => rawFile(path) as unknown as ObsidianTFile;
 
 function makeSettings(): SynapseSettings {
 	return structuredClone(DEFAULT_SETTINGS);
@@ -27,15 +35,19 @@ function makeOp(cancelled = false) {
 describe('ImageModule', () => {
 	let app: ReturnType<typeof createMockApp>;
 	let plugin: Plugin;
-	let notifications: any;
+	let notifications: MockNotifications;
 	let checkpointManager: ReturnType<typeof createMockCheckpointManager>;
 	let op: ReturnType<typeof makeOp>;
-	let extractSpy: ReturnType<typeof vi.spyOn>;
+	let extractSpy: MockInstance<typeof ImageExtractor.prototype.extract>;
+	let getActiveFile: Mock<() => ObsidianTFile | null>;
 	let module: ImageModule;
 
 	beforeEach(() => {
 		app = createMockApp();
-		(app.workspace as any).getActiveFile = vi.fn().mockReturnValue(null);
+		// getActiveFile isn't on the base mock workspace; attach the spy the module reads.
+		getActiveFile = vi.fn<() => ObsidianTFile | null>().mockReturnValue(null);
+		(app.workspace as unknown as { getActiveFile: typeof getActiveFile }).getActiveFile =
+			getActiveFile;
 		plugin = { app } as unknown as Plugin;
 		op = makeOp();
 		notifications = {
@@ -47,15 +59,20 @@ describe('ImageModule', () => {
 		extractSpy = vi.spyOn(ImageExtractor.prototype, 'extract').mockResolvedValue({
 			text: 'extracted text',
 			fileName: 'img.png',
-		} as any);
-		module = new ImageModule(plugin, () => makeSettings(), notifications, checkpointManager as any);
+		} as OCRResult);
+		module = new ImageModule(
+			plugin,
+			() => makeSettings(),
+			notifications as unknown as NotificationManager,
+			checkpointManager as unknown as CheckpointManager,
+		);
 	});
 
 	afterEach(() => vi.restoreAllMocks());
 
 	describe('extractFromFile', () => {
 		it('shows an info notice and does nothing when no note is active', async () => {
-			(app.workspace as any).getActiveFile.mockReturnValue(null);
+			getActiveFile.mockReturnValue(null);
 
 			await module.extractFromFile(mockFile('images/img.png'));
 
@@ -67,7 +84,7 @@ describe('ImageModule', () => {
 
 		it('extracts OCR text and appends an OCR callout to the active note', async () => {
 			const active = mockFile('notes/Active.md');
-			(app.workspace as any).getActiveFile.mockReturnValue(active);
+			getActiveFile.mockReturnValue(active);
 			app.vault.read.mockResolvedValue('existing body');
 			const onComplete = vi.fn();
 			module.onExtractionComplete = onComplete;
@@ -86,7 +103,7 @@ describe('ImageModule', () => {
 
 		it('reports an error notice when extraction throws', async () => {
 			const active = mockFile('notes/Active.md');
-			(app.workspace as any).getActiveFile.mockReturnValue(active);
+			getActiveFile.mockReturnValue(active);
 			app.vault.read.mockResolvedValue('body');
 			extractSpy.mockRejectedValue(new Error('vision API down'));
 
@@ -154,7 +171,10 @@ describe('ImageModule', () => {
 
 	describe('resumeFromCheckpoint', () => {
 		it('informs the user and discards the checkpoint', async () => {
-			const checkpoint = { id: 'cp-1', remainingItems: [{ id: 'x' }, { id: 'y' }] } as any;
+			const checkpoint = {
+				id: 'cp-1',
+				remainingItems: [{ id: 'x' }, { id: 'y' }],
+			} as unknown as Checkpoint;
 
 			await module.resumeFromCheckpoint(checkpoint);
 

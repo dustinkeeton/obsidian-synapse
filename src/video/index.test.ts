@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -17,7 +17,7 @@ import type { VideoMetadata } from './types';
 const VIDEO_BYTES = Buffer.from('fake-mp4-payload-bytes');
 
 interface VaultStub {
-	createBinary: ReturnType<typeof vi.fn>;
+	createBinary: Mock<(path: string, data: ArrayBuffer) => Promise<TFile>>;
 	getAbstractFileByPath: ReturnType<typeof vi.fn>;
 	createFolder: ReturnType<typeof vi.fn>;
 	adapter: { writeBinary: ReturnType<typeof vi.fn> };
@@ -100,7 +100,7 @@ describe('VideoModule.downloadVideoToVault', () => {
 
 		// Exact-bytes assertion: proves the pool-backed-Buffer slice is correct.
 		expect(writtenData).toBeInstanceOf(ArrayBuffer);
-		expect(Buffer.from(writtenData as ArrayBuffer).equals(VIDEO_BYTES)).toBe(true);
+		expect(Buffer.from(writtenData).equals(VIDEO_BYTES)).toBe(true);
 	});
 
 	it('cleans up the temp download file after writing', async () => {
@@ -181,7 +181,7 @@ describe('VideoModule.processUrl dependency-error preservation (#382)', () => {
 		);
 		(mod as unknown as { extractor: { extractFromUrl: ReturnType<typeof vi.fn> } }).extractor = {
 			extractFromUrl,
-		} as never;
+		};
 		return mod;
 	}
 

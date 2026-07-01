@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { requestUrl } from '../__mocks__/obsidian';
+import { requestUrl, type RequestUrlParam } from '../__mocks__/obsidian';
 import { Transcriber, buildMultipartBody, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 
@@ -9,13 +9,19 @@ function makeSettings(overrides?: Partial<SynapseSettings>): SynapseSettings {
 
 const mockRequestUrl = vi.mocked(requestUrl);
 
+/** The slice of the Gemini generateContent request body the tests assert on. */
+interface GeminiRequestBody {
+	contents: Array<{ role: string; parts: Array<{ inline_data: { mime_type: string; data: string } }> }>;
+	system_instruction: { parts: Array<{ text: string }> };
+}
+
 describe('buildMultipartBody', () => {
 	it('produces valid multipart body with text fields and a file', () => {
 		const fields = [
 			{ name: 'model', value: 'whisper-1' },
 			{ name: 'response_format', value: 'verbose_json' },
 		];
-		const fileData = new TextEncoder().encode('fake audio content').buffer as ArrayBuffer;
+		const fileData = new TextEncoder().encode('fake audio content').buffer;
 		const result = buildMultipartBody(fields, {
 			name: 'test.mp3',
 			fieldName: 'file',
@@ -46,7 +52,7 @@ describe('buildMultipartBody', () => {
 	});
 
 	it('handles empty fields array', () => {
-		const fileData = new Uint8Array([0x01, 0x02]).buffer as ArrayBuffer;
+		const fileData = new Uint8Array([0x01, 0x02]).buffer;
 		const result = buildMultipartBody([], {
 			name: 'audio.wav',
 			fieldName: 'file',
@@ -60,7 +66,7 @@ describe('buildMultipartBody', () => {
 	});
 
 	it('generates unique boundaries per call', () => {
-		const fileData = new Uint8Array([0x00]).buffer as ArrayBuffer;
+		const fileData = new Uint8Array([0x00]).buffer;
 		const r1 = buildMultipartBody([], { name: 'a.mp3', fieldName: 'file', data: fileData });
 		const r2 = buildMultipartBody([], { name: 'b.mp3', fieldName: 'file', data: fileData });
 
@@ -78,7 +84,7 @@ describe('buildMultipartBody', () => {
 		(new TextDecoder().decode(body).match(/\r\n/g) || []).length;
 
 	it('neutralizes CRLF/quote injection in a vault-derived file name', () => {
-		const fileData = new Uint8Array([0x01]).buffer as ArrayBuffer;
+		const fileData = new Uint8Array([0x01]).buffer;
 		// A maliciously named note/audio file trying to break out of the quoted
 		// filename param and inject an extra multipart header/part.
 		const evilName =
@@ -94,7 +100,7 @@ describe('buildMultipartBody', () => {
 	});
 
 	it('strips CRLF from field values so they cannot start a new part', () => {
-		const fileData = new Uint8Array([0x02]).buffer as ArrayBuffer;
+		const fileData = new Uint8Array([0x02]).buffer;
 		const benign = buildMultipartBody(
 			[{ name: 'language', value: 'en' }],
 			{ name: 'a.mp3', fieldName: 'file', data: fileData }
@@ -131,7 +137,8 @@ describe('Transcriber', () => {
 
 	describe('provider dispatch', () => {
 		it('throws for unsupported provider', async () => {
-			settings.audio.transcriptionProvider = 'unknown' as any;
+			settings.audio.transcriptionProvider =
+				'unknown' as unknown as SynapseSettings['audio']['transcriptionProvider'];
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
 				.rejects.toThrow('Unsupported transcription provider: unknown');
 		});
@@ -164,8 +171,8 @@ describe('Transcriber', () => {
 
 			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
 
-			const callArgs = mockRequestUrl.mock.calls[0][0] as any;
-			expect(callArgs.headers.Authorization).toBe('Bearer sk-shared-key');
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			expect(callArgs.headers?.['Authorization']).toBe('Bearer sk-shared-key');
 		});
 
 		it('sends multipart request to Whisper API via requestUrl', async () => {
@@ -181,17 +188,17 @@ describe('Transcriber', () => {
 				headers: {},
 			});
 
-			const audioData = new Uint8Array([0xff, 0xfb, 0x90]).buffer as ArrayBuffer;
+			const audioData = new Uint8Array([0xff, 0xfb, 0x90]).buffer;
 			const result = await transcriber.transcribe(audioData, 'recording.mp3');
 
 			// Verify requestUrl was called (not native fetch)
 			expect(mockRequestUrl).toHaveBeenCalledTimes(1);
 
-			const callArgs = mockRequestUrl.mock.calls[0][0] as any;
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(callArgs.url).toBe('https://api.openai.com/v1/audio/transcriptions');
 			expect(callArgs.method).toBe('POST');
-			expect(callArgs.headers.Authorization).toBe('Bearer sk-whisper-key');
-			expect(callArgs.headers['Content-Type']).toMatch(/^multipart\/form-data; boundary=/);
+			expect(callArgs.headers?.['Authorization']).toBe('Bearer sk-whisper-key');
+			expect(callArgs.headers?.['Content-Type']).toMatch(/^multipart\/form-data; boundary=/);
 			expect(callArgs.body).toBeInstanceOf(ArrayBuffer);
 			expect(callArgs.throw).toBe(false);
 
@@ -215,8 +222,8 @@ describe('Transcriber', () => {
 
 			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
 
-			const callArgs = mockRequestUrl.mock.calls[0][0] as any;
-			const body = new TextDecoder().decode(callArgs.body);
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			const body = new TextDecoder().decode(callArgs.body as ArrayBuffer);
 			expect(body).toContain('name="language"');
 			expect(body).toContain('fr');
 		});
@@ -312,18 +319,18 @@ describe('Transcriber', () => {
 				headers: {},
 			});
 
-			const audioData = new Uint8Array([0x01, 0x02, 0x03]).buffer as ArrayBuffer;
+			const audioData = new Uint8Array([0x01, 0x02, 0x03]).buffer;
 			const result = await transcriber.transcribe(audioData, 'audio.wav');
 
 			expect(mockRequestUrl).toHaveBeenCalledTimes(1);
 
-			const callArgs = mockRequestUrl.mock.calls[0][0] as any;
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(callArgs.url).toContain('https://api.deepgram.com/v1/listen');
 			expect(callArgs.url).toContain('punctuate=true');
 			expect(callArgs.url).toContain('paragraphs=true');
 			expect(callArgs.method).toBe('POST');
-			expect(callArgs.headers.Authorization).toBe('Token dg-test-key');
-			expect(callArgs.headers['Content-Type']).toBe('audio/*');
+			expect(callArgs.headers?.['Authorization']).toBe('Token dg-test-key');
+			expect(callArgs.headers?.['Content-Type']).toBe('audio/*');
 			expect(callArgs.body).toBe(audioData);
 			expect(callArgs.throw).toBe(false);
 
@@ -351,7 +358,7 @@ describe('Transcriber', () => {
 
 			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
 
-			const callArgs = mockRequestUrl.mock.calls[0][0] as any;
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(callArgs.url).toContain('language=de');
 		});
 
@@ -445,28 +452,28 @@ describe('Transcriber', () => {
 
 			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
 
-			const callArgs = mockRequestUrl.mock.calls[0][0] as any;
-			expect(callArgs.headers['x-goog-api-key']).toBe('AIza-shared-key');
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			expect(callArgs.headers?.['x-goog-api-key']).toBe('AIza-shared-key');
 		});
 
 		it('sends base64 inline audio in a JSON body to generateContent', async () => {
 			mockRequestUrl.mockResolvedValue(geminiResponse('transcribed words'));
 
-			const audioData = new Uint8Array([0x01, 0x02, 0x03]).buffer as ArrayBuffer;
+			const audioData = new Uint8Array([0x01, 0x02, 0x03]).buffer;
 			const result = await transcriber.transcribe(audioData, 'recording.mp3');
 
 			expect(mockRequestUrl).toHaveBeenCalledTimes(1);
 
-			const callArgs = mockRequestUrl.mock.calls[0][0] as any;
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(callArgs.url).toMatch(
 				/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/[\w.-]+:generateContent$/
 			);
 			expect(callArgs.method).toBe('POST');
-			expect(callArgs.headers['x-goog-api-key']).toBe('AIza-test-key');
-			expect(callArgs.headers['Content-Type']).toBe('application/json');
+			expect(callArgs.headers?.['x-goog-api-key']).toBe('AIza-test-key');
+			expect(callArgs.headers?.['Content-Type']).toBe('application/json');
 			expect(callArgs.throw).toBe(false);
 
-			const body = JSON.parse(callArgs.body);
+			const body = JSON.parse(callArgs.body as string) as GeminiRequestBody;
 			expect(body.contents).toHaveLength(1);
 			expect(body.contents[0].role).toBe('user');
 			// The transcription instruction rides in system_instruction (not the
@@ -493,7 +500,9 @@ describe('Transcriber', () => {
 
 			await transcriber.transcribe(new ArrayBuffer(8), 'meeting.wav');
 
-			const body = JSON.parse((mockRequestUrl.mock.calls[0][0] as any).body);
+			const body = JSON.parse(
+				(mockRequestUrl.mock.calls[0][0] as RequestUrlParam).body as string,
+			) as GeminiRequestBody;
 			expect(body.contents[0].parts[0].inline_data.mime_type).toBe('audio/wav');
 		});
 
@@ -503,7 +512,9 @@ describe('Transcriber', () => {
 
 			const result = await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
 
-			const body = JSON.parse((mockRequestUrl.mock.calls[0][0] as any).body);
+			const body = JSON.parse(
+				(mockRequestUrl.mock.calls[0][0] as RequestUrlParam).body as string,
+			) as GeminiRequestBody;
 			expect(body.system_instruction.parts[0].text).toContain('"fr"');
 			expect(result.language).toBe('fr');
 		});

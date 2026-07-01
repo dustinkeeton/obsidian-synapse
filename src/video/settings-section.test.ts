@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createEl, ToggleComponent, ButtonComponent, Notice } from '../__mocks__/obsidian';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import { createEl, ToggleComponent, ButtonComponent, Notice, type StubEl } from '../__mocks__/obsidian';
 import { createSettingsSectionContext, NotificationManager } from '../shared';
 import { renderVideoSettings } from './settings-section';
 import { DEFAULT_SETTINGS } from '../settings';
@@ -24,21 +24,21 @@ const FFMPEG_CMDS = [
 const ALL_CMDS = [...YT_DLP_CMDS, ...FFMPEG_CMDS];
 
 // ── Stub-tree introspection helpers (mirror feature-chip-select.test.ts) ──
-function walk(el: any, out: any[] = []): any[] {
-	for (const c of el?.children ?? []) {
+function walk(el: StubEl, out: StubEl[] = []): StubEl[] {
+	for (const c of el.children as unknown as StubEl[]) {
 		out.push(c);
 		walk(c, out);
 	}
 	return out;
 }
-function byClass(root: any, cls: string): any[] {
-	return walk(root).filter((e) => e.classList?.contains(cls));
+function byClass(root: StubEl, cls: string): StubEl[] {
+	return walk(root).filter((e) => e.classList.contains(cls));
 }
-function classTexts(root: any, cls: string): string[] {
+function classTexts(root: StubEl, cls: string): (string | null)[] {
 	return byClass(root, cls).map((e) => e.textContent);
 }
 
-let writeText: ReturnType<typeof vi.fn>;
+let writeText: Mock<(text: string) => Promise<void>>;
 
 function makeCtx(mutate?: (s: SynapseSettings) => void) {
 	const settings = structuredClone(DEFAULT_SETTINGS);
