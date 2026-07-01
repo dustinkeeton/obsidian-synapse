@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
-import { sectionHasReset, applySectionReset, applyResetAll } from './settings-reset';
+import {
+	sectionHasReset,
+	applySectionReset,
+	sectionMatchesDefaults,
+	applyResetAll,
+} from './settings-reset';
 
 /** A fresh, independent copy of shipped defaults to mutate per test. */
 function freshSettings(): SynapseSettings {
@@ -173,6 +178,120 @@ describe('applySectionReset — general (two cross-cutting fields only)', () => 
 		expect(s.ui.collapsedSections).toEqual({ audio: true });
 		expect(s.updates.lastUpdateCheck).toBe(12345);
 		expect(s.updates.dismissedUpdateVersion).toBe('9.9.9');
+	});
+});
+
+describe('sectionMatchesDefaults', () => {
+	/** Every section key that exposes a per-section reset control. */
+	const RESETTABLE_KEYS = [
+		'ai', 'autoAccept', 'exclusions', 'general', 'elaboration', 'intake',
+		'image', 'audio', 'video', 'enrichment', 'summarize', 'tidy', 'organize',
+		'deepDive', 'title', 'rem',
+	];
+
+	it('is true for every resettable section at shipped defaults', () => {
+		const s = freshSettings();
+		for (const key of RESETTABLE_KEYS) {
+			expect(sectionMatchesDefaults(s, key)).toBe(true);
+		}
+	});
+
+	it('is true for the about section (no reset — nothing to compare)', () => {
+		expect(sectionMatchesDefaults(freshSettings(), 'about')).toBe(true);
+	});
+
+	it('goes false once an owned field diverges, and true again after applySectionReset', () => {
+		const cases: Array<[string, (s: SynapseSettings) => void]> = [
+			['elaboration', (s) => { s.elaboration.detection.minWordThreshold = 999; }],
+			['deepDive', (s) => { s.deepDive.nestingMode = 'flat'; }],
+			['autoAccept', (s) => { s.autoAccept.rem = !s.autoAccept.rem; }],
+			['exclusions', (s) => { s.exclusions = [{ pattern: 'Archive/**', features: 'all' }]; }],
+			['rem', (s) => { s.rem.enabled = !s.rem.enabled; }],
+		];
+		for (const [key, mutate] of cases) {
+			const s = freshSettings();
+			mutate(s);
+			// mirrors applySectionReset: dirty ⇒ not matching…
+			expect(sectionMatchesDefaults(s, key)).toBe(false);
+			applySectionReset(s, key);
+			// …and a reset restores the match.
+			expect(sectionMatchesDefaults(s, key)).toBe(true);
+		}
+	});
+
+	describe('general (two cross-cutting fields only)', () => {
+		it('goes false when autoFoldProperties or update-notifications diverge', () => {
+			const a = freshSettings();
+			a.ui.autoFoldProperties = !DEFAULT_SETTINGS.ui.autoFoldProperties;
+			expect(sectionMatchesDefaults(a, 'general')).toBe(false);
+
+			const b = freshSettings();
+			b.updates.enableUpdateNotifications =
+				!DEFAULT_SETTINGS.updates.enableUpdateNotifications;
+			expect(sectionMatchesDefaults(b, 'general')).toBe(false);
+		});
+
+		it('is NOT dirtied by ui.collapsedSections (UI bookkeeping, out of scope)', () => {
+			const s = freshSettings();
+			s.ui.collapsedSections = { audio: true, ai: false };
+			expect(sectionMatchesDefaults(s, 'general')).toBe(true);
+		});
+	});
+
+	describe('audio (behavior fields only — credentials out of scope)', () => {
+		it('goes false when a behavior field diverges', () => {
+			const s = freshSettings();
+			s.audio.language = 'es';
+			expect(sectionMatchesDefaults(s, 'audio')).toBe(false);
+
+			const p = freshSettings();
+			p.audio.postProcessing.removeFiller =
+				!DEFAULT_SETTINGS.audio.postProcessing.removeFiller;
+			expect(sectionMatchesDefaults(p, 'audio')).toBe(false);
+		});
+
+		it('is NOT dirtied by the credential/provider fields (owned by AI configuration)', () => {
+			const s = freshSettings();
+			s.audio.transcriptionProvider = 'deepgram';
+			s.audio.whisperApiKey = 'sk-whisper';
+			s.audio.deepgramApiKey = 'dg-key';
+			s.audio.geminiApiKey = 'gm-key';
+			s.audio.whisperModel = 'whisper-large';
+			s.audio.localWhisperPath = '/opt/whisper';
+			expect(sectionMatchesDefaults(s, 'audio')).toBe(true);
+		});
+	});
+
+	describe('ai (ai group + the six audio credential/provider fields)', () => {
+		it('goes false when an ai-group field diverges', () => {
+			const s = freshSettings();
+			s.ai.apiKey = 'sk-ai';
+			expect(sectionMatchesDefaults(s, 'ai')).toBe(false);
+		});
+
+		const AI_CREDENTIAL_MUTATIONS: Array<[string, (s: SynapseSettings) => void]> = [
+			['transcriptionProvider', (s) => { s.audio.transcriptionProvider = 'deepgram'; }],
+			['whisperApiKey', (s) => { s.audio.whisperApiKey = 'sk-whisper'; }],
+			['deepgramApiKey', (s) => { s.audio.deepgramApiKey = 'dg-key'; }],
+			['geminiApiKey', (s) => { s.audio.geminiApiKey = 'gm-key'; }],
+			['whisperModel', (s) => { s.audio.whisperModel = 'whisper-large'; }],
+			['localWhisperPath', (s) => { s.audio.localWhisperPath = '/opt/whisper'; }],
+		];
+		it.each(AI_CREDENTIAL_MUTATIONS)(
+			'goes false when the audio credential field %s diverges',
+			(_label, mutate) => {
+				const s = freshSettings();
+				mutate(s);
+				expect(sectionMatchesDefaults(s, 'ai')).toBe(false);
+			},
+		);
+
+		it('is NOT dirtied by an audio BEHAVIOR field (owned by the Audio section)', () => {
+			const s = freshSettings();
+			s.audio.language = 'es';
+			s.audio.autoFormatLyrics = !DEFAULT_SETTINGS.audio.autoFormatLyrics;
+			expect(sectionMatchesDefaults(s, 'ai')).toBe(true);
+		});
 	});
 });
 

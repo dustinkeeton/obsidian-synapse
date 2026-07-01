@@ -1,4 +1,5 @@
 import { App, Platform, PluginSettingTab, Setting } from 'obsidian';
+import type { ButtonComponent } from 'obsidian';
 import type SynapsePlugin from './main';
 import { MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
@@ -13,6 +14,7 @@ import {
 	decorateCredentialField,
 	ConfirmModal,
 	applyResetAll,
+	sectionMatchesDefaults,
 } from './shared';
 import type {
 	SettingsSectionContext,
@@ -137,6 +139,18 @@ export class SynapseSettingTab extends PluginSettingTab {
 	private autoAcceptSettings: Partial<Record<ProposalKind, Setting>> = {};
 
 	/**
+	 * Live references to the per-section "Reset to defaults" footer rows, keyed by
+	 * section key (#442). Rebuilt on every {@link display}. Lets an inline edit or a
+	 * feature enable-toggle flip a row's disabled state in place (see
+	 * {@link refreshResetDisabledState}) without re-rendering the whole tab. The
+	 * `title` is kept alongside so the description hint can be rebuilt on refresh.
+	 */
+	private resetControls: Record<
+		string,
+		{ setting: Setting; button: ButtonComponent; title: string }
+	> = {};
+
+	/**
 	 * Whether the feature that produces a given proposal kind is enabled. When a
 	 * feature is off, its Auto-Accept row is greyed out — but its stored value is
 	 * never touched, so re-enabling restores the toggle exactly as left. Note the
@@ -182,6 +196,34 @@ export class SynapseSettingTab extends PluginSettingTab {
 		}
 	}
 
+	/**
+	 * Description for a per-section "Reset to defaults" row, mirroring the global
+	 * reset-all copy, with an "Already at defaults." hint appended when the section
+	 * already equals shipped defaults (and its reset button is therefore disabled).
+	 */
+	private resetSectionDesc(title: string, atDefaults: boolean): string {
+		const base = `Restore the ${title} settings to their shipped defaults. Your other settings are left unchanged.`;
+		return atDefaults ? `${base} (Already at defaults.)` : base;
+	}
+
+	/**
+	 * Sync per-section reset rows to whether their section still matches shipped
+	 * defaults: a matching section's button is disabled (kept visible) since a
+	 * reset would be a no-op. Pass a `key` to refresh just that row (after an inline
+	 * edit); omit it to refresh every row (after a feature toggle). Mirrors
+	 * {@link refreshAutoAcceptDisabledState} — an in-place update, no re-render.
+	 */
+	private refreshResetDisabledState(key?: string): void {
+		const keys = key !== undefined ? [key] : Object.keys(this.resetControls);
+		for (const k of keys) {
+			const control = this.resetControls[k];
+			if (!control) continue;
+			const atDefaults = sectionMatchesDefaults(this.plugin.settings, k);
+			control.button.setDisabled(atDefaults);
+			control.setting.setDesc(this.resetSectionDesc(control.title, atDefaults));
+		}
+	}
+
 	// NOTE: Migrating this imperative display() to the declarative
 	// getSettingDefinitions() API is deferred until minAppVersion >= 1.13.0.
 	// The project builds against obsidian 1.7.2, where display() is not
@@ -190,14 +232,18 @@ export class SynapseSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// Rebuilt each render; feature toggles flip Auto-Accept rows' disabled
-		// state live via the context's onFeatureToggle hook.
+		// Rebuilt each render; feature toggles flip Auto-Accept rows' and per-section
+		// reset rows' disabled state live via the context's onFeatureToggle hook.
 		this.autoAcceptSettings = {};
+		this.resetControls = {};
 
 		const ctx = createSettingsSectionContext({
 			containerEl,
 			plugin: this.plugin,
-			onFeatureToggle: () => this.refreshAutoAcceptDisabledState(),
+			onFeatureToggle: () => {
+				this.refreshAutoAcceptDisabledState();
+				this.refreshResetDisabledState();
+			},
 			rerender: () => this.display(),
 		});
 
@@ -225,6 +271,39 @@ export class SynapseSettingTab extends PluginSettingTab {
 
 		// ── About (static support links, always last) ──
 		this.renderAbout(ctx);
+
+		// ── Per-section "Reset to defaults" footer rows (#442) ──
+		// Appended to the BOTTOM of every resettable section's body once the whole
+		// tab has rendered (about is skipped — it hosts the global reset-all row
+		// instead). Each button is kept visible but DISABLED while its section
+		// already equals shipped defaults, so a reset that would do nothing is a
+		// clear no-op rather than a destructive-looking confirm.
+		for (const entry of ctx.sections) {
+			if (!entry.reset) continue;
+			const reset = entry.reset;
+			const atDefaults = sectionMatchesDefaults(this.plugin.settings, entry.key);
+			const setting = new Setting(entry.bodyEl)
+				.setName('Reset to defaults')
+				.setDesc(this.resetSectionDesc(entry.title, atDefaults))
+				.setClass('synapse-section-reset');
+			setting.addButton((button) => {
+				button
+					.setButtonText('Reset')
+					.setWarning()
+					.setTooltip(`Reset ${entry.title} to defaults`)
+					.setDisabled(atDefaults)
+					.onClick(reset);
+				this.resetControls[entry.key] = { setting, button, title: entry.title };
+			});
+			// Live refresh: an inline text/dropdown/slider/toggle edit inside the
+			// section body recomputes just this section's button, so a freshly
+			// dirtied section enables its reset near-instantly. Best-effort — some
+			// controls may not bubble a change; a full re-render and the feature
+			// enable-toggle hook cover the rest.
+			const recompute = (): void => this.refreshResetDisabledState(entry.key);
+			entry.bodyEl.addEventListener('input', recompute);
+			entry.bodyEl.addEventListener('change', recompute);
+		}
 
 		// Version as a muted footer line. The settings tab must not carry a
 		// top-level plugin-name heading (Obsidian community guidelines), so the

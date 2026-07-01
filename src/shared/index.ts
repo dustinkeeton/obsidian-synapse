@@ -96,12 +96,14 @@ export {
 export type {
 	SettingsSectionContext,
 	SettingsSectionContextOptions,
+	SectionRegistryEntry,
 } from './settings-section';
 export { ConfirmModal } from './confirm-modal';
 export type { ConfirmModalOptions } from './confirm-modal';
 export {
 	sectionHasReset,
 	applySectionReset,
+	sectionMatchesDefaults,
 	applyResetAll,
 } from './settings-reset';
 export {
