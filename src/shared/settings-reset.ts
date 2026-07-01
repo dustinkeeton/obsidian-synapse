@@ -92,6 +92,91 @@ export function applySectionReset(settings: SynapseSettings, key: string): void 
 }
 
 /**
+ * Structural deep-equality for the plain JSON-like values that make up the
+ * settings tree (primitives, arrays, and plain objects). Object-key order is
+ * ignored; array order is significant. Hand-rolled because the repo ships no
+ * deep-equal helper and `JSON.stringify` is unsafe here — it is key-order
+ * sensitive and silently drops `undefined` values.
+ *
+ * The `Array.isArray(a) !== Array.isArray(b)` guard is load-bearing: an
+ * exclusion rule's `features` is a `'all' | FeatureId[]` union, so a string must
+ * never be treated as equal to an array (and vice versa).
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+	if (a === b) return true;
+	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) {
+		return false;
+	}
+	const aArr = Array.isArray(a);
+	const bArr = Array.isArray(b);
+	if (aArr !== bArr) return false;
+	if (aArr && bArr) {
+		if (a.length !== (b as unknown[]).length) return false;
+		return a.every((v, i) => deepEqual(v, (b as unknown[])[i]));
+	}
+	const ao = a as Record<string, unknown>;
+	const bo = b as Record<string, unknown>;
+	const ak = Object.keys(ao);
+	const bk = Object.keys(bo);
+	if (ak.length !== bk.length) return false;
+	return ak.every(
+		(k) => Object.prototype.hasOwnProperty.call(bo, k) && deepEqual(ao[k], bo[k]),
+	);
+}
+
+/**
+ * Whether a section's settings already equal shipped defaults — i.e. running
+ * {@link applySectionReset} for `key` would change nothing. Used to disable the
+ * per-section "reset to defaults" control when it would be a no-op (#442).
+ *
+ * MUST mirror {@link applySectionReset} field-for-field, including the special
+ * cases: `general` compares its two cross-cutting fields; `ai` compares the `ai`
+ * group PLUS the six audio credential/provider fields it restores; `audio`
+ * compares only its four behavior fields. The dangerous direction is a false
+ * "matches" (button disabled while a reset would still change something), so
+ * every field the reset touches is compared here.
+ *
+ * Sections with no reset (`about`) report `true` — there is nothing to reset.
+ */
+export function sectionMatchesDefaults(
+	settings: SynapseSettings,
+	key: string,
+): boolean {
+	if (!sectionHasReset(key)) return true;
+	switch (key) {
+		case 'general':
+			return (
+				settings.ui.autoFoldProperties === DEFAULT_SETTINGS.ui.autoFoldProperties &&
+				settings.updates.enableUpdateNotifications ===
+					DEFAULT_SETTINGS.updates.enableUpdateNotifications
+			);
+		case 'ai':
+			return (
+				deepEqual(settings.ai, DEFAULT_SETTINGS.ai) &&
+				settings.audio.transcriptionProvider ===
+					DEFAULT_SETTINGS.audio.transcriptionProvider &&
+				settings.audio.whisperApiKey === DEFAULT_SETTINGS.audio.whisperApiKey &&
+				settings.audio.deepgramApiKey === DEFAULT_SETTINGS.audio.deepgramApiKey &&
+				settings.audio.geminiApiKey === DEFAULT_SETTINGS.audio.geminiApiKey &&
+				settings.audio.whisperModel === DEFAULT_SETTINGS.audio.whisperModel &&
+				settings.audio.localWhisperPath === DEFAULT_SETTINGS.audio.localWhisperPath
+			);
+		case 'audio':
+			return (
+				settings.audio.enabled === DEFAULT_SETTINGS.audio.enabled &&
+				settings.audio.language === DEFAULT_SETTINGS.audio.language &&
+				settings.audio.autoFormatLyrics === DEFAULT_SETTINGS.audio.autoFormatLyrics &&
+				deepEqual(settings.audio.postProcessing, DEFAULT_SETTINGS.audio.postProcessing)
+			);
+		default:
+			return deepEqual(
+				settings[key as keyof SynapseSettings],
+				DEFAULT_SETTINGS[key as keyof SynapseSettings],
+			);
+	}
+}
+
+/**
  * Build a fresh settings object at shipped defaults for a global "reset all",
  * copying back the small set of install-bookkeeping fields that must survive a
  * reset:

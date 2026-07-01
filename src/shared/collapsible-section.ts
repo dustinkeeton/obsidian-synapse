@@ -1,4 +1,4 @@
-import { setIcon, Setting } from 'obsidian';
+import { Setting } from 'obsidian';
 import type { ToggleComponent } from 'obsidian';
 
 /**
@@ -37,18 +37,6 @@ export interface CollapsibleSectionOptions {
 	 * Optional aria-label for the header toggle (falls back to `title`).
 	 */
 	toggleAriaLabel?: string;
-	/**
-	 * When provided, a small "reset to defaults" icon button is rendered in the
-	 * header (before the enable toggle, if any). Clicking it invokes this handler
-	 * without folding/unfolding the section. Use it to restore just this section's
-	 * settings to their shipped defaults.
-	 */
-	onReset?: () => void | Promise<void>;
-	/**
-	 * Optional aria-label/tooltip for the reset button (falls back to
-	 * `Reset to defaults`). Only used when {@link onReset} is provided.
-	 */
-	resetTooltip?: string;
 }
 
 /**
@@ -110,8 +98,6 @@ export function addCollapsibleSection(
 		onToggle,
 		onCollapseChange,
 		toggleAriaLabel,
-		onReset,
-		resetTooltip,
 	} = options;
 
 	const hasToggle = enabled !== undefined;
@@ -132,28 +118,6 @@ export function addCollapsibleSection(
 
 	// Spacer pushes the toggle to the trailing edge of the header row.
 	const controlEl = headerEl.createDiv({ cls: 'synapse-accordion-control' });
-
-	if (onReset) {
-		// Raw button matches the header's raw-DOM style (mirrors the video
-		// settings copy button). `data-icon` + aria-label make it locatable in
-		// tests, where `setIcon` is a no-op.
-		const resetBtn = controlEl.createEl('button', {
-			cls: 'synapse-accordion-reset',
-			attr: {
-				type: 'button',
-				'aria-label': resetTooltip ?? 'Reset to defaults',
-				'data-icon': 'rotate-ccw',
-			},
-		});
-		setIcon(resetBtn, 'rotate-ccw');
-		// stopPropagation is REQUIRED: config sections have no toggle, so the
-		// header's own fold handler would otherwise fire on this click (the
-		// controlEl stop-guard below only exists for toggle sections).
-		resetBtn.addEventListener('click', (evt) => {
-			evt.stopPropagation();
-			void onReset();
-		});
-	}
 
 	let toggle: ToggleComponent | undefined;
 	if (hasToggle) {

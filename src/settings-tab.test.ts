@@ -503,15 +503,35 @@ describe('SynapseSettingTab — no-subscription note in AI Configuration (#364)'
 	});
 });
 
-/** Drain pending microtasks so a floating `void onReset()` handler completes. */
+/** Drain pending microtasks so an async reset handler (fired via `_click`) settles. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-describe('SynapseSettingTab — per-section reset controls (#420)', () => {
+describe('SynapseSettingTab — per-section reset rows (#442)', () => {
 	beforeEach(() => {
 		ToggleComponent.instances.length = 0;
+		ButtonComponent.instances.length = 0;
 		(ConfirmModal as unknown as ReturnType<typeof vi.fn>).mockClear();
 		confirmResult.mockReset();
 	});
+
+	/**
+	 * The private per-section reset control map the tab tracks, keyed by section
+	 * key (read the way `autoAcceptRows` reads `autoAcceptSettings`). Each entry
+	 * holds the row's `Setting` and its `ButtonComponent`, whose `.disabled`
+	 * mirrors whether the section already equals shipped defaults.
+	 */
+	function resetControls(
+		tab: SynapseSettingTab,
+	): Record<string, { setting: Setting; button: ButtonComponent; title: string }> {
+		return (
+			tab as unknown as {
+				resetControls: Record<
+					string,
+					{ setting: Setting; button: ButtonComponent; title: string }
+				>;
+			}
+		).resetControls;
+	}
 
 	/** All accordion section wrappers, in DOM order. */
 	function accordions(tab: SynapseSettingTab): StubEl[] {
@@ -519,35 +539,81 @@ describe('SynapseSettingTab — per-section reset controls (#420)', () => {
 		return elsWithClass(container, 'synapse-accordion');
 	}
 
-	/** The accordion whose header title matches `title`. */
-	function sectionByTitle(tab: SynapseSettingTab, title: string): StubEl | undefined {
-		return accordions(tab).find((acc) =>
+	/** The collapsible body of the accordion whose header title matches `title`. */
+	function sectionBody(tab: SynapseSettingTab, title: string): StubEl | undefined {
+		const section = accordions(tab).find((acc) =>
 			elsWithClass(acc, 'synapse-accordion-title').some((t) => t.textContent === title),
 		);
+		return section ? elsWithClass(section, 'synapse-accordion-body')[0] : undefined;
 	}
 
-	/** The reset icon button within a section (located by class, never by icon). */
-	function resetBtn(section: StubEl): StubEl | undefined {
-		return elsWithClass(section, 'synapse-accordion-reset')[0];
-	}
-
-	it('renders a reset control (data-icon rotate-ccw) in feature and config section headers', () => {
+	it('registers a labeled "Reset" control for every section except About', () => {
 		const { tab } = makeTab();
 		tab.display();
 
-		const elaboration = sectionByTitle(tab, 'Note elaboration');
-		const ai = sectionByTitle(tab, 'AI configuration');
-		expect(resetBtn(elaboration!)?.getAttribute('data-icon')).toBe('rotate-ccw');
-		expect(resetBtn(ai!)?.getAttribute('data-icon')).toBe('rotate-ccw');
+		const controls = resetControls(tab);
+		// A representative feature section + both cross-cutting config sections…
+		expect(controls['elaboration']).toBeDefined();
+		expect(controls['ai']).toBeDefined();
+		expect(controls['general']).toBeDefined();
+		// …every registered control is the labeled "Reset" button (not the old icon)…
+		for (const key of Object.keys(controls)) {
+			expect(controls[key].button.buttonText).toBe('Reset');
+		}
+		// …and About hosts the global reset-all row instead of a per-section reset.
+		expect(controls['about']).toBeUndefined();
 	});
 
-	it('does not render a reset control in the About section', () => {
+	it('disables every section reset button at shipped defaults', () => {
 		const { tab } = makeTab();
 		tab.display();
 
-		const about = sectionByTitle(tab, 'About');
-		expect(about).toBeDefined();
-		expect(resetBtn(about!)).toBeUndefined();
+		const controls = resetControls(tab);
+		expect(Object.keys(controls).length).toBeGreaterThan(0);
+		for (const key of Object.keys(controls)) {
+			// setDisabled(true) at defaults — a reset would be a no-op.
+			expect(controls[key].button.disabled).toBe(true);
+		}
+	});
+
+	it('enables only the section whose settings diverge from defaults', () => {
+		const { tab } = makeTab((s) => {
+			s.elaboration.proposalFolderPath = 'custom/path';
+		});
+		tab.display();
+
+		const controls = resetControls(tab);
+		expect(controls['elaboration'].button.disabled).toBe(false);
+		// A pristine sibling section stays disabled.
+		expect(controls['organize'].button.disabled).toBe(true);
+	});
+
+	it('records the disabled decision through setDisabled (asserted, never via _click)', () => {
+		const { tab } = makeTab((s) => {
+			s.audio.language = 'es'; // dirties the Audio behavior section
+		});
+		tab.display();
+
+		const setDisabled = resetControls(tab)['audio'].button.setDisabled as ReturnType<
+			typeof vi.fn
+		>;
+		expect(setDisabled.mock.calls.at(-1)?.[0]).toBe(false);
+	});
+
+	it('re-enables a section reset live when a change event fires on its body', () => {
+		const { tab, plugin } = makeTab();
+		tab.display();
+
+		const control = resetControls(tab)['elaboration'];
+		expect(control.button.disabled).toBe(true); // pristine
+
+		// An inline edit dirties the section; the delegated body listener recomputes.
+		plugin.settings.elaboration.proposalFolderPath = 'custom/path';
+		const body = sectionBody(tab, 'Note elaboration');
+		expect(body).toBeDefined();
+		body!.dispatchEvent({ type: 'change' });
+
+		expect(control.button.disabled).toBe(false);
 	});
 
 	it('restores the section subtree, saves, and re-renders when confirmed', async () => {
@@ -559,8 +625,7 @@ describe('SynapseSettingTab — per-section reset controls (#420)', () => {
 		const displaySpy = vi.spyOn(tab, 'display');
 		tab.display();
 
-		const btn = resetBtn(sectionByTitle(tab, 'Note elaboration')!)!;
-		btn.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+		await resetControls(tab)['elaboration'].button._click();
 		await flush();
 
 		expect(plugin.settings.elaboration).toEqual(DEFAULT_SETTINGS.elaboration);
@@ -576,8 +641,7 @@ describe('SynapseSettingTab — per-section reset controls (#420)', () => {
 		});
 		tab.display();
 
-		const btn = resetBtn(sectionByTitle(tab, 'Note elaboration')!)!;
-		btn.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+		await resetControls(tab)['elaboration'].button._click();
 		await flush();
 
 		expect(plugin.settings.elaboration.enabled).toBe(false);
@@ -594,8 +658,7 @@ describe('SynapseSettingTab — per-section reset controls (#420)', () => {
 		});
 		tab.display();
 
-		const btn = resetBtn(sectionByTitle(tab, 'Audio transcription')!)!;
-		btn.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+		await resetControls(tab)['audio'].button._click();
 		await flush();
 
 		// Behavior restored…

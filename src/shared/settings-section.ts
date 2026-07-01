@@ -13,11 +13,37 @@ import { applySectionReset, sectionHasReset } from './settings-reset';
  * knows how an accordion is built, so feature modules never import from
  * `settings-tab.ts` — they depend on `shared/` only.
  */
+/**
+ * A rendered accordion section, recorded as it is built so the orchestrator can
+ * append cross-cutting footer rows (e.g. the per-section "Reset to defaults" row,
+ * #442) into each section body after every feature has rendered.
+ */
+export interface SectionRegistryEntry {
+	/** The section key (e.g. `elaboration`, `ai`). */
+	key: string;
+	/** The section's display title. */
+	title: string;
+	/** The section's collapsible body element (append footer rows here). */
+	bodyEl: HTMLElement;
+	/**
+	 * The section's per-section reset handler, or `undefined` when the section has
+	 * no reset control (e.g. `about`, which hosts the global reset-all instead).
+	 */
+	reset?: () => Promise<void>;
+}
+
 export interface SettingsSectionContext {
 	/** The settings tab's root container element. */
 	containerEl: HTMLElement;
 	/** The plugin instance (settings + saveSettings + manifest). */
 	plugin: SynapsePlugin;
+	/**
+	 * Every accordion section rendered through this context, in render order.
+	 * Populated by {@link SettingsSectionContext.featureSection} /
+	 * {@link SettingsSectionContext.configSection} as they build each section, so a
+	 * post-render pass can append footer rows into each `bodyEl`.
+	 */
+	sections: SectionRegistryEntry[];
 	/**
 	 * Render a feature accordion with an enable toggle in the header and return
 	 * the body element to populate with the feature's sub-settings.
@@ -103,6 +129,11 @@ export function createSettingsSectionContext(
 	const { containerEl, plugin, onFeatureToggle, rerender } = options;
 	const doRerender = rerender ?? (() => {});
 
+	// Every section is recorded here as it renders so the orchestrator can append
+	// cross-cutting footer rows (per-section reset, #442) into each body after the
+	// whole tab has rendered.
+	const sections: SectionRegistryEntry[] = [];
+
 	/**
 	 * Build the per-section reset handler for a section KEY, or `undefined` when
 	 * the section has no reset control (e.g. `about`). Confirmed via a modal, the
@@ -139,8 +170,6 @@ export function createSettingsSectionContext(
 			enabled,
 			collapsed: isSectionCollapsed(plugin, key, enabled),
 			toggleAriaLabel: toggleDesc ?? `Enable ${title}`,
-			onReset: makeSectionReset(key, title),
-			resetTooltip: `Reset ${title} to defaults`,
 			onToggle: async (value) => {
 				setEnabled(value);
 				await plugin.saveSettings();
@@ -154,6 +183,7 @@ export function createSettingsSectionContext(
 				await persistCollapse(plugin, key, collapsed);
 			},
 		});
+		sections.push({ key, title, bodyEl, reset: makeSectionReset(key, title) });
 		return bodyEl;
 	}
 
@@ -161,18 +191,18 @@ export function createSettingsSectionContext(
 		const { bodyEl } = addCollapsibleSection(containerEl, {
 			title,
 			collapsed: isSectionCollapsed(plugin, key, null),
-			onReset: makeSectionReset(key, title),
-			resetTooltip: `Reset ${title} to defaults`,
 			onCollapseChange: async (collapsed) => {
 				await persistCollapse(plugin, key, collapsed);
 			},
 		});
+		sections.push({ key, title, bodyEl, reset: makeSectionReset(key, title) });
 		return bodyEl;
 	}
 
 	return {
 		containerEl,
 		plugin,
+		sections,
 		featureSection,
 		configSection,
 		rerender: doRerender,
