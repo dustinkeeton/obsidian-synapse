@@ -72,7 +72,9 @@ describe('MIN_SLIDER_DURATION', () => {
 // execFile/fs and assert on subprocess wiring without spawning a process.
 
 /** execFile stub shared across the DI tests; reset per-test. */
-const execFileMock = vi.fn();
+const execFileMock = vi.fn<
+	(cmd: string, args: string[], opts: unknown, cb: (e: unknown, o: string) => void) => void
+>();
 
 /**
  * Build a NodeDeps with a stubbed execFile and recording fs.promises so tests

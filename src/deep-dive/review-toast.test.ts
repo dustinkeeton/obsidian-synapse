@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockApp, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
+import type { NoticeAction } from '../shared';
 
 // One new root topic → exactly one generated proposal (a reviewable item).
 vi.mock('./topic-analyzer', () => ({
@@ -42,7 +43,13 @@ vi.mock('./deep-dive-store', () => ({
 }));
 
 function makeOp(cancelled = false) {
-	return { progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled };
+	return {
+		progress: vi.fn(),
+		update: vi.fn(),
+		finish: vi.fn<(message?: string, action?: NoticeAction) => void>(),
+		error: vi.fn(),
+		cancelled,
+	};
 }
 
 describe('DeepDiveModule Review toast action (#366)', () => {
@@ -117,7 +124,7 @@ describe('DeepDiveModule Review toast action (#366)', () => {
 			expect.stringContaining('Generated 1 proposals'),
 			expect.objectContaining({ label: 'Review' })
 		);
-		genOp.finish.mock.calls.at(-1)![1].onClick();
+		genOp.finish.mock.calls.at(-1)![1]!.onClick();
 		expect(openSpy).toHaveBeenCalledTimes(1);
 	});
 

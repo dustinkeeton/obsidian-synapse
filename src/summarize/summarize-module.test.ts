@@ -6,6 +6,33 @@ import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import { fetchPageContent, fetchRedditContent } from '../shared';
 import { findSummarizeTargets, extractNoteProse } from './note-scanner';
+import type { Mock } from 'vitest';
+import type { Plugin } from 'obsidian';
+import type { NotificationManager, CheckpointManager } from '../shared';
+
+/** The slice of an Obsidian Command the tests read back off addCommand. */
+interface MockCommand {
+	id: string;
+	name: string;
+	editorCallback?: (editor: unknown, ctx: unknown) => unknown;
+}
+
+/** Typed shape of the hand-built plugin stub the module + registrar consume. */
+interface MockPlugin {
+	app: {
+		vault: {
+			read: Mock<(file: unknown) => Promise<string>>;
+			modify?: ReturnType<typeof vi.fn>;
+			process: Mock<(file: unknown, fn: (data: string) => string) => Promise<string>>;
+			create: ReturnType<typeof vi.fn>;
+			getAbstractFileByPath: ReturnType<typeof vi.fn>;
+		};
+		metadataCache: { getFileCache: ReturnType<typeof vi.fn> };
+		workspace: { getActiveFile: ReturnType<typeof vi.fn> };
+	};
+	addCommand: Mock<(cmd: MockCommand) => void>;
+	registerEvent: ReturnType<typeof vi.fn>;
+}
 
 // Mock the summarizer to return a canned summary.
 // Track the last created instance so tests can inspect call args.
@@ -15,7 +42,7 @@ vi.mock('./summarizer', () => ({
 		summarize = vi.fn().mockResolvedValue('This is a test summary.');
 		constructor() {
 			// eslint-disable-next-line @typescript-eslint/no-this-alias
-			lastSummarizerInstance = this as any;
+			lastSummarizerInstance = this;
 		}
 	},
 }));
@@ -96,7 +123,7 @@ function createMockNotifications() {
 
 describe('SummarizeModule organize scope', () => {
 	let module: SummarizeModule;
-	let mockPlugin: any;
+	let mockPlugin: MockPlugin;
 	let mockNotifications: ReturnType<typeof createMockNotifications>;
 	let settings: typeof DEFAULT_SETTINGS;
 
@@ -107,10 +134,10 @@ describe('SummarizeModule organize scope', () => {
 		mockPlugin = {
 			app: {
 				vault: {
-					read: vi.fn().mockResolvedValue('# Note\n\nhttps://example.com\n'),
+					read: vi.fn<(file: unknown) => Promise<string>>().mockResolvedValue('# Note\n\nhttps://example.com\n'),
 					modify: vi.fn().mockResolvedValue(undefined),
 					// Atomic read -> transform -> write (mirrors Vault.process).
-					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+					process: vi.fn(async (file: unknown, fn: (data: string) => string) =>
 						fn(await mockPlugin.app.vault.read(file))
 					),
 					create: vi.fn().mockResolvedValue(new TFile()),
@@ -123,17 +150,19 @@ describe('SummarizeModule organize scope', () => {
 					getActiveFile: vi.fn().mockReturnValue(null),
 				},
 			},
-			addCommand: vi.fn(),
+			addCommand: vi.fn<(cmd: MockCommand) => void>(),
 			registerEvent: vi.fn(),
 		};
 
 		mockNotifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin as any,
+			mockPlugin as unknown as Plugin,
 			() => settings,
-			mockNotifications as any,
-			createMockCheckpointManager() as any,
-			new CommandRegistrar(mockPlugin as any)
+			mockNotifications as unknown as NotificationManager,
+			createMockCheckpointManager() as unknown as CheckpointManager,
+			new CommandRegistrar(
+				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+			),
 		);
 	});
 
@@ -144,11 +173,11 @@ describe('SummarizeModule organize scope', () => {
 		// Register commands so we can invoke the summarize command
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
-		const file = new TFile('notes/test.md') as any;
-		await summarizeCmd.editorCallback({}, { file });
+		const file = new TFile('notes/test.md');
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		expect(organizeCallback).toHaveBeenCalledTimes(1);
 		expect(organizeCallback).toHaveBeenCalledWith(file);
@@ -162,11 +191,11 @@ describe('SummarizeModule organize scope', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
-		const file = new TFile('notes/test.md') as any;
-		await summarizeCmd.editorCallback({}, { file });
+		const file = new TFile('notes/test.md');
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		expect(organizeCallback).not.toHaveBeenCalled();
 	});
@@ -178,14 +207,14 @@ describe('SummarizeModule organize scope', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
-		const file = new TFile('notes/test.md') as any;
+		const file = new TFile('notes/test.md');
 
 		// Should not throw even with autoOrganizeOnSummarize enabled
 		await expect(
-			summarizeCmd.editorCallback({}, { file })
+			summarizeCmd.editorCallback?.({}, { file })
 		).resolves.not.toThrow();
 	});
 
@@ -197,11 +226,11 @@ describe('SummarizeModule organize scope', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
-		const specificFile = new TFile('projects/research/my-note.md') as any;
-		await summarizeCmd.editorCallback({}, { file: specificFile });
+		const specificFile = new TFile('projects/research/my-note.md');
+		await summarizeCmd.editorCallback?.({}, { file: specificFile });
 
 		// The callback receives the EXACT file that was summarized
 		expect(organizeCallback).toHaveBeenCalledWith(specificFile);
@@ -231,7 +260,7 @@ const NON_RECIPE_CONTENT = 'This is a plain news article about the economy.';
 
 describe('SummarizeModule content-aware templates', () => {
 	let module: SummarizeModule;
-	let mockPlugin: any;
+	let mockPlugin: MockPlugin;
 	let mockNotifications: ReturnType<typeof createMockNotifications>;
 	let settings: typeof DEFAULT_SETTINGS;
 
@@ -242,10 +271,10 @@ describe('SummarizeModule content-aware templates', () => {
 		mockPlugin = {
 			app: {
 				vault: {
-					read: vi.fn().mockResolvedValue('# Note\n\nhttps://example.com\n'),
+					read: vi.fn<(file: unknown) => Promise<string>>().mockResolvedValue('# Note\n\nhttps://example.com\n'),
 					modify: vi.fn().mockResolvedValue(undefined),
 					// Atomic read -> transform -> write (mirrors Vault.process).
-					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+					process: vi.fn(async (file: unknown, fn: (data: string) => string) =>
 						fn(await mockPlugin.app.vault.read(file))
 					),
 					create: vi.fn().mockResolvedValue(new TFile()),
@@ -258,26 +287,28 @@ describe('SummarizeModule content-aware templates', () => {
 					getActiveFile: vi.fn().mockReturnValue(null),
 				},
 			},
-			addCommand: vi.fn(),
+			addCommand: vi.fn<(cmd: MockCommand) => void>(),
 			registerEvent: vi.fn(),
 		};
 
 		mockNotifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin as any,
+			mockPlugin as unknown as Plugin,
 			() => settings,
-			mockNotifications as any,
-			createMockCheckpointManager() as any,
-			new CommandRegistrar(mockPlugin as any)
+			mockNotifications as unknown as NotificationManager,
+			createMockCheckpointManager() as unknown as CheckpointManager,
+			new CommandRegistrar(
+				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+			),
 		);
 	});
 
-	async function invokeCommand(file: any): Promise<void> {
+	async function invokeCommand(file: TFile): Promise<void> {
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
-		await summarizeCmd.editorCallback({}, { file });
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
+		await summarizeCmd.editorCallback?.({}, { file });
 	}
 
 	it('uses recipe template prompt when autoDetectTemplates is true and content matches', async () => {
@@ -287,7 +318,7 @@ describe('SummarizeModule content-aware templates', () => {
 		// Return recipe content from the content fetcher
 		vi.mocked(fetchPageContent).mockResolvedValueOnce(RECIPE_CONTENT);
 
-		const file = new TFile('notes/recipe.md') as any;
+		const file = new TFile('notes/recipe.md');
 		await invokeCommand(file);
 
 		// The summarizer should have been called with the recipe template prompt
@@ -303,7 +334,7 @@ describe('SummarizeModule content-aware templates', () => {
 
 		vi.mocked(fetchPageContent).mockResolvedValueOnce(RECIPE_CONTENT);
 
-		const file = new TFile('notes/recipe.md') as any;
+		const file = new TFile('notes/recipe.md');
 		await invokeCommand(file);
 
 		// The summarizer should have been called with undefined (style default)
@@ -317,7 +348,7 @@ describe('SummarizeModule content-aware templates', () => {
 
 		vi.mocked(fetchPageContent).mockResolvedValueOnce(RECIPE_CONTENT);
 
-		const file = new TFile('notes/recipe.md') as any;
+		const file = new TFile('notes/recipe.md');
 		await invokeCommand(file);
 
 		// The summarizer should have been called with the custom prompt
@@ -331,7 +362,7 @@ describe('SummarizeModule content-aware templates', () => {
 
 		vi.mocked(fetchPageContent).mockResolvedValueOnce(NON_RECIPE_CONTENT);
 
-		const file = new TFile('notes/article.md') as any;
+		const file = new TFile('notes/article.md');
 		await invokeCommand(file);
 
 		// The summarizer should have been called with undefined (style default)
@@ -343,12 +374,12 @@ describe('SummarizeModule content-aware templates', () => {
 		const redditUrl = 'https://www.reddit.com/r/immich/comments/abc123/title/';
 		vi.mocked(findSummarizeTargets).mockReturnValueOnce([
 			{ type: 'url', source: redditUrl, line: 2, endLine: 2 },
-		] as any);
+		]);
 		// Clear cross-test accumulation so the assertions reflect only this run.
 		vi.mocked(fetchPageContent).mockClear();
 		vi.mocked(fetchRedditContent).mockClear();
 
-		const file = new TFile('notes/reddit.md') as any;
+		const file = new TFile('notes/reddit.md');
 		await invokeCommand(file);
 
 		expect(fetchRedditContent).toHaveBeenCalledWith(redditUrl, expect.any(Number));
@@ -360,7 +391,7 @@ describe('SummarizeModule content-aware templates', () => {
 
 describe('SummarizeModule note content (#367)', () => {
 	let module: SummarizeModule;
-	let mockPlugin: any;
+	let mockPlugin: MockPlugin;
 	let mockNotifications: ReturnType<typeof createMockNotifications>;
 	let settings: typeof DEFAULT_SETTINGS;
 
@@ -370,8 +401,8 @@ describe('SummarizeModule note content (#367)', () => {
 		mockPlugin = {
 			app: {
 				vault: {
-					read: vi.fn().mockResolvedValue('# Title\n\nThe note body prose.\n'),
-					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+					read: vi.fn<(file: unknown) => Promise<string>>().mockResolvedValue('# Title\n\nThe note body prose.\n'),
+					process: vi.fn(async (file: unknown, fn: (data: string) => string) =>
 						fn(await mockPlugin.app.vault.read(file))
 					),
 					create: vi.fn().mockResolvedValue(new TFile()),
@@ -380,26 +411,28 @@ describe('SummarizeModule note content (#367)', () => {
 				metadataCache: { getFileCache: vi.fn().mockReturnValue(null) },
 				workspace: { getActiveFile: vi.fn().mockReturnValue(null) },
 			},
-			addCommand: vi.fn(),
+			addCommand: vi.fn<(cmd: MockCommand) => void>(),
 			registerEvent: vi.fn(),
 		};
 
 		mockNotifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin as any,
+			mockPlugin as unknown as Plugin,
 			() => settings,
-			mockNotifications as any,
-			createMockCheckpointManager() as any,
-			new CommandRegistrar(mockPlugin as any)
+			mockNotifications as unknown as NotificationManager,
+			createMockCheckpointManager() as unknown as CheckpointManager,
+			new CommandRegistrar(
+				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+			),
 		);
 	});
 
 	async function runSummarize(path = 'notes/My Note.md'): Promise<void> {
 		await module.onload();
 		const cmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
-		await cmd.editorCallback({}, { file: new TFile(path) });
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
+		await cmd.editorCallback?.({}, { file: new TFile(path) });
 	}
 
 	it('summarizes a prose-only note when includeNoteContent is on', async () => {

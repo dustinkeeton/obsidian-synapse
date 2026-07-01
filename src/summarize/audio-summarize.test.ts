@@ -4,6 +4,38 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import type { Mock } from 'vitest';
+import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
+import type { NotificationManager, CheckpointManager } from '../shared';
+import type { AudioEmbed } from '../audio';
+
+/** The slice of an Obsidian Command the tests read back off addCommand. */
+interface MockCommand {
+	id: string;
+	name: string;
+	editorCallback?: (editor: unknown, ctx: unknown) => unknown;
+}
+
+/** Typed shape of the hand-built plugin stub the module + registrar consume. */
+interface MockPlugin {
+	app: {
+		vault: {
+			read: Mock<(file: unknown) => Promise<string>>;
+			modify: ReturnType<typeof vi.fn>;
+			process: Mock<(file: unknown, fn: (data: string) => string) => Promise<string>>;
+			create: ReturnType<typeof vi.fn>;
+			getAbstractFileByPath: ReturnType<typeof vi.fn>;
+			readBinary: ReturnType<typeof vi.fn>;
+		};
+		metadataCache: {
+			getFileCache: ReturnType<typeof vi.fn>;
+			getFirstLinkpathDest: ReturnType<typeof vi.fn>;
+		};
+		workspace: { getActiveFile: ReturnType<typeof vi.fn> };
+	};
+	addCommand: Mock<(cmd: MockCommand) => void>;
+	registerEvent: ReturnType<typeof vi.fn>;
+}
 
 // Mock the summarizer to return a canned summary
 vi.mock('./summarizer', () => ({
@@ -28,9 +60,12 @@ vi.mock('../video', () => ({
 }));
 
 // Mock the audio module — findAudioEmbeds returns controlled results
-const mockFindAudioEmbeds = vi.fn().mockReturnValue([]);
+const mockFindAudioEmbeds = vi
+	.fn<(content: string, sourcePath: string, metadataCache: unknown) => AudioEmbed[]>()
+	.mockReturnValue([]);
 vi.mock('../audio', () => ({
-	findAudioEmbeds: (...args: any[]) => mockFindAudioEmbeds(...args),
+	findAudioEmbeds: (content: string, sourcePath: string, metadataCache: unknown) =>
+		mockFindAudioEmbeds(content, sourcePath, metadataCache),
 }));
 
 // Mock the shared module. Content fetchers are stubbed here (they moved from
@@ -87,17 +122,18 @@ function createMockNotifications() {
 	};
 }
 
-function makeTFile(path: string): TFile {
-	const file = new TFile(path);
-	return file;
+function makeTFile(path: string): ObsidianTFile {
+	// Mock TFile bridges to the real obsidian TFile that AudioEmbed.file / the
+	// editor ctx expect; a single boundary cast keeps the call sites clean.
+	return new TFile(path) as unknown as ObsidianTFile;
 }
 
 describe('SummarizeModule audio target detection', () => {
 	let module: SummarizeModule;
-	let mockPlugin: any;
+	let mockPlugin: MockPlugin;
 	let mockNotifications: ReturnType<typeof createMockNotifications>;
 	let settings: typeof DEFAULT_SETTINGS;
-	let transcribeAudioFn: TranscribeAudioFn & ReturnType<typeof vi.fn>;
+	let transcribeAudioFn: Mock<TranscribeAudioFn>;
 
 	beforeEach(() => {
 		settings = structuredClone(DEFAULT_SETTINGS);
@@ -106,17 +142,17 @@ describe('SummarizeModule audio target detection', () => {
 		settings.summarize.includeNoteContent = false;
 		mockFindAudioEmbeds.mockReset();
 
-		transcribeAudioFn = vi.fn().mockResolvedValue('Transcribed audio content.') as any;
+		transcribeAudioFn = vi.fn<TranscribeAudioFn>().mockResolvedValue('Transcribed audio content.');
 
 		const audioFile = makeTFile('audio/recording.mp3');
 
 		mockPlugin = {
 			app: {
 				vault: {
-					read: vi.fn().mockResolvedValue('# Note\n\n![[recording.mp3]]\n'),
+					read: vi.fn<(file: unknown) => Promise<string>>().mockResolvedValue('# Note\n\n![[recording.mp3]]\n'),
 					modify: vi.fn().mockResolvedValue(undefined),
 					// Atomic read -> transform -> write (mirrors Vault.process).
-					process: vi.fn(async (file: any, fn: (data: string) => string) =>
+					process: vi.fn(async (file: unknown, fn: (data: string) => string) =>
 						fn(await mockPlugin.app.vault.read(file))
 					),
 					create: vi.fn().mockResolvedValue(new TFile()),
@@ -131,17 +167,19 @@ describe('SummarizeModule audio target detection', () => {
 					getActiveFile: vi.fn().mockReturnValue(null),
 				},
 			},
-			addCommand: vi.fn(),
+			addCommand: vi.fn<(cmd: MockCommand) => void>(),
 			registerEvent: vi.fn(),
 		};
 
 		mockNotifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin as any,
+			mockPlugin as unknown as Plugin,
 			() => settings,
-			mockNotifications as any,
-			createMockCheckpointManager() as any,
-			new CommandRegistrar(mockPlugin as any),
+			mockNotifications as unknown as NotificationManager,
+			createMockCheckpointManager() as unknown as CheckpointManager,
+			new CommandRegistrar(
+				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+			),
 			undefined,
 			transcribeAudioFn
 		);
@@ -155,11 +193,11 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
 		const file = makeTFile('notes/test.md');
-		await summarizeCmd.editorCallback({}, { file });
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		// transcribeAudioFn should have been called because the audio target was detected
 		expect(transcribeAudioFn).toHaveBeenCalled();
@@ -173,17 +211,17 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
 		const file = makeTFile('notes/test.md');
-		await summarizeCmd.editorCallback({}, { file });
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		// The vault should have been modified with the summary
 		expect(mockPlugin.app.vault.process).toHaveBeenCalled();
 
 		// The content written should contain the summary callout
-		const modifiedContent = await mockPlugin.app.vault.process.mock.results[0].value;
+		const modifiedContent = (await mockPlugin.app.vault.process.mock.results[0].value) as string;
 		expect(modifiedContent).toContain('Summary of recording.mp3');
 	});
 
@@ -195,11 +233,11 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
 		const file = makeTFile('notes/test.md');
-		await summarizeCmd.editorCallback({}, { file });
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		// MetadataCache should have been used to resolve the audio file
 		expect(mockPlugin.app.metadataCache.getFirstLinkpathDest).toHaveBeenCalledWith(
@@ -227,11 +265,11 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
 		const file = makeTFile('notes/test.md');
-		await summarizeCmd.editorCallback({}, { file });
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		// Should not transcribe because the audio embed already has a summary
 		expect(transcribeAudioFn).not.toHaveBeenCalled();
@@ -244,11 +282,13 @@ describe('SummarizeModule audio target detection', () => {
 	it('does not detect audio embeds when no transcribeAudio callback is provided', async () => {
 		// Create module without audio callback
 		const moduleNoAudio = new SummarizeModule(
-			mockPlugin as any,
+			mockPlugin as unknown as Plugin,
 			() => settings,
-			mockNotifications as any,
-			createMockCheckpointManager() as any,
-			new CommandRegistrar(mockPlugin as any),
+			mockNotifications as unknown as NotificationManager,
+			createMockCheckpointManager() as unknown as CheckpointManager,
+			new CommandRegistrar(
+				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+			),
 			undefined,
 			undefined
 		);
@@ -260,11 +300,11 @@ describe('SummarizeModule audio target detection', () => {
 
 		await moduleNoAudio.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
 		const file = makeTFile('notes/test.md');
-		await summarizeCmd.editorCallback({}, { file });
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		// findAudioEmbeds should not have been called when there is no audio callback
 		expect(mockFindAudioEmbeds).not.toHaveBeenCalled();
@@ -291,11 +331,11 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
 		const file = makeTFile('notes/test.md');
-		await summarizeCmd.editorCallback({}, { file });
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		// findAudioEmbeds should have been called to detect audio targets
 		expect(mockFindAudioEmbeds).toHaveBeenCalled();
@@ -314,11 +354,11 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
 		const file = makeTFile('notes/test.md');
-		await summarizeCmd.editorCallback({}, { file });
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		// Should report an error rather than crash
 		expect(mockNotifications.notifyError).toHaveBeenCalled();
@@ -334,11 +374,11 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
 		const file = makeTFile('notes/test.md');
-		await summarizeCmd.editorCallback({}, { file });
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		// Should report error about empty content (standardized link-load notice)
 		expect(mockNotifications.error).toHaveBeenCalledWith(
@@ -376,11 +416,11 @@ describe('SummarizeModule audio target detection', () => {
 
 		await module.onload();
 		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
-			(c: any) => c[0].id === 'summarize-current-note'
-		)[0];
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
 
 		const file = makeTFile('notes/lecture.md');
-		await summarizeCmd.editorCallback({}, { file });
+		await summarizeCmd.editorCallback?.({}, { file });
 
 		// findAudioEmbeds was called, confirming both embeds were detected
 		expect(mockFindAudioEmbeds).toHaveBeenCalled();

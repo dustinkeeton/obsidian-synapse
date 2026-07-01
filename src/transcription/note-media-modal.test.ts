@@ -6,16 +6,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const { settingNames } = vi.hoisted(() => ({ settingNames: [] as string[] }));
 
 vi.mock('obsidian', async (importOriginal) => {
-	const actual = await importOriginal<any>();
+	const actual = await importOriginal<typeof import('obsidian')>();
 	class TrackedSetting {
 		constructor(_el: unknown) {}
 		setName = vi.fn((n: string) => { settingNames.push(n); return this; });
 		setDesc = vi.fn().mockReturnThis();
-		addToggle = vi.fn((cb: (t: any) => void) => {
+		addToggle = vi.fn((cb: (t: unknown) => void) => {
 			cb({ setValue: vi.fn().mockReturnThis(), onChange: vi.fn().mockReturnThis() });
 			return this;
 		});
-		addButton = vi.fn((cb: (b: any) => void) => {
+		addButton = vi.fn((cb: (b: unknown) => void) => {
 			cb({ setButtonText: vi.fn().mockReturnThis(), setCta: vi.fn().mockReturnThis(), onClick: vi.fn().mockReturnThis() });
 			return this;
 		});
@@ -24,18 +24,18 @@ vi.mock('obsidian', async (importOriginal) => {
 });
 
 import { NoteMediaModal } from './note-media-modal';
-import { TFile } from '../__mocks__/obsidian';
+import { TFile, createEl } from '../__mocks__/obsidian';
+import type { App, TFile as ObsidianTFile } from 'obsidian';
+import type { AudioEmbed } from '../audio';
+import type { NotificationManager } from '../shared';
 
 const COMBINE_LABEL = 'Combine all selected audio into one transcription';
 
-function stubEl(): any {
-	return { empty: vi.fn(), createEl: vi.fn(() => stubEl()), createDiv: vi.fn(() => stubEl()) };
-}
-
-function audioEmbeds(n: number) {
+function audioEmbeds(n: number): AudioEmbed[] {
 	return Array.from({ length: n }, (_, i) => ({
 		fileName: `clip${i}.mp3`,
-		file: new TFile(`clip${i}.mp3`),
+		// Mock TFile bridges to the real obsidian TFile the AudioEmbed type expects.
+		file: new TFile(`clip${i}.mp3`) as unknown as ObsidianTFile,
 		line: i,
 	}));
 }
@@ -46,8 +46,16 @@ function openModal(n: number, ffmpeg: boolean) {
 		onTranscribeVideo: vi.fn().mockResolvedValue(undefined),
 		onExtractImages: vi.fn().mockResolvedValue(undefined),
 	};
-	const modal = new NoteMediaModal({} as any, audioEmbeds(n) as any, [], [], callbacks, { info: vi.fn() } as any, ffmpeg);
-	(modal as any).contentEl = stubEl();
+	const modal = new NoteMediaModal(
+		{} as unknown as App,
+		audioEmbeds(n),
+		[],
+		[],
+		callbacks,
+		{ info: vi.fn() } as unknown as NotificationManager,
+		ffmpeg,
+	);
+	(modal as unknown as { contentEl: HTMLElement }).contentEl = createEl();
 	modal.onOpen();
 	return modal;
 }

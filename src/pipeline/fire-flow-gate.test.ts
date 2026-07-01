@@ -9,6 +9,7 @@ vi.mock('../commands', () => ({ isPipelineKeyInFlow: isPipelineKeyInFlowMock }))
 import { SynapseRunner } from './synapse-runner';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { PipelineModuleMap } from './types';
+import type { NotificationManager } from '../shared';
 
 function createMockNotifications() {
 	const handle = { update: vi.fn(), progress: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled: false };
@@ -42,7 +43,11 @@ describe('SynapseRunner — registry fire-synapse gate', () => {
 			(settings[key] as { enabled: boolean }).enabled = true;
 		}
 		mockModules = createMockModules();
-		runner = new SynapseRunner(mockModules, () => settings, createMockNotifications() as any);
+		runner = new SynapseRunner(
+			mockModules,
+			() => settings,
+			createMockNotifications() as unknown as NotificationManager,
+		);
 	});
 
 	it('runs every enabled phase when all are in the fire-synapse flow', async () => {

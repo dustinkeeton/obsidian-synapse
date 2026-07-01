@@ -3,16 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const { settingNames } = vi.hoisted(() => ({ settingNames: [] as string[] }));
 
 vi.mock('obsidian', async (importOriginal) => {
-	const actual = await importOriginal<any>();
+	const actual = await importOriginal<typeof import('obsidian')>();
 	class TrackedSetting {
 		constructor(_el: unknown) {}
 		setName = vi.fn((n: string) => { settingNames.push(n); return this; });
 		setDesc = vi.fn().mockReturnThis();
-		addToggle = vi.fn((cb: (t: any) => void) => {
+		addToggle = vi.fn((cb: (t: unknown) => void) => {
 			cb({ setValue: vi.fn().mockReturnThis(), onChange: vi.fn().mockReturnThis() });
 			return this;
 		});
-		addButton = vi.fn((cb: (b: any) => void) => {
+		addButton = vi.fn((cb: (b: unknown) => void) => {
 			cb({ setButtonText: vi.fn().mockReturnThis(), setCta: vi.fn().mockReturnThis(), onClick: vi.fn().mockReturnThis() });
 			return this;
 		});
@@ -22,12 +22,24 @@ vi.mock('obsidian', async (importOriginal) => {
 
 import { SummarizeSelectionModal, SummarizeModalDefaults } from './summarize-modal';
 import { SummarizeTarget } from './types';
+import type { App } from 'obsidian';
+import type { NotificationManager } from '../shared';
+import { createEl } from '../__mocks__/obsidian';
 
 const COMBINE_LABEL = 'Combine into one summary';
 const NOTE_LABEL = 'Include note content';
 
-function stubEl(): any {
-	return { empty: vi.fn(), createEl: vi.fn(() => stubEl()), createDiv: vi.fn(() => stubEl()) };
+/** Typed view of the modal's private toggle state / selection internals. */
+function internals(modal: SummarizeSelectionModal): {
+	includeNote: boolean;
+	combine: boolean;
+	collectChosen: () => SummarizeTarget[];
+} {
+	return modal as unknown as {
+		includeNote: boolean;
+		combine: boolean;
+		collectChosen: () => SummarizeTarget[];
+	};
 }
 
 const refTargets = (): SummarizeTarget[] => [
@@ -43,13 +55,13 @@ const DEFAULTS: SummarizeModalDefaults = { includeNoteContent: true, combineSumm
 
 function openModal(targets: SummarizeTarget[], defaults: SummarizeModalDefaults = DEFAULTS) {
 	const modal = new SummarizeSelectionModal(
-		{} as any,
+		{} as unknown as App,
 		targets,
 		vi.fn().mockResolvedValue(undefined),
 		defaults,
-		{ info: vi.fn() } as any
+		{ info: vi.fn() } as unknown as NotificationManager,
 	);
-	(modal as any).contentEl = stubEl();
+	(modal as unknown as { contentEl: HTMLElement }).contentEl = createEl();
 	modal.onOpen();
 	return modal;
 }
@@ -79,22 +91,22 @@ describe('SummarizeSelectionModal toggles (#367)', () => {
 			includeNoteContent: false,
 			combineSummaries: false,
 		});
-		expect((modal as any).includeNote).toBe(false);
-		expect((modal as any).combine).toBe(false);
+		expect(internals(modal).includeNote).toBe(false);
+		expect(internals(modal).combine).toBe(false);
 	});
 
 	it('includes the note-content target in the selection when its toggle is on', () => {
 		const modal = openModal([...refTargets(), noteContentTarget()]);
-		(modal as any).includeNote = true;
-		const chosen = (modal as any).collectChosen() as SummarizeTarget[];
+		internals(modal).includeNote = true;
+		const chosen = internals(modal).collectChosen();
 		expect(chosen.some((t) => t.type === 'note-content')).toBe(true);
 		expect(chosen).toHaveLength(3);
 	});
 
 	it('excludes the note-content target when its toggle is off', () => {
 		const modal = openModal([...refTargets(), noteContentTarget()]);
-		(modal as any).includeNote = false;
-		const chosen = (modal as any).collectChosen() as SummarizeTarget[];
+		internals(modal).includeNote = false;
+		const chosen = internals(modal).collectChosen();
 		expect(chosen.some((t) => t.type === 'note-content')).toBe(false);
 		// Reference targets remain selected by default.
 		expect(chosen).toHaveLength(2);
