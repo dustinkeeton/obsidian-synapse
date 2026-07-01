@@ -1,13 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { TitleSuggester } from './title-suggester';
+import type { AIClient } from '../shared';
 
 describe('TitleSuggester', () => {
 	let suggester: TitleSuggester;
-	let mockComplete: ReturnType<typeof vi.fn>;
+	let mockComplete: Mock<AIClient['complete']>;
 
 	beforeEach(() => {
 		mockComplete = vi.fn();
-		const mockAIClient = { complete: mockComplete } as any;
+		const mockAIClient = { complete: mockComplete } as unknown as AIClient;
 		suggester = new TitleSuggester(mockAIClient);
 	});
 

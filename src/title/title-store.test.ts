@@ -1,7 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { TitleProposalStore } from './title-store';
 import { TitleProposal } from './types';
 import { DEFAULT_SETTINGS } from '../settings';
+import type { App } from 'obsidian';
+
+/** Spy-backed stand-in for the Vault adapter surface the store reads/writes through. */
+interface MockAdapter {
+	read: Mock<(path: string) => Promise<string>>;
+	write: Mock<(path: string, data: string) => Promise<void>>;
+	exists: Mock<(path: string) => Promise<boolean>>;
+	remove: Mock<(path: string) => Promise<void>>;
+	list: Mock<(path: string) => Promise<{ files: string[]; folders: string[] }>>;
+}
 
 function makeProposal(overrides: Partial<TitleProposal> = {}): TitleProposal {
 	return {
@@ -19,7 +29,7 @@ function makeProposal(overrides: Partial<TitleProposal> = {}): TitleProposal {
 
 describe('TitleProposalStore', () => {
 	let store: TitleProposalStore;
-	let mockAdapter: any;
+	let mockAdapter: MockAdapter;
 
 	beforeEach(() => {
 		mockAdapter = {
@@ -36,7 +46,7 @@ describe('TitleProposalStore', () => {
 				createFolder: vi.fn().mockResolvedValue(undefined),
 				getAbstractFileByPath: vi.fn().mockReturnValue(null),
 			},
-		} as any;
+		} as unknown as App;
 
 		const getSettings = () => ({ ...DEFAULT_SETTINGS });
 		store = new TitleProposalStore(app, getSettings);
@@ -116,7 +126,7 @@ describe('TitleProposalStore', () => {
 		await store.updateStatus('update-me', 'accepted');
 
 		expect(mockAdapter.write).toHaveBeenCalled();
-		const written = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+		const written = JSON.parse(mockAdapter.write.mock.calls[0][1]) as TitleProposal;
 		expect(written.status).toBe('accepted');
 	});
 

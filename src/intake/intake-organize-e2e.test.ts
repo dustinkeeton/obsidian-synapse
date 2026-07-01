@@ -1,10 +1,34 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { IntakeModule } from './index';
 import { OrganizeModule } from '../organize';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile, TFolder } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
+
+/** Spy-backed stand-ins for the in-memory vault/adapter/fileManager surfaces. */
+interface MockAdapter {
+	read: Mock<(path: string) => Promise<string>>;
+	write: Mock<(path: string, content: string) => Promise<void>>;
+	exists: Mock<(path: string) => Promise<boolean>>;
+	remove: Mock<(path: string) => Promise<void>>;
+	list: Mock<(folder: string) => Promise<{ files: string[]; folders: string[] }>>;
+}
+interface MockVault {
+	on: Mock<(event: string, cb: (file: ObsidianTFile) => void) => { event: string }>;
+	read: Mock<(file: ObsidianTFile) => Promise<string>>;
+	process: Mock<(file: ObsidianTFile, fn: (data: string) => string) => Promise<string>>;
+	create: Mock<(path: string, content: string) => Promise<ObsidianTFile>>;
+	createFolder: Mock<(path: string) => Promise<void>>;
+	getRoot: () => TFolder;
+	getAbstractFileByPath: Mock<(path: string) => ObsidianTFile | null>;
+	rename: Mock<(file: ObsidianTFile, newPath: string) => Promise<void>>;
+	adapter: MockAdapter;
+}
+interface MockFileManager {
+	renameFile: Mock<(file: ObsidianTFile, newPath: string) => Promise<void>>;
+}
 
 /**
  * Integration test for the intake → organize handshake (#227).
@@ -50,13 +74,13 @@ vi.mock('../organize/content-analyzer', () => ({
 
 const SETTLE_MS = 5000;
 
-function makeFile(path: string): TFile {
+function makeFile(path: string): ObsidianTFile {
 	const file = new TFile(path);
 	const slash = path.lastIndexOf('/');
 	if (slash >= 0) {
 		file.parent = new TFolder(path.slice(0, slash));
 	}
-	return file;
+	return file as unknown as ObsidianTFile;
 }
 
 /** Build a TFolder tree (for vault.getRoot) from flat directory paths. */
@@ -102,9 +126,9 @@ describe('intake → real organize handshake (#227)', () => {
 	let settings: SynapseSettings;
 	let store: Map<string, string>;
 	let adapterFiles: Map<string, string>;
-	let handlers: Record<string, (file: any) => void>;
-	let vault: any;
-	let fileManager: any;
+	let handlers: Record<string, (file: ObsidianTFile) => void>;
+	let vault: MockVault;
+	let fileManager: MockFileManager;
 	let organize: OrganizeModule;
 	let intake: IntakeModule;
 	let deps: {
@@ -171,7 +195,7 @@ describe('intake → real organize handshake (#227)', () => {
 			})),
 		};
 
-		const moveInPlace = (file: any, newPath: string) => {
+		const moveInPlace = (file: ObsidianTFile, newPath: string) => {
 			const content = store.get(file.path);
 			store.delete(file.path);
 			if (content !== undefined) store.set(newPath, content);
@@ -182,12 +206,12 @@ describe('intake → real organize handshake (#227)', () => {
 		};
 
 		vault = {
-			on: vi.fn((event: string, cb: (file: any) => void) => {
+			on: vi.fn((event: string, cb: (file: ObsidianTFile) => void) => {
 				handlers[event] = cb;
 				return { event };
 			}),
-			read: vi.fn(async (file: any) => store.get(file.path) ?? ''),
-			process: vi.fn(async (file: any, fn: (data: string) => string) => {
+			read: vi.fn(async (file: ObsidianTFile) => store.get(file.path) ?? ''),
+			process: vi.fn(async (file: ObsidianTFile, fn: (data: string) => string) => {
 				const result = fn(store.get(file.path) ?? '');
 				store.set(file.path, result);
 				return result;
@@ -202,13 +226,13 @@ describe('intake → real organize handshake (#227)', () => {
 				store.has(path) ? makeFile(path) : null,
 			),
 			// Organize's primary mover.
-			rename: vi.fn(async (file: any, newPath: string) => moveInPlace(file, newPath)),
+			rename: vi.fn(async (file: ObsidianTFile, newPath: string) => moveInPlace(file, newPath)),
 			adapter,
 		};
 
 		fileManager = {
 			// Intake's fallback mover.
-			renameFile: vi.fn(async (file: any, newPath: string) => moveInPlace(file, newPath)),
+			renameFile: vi.fn(async (file: ObsidianTFile, newPath: string) => moveInPlace(file, newPath)),
 		};
 
 		const metadataCache = {
@@ -216,14 +240,14 @@ describe('intake → real organize handshake (#227)', () => {
 			getFirstLinkpathDest: vi.fn().mockReturnValue(null),
 		};
 
-		const plugin: any = {
+		const plugin = {
 			app: { vault, fileManager, metadataCache },
 			registerEvent: vi.fn(),
 			addCommand: vi.fn(),
 		};
 
 		organize = new OrganizeModule(
-			plugin,
+			plugin as unknown as Plugin,
 			() => settings,
 			createMockNotifications() as never,
 			createMockCheckpointManager() as never,
@@ -234,17 +258,17 @@ describe('intake → real organize handshake (#227)', () => {
 
 		deps = {
 			// THE handshake: intake's pipeline phase IS the real organize module.
-			fireOnFile: vi.fn(async (file: any) => {
+			fireOnFile: vi.fn(async (file: ObsidianTFile) => {
 				await organize.organizeNote(file);
 			}),
 			transcribeUrlToNote: vi.fn().mockResolvedValue(undefined),
 		};
 
-		intake = new IntakeModule(plugin, () => settings, createMockNotifications() as never, deps as never);
+		intake = new IntakeModule(plugin as unknown as Plugin, () => settings, createMockNotifications() as never, deps as never);
 		await intake.onload();
 	}
 
-	function emit(event: string, path: string, content = ''): TFile {
+	function emit(event: string, path: string, content = ''): ObsidianTFile {
 		store.set(path, content);
 		const file = makeFile(path);
 		handlers[event](file);
@@ -359,7 +383,7 @@ describe('intake → real organize handshake (#227)', () => {
 			const file = makeFile('Inbox/note.md');
 			const originalPath = file.path; // exactly how intake snapshots it pre-pipeline
 
-			await organize.organizeNote(file as never);
+			await organize.organizeNote(file);
 
 			// The real module mutated this very object — so intake's
 			// `originalPath !== file.path` detection holds against production code.
@@ -377,7 +401,7 @@ describe('intake → real organize handshake (#227)', () => {
 			store.set('Inbox/keep.md', 'unstructured notes');
 			const file = makeFile('Inbox/keep.md');
 
-			await organize.organizeNote(file as never);
+			await organize.organizeNote(file);
 
 			expect(file.path).toBe('Inbox/keep.md'); // unchanged
 			expect(vault.rename).not.toHaveBeenCalled();

@@ -1,8 +1,24 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
+import type { App } from 'obsidian';
+
+/** Spy-backed stand-ins for the Vault/adapter/FileManager surfaces TidyStore uses. */
+interface MockAdapter {
+	write: Mock<(path: string, data: string) => Promise<void>>;
+	exists: Mock<(path: string) => Promise<boolean>>;
+}
+interface MockVault {
+	adapter: MockAdapter;
+	createFolder: Mock<(path: string) => Promise<void>>;
+	getAbstractFileByPath: Mock<(path: string) => TFile | null>;
+	read: Mock<(file: TFile) => Promise<string>>;
+}
+interface MockFileManager {
+	trashFile: Mock<(file: TFile) => Promise<void>>;
+}
 
 function makeSnapshot(overrides: Partial<TidySnapshot> = {}): TidySnapshot {
 	return {
@@ -16,9 +32,9 @@ function makeSnapshot(overrides: Partial<TidySnapshot> = {}): TidySnapshot {
 
 describe('TidyStore', () => {
 	let store: TidyStore;
-	let mockAdapter: any;
-	let mockVault: any;
-	let mockFileManager: any;
+	let mockAdapter: MockAdapter;
+	let mockVault: MockVault;
+	let mockFileManager: MockFileManager;
 
 	beforeEach(() => {
 		mockAdapter = {
@@ -39,7 +55,7 @@ describe('TidyStore', () => {
 			trashFile: vi.fn().mockResolvedValue(undefined),
 		};
 
-		const app = { vault: mockVault, fileManager: mockFileManager } as any;
+		const app = { vault: mockVault, fileManager: mockFileManager } as unknown as App;
 		const getSettings = () => ({ ...DEFAULT_SETTINGS });
 		store = new TidyStore(app, getSettings);
 	});
@@ -63,11 +79,11 @@ describe('TidyStore', () => {
 		await store.save(snap2);
 
 		// Both writes go to the same path
-		const paths = mockAdapter.write.mock.calls.map((c: any) => c[0]);
+		const paths = mockAdapter.write.mock.calls.map((c) => c[0]);
 		expect(paths[0]).toBe(paths[1]);
 
 		// Second write has the updated content
-		const written = JSON.parse(mockAdapter.write.mock.calls[1][1]);
+		const written = JSON.parse(mockAdapter.write.mock.calls[1][1]) as TidySnapshot;
 		expect(written.id).toBe('second');
 		expect(written.originalContent).toBe('v2');
 	});
@@ -125,7 +141,7 @@ describe('TidyStore', () => {
 
 	it('sanitizes slashes in file paths for snapshot filename', async () => {
 		await store.save(makeSnapshot({ filePath: 'deep/nested/path/note.md' }));
-		const path = mockAdapter.write.mock.calls[0][0] as string;
+		const path = mockAdapter.write.mock.calls[0][0];
 		const fileName = path.split('/').pop()!;
 		// No slashes in the filename itself
 		expect(fileName).not.toContain('/');

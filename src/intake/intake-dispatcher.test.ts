@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { IntakeDispatcher } from './intake-dispatcher';
 import { parseFrontmatter } from '../shared';
 import { TFile } from '../__mocks__/obsidian';
+import type { TFile as ObsidianTFile } from 'obsidian';
 
 /**
  * Routing policy is pure: it depends only on the parsed body, so these tests
@@ -9,7 +10,7 @@ import { TFile } from '../__mocks__/obsidian';
  */
 describe('IntakeDispatcher.route', () => {
 	let dispatcher: IntakeDispatcher;
-	const file = new TFile('Inbox/capture.md') as any;
+	const file = new TFile('Inbox/capture.md') as unknown as ObsidianTFile;
 
 	beforeEach(() => {
 		dispatcher = new IntakeDispatcher();

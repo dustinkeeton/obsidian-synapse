@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import type { Command } from 'obsidian';
 
 // Mock the registry so we can exercise every status/flow combination
 // (the real registry ships everything active + palette).
@@ -16,13 +17,13 @@ vi.mock('./registry', () => {
 import { CommandRegistrar } from './registrar';
 
 describe('CommandRegistrar', () => {
-	let host: { addCommand: ReturnType<typeof vi.fn> };
+	let host: { addCommand: Mock<(command: Command) => unknown> };
 	let registrar: CommandRegistrar;
 	const spec = { callback: () => {} };
 
 	beforeEach(() => {
 		host = { addCommand: vi.fn() };
-		registrar = new CommandRegistrar(host as any);
+		registrar = new CommandRegistrar(host);
 	});
 
 	it('registers an active palette command with its feature-default icon when enabled', () => {

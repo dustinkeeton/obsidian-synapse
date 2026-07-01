@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { DirectoryMatcher } from './directory-matcher';
 import { ContentAnalysis } from './types';
 import { TFolder } from '../__mocks__/obsidian';
+import type { App } from 'obsidian';
 
 function makeMockApp(directories: string[]) {
 	// Build a folder tree from flat paths
@@ -32,7 +33,7 @@ function makeMockApp(directories: string[]) {
 		vault: {
 			getRoot: () => root,
 		},
-	} as any;
+	} as unknown as App;
 }
 
 function makeAnalysis(overrides: Partial<ContentAnalysis> = {}): ContentAnalysis {

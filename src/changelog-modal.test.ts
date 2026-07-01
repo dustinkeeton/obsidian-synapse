@@ -20,20 +20,20 @@ vi.mock('../CHANGELOG.md', () => ({
 `,
 }));
 
-import { createEl } from './__mocks__/obsidian';
+import { createEl, type StubEl } from './__mocks__/obsidian';
 import { ChangelogModal } from './changelog-modal';
 
 /** Recursively collect every element in a stub tree. */
-function walkEls(el: any, out: any[] = []): any[] {
-	for (const child of el?.children ?? []) {
+function walkEls(el: StubEl, out: StubEl[] = []): StubEl[] {
+	for (const child of el.children as unknown as StubEl[]) {
 		out.push(child);
 		walkEls(child, out);
 	}
 	return out;
 }
-const elsWithClass = (root: any, cls: string): any[] =>
-	walkEls(root).filter((e) => e.classList?.contains(cls));
-const elsWithTag = (root: any, tag: string): any[] =>
+const elsWithClass = (root: StubEl, cls: string): StubEl[] =>
+	walkEls(root).filter((e) => e.classList.contains(cls));
+const elsWithTag = (root: StubEl, tag: string): StubEl[] =>
 	walkEls(root).filter((e) => e.tagName === tag);
 
 function openModal(version = '1.0.6') {
@@ -48,14 +48,14 @@ function openModal(version = '1.0.6') {
 describe('ChangelogModal', () => {
 	it('renders a title heading', () => {
 		const modal = openModal();
-		const contentEl = (modal as unknown as { contentEl: any }).contentEl;
+		const contentEl = (modal as unknown as { contentEl: StubEl }).contentEl;
 		const headings = elsWithTag(contentEl, 'H2').map((e) => e.textContent);
 		expect(headings).toContain("What's new in Synapse");
 	});
 
 	it('renders the parsed changelog entries (version headings + items)', () => {
 		const modal = openModal();
-		const contentEl = (modal as unknown as { contentEl: any }).contentEl;
+		const contentEl = (modal as unknown as { contentEl: StubEl }).contentEl;
 
 		const versions = elsWithClass(contentEl, 'synapse-changelog-version').map(
 			(e) => e.textContent,
@@ -70,7 +70,7 @@ describe('ChangelogModal', () => {
 
 	it('highlights the entry matching the installed version', () => {
 		const modal = openModal('1.0.6');
-		const contentEl = (modal as unknown as { contentEl: any }).contentEl;
+		const contentEl = (modal as unknown as { contentEl: StubEl }).contentEl;
 		const highlighted = elsWithClass(contentEl, 'synapse-changelog-entry--current');
 		expect(highlighted).toHaveLength(1);
 		const version = elsWithClass(highlighted[0], 'synapse-changelog-version')[0];
@@ -79,7 +79,7 @@ describe('ChangelogModal', () => {
 
 	it('adds the synapse-changelog hook class to the content element', () => {
 		const modal = openModal();
-		const contentEl = (modal as unknown as { contentEl: any }).contentEl;
+		const contentEl = (modal as unknown as { contentEl: StubEl }).contentEl;
 		expect(contentEl.classList.contains('synapse-changelog')).toBe(true);
 	});
 });
