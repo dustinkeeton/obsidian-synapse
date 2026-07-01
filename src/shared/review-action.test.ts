@@ -10,7 +10,14 @@ describe('reviewAction — centralized Review-button gate (#366)', () => {
 			shouldAutoAccept: () => false,
 			openProposalView: baseOpen,
 		});
-		expect(action).toEqual({ label: 'Review', onClick: expect.any(Function) });
+		// `expect.any(Function)` is an asymmetric matcher (typed `any`); a typed
+		// intermediate lands it in an `unknown` slot (any→unknown is safe) without
+		// an unnecessary cast.
+		const expected: { label: string; onClick: unknown } = {
+			label: 'Review',
+			onClick: expect.any(Function),
+		};
+		expect(action).toEqual(expected);
 	});
 
 	it('returns undefined when auto-accept is ON (nothing left to review)', () => {

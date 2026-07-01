@@ -1,5 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { fetchRedditContent, isRedditUrl, extractCanonicalPostUrl } from './reddit-fetcher';
+import { requestUrl, type RequestUrlParam, type RequestUrlResponse } from '../__mocks__/obsidian';
+
+/**
+ * The `requestUrl` mock viewed with a precise async signature. The shared mock is
+ * loosely typed (`vi.fn()`), so `mockImplementation(async …)` would otherwise be
+ * seen as a void-returning callback and trip no-misused-promises. The view also
+ * lets stubs return partial responses (only the fields the fetcher reads).
+ */
+const mockRequestUrl = vi.mocked(requestUrl) as unknown as Mock<
+	(params: RequestUrlParam) => Promise<Partial<RequestUrlResponse>>
+>;
 
 /** XML-escape a string the way Reddit's Atom feed escapes its title/content. */
 function esc(s: string): string {
@@ -92,14 +103,12 @@ describe('fetchRedditContent', () => {
 	});
 
 	it('parses a post Atom feed into formatted output', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
+		mockRequestUrl.mockResolvedValue(
 			mockFeed({
 				author: 'someuser',
 				title: 'Great Immich tip',
 				bodyHtml: '<p>Here is the body of the post.</p>',
-			}) as never
-		);
+			})		);
 
 		const result = await fetchRedditContent(CANONICAL, 10000);
 		expect(result).toContain('u/someuser: Great Immich tip');
@@ -108,9 +117,8 @@ describe('fetchRedditContent', () => {
 	});
 
 	it('requests the .rss?sort=top endpoint with an Atom Accept header', async () => {
-		const { requestUrl } = await import('obsidian');
 		let captured: { url: string; headers?: Record<string, string> } | undefined;
-		(vi.mocked(requestUrl) as any).mockImplementation(async (params: any) => {
+		mockRequestUrl.mockImplementation(async (params) => {
 			captured = { url: params.url, headers: params.headers };
 			return mockFeed({ author: 'u', title: 't', bodyHtml: '<p>b</p>' });
 		});
@@ -121,8 +129,7 @@ describe('fetchRedditContent', () => {
 	});
 
 	it('includes up to the top three comments and labels them', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
+		mockRequestUrl.mockResolvedValue(
 			mockFeed(
 				{ author: 'op', title: 'Question', bodyHtml: '<p>body</p>' },
 				[
@@ -131,8 +138,7 @@ describe('fetchRedditContent', () => {
 					{ bodyHtml: '<p>third answer</p>' },
 					{ bodyHtml: '<p>fourth answer</p>' },
 				]
-			) as never
-		);
+			)		);
 
 		const result = await fetchRedditContent(CANONICAL, 10000);
 		expect(result).toContain('Comment 1: first answer');
@@ -142,16 +148,14 @@ describe('fetchRedditContent', () => {
 	});
 
 	it('strips the "submitted by" footer from the post selftext', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
+		mockRequestUrl.mockResolvedValue(
 			mockFeed({
 				author: 'op',
 				title: 'Title',
 				bodyHtml:
 					'<p>Real body text.</p> submitted by <a href="x">/u/op</a> ' +
 					'<span><a href="y">[link]</a></span> <span><a href="z">[comments]</a></span>',
-			}) as never
-		);
+			})		);
 
 		const result = await fetchRedditContent(CANONICAL, 10000);
 		expect(result).toContain('Real body text.');
@@ -160,16 +164,14 @@ describe('fetchRedditContent', () => {
 	});
 
 	it('decodes numeric character references and double-escaped entities', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
+		mockRequestUrl.mockResolvedValue(
 			// `I&#39;ve` survives esc() as `I&amp;#39;ve` (double-escaped); `&#32;`
 			// is Reddit's numeric-space separator.
 			mockFeed({
 				author: 'op',
 				title: 'T',
 				bodyHtml: '<p>I&#39;ve&#32;done it</p>',
-			}) as never
-		);
+			})		);
 
 		const result = await fetchRedditContent(CANONICAL, 10000);
 		expect(result).toContain("I've done it");
@@ -177,11 +179,10 @@ describe('fetchRedditContent', () => {
 	});
 
 	it('resolves a /s/ share link to canonical, then fetches its .rss feed', async () => {
-		const { requestUrl } = await import('obsidian');
 		const shareUrl = 'https://www.reddit.com/r/immich/s/DaHMD1DJhv';
 		const requestedUrls: string[] = [];
 
-		(vi.mocked(requestUrl) as any).mockImplementation(async (params: any) => {
+		mockRequestUrl.mockImplementation(async (params) => {
 			const reqUrl = typeof params === 'string' ? params : params.url;
 			requestedUrls.push(reqUrl);
 			// First call: the share page HTML carrying the canonical permalink.
@@ -204,11 +205,10 @@ describe('fetchRedditContent', () => {
 	});
 
 	it('throws when a share link cannot be resolved to a post', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue({
+		mockRequestUrl.mockResolvedValue({
 			status: 200,
 			text: '<html><body>blocked</body></html>',
-		} as never);
+		});
 
 		await expect(
 			fetchRedditContent('https://www.reddit.com/r/immich/s/DaHMD1DJhv', 10000)
@@ -216,10 +216,10 @@ describe('fetchRedditContent', () => {
 	});
 
 	it('falls back to "unknown" author and empty fields when missing', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
-			{ status: 200, text: '<?xml version="1.0"?><feed><entry></entry></feed>' } as never
-		);
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			text: '<?xml version="1.0"?><feed><entry></entry></feed>',
+		});
 
 		const result = await fetchRedditContent(CANONICAL, 10000);
 		expect(result).toContain('u/unknown');
@@ -227,41 +227,36 @@ describe('fetchRedditContent', () => {
 	});
 
 	it('throws `Reddit returned HTTP <status>` on a blocked/error response', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue({ status: 403, text: '<html>forbidden</html>' } as never);
+		mockRequestUrl.mockResolvedValue({ status: 403, text: '<html>forbidden</html>' });
 
 		await expect(fetchRedditContent(CANONICAL, 10000))
 			.rejects.toThrow('Failed to fetch Reddit post: Reddit returned HTTP 403');
 	});
 
 	it('throws when the feed has no post entry', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue({
+		mockRequestUrl.mockResolvedValue({
 			status: 200,
 			text: '<?xml version="1.0"?><feed></feed>',
-		} as never);
+		});
 
 		await expect(fetchRedditContent(CANONICAL, 10000))
 			.rejects.toThrow('Failed to fetch Reddit post');
 	});
 
 	it('throws a descriptive error on network failure', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockRejectedValue(new Error('Network error'));
+		mockRequestUrl.mockRejectedValue(new Error('Network error'));
 
 		await expect(fetchRedditContent(CANONICAL, 10000))
 			.rejects.toThrow('Failed to fetch Reddit post: Network error');
 	});
 
 	it('truncates to maxLength', async () => {
-		const { requestUrl } = await import('obsidian');
-		vi.mocked(requestUrl).mockResolvedValue(
+		mockRequestUrl.mockResolvedValue(
 			mockFeed({
 				author: 'user',
 				title: 'A very long title that should be cut off',
 				bodyHtml: '<p>And a very long body that goes on and on and on.</p>',
-			}) as never
-		);
+			})		);
 
 		const result = await fetchRedditContent(CANONICAL, 20);
 		expect(result.length).toBeLessThanOrEqual(20);
@@ -279,11 +274,10 @@ describe('fetchRedditContent -- retry on transient errors', () => {
 	});
 
 	it('retries on HTTP 429 and succeeds when a later attempt returns 200', async () => {
-		const { requestUrl } = await import('obsidian');
 		vi.useFakeTimers();
 		try {
 			let calls = 0;
-			(vi.mocked(requestUrl) as any).mockImplementation(async () => {
+			mockRequestUrl.mockImplementation(async () => {
 				calls++;
 				if (calls === 1) return { status: 429, text: '' };
 				return mockFeed({ author: 'op', title: 'Recovered', bodyHtml: '<p>body after retry</p>' });
@@ -302,11 +296,10 @@ describe('fetchRedditContent -- retry on transient errors', () => {
 	});
 
 	it('retries on HTTP 503 as well', async () => {
-		const { requestUrl } = await import('obsidian');
 		vi.useFakeTimers();
 		try {
 			let calls = 0;
-			(vi.mocked(requestUrl) as any).mockImplementation(async () => {
+			mockRequestUrl.mockImplementation(async () => {
 				calls++;
 				if (calls === 1) return { status: 503, text: '' };
 				return mockFeed({ author: 'op', title: 'Up again', bodyHtml: '<p>back online</p>' });
@@ -324,11 +317,10 @@ describe('fetchRedditContent -- retry on transient errors', () => {
 	});
 
 	it('gives up after exhausting retries and surfaces the final 429', async () => {
-		const { requestUrl } = await import('obsidian');
 		vi.useFakeTimers();
 		try {
 			let calls = 0;
-			(vi.mocked(requestUrl) as any).mockImplementation(async () => {
+			mockRequestUrl.mockImplementation(async () => {
 				calls++;
 				return { status: 429, text: '' };
 			});
@@ -347,9 +339,8 @@ describe('fetchRedditContent -- retry on transient errors', () => {
 	});
 
 	it('does not retry a permanent 403', async () => {
-		const { requestUrl } = await import('obsidian');
 		let calls = 0;
-		(vi.mocked(requestUrl) as any).mockImplementation(async () => {
+		mockRequestUrl.mockImplementation(async () => {
 			calls++;
 			return { status: 403, text: '' };
 		});

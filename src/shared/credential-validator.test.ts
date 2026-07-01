@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { requestUrl } from '../__mocks__/obsidian';
+import { requestUrl, type RequestUrlParam } from '../__mocks__/obsidian';
 import { validateCredentials } from './credential-validator';
 
 const mockRequestUrl = vi.mocked(requestUrl);
@@ -28,36 +28,36 @@ describe('validateCredentials', () => {
 			expect(result.status).toBe('valid');
 			expect(result.message).toContain('OpenAI');
 			expect(mockRequestUrl).toHaveBeenCalledTimes(1);
-			const call = mockRequestUrl.mock.calls[0][0] as any;
+			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(call.url).toBe('https://api.openai.com/v1/models');
 			expect(call.method).toBe('GET');
-			expect(call.headers.Authorization).toBe('Bearer sk-test');
+			expect(call.headers?.Authorization).toBe('Bearer sk-test');
 			expect(call.throw).toBe(false);
 		});
 
 		it('sends the Anthropic x-api-key + version headers', async () => {
 			mockRequestUrl.mockResolvedValue(ok());
 			await validateCredentials('anthropic', 'sk-ant-test');
-			const call = mockRequestUrl.mock.calls[0][0] as any;
+			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(call.url).toBe('https://api.anthropic.com/v1/models');
-			expect(call.headers['x-api-key']).toBe('sk-ant-test');
-			expect(call.headers['anthropic-version']).toBe('2023-06-01');
+			expect(call.headers?.['x-api-key']).toBe('sk-ant-test');
+			expect(call.headers?.['anthropic-version']).toBe('2023-06-01');
 		});
 
 		it('sends the Gemini x-goog-api-key header', async () => {
 			mockRequestUrl.mockResolvedValue(ok());
 			await validateCredentials('gemini', 'AIzaTest');
-			const call = mockRequestUrl.mock.calls[0][0] as any;
+			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(call.url).toBe('https://generativelanguage.googleapis.com/v1beta/models');
-			expect(call.headers['x-goog-api-key']).toBe('AIzaTest');
+			expect(call.headers?.['x-goog-api-key']).toBe('AIzaTest');
 		});
 
 		it('sends the Deepgram Token header', async () => {
 			mockRequestUrl.mockResolvedValue(ok());
 			await validateCredentials('deepgram', 'dgkey');
-			const call = mockRequestUrl.mock.calls[0][0] as any;
+			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(call.url).toBe('https://api.deepgram.com/v1/projects');
-			expect(call.headers.Authorization).toBe('Token dgkey');
+			expect(call.headers?.Authorization).toBe('Token dgkey');
 		});
 
 		it('reports reachability (not "connected") for a keyless ollama probe', async () => {
@@ -67,7 +67,7 @@ describe('validateCredentials', () => {
 			});
 			expect(result.status).toBe('valid');
 			expect(result.message.toLowerCase()).toContain('reachable');
-			const call = mockRequestUrl.mock.calls[0][0] as any;
+			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(call.url).toBe('http://localhost:11434/api/tags');
 		});
 	});

@@ -4,7 +4,7 @@ import { arrayBufferToBase64, base64EncodedLength } from './encoding';
 describe('arrayBufferToBase64', () => {
 	it('encodes bytes to base64', () => {
 		const bytes = new TextEncoder().encode('Hi');
-		expect(arrayBufferToBase64(bytes.buffer as ArrayBuffer)).toBe('SGk=');
+		expect(arrayBufferToBase64(bytes.buffer)).toBe('SGk=');
 	});
 
 	it('encodes an empty buffer to an empty string', () => {
@@ -13,7 +13,7 @@ describe('arrayBufferToBase64', () => {
 
 	it('handles buffers larger than one encoding chunk', () => {
 		const big = new Uint8Array(0x8000 + 16).fill(65); // 'A' × (chunk + 16)
-		const encoded = arrayBufferToBase64(big.buffer as ArrayBuffer);
+		const encoded = arrayBufferToBase64(big.buffer);
 		expect(atob(encoded)).toBe('A'.repeat(0x8000 + 16));
 	});
 });
@@ -29,7 +29,7 @@ describe('base64EncodedLength', () => {
 
 	it('matches the actual encoded length', () => {
 		for (const n of [1, 2, 3, 100, 1000]) {
-			const encoded = arrayBufferToBase64(new Uint8Array(n).buffer as ArrayBuffer);
+			const encoded = arrayBufferToBase64(new Uint8Array(n).buffer);
 			expect(base64EncodedLength(n)).toBe(encoded.length);
 		}
 	});

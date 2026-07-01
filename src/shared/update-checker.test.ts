@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Notice, requestUrl } from 'obsidian';
+import { Notice, requestUrl, type StubEl } from '../__mocks__/obsidian';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
 import { NotificationManager } from './notifications';
@@ -8,8 +8,8 @@ import { UpdateChecker, isNewerVersion } from './update-checker';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Recursively locate the first <button> element in a stub-element tree. */
-function findButton(el: any): any | null {
-	for (const child of el.children ?? []) {
+function findButton(el: StubEl): StubEl | null {
+	for (const child of el.children as unknown as StubEl[]) {
 		if (child.tagName === 'BUTTON') return child;
 		const nested = findButton(child);
 		if (nested) return nested;
@@ -17,21 +17,21 @@ function findButton(el: any): any | null {
 	return null;
 }
 
-function notices(): any[] {
-	return (Notice as unknown as { instances: any[] }).instances;
+function notices(): Notice[] {
+	return Notice.instances;
 }
-function lastNotice(): any {
-	return notices().at(-1);
+function lastNotice(): Notice {
+	return notices().at(-1)!;
 }
 
 /**
  * Collect a notice's full text. Action notices (#365) put the message in a child
  * div rather than on `noticeEl.textContent`, so recurse through the stub tree.
  */
-function noticeText(notice: any): string {
-	const collect = (el: any): string => {
+function noticeText(notice: Notice): string {
+	const collect = (el: StubEl): string => {
 		let text = el.textContent ?? '';
-		for (const child of el.children ?? []) text += collect(child);
+		for (const child of el.children as unknown as StubEl[]) text += collect(child);
 		return text;
 	};
 	return collect(notice.noticeEl);
@@ -77,7 +77,7 @@ function mockRelease(tag: string | null, status = 200): void {
 		json: tag === null ? {} : { tag_name: tag },
 		text: '',
 		headers: {},
-	} as never);
+	});
 }
 
 describe('isNewerVersion', () => {
@@ -261,7 +261,7 @@ describe('UpdateChecker.maybeCheck', () => {
 
 		const button = findButton(lastNotice().noticeEl);
 		expect(button?.textContent).toBe('Update');
-		button.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
+		button?.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
 
 		expect(app.setting?.open).toHaveBeenCalledTimes(1);
 		expect(app.setting?.openTabById).toHaveBeenCalledWith('community-plugins');
@@ -276,7 +276,7 @@ describe('UpdateChecker.maybeCheck', () => {
 
 		const button = findButton(lastNotice().noticeEl);
 		expect(() =>
-			button.dispatchEvent({ type: 'click', stopPropagation: vi.fn() }),
+			button?.dispatchEvent({ type: 'click', stopPropagation: vi.fn() }),
 		).not.toThrow();
 
 		// The click surfaced a plain guidance notice instead of throwing.

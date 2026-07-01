@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TFolder } from 'obsidian';
+import { TFolder, type App } from 'obsidian';
 
 // Capture how openScanFolderPicker constructs the modal and whether it opens it.
 // `mock`-prefixed names are referenced lazily inside the (hoisted) vi.mock
@@ -35,7 +35,7 @@ function makeFolder(path: string, root: boolean): TFolder {
 	return f;
 }
 
-const mockApp = {} as any;
+const mockApp = {} as unknown as App;
 
 describe('openScanFolderPicker', () => {
 	beforeEach(() => {

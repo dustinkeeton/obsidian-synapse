@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TFolder } from 'obsidian';
+import { TFolder, type App } from 'obsidian';
+import { createEl } from '../__mocks__/obsidian';
 import { FolderPickerModal } from './folder-picker-modal';
 
 function makeFolder(path: string): TFolder {
@@ -25,11 +26,11 @@ function buildFolderTree() {
 	return { root, notes, daily, projects, templates };
 }
 
-function createMockApp(root: TFolder) {
+function createMockApp(root: TFolder): App {
 	return {
 		vault: { getRoot: () => root },
 		workspace: { getActiveFile: () => null },
-	} as any;
+	} as unknown as App;
 }
 
 describe('FolderPickerModal', () => {
@@ -109,7 +110,7 @@ describe('FolderPickerModal', () => {
 		const { root } = buildFolderTree();
 		const app = createMockApp(root);
 		const modal = new FolderPickerModal(app, vi.fn());
-		const el = { createEl: vi.fn() } as any;
+		const el = createEl();
 
 		modal.renderSuggestion(root, el);
 
@@ -120,7 +121,7 @@ describe('FolderPickerModal', () => {
 		const { root, projects } = buildFolderTree();
 		const app = createMockApp(root);
 		const modal = new FolderPickerModal(app, vi.fn());
-		const el = { createEl: vi.fn() } as any;
+		const el = createEl();
 
 		modal.renderSuggestion(projects, el);
 

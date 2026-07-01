@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createEl } from '../__mocks__/obsidian';
+import { createEl, type StubEl } from '../__mocks__/obsidian';
 import { renderFeatureChipSelect } from './feature-chip-select';
 import { ALL_FEATURE_IDS } from './exclusions';
 import type { FeatureId } from './exclusions';
@@ -23,32 +23,32 @@ const LABELS: Record<FeatureId, string> = {
 const ORDER = Object.keys(ALL_FEATURE_IDS) as FeatureId[];
 
 // ── Stub-tree introspection helpers ──
-function walk(el: any, out: any[] = []): any[] {
-	for (const c of el?.children ?? []) {
+function walk(el: StubEl, out: StubEl[] = []): StubEl[] {
+	for (const c of el.children as unknown as StubEl[]) {
 		out.push(c);
 		walk(c, out);
 	}
 	return out;
 }
-function byClass(root: any, cls: string): any[] {
-	return walk(root).filter((e) => e.classList?.contains(cls));
+function byClass(root: StubEl, cls: string): StubEl[] {
+	return walk(root).filter((e) => e.classList.contains(cls));
 }
-function byTag(root: any, tag: string): any[] {
+function byTag(root: StubEl, tag: string): StubEl[] {
 	return walk(root).filter((e) => e.tagName === tag);
 }
-function chipLabels(root: any): string[] {
+function chipLabels(root: StubEl): (string | null)[] {
 	return byClass(root, 'synapse-chip-label').map((e) => e.textContent);
 }
-function selectEl(root: any): any {
+function selectEl(root: StubEl): StubEl {
 	return byTag(root, 'SELECT')[0];
 }
-function optionValues(root: any): string[] {
+function optionValues(root: StubEl): (string | undefined)[] {
 	return byTag(root, 'OPTION').map((e) => e.value);
 }
-function optionTexts(root: any): string[] {
+function optionTexts(root: StubEl): (string | null)[] {
 	return byTag(root, 'OPTION').map((e) => e.textContent);
 }
-function removeButton(root: any, ariaLabel: string): any {
+function removeButton(root: StubEl, ariaLabel: string): StubEl | undefined {
 	return byClass(root, 'synapse-chip-remove').find(
 		(b) => b.getAttribute('aria-label') === ariaLabel,
 	);
@@ -109,7 +109,7 @@ describe('renderFeatureChipSelect — add dropdown options', () => {
 
 	it('renders a disabled placeholder as the first option', () => {
 		const { container } = render([]);
-		const placeholder = byTag(container, 'OPTION')[0];
+		const placeholder = byTag(container, 'OPTION')[0] as StubEl & { disabled?: boolean };
 		expect(placeholder.textContent).toBe('+ add feature…');
 		expect(placeholder.value).toBe('');
 		expect(placeholder.disabled).toBe(true);
@@ -120,7 +120,7 @@ describe('renderFeatureChipSelect — add dropdown options', () => {
 });
 
 describe('renderFeatureChipSelect — adding via the dropdown', () => {
-	function pick(container: any, value: string): void {
+	function pick(container: StubEl, value: string): void {
 		const select = selectEl(container);
 		select.value = value;
 		select.dispatchEvent({ type: 'change' });
@@ -155,8 +155,8 @@ describe('renderFeatureChipSelect — adding via the dropdown', () => {
 });
 
 describe('renderFeatureChipSelect — removing via chips', () => {
-	function clickRemove(container: any, ariaLabel: string): void {
-		removeButton(container, ariaLabel).dispatchEvent({ type: 'click' });
+	function clickRemove(container: StubEl, ariaLabel: string): void {
+		removeButton(container, ariaLabel)?.dispatchEvent({ type: 'click' });
 	}
 
 	it("removing the 'All features' chip drops to the inactive empty list", () => {

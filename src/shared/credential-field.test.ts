@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Setting as ObsidianSetting } from 'obsidian';
-import { Setting, ButtonComponent, createEl } from '../__mocks__/obsidian';
+import { Setting, ButtonComponent, createEl, type StubEl } from '../__mocks__/obsidian';
 import { decorateCredentialField } from './credential-field';
 import type { ValidationResult } from './credential-validator';
 import { PROVIDER_METADATA } from './provider-metadata';
@@ -13,17 +13,23 @@ import { PROVIDER_METADATA } from './provider-metadata';
  * directly. The Setting is typed as the real one so it satisfies the decorator API.
  */
 function makeCtx() {
-	const setting = new Setting({} as never) as unknown as ObsidianSetting;
+	const setting = new Setting({}) as unknown as ObsidianSetting;
 	const container = createEl();
 	return { setting, container };
 }
 
-const extrasEl = (setting: any) =>
-	setting.settingEl.children.find((el: any) => el.classList?.contains('synapse-credential-extras'));
-const chipEl = (setting: any) =>
-	extrasEl(setting)?.children.find((el: any) => el.classList?.contains('synapse-credential-chip'));
-const anchorEl = (setting: any) =>
-	extrasEl(setting)?.children.find((el: any) => el.tagName === 'A');
+const extrasEl = (setting: ObsidianSetting): StubEl | undefined =>
+	(setting.settingEl.children as unknown as StubEl[]).find((el) =>
+		el.classList.contains('synapse-credential-extras'),
+	);
+const chipEl = (setting: ObsidianSetting): StubEl | undefined =>
+	(extrasEl(setting)?.children as unknown as StubEl[] | undefined)?.find((el) =>
+		el.classList.contains('synapse-credential-chip'),
+	);
+const anchorEl = (setting: ObsidianSetting): StubEl | undefined =>
+	(extrasEl(setting)?.children as unknown as StubEl[] | undefined)?.find(
+		(el) => el.tagName === 'A',
+	);
 
 function testButton(): ButtonComponent {
 	const btn = ButtonComponent.instances.find((b) => b.buttonText === 'Test');
@@ -57,7 +63,7 @@ describe('decorateCredentialField', () => {
 		// The extras block now lives inside the setting row's own `.setting-item`…
 		expect(extrasEl(setting)).toBeDefined();
 		// …and the host row is marked so CSS can wrap the helper onto its own line.
-		expect((setting.settingEl as any).classList.contains('synapse-setting--has-helper')).toBe(true);
+		expect(setting.settingEl.classList.contains('synapse-setting--has-helper')).toBe(true);
 		// …and nothing leaked into the section-body container.
 		expect(container.children).toHaveLength(0);
 	});
@@ -65,7 +71,7 @@ describe('decorateCredentialField', () => {
 	it('renders a get-key anchor pointing at the provider console', () => {
 		const { setting } = makeCtx();
 		decorateCredentialField({ setting, provider: 'openai', getKey: () => 'sk-x' });
-		const a = anchorEl(setting);
+		const a = anchorEl(setting)!;
 		expect(a).toBeDefined();
 		expect(a.getAttribute('href')).toBe(PROVIDER_METADATA.openai.getKeyUrl);
 		expect(a.getAttribute('target')).toBe('_blank');
@@ -85,7 +91,7 @@ describe('decorateCredentialField', () => {
 	it('starts with a neutral format-hint chip', () => {
 		const { setting } = makeCtx();
 		decorateCredentialField({ setting, provider: 'openai', getKey: () => '' });
-		const chip = chipEl(setting);
+		const chip = chipEl(setting)!;
 		expect(chip.textContent).toBe(PROVIDER_METADATA.openai.formatHint);
 		expect(chip.classList.contains('is-hint')).toBe(true);
 	});
@@ -103,7 +109,7 @@ describe('decorateCredentialField', () => {
 		await flush();
 
 		expect(validate).toHaveBeenCalledWith('openai', 'sk-good', { endpoint: undefined });
-		const chip = chipEl(setting);
+		const chip = chipEl(setting)!;
 		expect(chip.textContent).toContain('Connected to OpenAI');
 		expect(chip.classList.contains('is-valid')).toBe(true);
 	});
@@ -120,7 +126,7 @@ describe('decorateCredentialField', () => {
 		testButton()._click();
 		await flush();
 
-		const chip = chipEl(setting);
+		const chip = chipEl(setting)!;
 		expect(chip.textContent).toContain('Invalid key');
 		expect(chip.classList.contains('is-invalid')).toBe(true);
 	});
@@ -162,10 +168,10 @@ describe('decorateCredentialField', () => {
 
 		testButton()._click();
 		await flush();
-		expect(chipEl(setting).classList.contains('is-valid')).toBe(true);
+		expect(chipEl(setting)!.classList.contains('is-valid')).toBe(true);
 
 		handle.reset();
-		const chip = chipEl(setting);
+		const chip = chipEl(setting)!;
 		expect(chip.textContent).toBe(PROVIDER_METADATA.openai.formatHint);
 		expect(chip.classList.contains('is-hint')).toBe(true);
 		expect(chip.classList.contains('is-valid')).toBe(false);
