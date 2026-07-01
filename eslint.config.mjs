@@ -144,20 +144,4 @@ export default tseslint.config(
 			],
 		},
 	},
-	{
-		// Test infra is exempt from no-unsafe-* / unnecessary-assertion — tracked in #321.
-		// Mocks, factories, and test files lean on deliberately loose `any`-typed
-		// stubs (spy objects, `mockResolvedValue`, the Obsidian DOM mock), so the
-		// type-safety family adds churn without protecting shipped code. The
-		// promise rules and `no-duplicate-type-constituents` stay ON here.
-		files: ['**/*.test.ts', 'src/__mocks__/**', 'src/__test-utils__/**'],
-		rules: {
-			'@typescript-eslint/no-unsafe-assignment': 'off',
-			'@typescript-eslint/no-unsafe-call': 'off',
-			'@typescript-eslint/no-unsafe-member-access': 'off',
-			'@typescript-eslint/no-unsafe-argument': 'off',
-			'@typescript-eslint/no-unsafe-return': 'off',
-			'@typescript-eslint/no-unnecessary-type-assertion': 'off',
-		},
-	},
 );
