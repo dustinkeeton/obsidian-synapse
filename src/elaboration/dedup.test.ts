@@ -5,11 +5,14 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager } from '../shared';
 import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import type { TFile } from 'obsidian';
 import { Proposal } from './types';
 
 // The proposer uses AIClient under the hood; stub it so no network is hit and
 // we can count how many times the model is actually invoked.
-const sharedCompleteMock = vi.fn().mockResolvedValue('AI-generated elaboration content');
+const sharedCompleteMock = vi
+	.fn<(...args: unknown[]) => Promise<string>>()
+	.mockResolvedValue('AI-generated elaboration content');
 vi.mock('../shared/ai-client', () => ({
 	AIClient: class MockAIClient {
 		constructor(_getSettings: unknown) {}
@@ -57,11 +60,12 @@ function createMemoryAdapter() {
 
 function createMockPlugin(noteContent: string, adapter: ReturnType<typeof createMemoryAdapter>) {
 	const noteFile = mockFile('notes/topic.md');
-	const vault: any = {
-		read: vi.fn().mockResolvedValue(noteContent),
+	const read = vi.fn<(file: TFile) => Promise<string>>().mockResolvedValue(noteContent);
+	const vault = {
+		read,
 		cachedRead: vi.fn().mockResolvedValue(noteContent),
 		modify: vi.fn().mockResolvedValue(undefined),
-		process: vi.fn(async (file: any, fn: (data: string) => string) => fn(await vault.read(file))),
+		process: vi.fn(async (file: TFile, fn: (data: string) => string) => fn(await read(file))),
 		create: vi.fn(),
 		createFolder: vi.fn().mockResolvedValue(undefined),
 		getAbstractFileByPath: vi.fn((path: string) => (path === 'notes/topic.md' ? noteFile : null)),
@@ -137,7 +141,7 @@ describe('ElaborationModule proposal idempotency (#395)', () => {
 			() => settings,
 			notifications,
 			createMockCheckpointManager() as never,
-			new CommandRegistrar(mockPlugin as never),
+			new CommandRegistrar(mockPlugin),
 			() => settings.autoAccept.elaboration
 		);
 	}

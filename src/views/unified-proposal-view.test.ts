@@ -1,18 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UnifiedProposalView, UnifiedItem, UnifiedViewCallbacks } from './unified-proposal-view';
 import { NotificationManager } from '../shared/notifications';
-import type { Proposal } from '../elaboration';
-import type { EnrichmentProposal } from '../enrichment';
-import type { OrganizeProposal } from '../organize';
-import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
-import { createEl } from '../__mocks__/obsidian';
+import { createEl, type StubEl } from '../__mocks__/obsidian';
+import type { WorkspaceLeaf } from 'obsidian';
+
+/**
+ * The private surface of {@link UnifiedProposalView} these tests reach into via
+ * a boundary cast (real instance, internal methods/fields exercised directly).
+ */
+interface ViewInternals {
+	items: UnifiedItem[];
+	rejectAllInProgress: boolean;
+	acceptAllInProgress: boolean;
+	contentEl: StubEl;
+	rejectSingleItem(item: UnifiedItem): Promise<void>;
+	rejectAll(): Promise<void>;
+	acceptAll(): Promise<void>;
+	renderTitleCard(container: StubEl, proposal: TitleProposal): void;
+	renderTitleReview(proposal: TitleProposal): void;
+}
 
 // --- Helpers ----------------------------------------------------------------
 
 /** Stub WorkspaceLeaf that satisfies ItemView constructor. */
-function mockLeaf(): any {
-	return { view: {} };
+function mockLeaf(): WorkspaceLeaf {
+	return { view: {} } as unknown as WorkspaceLeaf;
 }
 
 /** Create a stub callbacks object with all methods as spies. */
@@ -48,7 +61,7 @@ function makeElaborationItem(id = 'elab-1'): UnifiedItem {
 			proposedAdditions: 'additions',
 			insertionPoint: 'append',
 			status: 'pending',
-		} as Proposal,
+		},
 	};
 }
 
@@ -68,7 +81,7 @@ function makeEnrichmentItem(id = 'enrich-1'): UnifiedItem {
 				frontmatter: [],
 			},
 			status: 'pending',
-		} as EnrichmentProposal,
+		},
 	};
 }
 
@@ -83,7 +96,7 @@ function makeOrganizeItem(id = 'org-1'): UnifiedItem {
 			reasoning: 'fits better here',
 			createdAt: '2024-01-01T00:00:00Z',
 			status: 'pending',
-		} as OrganizeProposal,
+		},
 	};
 }
 
@@ -103,7 +116,7 @@ function makeDeepDiveItem(id = 'dd-1'): UnifiedItem {
 			childProposalIds: [],
 			createdAt: '2024-01-01T00:00:00Z',
 			status: 'pending',
-		} as DeepDiveProposal,
+		},
 	};
 }
 
@@ -128,8 +141,8 @@ function makeTitleProposal(conflictsWith?: string): TitleProposal {
 // Notice — the inner-element gotcha does not apply).
 
 /** Recursively collect every element in a createEl() stub tree. */
-function walkEls(el: any, out: any[] = []): any[] {
-	for (const child of el?.children ?? []) {
+function walkEls(el: StubEl, out: StubEl[] = []): StubEl[] {
+	for (const child of el.children as unknown as StubEl[]) {
 		out.push(child);
 		walkEls(child, out);
 	}
@@ -139,19 +152,19 @@ function walkEls(el: any, out: any[] = []): any[] {
 // a multi-class `cls` string (e.g. "synapse-badge synapse-badge--conflict") as a
 // single combined entry, so contains() of an individual token misses. className
 // rejoins+splits cleanly and works for single- and multi-class elements alike.
-const elsWithClass = (root: any, cls: string): any[] =>
-	walkEls(root).filter((e) => String(e.className ?? '').split(/\s+/).includes(cls));
-const elsWithTag = (root: any, tag: string): any[] =>
+const elsWithClass = (root: StubEl, cls: string): StubEl[] =>
+	walkEls(root).filter((e) => e.className.split(/\s+/).includes(cls));
+const elsWithTag = (root: StubEl, tag: string): StubEl[] =>
 	walkEls(root).filter((e) => e.tagName === tag);
 /** Concatenate an element's own text with all descendant text. */
-const textOf = (el: any): string =>
-	[el?.textContent ?? '', ...walkEls(el).map((c) => c.textContent ?? '')].join(' ');
+const textOf = (el: StubEl): string =>
+	[el.textContent ?? '', ...walkEls(el).map((c) => c.textContent ?? '')].join(' ');
 
 // --- Tests ------------------------------------------------------------------
 
 /** Create a deeply-recursive stub DOM element that supports all Obsidian HTML methods. */
-function stubEl(): any {
-	const el: any = {
+function stubEl(): StubEl {
+	const el = {
 		style: {},
 		disabled: false,
 		value: '',
@@ -165,16 +178,20 @@ function stubEl(): any {
 		createEl: vi.fn().mockImplementation(() => stubEl()),
 		createDiv: vi.fn().mockImplementation(() => stubEl()),
 	};
-	return el;
+	return el as unknown as StubEl;
 }
 
 describe('UnifiedProposalView reject-all', () => {
-	let view: any; // cast to any to access private methods
+	let view: ViewInternals; // boundary cast to reach private methods
 	let callbacks: UnifiedViewCallbacks;
 
 	beforeEach(() => {
 		callbacks = mockCallbacks();
-		view = new UnifiedProposalView(mockLeaf(), callbacks, new NotificationManager());
+		view = new UnifiedProposalView(
+			mockLeaf(),
+			callbacks,
+			new NotificationManager()
+		) as unknown as ViewInternals;
 		// Stub contentEl with a recursive mock so render calls don't throw
 		view.contentEl = stubEl();
 	});
@@ -225,11 +242,11 @@ describe('UnifiedProposalView reject-all', () => {
 
 		it('calls reject callbacks in presentation order', async () => {
 			const callOrder: string[] = [];
-			(callbacks.onElaborationReject as any).mockImplementation((id: string) => {
+			vi.mocked(callbacks.onElaborationReject).mockImplementation((id: string) => {
 				callOrder.push(`elab-${id}`);
 				return Promise.resolve();
 			});
-			(callbacks.onEnrichmentReject as any).mockImplementation((id: string) => {
+			vi.mocked(callbacks.onEnrichmentReject).mockImplementation((id: string) => {
 				callOrder.push(`enrich-${id}`);
 				return Promise.resolve();
 			});
@@ -246,7 +263,7 @@ describe('UnifiedProposalView reject-all', () => {
 		});
 
 		it('stops on first failure and reports partial progress', async () => {
-			(callbacks.onEnrichmentReject as any).mockRejectedValue(new Error('network'));
+			vi.mocked(callbacks.onEnrichmentReject).mockRejectedValue(new Error('network'));
 
 			view.items = [
 				makeElaborationItem('e1'),
@@ -291,7 +308,7 @@ describe('UnifiedProposalView reject-all', () => {
 		});
 
 		it('resets rejectAllInProgress flag after failure', async () => {
-			(callbacks.onElaborationReject as any).mockRejectedValue(new Error('fail'));
+			vi.mocked(callbacks.onElaborationReject).mockRejectedValue(new Error('fail'));
 			view.items = [makeElaborationItem('e1')];
 
 			await view.rejectAll();
@@ -323,9 +340,13 @@ describe('UnifiedProposalView reject-all', () => {
 });
 
 describe('UnifiedProposalView title collision UI (#414)', () => {
-	/** Fresh view; cast to any to reach the private render methods. */
-	function makeView(): any {
-		return new UnifiedProposalView(mockLeaf(), mockCallbacks(), new NotificationManager());
+	/** Fresh view; boundary cast to reach the private render methods. */
+	function makeView(): ViewInternals {
+		return new UnifiedProposalView(
+			mockLeaf(),
+			mockCallbacks(),
+			new NotificationManager()
+		) as unknown as ViewInternals;
 	}
 
 	describe('renderTitleCard', () => {
