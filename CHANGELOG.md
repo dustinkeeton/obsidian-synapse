@@ -5,6 +5,13 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.10] - 2026-07-01
+
+### Added
+
+- Each settings section now ends with a "Reset to defaults" row that restores just that section after a confirmation prompt; it's disabled, with an "Already at defaults" note, whenever the section already matches the shipped defaults
+- A new "Reset all settings" button in Settings → About restores every section at once — after you confirm — while preserving your onboarding, update-check, and collapsed-section state
+
 ## [1.0.9] - 2026-06-30
 
 ### Changed
