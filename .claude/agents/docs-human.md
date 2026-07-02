@@ -6,7 +6,7 @@ skills:
   - codebase-architecture
   - git-workflow
   - issue
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
 You are the human documentation specialist for the Synapse Obsidian plugin. Your responsibilities:

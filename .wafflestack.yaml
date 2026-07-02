@@ -5,11 +5,12 @@
 # toolkit — edit the toolkit source, this config, or .wafflestack/extensions/
 # instead of the rendered files, then re-render:
 #
-#   npx github:dustinkeeton/wafflestack#v0.2.0 render
-#   npx github:dustinkeeton/wafflestack#v0.2.0 doctor   # drift check
+#   npx github:dustinkeeton/wafflestack#v0.3.0 render
+#   npx github:dustinkeeton/wafflestack#v0.3.0 doctor   # drift check
 #
 # Account-specific values (git.botEmail, git.botName) live in the gitignored
-# .wafflestack.local.yaml overlay, so renders that embed them stay gitignored.
+# .wafflestack.local.yaml overlay; the git.* values below reference them via
+# nested substitution, so renders that embed them stay gitignored.
 targets: [claude, codex, agents-dir]
 bundles:
   - docs-system
@@ -19,6 +20,21 @@ bundles:
   - obsidian-dev
   - orchestration
 config:
+  git:
+    cmd: git -c user.email={{git.botEmail}} -c user.name={{git.botName}}
+    coAuthorTrailer: "Co-Authored-By: {{harness.assistantName}} <{{git.botEmail}}>"
+    identitySection: |-
+      All git operations MUST use the project bot identity:
+
+      ```bash
+      git -c user.email={{git.botEmail}} -c user.name={{git.botName}} <command>
+      ```
+
+      Never use a personal identity or the default git config for this project. Every agent-made commit must end with the attribution trailer:
+
+      ```
+      Co-Authored-By: {{harness.assistantName}} <{{git.botEmail}}>
+      ```
   project:
     name: Synapse
     longName: the Synapse Obsidian plugin
