@@ -13,6 +13,7 @@ import { PROVIDER_METADATA } from './provider-metadata';
 import type { CredentialProvider } from './provider-metadata';
 import { validateCredentials } from './credential-validator';
 import type { ValidationResult } from './credential-validator';
+import { redactSecrets } from './redact';
 
 export interface CredentialFieldOptions {
 	/** The key (or, for Ollama, endpoint) Setting row to decorate (gets the Test button). */
@@ -114,7 +115,7 @@ export function decorateCredentialField(opts: CredentialFieldOptions): Credentia
 						settle({
 							status: 'error',
 							provider,
-							message: err instanceof Error ? err.message : String(err),
+							message: redactSecrets(err instanceof Error ? err.message : String(err)),
 						}),
 					);
 			}),

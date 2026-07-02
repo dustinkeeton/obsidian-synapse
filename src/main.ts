@@ -17,7 +17,7 @@ import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID } f
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
-import { openScanFolderPicker, NotificationManager, CheckpointManager, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION } from './shared';
+import { openScanFolderPicker, NotificationManager, CheckpointManager, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION, redactError } from './shared';
 import type { DeferredTask } from './shared';
 import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
 import { findAudioEmbeds } from './audio';
@@ -486,7 +486,7 @@ export default class SynapsePlugin extends Plugin {
 			} catch (error) {
 				// Resilient fallback — load must never break. migrateSettings clones
 				// before mutating, so `raw` is still the untouched original here.
-				console.warn('[Synapse] settings migration failed:', error);
+				console.warn('[Synapse] settings migration failed:', redactError(error));
 				migrated = raw;
 			}
 		}
@@ -526,7 +526,7 @@ export default class SynapsePlugin extends Plugin {
 				this.notifications.info(WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS);
 			}
 		} catch (error) {
-			console.warn('[Synapse] First-run onboarding failed:', error);
+			console.warn('[Synapse] First-run onboarding failed:', redactError(error));
 		}
 	}
 
@@ -809,7 +809,7 @@ export default class SynapsePlugin extends Plugin {
 			// Clean up old completed/discarded checkpoints
 			await this.checkpointManager.cleanup();
 		} catch (error) {
-			console.warn('[Synapse] Failed to check for incomplete checkpoints:', error);
+			console.warn('[Synapse] Failed to check for incomplete checkpoints:', redactError(error));
 		}
 	}
 
@@ -902,7 +902,7 @@ export default class SynapsePlugin extends Plugin {
 				`migrated data folder from ${OLD_FOLDER}/ to ${NEW_FOLDER}/`
 			);
 		} catch (error) {
-			console.error('[Synapse] Failed to migrate data folder:', error);
+			console.error('[Synapse] Failed to migrate data folder:', redactError(error));
 			// Persistent, copyable error toast (NotificationManager exists by now —
 			// it is constructed before migrateDataFolder() in onload).
 			this.notifications.error(
