@@ -5,6 +5,16 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.11] - 2026-07-02
+
+### Changed
+
+- Synapse's icons wear the new Iris + Gold identity: glyph bodies still follow your theme's text color, now with at most a single gold accent per icon — brighter on dark themes, deepened on light ones — and the per-note actions icon becomes the S-Signal mark
+
+### Security
+
+- Secret-key redaction now covers the last remaining console error paths — plugin startup and settings-migration logs, the update checker, the credential Test button, image downscaling, and clipboard-copy failures — so an API key echoed into an error message can never reach the console unredacted
+
 ## [1.0.10] - 2026-07-01
 
 ### Added
