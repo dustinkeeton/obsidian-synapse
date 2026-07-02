@@ -1,4 +1,5 @@
 import { Setting, setIcon } from 'obsidian';
+import { redactError } from '../shared';
 import type { SettingsSectionContext, NotificationManager } from '../shared';
 
 /** A single copy-able install command shown in a path setting's help panel (#382/#383). */
@@ -80,7 +81,7 @@ function buildInstallHelpPanel(
 					}, COPY_CONFIRM_MS);
 				})
 				.catch((err) => {
-					console.error('[Synapse] Could not copy install command:', err);
+					console.error('[Synapse] Could not copy install command:', redactError(err));
 					notifications.info("Couldn't copy to clipboard");
 				});
 		});

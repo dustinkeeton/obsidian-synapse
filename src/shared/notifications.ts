@@ -1,5 +1,5 @@
 import { Notice } from 'obsidian';
-import { redactSecrets } from './redact';
+import { redactSecrets, redactError } from './redact';
 
 export type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error';
 
@@ -505,7 +505,7 @@ export class NotificationManager {
 			navigator.clipboard.writeText(redacted)
 				.then(() => this.info('Error copied to clipboard'))
 				.catch((err) => {
-					console.error('[Synapse] Could not copy error to clipboard:', err);
+					console.error('[Synapse] Could not copy error to clipboard:', redactError(err));
 					this.info("Couldn't copy error to clipboard");
 				});
 		});

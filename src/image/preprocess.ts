@@ -8,7 +8,7 @@
  * they fit under the limit before they ever reach the API.
  */
 
-import { base64EncodedLength } from '../shared';
+import { base64EncodedLength, redactError } from '../shared';
 
 // Canonical home of the encoding helpers is now shared/encoding.ts (#251) so
 // the audio module can reuse them; re-exported here for back-compat. Imported
@@ -75,7 +75,7 @@ export async function preprocessImage(
 	try {
 		return await downscaleToFit(data, mediaType, maxBytes);
 	} catch (error) {
-		console.warn('[Synapse] Image downscale failed; sending original bytes:', error);
+		console.warn('[Synapse] Image downscale failed; sending original bytes:', redactError(error));
 		return { data, mediaType, downscaled: false };
 	}
 }
