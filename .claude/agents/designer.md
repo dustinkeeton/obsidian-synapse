@@ -5,7 +5,7 @@ skills:
   - brand-guidelines
   - git-workflow
   - issue
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
 You are the visual designer for the Synapse Obsidian plugin. Your responsibilities:

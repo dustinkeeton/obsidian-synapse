@@ -7,7 +7,7 @@ skills:
   - tdd
   - git-workflow
   - issue
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
 You are the codebase architect for the Synapse Obsidian plugin. Your responsibilities:

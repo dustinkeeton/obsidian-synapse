@@ -40,7 +40,7 @@ Determine the issue type and select **one primary label** from the repo:
 | Questions or discussion | `question` |
 | Docs improvements | `documentation` |
 
-Add additional labels only if clearly warranted (e.g., `help wanted`).
+Add additional labels only if clearly warranted by the repo's taxonomy (run `gh label list` when unsure — never apply a label that doesn't exist in the repo).
 
 ### 3. Draft the issue
 
@@ -81,6 +81,29 @@ EOF
 )"
 ```
 
+**Native sub-issues** — the checkbox list in the body is enough for small work. When the sub-tasks deserve their own issues, create each child with `gh issue create`, then link it to the parent as a native GitHub sub-issue (this is what makes the parent show `n of m` progress). The mutation is feature-flagged, so pass the `GraphQL-Features` header:
+
+```bash
+# Node IDs for parent and child (repeat the query per issue number)
+ISSUE_ID=$(gh api graphql -f query='
+  query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      issue(number: $number) { id }
+    }
+  }
+' -f owner="$OWNER" -f repo="$REPO" -F number=$N --jq '.data.repository.issue.id')
+
+gh api graphql -H "GraphQL-Features: sub_issues" -f query='
+  mutation($parentId: ID!, $childId: ID!) {
+    addSubIssue(input: { issueId: $parentId, subIssueId: $childId }) {
+      issue { number }
+    }
+  }
+' -f parentId="$PARENT_ID" -f childId="$CHILD_ID"
+```
+
+Note: parent (epic) issues do **not** auto-close when their sub-issues close — close them explicitly once all children are done.
+
 ### 5. Classify priority
 
 Infer a priority label from the issue context using signal matching:
@@ -92,15 +115,13 @@ Infer a priority label from the issue context using signal matching:
 | new feature, improvement, moderate bug, unclear | `priority: medium` |
 | cosmetic, nice-to-have, minor, tech debt | `priority: low` |
 
-Default to `priority: medium` when signals are ambiguous.
+Default to `priority: medium` when signals are ambiguous. Labels use a space after the colon (e.g., `priority: medium`, not `priority:medium`).
 
 Apply the priority label:
 
 ```bash
-gh issue edit {number} --add-label "priority: medium"
+gh issue edit {number} --add-label "<priority label>"
 ```
-
-Note: Labels use a space after the colon (e.g., `priority: medium`, not `priority:medium`).
 
 ### 6. Project integration
 
@@ -238,7 +259,7 @@ Use this when `$ARGUMENTS` is an issue reference (`#N`, a bare number, or an iss
 
 5. **Labels** — add the type label (step 2) and priority label (step 5), and **remove the lifecycle label**:
    ```bash
-   gh issue edit <N> --add-label "bug" --add-label "priority: high" --remove-label "Needs Inference"
+   gh issue edit <N> --add-label "<type label>" --add-label "<priority label>" --remove-label "Needs Inference"
    ```
 
 6. **Project board + milestone** — ensure the issue is on the board with a Status (Backlog if open) and has a milestone, reusing **step 6** (project integration). Skip whichever is already set.
@@ -261,19 +282,19 @@ Run steps 1–7 above for each issue, then print a summary of every issue enrich
 ```
 /issue audio transcription fails silently when API key is expired
 ```
-Creates an issue titled "Fix silent failure when audio transcription API key is expired" with `bug` label, a body explaining the problem, proposed error-handling fix, and no sub-issues. Applies `priority: high` label and adds to project board as "Backlog".
+Creates an issue titled "Fix silent failure when audio transcription API key is expired" with the bug-type label, a body explaining the problem, proposed error-handling fix, and no sub-issues. Applies the high-priority label and adds to project board as "Backlog".
 
 ### Multi-step feature
 ```
 /issue add support for Instagram video transcription
 ```
-Creates an issue titled "Add Instagram video transcription support" with `enhancement` label, a body explaining the motivation, proposed approach, and sub-issues for URL detection, extraction, pipeline integration, and tests. Applies `priority: medium` label, adds to project board as "Backlog", and assigns to the matching milestone if one exists.
+Creates an issue titled "Add Instagram video transcription support" with the enhancement-type label, a body explaining the motivation, proposed approach, and sub-issues for URL detection, extraction, pipeline integration, and tests. Applies the default priority label, adds to project board as "Backlog", and assigns to the matching milestone if one exists.
 
 ### Enrich an existing issue
 ```
 /issue 360
 ```
-Fetches issue #360 (labeled `Needs Inference`), reads the relevant code, and rewrites its title and body into the full template — preserving the original report in a collapsed block. Applies the `bug` + priority labels, removes `Needs Inference`, ensures it's on the board as "Backlog", and assigns a milestone.
+Fetches issue #360 (labeled `Needs Inference`), reads the relevant code, and rewrites its title and body into the full template — preserving the original report in a collapsed block. Applies the type + priority labels, removes `Needs Inference`, ensures it's on the board as "Backlog", and assigns a milestone.
 
 ### Enrich the whole queue
 ```
