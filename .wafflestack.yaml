@@ -1,0 +1,164 @@
+# wafflestack consumer config — https://github.com/dustinkeeton/wafflestack
+#
+# The agent/skill files under .claude/agents, .claude/skills, .codex/agents, and
+# .agents/skills that are listed in .wafflestack.lock.json are RENDERED from the
+# toolkit — edit the toolkit source, this config, or .wafflestack/extensions/
+# instead of the rendered files, then re-render:
+#
+#   npx github:dustinkeeton/wafflestack#v0.2.0 render
+#   npx github:dustinkeeton/wafflestack#v0.2.0 doctor   # drift check
+#
+# Account-specific values (git.botEmail, git.botName) live in the gitignored
+# .wafflestack.local.yaml overlay, so renders that embed them stay gitignored.
+targets: [claude, codex, agents-dir]
+bundles:
+  - docs-system
+  - github-workflow
+  - code-quality
+  - design
+  - obsidian-dev
+  - orchestration
+config:
+  project:
+    name: Synapse
+    longName: the Synapse Obsidian plugin
+    slug: synapse
+    buildCmd: node esbuild.config.mjs production
+    testCmd: npm test
+    typecheckCmd: npx tsc --noEmit --skipLibCheck
+  issue:
+    inferenceLabel: Needs Inference
+  tdd:
+    priorityTiers: |-
+      ### Tier 1 — Pure functions (no mocking needed, write these first)
+      | Module | Key functions |
+      |--------|--------------|
+      | `shared/validation.ts` | `sanitizeUrl`, `sanitizePath`, `sanitizeAIResponse`, `ensureWithinVault` |
+      | `video/url-detector.ts` | `detectPlatform`, `isSupportedUrl` |
+      | `shared/file-utils.ts` | `wordCount` |
+      | `shared/api-utils.ts` | `withRetry`, `sleep` |
+      | `settings.ts` | `DEFAULT_SETTINGS` shape, `MODEL_OPTIONS` consistency |
+
+      ### Tier 2 — Units with injectable/mockable dependencies
+      | Module | Mock surface |
+      |--------|-------------|
+      | `elaboration/detector.ts` | `App.vault.read`, `App.metadataCache` |
+      | `elaboration/proposer.ts` | `AIClient`, `App.vault.adapter.read`, `MetadataCache` |
+      | `elaboration/proposal-store.ts` | `App.vault.adapter` (CRUD) |
+      | `shared/ai-client.ts` | `requestUrl` from obsidian |
+      | `audio/transcriber.ts` | `global.fetch` |
+      | `audio/post-processor.ts` | `AIClient.complete()` |
+      | `video/audio-extractor.ts` | `child_process.execFile` |
+
+      ### Tier 3 — Module orchestrators (integration-level)
+      | Module | What to verify |
+      |--------|---------------|
+      | `elaboration/index.ts` | scan → detect → propose → store pipeline |
+      | `audio/index.ts` | transcribe → post-process → save pipeline, inline insertion |
+      | `video/index.ts` | URL → extract → transcribe → save pipeline |
+
+      ### Do NOT unit test
+      - `main.ts` (lifecycle glue — extract `deepMerge` to `shared/` if testing needed)
+      - Modal/View UI classes (extract testable logic to pure functions instead)
+      - `settings-tab.ts` (pure UI wiring)
+    moduleBoundaries: |-
+      **Import boundaries** — Feature modules (`elaboration/`, `audio/`, `video/`) must not import from each other, except the documented `video/ → audio/` dependency. Consider an architectural test that scans imports.
+    workflows: |-
+      ### Adding a new detection heuristic (elaboration)
+      1. Add type variant to `DetectionReason` in `types.ts`
+      2. Write failing detector test with concrete input/expected output
+      3. Implement detection logic, run until green
+      4. Write prompt-building test for the new reason type
+      5. Add settings flag test, then implement the flag
+      6. Add edge case tests
+
+      ### Adding a new transcription provider
+      1. Write tests: provider dispatch, missing API key, request format, response mapping, HTTP errors
+      2. Update types in `settings.ts`
+      3. Implement provider method in `Transcriber`
+      4. Write post-processor integration test
+      5. Add settings UI (not unit tested)
+
+      ### Adding a new media source (e.g., Instagram)
+      1. Write URL detection tests for the new platform
+      2. Add regex and detection logic to `url-detector.ts`
+      3. Write audio extraction tests (mock `execFile`)
+      4. Verify `yt-dlp` handles the platform
+      5. Write integration test for full pipeline
+  arch:
+    settingsType: SynapseSettings
+    depExceptions: VideoModule → AudioModule (documented exception)
+  security:
+    skillGitignore: '`.env`, `data.json`, `.synapse/`'
+    dataDir: '`.synapse/`'
+    externalTools: yt-dlp, ffmpeg
+    mediaFetchTool: yt-dlp
+    agentGitignore: .env, data.json, .synapse/, node_modules/
+    threatModel: |-
+      - Calls external APIs (OpenAI, Anthropic, Deepgram) with user-provided API keys
+      - Executes external processes (yt-dlp, ffmpeg) with user-provided URLs and file paths
+      - Reads/writes files within an Obsidian vault
+      - Stores configuration including API keys via Obsidian's data persistence
+  brand:
+    assetsDir: assets/brand/
+    background: "#1e1e1e"
+  plugin:
+    id: synapse
+    name: Synapse
+    description: Flesh out and elaborate on notes with AI assistance
+    author: Dustin Keeton
+    classPrefix: Synapse
+  roster:
+    specialistTable: |-
+      | Agent | Specialty |
+      |---|---|
+      | `transcription-engineer` | Audio/video transcription pipeline (`src/audio/`, `src/video/`) |
+      | `elaboration-designer` | Note elaboration and proposal system (`src/elaboration/`) |
+      | `plugin-architect` | Plugin features, UI, settings, commands (`src/enrichment/`, `src/summarize/`, `src/tidy/`, `src/views/`) |
+      | `architect` | Codebase structure, shared utilities, conventions (`src/shared/`, cross-cutting) |
+      | `security` | Security auditing and fixes |
+      | `docs-agent` | Machine-readable documentation (AGENTS.md files) |
+      | `docs-human` | Human-readable documentation (DECISIONS.md, STATUS.md, ARCHITECTURE.md) |
+    classificationTable: |-
+      | Keywords / paths in issue | Agent |
+      |---|---|
+      | `src/audio/`, `src/video/`, audio, transcription, whisper, deepgram, yt-dlp, youtube, tiktok | `transcription-engineer` |
+      | `src/elaboration/`, elaborate, proposal, placeholder, detection | `elaboration-designer` |
+      | `src/enrichment/`, enrich, tags, links, weights | `plugin-architect` |
+      | `src/summarize/`, summarize, summary, URL fetching | `plugin-architect` |
+      | `src/tidy/`, `src/views/`, UI, modal, settings-tab, sidebar, tidy, formatting | `plugin-architect` |
+      | `src/shared/`, validation, ai-client, file-utils | `architect` |
+      | `src/main.ts`, plugin lifecycle, onload, commands | `plugin-architect` |
+      | security, injection, secrets, .gitignore | `security` |
+      | AGENTS.md, machine docs, module registry | `docs-agent` |
+      | DECISIONS.md, STATUS.md, ARCHITECTURE.md | `docs-human` |
+      | architecture, structure, naming, dependency, circular | `architect` |
+      | `assets/brand/`, logo, icon, banner, visual asset, SVG | `designer` |
+      | brand, branding, voice, tone, name treatment, brand audit | `brand-manager` |
+    labelFallback: |-
+      | Label | Agent |
+      |---|---|
+      | `bug` | `plugin-architect` |
+      | `enhancement` | `plugin-architect` |
+      | `documentation` | `docs-agent` |
+      | `question` | `architect` |
+    rootFiles: "`main.ts`, `settings.ts`, `settings-tab.ts`"
+    sharedModule: "`src/shared/`"
+    moduleDependencies: "`src/video/` depends on `src/audio/` — serialize audio-first"
+    rootFileExample: "`main.ts`"
+  audit:
+    complianceLabel: Obsidian compliance
+    complianceFrontmatterLabel: Obsidian submission-guideline compliance
+    complianceTaskLabel: obsidian compliance
+    complianceAgentName: obsidian-compliance
+    complianceDescription: "Verify the codebase still meets the Obsidian community plugin submission guidelines (manifest correctness, lifecycle cleanup, no internal/deprecated APIs, DOM safety, mobile/`isDesktopOnly` accuracy, command & UI-copy conventions). Implement fixes."
+    compliancePrompt: |-
+      ### Obsidian Compliance (Task 3)
+      Verify the plugin still satisfies the Obsidian community plugin submission guidelines, per `.claude/skills/obsidian-plugin-dev/SKILL.md` and the official policies (developer.obsidian.md plugin guidelines + the `obsidianmd/obsidian-releases` submission checklist). Audit and fix:
+      - **manifest.json**: required fields present and valid (`id`, `name`, `version` matching the release, `minAppVersion`, `description`, `author`, `authorUrl`, and an `isDesktopOnly` flag that matches actual Node/Electron/desktop-only API usage); `id` is unique, lowercase-kebab, and contains neither "obsidian" nor "plugin"; `versions.json` kept in sync with `minAppVersion`.
+      - **Lifecycle & cleanup**: every event, interval, and DOM listener is registered via `registerEvent` / `registerInterval` / `registerDomEvent` (or explicitly torn down in `onunload`); no leaked timers; `onunload` does not detach leaves it didn't create.
+      - **API hygiene**: no internal/undocumented APIs (e.g. `app.internalPlugins`, private fields) and no deprecated calls; use `this.app` rather than the global `app`; use `normalizePath` for vault paths; prefer `Vault.process` / `FileManager` over raw adapter writes; gate desktop-only Node usage behind the existing desktop assertions.
+      - **DOM safety**: no `innerHTML` / `outerHTML` / `insertAdjacentHTML` with dynamic content — build nodes with `createEl` / `createDiv`; move inline styles to CSS classes in `styles.css`.
+      - **Commands & UI copy**: command names in sentence case, no plugin-name prefix and not containing the word "plugin"; settings headings follow Obsidian conventions (sentence case, no "Settings for…").
+      - **Repo hygiene**: `main.js` / `manifest.json` / `styles.css` are the published release artifacts; `LICENSE` and `README` present; no committed secrets; any network usage is disclosed in the README.
+      Implement fixes directly (do not just report), then verify with `npx tsc --noEmit` and the production build. Respect the project's deliberate patterns (e.g. the type-only audio→video back-edge, desktop gating via `loadNodeModules`) — flag, don't "fix", anything that is intentional.
