@@ -28,14 +28,15 @@ coverage/
 # Agent / tooling harness artifacts (Claude Code, Codex, etc.)
 .claude/worktrees
 .claude/settings.local.json
+# Project-local private agent definitions (not toolkit-managed)
 .claude/agents/brand-manager.md
-.claude/agents/designer.md
 .claude/agents/product-manager.md
-.claude/agents/project-manager.md
 .claude/skills/brand-guidelines
+# agent-toolkit renders that embed the account-specific local overlay
+# (see .agent-toolkit.yaml; the rest of the rendered files are committed)
 .claude/skills/delegate/
 .claude/skills/git-workflow/
-.claude/skills/github-project-management/
+.agent-toolkit.local.yaml
 .agents/
 .codex/
 
