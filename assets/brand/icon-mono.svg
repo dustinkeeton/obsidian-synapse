@@ -1,5 +1,3 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <path d="M34 46 L25 39 M25 39 L19 31 M19 31 L20 22 M19 31 L11 27 M25 39 L14 45" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="43" cy="50" r="14" fill="currentColor"/>
-  <path d="M57 50 L65 50 L71 40 L78 60 L84 50 L91 50" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M34 46 L25 39 M25 39 L19 31 M19 31 L20 22 M19 31 L11 27 M25 39 L14 45" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="43" cy="50" r="14" fill="currentColor"></circle><path d="M57 50 L65 50 L71 40 L78 60 L84 50 L91 50" fill="none" style="stroke:var(--synapse-gold, #FFD23F)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
 </svg>

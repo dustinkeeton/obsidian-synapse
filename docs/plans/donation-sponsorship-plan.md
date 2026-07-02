@@ -131,11 +131,11 @@ Placement: **near the bottom**, after Features / Install / Usage — never in th
 Synapse is free and open source. If it has earned a place in your workflow,
 you can support continued development:
 
-[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-8b5cf6?logo=github)](https://github.com/sponsors/dustinkeeton)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-5b21b6?logo=buymeacoffee&logoColor=white)](https://www.buymeacoffee.com/<bmc-handle>)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-5A3EF0?logo=github)](https://github.com/sponsors/dustinkeeton)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFD23F?logo=buymeacoffee&logoColor=0A0718)](https://www.buymeacoffee.com/<bmc-handle>)
 ```
 
-(Badge colors above use the brand violets — Synapse Violet `#8b5cf6` and Threshold Violet `#5b21b6` — so the section reads as part of the identity rather than stock badge clutter.)
+(Badge colors above use the brand palette — Iris `#5A3EF0` and Gold `#FFD23F` — so the section reads as part of the identity rather than stock badge clutter.)
 
 ### d) Settings panel (optional, non-intrusive)
 

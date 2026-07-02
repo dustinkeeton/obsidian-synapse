@@ -24,9 +24,11 @@
   <circle cx="179.3" cy="64.4" r="20" fill="#5A3EF0"></circle>
   <path d="M177.4 141.9 A46 46 0 0 1 107 200.9" fill="none" stroke="#5A3EF0" stroke-width="26" stroke-linecap="round"></path>
   <circle cx="85.7" cy="177.8" r="22.5" fill="none" stroke="#5A3EF0" stroke-width="14"></circle>
-  <polyline points="101,121 119,115 134,84 149,160 161,131 174,133" fill="none" stroke="#0A0718" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="101,121 119,115 134,84 149,160 161,131 174,133" fill="none" stroke="#0A0718" stroke-width="19" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="178" stroke-dashoffset="0">
+    <animate attributeName="stroke-dashoffset" values="178;0;0" keyTimes="0;0.3;1" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1" dur="4s" repeatCount="indefinite"></animate>
   </polyline>
-  <polyline points="101,121 119,115 134,84 149,160 161,131 174,133" fill="none" stroke="#FFD23F" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="101,121 119,115 134,84 149,160 161,131 174,133" fill="none" stroke="#FFD23F" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="178" stroke-dashoffset="0">
+    <animate attributeName="stroke-dashoffset" values="178;0;0" keyTimes="0;0.3;1" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1" dur="4s" repeatCount="indefinite"></animate>
   </polyline>
   </g>
   <text x="336" y="168" font-family="&#39;Space Grotesk&#39;, &#39;Helvetica Neue&#39;, Arial, sans-serif" font-size="88" font-weight="500" letter-spacing="-1.76" fill="#F3F0FF">synapse</text>
