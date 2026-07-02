@@ -1,15 +1,15 @@
-# agent-toolkit consumer config — https://github.com/dustinkeeton/agent-toolkit
+# wafflestack consumer config — https://github.com/dustinkeeton/wafflestack
 #
 # The agent/skill files under .claude/agents, .claude/skills, .codex/agents, and
-# .agents/skills that are listed in .agent-toolkit.lock.json are RENDERED from the
-# toolkit — edit the toolkit source, this config, or .agent-toolkit/extensions/
+# .agents/skills that are listed in .wafflestack.lock.json are RENDERED from the
+# toolkit — edit the toolkit source, this config, or .wafflestack/extensions/
 # instead of the rendered files, then re-render:
 #
-#   npx github:dustinkeeton/agent-toolkit#v0.1.0 render
-#   npx github:dustinkeeton/agent-toolkit#v0.1.0 doctor   # drift check
+#   npx github:dustinkeeton/wafflestack#v0.2.0 render
+#   npx github:dustinkeeton/wafflestack#v0.2.0 doctor   # drift check
 #
 # Account-specific values (git.botEmail, git.botName) live in the gitignored
-# .agent-toolkit.local.yaml overlay, so renders that embed them stay gitignored.
+# .wafflestack.local.yaml overlay, so renders that embed them stay gitignored.
 targets: [claude, codex, agents-dir]
 bundles:
   - docs-system
