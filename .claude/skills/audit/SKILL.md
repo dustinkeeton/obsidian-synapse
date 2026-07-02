@@ -14,8 +14,8 @@ Run the full audit pipeline in consecutive order. Each agent audits the codebase
 1. **architect** — Audit and improve codebase structure (module patterns, file organization, naming, dependency rules, import paths)
 2. **security** (pass 1) — Full security audit per the security-audit skill checklist
 3. **plugin-architect** (Obsidian compliance) — Verify the codebase still meets the Obsidian community plugin submission guidelines (manifest correctness, lifecycle cleanup, no internal/deprecated APIs, DOM safety, mobile/`isDesktopOnly` accuracy, command & UI-copy conventions). Implement fixes.
-4. **docs-agent** — Create/update machine-readable AGENTS.md files (root + per-feature) optimized for LLM consumption
-5. **docs-human** — Create/update DECISIONS.md, STATUS.md, ARCHITECTURE.md for human stakeholders
+4. **docs-agent** — Create/update the machine docs (a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files) optimized for LLM consumption
+5. **docs-human** — Create/update the human docs (`DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root) for human stakeholders
 6. **security** (pass 2) — Re-audit the entire codebase including all changes made by earlier agents. Ensure no new issues were introduced.
 
 ## Execution Steps
@@ -123,7 +123,7 @@ TeamDelete(team_name: "audit-{timestamp}")
 Each agent should:
 
 - Read its corresponding skill in `.claude/skills/` for standards and checklists
-- Read the full codebase under `src/` and project root
+- Read the full project source and root
 - Implement fixes directly if its role grants edit tools; report-only agents deliver a severity-ranked findings report instead
 - Verify the build passes after changes (`npx tsc --noEmit --skipLibCheck`)
 - Send a findings summary to the team lead: `SendMessage(to: "team-lead", content: <summary>)`
@@ -137,7 +137,7 @@ Audit for: module pattern adherence, file structure conventions, naming (kebab-c
 
 ### Security Pass 1 (Task 2)
 
-Full audit per `.claude/skills/security-audit/SKILL.md` — the skill is the source of truth for the checklist, grep patterns, and severity rubric. Apply fixes if your role permits edits; otherwise deliver a severity-ranked findings report and do not modify code.
+Full audit per the security agent's own checklist — and `.claude/skills/security-audit/SKILL.md` where the project has that skill, as the source of truth for grep patterns and the severity rubric. Apply fixes if your role permits edits; otherwise deliver a severity-ranked findings report and do not modify code.
 
 ### Obsidian Compliance (Task 3)
 Verify the plugin still satisfies the Obsidian community plugin submission guidelines, per `.claude/skills/obsidian-plugin-dev/SKILL.md` and the official policies (developer.obsidian.md plugin guidelines + the `obsidianmd/obsidian-releases` submission checklist). Audit and fix:
@@ -151,11 +151,11 @@ Implement fixes directly (do not just report), then verify with `npx tsc --noEmi
 
 ### Docs-Agent (Task 4)
 
-Create/update AGENTS.md at root and `src/<feature>/AGENTS.md` files. Include: module registry, dependency graph, public APIs with type signatures, command registry, settings schema, build commands. Machine-readable format per `.claude/skills/docs-agent/SKILL.md`.
+Create/update the machine docs — a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files. Machine-readable format and required sections per `.claude/skills/docs-agent/SKILL.md` (the skill defines the file set).
 
 ### Docs-Human (Task 5)
 
-Create/update DECISIONS.md, STATUS.md, ARCHITECTURE.md per `.claude/skills/docs-human/SKILL.md`. Derive from codebase and agent docs. Decision log with context/alternatives/rationale, status snapshot, architecture overview with diagrams.
+Create/update the human docs — `DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root — per `.claude/skills/docs-human/SKILL.md` (the skill defines the file set, sections, and guardrails). Derive from codebase and machine docs.
 
 ### Security Pass 2 (Task 6)
 

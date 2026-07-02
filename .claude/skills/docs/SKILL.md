@@ -12,12 +12,12 @@ When this skill is invoked, run the following pipeline:
 
 Spawn the `architect` agent with this prompt:
 
-> Audit the current codebase for any architectural changes since the docs were last updated. Read the existing AGENTS.md files and compare against the actual code. Produce a concise **change report** covering:
+> Audit the current codebase for any changes since the docs were last updated. Read the existing machine docs (a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files) and compare against the actual project. Produce a concise **change report** covering:
 >
 > - New or removed modules, files, commands, settings
-> - Changed public APIs or type signatures
-> - Dependency changes between modules
-> - Any architectural violations or inconsistencies
+- Changed public APIs or type signatures
+- Dependency changes between modules
+- Any architectural violations or inconsistencies
 >
 > Output ONLY the change report as structured text. Do NOT modify any files.
 
@@ -29,19 +29,15 @@ Take the change report and spawn the `docs-agent` agent with this prompt:
 >
 > {step-1 output}
 >
-> Update all AGENTS.md files (root and per-feature in src/) to reflect the current state of the codebase. Read the actual source files to verify details — do not rely solely on the change report. Follow the docs-agent skill guidelines for format and structure.
+> Update the machine docs — a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files — to reflect the current state of the project. Read the actual source files to verify details — do not rely solely on the change report. Follow the docs-agent skill guidelines for format and structure.
 
 ## Step 3: Human Documentation
 
 After docs-agent completes, spawn the `docs-human` agent with this prompt:
 
-> The agent documentation (AGENTS.md files) has just been updated. Update the human-facing documentation:
+> The machine docs have just been updated. Update the human-facing documentation — `DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root — to match.
 >
-> - DECISIONS.md — add entries for any new decisions reflected in code changes
-> - STATUS.md — update to reflect current project state
-> - ARCHITECTURE.md — update if architecture has changed
->
-> Read the updated AGENTS.md files and the actual source code to ensure accuracy. Follow the docs-human skill guidelines for format and structure.
+> Read the updated machine docs and the actual source to ensure accuracy. Follow the docs-human skill guidelines for format, structure, and its guardrails (owner-voiced docs are flagged, never rewritten).
 
 ## Important
 

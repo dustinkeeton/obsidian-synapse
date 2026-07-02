@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
@@ -6,8 +9,5 @@
     "context7@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "figma@claude-plugins-official": true
-  },
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   }
 }

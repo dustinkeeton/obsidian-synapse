@@ -1,6 +1,6 @@
 ---
 name: docs-agent
-description: Machine-readable documentation system optimized for LLMs and agents. Produces structured docs with explicit type signatures, dependency graphs, and decision context. Use when creating or updating documentation intended for AI consumption.
+description: Machine-readable documentation standard optimized for LLMs and agents — structured, terse, explicit. Defines the project's machine-doc file set and format rules. Use when creating or updating documentation intended for AI consumption.
 user-invocable: false
 ---
 
@@ -8,12 +8,12 @@ user-invocable: false
 
 ## Purpose
 
-Produce documentation that LLMs and agents can parse efficiently. Prioritize:
+Produce documentation that LLMs and agents can parse efficiently. The machine docs for this project are a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files. Prioritize:
 
 - **Explicit over implicit** — spell out types, dependencies, and contracts
 - **Structured data** — use tables, typed signatures, and consistent headings
 - **No prose fluff** — eliminate narrative; use terse, factual descriptions
-- **Cross-references** — link to source files with `path:line` format
+- **Cross-references** — point at source files by path
 
 ## Documentation Files
 
@@ -52,3 +52,5 @@ Per-feature docs:
 
 - Show exports as full signatures in the source language, not pseudocode.
 - Treat the module's re-export surface (e.g. `index.ts`) as the public API — anything not re-exported is internal and belongs under "Internal architecture", not "Public API".
+
+
