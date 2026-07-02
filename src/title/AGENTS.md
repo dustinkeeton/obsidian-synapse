@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-07-02
 ---
 
 # title module
@@ -58,7 +58,7 @@ type TitleAcceptOutcome =
 | `title-store.ts` | `TitleProposalStore` | JSON persistence in `settings.title.proposalFolderPath` |
 | `content-key.ts` | `titleContentKey` | Deterministic input-keyed dedup hash for proposals (#408) |
 | `settings-section.ts` | `renderTitleSettings` | Title settings accordion (enabled toggle + duplicate-handling dropdown) (#408) |
-| `title-detector.ts` | re-exports `isUntitled` | Thin re-export of `isUntitled` from `shared/title-detector` (its canonical home) |
+| `title-detector.ts` | re-exports `isUntitled` | Thin re-export of `isUntitled` through the `../shared` barrel (never the internal `shared/title-detector` file, per the shared-import rule); canonical home is `shared/title-detector.ts` |
 | `types.ts` | -- | All title types |
 
 ## TitleSuggester (`title-suggester.ts`)
@@ -103,7 +103,7 @@ function isUntitled(title: string): boolean
 // Pattern: /^untitled(\s+\d+)?$/i (on title.trim())
 ```
 
-Canonical definition lives in `shared/title-detector.ts` (alongside `isGenericTitle`, used by elaboration's anti-fabrication guard) so non-`title/` features can reuse it without importing from this module. `title/title-detector.ts` re-exports it.
+Canonical definition lives in `shared/title-detector.ts` (alongside `isGenericTitle`, used by elaboration's anti-fabrication guard) so non-`title/` features can reuse it without importing from this module. `title/title-detector.ts` re-exports it through the `../shared` barrel (`export { isUntitled } from '../shared'`), never the internal `shared/title-detector` file.
 
 ## Data Flow
 
