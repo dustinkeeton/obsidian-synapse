@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/brand/banner.svg" alt="Synapse — More connections. Brighter thoughts." width="100%">
+  <img src="assets/brand/banner-animated.svg" alt="Synapse — More connections. Brighter thoughts." width="100%">
 </p>
 
 # Synapse
@@ -416,8 +416,8 @@ Then run `npm run dev` to rebuild automatically on changes. Reload Obsidian (Cmd
 Synapse is free and open source. If it has earned a place in your workflow,
 you can support continued development:
 
-[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-8b5cf6?logo=github)](https://github.com/sponsors/dustinkeeton)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-5b21b6?logo=buymeacoffee&logoColor=white)](https://www.buymeacoffee.com/dustinkeeton)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-5A3EF0?logo=github)](https://github.com/sponsors/dustinkeeton)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFD23F?logo=buymeacoffee&logoColor=0A0718)](https://www.buymeacoffee.com/dustinkeeton)
 
 ## License
 

@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect x="12" y="22" width="76" height="56" rx="10" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/>
-  <path d="M42 38 L62 50 L42 62 Z" fill="currentColor" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/>
+  <polygon points="16,36 38,50 16,64" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"></polygon>
+  <path d="M42 50 H46" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path>
+  <polyline points="46,50 52,42 58,58 62,50" fill="none" style="stroke:var(--synapse-gold, #FFD23F)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></polyline>
+  <circle cx="75" cy="50" r="8.5" fill="none" stroke="currentColor" stroke-width="6.5"></circle>
 </svg>

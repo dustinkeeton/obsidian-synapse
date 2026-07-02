@@ -44,13 +44,18 @@ describe('brand-icons', () => {
 		}
 	});
 
-	it('draws every glyph as a non-empty currentColor silhouette with no baked palette color', () => {
+	it('draws every glyph as a currentColor silhouette; gold only via the theme var', () => {
 		for (const [name, body] of Object.entries(SYNAPSE_ICONS)) {
 			expect(body, name).toBeTruthy();
-			// Color comes from the host UI (mono ribbon/palette, CSS tint in the
-			// sidebar) — the bodies must use currentColor and never a hardcoded hex.
+			// Body ink comes from the host UI via currentColor; the only other color
+			// allowed is the impulse gold, and only through the theme var (with its
+			// canonical fallback) so styles.css can retune it per light/dark surface.
 			expect(body, name).toContain('currentColor');
-			expect(body.includes('#'), `${name} must not bake a hex color`).toBe(false);
+			const withoutGold = body.split('var(--synapse-gold, #FFD23F)').join('');
+			expect(
+				withoutGold.includes('#'),
+				`${name} must not bake a color outside var(--synapse-gold, #FFD23F)`,
+			).toBe(false);
 		}
 	});
 

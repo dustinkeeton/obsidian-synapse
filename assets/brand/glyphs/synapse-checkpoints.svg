@@ -1,4 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <path d="M50 22 A28 28 0 1 1 26 36" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
-  <path d="M42 40 L60 50 L42 60 Z" fill="currentColor" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M72.6 41.8 A24 24 0 1 1 38 29.2" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M42 39 L63 50 L42 61 Z" style="fill:var(--synapse-gold, #FFD23F)"></path>
 </svg>

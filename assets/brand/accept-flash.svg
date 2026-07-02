@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Looping SMIL demo of accept-flash.md: 2400ms cycle = 600ms open hold,
+       700ms flash (spec phases offset +600ms), 1100ms accepted hold, reset.
+       Base attributes = the open/proposed state, so each cycle restart is the
+       reset and non-SMIL renderers show the proposed mark. -->
+  <path d="M179.3 64.4 A42 42 0 1 0 108.3 108.1" fill="none" stroke="#5A3EF0" stroke-width="26" stroke-linecap="round"></path>
+  <circle cx="179.3" cy="64.4" r="20" fill="#5A3EF0"></circle>
+  <path d="M177.4 141.9 A46 46 0 0 1 107 200.9" fill="none" stroke="#5A3EF0" stroke-width="26" stroke-linecap="round"></path>
+  <path d="M108.3 108.2 Q131.0 132.0 177.4 141.9" fill="none" stroke="#5A3EF0" stroke-width="26" stroke-linecap="round" stroke-dasharray="80" stroke-dashoffset="80">
+    <animate attributeName="stroke-dashoffset" values="80;80;0;0" keyTimes="0;0.375;0.425;1" calcMode="spline" keySplines="0 0 1 1;0.42 0 0.58 1;0 0 1 1" dur="2400ms" repeatCount="indefinite"></animate>
+  </path>
+  <circle cx="85.7" cy="177.8" r="22.5" fill="none" stroke="#5A3EF0" stroke-width="14">
+    <animate attributeName="stroke-width" values="14;14;18;14;14" keyTimes="0;0.45;0.479;0.5083;1" calcMode="spline" keySplines="0 0 1 1;0 0 0.2 1;0.4 0 1 1;0 0 1 1" dur="2400ms" repeatCount="indefinite"></animate>
+  </circle>
+  <polyline points="101,121 119,115 134,84 149,160 161,131 174,133" fill="none" stroke="#0A0718" stroke-width="19" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="178">
+    <animate attributeName="stroke-dashoffset" values="0;0;-178;-178" keyTimes="0;0.3;0.3583;1" calcMode="spline" keySplines="0 0 1 1;0.3 0 0.9 1;0 0 1 1" dur="2400ms" repeatCount="indefinite"></animate>
+  </polyline>
+  <polyline points="101,121 119,115 134,84 149,160 161,131 174,133" fill="none" stroke="#FFD23F" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="178">
+    <animate attributeName="stroke-width" values="11;11;13;11;11" keyTimes="0;0.25;0.275;0.3;1" calcMode="spline" keySplines="0 0 1 1;0 0 0.2 1;0.4 0 1 1;0 0 1 1" dur="2400ms" repeatCount="indefinite"></animate>
+    <animate attributeName="stroke-dashoffset" values="0;0;-178;-178" keyTimes="0;0.3;0.3583;1" calcMode="spline" keySplines="0 0 1 1;0.3 0 0.9 1;0 0 1 1" dur="2400ms" repeatCount="indefinite"></animate>
+  </polyline>
+  <g opacity="0">
+    <animate attributeName="opacity" values="0;1" keyTimes="0;0.3583" calcMode="discrete" dur="2400ms" repeatCount="indefinite"></animate>
+    <circle cx="0" cy="0" r="13" fill="#FFD23F" stroke="#0A0718" stroke-width="3.5">
+      <animate attributeName="r" values="13;13;18;15;15" keyTimes="0;0.45;0.4708;0.5083;1" calcMode="spline" keySplines="0 0 1 1;0 0 0.2 1;0.4 0 0.6 1;0 0 1 1" dur="2400ms" repeatCount="indefinite"></animate>
+    </circle>
+    <animateMotion path="M174 133 L177.4 141.9 A46 46 0 0 1 107 200.9 L85.7 177.8" keyPoints="0;0;1;1" keyTimes="0;0.3583;0.45;1" calcMode="spline" keySplines="0 0 1 1;0.2 0 0.55 1;0 0 1 1" dur="2400ms" repeatCount="indefinite"></animateMotion>
+  </g>
+</svg>

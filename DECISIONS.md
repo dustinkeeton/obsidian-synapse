@@ -4,6 +4,22 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-07-02: Brand refresh — Iris + Gold; glyphs may carry ONE gold gesture via a theme var
+
+**Context**: The brand kit in `assets/brand/` was replaced (2026 Iris + Gold refresh): body color moves from violet `#8b5cf6` to Iris `#5A3EF0`, volt lime `#CCFF00` is retired, and the "impulse" — the one thing Synapse adds — is now always Gold `#FFD23F`. The in-app glyphs previously had a hard rule: pure `currentColor`, never a baked color (`brand-icons.test.ts` failed on any `#`). The new glyph grammar puts the single gold gesture *inside* the glyphs, which that rule forbade.
+
+**Decision**: Glyph bodies stay `currentColor` (host UI supplies the ink), but each glyph may carry **one** gold gesture expressed only as `style="…var(--synapse-gold, #FFD23F)"`. The var is themed in `styles.css` (`body { --synapse-gold: #FFD23F }`, deepened to `#E8B419` on `.theme-light` for contrast on white). The test now strips the exact token `var(--synapse-gold, #FFD23F)` before asserting no `#` remains, so the canonical fallback is the *only* hex a glyph can bake. `synapse-main` stays impulse-free (neutral fallback); `synapse-actions` becomes the S-Signal at glyph weight (the brain mark is retired; the neuron remains the proposals mark).
+
+**Alternatives considered**:
+- **Keep glyphs pure `currentColor`** — rejected; the refresh's whole grammar is "gold = what Synapse adds", and a mono glyph set can't say that.
+- **Bake `#FFD23F` directly** — rejected; light themes need the deepened `#E8B419`, and a literal hex can't retheme.
+
+**Rationale**: The CSS var keeps one retunable source of truth per surface while the fallback keeps the assets self-contained (they render correctly outside Obsidian, e.g. on GitHub).
+
+**Impact**: `assets/brand/*` (all marks + glyphs), `src/brand-icons.ts` (regenerated bodies), `brand-icons.test.ts` (color rule), `styles.css` (gold tokens), README hero (animated banner) + sponsor badges (Iris/Gold). No behavior change beyond visuals.
+
+---
+
 ## 2026-06-29: Raw caught errors get the same redaction as strings (`redactError`)
 
 **Context**: `redactSecrets()` — the single redaction source (`shared/redact.ts`) — only operates on **strings**. Several console sinks log a caught value directly (`console.warn('…failed', err)` / `console.error('…', err)`), handing the bare `Error` object — and its `.stack`, which embeds `.message` — to the console. A secret echoed into an error message by an upstream API or a thrown exception would reach the console **verbatim**, bypassing redaction. This audit found five such raw-error sinks across audio, rem, elaboration, and shared.

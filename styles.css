@@ -48,6 +48,20 @@
 }
 
 /*
+ * Brand impulse gold (2026 Iris+Gold refresh). Every registered glyph draws
+ * its body in currentColor and its single gold gesture in this var (see
+ * src/brand-icons.ts / assets/brand/README.md). Deepened on light surfaces
+ * for contrast against white.
+ */
+body {
+  --synapse-gold: #FFD23F;
+}
+
+.theme-light {
+  --synapse-gold: #E8B419;
+}
+
+/*
  * Cap the height of embedded videos so portrait-oriented content
  * (TikTok, Instagram Reels, phone recordings) does not dominate the note.
  * Landscape videos are unaffected because they hit width constraints first.

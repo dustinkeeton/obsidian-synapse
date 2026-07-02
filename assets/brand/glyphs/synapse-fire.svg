@@ -1,4 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <path d="M14 78 a6 6 0 0 1 -6 -6 V34 a6 6 0 0 1 6 -6 H32 l7 8 H82 a6 6 0 0 1 6 6 V72 a6 6 0 0 1 -6 6 Z" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/>
-  <path d="M20 54 H78 M66 42 L80 54 L66 66" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="18" cy="50" r="9" fill="currentColor"></circle>
+  <polyline points="27,50 33,43 39,57 45,50" fill="none" style="stroke:var(--synapse-gold, #FFD23F)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></polyline>
+  <circle cx="53" cy="50" r="9" fill="currentColor"></circle>
+  <path d="M62 50 H70" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="80" cy="50" r="8" fill="none" stroke="currentColor" stroke-width="6.5"></circle>
 </svg>

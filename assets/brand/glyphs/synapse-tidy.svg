@@ -1,7 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect x="29" y="20" width="42" height="60" rx="8" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/>
-  <path d="M52 32 H62" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
-  <path d="M42 43 H56" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
-  <path d="M38 58 H62" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
-  <path d="M38 68 H62" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+  <path d="M6 52 Q13 40 20 52 Q26 62 32 52" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path>
+  <polyline points="34,52 40,44 46,60 50,52" fill="none" style="stroke:var(--synapse-gold, #FFD23F)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></polyline>
+  <path d="M52 52 H66" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="77" cy="52" r="8" fill="none" stroke="currentColor" stroke-width="6.5"></circle>
 </svg>

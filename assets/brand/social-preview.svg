@@ -1,39 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#131019"/>
-      <stop offset="1" stop-color="#1D1630"/>
+      <stop offset="0" stop-color="#0A0718"></stop>
+      <stop offset="1" stop-color="#140F2A"></stop>
     </linearGradient>
   </defs>
-  <!-- full-bleed background, no corner radius: unfurl clients round their own corners -->
-  <rect x="0" y="0" width="1280" height="640" fill="url(#bg)"/>
-
-  <!-- faint synaptic-edge motifs: filled sender dot, gapped edge, open receptor ring; sacrificial — may crop away outside the 64px safe area -->
-  <g stroke="#8b5cf6" fill="none" opacity="0.16">
-    <circle cx="916" cy="158" r="6" fill="#8b5cf6" stroke="none"/>
-    <path d="M928 155 Q1040 124 1146 118" stroke-width="3" stroke-linecap="round"/>
-    <path d="M1172 117 Q1200 116 1224 114" stroke-width="3" stroke-linecap="round"/>
-    <circle cx="1250" cy="112" r="11" stroke-width="3"/>
+  <rect x="0" y="0" width="1280" height="640" fill="url(#bg)"></rect>
+  <g stroke="#5A3EF0" fill="none" opacity="0.16">
+    <circle cx="916" cy="158" r="6" fill="#5A3EF0" stroke="none"></circle>
+    <path d="M928 155 Q1024 130 1096 122" stroke-width="3" stroke-linecap="round"></path>
+    <path d="M1148 118 Q1188 116 1216 114" stroke-width="3" stroke-linecap="round"></path>
+    <circle cx="1242" cy="112" r="11" stroke-width="3"></circle>
   </g>
-  <g stroke="#8b5cf6" fill="none" opacity="0.10">
-    <circle cx="32" cy="622" r="6" fill="#8b5cf6" stroke="none"/>
-    <path d="M44 619 Q112 606 174 599" stroke-width="2.5" stroke-linecap="round"/>
-    <path d="M198 597 Q214 596 228 595" stroke-width="2.5" stroke-linecap="round"/>
-    <circle cx="252" cy="593" r="10" stroke-width="3"/>
+  <polyline points="1100,122 1114,106 1128,132 1144,118" fill="none" stroke="#FFD23F" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"></polyline>
+  <g stroke="#5A3EF0" fill="none" opacity="0.10">
+    <circle cx="44" cy="610" r="6" fill="#5A3EF0" stroke="none"></circle>
+    <path d="M56 607 Q124 594 186 587" stroke-width="2.5" stroke-linecap="round"></path>
+    <path d="M210 585 Q226 584 240 583" stroke-width="2.5" stroke-linecap="round"></path>
+    <circle cx="264" cy="581" r="10" stroke-width="3"></circle>
   </g>
-
-  <!-- the mark: canonical icon.svg elements, byte-for-byte; transform centers the ink (not the viewBox) on x~640 -->
   <g transform="translate(487,44) scale(1.2)">
-    <path d="M179.3 64.4 A42 42 0 1 0 108.3 108.2" fill="none" stroke="#8b5cf6" stroke-width="26" stroke-linecap="round"/>
-    <circle cx="179.3" cy="64.4" r="20" fill="#8b5cf6"/>
-    <path d="M177.4 141.9 A46 46 0 0 1 107.0 200.9" fill="none" stroke="#8b5cf6" stroke-width="26" stroke-linecap="round"/>
-    <circle cx="85.7" cy="177.8" r="22.5" fill="none" stroke="#8b5cf6" stroke-width="14"/>
-    <path d="M124.0 120.1 L143.1 113.9 A14 14 0 1 1 136.4 135.9 Z" fill="#CCFF00" stroke="#131019" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M179.3 64.4 A42 42 0 1 0 108.3 108.1" fill="none" stroke="#5A3EF0" stroke-width="26" stroke-linecap="round"></path>
+  <circle cx="179.3" cy="64.4" r="20" fill="#5A3EF0"></circle>
+  <path d="M177.4 141.9 A46 46 0 0 1 107 200.9" fill="none" stroke="#5A3EF0" stroke-width="26" stroke-linecap="round"></path>
+  <circle cx="85.7" cy="177.8" r="22.5" fill="none" stroke="#5A3EF0" stroke-width="14"></circle>
+  <polyline points="101,121 119,115 134,84 149,160 161,131 174,133" fill="none" stroke="#0A0718" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+  </polyline>
+  <polyline points="101,121 119,115 134,84 149,160 161,131 174,133" fill="none" stroke="#FFD23F" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+  </polyline>
   </g>
-
-  <!-- wordmark + qualifier, one centered chunk on shared baseline y=458: Space Grotesk 500 with the engineered n-a cleft, then "for Obsidian" in Inter 500 -->
-  <text x="640" y="458" text-anchor="middle" font-family="'Space Grotesk', 'Helvetica Neue', Arial, sans-serif" font-size="116" font-weight="500" letter-spacing="-2.32" fill="#F4F2FB">syn<tspan dx="8">apse</tspan><tspan dx="28" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="40" letter-spacing="normal">for Obsidian</tspan></text>
-
-  <!-- tagline -->
-  <text x="640" y="544" text-anchor="middle" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="36" font-weight="500" fill="#A78BFA">More connections. Brighter thoughts.</text>
+  <text x="640" y="458" text-anchor="middle" font-family="&#39;Space Grotesk&#39;, &#39;Helvetica Neue&#39;, Arial, sans-serif" font-size="116" font-weight="500" letter-spacing="-2.32" fill="#F3F0FF">synapse<tspan dx="28" font-family="&#39;Inter&#39;, -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, sans-serif" font-size="40" letter-spacing="normal">for Obsidian</tspan></text>
+  <text x="640" y="544" text-anchor="middle" font-family="&#39;Inter&#39;, -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, sans-serif" font-size="36" font-weight="500" fill="#B7A8FF">More connections. Brighter thoughts.</text>
 </svg>

@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect x="13" y="24" width="38" height="52" rx="8" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/>
-  <path d="M23 38 H41" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"/>
-  <path d="M23 50 H41" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"/>
-  <path d="M23 62 H35" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"/>
-  <path d="M51 42 H64" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
-  <circle cx="77" cy="42" r="9" fill="none" stroke="currentColor" stroke-width="7"/>
-  <path d="M51 62 H64" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
-  <circle cx="77" cy="62" r="9" fill="none" stroke="currentColor" stroke-width="7"/>
+  <circle cx="36" cy="52" r="12" fill="currentColor"></circle>
+  <path d="M44 44 L60 33" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="68" cy="28" r="7" style="fill:var(--synapse-gold, #FFD23F)"></circle>
+  <path d="M47 55 L69 56" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="78" cy="56" r="7" style="fill:var(--synapse-gold, #FFD23F)"></circle>
+  <path d="M42 62 L54 72" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="61" cy="78" r="7" style="fill:var(--synapse-gold, #FFD23F)"></circle>
 </svg>
