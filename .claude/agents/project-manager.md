@@ -36,12 +36,11 @@ You are the project manager for the Synapse Obsidian plugin. Your role is to coo
 
 ### When to parallelize
 
-- Issues assigned to different agents touching different `src/` subdirectories
+- Issues touching different areas — different modules/subdirectories, no overlap with `src/shared/` or root files (same-agent-type issues may parallelize too; each spawn is its own instance)
 - Provision a git worktree per agent manually, following the `delegate` skill's "Worktree provisioning" section (do **not** rely on the Agent tool's `isolation: "worktree"` — it is silently ignored when `team_name` is set)
 
 ### When to serialize
 
-- Same agent needed for multiple issues (one agent cannot run twice)
 - Overlapping modules (especially `src/shared/`, root files like `main.ts`)
 - Explicit dependencies between issues ("depends on #N", "blocked by #N")
 - Security and documentation issues run last (need final code state)

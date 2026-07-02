@@ -1,6 +1,6 @@
 ---
 name: docs-human
-description: Human-readable documentation covering decisions, project status, and architecture. Derived from agent docs but formatted for human consumption. Use when creating or updating documentation intended for human stakeholders.
+description: Human-readable documentation standard — scannable, plain-language docs derived from the agent docs but formatted for human consumption. Defines the project's human-doc file set and format rules. Use when creating or updating documentation intended for human stakeholders.
 user-invocable: false
 ---
 
@@ -8,7 +8,9 @@ user-invocable: false
 
 ## Purpose
 
-Produce documentation that humans can quickly scan to understand project status, decisions made, and how the system fits together. Prioritize:
+Produce documentation that humans can quickly scan to understand the project. The human docs for this project are `DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root. Derive from the machine docs and the codebase, but reformat for human readers — plain language, headings, and bullets over walls of prose.
+
+Prioritize:
 
 - **Decision log** — what was decided, why, and what alternatives were considered
 - **Status visibility** — what's done, what's in progress, what's blocked
@@ -57,3 +59,7 @@ High-level architecture overview for humans:
 3. Use bullet points over paragraphs
 4. Include dates on all log entries
 5. Keep STATUS.md under 100 lines — it's a snapshot, not a history
+
+
+
+

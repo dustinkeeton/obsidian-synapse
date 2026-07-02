@@ -218,7 +218,7 @@ gh api repos/$OWNER/$REPO/milestones --jq '.[] | select(.state == "open") | {num
 
 Match by scope: bugs → assign to earliest milestone, features → match by milestone title/scope. If no match → skip milestone assignment.
 
-**Error handling:** Each substep fails independently. No project → skip with warning. No "Backlog" option → try "Todo"/"New" fallbacks. GraphQL error → report but don't fail the issue creation.
+**Error handling:** Each substep fails independently. No project → skip with warning. No "Backlog" option → try "Todo"/"New" fallbacks. GraphQL error → report but don't fail the issue creation. If the repo has no Projects board at all, skip step 6 entirely — issue creation still succeeds.
 
 See the `github-project-management` skill for the full GraphQL query catalog.
 
@@ -280,15 +280,15 @@ Run steps 1–7 above for each issue, then print a summary of every issue enrich
 
 ### Simple bug
 ```
-/issue audio transcription fails silently when API key is expired
+/issue data export fails silently when the API key is expired
 ```
-Creates an issue titled "Fix silent failure when audio transcription API key is expired" with the bug-type label, a body explaining the problem, proposed error-handling fix, and no sub-issues. Applies the high-priority label and adds to project board as "Backlog".
+Creates an issue titled "Fix silent failure when the data-export API key is expired" with the bug-type label, a body explaining the problem, proposed error-handling fix, and no sub-issues. Applies the high-priority label and adds to project board as "Backlog".
 
 ### Multi-step feature
 ```
-/issue add support for Instagram video transcription
+/issue add CSV import support
 ```
-Creates an issue titled "Add Instagram video transcription support" with the enhancement-type label, a body explaining the motivation, proposed approach, and sub-issues for URL detection, extraction, pipeline integration, and tests. Applies the default priority label, adds to project board as "Backlog", and assigns to the matching milestone if one exists.
+Creates an issue titled "Add CSV import support" with the enhancement-type label, a body explaining the motivation, proposed approach, and sub-issues for file parsing, validation, pipeline integration, and tests. Applies the default priority label, adds to project board as "Backlog", and assigns to the matching milestone if one exists.
 
 ### Enrich an existing issue
 ```

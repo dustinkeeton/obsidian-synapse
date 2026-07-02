@@ -32,11 +32,11 @@ coverage/
 .claude/agents/brand-manager.md
 .claude/agents/product-manager.md
 .claude/skills/brand-guidelines
-# agent-toolkit renders that embed the account-specific local overlay
-# (see .wafflestack.yaml; the rest of the rendered files are committed)
+# wafflestack renders that embed the account-specific local overlay
+# (see .waffle.yaml; the rest of the rendered files are committed)
 .claude/skills/delegate/
 .claude/skills/git-workflow/
-.wafflestack.local.yaml
+.waffle.local.yaml
 .agents/
 .codex/
 

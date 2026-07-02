@@ -1,17 +1,17 @@
 # wafflestack consumer config — https://github.com/dustinkeeton/wafflestack
 #
 # The agent/skill files under .claude/agents, .claude/skills, .codex/agents, and
-# .agents/skills that are listed in .wafflestack.lock.json are RENDERED from the
-# toolkit — edit the toolkit source, this config, or .wafflestack/extensions/
+# .agents/skills that are listed in .waffle.lock.json are RENDERED from the
+# toolkit — edit the toolkit source, this config, or .waffle/extensions/
 # instead of the rendered files, then re-render:
 #
-#   npx github:dustinkeeton/wafflestack#v0.3.0 render
-#   npx github:dustinkeeton/wafflestack#v0.3.0 doctor   # drift check
+#   npx github:dustinkeeton/wafflestack#v0.6.0 render
+#   npx github:dustinkeeton/wafflestack#v0.6.0 doctor   # drift check
 #
 # Account-specific values (git.botEmail, git.botName) live in the gitignored
-# .wafflestack.local.yaml overlay; the git.* values below reference them via
+# .waffle.local.yaml overlay; the git.* values below reference them via
 # nested substitution, so renders that embed them stay gitignored.
-targets: [claude, codex, agents-dir]
+targets: [ claude, codex, agents-dir ]
 bundles:
   - docs-system
   - github-workflow
@@ -167,7 +167,10 @@ config:
     complianceFrontmatterLabel: Obsidian submission-guideline compliance
     complianceTaskLabel: obsidian compliance
     complianceAgentName: obsidian-compliance
-    complianceDescription: "Verify the codebase still meets the Obsidian community plugin submission guidelines (manifest correctness, lifecycle cleanup, no internal/deprecated APIs, DOM safety, mobile/`isDesktopOnly` accuracy, command & UI-copy conventions). Implement fixes."
+    complianceDescription: "Verify the codebase still meets the Obsidian community
+      plugin submission guidelines (manifest correctness, lifecycle cleanup, no
+      internal/deprecated APIs, DOM safety, mobile/`isDesktopOnly` accuracy,
+      command & UI-copy conventions). Implement fixes."
     compliancePrompt: |-
       ### Obsidian Compliance (Task 3)
       Verify the plugin still satisfies the Obsidian community plugin submission guidelines, per `.claude/skills/obsidian-plugin-dev/SKILL.md` and the official policies (developer.obsidian.md plugin guidelines + the `obsidianmd/obsidian-releases` submission checklist). Audit and fix:
@@ -178,3 +181,5 @@ config:
       - **Commands & UI copy**: command names in sentence case, no plugin-name prefix and not containing the word "plugin"; settings headings follow Obsidian conventions (sentence case, no "Settings for…").
       - **Repo hygiene**: `main.js` / `manifest.json` / `styles.css` are the published release artifacts; `LICENSE` and `README` present; no committed secrets; any network usage is disclosed in the README.
       Implement fixes directly (do not just report), then verify with `npx tsc --noEmit` and the production build. Respect the project's deliberate patterns (e.g. the type-only audio→video back-edge, desktop gating via `loadNodeModules`) — flag, don't "fix", anything that is intentional.
+eject:
+  - files/.github/workflows/wafflestack-doctor.yml
