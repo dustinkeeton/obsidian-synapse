@@ -4,6 +4,7 @@ import type { SynapseSettings } from '../settings';
 import type { NotificationManager } from './notifications';
 import { withRetry, isTransientNetworkError, describeNetworkError } from './api-utils';
 import { isRecord } from './json-utils';
+import { redactError, redactSecrets } from './redact';
 
 /**
  * In-app "a newer Synapse is available" check (#365).
@@ -133,7 +134,7 @@ export class UpdateChecker {
 			await this.deps.saveSettings();
 		} catch (error) {
 			// Defense in depth: the startup path must never see a throw from here.
-			console.warn('[Synapse] Update check encountered an unexpected error:', error);
+			console.warn('[Synapse] Update check encountered an unexpected error:', redactError(error));
 		}
 	}
 
@@ -166,7 +167,7 @@ export class UpdateChecker {
 			const detail =
 				describeNetworkError(error, 'GitHub') ??
 				(error instanceof Error ? error.message : String(error));
-			console.warn('[Synapse] Update check failed:', detail);
+			console.warn('[Synapse] Update check failed:', redactSecrets(detail));
 			return null;
 		}
 	}

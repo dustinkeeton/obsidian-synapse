@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Last updated**: 2026-06-29 · **Version**: 1.0.7
+**Last updated**: 2026-07-02 · **Version**: 1.0.10
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, and in-place wikilink discovery (REM). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile (video and media-clipping features are desktop-only).
 
@@ -211,6 +211,7 @@ src/
 │   ├── content-key.ts      #   titleContentKey() — input-keyed dedup so a rejected title isn't re-proposed (#408)
 │   ├── settings-section.ts #   Settings UI: enabled toggle + duplicate-handling dropdown
 │   ├── types.ts            #   TitleProposal, trigger/status types, TitleDuplicateStrategy
+│   ├── title-detector.ts   #   Re-exports isUntitled from ../shared (canonical home is shared/)
 │   └── index.ts            #   Re-exports module, types, isUntitled
 │
 ├── shared/                 # Cross-cutting utilities (base layer)
@@ -234,7 +235,7 @@ src/
 │   │                       #   every error sink routes through redactSecrets; equal-message throttle for one-shot toasts (#396)
 │   ├── fire-and-forget.ts  #   fireAndForget() — rejection handling for un-awaited promises; sinks route through redactError
 │   ├── update-checker.ts   #   UpdateChecker/isNewerVersion — once/24h GitHub Releases poll, sticky notice (#365)
-│   ├── title-detector.ts   #   isUntitled/isGenericTitle predicates (shared by title/ and elaboration/)
+│   ├── title-detector.ts   #   isUntitled/isGenericTitle predicates — canonical home; title/ re-exports isUntitled
 │   ├── validation.ts       #   URL, path, AI response sanitization
 │   ├── file-utils.ts       #   Vault file operations
 │   ├── frontmatter-utils.ts#   YAML frontmatter parsing/serialization
@@ -938,7 +939,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Desktop gating | `assertDesktop()`/`loadNodeModules()` — Node builtins resolve only on desktop, behind one guarded site; keeps `isDesktopOnly: false` mobile-safe | `shared/node-loader.ts` |
 | Temp-path hardening | Vault-derived basenames sanitized before composing temp paths (2026-06-08) | `transcription/duration-detector.ts` |
 | Multipart header hardening | Vault-/settings-derived field + file names sanitized (`sanitizeMultipartHeaderValue`: strip CR/LF, replace `"`/`\`) before `Content-Disposition` lines — blocks multipart/header injection (2026-06-11) | `audio/transcriber.ts` |
-| API key protection | `redactSecrets()` (strings) + `redactError()` (raw caught errors — Error `.stack`/`.message`) — **single source of truth** scrubbing keys from error messages/console on **every error path**; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts`, `credential-validator.ts`, all of `notifications.ts`; `redactError` at audio/index, rem/semantic-matcher, elaboration/image-analyzer + proposer, shared/fire-and-forget) |
+| API key protection | `redactSecrets()` (strings) + `redactError()` (raw caught errors — Error `.stack`/`.message`) — **single source of truth** scrubbing keys from error messages/console on **every error path**; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts`, `credential-validator.ts`, all of `notifications.ts`; `redactError` at audio/index, rem/semantic-matcher, elaboration/image-analyzer + proposer, image/preprocess, shared/fire-and-forget, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, `main.ts` lifecycle paths, and `update-checker.ts`; `redactSecrets` also at the credential Test chip `credential-field.ts` and the `update-checker.ts` fetch-fail log) |
 | Prompt-injection defense | `wrapUntrusted()` fences fetched untrusted content (article/tweet/Reddit, image analysis) in labeled delimiters + data-not-instructions frame + anti-breakout scrub — structural, not lexical (#398); Gemini audio instruction in `system_instruction` | `shared/untrusted-content.ts` (used by `elaboration/proposer.ts`), `audio/transcriber.ts` |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
@@ -947,7 +948,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
 | Lifecycle hygiene | `NotificationManager.dispose()` tears down in-flight ellipsis timers + hides notices on unload (no orphaned `setInterval`) | `shared/notifications.ts`, `main.ts:onunload()` |
 
-**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). The 2026-06-25 audit pass (v1.0.6) brought the per-operation error `console.error` under `redactSecrets`, so the single redaction source now guards **every** error sink in `notifications.ts`. The 2026-06-29 audit pass (v1.0.7) added `redactError()` so raw caught errors logged directly to the console get the same scrub (five direct error sinks routed through it); the idempotency bundle also landed a structural prompt-injection fence (`wrapUntrusted`, #398) for fetched external content. `data.json` (live API keys) is gitignored and never committed.
+**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). The 2026-06-25 audit pass (v1.0.6) brought the per-operation error `console.error` under `redactSecrets`, so the single redaction source now guards **every** error sink in `notifications.ts`. The 2026-06-29 audit pass (v1.0.7) added `redactError()` so raw caught errors logged directly to the console get the same scrub (five direct error sinks routed through it); the idempotency bundle also landed a structural prompt-injection fence (`wrapUntrusted`, #398) for fetched external content. The 2026-07-02 audit pass (v1.0.10) completed the `redactError` rollout — the **remaining** direct error-log call sites (`main.ts` lifecycle paths, the update checker, the credential Test chip, the image-downscale fallback, and the two clipboard-copy catches) now route through the scrub — and rerouted the `title` module's back-compat re-export of `isUntitled` through the `../shared` barrel instead of the internal `shared/title-detector` file (barrel-import rule; the canonical home has been `shared/` since #387). `data.json` (live API keys) is gitignored and never committed.
 
 **Known posture / not-yet-enforced:**
 - `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths** — there is no active vault-boundary enforcement on writes today.

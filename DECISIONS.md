@@ -20,6 +20,24 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-07-02: Finish the `redactError` rollout + import `isUntitled` through the `shared` barrel
+
+**Context**: The 2026-06-29 pass added `redactError` and routed five raw-error console sinks through it, but scoped itself to exactly those five. A follow-up sweep found more direct error-log call sites still handing a bare value to the console: `main.ts` lifecycle paths (settings migration, first-run onboarding, incomplete-checkpoint scan, data-folder migration), the update checker, and the credential Test-button chip; a second-pass sweep caught three more (the image-downscale fallback in `image/preprocess.ts` and the clipboard-copy catches in `notifications.ts` and `video/settings-section.ts`). Separately, the `title` module's back-compat re-export of `isUntitled` (whose canonical home has been `shared/title-detector.ts` since #387) still imported the internal `shared/title-detector` file directly, violating the rule that shared code is consumed only through the `shared` barrel.
+
+**Decision**:
+- Route the remaining error-log call sites through the existing scrub — `redactError(error)` for raw caught errors (`main.ts`, `update-checker.ts` unexpected-error catch) and `redactSecrets(...)` for already-stringified detail (the credential Test chip in `credential-field.ts`, the update checker's fetch-failure log). No new helper; reuse `shared/redact.ts`.
+- Change `title/title-detector.ts` to re-export `isUntitled` from the `../shared` barrel (`export { isUntitled } from '../shared'`) instead of the internal file, preserving the `title` module's public surface.
+
+**Alternatives considered**:
+- **Leave the extra sinks as-is** — rejected; a single-source redaction guarantee only holds if *every* console error path goes through it, and these were real gaps.
+- **Keep the internal-file import** — rejected; the barrel-import rule exists so `shared`'s internal files can move or split without breaking consumers, and a re-export is a consumer like any other.
+
+**Rationale**: Both changes finish work the codebase already committed to — one redaction source on every error path, and every cross-module import of `shared` code going through its public barrel.
+
+**Impact**: `main.ts`, `shared/update-checker.ts`, `shared/credential-field.ts`, `image/preprocess.ts`, `shared/notifications.ts`, `video/settings-section.ts` (redaction call sites); `title/title-detector.ts` (re-export path only). Defense-in-depth + layering cleanup only — no user-facing behavior change.
+
+---
+
 ## 2026-06-29: Raw caught errors get the same redaction as strings (`redactError`)
 
 **Context**: `redactSecrets()` — the single redaction source (`shared/redact.ts`) — only operates on **strings**. Several console sinks log a caught value directly (`console.warn('…failed', err)` / `console.error('…', err)`), handing the bare `Error` object — and its `.stack`, which embeds `.message` — to the console. A secret echoed into an error message by an upstream API or a thrown exception would reach the console **verbatim**, bypassing redaction. This audit found five such raw-error sinks across audio, rem, elaboration, and shared.
