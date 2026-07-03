@@ -863,14 +863,16 @@ export class SummarizeModule {
 			: undefined;
 
 		// Best-effort scroll of the Video section into view once the tab paints.
-		// The section is already expanded above, so this is pure polish; guard for
-		// the test environment where containerEl has no querySelectorAll.
+		// The section is already expanded above, so this is pure polish. `findAll`
+		// is an Obsidian HTMLElement augmentation returning a typed array (no
+		// `Array.from` needed); feature-detect it so the vitest environment — where
+		// containerEl only gains `findAll` via the obsidian mock — no-ops cleanly.
 		const containerEl = tab?.containerEl;
-		if (containerEl && typeof containerEl.querySelectorAll === 'function') {
+		if (containerEl && typeof containerEl.findAll === 'function') {
 			window.setTimeout(() => {
-				const title = Array.from(
-					containerEl.querySelectorAll<HTMLElement>('.synapse-accordion-title'),
-				).find((el) => el.textContent === 'Video transcription');
+				const title = containerEl
+					.findAll('.synapse-accordion-title')
+					.find((el) => el.textContent === 'Video transcription');
 				title?.closest('.synapse-accordion')?.scrollIntoView({ block: 'start' });
 			}, 0);
 		}

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { SummarizeModule, TranscribeUrlFn } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
-import { TFile } from '../__mocks__/obsidian';
+import { TFile, createEl } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
 import type { NotificationManager, CheckpointManager } from '../shared';
@@ -234,6 +234,36 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 		// Video accordion expanded + persisted so the tab renders it open.
 		expect(settings.ui.collapsedSections['video']).toBe(false);
 		expect(saveSettings).toHaveBeenCalled();
+	});
+
+	it('scrolls the expanded Video section into view once the settings tab paints', async () => {
+		// Build a stub settings-tab container holding the Video accordion so the
+		// reveal path's `containerEl.findAll('.synapse-accordion-title')` resolves
+		// to it. `findAll` is an Obsidian HTMLElement augmentation supplied only by
+		// the obsidian mock — this is the test that exercises that changed path.
+		const scrollIntoView = vi.fn();
+		const container = createEl('div');
+		const accordion = container.createDiv({ cls: 'synapse-accordion' });
+		const title = accordion.createEl('div', {
+			cls: 'synapse-accordion-title',
+			text: 'Video transcription',
+		});
+		accordion.scrollIntoView = scrollIntoView;
+		(title.closest as unknown as Mock).mockReturnValue(accordion);
+		openTabById.mockReturnValue({ containerEl: container });
+
+		module = build(vi.fn().mockRejectedValue(
+			depError('yt-dlp', 'yt-dlp not found — install it or set the full path in settings')
+		));
+
+		await runSummarize();
+
+		const action = notifications.info.mock.calls.find((c) => c[2] !== undefined)![2] as NoticeAction;
+		action.onClick();
+		// The scroll is deferred to a macrotask (window.setTimeout(…, 0)); flush it.
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+		expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
 	});
 
 	it('the action degrades to a no-op when the undocumented app.setting API is absent', async () => {
