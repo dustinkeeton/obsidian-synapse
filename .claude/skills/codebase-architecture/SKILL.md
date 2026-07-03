@@ -12,17 +12,19 @@ Every feature module follows a consistent contract:
 
 ```typescript
 class FeatureModule {
-  constructor(plugin: Plugin, getSettings: () => SynapseSettings) {}
+  constructor(host: AppHost, getSettings: () => SynapseSettings) {}
   async onload(): Promise<void>;  // register commands, views, events
   onunload(): void;               // cleanup
 }
 ```
 
+`AppHost` stands for whatever handle the application entry point owns (the app or plugin instance) — modules receive it, they never construct it.
+
 ## File Structure Conventions
 
 ```
 src/
-├── main.ts                    # Plugin entry point only — no business logic
+├── main.ts                    # App entry point only — no business logic
 ├── settings.ts                # Unified settings interface + defaults
 ├── settings-tab.ts            # Settings UI
 ├── <feature>/
@@ -33,16 +35,16 @@ src/
 └── shared/
     ├── ai-client.ts           # Unified AI API client
     ├── api-utils.ts           # Retry, error handling utilities
-    └── file-utils.ts          # Vault file operations
+    └── file-utils.ts          # File-system / storage operations
 ```
 
 ## Rules
 
 1. **No circular dependencies** — feature modules may depend on `shared/` but never on each other, except VideoModule → AudioModule (documented exception)
-2. **No runtime npm deps** — use `requestUrl`/`fetch` for API calls, `child_process` for external tools
+2. **Minimal runtime deps** — prefer the platform's HTTP client (`fetch`) for API calls and `child_process` for external tools over adding npm dependencies
 3. **Types in `types.ts`** — each feature has its own types file; shared types go in `shared/`
 4. **Index files are public API** — other modules import from `feature/index.ts`, never from internal files
 5. **Settings are read-only in modules** — modules receive `getSettings()`, never mutate settings directly
-6. **All Obsidian registrations in `onload()`** — commands, events, views registered through the Plugin instance for automatic cleanup
+6. **All host registrations in `onload()`** — commands, events, views registered through the host handle so teardown happens in one place
 7. **Naming**: files use kebab-case, classes use PascalCase, functions/variables use camelCase
-8. **Exports**: prefer named exports over default exports (except the main Plugin class)
+8. **Exports**: prefer named exports over default exports (except the entry-point class)

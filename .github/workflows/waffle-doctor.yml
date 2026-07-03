@@ -1,10 +1,7 @@
-# Ejected from wafflestack management (see `eject:` in .waffle.yaml) — project-owned.
-# Fails CI when a managed file drifts from .waffle.lock.json: either a rendered file
-# was hand-edited, or the repo never committed its render + lock.
-# --allow-missing: this repo deliberately gitignores some renders (.agents/, .codex/,
-# and the .claude skills that embed the local overlay), so absent files are tolerated;
-# hand-edited (modified) files still fail.
-name: WaffleStack doctor
+# Managed by wafflestack (github-workflow bundle) — do not edit by hand; re-render instead.
+# Fails CI when a managed file drifts from .waffle/waffle.lock.json: either a rendered file
+# was hand-edited, or the repo never committed its render + lock. See the bundle setup note.
+name: waffle-doctor
 
 on:
   push:
@@ -18,7 +15,7 @@ permissions:
 
 # Cancel superseded runs on the same pull request; always let main-branch checks finish.
 concurrency:
-  group: wafflestack-doctor-${{ github.workflow }}-${{ github.ref }}
+  group: waffle-doctor-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -30,4 +27,4 @@ jobs:
         with:
           node-version: 20
       - name: Check wafflestack drift
-        run: npx --yes github:dustinkeeton/wafflestack#v0.6.0 doctor --allow-missing
+        run: npx --yes github:dustinkeeton/wafflestack#v0.8.0 doctor --allow-missing

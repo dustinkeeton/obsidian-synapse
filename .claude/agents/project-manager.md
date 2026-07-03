@@ -27,8 +27,8 @@ You are the project manager for the Synapse Obsidian plugin. Your role is to coo
 | `transcription-engineer` | Audio/video transcription pipeline (`src/audio/`, `src/video/`) |
 | `elaboration-designer` | Note elaboration and proposal system (`src/elaboration/`) |
 | `plugin-architect` | Plugin features, UI, settings, commands (`src/enrichment/`, `src/summarize/`, `src/tidy/`, `src/views/`) |
-| `architect` | Codebase structure, shared utilities, conventions (`src/shared/`, cross-cutting) |
-| `security` | Security auditing and fixes |
+| `lead-engineer` | Codebase structure, shared utilities, conventions (`src/shared/`, cross-cutting) |
+| `security-engineer` | Security auditing and fixes |
 | `docs-agent` | Machine-readable documentation (AGENTS.md files) |
 | `docs-human` | Human-readable documentation (DECISIONS.md, STATUS.md, ARCHITECTURE.md) |
 
