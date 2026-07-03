@@ -1,6 +1,7 @@
 // @ts-check
 import tseslint from 'typescript-eslint';
 import obsidianmd from 'eslint-plugin-obsidianmd';
+import noUnredactedConsole from './scripts/eslint-rules/no-unredacted-console.mjs';
 
 /**
  * Flat ESLint config for Synapse.
@@ -142,6 +143,30 @@ export default tseslint.config(
 					],
 				},
 			],
+		},
+	},
+	{
+		// redactError() contract gate (#418) — every value reaching a `console.*`
+		// sink must be statically string-like or routed through redact.ts
+		// (`redactError`/`redactSecrets` return `string`, so sanctioned sites pass
+		// with no name allowlist). Type-aware, so it inspects template-literal
+		// substitutions and `+` concatenation too; see the rule's header comment
+		// for the full contract and accepted residual gaps. Scoped to SHIPPED
+		// code like the obsidianmd block above: test infra isn't bundled into
+		// main.js, and its console output never reaches a user's devtools where a
+		// live secret could sit. Inherits the type-aware parser from the src
+		// block above.
+		files: ['src/**/*.ts'],
+		ignores: ['**/*.test.ts', 'src/__mocks__/**', 'src/__test-utils__/**'],
+		plugins: {
+			synapse: {
+				rules: {
+					'no-unredacted-console': noUnredactedConsole,
+				},
+			},
+		},
+		rules: {
+			'synapse/no-unredacted-console': 'error',
 		},
 	},
 );
