@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-07-03
 ---
 
 # Video Module
@@ -192,7 +192,7 @@ Registered via `registrar.register('check-dependencies', ...)` (index.ts:L50); O
 | `video.frameExtraction.visionModel` | `string` | `'gpt-4o'` | Vision model for frame analysis |
 | `video.frameExtraction.maxFrames` | `number` | `20` | Max frames to extract |
 
-Settings UI: `renderVideoSettings` (`settings-section.ts:L149`) renders the accordion; `addPathSetting` attaches per-OS install-help panels (#382/#383) to the yt-dlp and ffmpeg path fields. Invoked only on desktop by `settings-tab.ts`.
+Settings UI: `renderVideoSettings` (`settings-section.ts:L150`) renders the accordion; `addPathSetting` attaches per-OS install-help panels (#382/#383) to the yt-dlp and ffmpeg path fields. Invoked only on desktop by `settings-tab.ts`.
 
 ## External Runtime Dependencies
 

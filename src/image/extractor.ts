@@ -23,7 +23,7 @@ export class ImageExtractor {
 		if (processed.downscaled) {
 			// Routed through the manager so the 3s dedup collapses this otherwise
 			// once-per-image flood into a single toast (#396).
-			this.notifications.info('large image auto-downscaled to fit the API limit');
+			this.notifications.info('Large image auto-downscaled to fit the API limit');
 		}
 
 		const base64 = arrayBufferToBase64(processed.data);

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-07-02
+last-updated: 2026-07-03
 ---
 
 # Synapse — Agent Reference
@@ -14,6 +14,7 @@ npm run dev            # esbuild watch
 npm test               # vitest run
 npm run test:watch     # vitest watch
 npm run test:coverage  # vitest run --coverage
+npm run lint           # eslint src (flat config: eslint.config.mjs; includes custom synapse/no-unredacted-console rule)
 npx tsc --noEmit --skipLibCheck  # type-check only
 ```
 
@@ -505,6 +506,8 @@ No npm runtime dependencies. Uses Obsidian `requestUrl`, `execFile` (argument ar
 | Obsidian mock | `src/__mocks__/obsidian.ts` |
 | Mock factories | `src/__test-utils__/mock-factories.ts` |
 | Test files | `src/**/*.test.ts` |
+| Lint config | `eslint.config.mjs` (flat, type-aware) |
+| Custom lint rules | `scripts/eslint-rules/no-unredacted-console.mjs` (redactError contract gate, #418) |
 
 Framework: Vitest, globals enabled, node environment.
 
@@ -513,7 +516,7 @@ Framework: Vitest, globals enabled, node environment.
 - URLs validated via `sanitizeUrl()` before external tool invocation
 - Paths validated via `sanitizePath()` (rejects `..`, null bytes, shell metacharacters)
 - AI output sanitized via `sanitizeAIResponse()` before vault writes
-- Secret redaction centralized in `shared/redact.ts` (`redactSecrets`); the AI client (`ai-client.ts`, upstream error bodies), the notification manager (`notifications.ts` — every error sink: the operation-error `console.error`, `showErrorNotice`, and the `NotificationManager.notifyError` method), credential validation (`credential-validator.ts`, probe error bodies), the credential Test-button chip (`credential-field.ts`, validation-catch message), and the update checker's fetch-failure log (`update-checker.ts`) all route through it — single source of truth, re-exported from `ai-client` and the `shared` barrel. Covers `sk-`/`sk-ant-`, `key-`, Deepgram `dg-`, `Bearer `/`Token ` headers, `anthropic-`, and Google `AIza` keys. `redactError(value)` (also `shared/redact.ts`) extends this to raw caught errors: every direct error console sink (`main.ts` settings-migration / first-run-onboarding / incomplete-checkpoint / data-folder-migration paths, `update-checker.ts` unexpected-error catch, audio, rem/semantic-matcher, elaboration/image-analyzer + proposer, image/preprocess downscale fallback, the clipboard-copy catches in notifications + video/settings-section, shared/fire-and-forget) renders the error through it so a secret echoed into an error message/stack never reaches the console verbatim
+- Secret redaction centralized in `shared/redact.ts` (`redactSecrets`); the AI client (`ai-client.ts`, upstream error bodies), the notification manager (`notifications.ts` — every error sink: the operation-error `console.error`, `showErrorNotice`, and the `NotificationManager.notifyError` method), credential validation (`credential-validator.ts`, probe error bodies), the credential Test-button chip (`credential-field.ts`, validation-catch message), and the update checker's fetch-failure log (`update-checker.ts`) all route through it — single source of truth, re-exported from `ai-client` and the `shared` barrel. Covers `sk-`/`sk-ant-`, `key-`, Deepgram `dg-`, `Bearer `/`Token ` headers, `anthropic-`, and Google `AIza` keys. `redactError(value)` (also `shared/redact.ts`) extends this to raw caught errors: every direct error console sink (`main.ts` settings-migration / first-run-onboarding / incomplete-checkpoint / data-folder-migration paths, `update-checker.ts` unexpected-error catch, audio, rem/semantic-matcher, elaboration/image-analyzer + proposer, image/preprocess downscale fallback, the clipboard-copy catches in notifications + video/settings-section, shared/fire-and-forget) renders the error through it so a secret echoed into an error message/stack never reaches the console verbatim. The contract is lint-enforced (#418): custom type-aware rule `synapse/no-unredacted-console` (`scripts/eslint-rules/no-unredacted-console.mjs`, registered in `eslint.config.mjs`) errors on any `console.*` argument that is not statically string-like or routed through `redactError`/`redactSecrets`; scoped to shipped code (`src/**/*.ts`, excluding `*.test.ts`, `src/__mocks__/`, `src/__test-utils__/`)
 - Credential validation (`shared/credential-validator.ts`, `validateCredentials`) probes each provider with a single minimal GET (probe specs in `shared/provider-metadata.ts`); every result message routes through `redactSecrets`, so a key echoed in a 401/400 body cannot reach the status chip. One-shot (no retry), 10s timeout, `throw:false`. Validation state is ephemeral (never persisted to settings)
 - Multipart transcription bodies (`audio/transcriber.ts:buildMultipartBody`) sanitize vault-/settings-derived field names and file names via `sanitizeMultipartHeaderValue` (strips CR/LF, replaces `"`/`\` with `_`) to block `Content-Disposition` header / multipart injection
 - Gemini audio transcription places its instruction in `system_instruction` (not the user turn beside the audio) so speech inside untrusted audio cannot override the prompt (prompt-injection hardening)

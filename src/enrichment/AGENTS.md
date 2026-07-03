@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-07-03
 ---
 
 # Enrichment Module
@@ -38,7 +38,7 @@ class EnrichmentModule {
   rejectFromView(id: string): Promise<void>
 }
 
-function renderEnrichmentSettings(ctx: SettingsSectionContext): void  // re-exported (index.ts:704)
+function renderEnrichmentSettings(ctx: SettingsSectionContext): void  // re-exported (index.ts:695)
 ```
 
 Types re-exported from the `index.ts` barrel (`index.ts:19-28`):
@@ -245,7 +245,7 @@ User review (UnifiedProposalView / EnrichmentDetailModal):
 Exclusion uses the centralized `src/shared/exclusions.ts` API. Per-module `excludeFolders` was removed; path exclusions live in `settings.exclusions: ExclusionRule[]` at the top level, scoped by feature name.
 
 ```ts
-// index.ts:656-662
+// index.ts:647-653
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (
@@ -255,7 +255,7 @@ private isExcluded(file: TFile): boolean {
 }
 ```
 
-`findMatchingRule(file.path, 'enrichment', settings)` is called only on the manual-trigger path to surface the matching rule pattern in the user-facing notice (`index.ts:407-417`).
+`findMatchingRule(file.path, 'enrichment', settings)` is called only on the manual-trigger path to surface the matching rule pattern in the user-facing notice (`index.ts:398-408`).
 
 ## Settings Keys
 
@@ -292,8 +292,8 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:14
 - Tag format `^[a-zA-Z0-9][a-zA-Z0-9_/-]{0,49}$`; only vocabulary tags accepted, hallucinated tags dropped (`metadata-classifier.ts:L5,L48-51`).
 - External URL validation: HTTP/HTTPS only, in both proposal generation (`prompt-builder.ts:L19-26`) and write-out (`enrichment-applier.ts:L196-205`).
 - New-note topic threshold: a topic must be surfaced by 2+ notes during a vault scan to become a suggestion; new-note candidate `relevanceScore` = `0.5` (`topic-extractor.ts:L122,L127`).
-- Double-acceptance guard: `acceptSelected` and `maybeAutoAccept` bail if `proposal.status !== 'pending'` (`index.ts:L590,L566`).
-- Empty proposals skipped: `enrichFile` returns `null` when no items are produced (`index.ts:L517`).
-- Review toast (#366): completion notices attach an optional Review action via `reviewAction({ generated, shouldAutoAccept, openProposalView, postOp })` (`src/shared`), surfaced only when proposals were generated AND enrichment auto-accept is off; `postOp` (chained auto-enrich) suppresses it. Used by `enrich` (`index.ts:L433`), `scanVault` (`index.ts:L369`), `resumeFromCheckpoint` (`index.ts:L187`).
+- Double-acceptance guard: `acceptSelected` and `maybeAutoAccept` bail if `proposal.status !== 'pending'` (`index.ts:L581,L557`).
+- Empty proposals skipped: `enrichFile` returns `null` when no items are produced (`index.ts:L508`).
+- Review toast (#366): completion notices attach an optional Review action via `reviewAction({ generated, shouldAutoAccept, openProposalView, postOp })` (`src/shared`), surfaced only when proposals were generated AND enrichment auto-accept is off; `postOp` (chained auto-enrich) suppresses it. Used by `enrich` (`index.ts:L426`), `scanVault` (`index.ts:L360`), `resumeFromCheckpoint` (`index.ts:L178`).
 - Proposal JSON filename: `<sanitized-path>-enrich-<8charId>.json`; null bytes and `..` stripped (`enrichment-store.ts:L113-122`).
 - `VaultAnalyzer` caches invalidate on the `metadataCache 'resolved'` event (`index.ts:L75-79`).
