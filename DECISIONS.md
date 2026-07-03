@@ -4,6 +4,39 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-07-03: The console-sink redaction contract is now lint-enforced (`synapse/no-unredacted-console`, #418)
+
+**Context**: Three successive audit passes (2026-06-25, 2026-06-29, 2026-07-02) each found and patched console sinks that logged unredacted values — the contract "every error console sink routes through `redactError`/`redactSecrets`" was held only by convention, and nothing stopped a new `console.error('…', err)` from silently reopening the hole. The sinks listed in #418 were already fixed by the 2026-07-02 pass; the remaining deliverable was an enforcement guard.
+
+**Decision**: Add a custom **type-aware** ESLint rule, `synapse/no-unredacted-console` (`scripts/eslint-rules/no-unredacted-console.mjs`, registered in `eslint.config.mjs` and run by `npm run lint` in CI). Every value reaching a `console.*` call must be **statically string-like** — checked at the argument top level, inside template-literal substitutions, and across `+` concatenation. Because `redactError()`/`redactSecrets()` return `string`, sanctioned call sites pass with **no function-name allowlist**. `String()`/`JSON.stringify()` of non-string values and direct `.message`/`.stack` access are flagged as bypasses (stringification is not redaction). The rule **fails closed** (throws) if type information is unavailable. Scoped to shipped code only — `src/**/*.ts` minus tests, mocks, and test-utils, mirroring the `obsidianmd/*` lint scope (test infra isn't bundled).
+
+**Alternatives considered**:
+- **Allowlist sanctioned wrapper names** (`redactError`, `redactSecrets`) — rejected; a rename or a new helper silently escapes the list, while "returns `string`" needs no list and covers future helpers automatically.
+- **Non-type-aware AST pattern matching** — rejected; without the type checker the rule can't tell a plain string variable from an `Error`, so it would either over-flag safe sites or under-protect.
+- **Keep catching regressions in periodic audits** — rejected; three audits in a row patching the same class of gap is exactly the signal that a convention needs a machine gate.
+
+**Rationale**: The redaction guarantee only holds if *every* console path goes through the scrub — a property that must be enforced continuously, not re-verified per audit. Framing the rule as "only strings reach the console" enforces the **outcome** (a scrubbed, rendered string) rather than a spelling, so it can't be satisfied by accident or dodged by a rename.
+
+**Impact**: New `scripts/eslint-rules/no-unredacted-console.mjs`; `eslint.config.mjs`. CI-only — no runtime behavior change; a regressed sink now fails `npm run lint`. Closes the enforcement gap behind the 2026-06-29 and 2026-07-02 redaction entries below.
+
+---
+
+## 2026-07-03: Automated store-review findings get a triaged, reviewer-facing companion doc (#454)
+
+**Context**: Obsidian auto-reviews **every** GitHub release of a listed plugin (see the 2026-06-28 release-automation entry). The v1.0.11 run produced a findings dump mixing one genuine issue, several intentional-by-design patterns, false positives, and a large `no-unsafe-*` cascade that turned out to be an artifact of **untyped** analysis (the type-aware `npm run lint` exits 0 on the same code).
+
+**Decision**: Triage every finding into one of four buckets — **fix**, **document-as-intended**, **rebut (false positive)**, or **untyped-analysis artifact** — and record the outcomes in a new reviewer-facing doc, `docs/automated-review-notes.md` (companion to `docs/audit-community-guidelines.md`). The doc declares the deliberate desktop-only Node usage (temp-file I/O under `os.tmpdir()` with `finally` cleanup, `execFile`-only subprocesses with argument arrays, the `shellEnv()` env allowlist, write-only clipboard), records the wontfix rationale for the node-loader require pattern and the `:has()` toast selectors, rebuts the false positives (no system-identity reads; test-only `globalThis`), and **links to in-code comments rather than duplicating them**. The one genuine fix landed: summarize's deprecated `querySelectorAll` + `Array.from().find()` replaced with Obsidian's typed `containerEl.findAll()` (feature-detected so the vitest environment no-ops cleanly). README now declares clipboard use is write-only and links the doc.
+
+**Alternatives considered**:
+- **Fix everything the reviewer flagged** — rejected; most flags mis-model declared, intentional design (desktop-gated Node access, the single sanctioned require site, the `:has()` selector fallback), and "fixing" them would regress real decisions this log records.
+- **Answer per-release in the issue thread only** — rejected; the review runs on every release, so the same questions recur — the answers belong in one versioned doc both reviewers and future maintainers can be pointed at.
+
+**Rationale**: With no per-release submission step, the automated review is a permanent gate; a standing triage doc turns each run into a diff against known, justified findings instead of a from-scratch re-derivation.
+
+**Impact**: New `docs/automated-review-notes.md`; `README.md` (clipboard declaration + link); `src/summarize/index.ts` (`findAll`), obsidian mock + a scroll-reveal test. The untyped-analysis reproduction and per-rule enumeration live on the tracking issue (#454).
+
+---
+
 ## 2026-07-02: Brand refresh — Iris + Gold; glyphs may carry ONE gold gesture via a theme var
 
 **Context**: The brand kit in `assets/brand/` was replaced (2026 Iris + Gold refresh): body color moves from violet `#8b5cf6` to Iris `#5A3EF0`, volt lime `#CCFF00` is retired, and the "impulse" — the one thing Synapse adds — is now always Gold `#FFD23F`. The in-app glyphs previously had a hard rule: pure `currentColor`, never a baked color (`brand-icons.test.ts` failed on any `#`). The new glyph grammar puts the single gold gesture *inside* the glyphs, which that rule forbade.
@@ -35,6 +68,8 @@ Decisions listed in reverse chronological order.
 **Rationale**: Both changes finish work the codebase already committed to — one redaction source on every error path, and every cross-module import of `shared` code going through its public barrel.
 
 **Impact**: `main.ts`, `shared/update-checker.ts`, `shared/credential-field.ts`, `image/preprocess.ts`, `shared/notifications.ts`, `video/settings-section.ts` (redaction call sites); `title/title-detector.ts` (re-export path only). Defense-in-depth + layering cleanup only — no user-facing behavior change.
+
+**Update (2026-07-03)**: this contract is now lint-enforced — see the 2026-07-03 `synapse/no-unredacted-console` entry (#418).
 
 ---
 

@@ -1,9 +1,9 @@
 # Project Status
 
-**Last updated**: 2026-07-02
-**Version**: 1.0.10
-**Branch**: `chore/audit-2026-07-02`
-**Health**: Green — `tsc` clean, **1871/1871 tests passing (138 files)**, dependency graph acyclic, no critical/high security findings.
+**Last updated**: 2026-07-03
+**Version**: 1.0.11
+**Branch**: `chore/audit-2026-07-03`
+**Health**: Green — `tsc` clean, **1872/1872 tests passing (138 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
@@ -52,7 +52,7 @@ Top-level helpers: `onboarding.ts` (first-run welcome, #89), `brand-icons.ts` (S
 
 ## Current Focus
 
-- **Codebase audit (2026-07-02)** — regrounded all `AGENTS.md` files (root + per-feature) and these human docs against the live code. Two follow-through changes: (1) the `redactError`/`redactSecrets` scrub now reaches the **remaining** direct error-log call sites — `main.ts` lifecycle paths (settings migration, first-run onboarding, incomplete-checkpoint scan, data-folder migration), the update checker, the credential Test-button chip, the image-downscale fallback (`image/preprocess.ts`), and the clipboard-copy catches (`notifications.ts`, `video/settings-section.ts`) — closing the last raw-error gaps from the 2026-06-29 pass; (2) the `title` module's back-compat re-export of `isUntitled` now goes through the `../shared` barrel instead of the internal `shared/title-detector` file, per the barrel-import rule (the canonical home has been `shared/` since #387). `tsc` clean, 1871 tests green, graph acyclic, no critical/high security findings.
+- **Codebase audit (2026-07-03)** — architecture and security passes clean; the Obsidian-compliance pass capitalized three notification strings to match the sentence-case convention; machine docs (`AGENTS.md`) and these human docs regrounded. Chores since the last audit: **release 1.0.11**; the **redaction lint gate** (#418) — a custom type-aware ESLint rule (`synapse/no-unredacted-console`) that makes the "every console sink is redacted" contract regression-proof; the **automated-review triage** (#454) — v1.0.11 store-review findings triaged into a reviewer-facing `docs/automated-review-notes.md`, with one real fix (summarize now uses Obsidian's typed `containerEl.findAll()` instead of deprecated `querySelectorAll`); and a dev-tooling bump (wafflestack 0.6.0 → 0.8.0, agent/skill bundles only — no shipped code).
 - **Recent feature work (1.0.7 → 1.0.10)**: idempotency bundle — proposal dedup + `maxProposalsPerNote` (#395), notice throttle (#396), AI cache/coalescing (#397), prompt-injection fence (#398); version-stamped settings migrations (#93); title collision handling (#408, #414); centralized Review-toast gate (#366); combined / note-content summaries (#367); in-app update check (#365) + "What's new" modal (#375); always-on REM semantic matching (#380); elaboration title signal + anti-fabrication guards (#387); unified folder-scan pickers defaulting to vault root (1.0.9); per-section and global reset-to-defaults (1.0.10).
 
 ---
@@ -62,7 +62,7 @@ Top-level helpers: `onboarding.ts` (first-run welcome, #89), `brand-icons.ts` (S
 - The full audit found **no critical or high vulnerabilities**; the codebase is security-mature.
 - API keys live in `data.json`, which is **gitignored and never committed** — no secrets in the repo.
 - Subprocess calls use `execFile` with argument arrays (no shell); API auth is header-based and HTTPS-only; AI responses are sanitized before being written to notes.
-- Secret redaction has a single source of truth (`shared/redact.ts`), used on **every error path** — the AI client, credential validation, and all of `notifications.ts` (error toast, `notifyError`, per-operation `console.error`). `redactError(value)` extends the same scrub to **raw caught errors** (Error `.stack`/`.message`) at **every** direct error console sink: audio, rem, elaboration (×2), and fire-and-forget, plus `main.ts` lifecycle paths (settings migration, first-run onboarding, incomplete-checkpoint scan, data-folder migration), the update checker, the credential Test-button chip, the image-downscale fallback (`image/preprocess.ts`), and the clipboard-copy catches (`notifications.ts`, `video/settings-section.ts`). Covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Google `AIza` keys.
+- Secret redaction has a single source of truth (`shared/redact.ts`), used on **every error path** — the AI client, credential validation, and all of `notifications.ts` (error toast, `notifyError`, per-operation `console.error`). `redactError(value)` extends the same scrub to **raw caught errors** (Error `.stack`/`.message`) at **every** direct error console sink: audio, rem, elaboration (×2), and fire-and-forget, plus `main.ts` lifecycle paths (settings migration, first-run onboarding, incomplete-checkpoint scan, data-folder migration), the update checker, the credential Test-button chip, the image-downscale fallback (`image/preprocess.ts`), and the clipboard-copy catches (`notifications.ts`, `video/settings-section.ts`). Covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Google `AIza` keys. The contract is now **lint-enforced** (#418): a custom type-aware ESLint rule (`synapse/no-unredacted-console`) fails CI if any value reaching a `console.*` sink isn't statically string-like (i.e. already scrubbed).
 - **Prompt-injection fence** (#398): fetched untrusted content (article/tweet/Reddit bodies, image analysis) is wrapped via `wrapUntrusted` — labeled delimiters + data-not-instructions frame + anti-breakout scrubbing — a structural (not lexical) defense. Gemini audio instructions also go in `system_instruction`.
 - Credential validation (#335) probes each provider with one minimal GET; results route through redaction and are **ephemeral** (never persisted).
 - Multipart Whisper bodies sanitize vault-derived field/file names (`sanitizeMultipartHeaderValue`).
@@ -109,5 +109,6 @@ No npm runtime dependencies.
 |---------|---------|
 | `npm run dev` | esbuild watch (development) |
 | `npm run build` | `tsc -noEmit -skipLibCheck` + esbuild production bundle |
-| `npm test` | Vitest — **1871/1871 passing** (138 files) |
+| `npm test` | Vitest — **1872/1872 passing** (138 files) |
 | `npm run test:coverage` | Vitest with coverage |
+| `npm run lint` | ESLint — `obsidianmd/*` store-review mirror + custom `synapse/no-unredacted-console` redaction gate (#418) |
