@@ -206,6 +206,25 @@ function createStubEl(tag = 'div'): StubEl {
 			return true;
 		},
 		closest: vi.fn().mockReturnValue(null),
+		/**
+		 * Obsidian's `HTMLElement.findAll` augmentation, absent from jsdom-less
+		 * vitest. Minimal recursive matcher over the tracked `children` tree
+		 * supporting the selector shapes shipped code uses: a single class
+		 * (`.foo`) or a tag name (`div`). Returns a real array so callers can
+		 * `.find()`/`.map()` on it as they would in Obsidian.
+		 */
+		findAll: (selector: string): StubEl[] => {
+			const matches = (node: StubEl): boolean =>
+				selector.startsWith('.')
+					? node.classList.contains(selector.slice(1))
+					: node.tagName === selector.toUpperCase();
+			const walk = (nodes: StubEl[]): StubEl[] =>
+				nodes.flatMap((n) => [
+					...(matches(n) ? [n] : []),
+					...walk((n.children as unknown as StubEl[]) ?? []),
+				]);
+			return walk(children);
+		},
 		style: {},
 	} as unknown as StubEl;
 	return el;

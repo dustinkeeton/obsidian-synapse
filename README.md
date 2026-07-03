@@ -148,8 +148,11 @@ These are the only services Synapse contacts, what each one is used for, and wha
 - **Audio and video transcription use privileged desktop access.** To work with `yt-dlp`, `ffmpeg`, and `ffprobe`, the desktop build reaches outside the vault in two ways, both gated to desktop only (mobile never runs this code):
   - **Direct filesystem access.** Synapse writes scratch files -- downloaded media, extracted audio, clipped or concatenated segments -- to your operating system's temp directory (`os.tmpdir()`), never inside your vault. These temp files are removed when the operation finishes, on both success and failure. The finished video, if you opt to keep it, is the only artifact saved into the vault (in your configured download folder).
   - **Local shell execution.** Synapse runs the external tools as child processes with `execFile` and an explicit argument array -- never a shell command string -- so there is no shell interpolation of URLs, paths, or titles. URLs and file paths are sanitized first (`sanitizeUrl` / `sanitizePath`), the subprocess inherits a narrowed environment (essentially just an augmented `PATH` plus `HOME`), and the binaries that run are exactly the `yt-dlp path` and `ffmpeg path` you set in settings.
+- **The clipboard is written, never read.** Synapse copies text to the clipboard in exactly two places -- a redacted error string when you dismiss an error toast, and an install command in the video settings -- and never reads clipboard contents.
 
 Synapse proposes, you decide -- and that holds for the network too: nothing is requested until you ask for it.
+
+For the reviewer-facing counterpart to this section -- the desktop-only Node usage declaration, the wontfix rationale for the `node-loader` require pattern and the `:has()` toast selectors, and the rebuttals for the automated review's false positives -- see [`docs/automated-review-notes.md`](docs/automated-review-notes.md).
 
 ## FAQ
 
