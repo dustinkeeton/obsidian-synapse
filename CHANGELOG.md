@@ -5,6 +5,16 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.12] - 2026-07-03
+
+### Changed
+
+- Notification messages now consistently use sentence case
+
+### Security
+
+- Console error redaction is now an enforced contract: an automated guard blocks any future error-logging path from bypassing secret-key redaction, so the coverage added in recent releases can't quietly regress
+
 ## [1.0.11] - 2026-07-02
 
 ### Changed
