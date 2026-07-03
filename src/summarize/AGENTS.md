@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-07-03
 ---
 
 # Summarize Module
@@ -77,32 +77,32 @@ interface SummarizeTarget {
 ## Data Flow
 
 ```
-summarizeNote(file)                                   index.ts:L230
-  --> collectTargets(content, sourcePath)             index.ts:L454
+summarizeNote(file)                                   index.ts:L221
+  --> collectTargets(content, sourcePath)             index.ts:L445
         findSummarizeTargets(content)    [URLs, transcription blocks]
         findAudioEmbeds(...)             [audio embeds w/o summary below]
         extractNoteProse(content)        [appends 'note-content' if includeNoteContent]
   --> 1 target:  processTargets(file, targets, content)            [per-item, no modal]
   --> 2+ targets: SummarizeSelectionModal(defaults={includeNoteContent, combineSummaries})
         callback(selected, combine):
-          combine  -> processTargetsCombined(file, selected, content)   index.ts:L271
-          !combine -> processTargets(file, selected, content)           index.ts:L503
+          combine  -> processTargetsCombined(file, selected, content)   index.ts:L262
+          !combine -> processTargets(file, selected, content)           index.ts:L494
 
-processTargetsForFile(file, targets, op, content, combine)            index.ts:L302
+processTargetsForFile(file, targets, op, content, combine)            index.ts:L293
   combine == false:
     --> processFileTargets(file, targets, op, content)
   combine == true:
     --> enrichment refs first (per-item):  processFileTargets(enrichmentTargets)
     --> everything else folded into ONE summary: combineSelectedTargets(summarizable)
 
-combineSelectedTargets(file, targets, op, content)                    index.ts:L357
+combineSelectedTargets(file, targets, op, content)                    index.ts:L348
   per target: reuse note-content/transcript content, else fetch URL / transcribe audio
   --> join sections w/ '## <label>' + '---' separators, slice(maxContentLength)
   --> Summarizer.summarize(combinedText, labels, style, prompt)
         prompt = customPrompt > schema('summary') > COMPREHENSIVE_SUMMARY_PROMPT
   --> vault.process(file): append ONE 'Combined summary (N items)' callout at end
 
-processFileTargets(file, targets, op, content)                        index.ts:L561
+processFileTargets(file, targets, op, content)                        index.ts:L552
   for each target (reverse line order):
     enrichment ref (inEnrichmentSection + linkTitle):
       --> if note exists: rewrite link only (linksUpdated++)
@@ -116,7 +116,7 @@ processFileTargets(file, targets, op, content)                        index.ts:L
   --> vault.create() per pendingNote      [new notes AFTER source]
   returns { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths }
 
-fireEnrichmentCallbacks(path, result)                                 index.ts:L544
+fireEnrichmentCallbacks(path, result)                                 index.ts:L535
   --> onSummaryComplete?.(path)  [only if inlineCompleted>0 and enrichmentCompleted==0]
   --> onSummaryComplete?.(newNotePath)  per created note
   caller separately: onOrganizeRequested?.(file) if autoOrganizeOnSummarize
@@ -125,7 +125,7 @@ fireEnrichmentCallbacks(path, result)                                 index.ts:L
 ## Vault Scan (checkpointed)
 
 ```
-scanVault(folderPath?, skipConfirmation?, onlyFile?)                  index.ts:L901
+scanVault(folderPath?, skipConfirmation?, onlyFile?)                  index.ts:L894
   Phase 1: collect files with targets (cancellable scan; onlyFile narrows scope, #111)
   Phase 2: user confirmation (skipped when skipConfirmation=true / Fire Synapse)
   Phase 3: checkpointed processing
@@ -135,7 +135,7 @@ scanVault(folderPath?, skipConfirmation?, onlyFile?)                  index.ts:L
     --> completeItem() after each file
     --> on cancel: discard(); on success: complete() + dispatchDeferredTasks
 
-resumeFromCheckpoint(checkpoint)                                      index.ts:L169
+resumeFromCheckpoint(checkpoint)                                      index.ts:L160
   --> re-process remaining items via processTargetsForFile(..., combineSummaries)
   --> completeItem() per file; on cancel discard(); on success complete()
 ```
@@ -149,7 +149,7 @@ Registered in `onload()`, both gated by `settings.summarize.enabled` (`commands/
 | `synapse:summarize-current-note` | Summarize current note | editorCallback |
 | `synapse:scan-vault-summarize` | Scan folder for notes to summarize | callback (FolderPickerModal) |
 
-## URL Fetch / Video Auto-Transcription (`fetchContentForUrl`, index.ts:L739)
+## URL Fetch / Video Auto-Transcription (`fetchContentForUrl`, index.ts:L730)
 
 Routing order for a target URL:
 1. `transcribeUrl` injected AND `isSupportedUrl(url)` -> call `transcribeUrl(url, op)` (video transcript).
@@ -187,7 +187,7 @@ All under `settings.summarize` (`SummarizeSettings`, `settings.ts:L164`):
 | `includeNoteContent` | `boolean` | `true` | Summarize the note's own prose as an additional item (#367) |
 | `combineSummaries` | `boolean` | `true` | Emit ONE combined summary instead of a callout per item (#367) |
 
-Path exclusion: centralized `settings.exclusions: ExclusionRule[]`; no per-module `excludeFolders`. Checked via `isPathExcluded(path, 'summarize', settings)`; tag exclusion via `matchesExcludeTag(file, excludeTags, metadataCache)` (both in `isExcluded`, `index.ts:L1032`).
+Path exclusion: centralized `settings.exclusions: ExclusionRule[]`; no per-module `excludeFolders`. Checked via `isPathExcluded(path, 'summarize', settings)`; tag exclusion via `matchesExcludeTag(file, excludeTags, metadataCache)` (both in `isExcluded`, `index.ts:L1025`).
 
 ## Content-Aware Schemas
 

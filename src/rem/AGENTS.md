@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-07-03
 ---
 
 # REM Module
@@ -161,7 +161,7 @@ Resume re-checks exclusion rules silently (a path may have been excluded after c
 ## Exclusion Rules
 
 ```ts
-// index.ts:L484-490
+// index.ts:L478-484
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (

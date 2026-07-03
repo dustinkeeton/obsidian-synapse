@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-07-03
 ---
 
 # Elaboration Module
@@ -139,7 +139,7 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
 9. User action (unified view / legacy modal):
    Accept -> stripCodeFences(sanitizeAIResponse(additions)),
              buildCallout(CALLOUT_TYPES.elaboration,'Elaboration',...),
-             vault.process(file, d => d.trimEnd()+'\n'+callout)  (index.ts:L497)
+             vault.process(file, d => d.trimEnd()+'\n'+callout)  (index.ts:L488)
    Reject -> status = 'rejected'
 ```
 
@@ -167,7 +167,7 @@ if (content.trim() === '' && isGenericTitle(noteFile.basename)) {
 }
 ```
 
-`isGenericTitle` is imported from the `../shared` barrel (shared/index.ts:L128), which re-exports it from `shared/title-detector.ts:L69` -- not a local copy, and not from the `title/` feature module (dependency rules forbid feature-to-feature imports; `title/` re-exports `isUntitled` from the same shared source). `isGenericTitle(t) === isUntitled(t) || isDateStyleTitle(t) || isBareUrlTitle(t)` (title-detector.ts:L69-71). It returns true for Obsidian "Untitled" defaults, date-style daily-note names (e.g. `2026-06-25`, `YYYYMMDD`, `DD-MM-YYYY`), and bare URLs. A real title like "Photosynthesis" is not generic, so the title-led prompt still runs.
+`isGenericTitle` is imported from the `../shared` barrel (shared/index.ts:L138), which re-exports it from `shared/title-detector.ts:L69` -- not a local copy, and not from the `title/` feature module (dependency rules forbid feature-to-feature imports; `title/` re-exports `isUntitled` from the same shared source). `isGenericTitle(t) === isUntitled(t) || isDateStyleTitle(t) || isBareUrlTitle(t)` (title-detector.ts:L69-71). It returns true for Obsidian "Untitled" defaults, date-style daily-note names (e.g. `2026-06-25`, `YYYYMMDD`, `DD-MM-YYYY`), and bare URLs. A real title like "Photosynthesis" is not generic, so the title-led prompt still runs.
 
 Guard B (link-dominated note, all fetches failed), proposer.ts:L109: when the note is essentially just link(s) and every external fetch returned nothing, `generate()` returns null rather than fabricating from a URL slug. `isLinkDominated` strips URLs/markdown/wikilinks to visible text and checks `length < 10` (proposer.ts:L265). Both guards return `null`; callers skip the file without creating a proposal.
 
@@ -235,7 +235,7 @@ All under `settings.elaboration` unless noted.
 | `detection.detectSparseLinks` | boolean | true | Flag inbound-linked but sparse notes |
 | `detection.excludeTags` | string[] | `['no-elaborate']` | Per-note opt-out via frontmatter tags |
 | `proposal.includeSourceContext` | boolean | true | Gather up to 5 linked notes as context |
-| `proposal.maxProposalsPerNote` | number | 3 | Per-note pending-proposal cap; `guardProposal` skips with reason `cap` once reached (index.ts:L158) |
+| `proposal.maxProposalsPerNote` | number | 3 | Per-note pending-proposal cap; `guardProposal` skips with reason `cap` once reached (index.ts:L127) |
 | `proposal.preserveFrontmatter` | boolean | true | Defined in settings; not referenced by module code |
 
 Path exclusions use centralized `settings.exclusions: ExclusionRule[]` via `isPathExcluded(path,'elaboration',settings)`; there is no per-module `excludeFolders`. Auto-accept is `settings.autoAccept.elaboration` (default false), passed in via `shouldAutoAccept: () => boolean`; module code never mutates settings. Image analysis reads `settings.image.enabled`, `settings.image.visionModel`, `settings.image.maxImageSizeMb`, `settings.ai.model`. The dedup content key additionally folds in `settings.ai.provider`, `settings.ai.model`, `settings.ai.temperature`, `settings.ai.maxTokens` (`proposalContentKey`, proposer.ts:L19).
@@ -269,7 +269,7 @@ No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny lo
 ## Invariants / Gotchas
 
 - `scanVault` and `resumeFromCheckpoint` create/advance a checkpoint; cancellation or error auto-rejects all proposals created in the run (`rejectProposalBatch`) and discards the checkpoint.
-- `generate()` returning `null` (either anti-fabrication guard) is not an error: callers complete the checkpoint item and skip without saving a proposal (index.ts:L203, index.ts:L344, index.ts:L438).
+- `generate()` returning `null` (either anti-fabrication guard) is not an error: callers complete the checkpoint item and skip without saving a proposal (index.ts:L194, index.ts:L335, index.ts:L429).
 - Proposal `id` is deterministic: `id === contentKey`. Re-scanning an unchanged note recomputes the same key, so `guardProposal` returns `duplicate` and no second AI call fires; a `rejected` proposal with that key does not block a fresh attempt (#395).
 - `acceptProposal` no-ops when `proposal.status !== 'pending'` (cascade-safe double-accept guard).
 - `scanNote(userInvoked=true)` bypasses the stub gate: a synthetic `user-requested` reason is created so the proposer always runs, except where the dedup guard (`duplicate`/`cap`) or the anti-fabrication guards apply.

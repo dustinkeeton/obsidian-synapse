@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-07-03
 ---
 
 # Image Module
@@ -67,7 +67,7 @@ function hasExtractionBelow(lines: string[], embedLine: number, fileName: string
 | `extractor.ts` | `ImageExtractor` | Multi-modal OCR via `AIClient.chat()` with `ContentBlock[]`; applies vision-model override |
 | `preprocess.ts` | `preprocessImage`, `PreprocessResult`; re-exports `arrayBufferToBase64`, `base64EncodedLength` | Auto-downscale/re-encode oversized payloads; base64 helpers re-exported from `shared/encoding.ts` |
 | `note-scanner.ts` | `findImageEmbeds`, `hasExtractionBelow`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX` | Scan note text for image embeds; skip embeds already OCR'd |
-| `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `settings-tab.ts:105`) |
+| `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `settings-tab.ts:109`) |
 | `index.ts` | `ImageModule` + barrel re-exports | Orchestrator, public extraction methods, checkpoint management |
 | `extractor.test.ts`, `note-scanner.test.ts`, `preprocess.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests |
 
@@ -180,7 +180,7 @@ Downscale path re-encodes to JPEG. Lossless sources (`image/png`, `image/bmp`, `
 | `extractFromFile` | extract throws | `op.error("OCR extraction failed -- <msg>")` |
 | `extractAndInsert` | per-embed extract throws | `notifications.notifyError(...)`; continue to next embed |
 | `extractAndInsert` | user cancels | write partial inserts, discard checkpoint |
-| `extract` | payload downscaled | `notifications.info('large image auto-downscaled to fit the API limit')` (3s dedup, #396) |
+| `extract` | payload downscaled | `notifications.info('Large image auto-downscaled to fit the API limit')` (3s dedup, #396) |
 | `preprocessImage` | canvas/DOM unavailable or downscale throws | console.warn; return original bytes, `downscaled: false` |
 
 ## Invariants / Gotchas

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-07-03
 ---
 
 # Audio Module
@@ -116,7 +116,7 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 
 ## Settings Keys
 
-All under `settings.audio` (interface `AudioSettings`, `settings.ts:L79`; defaults `settings.ts:L367`):
+All under `settings.audio` (interface `AudioSettings`, `settings.ts:L93`; defaults `settings.ts:L367`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -129,9 +129,9 @@ All under `settings.audio` (interface `AudioSettings`, `settings.ts:L79`; defaul
 | `localWhisperPath` | string | `''` | Reserved for `local-whisper` CLI path (provider not implemented) |
 | `language` | string | `''` | Language hint; empty = auto-detect |
 | `autoFormatLyrics` | boolean | `true` | Auto-detect song transcripts and reformat as structured lyrics (#234) |
-| `postProcessing` | `PostProcessingSettings` | see below | AI transcript cleanup block (`settings.ts:L71`) |
+| `postProcessing` | `PostProcessingSettings` | see below | AI transcript cleanup block (`settings.ts:L85`) |
 
-`postProcessing` (`PostProcessingSettings`, `settings.ts:L71`), consumed by `post-processor.ts`:
+`postProcessing` (`PostProcessingSettings`, `settings.ts:L85`), consumed by `post-processor.ts`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
