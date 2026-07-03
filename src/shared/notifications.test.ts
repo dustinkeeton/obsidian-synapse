@@ -392,7 +392,7 @@ describe('NotificationManager', () => {
 		});
 
 		it('collapses a per-image downscale loop into a single toast', () => {
-			const msg = 'large image auto-downscaled to fit the API limit';
+			const msg = 'Large image auto-downscaled to fit the API limit';
 			for (let i = 0; i < 5; i++) manager.info(msg);
 			expect(noticeCount()).toBe(1);
 		});

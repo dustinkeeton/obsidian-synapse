@@ -662,7 +662,7 @@ export default class SynapsePlugin extends Plugin {
 		if (REGISTRY_BY_ID.get(id)?.context === 'note') {
 			const file = this.activeMarkdownFile();
 			if (!file) {
-				this.notifications.info('open a note first to use this action.');
+				this.notifications.info('Open a note first to use this action.');
 				return;
 			}
 			const mdLeaf = this.app.workspace
