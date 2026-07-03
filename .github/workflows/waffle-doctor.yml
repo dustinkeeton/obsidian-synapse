@@ -27,4 +27,4 @@ jobs:
         with:
           node-version: 20
       - name: Check wafflestack drift
-        run: npx --yes github:dustinkeeton/wafflestack#v0.8.0 doctor --allow-missing
+        run: npx --yes github:dustinkeeton/wafflestack#v0.9.0 doctor --allow-missing

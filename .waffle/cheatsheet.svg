@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 884" width="880" height="884" font-family="'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" role="img" aria-label="Skills cheat sheet">
+<title>wafflestack — Skills cheat sheet</title>
+<rect width="880" height="884" fill="#1A0D03"/>
+<g transform="translate(40,38) scale(0.5)" stroke-linejoin="round"><rect x="22" y="22" width="70" height="70" rx="18" fill="#D0902B" stroke="#5B2B0E" stroke-width="6"/><rect x="14.5" y="14.5" width="70" height="70" rx="18" fill="#E4A93D" stroke="#5B2B0E" stroke-width="6"/><rect x="7" y="7" width="70" height="70" rx="18" fill="#F5C752" stroke="#5B2B0E" stroke-width="6.5"/><rect x="16.75" y="16.75" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="16.75" y="35.5" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="16.75" y="54.25" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="35.5" y="16.75" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="35.5" y="35.5" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="35.5" y="54.25" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="54.25" y="16.75" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="54.25" y="35.5" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="54.25" y="54.25" width="13" height="13" rx="4.5" fill="#DE8127"/></g>
+<text x="112" y="64" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" letter-spacing="3" fill="#F08A1D">WAFFLESTACK</text>
+<text x="112" y="100" font-family="'Baloo 2', 'Trebuchet MS', system-ui, sans-serif" font-size="30" font-weight="800" fill="#FFF3DC">Skills cheat sheet</text>
+<rect x="40" y="114" width="800" height="3" rx="1.5" fill="#F08A1D"/>
+<text x="40" y="178" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/audit</text>
+<text x="40" y="202" font-size="15" fill="#FFF3DC">Run a full codebase audit chain — architecture, security, Obsidian submission-guideline…</text>
+<line x1="40" y1="207" x2="840" y2="207" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="240" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/clean-up</text>
+<text x="40" y="264" font-size="15" fill="#FFF3DC">Tidy up after a finished process: delete local git branches and worktrees whose pull…</text>
+<line x1="40" y1="269" x2="840" y2="269" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="302" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/delegate</text>
+<text x="40" y="326" font-size="15" fill="#FFF3DC">Fetch open GitHub issues, assign each to the best specialist agent, and orchestrate…</text>
+<line x1="40" y1="331" x2="840" y2="331" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="364" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/docs</text>
+<text x="40" y="388" font-size="15" fill="#FFF3DC">Orchestrates documentation updates by spawning the lead-engineer, docs-agent, and…</text>
+<line x1="40" y1="393" x2="840" y2="393" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="426" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/github-project-board</text>
+<text x="40" y="450" font-size="15" fill="#FFF3DC">Create and standardize a GitHub Projects v2 board to the toolkit&apos;s canonical Kanban config…</text>
+<line x1="40" y1="455" x2="840" y2="455" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="488" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/hygiene</text>
+<text x="40" y="512" font-size="15" fill="#FFF3DC">Run the scheduled repo-hygiene task list: refresh managed docs via the `docs` skill, then…</text>
+<line x1="40" y1="517" x2="840" y2="517" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="550" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/issue</text>
+<text x="40" y="574" font-size="15" fill="#FFF3DC">Create a well-structured GitHub issue from a brief description, or enrich an existing…</text>
+<line x1="40" y1="579" x2="840" y2="579" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="612" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/label-hook</text>
+<text x="40" y="636" font-size="15" fill="#FFF3DC">Execute the label→action mapping when a GitHub trigger label dispatches the CI harness:…</text>
+<line x1="40" y1="641" x2="840" y2="641" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="674" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/release</text>
+<text x="40" y="698" font-size="15" fill="#FFF3DC">Cut a Synapse release — pick the semver bump from the changes since the last tag (or take…</text>
+<line x1="40" y1="703" x2="840" y2="703" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="736" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/standup</text>
+<text x="40" y="760" font-size="15" fill="#FFF3DC">Round up a quick status pulse from every installed agent — each reports in ≤3 lines,…</text>
+<line x1="40" y1="765" x2="840" y2="765" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="798" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">/tdd</text>
+<text x="40" y="822" font-size="15" fill="#FFF3DC">Test-Driven Development skill.</text>
+<text x="40" y="866" font-size="12.5" fill="#C9A87C">11 commands · generated by wafflestack render — do not edit</text>
+</svg>

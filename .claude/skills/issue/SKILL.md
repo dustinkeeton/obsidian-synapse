@@ -218,9 +218,9 @@ gh api repos/$OWNER/$REPO/milestones --jq '.[] | select(.state == "open") | {num
 
 Match by scope: bugs → assign to earliest milestone, features → match by milestone title/scope. If no match → skip milestone assignment.
 
-**Error handling:** Each substep fails independently. No project → skip with warning. No "Backlog" option → try "Todo"/"New" fallbacks. GraphQL error → report but don't fail the issue creation. If the repo has no Projects board at all, skip step 6 entirely — issue creation still succeeds.
+**Error handling:** Each substep fails independently. No project → skip with warning (the `github-project-board` skill can provision a standard board if the user wants one — don't create it inline). No "Backlog" option → try "Todo"/"New" fallbacks. GraphQL error → report but don't fail the issue creation. If the repo has no Projects board at all, skip step 6 entirely — issue creation still succeeds.
 
-See the `github-project-management` skill for the full GraphQL query catalog.
+See the `github-project-management` skill for the full GraphQL query catalog, and the `github-project-board` skill to create or standardize the board itself.
 
 ### 7. Report back
 

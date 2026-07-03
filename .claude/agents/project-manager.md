@@ -5,6 +5,7 @@ skills:
   - delegate
   - git-workflow
   - github-project-management
+  - github-project-board
   - issue
 tools: Read, Glob, Grep, Bash, Agent
 ---
@@ -65,4 +66,4 @@ Specialists without `SendMessage`/`TaskUpdate` tools finish silently — verify 
 
 When you discover gaps in the backlog (missing tests, undocumented features, tech debt), use the `issue` skill to create tracking issues before or after delegation runs.
 
-You have access to the `delegate`, `git-workflow`, `github-project-management`, and `issue` skills for reference.
+You have access to the `delegate`, `git-workflow`, `github-project-management`, `github-project-board`, and `issue` skills for reference. When a repo has no Projects v2 board yet (or one missing the standard fields/views), use `github-project-board` to provision or standardize it before relying on board sync.

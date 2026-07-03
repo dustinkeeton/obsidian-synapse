@@ -5,8 +5,8 @@
 # the toolkit — edit the toolkit source, this config, or .waffle/extensions/
 # instead of the rendered files, then re-render:
 #
-#   npx github:dustinkeeton/wafflestack#v0.8.0 render
-#   npx github:dustinkeeton/wafflestack#v0.8.0 doctor --allow-missing   # drift check
+#   npx github:dustinkeeton/wafflestack#v0.9.0 render
+#   npx github:dustinkeeton/wafflestack#v0.9.0 doctor --allow-missing   # drift check
 #
 # Account-specific values (git.botEmail, git.botName) live in the gitignored
 # .waffle/waffle.local.yaml overlay; the git.* values below reference them via
@@ -18,6 +18,7 @@ bundles:
   - code-quality
   - obsidian-dev
   - orchestration
+  - harness-architect
 # Per-item pulls from the engineering-team bundle: Synapse needs the general
 # architect and the remediating security agent, not the whole app-team roster.
 include:
@@ -48,8 +49,14 @@ config:
     typecheckCmd: npx tsc --noEmit --skipLibCheck
   issue:
     inferenceLabel: Needs Inference
+  release:
+    # Obsidian requires the release tag to exactly match manifest.json's version —
+    # no "v" prefix (e.g. "1.0.12"). The tag itself is pushed by the repo's own
+    # tag-on-version-bump.yml, not the waffle-release-hook (deliberately not
+    # installed: its GITHUB_TOKEN tag push could never trigger release.yml).
+    tagFormat: "{version}"
   doctor:
-    toolkitRef: github:dustinkeeton/wafflestack#v0.8.0
+    toolkitRef: github:dustinkeeton/wafflestack#v0.9.0
     # This repo deliberately gitignores some renders (.agents/, .codex/, and the
     # .claude skills that embed the local overlay) — tolerate absent files in CI,
     # still fail on hand-edited ones. Keeps the workflow managed instead of ejected.

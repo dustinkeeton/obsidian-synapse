@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 760" width="880" height="760" font-family="'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" role="img" aria-label="Team">
+<title>wafflestack — Team</title>
+<rect width="880" height="760" fill="#1A0D03"/>
+<g transform="translate(40,38) scale(0.5)" stroke-linejoin="round"><rect x="22" y="22" width="70" height="70" rx="18" fill="#D0902B" stroke="#5B2B0E" stroke-width="6"/><rect x="14.5" y="14.5" width="70" height="70" rx="18" fill="#E4A93D" stroke="#5B2B0E" stroke-width="6"/><rect x="7" y="7" width="70" height="70" rx="18" fill="#F5C752" stroke="#5B2B0E" stroke-width="6.5"/><rect x="16.75" y="16.75" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="16.75" y="35.5" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="16.75" y="54.25" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="35.5" y="16.75" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="35.5" y="35.5" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="35.5" y="54.25" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="54.25" y="16.75" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="54.25" y="35.5" width="13" height="13" rx="4.5" fill="#DE8127"/><rect x="54.25" y="54.25" width="13" height="13" rx="4.5" fill="#DE8127"/></g>
+<text x="112" y="64" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" letter-spacing="3" fill="#F08A1D">WAFFLESTACK</text>
+<text x="112" y="100" font-family="'Baloo 2', 'Trebuchet MS', system-ui, sans-serif" font-size="30" font-weight="800" fill="#FFF3DC">Team</text>
+<rect x="40" y="114" width="800" height="3" rx="1.5" fill="#F08A1D"/>
+<text x="40" y="178" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">docs-agent</text>
+<text x="40" y="202" font-size="15" fill="#FFF3DC">Agent-optimized documentation writer.</text>
+<line x1="40" y1="207" x2="840" y2="207" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="240" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">docs-human</text>
+<text x="40" y="264" font-size="15" fill="#FFF3DC">Human-readable documentation writer.</text>
+<line x1="40" y1="269" x2="840" y2="269" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="302" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">harness-architect</text>
+<text x="40" y="326" font-size="15" fill="#FFF3DC">Expert in designing and building agent harnesses — agent/skill/tool decomposition,…</text>
+<line x1="40" y1="331" x2="840" y2="331" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="364" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">lead-engineer</text>
+<text x="40" y="388" font-size="15" fill="#FFF3DC">Senior architect for the Synapse codebase.</text>
+<line x1="40" y1="393" x2="840" y2="393" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="426" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">plugin-architect</text>
+<text x="40" y="450" font-size="15" fill="#FFF3DC">Obsidian plugin architecture specialist.</text>
+<line x1="40" y1="455" x2="840" y2="455" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="488" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">product-manager</text>
+<text x="40" y="512" font-size="15" fill="#FFF3DC">Product strategy and discovery specialist for Synapse.</text>
+<line x1="40" y1="517" x2="840" y2="517" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="550" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">project-manager</text>
+<text x="40" y="574" font-size="15" fill="#FFF3DC">Project coordinator that reads the GitHub backlog, assigns issues to specialist agents,…</text>
+<line x1="40" y1="579" x2="840" y2="579" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="612" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">security-engineer</text>
+<text x="40" y="636" font-size="15" fill="#FFF3DC">Security auditor. Reviews code for secrets, command injection, input validation, API key…</text>
+<line x1="40" y1="641" x2="840" y2="641" stroke="#5C4630" stroke-width="1" opacity="0.4"/>
+<text x="40" y="674" font-family="'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#F5C752">task-planner</text>
+<text x="40" y="698" font-size="15" fill="#FFF3DC">Sprint planning and task-tracking specialist for Synapse.</text>
+<text x="40" y="742" font-size="12.5" fill="#C9A87C">9 agents · generated by wafflestack render — do not edit</text>
+</svg>

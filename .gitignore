@@ -35,6 +35,7 @@ coverage/
 # (see .waffle/waffle.yaml; the rest of the rendered files are committed)
 .claude/skills/delegate/
 .claude/skills/git-workflow/
+.claude/skills/release/
 .waffle/waffle.local.yaml
 .agents/
 .codex/
