@@ -1,5 +1,5 @@
 ---
-name: security-audit
+name: electron-security-audit
 description: Security auditing for the Synapse plugin. Covers secret detection, input validation, command injection prevention, API key handling, and .gitignore enforcement. Use when reviewing code for security vulnerabilities or setting up security guardrails.
 user-invocable: false
 ---

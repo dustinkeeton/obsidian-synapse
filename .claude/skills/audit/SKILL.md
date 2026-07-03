@@ -11,12 +11,12 @@ Run the full audit pipeline in consecutive order. Each agent audits the codebase
 
 ## Chain Order
 
-1. **architect** — Audit and improve codebase structure (module patterns, file organization, naming, dependency rules, import paths)
-2. **security** (pass 1) — Full security audit per the security-audit skill checklist
+1. **lead-engineer** — Audit and improve codebase structure (module patterns, file organization, naming, dependency rules, import paths)
+2. **security-engineer** (pass 1) — Full security audit per the security-audit skill checklist
 3. **plugin-architect** (Obsidian compliance) — Verify the codebase still meets the Obsidian community plugin submission guidelines (manifest correctness, lifecycle cleanup, no internal/deprecated APIs, DOM safety, mobile/`isDesktopOnly` accuracy, command & UI-copy conventions). Implement fixes.
 4. **docs-agent** — Create/update the machine docs (a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files) optimized for LLM consumption
 5. **docs-human** — Create/update the human docs (`DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root) for human stakeholders
-6. **security** (pass 2) — Re-audit the entire codebase including all changes made by earlier agents. Ensure no new issues were introduced.
+6. **security-engineer** (pass 2) — Re-audit the entire codebase including all changes made by earlier agents. Ensure no new issues were introduced.
 
 ## Execution Steps
 
@@ -43,7 +43,7 @@ For each step, spawn the agent into the team, wait for completion, then proceed:
 
 ```
 Agent(
-  subagent_type: "architect",
+  subagent_type: "lead-engineer",
   team_name: "audit-{timestamp}",
   name: "architecture-pass",
   prompt: <architecture prompt>
@@ -54,7 +54,7 @@ TaskUpdate(id: task1.id, status: "completed")
 
 ```
 Agent(
-  subagent_type: "security",
+  subagent_type: "security-engineer",
   team_name: "audit-{timestamp}",
   name: "security-pass1",
   prompt: <security pass 1 prompt>
@@ -96,7 +96,7 @@ TaskUpdate(id: task5.id, status: "completed")
 
 ```
 Agent(
-  subagent_type: "security",
+  subagent_type: "security-engineer",
   team_name: "audit-{timestamp}",
   name: "security-final",
   prompt: <security pass 2 prompt>
@@ -137,7 +137,7 @@ Audit for: module pattern adherence, file structure conventions, naming (kebab-c
 
 ### Security Pass 1 (Task 2)
 
-Full audit per the security agent's own checklist — and `.claude/skills/security-audit/SKILL.md` where the project has that skill, as the source of truth for grep patterns and the severity rubric. Apply fixes if your role permits edits; otherwise deliver a severity-ranked findings report and do not modify code.
+Full audit per the security-engineer agent's own checklist — and `.claude/skills/security-audit/SKILL.md` where the project has that skill, as the source of truth for grep patterns and the severity rubric. Apply fixes if your role permits edits; otherwise deliver a severity-ranked findings report and do not modify code.
 
 ### Obsidian Compliance (Task 3)
 Verify the plugin still satisfies the Obsidian community plugin submission guidelines, per `.claude/skills/obsidian-plugin-dev/SKILL.md` and the official policies (developer.obsidian.md plugin guidelines + the `obsidianmd/obsidian-releases` submission checklist). Audit and fix:
@@ -174,12 +174,12 @@ After all agents complete, present:
 
 | # | Agent | Findings | Fixes Applied |
 |---|-------|----------|---------------|
-| 1 | architect | N issues | brief list |
-| 2 | security (pass 1) | N issues | brief list |
+| 1 | lead-engineer | N issues | brief list |
+| 2 | security-engineer (pass 1) | N issues | brief list |
 | 3 | plugin-architect (Obsidian compliance) | N issues | brief list or "clean" |
 | 4 | docs-agent | N files created/updated | file list |
 | 5 | docs-human | N files created/updated | file list |
-| 6 | security (pass 2) | N issues | brief list or "clean" |
+| 6 | security-engineer (pass 2) | N issues | brief list or "clean" |
 
 Build status: passing/failing
 ```

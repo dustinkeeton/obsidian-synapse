@@ -1,24 +1,28 @@
 # wafflestack consumer config — https://github.com/dustinkeeton/wafflestack
 #
 # The agent/skill files under .claude/agents, .claude/skills, .codex/agents, and
-# .agents/skills that are listed in .waffle.lock.json are RENDERED from the
-# toolkit — edit the toolkit source, this config, or .waffle/extensions/
+# .agents/skills that are listed in .waffle/waffle.lock.json are RENDERED from
+# the toolkit — edit the toolkit source, this config, or .waffle/extensions/
 # instead of the rendered files, then re-render:
 #
-#   npx github:dustinkeeton/wafflestack#v0.6.0 render
-#   npx github:dustinkeeton/wafflestack#v0.6.0 doctor   # drift check
+#   npx github:dustinkeeton/wafflestack#v0.8.0 render
+#   npx github:dustinkeeton/wafflestack#v0.8.0 doctor --allow-missing   # drift check
 #
 # Account-specific values (git.botEmail, git.botName) live in the gitignored
-# .waffle.local.yaml overlay; the git.* values below reference them via
+# .waffle/waffle.local.yaml overlay; the git.* values below reference them via
 # nested substitution, so renders that embed them stay gitignored.
 targets: [ claude, codex, agents-dir ]
 bundles:
   - docs-system
   - github-workflow
   - code-quality
-  - design
   - obsidian-dev
   - orchestration
+# Per-item pulls from the engineering-team bundle: Synapse needs the general
+# architect and the remediating security agent, not the whole app-team roster.
+include:
+  - agents/lead-engineer
+  - agents/security-engineer
 config:
   git:
     cmd: git -c user.email={{git.botEmail}} -c user.name={{git.botName}}
@@ -44,6 +48,46 @@ config:
     typecheckCmd: npx tsc --noEmit --skipLibCheck
   issue:
     inferenceLabel: Needs Inference
+  doctor:
+    toolkitRef: github:dustinkeeton/wafflestack#v0.8.0
+    # This repo deliberately gitignores some renders (.agents/, .codex/, and the
+    # .claude skills that embed the local overlay) — tolerate absent files in CI,
+    # still fail on hand-edited ones. Keeps the workflow managed instead of ejected.
+    flags: --allow-missing
+  pm:
+    brief: >-
+      You are the senior product manager for **Synapse**, an Obsidian plugin
+      that elaborates, transcribes, enriches, summarizes, organizes, and
+      connects notes with AI. The audience is Obsidian users who live in
+      plain-Markdown vaults — so write in their vocabulary (notes, vaults,
+      commands, settings), never in engineering or marketing jargon.
+    principles: |-
+      - **Non-destructive by default.** Synapse proposes, the user disposes — any story that mutates a note needs an explicit user action and an undo path.
+      - **The vault is private.** Any flow that sends note content to an AI provider must make that obvious and opt-in; never design silent uploads.
+      - **Fit the platform.** Stories must respect Obsidian UX conventions and the community-plugin guidelines, and must flag desktop-only capabilities (yt-dlp, ffmpeg) explicitly.
+    handoffs: |-
+      - Feasibility, architecture, or dependency questions → `lead-engineer`
+      - Obsidian API / platform constraints → `plugin-architect`
+      - Security or privacy implications → `security-engineer`
+      - Brand voice, naming, user-facing copy → `brand-manager`
+      - Scheduling, assignment, and execution → `project-manager`
+  lead:
+    stack: |-
+      - **TypeScript** (strict) on the Obsidian plugin API (`obsidian` typings pinned in `package.json`).
+      - **esbuild** (`esbuild.config.mjs`) for bundling; `tsc --noEmit` for typechecking only.
+      - **Vitest** for tests, using the centralized Obsidian mock (`src/__mocks__/`).
+      - **No runtime npm dependencies** — HTTP via Obsidian's `requestUrl`/`fetch`; media tooling via external `yt-dlp`/`ffmpeg` processes (desktop only).
+    structure: |-
+      - `src/main.ts` is lifecycle glue only. Every feature lives in `src/<feature>/` behind an `index.ts` public API (module class with `onload`/`onunload`), with feature-specific types in its `types.ts`.
+      - Feature modules may depend on `src/shared/` but never on each other; the one documented exception is VideoModule → AudioModule.
+      - Import through `feature/index.ts`, never internal files. Files kebab-case, classes PascalCase, named exports.
+      - The full standard lives in the `codebase-architecture` skill — read it before ruling on structure questions.
+    delegation: >-
+      Obsidian platform and UI work to `plugin-architect`, the transcription
+      pipeline to `transcription-engineer`, the elaboration system to
+      `elaboration-designer`, security to `security-engineer`, visual assets to
+      `designer`, docs to `docs-agent`/`docs-human`. Use the `Agent` tool to
+      invoke them.
   tdd:
     priorityTiers: |-
       ### Tier 1 — Pure functions (no mocking needed, write these first)
@@ -131,8 +175,8 @@ config:
       | `transcription-engineer` | Audio/video transcription pipeline (`src/audio/`, `src/video/`) |
       | `elaboration-designer` | Note elaboration and proposal system (`src/elaboration/`) |
       | `plugin-architect` | Plugin features, UI, settings, commands (`src/enrichment/`, `src/summarize/`, `src/tidy/`, `src/views/`) |
-      | `architect` | Codebase structure, shared utilities, conventions (`src/shared/`, cross-cutting) |
-      | `security` | Security auditing and fixes |
+      | `lead-engineer` | Codebase structure, shared utilities, conventions (`src/shared/`, cross-cutting) |
+      | `security-engineer` | Security auditing and fixes |
       | `docs-agent` | Machine-readable documentation (AGENTS.md files) |
       | `docs-human` | Human-readable documentation (DECISIONS.md, STATUS.md, ARCHITECTURE.md) |
     classificationTable: |-
@@ -143,12 +187,12 @@ config:
       | `src/enrichment/`, enrich, tags, links, weights | `plugin-architect` |
       | `src/summarize/`, summarize, summary, URL fetching | `plugin-architect` |
       | `src/tidy/`, `src/views/`, UI, modal, settings-tab, sidebar, tidy, formatting | `plugin-architect` |
-      | `src/shared/`, validation, ai-client, file-utils | `architect` |
+      | `src/shared/`, validation, ai-client, file-utils | `lead-engineer` |
       | `src/main.ts`, plugin lifecycle, onload, commands | `plugin-architect` |
-      | security, injection, secrets, .gitignore | `security` |
+      | security, injection, secrets, .gitignore | `security-engineer` |
       | AGENTS.md, machine docs, module registry | `docs-agent` |
       | DECISIONS.md, STATUS.md, ARCHITECTURE.md | `docs-human` |
-      | architecture, structure, naming, dependency, circular | `architect` |
+      | architecture, structure, naming, dependency, circular | `lead-engineer` |
       | `assets/brand/`, logo, icon, banner, visual asset, SVG | `designer` |
       | brand, branding, voice, tone, name treatment, brand audit | `brand-manager` |
     labelFallback: |-
@@ -157,12 +201,15 @@ config:
       | `bug` | `plugin-architect` |
       | `enhancement` | `plugin-architect` |
       | `documentation` | `docs-agent` |
-      | `question` | `architect` |
+      | `question` | `lead-engineer` |
     rootFiles: "`main.ts`, `settings.ts`, `settings-tab.ts`"
     sharedModule: "`src/shared/`"
     moduleDependencies: "`src/video/` depends on `src/audio/` — serialize audio-first"
     rootFileExample: "`main.ts`"
   audit:
+    # Domain architect for the Obsidian-guideline compliance step (the toolkit
+    # default is the general lead-engineer).
+    complianceAgentType: plugin-architect
     complianceLabel: Obsidian compliance
     complianceFrontmatterLabel: Obsidian submission-guideline compliance
     complianceTaskLabel: obsidian compliance
@@ -181,5 +228,3 @@ config:
       - **Commands & UI copy**: command names in sentence case, no plugin-name prefix and not containing the word "plugin"; settings headings follow Obsidian conventions (sentence case, no "Settings for…").
       - **Repo hygiene**: `main.js` / `manifest.json` / `styles.css` are the published release artifacts; `LICENSE` and `README` present; no committed secrets; any network usage is disclosed in the README.
       Implement fixes directly (do not just report), then verify with `npx tsc --noEmit` and the production build. Respect the project's deliberate patterns (e.g. the type-only audio→video back-edge, desktop gating via `loadNodeModules`) — flag, don't "fix", anything that is intentional.
-eject:
-  - files/.github/workflows/wafflestack-doctor.yml
