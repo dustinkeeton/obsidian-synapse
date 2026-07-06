@@ -13,7 +13,7 @@ import { DeepDiveModule } from './deep-dive';
 import { TitleModule } from './title';
 import { RemModule } from './rem';
 import { IntakeModule } from './intake';
-import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID } from './commands';
+import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID, dispatchSidebarCommand, type NoteEditorContext } from './commands';
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
@@ -182,7 +182,10 @@ export default class SynapsePlugin extends Plugin {
 		// (post-onload), so getRegistered() is fully populated.
 		this.registerView(SYNAPSE_ACTIONS_VIEW_TYPE, (leaf) => new SynapseActionsView(leaf, {
 			getActions: () => listPaletteActions(registrar.getRegistered()),
-			runAction: (id) => this.runCommand(id),
+			runAction: (id) =>
+				fireAndForget(this.runCommand(id), 'Run Synapse action', {
+					notifications: this.notifications,
+				}),
 			isNoteActive: () => this.activeMarkdownFile() !== null,
 		}));
 
@@ -643,35 +646,49 @@ export default class SynapsePlugin extends Plugin {
 	}
 
 	/**
-	 * Run a registered command by its registry id (without the `synapse:` prefix),
-	 * via Obsidian's own command dispatch — the same gated path the palette uses,
-	 * so editor/check gating is honored. `app.commands` isn't in the public typings,
-	 * hence the localized cast (the repo has no global App augmentation).
+	 * Run a registered command by its registry id (without the `synapse:` prefix).
 	 *
-	 * For `context: 'note'` commands (registered as `editorCallback`s) the active
-	 * editor is required, but opening the actions sidebar makes the note's editor
-	 * inactive (`workspace.activeEditor` goes null) — so the command would silently
-	 * no-op. We re-activate the note's markdown leaf first, restoring the editor
-	 * context so the command runs against the note the user was viewing.
+	 * For `context: 'note'` commands (registered as `editorCallback`s) we invoke the
+	 * command's handler DIRECTLY with the note's own editor + view, instead of
+	 * routing through `executeCommandById`. Opening the actions sidebar makes the
+	 * note's editor inactive, so the palette path's editor gate would silently no-op
+	 * on the first click — the #352 "works only on the second click" bug. Resolving
+	 * the note's markdown view ourselves and calling `editorCallback(editor, view)`
+	 * runs the action deterministically on the FIRST click, with no focus theft and
+	 * no self-induced `active-leaf-change` re-render of the panel. `app.commands`
+	 * isn't in the public typings, hence the localized cast.
 	 */
-	private runCommand(id: string): void {
+	private async runCommand(id: string): Promise<void> {
 		const commands = (this.app as unknown as {
-			commands: { executeCommandById(id: string): boolean };
+			commands: {
+				executeCommandById(id: string): boolean;
+				commands: Record<string, { editorCallback?: (editor: unknown, ctx: unknown) => unknown }>;
+			};
 		}).commands;
 
+		let noteContext: NoteEditorContext | null = null;
 		if (REGISTRY_BY_ID.get(id)?.context === 'note') {
 			const file = this.activeMarkdownFile();
 			if (!file) {
 				this.notifications.info('Open a note first to use this action.');
 				return;
 			}
-			const mdLeaf = this.app.workspace
+			const view = this.app.workspace
 				.getLeavesOfType('markdown')
-				.find((leaf) => leaf.view instanceof MarkdownView && leaf.view.file === file);
-			if (mdLeaf) this.app.workspace.setActiveLeaf(mdLeaf, { focus: true });
+				.map((leaf) => leaf.view)
+				.find((v): v is MarkdownView => v instanceof MarkdownView && v.file === file);
+			if (view) noteContext = { editor: view.editor, view };
 		}
 
-		commands.executeCommandById(`${this.manifest.id}:${id}`);
+		await dispatchSidebarCommand(
+			{
+				getCommand: (fullId) => commands.commands[fullId],
+				executeCommandById: (fullId) => commands.executeCommandById(fullId),
+			},
+			id,
+			`${this.manifest.id}:${id}`,
+			noteContext,
+		);
 	}
 
 	private async discardCheckpoint(id: string): Promise<void> {
