@@ -25,7 +25,12 @@ import { detectPlatform, isRecord, parseJson, redactError, sanitizeUrl } from '.
  */
 
 export interface YouTubeTranscript {
-	/** Cleaned caption text (timing stripped, segments merged). */
+	/**
+	 * Cleaned transcript, deterministically structured from the caption
+	 * stream's own signals (see {@link formatCaptionTranscript}): speaker-turn
+	 * paragraphs from `>>` markers, chapter headings from the video
+	 * description, and pause-based paragraph breaks from cue timing.
+	 */
 	text: string;
 	/** BCP-47 language code of the selected track (e.g. `en`, `en-US`). */
 	language: string;
@@ -33,6 +38,26 @@ export interface YouTubeTranscript {
 	auto: boolean;
 	/** Video title from the player response, when present. */
 	title?: string;
+	/**
+	 * True when STRONG deterministic structure was found (speaker turns or
+	 * chapters) — the text is finished markdown, and AI restructuring would
+	 * only degrade it. Weakly-structured transcripts (pause-paragraphed ASR)
+	 * still benefit from the AI post-processing pass.
+	 */
+	structured: boolean;
+}
+
+/** One caption cue: a timed slice of transcript text. */
+export interface CaptionCue {
+	startMs: number;
+	endMs: number;
+	text: string;
+}
+
+/** A chapter declared in the video description (`MM:SS Title` lines). */
+export interface VideoChapter {
+	title: string;
+	startMs: number;
 }
 
 /** A caption track as advertised by the player response. */
@@ -124,18 +149,22 @@ export async function fetchYouTubeTranscript(
 		}
 
 		const track = selectCaptionTrack(tracks, preferredLanguages);
-		const text = await fetchCaptionText(track.baseUrl);
-		if (!text) {
+		const cues = await fetchCaptionCues(track.baseUrl);
+		if (cues.length === 0) {
 			// The known POT-enforcement failure mode is a 200 with an empty body.
 			console.warn(`[Synapse] Empty caption track for YouTube video ${detected.videoId}`);
 			return null;
 		}
+
+		const chapters = parseChaptersFromDescription(extractVideoDescription(player));
+		const { text, structured } = formatCaptionTranscript(cues, chapters, detected.videoId);
 
 		return {
 			text,
 			language: track.languageCode,
 			auto: track.kind === 'asr',
 			title: extractVideoTitle(player),
+			structured,
 		};
 	} catch (error) {
 		console.warn('[Synapse] YouTube caption fetch failed:', redactError(error));
@@ -282,6 +311,14 @@ function extractVideoTitle(player: unknown): string | undefined {
 	return typeof details.title === 'string' ? details.title : undefined;
 }
 
+/** `videoDetails.shortDescription` — where creators declare chapters. */
+function extractVideoDescription(player: unknown): string {
+	if (!isRecord(player)) return '';
+	const details = player.videoDetails;
+	if (!isRecord(details)) return '';
+	return typeof details.shortDescription === 'string' ? details.shortDescription : '';
+}
+
 /**
  * Human-readable `playabilityStatus` fragment for the no-tracks diagnostic —
  * e.g. LOGIN_REQUIRED (age restriction) or UNPLAYABLE, which explain why no
@@ -330,26 +367,25 @@ function languageMatches(trackLanguage: string, preferred: string): boolean {
 	);
 }
 
-/** Fetch a caption track in json3 format and clean it into transcript text. */
-async function fetchCaptionText(baseUrl: string): Promise<string | null> {
+/** Fetch a caption track in json3 format and parse it into timed cues. */
+async function fetchCaptionCues(baseUrl: string): Promise<CaptionCue[]> {
 	const trackUrl = buildTrackUrl(baseUrl);
-	if (!trackUrl) return null;
+	if (!trackUrl) return [];
 
 	const response = await fetchWithTimeout({
 		url: trackUrl,
 		method: 'GET',
 		headers: { 'User-Agent': WATCH_PAGE_USER_AGENT },
 	});
-	if (!response.text || response.text.trim().length === 0) return null;
+	if (!response.text || response.text.trim().length === 0) return [];
 
 	let parsed: unknown;
 	try {
 		parsed = parseJson(response.text);
 	} catch {
-		return null;
+		return [];
 	}
-	const text = collectJson3Text(parsed);
-	return text.length > 0 ? text : null;
+	return collectJson3Cues(parsed);
 }
 
 /** Force `fmt=json3` onto a track URL; tolerate a protocol-relative/path base. */
@@ -367,14 +403,15 @@ function buildTrackUrl(baseUrl: string): string | null {
 }
 
 /**
- * Flatten a json3 timedtext payload (`events[].segs[].utf8`) into clean text.
+ * Parse a json3 timedtext payload (`events[].segs[].utf8`) into timed cues.
  * Skips `aAppend` continuation events (they duplicate the previous window's
- * trailing text in rolling ASR captions) and events with no segments.
+ * trailing text in rolling ASR captions), events with no segments, and
+ * blank/newline-only filler cues.
  */
-export function collectJson3Text(payload: unknown): string {
-	if (!isRecord(payload) || !Array.isArray(payload.events)) return '';
+export function collectJson3Cues(payload: unknown): CaptionCue[] {
+	if (!isRecord(payload) || !Array.isArray(payload.events)) return [];
 
-	const parts: string[] = [];
+	const cues: CaptionCue[] = [];
 	for (const event of payload.events as unknown[]) {
 		if (!isRecord(event)) continue;
 		if (event.aAppend === 1) continue;
@@ -385,11 +422,13 @@ export function collectJson3Text(payload: unknown): string {
 				eventText += seg.utf8;
 			}
 		}
-		if (eventText.trim().length > 0) {
-			parts.push(eventText);
-		}
+		const text = cleanCaptionText(eventText);
+		if (text.length === 0) continue;
+		const startMs = typeof event.tStartMs === 'number' ? event.tStartMs : 0;
+		const durationMs = typeof event.dDurationMs === 'number' ? event.dDurationMs : 0;
+		cues.push({ startMs, endMs: startMs + durationMs, text });
 	}
-	return cleanCaptionText(parts.join(' '));
+	return cues;
 }
 
 /** Decode the entities YouTube emits and collapse whitespace runs. */
@@ -403,4 +442,151 @@ function cleanCaptionText(text: string): string {
 		.replace(/&nbsp;/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
+}
+
+/* ── Deterministic transcript formatting ──
+ *
+ * The caption stream carries its own structure — no AI required:
+ *   - `>>` is the broadcast-captioning convention for a speaker change;
+ *     each turn becomes its own paragraph.
+ *   - Creators declare chapters as `MM:SS Title` lines in the description;
+ *     each becomes a heading linked to that timestamp in the video.
+ *   - Cue timing exposes real pauses; long gaps become paragraph breaks in
+ *     marker-less (plain ASR) transcripts.
+ */
+
+/** Minimum silence between cues that starts a new paragraph (marker-less mode). */
+const PARAGRAPH_GAP_MS = 2500;
+
+/** Force a paragraph break at the next cue once one grows past this length. */
+const PARAGRAPH_MAX_CHARS = 700;
+
+/** Chapter line: leading `H:MM:SS` or `MM:SS`, then the title. */
+const CHAPTER_LINE_REGEX = /^\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*[-–—:.]?\s+(\S.*)$/;
+
+/**
+ * Parse `MM:SS Title` chapter lines out of a video description. Returns []
+ * unless at least two chapters exist in strictly ascending order — the same
+ * shape YouTube itself requires before it renders chapter markers.
+ */
+export function parseChaptersFromDescription(description: string): VideoChapter[] {
+	const chapters: VideoChapter[] = [];
+	for (const line of description.split('\n')) {
+		const match = line.match(CHAPTER_LINE_REGEX);
+		if (!match) continue;
+		const [, hours, minutes, seconds, title] = match;
+		const startMs =
+			((hours ? parseInt(hours, 10) : 0) * 3600 +
+				parseInt(minutes, 10) * 60 +
+				parseInt(seconds, 10)) * 1000;
+		chapters.push({ title: title.trim(), startMs });
+	}
+
+	if (chapters.length < 2) return [];
+	for (let i = 1; i < chapters.length; i++) {
+		if (chapters[i].startMs <= chapters[i - 1].startMs) return [];
+	}
+	return chapters;
+}
+
+/** A timed block of output text (one speaker turn or one paragraph). */
+interface TranscriptBlock {
+	startMs: number;
+	text: string;
+}
+
+/**
+ * Split cues into speaker turns at `>>` markers. A marker can land anywhere
+ * inside a cue, so each cue's text is split and the fragments after the
+ * first each open a new turn stamped with that cue's start time.
+ */
+function splitDialogueTurns(cues: CaptionCue[]): TranscriptBlock[] {
+	const turns: TranscriptBlock[] = [];
+	let current: TranscriptBlock = { startMs: cues[0]?.startMs ?? 0, text: '' };
+
+	for (const cue of cues) {
+		const fragments = cue.text.split(/\s*>{2,}\s*/);
+		if (fragments[0]) {
+			current.text += (current.text ? ' ' : '') + fragments[0];
+		}
+		for (let i = 1; i < fragments.length; i++) {
+			if (current.text.trim()) turns.push(current);
+			current = { startMs: cue.startMs, text: fragments[i] };
+		}
+	}
+	if (current.text.trim()) turns.push(current);
+	return turns;
+}
+
+/**
+ * Group marker-less cues into paragraphs at real pauses (and force a break
+ * once a paragraph gets unreadably long).
+ */
+function paragraphsByGaps(cues: CaptionCue[]): TranscriptBlock[] {
+	const paragraphs: TranscriptBlock[] = [];
+	let current: TranscriptBlock | null = null;
+	let previousEndMs = 0;
+
+	for (const cue of cues) {
+		const isPause = current !== null && cue.startMs - previousEndMs >= PARAGRAPH_GAP_MS;
+		const isOverlong = current !== null && current.text.length >= PARAGRAPH_MAX_CHARS;
+		if (current === null || isPause || isOverlong) {
+			if (current) paragraphs.push(current);
+			current = { startMs: cue.startMs, text: cue.text };
+		} else {
+			current.text += ' ' + cue.text;
+		}
+		previousEndMs = Math.max(previousEndMs, cue.endMs);
+	}
+	if (current) paragraphs.push(current);
+	return paragraphs;
+}
+
+/**
+ * Assemble the final transcript: blocks become paragraphs, and each chapter
+ * becomes a `###` heading (linked to its timestamp in the video) inserted
+ * before the first block that starts at or after it.
+ *
+ * `structured` is true only for STRONG structure (speaker turns or chapters);
+ * pause-based paragraphs alone still leave ASR text unpunctuated, so those
+ * transcripts keep going through the AI post-processing pass.
+ */
+export function formatCaptionTranscript(
+	cues: CaptionCue[],
+	chapters: VideoChapter[],
+	videoId: string
+): { text: string; structured: boolean } {
+	const markerCount = cues.reduce(
+		(count, cue) => count + (cue.text.match(/>{2,}/g)?.length ?? 0),
+		0
+	);
+	const hasDialogue = markerCount >= 2;
+	const blocks = hasDialogue ? splitDialogueTurns(cues) : paragraphsByGaps(cues);
+
+	const lines: string[] = [];
+	let chapterIdx = 0;
+	for (const block of blocks) {
+		while (chapterIdx < chapters.length && chapters[chapterIdx].startMs <= block.startMs) {
+			lines.push(chapterHeading(chapters[chapterIdx], videoId));
+			chapterIdx++;
+		}
+		lines.push(block.text);
+	}
+	// Trailing chapters with no caption text after them (e.g. an outro card).
+	while (chapterIdx < chapters.length) {
+		lines.push(chapterHeading(chapters[chapterIdx], videoId));
+		chapterIdx++;
+	}
+
+	return {
+		text: lines.join('\n\n'),
+		structured: hasDialogue || chapters.length > 0,
+	};
+}
+
+/** `### [Title](watch?v=…&t=…)` — a heading that jumps to the chapter. */
+function chapterHeading(chapter: VideoChapter, videoId: string): string {
+	const title = chapter.title.replace(/[[\]]/g, '');
+	const seconds = Math.floor(chapter.startMs / 1000);
+	return `### [${title}](https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&t=${seconds})`;
 }

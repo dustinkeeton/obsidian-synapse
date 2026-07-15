@@ -54,12 +54,30 @@ describe('CaptionStrategy.canHandle', () => {
 });
 
 describe('CaptionStrategy.transcribe', () => {
+	it('skips AI post-processing for deterministically structured transcripts', async () => {
+		fetchTranscript.mockResolvedValue({
+			text: '### [Intro](https://youtube/t=0)\n\nHi everyone.\n\nGlad to be here.',
+			language: 'en',
+			auto: true,
+			title: 'A Video',
+			structured: true,
+		});
+		const { strategy, postProcess } = makeStrategy();
+
+		const result = await strategy.transcribe(YOUTUBE_URL, {});
+
+		expect(postProcess).not.toHaveBeenCalled();
+		expect(result?.text).toContain('### [Intro]');
+		expect(result?.source).toBe('captions');
+	});
+
 	it('post-processes fetched captions into a caption-sourced transcript', async () => {
 		fetchTranscript.mockResolvedValue({
 			text: 'caption text',
 			language: 'en',
 			auto: true,
 			title: 'A Video',
+			structured: false,
 		});
 		const { strategy, postProcess } = makeStrategy();
 
@@ -95,7 +113,7 @@ describe('CaptionStrategy.transcribe', () => {
 	});
 
 	it('degrades to raw captions when post-processing fails', async () => {
-		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true });
+		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true, structured: false });
 		const { strategy } = makeStrategy(
 			{},
 			vi.fn(() => Promise.reject(new Error('no AI key')))
@@ -108,7 +126,7 @@ describe('CaptionStrategy.transcribe', () => {
 	});
 
 	it('carries schema-reformat flags through (lyrics callout, #234)', async () => {
-		fetchTranscript.mockResolvedValue({ text: 'la la la', language: 'en', auto: true });
+		fetchTranscript.mockResolvedValue({ text: 'la la la', language: 'en', auto: true, structured: false });
 		const { strategy } = makeStrategy(
 			{},
 			vi.fn(() => Promise.resolve({ text: '## Verse\nla la la', reformatted: true, schemaId: 'lyrics' }))
@@ -121,7 +139,7 @@ describe('CaptionStrategy.transcribe', () => {
 	});
 
 	it('reports progress through the update hook', async () => {
-		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true });
+		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true, structured: false });
 		const { strategy } = makeStrategy();
 		const update = vi.fn();
 

@@ -53,6 +53,20 @@ export class CaptionStrategy implements UrlTranscriptionStrategy {
 			return null;
 		}
 
+		// Deterministically structured transcripts (speaker turns / chapter
+		// headings) are finished markdown — an AI rewrite would only flatten
+		// the structure the caption stream itself declared. Only weakly
+		// structured (plain ASR) text goes through the post-processing pass.
+		if (captions.structured) {
+			return {
+				text: captions.text,
+				raw: captions.text,
+				source: 'captions',
+				title: captions.title,
+				language: captions.language,
+			};
+		}
+
 		opts.update?.('Post-processing transcript...');
 		let processed: ProcessedTranscript = { text: captions.text };
 		try {
