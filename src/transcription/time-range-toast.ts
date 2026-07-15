@@ -69,10 +69,14 @@ export function showTimeRangeToast(
 		preventDismiss(notice);
 		el.empty();
 
-		// Title
+		// Source eyebrow + media title (title clamps to two lines in CSS)
+		el.createDiv({
+			cls: `${CLS}-time-range-eyebrow`,
+			text: 'Synapse · Transcribe',
+		});
 		el.createDiv({
 			cls: `${CLS}-time-range-title`,
-			text: `Synapse: ${options.title}`,
+			text: options.title,
 		});
 
 		// Slider container
@@ -89,8 +93,20 @@ export function showTimeRangeToast(
 			},
 		});
 
-		// Buttons row
+		// Buttons row — quiet action first, primary action on the right
 		const actions = el.createDiv({ cls: `${CLS}-actions` });
+
+		const fullBtn = actions.createEl('button', {
+			text: 'Full file',
+			cls: 'mod-cancel',
+		});
+		fullBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			if (resolved) return;
+			resolved = true;
+			notice.hide();
+			resolve(undefined);
+		});
 
 		const selectionBtn = actions.createEl('button', {
 			text: 'Transcribe selection',
@@ -108,18 +124,6 @@ export function showTimeRangeToast(
 			} else {
 				resolve({ startSeconds: selectedStart, endSeconds: selectedEnd });
 			}
-		});
-
-		const fullBtn = actions.createEl('button', {
-			text: 'Full file',
-			cls: 'mod-cancel',
-		});
-		fullBtn.addEventListener('click', (e) => {
-			e.stopPropagation();
-			if (resolved) return;
-			resolved = true;
-			notice.hide();
-			resolve(undefined);
 		});
 	});
 }
