@@ -2,8 +2,8 @@ export { UnifiedTranscriptionModal } from './unified-modal';
 export { NoteMediaModal } from './note-media-modal';
 export { TimeRangeSlider } from './time-range-slider';
 export type { TimeRangeSliderOptions } from './time-range-slider';
-export { showTimeRangeToast } from './time-range-toast';
-export type { TimeRangeToastOptions } from './time-range-toast';
+export { TimeRangeModal } from './time-range-modal';
+export type { TimeRangeChoice, TimeRangeModalOptions } from './time-range-modal';
 export {
 	detectLocalFileDuration,
 	detectUrlDuration,

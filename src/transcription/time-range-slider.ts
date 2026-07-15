@@ -36,7 +36,6 @@ export class TimeRangeSlider {
 	private trackHighlight: HTMLElement;
 	private startLabel: HTMLElement;
 	private endLabel: HTMLElement;
-	private rangeLabel: HTMLElement;
 
 	private _start: number;
 	private _end: number;
@@ -54,9 +53,6 @@ export class TimeRangeSlider {
 
 		// Root container
 		this.containerEl = parentEl.createDiv({ cls: `${CLS}-container` });
-
-		// Range display label (e.g. "01:30 - 05:00")
-		this.rangeLabel = this.containerEl.createDiv({ cls: `${CLS}-range-label` });
 
 		// Track wrapper for overlapping range inputs
 		const trackWrapper = this.containerEl.createDiv({ cls: `${CLS}-track-wrapper` });
@@ -90,13 +86,10 @@ export class TimeRangeSlider {
 			},
 		});
 
-		// Labels row (start timestamp, duration, end timestamp)
+		// Labels row: live start/end timestamps under their handles. No extra
+		// readout or total-duration label — the endpoints already say it all.
 		const labelsRow = this.containerEl.createDiv({ cls: `${CLS}-labels` });
 		this.startLabel = labelsRow.createSpan({ cls: `${CLS}-label-start` });
-		labelsRow.createSpan({
-			cls: `${CLS}-label-duration`,
-			text: `Duration: ${formatTimestamp(this.duration)}`,
-		});
 		this.endLabel = labelsRow.createSpan({ cls: `${CLS}-label-end` });
 
 		// Wire up event handlers
@@ -145,7 +138,6 @@ export class TimeRangeSlider {
 		// Update timestamp labels
 		this.startLabel.textContent = formatTimestamp(this._start);
 		this.endLabel.textContent = formatTimestamp(this._end);
-		this.rangeLabel.textContent = `${formatTimestamp(this._start)} \u2013 ${formatTimestamp(this._end)}`;
 
 		// Update track highlight position (percentage-based)
 		const startPct = (this._start / this.duration) * 100;
