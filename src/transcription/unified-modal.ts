@@ -1,15 +1,15 @@
-import { App, Modal, Notice, Platform, Setting, TFile } from 'obsidian';
+import { App, Modal, Platform, Setting, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AUDIO_EXTENSIONS } from '../audio';
 import { detectPlatform } from '../video';
-import { validateTimeRange, isPathExcluded } from '../shared';
+import { isPathExcluded } from '../shared';
 import type { TimeRange, NotificationManager } from '../shared';
 import {
 	detectLocalFileDuration,
 	detectUrlDuration,
 	MIN_SLIDER_DURATION,
 } from './duration-detector';
-import { showTimeRangeToast } from './time-range-toast';
+import { TimeRangeModal } from './time-range-modal';
 
 export class UnifiedTranscriptionModal extends Modal {
 	private selectedFile: TFile | null = null;
@@ -147,25 +147,9 @@ export class UnifiedTranscriptionModal extends Modal {
 			this.getSettings
 		);
 
-		if (
-			durationResult.durationSeconds !== undefined &&
-			durationResult.durationSeconds >= MIN_SLIDER_DURATION
-		) {
-			const timeRange = await showTimeRangeToast({
-				title: durationResult.title,
-				duration: durationResult.durationSeconds,
-			});
-			await this.callbacks.onTranscribeFile(file, timeRange);
-		} else if (durationResult.durationSeconds !== undefined) {
-			// Too short for slider -- transcribe full file
-			await this.callbacks.onTranscribeFile(file);
-		} else {
-			// Duration unknown -- show fallback text input toast
-			const timeRange = await this.showFallbackTextInputToast(
-				durationResult.title
-			);
-			await this.callbacks.onTranscribeFile(file, timeRange);
-		}
+		const timeRange = await this.chooseTimeRange(durationResult);
+		if (timeRange === 'cancelled') return;
+		await this.callbacks.onTranscribeFile(file, timeRange);
 	}
 
 	private async handleUrlTranscribe(url: string): Promise<void> {
@@ -178,112 +162,43 @@ export class UnifiedTranscriptionModal extends Modal {
 		this.close();
 		const durationResult = await detectUrlDuration(url, this.getSettings);
 
-		if (
-			durationResult.durationSeconds !== undefined &&
-			durationResult.durationSeconds >= MIN_SLIDER_DURATION
-		) {
-			const timeRange = await showTimeRangeToast({
-				title: durationResult.title,
-				duration: durationResult.durationSeconds,
-			});
-			await this.callbacks.onTranscribeUrl(url, timeRange);
-		} else if (durationResult.durationSeconds !== undefined) {
-			// Too short for slider -- transcribe full file
-			await this.callbacks.onTranscribeUrl(url);
-		} else {
-			// Duration unknown -- show fallback text input toast
-			const timeRange = await this.showFallbackTextInputToast(
-				durationResult.title
-			);
-			await this.callbacks.onTranscribeUrl(url, timeRange);
-		}
+		const timeRange = await this.chooseTimeRange(durationResult);
+		if (timeRange === 'cancelled') return;
+		await this.callbacks.onTranscribeUrl(url, timeRange);
 	}
 
 	/**
-	 * Show a fallback Notice-based toast with text inputs for start/end times.
-	 * Used when duration detection fails (e.g. missing ffprobe, corrupt file).
+	 * Ask the user what to transcribe via {@link TimeRangeModal}: a trim-bar
+	 * slider when the duration is known, manual start/end inputs when
+	 * detection failed. Media too short to clip skips the modal entirely.
+	 * Returns the selected range, undefined for the full file, or
+	 * `'cancelled'` when the user dismissed the modal (do nothing).
 	 */
-	private showFallbackTextInputToast(
-		title: string
-	): Promise<TimeRange | undefined> {
-		return new Promise((resolve) => {
-			let resolved = false;
-			let startValue = '';
-			let endValue = '';
+	private async chooseTimeRange(durationResult: {
+		title: string;
+		durationSeconds?: number;
+	}): Promise<TimeRange | undefined | 'cancelled'> {
+		const { title, durationSeconds } = durationResult;
 
-			const notice = new Notice('', 0);
-			const el = (notice as unknown as { noticeEl: HTMLElement }).noticeEl;
-			if (!el) {
-				resolve(undefined);
-				return;
-			}
+		// Too short for clipping -- transcribe the full file directly.
+		if (durationSeconds !== undefined && durationSeconds < MIN_SLIDER_DURATION) {
+			return undefined;
+		}
 
-			el.classList.add('synapse-notice', 'synapse-notice--info', 'synapse-notice--no-dismiss');
-			el.addEventListener('click', (e) => {
-				const target = e.target as HTMLElement;
-				if (target.closest('button') || target.closest('input')) return;
-				e.preventDefault();
-				e.stopPropagation();
-			}, true);
-			el.empty();
+		const choice = await new TimeRangeModal(
+			this.app,
+			{ title, duration: durationSeconds },
+			this.notifications
+		).openAndChoose();
 
-			el.createDiv({
-				cls: 'synapse-notice-time-range-title',
-				text: `Synapse: Clip "${title}" (optional)`,
-			});
-
-			const desc = el.createDiv({ cls: 'synapse-notice-time-range-desc' });
-			desc.textContent = 'Duration unknown. Enter timestamps manually (HH:MM:SS or MM:SS):';
-
-			const inputRow = el.createDiv({ cls: 'synapse-notice-time-range-inputs' });
-			const startInput = inputRow.createEl('input', {
-				attr: { type: 'text', placeholder: 'Start (00:00)', 'aria-label': 'Start time' },
-				cls: 'synapse-notice-time-input',
-			});
-			inputRow.createSpan({ text: ' \u2013 ' });
-			const endInput = inputRow.createEl('input', {
-				attr: { type: 'text', placeholder: 'End (00:00)', 'aria-label': 'End time' },
-				cls: 'synapse-notice-time-input',
-			});
-
-			startInput.addEventListener('input', () => { startValue = startInput.value; });
-			endInput.addEventListener('input', () => { endValue = endInput.value; });
-
-			const actions = el.createDiv({ cls: 'synapse-notice-actions' });
-
-			const clipBtn = actions.createEl('button', {
-				text: 'Transcribe selection',
-				cls: 'mod-cta',
-			});
-			clipBtn.addEventListener('click', (e) => {
-				e.stopPropagation();
-				if (resolved) return;
-				if (!startValue || !endValue) {
-					this.notifications.info('Both start and end times are required');
-					return;
-				}
-				try {
-					const range = validateTimeRange(startValue, endValue);
-					resolved = true;
-					notice.hide();
-					resolve(range);
-				} catch (err) {
-					this.notifications.info(err instanceof Error ? err.message : String(err));
-				}
-			});
-
-			const fullBtn = actions.createEl('button', {
-				text: 'Full file',
-				cls: 'mod-cancel',
-			});
-			fullBtn.addEventListener('click', (e) => {
-				e.stopPropagation();
-				if (resolved) return;
-				resolved = true;
-				notice.hide();
-				resolve(undefined);
-			});
-		});
+		switch (choice.kind) {
+			case 'selection':
+				return choice.range;
+			case 'full':
+				return undefined;
+			case 'cancelled':
+				return 'cancelled';
+		}
 	}
 
 	onClose(): void {
