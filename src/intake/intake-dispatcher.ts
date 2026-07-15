@@ -51,8 +51,11 @@ export class IntakeDispatcher {
 	 * whitespace remains (i.e. the body IS the URL modulo trailing/leading
 	 * whitespace). Returns null otherwise — including when there are zero or
 	 * multiple URLs, or the URL is surrounded by other prose.
+	 *
+	 * Public because the adopt-shared-captures flow (#455) reuses the exact
+	 * same "is this note just a captured link?" test on root-level notes.
 	 */
-	private bareUrl(body: string): string | null {
+	bareUrl(body: string): string | null {
 		const urls = extractUrls(body);
 		if (urls.length !== 1) {
 			return null;

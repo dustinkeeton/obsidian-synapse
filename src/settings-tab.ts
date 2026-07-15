@@ -1,4 +1,4 @@
-import { App, Platform, PluginSettingTab, Setting } from 'obsidian';
+import { App, PluginSettingTab, Setting } from 'obsidian';
 import type { ButtonComponent } from 'obsidian';
 import type SynapsePlugin from './main';
 import { MODEL_OPTIONS } from './settings';
@@ -97,18 +97,17 @@ const FEATURE_LABELS: Record<FeatureId, string> = {
 const FEATURE_ORDER = Object.keys(ALL_FEATURE_IDS) as FeatureId[];
 
 /**
- * The ordered list of per-feature section renderers (#243). Video is gated
- * behind `Platform.isDesktop` in {@link SynapseSettingTab.display} and inserted
- * here at render time, preserving the historical section order:
- * Elaboration, Intake, Image, Audio, Video, Enrichment, Summarize, Tidy,
- * Organize, Deep Dive, REM.
+ * The ordered list of per-feature section renderers (#243). Video is inserted
+ * in {@link SynapseSettingTab.display} at render time, preserving the
+ * historical section order: Elaboration, Intake, Image, Audio, Video,
+ * Enrichment, Summarize, Tidy, Organize, Deep Dive, REM.
  */
 const FEATURE_SECTION_RENDERERS: Array<(ctx: SettingsSectionContext) => void> = [
 	renderElaborationSettings,
 	renderIntakeSettings,
 	renderImageSettings,
 	renderAudioSettings,
-	// renderVideoSettings is spliced in after Audio when Platform.isDesktop.
+	// renderVideoSettings is spliced in after Audio (see display()).
 	renderEnrichmentSettings,
 	renderSummarizeSettings,
 	renderTidySettings,
@@ -259,12 +258,13 @@ export class SynapseSettingTab extends PluginSettingTab {
 		// ── General (non-feature, cross-cutting preferences; sits near the top) ──
 		this.renderGeneralSettings(ctx);
 
-		// ── Per-feature sections, in order (Video gated to desktop) ──
+		// ── Per-feature sections, in order ──
 		for (const render of FEATURE_SECTION_RENDERERS) {
 			render(ctx);
-			// Video Transcription slots in after Audio (desktop only — requires
-			// yt-dlp + ffmpeg). Splicing here keeps the historical section order.
-			if (render === renderAudioSettings && Platform.isDesktop) {
+			// Video Transcription slots in after Audio on every platform since
+			// #184; the section renderer itself hides the desktop-only binary
+			// settings on mobile. Splicing keeps the historical section order.
+			if (render === renderAudioSettings) {
 				renderVideoSettings(ctx);
 			}
 		}

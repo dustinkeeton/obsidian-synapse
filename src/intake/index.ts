@@ -3,6 +3,7 @@ import type { TAbstractFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
 	NotificationManager,
+	classifyUrl,
 	ensureFolder,
 	fetchArticleContent,
 	isPathExcluded,
@@ -83,10 +84,10 @@ export class IntakeModule {
 		}
 
 		this.plugin.registerEvent(
-			this.plugin.app.vault.on('create', (file) => this.handleEvent(file)),
+			this.plugin.app.vault.on('create', (file) => this.handleEvent(file, 'create')),
 		);
 		this.plugin.registerEvent(
-			this.plugin.app.vault.on('modify', (file) => this.handleEvent(file)),
+			this.plugin.app.vault.on('modify', (file) => this.handleEvent(file, 'modify')),
 		);
 	}
 
@@ -103,8 +104,14 @@ export class IntakeModule {
 	 * Cheap synchronous gatekeeper run on every vault event, before any async
 	 * work. Order is deliberately cheapest-first. Anything that passes is
 	 * debounced; everything else is ignored outright.
+	 *
+	 * Two kinds of paths get through: notes inside the intake folder (create or
+	 * modify), and — when `adoptSharedCaptures` is on (#455) — newly CREATED
+	 * root-level notes, which is where Obsidian's mobile share receiver drops
+	 * captures when "Default location for new notes" is the vault root. The
+	 * flush step decides whether a root note is actually a bare-URL capture.
 	 */
-	private handleEvent(file: TAbstractFile): void {
+	private handleEvent(file: TAbstractFile, kind: 'create' | 'modify'): void {
 		if (!(file instanceof TFile) || file.extension !== 'md') {
 			return;
 		}
@@ -115,7 +122,9 @@ export class IntakeModule {
 		}
 
 		if (!this.isInIntakeFolder(file.path, settings.intakeFolder)) {
-			return;
+			if (!this.isAdoptionCandidate(file.path, kind)) {
+				return;
+			}
 		}
 
 		// Path exclusion (#307): never auto-process a watched note that an
@@ -131,6 +140,23 @@ export class IntakeModule {
 		}
 
 		this.scheduleFlush(file.path);
+	}
+
+	/**
+	 * True when a path outside the intake folder may still enter the pipeline
+	 * as a shared capture (#455): the feature is on, an intake folder is
+	 * configured to adopt INTO, the event is a `create` (never a modify — we
+	 * don't chase edits to existing root notes), and the note sits at the vault
+	 * root (no `/`). Content checks happen later in {@link maybeAdoptCapture}.
+	 */
+	private isAdoptionCandidate(path: string, kind: 'create' | 'modify'): boolean {
+		const settings = this.getSettings().intake;
+		return (
+			settings.adoptSharedCaptures === true &&
+			kind === 'create' &&
+			!path.includes('/') &&
+			settings.intakeFolder.trim().length > 0
+		);
 	}
 
 	/**
@@ -228,6 +254,13 @@ export class IntakeModule {
 			return;
 		}
 
+		// A settled path OUTSIDE the intake folder can only have been scheduled
+		// as an adoption candidate (#455): adopt-or-ignore, never process here.
+		if (!this.isInIntakeFolder(path, this.getSettings().intake.intakeFolder)) {
+			await this.maybeAdoptCapture(file);
+			return;
+		}
+
 		this.inFlight.add(path);
 		try {
 			const content = await this.plugin.app.vault.read(file);
@@ -248,6 +281,45 @@ export class IntakeModule {
 			);
 		} finally {
 			this.inFlight.delete(path);
+		}
+	}
+
+	/**
+	 * Adopt a shared capture (#455): move a settled root-level note into the
+	 * intake folder when its body is a bare, classifiable URL — the exact shape
+	 * Obsidian's mobile share receiver produces — then re-schedule it so the
+	 * normal watcher/debounce path processes it from its new home. Anything
+	 * else (prose, multiple URLs, an unclassifiable link, an already-stamped
+	 * note) is left untouched where the user created it.
+	 */
+	private async maybeAdoptCapture(file: TFile): Promise<void> {
+		const settings = this.getSettings().intake;
+		if (!settings.adoptSharedCaptures) {
+			return;
+		}
+
+		try {
+			const content = await this.plugin.app.vault.read(file);
+			const parsed = parseFrontmatter(content);
+			if (this.isProcessed(parsed.frontmatter)) {
+				return;
+			}
+
+			const url = this.dispatcher.bareUrl(parsed.body);
+			if (url === null || classifyUrl(url).type === 'unknown') {
+				return;
+			}
+
+			await this.moveNote(file, settings.intakeFolder.trim());
+			// renameFile mutates file.path in place; hand the note to the normal
+			// intake debounce from its new path (a rename fires no create/modify
+			// event, so without this the adopted note would sit unprocessed).
+			this.scheduleFlush(file.path);
+		} catch (error) {
+			this.notifications.notifyError(
+				`Could not adopt shared capture ${file.basename}`,
+				error,
+			);
 		}
 	}
 
@@ -283,12 +355,12 @@ export class IntakeModule {
 
 		switch (route.kind) {
 			case 'transcription':
-				// #112 — STUB. Surfaces a "coming soon" notice and no-ops. A
-				// content-less URL note has nothing for organize to analyse; once
-				// #112 produces a transcript this branch should also end in
-				// `await this.deps.fireOnFile(file)` so the note is enriched and
-				// organized like the others.
+				// #112/#184 — tiered URL transcription appends the transcript to
+				// the note (throws when no tier can handle it, leaving the note
+				// un-stamped/retriable), then the full pipeline enriches and
+				// organizes the now-content-bearing note like the article branch.
 				await this.deps.transcribeUrlToNote(route.url, route.mediaType, file);
+				await this.deps.fireOnFile(file);
 				break;
 
 			case 'article': {

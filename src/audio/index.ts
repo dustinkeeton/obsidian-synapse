@@ -94,6 +94,31 @@ export class AudioModule {
 	}
 
 	/**
+	 * Run an already-textual transcript through the same post-processing
+	 * pipeline as {@link transcribe} (sanitize → cleanup → optional schema
+	 * reformat, #234), without needing audio bytes. Used by the caption tier of
+	 * URL transcription (#184) so caption-sourced transcripts get identical
+	 * treatment — and identical callout types — to extraction-sourced ones.
+	 * Post-processing failures propagate, mirroring {@link transcribe}; callers
+	 * that prefer degrading to the raw text catch and fall back themselves.
+	 */
+	async processTranscriptText(
+		raw: string
+	): Promise<{ text: string; reformatted?: boolean; schemaId?: string }> {
+		const result: TranscriptionResult = {
+			raw: sanitizeAIResponse(raw),
+			sourceName: '',
+		};
+		result.processed = await this.postProcessor.process(result.raw);
+		await this.maybeReformatBySchema(result);
+		return {
+			text: result.processed || result.raw,
+			reformatted: result.reformatted,
+			schemaId: result.schemaId,
+		};
+	}
+
+	/**
 	 * Content-schema reformat (#234): if a transcription-stage schema (e.g.
 	 * lyrics) matches and auto-formatting is enabled, reformat the transcript in
 	 * place — preserving it rather than condensing it. The reformatted text is

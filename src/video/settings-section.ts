@@ -1,4 +1,4 @@
-import { Setting, setIcon } from 'obsidian';
+import { Platform, Setting, setIcon } from 'obsidian';
 import { redactError } from '../shared';
 import type { SettingsSectionContext, NotificationManager } from '../shared';
 
@@ -143,9 +143,11 @@ function addPathSetting(
 /**
  * Render the Video Transcription settings accordion (#243).
  *
- * NOTE: This feature is desktop-only (requires yt-dlp + ffmpeg). The
- * `Platform.isDesktop` gate lives in the orchestrator (`settings-tab.ts`),
- * which only invokes this renderer on desktop — keep it that way.
+ * Rendered on every platform since #184 (mobile transcribes YouTube URLs via
+ * captions). The section is platform-aware itself: the desktop-only settings
+ * — yt-dlp/ffmpeg binary paths and the video download/embed pair, all tied to
+ * the local extraction pipeline — are hidden on mobile, where a short note
+ * explains what works instead.
  */
 export function renderVideoSettings(ctx: SettingsSectionContext): void {
 	const { plugin } = ctx;
@@ -157,6 +159,37 @@ export function renderVideoSettings(ctx: SettingsSectionContext): void {
 		(v) => { plugin.settings.video.enabled = v; },
 		'Enable video transcription',
 	);
+
+	new Setting(videoBody)
+		.setName('Prefer YouTube captions')
+		.setDesc(
+			'Transcribe YouTube videos from their captions when available — free, ' +
+			'near-instant, and the only path on mobile. Turn off to always ' +
+			'download and transcribe the audio (desktop only), which also restores ' +
+			'the video download/embed behavior for captioned videos.'
+		)
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.video.captionsFirst)
+				.onChange(async (value) => {
+					plugin.settings.video.captionsFirst = value;
+					await plugin.saveSettings();
+				})
+		);
+
+	if (!Platform.isDesktop) {
+		// Raw createEl DOM (not a Setting row) so the structure stays
+		// unit-testable under the Obsidian mock.
+		videoBody.createDiv({
+			cls: 'setting-item-description',
+			text:
+				'On mobile, YouTube videos are transcribed from their captions. ' +
+				'TikTok/Instagram and caption-less videos need the desktop app ' +
+				'(yt-dlp + ffmpeg) — in a synced vault, notes left in the intake ' +
+				'folder are picked up by the desktop app automatically.',
+		});
+		return;
+	}
 
 	addPathSetting(videoBody, {
 		name: 'yt-dlp path',

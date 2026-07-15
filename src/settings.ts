@@ -118,6 +118,13 @@ export interface VideoSettings {
 	tempFolder: string;
 	downloadFolder: string;
 	embedInNote: boolean;
+	/**
+	 * Prefer YouTube caption extraction over download+transcribe (#184). The
+	 * caption tier is free, near-instant, and the only URL-transcription path
+	 * available on mobile; turning this off restores the old always-download
+	 * desktop behavior (including the vault video download/embed).
+	 */
+	captionsFirst: boolean;
 	frameExtraction: FrameExtractionSettings;
 }
 
@@ -257,6 +264,14 @@ export interface IntakeSettings {
 	 * breadcrumbs are never re-ingested.
 	 */
 	captureLogFolder: string;
+	/**
+	 * Adopt shared captures (#455): also watch newly created ROOT-level notes
+	 * whose body is a bare media/article URL and move them into the intake
+	 * folder. Covers Obsidian's mobile share-sheet receiver, which creates the
+	 * note at "Default location for new notes" — a location plugins cannot
+	 * influence. Opt-in (default off) because it relocates root notes.
+	 */
+	adoptSharedCaptures: boolean;
 }
 
 /**
@@ -418,6 +433,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		tempFolder: '.synapse/temp',
 		downloadFolder: 'Media',
 		embedInNote: true,
+		captionsFirst: true,
 		frameExtraction: {
 			enabled: false,
 			intervalSeconds: 30,
@@ -513,6 +529,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		settleSeconds: 5,
 		captureLog: true,
 		captureLogFolder: '_captured',
+		adoptSharedCaptures: false,
 	},
 	ui: {
 		collapsedSections: {},

@@ -22,8 +22,8 @@ Scans your vault for stub notes (short content, TODO markers, empty sections) an
 ### Audio Transcription
 Transcribes audio files embedded in your notes using OpenAI Whisper API, Deepgram, or a local Whisper installation. Includes AI post-processing to remove filler words, add structure, and extract key points.
 
-### Video Transcription (desktop only)
-Downloads and transcribes YouTube and TikTok videos using yt-dlp and ffmpeg. Extracts the audio track and feeds it through the audio transcription pipeline. Not available on mobile.
+### Video Transcription
+Transcribes YouTube, TikTok, and Instagram videos. YouTube videos are transcribed caption-first: the caption track is fetched over plain HTTP -- free, near-instant, no external tools -- and works **on mobile** as well as desktop. Videos without captions, plus TikTok and Instagram, fall back to the desktop pipeline, which downloads the video with yt-dlp, extracts the audio with ffmpeg, and feeds it through the audio transcription pipeline. Share a video link into the intake folder on your phone and a synced desktop vault will even finish the ones mobile can't (see [docs/intake-folder.md](docs/intake-folder.md)).
 
 ### Enrichment
 Analyzes note content to suggest metadata tags (from a configurable vocabulary), internal links to related notes, topic links, and external references. Uses proximity-weighted scoring to find the most relevant connections in your vault. Runs automatically after elaboration, transcription, or summarization when configured.
@@ -137,14 +137,16 @@ These are the only services Synapse contacts, what each one is used for, and wha
 | Deepgram -- `api.deepgram.com` | Audio transcription | The audio you transcribe | API key required |
 | Twitter / X -- `publish.twitter.com` (fxtwitter, vxtwitter as fallbacks) | Tweet context during enrichment and summarize | The tweet URL found in your note | None |
 | Web pages -- any `http(s)` URL in your notes | Article context during elaboration, enrichment, and summarize | A request to that URL, to read the page | None |
-| YouTube / TikTok and others -- via `yt-dlp` (desktop) | Video transcription | The video URL you transcribe | None |
+| YouTube -- `www.youtube.com` | Caption-first video transcription | The video ID of the YouTube URL you transcribe, to fetch its caption track | None |
+| YouTube / TikTok and others -- via `yt-dlp` (desktop) | Video transcription (extraction fallback) | The video URL you transcribe | None |
 
 ### What this means for you
 
 - **Cloud AI and transcription require an account.** OpenAI, Anthropic, Google Gemini, and Deepgram each need an API key you supply in **Settings > Synapse**. The note content or audio you act on is sent to the one provider you selected so it can do the work, and to no one else.
 - **Two paths stay offline.** Selected as your AI provider, **Ollama** sends note content only to the local endpoint you set (default `http://localhost:11434`) -- no account, no key, nothing leaving your machine. For transcription, the **local Whisper** option is designed to run entirely on-device for the same reason. Use these if you want Synapse to work without sending anything out.
 - **Content you link is fetched from third-party sites.** When a note references a tweet or a web page and you run elaboration, enrichment, or summarize, Synapse requests that URL to read its content -- from Twitter/X (falling back to the fxtwitter and vxtwitter mirrors) or from the site itself. To avoid this, don't run those features on notes whose links you would rather not request, or turn the feature off in settings.
-- **Video transcription downloads the video.** On desktop, video transcription invokes `yt-dlp` to download the source from YouTube, TikTok, or another platform, then extracts and transcribes the audio locally.
+- **YouTube captions are fetched over plain HTTP.** Caption-first transcription requests the video's public watch page and caption track from `www.youtube.com` (no account, no download). Only when captions are unavailable — or for other platforms — does the flow fall to the desktop extraction pipeline below.
+- **Video transcription downloads the video (extraction fallback).** On desktop, the fallback invokes `yt-dlp` to download the source from YouTube, TikTok, or another platform, then extracts and transcribes the audio locally.
 - **Audio and video transcription use privileged desktop access.** To work with `yt-dlp`, `ffmpeg`, and `ffprobe`, the desktop build reaches outside the vault in two ways, both gated to desktop only (mobile never runs this code):
   - **Direct filesystem access.** Synapse writes scratch files -- downloaded media, extracted audio, clipped or concatenated segments -- to your operating system's temp directory (`os.tmpdir()`), never inside your vault. These temp files are removed when the operation finishes, on both success and failure. The finished video, if you opt to keep it, is the only artifact saved into the vault (in your configured download folder).
   - **Local shell execution.** Synapse runs the external tools as child processes with `execFile` and an explicit argument array -- never a shell command string -- so there is no shell interpolation of URLs, paths, or titles. URLs and file paths are sanitized first (`sanitizeUrl` / `sanitizePath`), the subprocess inherits a narrowed environment (essentially just an augmented `PATH` plus `HOME`), and the binaries that run are exactly the `yt-dlp path` and `ffmpeg path` you set in settings.
@@ -278,15 +280,16 @@ way (see DECISIONS.md).
 | Post-processing | Clean up transcriptions with AI | On |
 | Remove filler words | Strip filler words from transcripts | On |
 
-### Video Transcription (desktop only)
+### Video Transcription
 
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Enable video | Toggle video transcription | On |
-| yt-dlp path | Path to yt-dlp binary | `yt-dlp` |
-| ffmpeg path | Path to ffmpeg binary | `ffmpeg` |
-| Download folder | Where to save downloaded video files | `Media` |
-| Embed in note | Add an embed link to the downloaded video | On |
+| Prefer YouTube captions | Transcribe YouTube from its captions when available (free, works on mobile); off = always download + transcribe | On |
+| yt-dlp path (desktop) | Path to yt-dlp binary | `yt-dlp` |
+| ffmpeg path (desktop) | Path to ffmpeg binary | `ffmpeg` |
+| Download folder (desktop) | Where to save downloaded video files | `Media` |
+| Embed in note (desktop) | Add an embed link to the downloaded video | On |
 
 ### Enrichment
 

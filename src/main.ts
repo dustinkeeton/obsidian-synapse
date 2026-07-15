@@ -19,7 +19,16 @@ import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
 import { openScanFolderPicker, NotificationManager, CheckpointManager, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION, redactError } from './shared';
 import type { DeferredTask } from './shared';
-import { UnifiedTranscriptionModal, NoteMediaModal } from './transcription';
+import {
+	UnifiedTranscriptionModal,
+	NoteMediaModal,
+	UrlTranscriptionRouter,
+	CaptionStrategy,
+	LocalExtractionStrategy,
+	buildUrlTranscriptBlock,
+	insertUrlTranscript,
+} from './transcription';
+import type { UrlTranscriptionStrategy } from './transcription';
 import { findAudioEmbeds } from './audio';
 import { findVideoUrls } from './video';
 import { findImageEmbeds } from './image';
@@ -61,6 +70,8 @@ export default class SynapsePlugin extends Plugin {
 	private rem!: RemModule;
 	private intake!: IntakeModule;
 	private audioExtractor: AudioExtractor | undefined;
+	/** Tiered URL transcription router (#184) — built in onload, used by the unified modal. */
+	private urlTranscription!: UrlTranscriptionRouter;
 	private ffmpegAvailable: boolean | null = null;
 	private startupTimeout: number | null = null;
 	/**
@@ -125,11 +136,36 @@ export default class SynapsePlugin extends Plugin {
 		}
 		this.image = new ImageModule(this, getSettings, this.notifications, this.checkpointManager);
 		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.enrichment);
+
+		// URL transcription router (#184): ordered tiers behind one seam.
+		// Captions work on every platform; the yt-dlp/ffmpeg extraction tier
+		// joins only where VideoModule exists (desktop). Both tiers reach their
+		// feature modules through injected callbacks, mirroring the other
+		// cross-module callback bundles.
+		const urlStrategies: UrlTranscriptionStrategy[] = [
+			new CaptionStrategy(getSettings, (raw) => this.audio.processTranscriptText(raw)),
+		];
+		const video = this.video;
+		if (video) {
+			urlStrategies.push(new LocalExtractionStrategy((url, opts) =>
+				video.processUrl(
+					url,
+					{ insertMode: false, timeRange: opts.timeRange },
+					opts.update ? { update: opts.update } : undefined
+				)
+			));
+		}
+		const urlTranscription = new UrlTranscriptionRouter(urlStrategies);
+		this.urlTranscription = urlTranscription;
+
 		this.summarize = new SummarizeModule(
 			this, getSettings, this.notifications, this.checkpointManager, registrar,
-			this.video
-				? (url, parentOp) => this.video!.transcribeUrl(url, parentOp)
-				: async () => { throw new Error('Video transcription is not available on mobile'); },
+			async (url, parentOp) => {
+				const result = await urlTranscription.transcribe(url, {
+					update: parentOp ? (msg) => parentOp.update(msg) : undefined,
+				});
+				return result.text;
+			},
 			async (audioFile) => {
 				const data = await this.app.vault.readBinary(audioFile);
 				const result = await this.audio.transcribe(data, audioFile.name);
@@ -342,14 +378,13 @@ export default class SynapsePlugin extends Plugin {
 			fireAndForget(this.activateUnifiedView(), 'Open proposal review', { notifications: this.notifications });
 		});
 
-		// Unified transcription ribbon (desktop only — transcribe implies video
-		// support). Uses the bespoke 'synapse-transcribe' mark (#349), the same
-		// glyph the transcribe action carries, so the set stays coherent.
-		if (Platform.isDesktop) {
-			this.addRibbonIcon('synapse-transcribe', 'Transcribe media', () => {
-				this.openUnifiedModal();
-			});
-		}
+		// Unified transcription ribbon. Available on every platform since #184:
+		// mobile transcribes audio files and YouTube URLs (captions). Uses the
+		// bespoke 'synapse-transcribe' mark (#349), the same glyph the
+		// transcribe action carries, so the set stays coherent.
+		this.addRibbonIcon('synapse-transcribe', 'Transcribe media', () => {
+			this.openUnifiedModal();
+		});
 
 		// Opener for the Synapse actions sidebar (#289). Unconditional so it
 		// appears on mobile, where the command palette is hardest to reach. Uses
@@ -374,9 +409,10 @@ export default class SynapsePlugin extends Plugin {
 		// on the toggle and the once/day rate limit.
 		this.updateCheckTimeout = window.setTimeout(() => { void this.updateChecker.maybeCheck(); }, 5000);
 
-		// Unified transcription commands (audio on any platform, video on desktop only, image OCR).
-		// Always attempted so the registry audit sees them; userEnabled gates actual registration.
-		const hasTranscription = this.settings.audio.enabled || (this.settings.video.enabled && this.video) || this.settings.image.enabled;
+		// Unified transcription commands (audio + URL transcription on any
+		// platform since #184, image OCR). Always attempted so the registry
+		// audit sees them; userEnabled gates actual registration.
+		const hasTranscription = this.settings.audio.enabled || this.settings.video.enabled || this.settings.image.enabled;
 		registrar.register('transcribe-media', !!hasTranscription, {
 			callback: () => this.openUnifiedModal(),
 		});
@@ -408,13 +444,33 @@ export default class SynapsePlugin extends Plugin {
 		//   - general notes  -> run the whole pipeline on the one note
 		//   - article URLs    -> fetch+append, then the whole pipeline (#223);
 		//                        the pipeline's organize phase relocates the note
-		//   - media URLs      -> #112 transcription STUB (notice only)
+		//   - media URLs      -> tiered URL transcription (#112/#184), then the
+		//                        whole pipeline like the article branch
 		// fireOnFile runs elaboration as its first phase, so no separate
 		// elaborate-only callback is needed anymore (#223).
 		this.intake = new IntakeModule(this, getSettings, this.notifications, {
 			fireOnFile: (file) => synapseRunner.fireOnFile(file),
-			transcribeUrlToNote: async (_url, _mediaType, _file) => {
-				this.notifications.info('URL transcription from intake is coming soon (#112)');
+			transcribeUrlToNote: async (url, _mediaType, file) => {
+				const op = this.notifications.startOperation(
+					'Transcribing shared URL...',
+					`intake-url-${file.path}`
+				);
+				try {
+					const result = await urlTranscription.transcribe(url, {
+						update: (msg) => op.update(msg),
+					});
+					const block = buildUrlTranscriptBlock(
+						result, url, this.settings.video.embedInNote
+					);
+					await this.app.vault.process(file, (data) => data + block);
+					op.finish('Transcript added');
+				} catch (error) {
+					const msg = error instanceof Error ? error.message : String(error);
+					op.error(`URL transcription failed -- ${msg}`);
+					// Rethrow so intake leaves the note un-stamped/retriable — in a
+					// synced vault a mobile failure is finished by the desktop watcher.
+					throw error;
+				}
 			},
 		});
 		if (this.settings.intake.enabled) {
@@ -536,13 +592,25 @@ export default class SynapsePlugin extends Plugin {
 			() => this.settings,
 			{
 				audio: this.settings.audio.enabled,
-				video: this.settings.video.enabled && this.video !== null,
+				video: this.settings.video.enabled,
 			},
 			{
 				onTranscribeFile: (file, timeRange) => this.audio.transcribeFileToActiveNote(file, timeRange),
-				onTranscribeUrl: this.video
-					? (url, timeRange) => this.video!.transcribeUrlToActiveNote(url, timeRange)
-					: async () => { /* unreachable: video hidden on mobile */ },
+				// Tier-routed on every platform (#184). A time range forces the
+				// extraction tier, so desktop clipping behaves exactly as before.
+				// Completion reuses the audio module's post-transcription hook
+				// (enrichment + title check) — same kind, same wiring blocks.
+				onTranscribeUrl: (url, timeRange) => insertUrlTranscript(
+					{
+						app: this.app,
+						getSettings: () => this.settings,
+						notifications: this.notifications,
+						router: this.urlTranscription,
+						onComplete: (filePath) => this.audio.onTranscriptionComplete?.(filePath),
+					},
+					url,
+					timeRange
+				),
 			},
 			this.notifications
 		).open();

@@ -433,7 +433,7 @@ describe('IntakeModule', () => {
 			await module.onload();
 		});
 
-		it('bare video URL → transcription stub (no fire, no fetch)', async () => {
+		it('bare video URL → transcription, then the full pipeline (#112/#184)', async () => {
 			emit('create', 'Inbox/vid.md', 'https://www.youtube.com/watch?v=abc');
 			await flushDebounce();
 			expect(deps.transcribeUrlToNote).toHaveBeenCalledWith(
@@ -441,8 +441,18 @@ describe('IntakeModule', () => {
 				'video',
 				expect.anything()
 			);
-			expect(deps.fireOnFile).not.toHaveBeenCalled();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
 			expect(fetchArticleContent).not.toHaveBeenCalled();
+			expect(store.get('Inbox/vid.md')).toContain('synapse-processed');
+		});
+
+		it('failed URL transcription leaves the note un-stamped and skips the pipeline', async () => {
+			deps.transcribeUrlToNote.mockRejectedValueOnce(new Error('no transcription path'));
+			emit('create', 'Inbox/vid.md', 'https://www.youtube.com/watch?v=abc');
+			await flushDebounce();
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+			expect(store.get('Inbox/vid.md')).not.toContain('synapse-processed');
+			expect(notifications.notifyError).toHaveBeenCalled();
 		});
 
 		it('bare audio URL → transcription stub with mediaType audio', async () => {
@@ -797,6 +807,73 @@ describe('IntakeModule', () => {
 			handlers['create'](makeFile(path)); // never seeded into store
 			await flushDebounce();
 			expect(deps.fireOnFile).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('adopt shared captures (#455)', () => {
+		beforeEach(async () => {
+			settings.intake.adoptSharedCaptures = true;
+			await module.onload();
+		});
+
+		it('moves a created root-level bare-URL note into the intake folder and processes it', async () => {
+			emit('create', 'shared.md', 'https://www.youtube.com/watch?v=abc');
+			// First settle adopts (move + re-schedule), second settle processes.
+			await flushDebounce();
+			expect(plugin.app.fileManager.renameFile).toHaveBeenCalled();
+			expect(store.has('shared.md')).toBe(false);
+			expect(store.has('Inbox/shared.md')).toBe(true);
+
+			await flushDebounce();
+			expect(deps.transcribeUrlToNote).toHaveBeenCalledWith(
+				'https://www.youtube.com/watch?v=abc',
+				'video',
+				expect.anything()
+			);
+		});
+
+		it('ignores root notes when the toggle is off', async () => {
+			settings.intake.adoptSharedCaptures = false;
+			emit('create', 'shared.md', 'https://www.youtube.com/watch?v=abc');
+			await flushDebounce();
+			await flushDebounce();
+			expect(store.has('shared.md')).toBe(true);
+			expect(deps.transcribeUrlToNote).not.toHaveBeenCalled();
+		});
+
+		it('ignores modify events outside the intake folder', async () => {
+			store.set('shared.md', 'https://www.youtube.com/watch?v=abc');
+			handlers['modify'](makeFile('shared.md'));
+			await flushDebounce();
+			expect(store.has('shared.md')).toBe(true);
+			expect(plugin.app.fileManager.renameFile).not.toHaveBeenCalled();
+		});
+
+		it('ignores non-root creations outside the intake folder', async () => {
+			emit('create', 'Projects/shared.md', 'https://www.youtube.com/watch?v=abc');
+			await flushDebounce();
+			expect(store.has('Projects/shared.md')).toBe(true);
+			expect(plugin.app.fileManager.renameFile).not.toHaveBeenCalled();
+		});
+
+		it('leaves prose and unclassifiable-URL root notes untouched', async () => {
+			emit('create', 'ideas.md', 'some prose with https://example.com inside');
+			emit('create', 'weird.md', 'ftp://example.com/file');
+			await flushDebounce();
+			expect(store.has('ideas.md')).toBe(true);
+			expect(store.has('weird.md')).toBe(true);
+			expect(plugin.app.fileManager.renameFile).not.toHaveBeenCalled();
+		});
+
+		it('never re-adopts an already-stamped note', async () => {
+			emit(
+				'create',
+				'done.md',
+				'---\nsynapse-processed: true\n---\nhttps://www.youtube.com/watch?v=abc'
+			);
+			await flushDebounce();
+			expect(store.has('done.md')).toBe(true);
+			expect(plugin.app.fileManager.renameFile).not.toHaveBeenCalled();
 		});
 	});
 });
