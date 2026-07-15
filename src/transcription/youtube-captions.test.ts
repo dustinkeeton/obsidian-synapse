@@ -4,8 +4,11 @@ import {
 	extractJsonAfterMarker,
 	extractCaptionTracks,
 	selectCaptionTrack,
-	collectJson3Text,
+	collectJson3Cues,
+	parseChaptersFromDescription,
+	formatCaptionTranscript,
 } from './youtube-captions';
+import type { CaptionCue } from './youtube-captions';
 import { requestUrl, type RequestUrlParam, type RequestUrlResponse } from '../__mocks__/obsidian';
 
 /**
@@ -82,11 +85,13 @@ describe('fetchYouTubeTranscript', () => {
 
 		const result = await fetchYouTubeTranscript(WATCH_URL, ['en']);
 
+		// The 3s silence between the cues becomes a paragraph break.
 		expect(result).toEqual({
-			text: "hello world it's fine",
+			text: "hello world\n\nit's fine",
 			language: 'en',
 			auto: true,
 			title: 'Test Video',
+			structured: false,
 		});
 		const innertubeCall = mockRequestUrl.mock.calls.find(([params]) => {
 			const url = typeof params === 'string' ? params : params.url;
@@ -130,7 +135,7 @@ describe('fetchYouTubeTranscript', () => {
 		});
 
 		const result = await fetchYouTubeTranscript(WATCH_URL, ['en']);
-		expect(result?.text).toBe("hello world it's fine");
+		expect(result?.text).toBe("hello world\n\nit's fine");
 	});
 
 	it('falls back to the watch page when Innertube returns an error payload without tracks', async () => {
@@ -149,7 +154,7 @@ describe('fetchYouTubeTranscript', () => {
 		});
 
 		const result = await fetchYouTubeTranscript(WATCH_URL, ['en']);
-		expect(result?.text).toBe("hello world it's fine");
+		expect(result?.text).toBe("hello world\n\nit's fine");
 	});
 
 	it('returns null when neither attempt yields caption tracks', async () => {
@@ -271,24 +276,126 @@ describe('selectCaptionTrack', () => {
 	});
 });
 
-describe('collectJson3Text', () => {
-	it('joins segments, skips append events, and decodes entities', () => {
+describe('collectJson3Cues', () => {
+	it('produces timed cues, skipping append and blank filler events', () => {
 		const payload = JSON.parse(json3(SIMPLE_EVENTS)) as unknown;
-		expect(collectJson3Text(payload)).toBe("hello world it's fine");
+		expect(collectJson3Cues(payload)).toEqual([
+			{ startMs: 0, endMs: 2000, text: 'hello world' },
+			{ startMs: 5000, endMs: 5000, text: "it's fine" },
+		]);
 	});
 
-	it('collapses whitespace runs and newline segments', () => {
+	it('decodes entities and collapses whitespace/newline segments', () => {
 		const payload = {
 			events: [
-				{ segs: [{ utf8: 'line one\n' }, { utf8: '  line   two ' }] },
+				{ tStartMs: 10, dDurationMs: 5, segs: [{ utf8: 'line one\n' }, { utf8: '  line &amp; two ' }] },
+				{ tStartMs: 20, dDurationMs: 5, segs: [{ utf8: '\n' }] },
 			],
 		};
-		expect(collectJson3Text(payload)).toBe('line one line two');
+		expect(collectJson3Cues(payload)).toEqual([
+			{ startMs: 10, endMs: 15, text: 'line one line & two' },
+		]);
 	});
 
-	it('returns empty string for non-json3 shapes', () => {
-		expect(collectJson3Text(null)).toBe('');
-		expect(collectJson3Text({})).toBe('');
-		expect(collectJson3Text({ events: 'nope' })).toBe('');
+	it('returns [] for non-json3 shapes', () => {
+		expect(collectJson3Cues(null)).toEqual([]);
+		expect(collectJson3Cues({})).toEqual([]);
+		expect(collectJson3Cues({ events: 'nope' })).toEqual([]);
+	});
+});
+
+describe('parseChaptersFromDescription', () => {
+	const DESCRIPTION = [
+		'Kara and Scott discuss the week.',
+		'',
+		'00:00 Intro',
+		'05:11 First Topic',
+		'1:01:30 - Late Topic',
+		'',
+		'Follow us at https://example.com',
+	].join('\n');
+
+	it('parses MM:SS and H:MM:SS chapter lines', () => {
+		expect(parseChaptersFromDescription(DESCRIPTION)).toEqual([
+			{ title: 'Intro', startMs: 0 },
+			{ title: 'First Topic', startMs: 311_000 },
+			{ title: 'Late Topic', startMs: 3_690_000 },
+		]);
+	});
+
+	it('requires at least two chapters', () => {
+		expect(parseChaptersFromDescription('00:00 Only one')).toEqual([]);
+		expect(parseChaptersFromDescription('no chapters here')).toEqual([]);
+	});
+
+	it('rejects non-ascending timestamps (not a chapter list)', () => {
+		expect(
+			parseChaptersFromDescription('05:00 Later\n00:30 Earlier')
+		).toEqual([]);
+	});
+});
+
+describe('formatCaptionTranscript', () => {
+	const VIDEO_ID = 'dQw4w9WgXcQ';
+
+	function cue(startMs: number, text: string, durationMs = 1000): CaptionCue {
+		return { startMs, endMs: startMs + durationMs, text };
+	}
+
+	it('splits >> speaker markers into turn paragraphs (structured)', () => {
+		const cues = [
+			cue(0, "This isn't a story about Mitch McConnell."),
+			cue(2000, '>> Hi everyone, this is Pivot. >> And'),
+			cue(4000, "I'm Scott Galloway."),
+		];
+		const { text, structured } = formatCaptionTranscript(cues, [], VIDEO_ID);
+		expect(structured).toBe(true);
+		expect(text).toBe(
+			"This isn't a story about Mitch McConnell.\n\n" +
+				'Hi everyone, this is Pivot.\n\n' +
+				"And I'm Scott Galloway."
+		);
+	});
+
+	it('weaves chapter headings in as timestamp links', () => {
+		const cues = [
+			cue(0, '>> Welcome back. >> Glad to be here.'),
+			cue(310_000, '>> Now the big story.'),
+		];
+		const chapters = [
+			{ title: 'Intro', startMs: 0 },
+			{ title: 'Big [Story]', startMs: 305_000 },
+		];
+		const { text, structured } = formatCaptionTranscript(cues, chapters, VIDEO_ID);
+		expect(structured).toBe(true);
+		expect(text).toContain('### [Intro](https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=0)');
+		expect(text).toContain('### [Big Story](https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=305)');
+		expect(text.indexOf('Big Story')).toBeGreaterThan(text.indexOf('Glad to be here.'));
+		expect(text.indexOf('Now the big story.')).toBeGreaterThan(text.indexOf('Big Story'));
+	});
+
+	it('paragraphs marker-less ASR at pauses (not structured)', () => {
+		const cues = [
+			cue(0, 'first thought', 2000),
+			cue(2100, 'continues here', 1000),
+			cue(6000, 'after a long pause'),
+		];
+		const { text, structured } = formatCaptionTranscript(cues, [], VIDEO_ID);
+		expect(structured).toBe(false);
+		expect(text).toBe('first thought continues here\n\nafter a long pause');
+	});
+
+	it('force-breaks unreadably long marker-less paragraphs at a cue boundary', () => {
+		const long = 'x'.repeat(400);
+		const cues = [cue(0, long), cue(1100, long), cue(2200, 'tail')];
+		const { text } = formatCaptionTranscript(cues, [], VIDEO_ID);
+		expect(text.split('\n\n').length).toBe(2);
+		expect(text.endsWith('tail')).toBe(true);
+	});
+
+	it('a single stray >> is not treated as dialogue', () => {
+		const cues = [cue(0, 'plain text >> once only')];
+		const { structured } = formatCaptionTranscript(cues, [], VIDEO_ID);
+		expect(structured).toBe(false);
 	});
 });
