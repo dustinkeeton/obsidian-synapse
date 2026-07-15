@@ -420,7 +420,10 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		autoFormatLyrics: true,
 		postProcessing: {
 			enabled: true,
-			removeFiller: true,
+			// Off by default: stripping filler is a per-content-type call (great
+			// for voice memos, wrong for interviews/quotes) that users forget
+			// is on. Opt in per vault; possibly moving to tidy (#465).
+			removeFiller: false,
 			addStructure: true,
 			extractKeyPoints: false,
 			customPrompt: '',

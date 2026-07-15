@@ -81,6 +81,11 @@ export function renderAudioSettings(ctx: SettingsSectionContext): void {
 
 	new Setting(audioBody)
 		.setName('Remove filler words')
+		.setDesc(
+			'Strip "um", "uh", and false starts during post-processing. Best for ' +
+			'voice memos — it rewords quoted speech, so leave it off for ' +
+			'interviews, talks, and video transcripts you want verbatim.'
+		)
 		.addToggle((toggle) =>
 			toggle
 				.setValue(plugin.settings.audio.postProcessing.removeFiller)

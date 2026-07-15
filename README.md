@@ -278,7 +278,7 @@ way (see DECISIONS.md).
 | Enable audio | Toggle audio transcription | On |
 | Transcription provider | Whisper API, Deepgram, or Local Whisper (desktop only) | Whisper API |
 | Post-processing | Clean up transcriptions with AI | On |
-| Remove filler words | Strip filler words from transcripts | On |
+| Remove filler words | Strip filler words from transcripts (best for voice memos; alters quoted speech) | Off |
 
 ### Video Transcription
 

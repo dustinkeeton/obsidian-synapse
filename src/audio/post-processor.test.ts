@@ -44,6 +44,31 @@ describe('PostProcessor', () => {
 		expect(completeSpy).not.toHaveBeenCalled();
 	});
 
+	it('skips the AI pass when the transcript exceeds the output-token budget (#466)', async () => {
+		const settings = makeSettings((s) => {
+			s.ai.maxTokens = 100; // budget: ~400 chars
+		});
+		const pp = new PostProcessor(() => settings);
+		const longTranscript = 'word '.repeat(200); // 1000 chars ≈ 250 tokens
+
+		const result = await pp.process(longTranscript);
+
+		expect(result).toBe(longTranscript);
+		expect(completeSpy).not.toHaveBeenCalled();
+	});
+
+	it('still post-processes a transcript that fits the output-token budget', async () => {
+		const settings = makeSettings((s) => {
+			s.ai.maxTokens = 100;
+		});
+		const pp = new PostProcessor(() => settings);
+
+		const result = await pp.process('short transcript');
+
+		expect(result).toBe('processed');
+		expect(completeSpy).toHaveBeenCalledTimes(1);
+	});
+
 	it('builds an instruction list from the enabled toggles and sends it to the AI', async () => {
 		const settings = makeSettings((s) => {
 			s.audio.postProcessing.enabled = true;
