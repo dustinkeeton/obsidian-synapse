@@ -4,16 +4,18 @@ import { CommandRegistrar } from '../commands';
 import { AudioModule, TranscriptionResult } from '../audio';
 import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, calloutForTranscriptionResult,
-	CheckpointManager, generateId, formatTimeRange, detectPlatform, loadNodeModules,
-	isPathExcluded, findMatchingRule, findAvailableVaultPath,
+	CheckpointManager, generateId, detectPlatform, loadNodeModules,
+	isPathExcluded, findAvailableVaultPath,
 } from '../shared';
-import type { TimeRange } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
 import { AudioExtractor, DependencyMissingError } from './audio-extractor';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
+import type { RoutedUrlTranscriber, RoutedUrlTranscript } from './types';
 
 export type {
 	ExtractionResult,
+	RoutedUrlTranscriber,
+	RoutedUrlTranscript,
 	VideoMetadata,
 	VideoProcessOptions,
 	VideoSource,
@@ -29,6 +31,14 @@ export class VideoModule {
 
 	/** Optional callback invoked after video transcription completes. Wired by main.ts for enrichment. */
 	onTranscriptionComplete: ((filePath: string) => void) | null = null;
+
+	/**
+	 * Tier-routed URL transcriber (captions first, then extraction). Wired by
+	 * main.ts so batch note-media transcription (#184) goes through the same
+	 * tier routing as every other URL path; when unset (defensive fallback),
+	 * the batch falls back to direct extraction via {@link processUrl}.
+	 */
+	urlTranscriber: RoutedUrlTranscriber | null = null;
 
 	constructor(
 		private plugin: Plugin,
@@ -53,19 +63,6 @@ export class VideoModule {
 	}
 
 	onunload(): void {}
-
-	/**
-	 * Transcribe a video URL and return the transcript text without creating
-	 * a note. Used by the summarize module to auto-transcribe video URLs
-	 * before summarizing.
-	 */
-	async transcribeUrl(
-		url: string,
-		parentOp?: { update: (msg: string) => void }
-	): Promise<string> {
-		const result = await this.processUrl(url, { insertMode: false }, parentOp);
-		return result.processed || result.raw;
-	}
 
 	async processUrl(
 		url: string,
@@ -146,61 +143,6 @@ export class VideoModule {
 		return { ...result, videoVaultPath };
 	}
 
-	async transcribeUrlToActiveNote(url: string, timeRange?: TimeRange): Promise<void> {
-		const activeFile = this.plugin.app.workspace.getActiveFile();
-		if (!activeFile) {
-			this.notifications.info('Open a note first to insert the transcription');
-			return;
-		}
-
-		// Path exclusion (#307): transcription lands in the ACTIVE note. Explicit
-		// command → Notice naming the rule.
-		const rule = findMatchingRule(activeFile.path, 'video', this.getSettings());
-		if (rule) {
-			this.notifications.info(
-				`Skipped — "${activeFile.path}" is excluded by rule "${rule.pattern}"`
-			);
-			return;
-		}
-
-		const op = this.notifications.startOperation(
-			'Processing video URL...',
-			`video-url-${Date.now()}`
-		);
-		try {
-			const result = await this.processUrl(url, { insertMode: true, timeRange }, op);
-			const text = result.processed || result.raw;
-
-			const blockLines: string[] = [''];
-
-			if (this.getSettings().video.embedInNote && result.videoVaultPath) {
-				const fileName = result.videoVaultPath.split('/').pop()!;
-				blockLines.push(`![[${fileName}]]`);
-				blockLines.push('');
-			}
-
-			const { type, verb } = calloutForTranscriptionResult(result);
-			const title = timeRange
-				? `${verb} ${url} ${formatTimeRange(timeRange)}`
-				: `${verb} ${url}`;
-			const callout = buildCallout(
-				type,
-				title,
-				text,
-				true
-			);
-			blockLines.push(callout);
-
-			const block = blockLines.join('\n');
-			await this.plugin.app.vault.process(activeFile, (data) => data + block);
-			this.onTranscriptionComplete?.(activeFile.path);
-			op.finish('Video transcription added to note');
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			op.error(`Video transcription failed -- ${msg}`);
-		}
-	}
-
 	/**
 	 * Resume video transcription from a checkpoint (C1).
 	 * The remaining video files are re-processed.
@@ -262,8 +204,22 @@ export class VideoModule {
 			}
 			try {
 				op.progress(completed + 1, total, 'Transcribing video');
-				const result = await this.processUrl(embed.url, { insertMode: true }, op);
-				const text = result.processed || result.raw;
+
+				// Tier-routed (#184): captions first, extraction fallback — the
+				// same routing every other URL path uses. The direct processUrl
+				// branch is a defensive fallback for an unwired transcriber.
+				let result: RoutedUrlTranscript;
+				if (this.urlTranscriber) {
+					result = await this.urlTranscriber(embed.url, op);
+				} else {
+					const extracted = await this.processUrl(embed.url, { insertMode: true }, op);
+					result = {
+						text: extracted.processed || extracted.raw,
+						videoVaultPath: extracted.videoVaultPath,
+						reformatted: extracted.reformatted,
+						schemaId: extracted.schemaId,
+					};
+				}
 
 				const blockLines: string[] = [''];
 
@@ -278,7 +234,7 @@ export class VideoModule {
 				const callout = buildCallout(
 					type,
 					`${verb} ${embed.url}`,
-					text,
+					result.text,
 					true
 				);
 				blockLines.push(callout);
