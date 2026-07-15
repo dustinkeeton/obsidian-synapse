@@ -5,6 +5,24 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.13] - 2026-07-15
+
+### Added
+
+- YouTube videos now transcribe from their captions — free, near-instant, no yt-dlp or ffmpeg needed — and it works on mobile, where video transcription was previously unavailable. Videos without captions (and TikTok/Instagram) still use the desktop download pipeline automatically, and a "Prefer YouTube captions" toggle in the video settings restores the old always-download behavior
+- Caption transcripts arrive formatted: speaker changes become their own paragraphs, the video's chapters become headings that link to that moment in the video, and natural pauses break up auto-generated captions — all derived from the captions themselves, with no AI cost
+- Sharing a link into the vault from your phone now flows end to end: a bare video URL dropped in the intake folder is transcribed and run through the full pipeline, and an optional "Adopt shared captures" setting moves share-sheet captures from the vault root into the intake folder for you. When a video can't be transcribed on mobile, the note is left unprocessed so a synced desktop vault finishes it automatically
+
+### Changed
+
+- Choosing what to transcribe is now a proper dialog instead of a toast: the trim bar shows in/out handles on the timeline, dismissing the dialog cancels instead of silently transcribing the whole file, and manual start/end entry appears in the same dialog when the duration can't be detected
+- "Remove filler words" is now off by default and explains its trade-off — it suits voice memos, but rewords interviews and talks you may want verbatim (existing vaults keep their saved setting)
+
+### Fixed
+
+- Transcribing videos found in a note now goes through the same caption-first routing as every other flow, so a captioned YouTube video no longer downloads or hits transcription size limits
+- Long transcripts are no longer silently cut off by AI post-processing: when a transcript exceeds the configured token budget, Synapse keeps the complete raw text instead of a truncated cleanup
+
 ## [1.0.12] - 2026-07-03
 
 ### Changed
