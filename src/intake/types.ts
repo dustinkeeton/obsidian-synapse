@@ -19,8 +19,8 @@ export const SYNAPSE_PROCESSED_AT_FLAG = 'synapse-processed-at';
 export type IntakeRoute =
 	/**
 	 * The note is essentially a single video/audio URL. Carries the URL and
-	 * which media type it is so the (stubbed, #112) transcription branch can
-	 * route it. NOT implemented yet — see IntakeDeps.transcribeUrlToNote.
+	 * which media type it is so the transcription branch (#112/#184) can route
+	 * it — see IntakeDeps.transcribeUrlToNote.
 	 */
 	| { kind: 'transcription'; url: string; mediaType: 'video' | 'audio' }
 	/**
@@ -52,8 +52,11 @@ export interface IntakeDeps {
 	 */
 	fireOnFile(file: TFile): Promise<void>;
 	/**
-	 * Transcription branch (#112) — STUB. For now this just surfaces a
-	 * "coming soon" notice and no-ops; real URL transcription is out of scope.
+	 * Transcription branch (#112/#184): transcribe a bare media URL through the
+	 * tiered URL-transcription router and append the transcript to the note.
+	 * MUST throw when transcription fails or no tier can handle the URL (e.g.
+	 * TikTok on mobile), so the note stays un-stamped and a synced desktop
+	 * vault's watcher can retry it.
 	 */
 	transcribeUrlToNote(
 		url: string,

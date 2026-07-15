@@ -49,6 +49,24 @@ export function renderIntakeSettings(ctx: SettingsSectionContext): void {
 		);
 
 	new Setting(intakeBody)
+		.setName('Adopt shared captures')
+		.setDesc(
+			'Also watch newly created notes at the vault ROOT and move any whose ' +
+			'body is a single video/audio/article link into the intake folder. ' +
+			'Catches captures from the mobile share sheet when "Default location ' +
+			'for new notes" is not the intake folder. Off by default because it ' +
+			'relocates root notes.'
+		)
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.intake.adoptSharedCaptures)
+				.onChange(async (value) => {
+					plugin.settings.intake.adoptSharedCaptures = value;
+					await plugin.saveSettings();
+				})
+		);
+
+	new Setting(intakeBody)
 		.setName('Mark processed in frontmatter')
 		.setDesc('Stamp `synapse-processed: true` on a note once handled so it is not reprocessed')
 		.addToggle((toggle) =>

@@ -71,8 +71,9 @@ export class UnifiedTranscriptionModal extends Modal {
 				.setDesc(ppStatus);
 		}
 
-		// URL section (desktop only -- video transcription requires yt-dlp + ffmpeg)
-		if (this.enabledModules.video && Platform.isDesktop) {
+		// URL section — every platform since #184: desktop routes through
+		// captions/yt-dlp, mobile through the caption tier (YouTube only).
+		if (this.enabledModules.video) {
 			const platformBadge = contentEl.createDiv({
 				cls: 'synapse-platform-badge',
 			});

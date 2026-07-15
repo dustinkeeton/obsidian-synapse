@@ -4,6 +4,23 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-07-14: URL transcription ships as a transcript-level strategy router, not #180's MediaExtractor (#184/#112/#455)
+
+**Context**: Mobile video transcription (Android-first) finally lands. The 2026-03-19 "revised hybrid" entry below sketched a caption-first tier cascade but was never built; issue #180 proposed abstracting extraction behind a `MediaExtractor` interface whose unit of exchange is *extracted audio*. The caption tier, however, never produces audio — it goes straight from URL to transcript — so an audio-returning interface cannot host it.
+
+**Decision**: Introduce `UrlTranscriptionRouter` + `UrlTranscriptionStrategy` (`src/transcription/url-transcription.ts`), whose unit of exchange is a **transcript** (`UrlTranscript`). Tier 1 `CaptionStrategy` fetches YouTube captions over HTTP (`youtube-captions.ts`: watch-page parse, Innertube ANDROID fallback, json3 cleanup) and post-processes them through `AudioModule.processTranscriptText` — the same pipeline (and lyrics-schema callouts) as audio transcriptions. Tier 2 `LocalExtractionStrategy` wraps the existing desktop `VideoModule.processUrl` via an injected callback. Contract: `canHandle` is a cheap gate; `transcribe` returns `null` to fall through (captionless video) and **throws only on real failures** so `DependencyMissingError` keeps its #382 onboarding UX; exhaustion throws a platform-aware `NoTranscriptionPathError`. The router serves summarize, the unified modal (via `insertUrlTranscript`), and the intake media-URL branch (#112) — which now also runs the full pipeline and, on failure, leaves the note **un-stamped so a synced desktop vault retries it** (the honest mobile-TikTok story until the #181 server extractor exists). Companion decisions: `video.captionsFirst` (default on — captioned YouTube no longer auto-downloads on desktop; the toggle restores it) and opt-in `intake.adoptSharedCaptures` (#455) which adopts root-level bare-URL creations into the intake folder for share-sheet captures.
+
+**Alternatives considered**:
+- **Implement #180's `MediaExtractor` as specced** — rejected; the caption tier has no audio to return, and the phase-2 `ServerExtractionStrategy` (#181) slots into the transcript-level seam as just a third array element.
+- **Deepgram URL input for mobile (#112 as written)** — rejected as unworkable; Deepgram's `/v1/listen` URL mode needs a *direct media file URL*, not a YouTube/TikTok page URL.
+- **Silent notice (status quo stub) on mobile misses** — rejected; an un-stamped note plus an explanatory error makes the desktop-sync handoff a designed behavior instead of an accident.
+
+**Rationale**: The lightest seam that hosts today's two tiers and Phase 2's server tier without rework, keeps the module-boundary rule (strategies reach feature modules through injected callbacks), and reuses the existing post-processing, callout, exclusion, and onboarding machinery instead of duplicating any of it.
+
+**Impact**: New `src/transcription/{url-transcription,youtube-captions,caption-strategy,local-extraction-strategy,insert-url-transcript}.ts` (+ tests); `AudioModule.processTranscriptText`; `main.ts` wiring (summarize callback, intake branch, modal, ribbon/command ungating); `video.captionsFirst` + mobile-aware video settings; `intake.adoptSharedCaptures` + root-create adoption; docs. Supersedes the #112 stub. #180 closes as superseded by this seam.
+
+---
+
 ## 2026-07-03: The console-sink redaction contract is now lint-enforced (`synapse/no-unredacted-console`, #418)
 
 **Context**: Three successive audit passes (2026-06-25, 2026-06-29, 2026-07-02) each found and patched console sinks that logged unredacted values — the contract "every error console sink routes through `redactError`/`redactSecrets`" was held only by convention, and nothing stopped a new `console.error('…', err)` from silently reopening the hole. The sinks listed in #418 were already fixed by the 2026-07-02 pass; the remaining deliverable was an enforcement guard.
