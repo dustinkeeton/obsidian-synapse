@@ -16,10 +16,10 @@ export interface InsertUrlTranscriptDeps {
 
 /**
  * Transcribe a media URL through the tier router and append the transcript to
- * the ACTIVE note — the platform-agnostic sibling of the desktop-only
- * `VideoModule.transcribeUrlToActiveNote`, and the path the unified
- * transcription modal takes on every platform. Mirrors that method's guards
- * (active note required, #307 path exclusion) and its output block shape.
+ * the ACTIVE note — the path the unified transcription modal takes on every
+ * platform (it replaced the desktop-only VideoModule equivalent). Guards:
+ * active note required, #307 path exclusion; output mirrors the standard
+ * transcription block shape.
  */
 export async function insertUrlTranscript(
 	deps: InsertUrlTranscriptDeps,

@@ -157,6 +157,14 @@ export default class SynapsePlugin extends Plugin {
 		}
 		const urlTranscription = new UrlTranscriptionRouter(urlStrategies);
 		this.urlTranscription = urlTranscription;
+		if (video) {
+			// Batch note-media transcription routes through the same tiers, so
+			// captioned YouTube videos never hit the download/size limits (#184).
+			video.urlTranscriber = (url, parentOp) =>
+				urlTranscription.transcribe(url, {
+					update: parentOp ? (msg) => parentOp.update(msg) : undefined,
+				});
+		}
 
 		this.summarize = new SummarizeModule(
 			this, getSettings, this.notifications, this.checkpointManager, registrar,

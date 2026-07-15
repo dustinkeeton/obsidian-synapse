@@ -42,3 +42,25 @@ export interface VideoUrlEmbed {
 	platform: Platform;
 	line: number;
 }
+
+/**
+ * Result of the tier-routed URL transcriber injected by main.ts —
+ * structurally compatible with `UrlTranscript` from `src/transcription`
+ * (declared here so the video module never imports the transcription module,
+ * whose barrel imports this one).
+ */
+export interface RoutedUrlTranscript {
+	text: string;
+	videoVaultPath?: string;
+	reformatted?: boolean;
+	schemaId?: string;
+}
+
+/**
+ * Tier-routed URL transcription callback (captions first, then extraction).
+ * Throws on failure — including when no tier can handle the URL.
+ */
+export type RoutedUrlTranscriber = (
+	url: string,
+	parentOp?: { update: (message: string) => void }
+) => Promise<RoutedUrlTranscript>;
