@@ -42,6 +42,24 @@ Exceptions: `synapse-main` is deliberately impulse-free (neutral fallback). `syn
 
 ## Notes
 
-- `banner-animated.svg` loops the spike draw-on (SMIL — plays in GitHub READMEs).
+- `banner-animated.svg` loops the spike draw-on (SMIL — plays in GitHub READMEs). The README hero embeds this file.
 - `accept-flash.svg` + `accept-flash.md` — the proposed→accepted motion: 700ms, spike morphs into a bead that lands in the receptor while the cleft bridges. Spec only; not wired into UI.
 - Rasterize `social-preview.svg` to PNG (≤1MB) before uploading to repo settings, e.g. `qlmanage -t -s 1280 -o /tmp kit/social-preview.svg`.
+
+## Banner wordmark is outlined, not live text (issue #292)
+
+The wordmark (`synapse`) and tagline in `banner.svg` and `banner-animated.svg` ship as **outlined vector `<path>`s**, not live `<text>`. GitHub serves README images through a sandboxed `<img>`/camo context that can't load webfonts, so live `<text>` in Space Grotesk / Inter fell back to Helvetica/Arial for nearly every visitor — a name-treatment violation on the most visible surface. Outlining removes the font dependency entirely (both fonts are OFL, so outlining is permitted) and keeps the hero crisp at any DPI.
+
+**Consequence:** the wordmark/tagline copy is no longer editable in the SVG. To change the text, regenerate from the recipe below.
+
+**Regeneration recipe** (macOS, produces a font-correct outline identical to the live-text render):
+
+1. Install the exact weights: **Space Grotesk Medium (500)** and **Inter Medium (500)** (Google Fonts / official OFL repos).
+2. Lay out each string with HarfBuzz shaping (kerning on) + CSS `letter-spacing`, then convert each glyph to a path with fontTools (`SVGPathPen` through a `TransformPen` that scales `font-size/upem` and flips Y to SVG's y-down), rounding coordinates to 1 decimal. This matches WebKit's live-text layout exactly.
+   - Wordmark: `synapse`, Space Grotesk Medium, `font-size` 88, start `x=336`, baseline `y=168`, `letter-spacing=-1.76` (−0.02em), fill `#F3F0FF`.
+   - Tagline: `More connections. Brighter thoughts.`, Inter Medium, `font-size` 26, start `x=340`, baseline `y=220`, `letter-spacing=0`, fill `#B7A8FF`.
+3. Replace only the two `<text>` elements — the mark, motif, gradient, and SMIL `<animate>` nodes stay untouched.
+
+**Verification:** render a CONTROL of the pre-outline SVG with the fonts installed (`qlmanage -t -s 1280`) and pixel-diff it against the outlined output — full-size geometry must match (residual is edge antialiasing only). Confirm the outlined files contain **no** `<text>` and **no** `font-family` (grep), and check both GitHub light and dark themes (the banner carries its own rounded dark panel, so it reads on either).
+
+> **Standing rule:** any `<text>`-bearing SVG shipped where we don't control installed fonts gets outlined or rasterized first (`social-preview.png` already follows this; `social-preview.svg` still holds live `<text>` and is only shipped as the PNG).
