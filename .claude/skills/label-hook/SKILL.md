@@ -46,6 +46,10 @@ CI notes: the CI token has no Projects scope — the board/milestone steps will 
 with a warning; that is expected, continue. Do **not** remove or add either trigger
 label yourself.
 
+The issue skill's confirmation gate **auto-skips for this run** — you are an agent/CI
+caller, and a CI job can never answer a prompt, so pausing for one would hang the
+workflow. Log the drafted plan in the transcript, then apply it.
+
 ## implement
 
 1. Fetch #N and its context:
@@ -73,6 +77,9 @@ label yourself.
   reviewed through the PR like everything else.
 - Never apply 'waffle:enrich' or 'waffle:implement' to any
   issue — a hook run must not be able to fan out new hook runs.
+- Never apply 'waffle:release' to any PR you open — that label arms
+  `waffle-release-hook` to push a tag on merge, and a hook run must not be able to trigger a
+  release. Cutting a release is the `release` skill's job, run deliberately.
 
 ## Report
 
