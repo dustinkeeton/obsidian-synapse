@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Run a full codebase audit chain — architecture, security, Obsidian submission-guideline compliance, machine docs, human docs, then security again. Creates a team, spawns agents consecutively, and reports results.
+description: Run a full codebase audit chain — architecture, security, Obsidian submission-guideline compliance, machine docs, human docs, then security again. Spawns six named agents consecutively, chained on task dependencies, and reports results.
 disable-model-invocation: true
 argument-hint: [optional focus area]
 ---
@@ -14,52 +14,57 @@ Run the full audit pipeline in consecutive order. Each agent audits the codebase
 1. **lead-engineer** — Audit and improve codebase structure (module patterns, file organization, naming, dependency rules, import paths)
 2. **security-engineer** (pass 1) — Full security audit per the security-audit skill checklist
 3. **plugin-architect** (Obsidian compliance) — Verify the codebase still meets the Obsidian community plugin submission guidelines (manifest correctness, lifecycle cleanup, no internal/deprecated APIs, DOM safety, mobile/`isDesktopOnly` accuracy, command & UI-copy conventions). Implement fixes.
-4. **docs-agent** — Create/update the machine docs (a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files) optimized for LLM consumption
+4. **docs-agent** — Create/update the machine docs (a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way) optimized for LLM consumption
 5. **docs-human** — Create/update the human docs (`DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root) for human stakeholders
 6. **security-engineer** (pass 2) — Re-audit the entire codebase including all changes made by earlier agents. Ensure no new issues were introduced.
 
 ## Execution Steps
 
-### 1. Create Team
+The chain is **six named agents**, spawned one at a time and chained on task dependencies. There is no team to create or delete: the session has a **single implicit team**, and the `Agent` tool's `team_name` parameter is deprecated and ignored. An agent's `name:` is its address — `SendMessage(to: "<name>")` reaches it and `TaskStop(task_id: "<name>")` stops it.
+
+> **If a spawn is rejected because the roster is flat** (an agent cannot name its own spawns — only the main conversation loop can), omit `name:` and address the agent by the `agentId` the spawn returns. `SendMessage` and `TaskStop` both accept it in place of a name.
+
+### 1. Create the Tasks, Then Chain Them
+
+`TaskCreate` takes `subject` **and** `description` (both required); it has no `team_name` and no `addBlockedBy`. Dependencies are wired **afterwards**, with `TaskUpdate`:
 
 ```
-TeamCreate(team_name: "audit-{timestamp}")
+task1 = TaskCreate(subject: "Architecture audit", description: "Audit and improve codebase structure")
+task2 = TaskCreate(subject: "Security pass 1",    description: "Full security audit per the security-audit checklist")
+task3 = TaskCreate(subject: "obsidian compliance", description: "Verify the codebase still meets the Obsidian community plugin submission guidelines (manifest correctness, lifecycle cleanup, no internal/deprecated APIs, DOM safety, mobile/`isDesktopOnly` accuracy, command & UI-copy conventions). Implement fixes.")
+task4 = TaskCreate(subject: "Machine docs",       description: "Create/update the machine docs")
+task5 = TaskCreate(subject: "Human docs",         description: "Create/update the human docs")
+task6 = TaskCreate(subject: "Security pass 2",    description: "Re-audit including all changes made by earlier agents")
+
+# addBlockedBy is a TaskUpdate parameter, not a TaskCreate one — and the key is taskId, not id
+TaskUpdate(taskId: task2.id, addBlockedBy: [task1.id])
+TaskUpdate(taskId: task3.id, addBlockedBy: [task2.id])
+TaskUpdate(taskId: task4.id, addBlockedBy: [task3.id])
+TaskUpdate(taskId: task5.id, addBlockedBy: [task4.id])
+TaskUpdate(taskId: task6.id, addBlockedBy: [task5.id])
 ```
 
-### 2. Create Tasks with Dependencies
+### 2. Spawn Agents Sequentially
 
-```
-task1 = TaskCreate(description: "architecture audit", team_name: "audit-{timestamp}")
-task2 = TaskCreate(description: "security pass 1", team_name: "audit-{timestamp}", addBlockedBy: [task1.id])
-task3 = TaskCreate(description: "obsidian compliance", team_name: "audit-{timestamp}", addBlockedBy: [task2.id])
-task4 = TaskCreate(description: "docs-agent", team_name: "audit-{timestamp}", addBlockedBy: [task3.id])
-task5 = TaskCreate(description: "docs-human", team_name: "audit-{timestamp}", addBlockedBy: [task4.id])
-task6 = TaskCreate(description: "security pass 2", team_name: "audit-{timestamp}", addBlockedBy: [task5.id])
-```
-
-### 3. Spawn Agents Sequentially
-
-For each step, spawn the agent into the team, wait for completion, then proceed:
+For each step, spawn the named agent, wait for completion, then proceed:
 
 ```
 Agent(
   subagent_type: "lead-engineer",
-  team_name: "audit-{timestamp}",
   name: "architecture-pass",
   prompt: <architecture prompt>
 )
 # After completion:
-TaskUpdate(id: task1.id, status: "completed")
+TaskUpdate(taskId: task1.id, status: "completed")
 ```
 
 ```
 Agent(
   subagent_type: "security-engineer",
-  team_name: "audit-{timestamp}",
   name: "security-pass1",
   prompt: <security pass 1 prompt>
 )
-TaskUpdate(id: task2.id, status: "completed")
+TaskUpdate(taskId: task2.id, status: "completed")
 ```
 
 **Gate after pass 1:** present the security findings to the user. Do **not** auto-proceed if there are Critical or High findings — wait for the fixes (by the user or the architecture agent) or an explicit override before continuing the chain.
@@ -67,56 +72,62 @@ TaskUpdate(id: task2.id, status: "completed")
 ```
 Agent(
   subagent_type: "plugin-architect",
-  team_name: "audit-{timestamp}",
   name: "obsidian-compliance",
   prompt: <obsidian compliance prompt>
 )
-TaskUpdate(id: task3.id, status: "completed")
+TaskUpdate(taskId: task3.id, status: "completed")
 ```
 
 ```
 Agent(
   subagent_type: "docs-agent",
-  team_name: "audit-{timestamp}",
   name: "docs-agent",
   prompt: <docs-agent prompt>
 )
-TaskUpdate(id: task4.id, status: "completed")
+TaskUpdate(taskId: task4.id, status: "completed")
 ```
 
 ```
 Agent(
   subagent_type: "docs-human",
-  team_name: "audit-{timestamp}",
   name: "docs-human",
   prompt: <docs-human prompt>
 )
-TaskUpdate(id: task5.id, status: "completed")
+TaskUpdate(taskId: task5.id, status: "completed")
 ```
 
 ```
 Agent(
   subagent_type: "security-engineer",
-  team_name: "audit-{timestamp}",
   name: "security-final",
   prompt: <security pass 2 prompt>
 )
-TaskUpdate(id: task6.id, status: "completed")
+TaskUpdate(taskId: task6.id, status: "completed")
 ```
 
-### 4. Summary and Cleanup
+### 3. Summary and Teardown
 
-After all 6 complete, present the user a consolidated summary table of findings and fixes per agent, then clean up:
+After all 6 complete, present the user a consolidated summary table of findings and fixes per agent, then tear the agents down:
 
 ```
-SendMessage(type: "shutdown_request", to: "architecture-pass")
-SendMessage(type: "shutdown_request", to: "security-pass1")
-SendMessage(type: "shutdown_request", to: "obsidian-compliance")
-SendMessage(type: "shutdown_request", to: "docs-agent")
-SendMessage(type: "shutdown_request", to: "docs-human")
-SendMessage(type: "shutdown_request", to: "security-final")
-TeamDelete(team_name: "audit-{timestamp}")
+# Politely ask each agent to wind down…
+SendMessage(to: "architecture-pass", message: {type: "shutdown_request", reason: "Audit chain complete"})
+SendMessage(to: "security-pass1",    message: {type: "shutdown_request", reason: "Audit chain complete"})
+SendMessage(to: "obsidian-compliance", message: {type: "shutdown_request", reason: "Audit chain complete"})
+SendMessage(to: "docs-agent",        message: {type: "shutdown_request", reason: "Audit chain complete"})
+SendMessage(to: "docs-human",        message: {type: "shutdown_request", reason: "Audit chain complete"})
+SendMessage(to: "security-final",    message: {type: "shutdown_request", reason: "Audit chain complete"})
+
+# …then confirm the kill.
+TaskStop(task_id: "architecture-pass")
+TaskStop(task_id: "security-pass1")
+TaskStop(task_id: "obsidian-compliance")
+TaskStop(task_id: "docs-agent")
+TaskStop(task_id: "docs-human")
+TaskStop(task_id: "security-final")
 ```
+
+**Teardown is shutdown-then-stop.** `shutdown_request` is the polite first step, and an agent that honours it terminates cleanly. It is **not** reliable on its own — a requested agent can go idle but stay alive, still emitting idle notifications. `TaskStop(task_id: "<agent-name>")` is what actually terminates it, and it is safe to call on an agent that has already exited. Never treat a sent `shutdown_request` as proof the agent is gone; always follow through. There is nothing else to tear down — with a single implicit team per session, no team object is created and none is deleted.
 
 ## Agent Prompts
 
@@ -126,8 +137,8 @@ Each agent should:
 - Read the full project source and root
 - Implement fixes directly if its role grants edit tools; report-only agents deliver a severity-ranked findings report instead
 - Verify the build passes after changes (`npx tsc --noEmit --skipLibCheck`)
-- Send a findings summary to the team lead: `SendMessage(to: "team-lead", content: <summary>)`
-- Mark its task as completed: `TaskUpdate(id: <task_id>, status: "completed")`
+- Send a findings summary to the team lead: `SendMessage(to: "team-lead", message: <summary>, summary: "<5–10 word preview>")`
+- Mark its task as completed: `TaskUpdate(taskId: <task_id>, status: "completed")`
 
 If an agent's toolset lacks `SendMessage`/`TaskUpdate`, it finishes silently — verify its output directly and do the task bookkeeping yourself.
 
@@ -151,7 +162,7 @@ Implement fixes directly (do not just report), then verify with `npx tsc --noEmi
 
 ### Docs-Agent (Task 4)
 
-Create/update the machine docs — a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files. Machine-readable format and required sections per `.claude/skills/docs-agent/SKILL.md` (the skill defines the file set).
+Create/update the machine docs — a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way. Machine-readable format and required sections per `.claude/skills/docs-agent/SKILL.md` (the skill defines the file set).
 
 ### Docs-Human (Task 5)
 

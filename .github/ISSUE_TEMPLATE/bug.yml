@@ -1,0 +1,41 @@
+name: Bug report
+description: Something is broken — a defect, a regression, or behavior that contradicts the docs.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form mirrors the body template the `/issue` skill drafts, so a hand-filed issue and a
+        skill-drafted one converge on one shape. Fill what you can — a maintainer (or an enrichment
+        pass) fills the gaps.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: >-
+        What is broken, and why does it matter? Explain the *why*, not just the *what*. Include what
+        you expected, what actually happened, and the smallest way to reproduce it.
+      placeholder: |-
+        Expected: ...
+        Actual: ...
+        Repro: ...
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: >-
+        A concrete fix or acceptance criteria — specific enough to act on. Leave blank if you do not
+        have one; diagnosing it is fair work for the issue.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: >-
+        Links to the relevant code, related issues, docs, or a failing CI run. Omit if there is
+        nothing useful to link.
+    validations:
+      required: false

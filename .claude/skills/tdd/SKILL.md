@@ -8,6 +8,19 @@ user-invocable: true
 
 When this skill is invoked, follow the TDD workflow below. If invoked with arguments (e.g., `/tdd src/shared/validation.ts`), scope the work to that file or module. If invoked without arguments, audit the codebase for missing test coverage and propose a plan.
 
+## How and when to use
+
+Reach for TDD whenever you are about to change behavior:
+
+- **New source files** — write the test first. Before a new function, class, or module exists, write a failing test that pins the behavior you intend, then implement against it (the Red-Green-Refactor cycle below).
+- **Bug fixes** — reproduce before you repair. Write a failing **regression test** that captures the bug first, watch it fail, then fix the code until it passes. The test stays behind as a guard against the bug returning.
+- **Refactors** — lean on the existing tests as a safety net. If the code you are about to restructure has no tests, add them first so the refactor is verifiable.
+
+This skill is both **user-invocable** and **agent-granted**:
+
+- **User-invoked** — run `/tdd <path>` to scope the workflow to a file or module (e.g. `/tdd src/shared/validation.ts`), or `/tdd` with no argument to audit the codebase for missing coverage and propose a plan.
+- **Agent-granted** — agents that list `tdd` in their `skills:` frontmatter follow this workflow automatically when writing new code or fixing bugs, without an explicit invocation.
+
 ## Framework & Structure
 
 - **Test runner:** the project's standard runner — `npm test` runs the suite

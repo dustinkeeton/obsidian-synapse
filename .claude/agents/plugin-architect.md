@@ -6,6 +6,8 @@ skills:
   - tdd
   - git-workflow
   - issue
+identity:
+  displayName: Plugin Architect
 tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
 ---
 

@@ -5,14 +5,14 @@
 # the toolkit — edit the toolkit source, this config, or .waffle/extensions/
 # instead of the rendered files, then re-render:
 #
-#   npx github:dustinkeeton/wafflestack#v0.8.0 render
-#   npx github:dustinkeeton/wafflestack#v0.8.0 doctor --allow-missing   # drift check
+#   npx github:dustinkeeton/wafflestack#v0.13.0 render
+#   npx github:dustinkeeton/wafflestack#v0.13.0 doctor --allow-missing   # drift check
 #
 # Account-specific values (git.botEmail, git.botName) live in the gitignored
 # .waffle/waffle.local.yaml overlay; the git.* values below reference them via
 # nested substitution, so renders that embed them stay gitignored.
 targets: [ claude, codex, agents-dir ]
-bundles:
+stacks:
   - docs-system
   - github-workflow
   - code-quality
@@ -23,6 +23,13 @@ bundles:
 include:
   - agents/lead-engineer
   - agents/security-engineer
+# The toolkit's release skill tags `vX.Y.Z` and defers the tag push to
+# waffle-release-hook. Obsidian requires the release tag to match manifest.json
+# exactly, with no `v` prefix, and this repo tags from tag-on-version-bump.yml
+# instead. The project-owned .claude/skills/release/SKILL.md encodes that plus
+# the four-file version-bump lockstep, so the toolkit's copy stays out.
+eject:
+  - skills/release
 config:
   git:
     cmd: git -c user.email={{git.botEmail}} -c user.name={{git.botName}}
@@ -49,7 +56,7 @@ config:
   issue:
     inferenceLabel: Needs Inference
   doctor:
-    toolkitRef: github:dustinkeeton/wafflestack#v0.8.0
+    toolkitRef: github:dustinkeeton/wafflestack#v0.13.0
     # This repo deliberately gitignores some renders (.agents/, .codex/, and the
     # .claude skills that embed the local overlay) — tolerate absent files in CI,
     # still fail on hand-edited ones. Keeps the workflow managed instead of ejected.
