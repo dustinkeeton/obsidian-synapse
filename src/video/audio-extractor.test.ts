@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
-import { AudioExtractor, DependencyMissingError } from './audio-extractor';
+import { AudioExtractor, DependencyMissingError, AudioCodecReadError } from './audio-extractor';
 import { DEFAULT_SETTINGS } from '../settings';
 
 // Capture the ffmpeg argument array without spawning a process. The extractor
@@ -186,17 +186,17 @@ describe('AudioExtractor.runCommand error classification', () => {
 		await expect(rejection).rejects.toThrow(/yt-dlp/);
 	});
 
-	it('maps the ffprobe no-audio-codec stderr to the slideshow message', async () => {
-		// metadata dump (#0) succeeds without a no-audio signal; the extraction
-		// call (#1) fails with the characteristic ffprobe codec line.
+	it('maps the ffprobe no-audio-codec stderr to the slideshow message when the dump is inconclusive', async () => {
+		// metadata dump (#0) fails (null dump — no positive audio evidence); the
+		// extraction call (#1) fails with the characteristic ffprobe codec line, so
+		// the reactive path is trusted and reports a genuine slideshow.
 		const stderr = 'ERROR: Postprocessing: WARNING: unable to obtain file audio codec with ffprobe.';
 		const error = Object.assign(new Error('Command failed'), { code: 1 });
 		execFileMock.mockImplementation(
 			(_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) => {
 				if (args.includes('--dump-json')) {
-					// A normal video dump (has an audio-bearing format) so the proactive
-					// check does NOT short-circuit — we want the reactive stderr path.
-					cb(null, JSON.stringify({ title: 'Clip', formats: [{ acodec: 'aac' }] }), '');
+					// Dump probe fails -> null dump -> no positive audio evidence.
+					cb(Object.assign(new Error('Command failed'), { code: 1 }), '', '');
 				} else {
 					cb(error, '', stderr);
 				}
@@ -207,6 +207,62 @@ describe('AudioExtractor.runCommand error classification', () => {
 		await expect(ex.extractFromUrl('https://www.tiktok.com/@user/video/123')).rejects.toThrow(
 			/photo slideshow with no audio track/i
 		);
+	});
+
+	it('does NOT report a slideshow when the dump proves audio but ffprobe cannot read the codec (#479)', async () => {
+		// Conflicting signals: the dump PROVES audio exists (aac formats + top-level
+		// acodec) yet the extraction call emits the ffprobe no-audio-codec line —
+		// the real-world HEVC/mismatched-ffprobe case. The positive dump evidence
+		// must win: surface the actionable codec-read error, never the slideshow.
+		const stderr = 'ERROR: Postprocessing: WARNING: unable to obtain file audio codec with ffprobe.';
+		const error = Object.assign(new Error('Command failed'), { code: 1 });
+		execFileMock.mockImplementation(
+			(_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) => {
+				if (args.includes('--dump-json')) {
+					cb(null, JSON.stringify({
+						title: 'Clip',
+						_type: 'video',
+						acodec: 'aac',
+						formats: [{ acodec: 'aac', vcodec: 'hev1' }],
+					}), '');
+				} else {
+					cb(error, '', stderr);
+				}
+			}
+		);
+
+		const ex = makeExtractor();
+		const thrown = await ex
+			.extractFromUrl('https://www.tiktok.com/@user/video/123')
+			.catch((e: unknown) => e);
+		expect(thrown).toBeInstanceOf(AudioCodecReadError);
+		expect((thrown as AudioCodecReadError).message).not.toMatch(/photo slideshow/i);
+		// Actionable: points at the ffmpeg path setting rather than "it's a slideshow".
+		expect((thrown as AudioCodecReadError).message).toMatch(/ffmpeg path in Synapse settings/i);
+	});
+
+	it('does NOT retry a codec-read failure with a looser format (#479)', async () => {
+		// A codec-introspection failure can't be salvaged by loosening the format,
+		// so only the single failed extraction attempt runs (no fallback).
+		const stderr = 'ERROR: Postprocessing: WARNING: unable to obtain file audio codec with ffprobe.';
+		const error = Object.assign(new Error('Command failed'), { code: 1 });
+		execFileMock.mockImplementation(
+			(_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) => {
+				if (args.includes('--dump-json')) {
+					cb(null, JSON.stringify({ title: 'Clip', formats: [{ acodec: 'aac', vcodec: 'hev1' }] }), '');
+				} else {
+					cb(error, '', stderr);
+				}
+			}
+		);
+
+		const ex = makeExtractor();
+		await expect(ex.extractFromUrl('https://www.tiktok.com/@user/video/123')).rejects.toBeInstanceOf(
+			AudioCodecReadError
+		);
+		// Only the metadata dump + one failed extraction — no looser-format retry.
+		expect(execFileMock.mock.calls.filter((c) => !c[1].includes('--dump-json')))
+			.toHaveLength(1);
 	});
 
 	it('reports an actionable "set the ffmpeg path" message when ffprobe is not found', async () => {

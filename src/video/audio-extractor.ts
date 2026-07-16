@@ -10,11 +10,25 @@ import {
  * stream — typically a photo/image slideshow. Surfaced both proactively (from
  * `--dump-json` metadata, before any extraction is attempted) and reactively
  * (when ffprobe's `unable to obtain file audio codec` signature appears in
- * stderr). Kept as a shared constant so the proactive and reactive paths stay
- * in sync.
+ * stderr AND the dump did NOT prove audio exists — see
+ * {@link AudioExtractor.hasPositiveAudio}). Kept as a shared constant so the
+ * proactive and reactive paths stay in sync.
  */
 const NO_AUDIO_MESSAGE =
 	'This TikTok post appears to be a photo slideshow with no audio track.';
+
+/**
+ * User-facing message for a post that HAS an audio stream (proven by
+ * `--dump-json` metadata) but whose codec ffprobe could not read — commonly an
+ * HEVC/h265 stream an old or mismatched local ffprobe can't introspect, or a
+ * mismatched ffmpeg↔ffprobe pair. Distinct from {@link NO_AUDIO_MESSAGE}: the
+ * fix is a working ffmpeg/ffprobe (or a fresher yt-dlp), NOT accepting the
+ * false "it's a slideshow" verdict (#479).
+ */
+const AUDIO_CODEC_READ_MESSAGE =
+	'Could not read this video\'s audio codec — your ffmpeg/ffprobe may be ' +
+	'outdated or mismatched. Set the ffmpeg path in Synapse settings (Video), ' +
+	'or update yt-dlp, then try again.';
 
 /**
  * Marker error thrown the moment {@link AudioExtractor.extractFromUrl} detects a
@@ -26,6 +40,24 @@ class NoAudioError extends Error {
 	constructor(message: string = NO_AUDIO_MESSAGE) {
 		super(message);
 		this.name = 'NoAudioError';
+	}
+}
+
+/**
+ * Marker error thrown when the ffprobe `unable to obtain file audio codec`
+ * signature appears on a post whose metadata PROVES it has audio (see
+ * {@link AudioExtractor.hasPositiveAudio}). Kept separate from
+ * {@link NoAudioError} so the reactive slideshow verdict is never applied to a
+ * real video — the positive dump evidence wins over the ffprobe stderr (#479).
+ * Like {@link NoAudioError} it is terminal: a looser-format retry cannot fix a
+ * codec-introspection failure, so the fallback path rethrows it untouched.
+ * Carries {@link AUDIO_CODEC_READ_MESSAGE}, which points at the ffmpeg-path
+ * setting rather than mislabeling the post a slideshow.
+ */
+export class AudioCodecReadError extends Error {
+	constructor(message: string = AUDIO_CODEC_READ_MESSAGE) {
+		super(message);
+		this.name = 'AudioCodecReadError';
 	}
 }
 
@@ -186,6 +218,12 @@ export class AudioExtractor {
 			throw new NoAudioError();
 		}
 
+		// Whether the dump carries POSITIVE proof of an audio stream. Threaded into
+		// extraction so a reactive `unable to obtain file audio codec` stderr line
+		// is classified as a codec-read failure (real video, unreadable codec)
+		// rather than wrongly as a slideshow when the metadata says audio exists (#479).
+		const hasPositiveAudio = this.hasPositiveAudio(dump);
+
 		const ytDlp = sanitizePath(settings.ytDlpPath);
 		const ffmpegLocation = this.ffmpegLocationArgs();
 
@@ -199,12 +237,18 @@ export class AudioExtractor {
 				...ffmpegLocation,
 				'-o', outputPath,
 				sanitizedUrl,
-			], 'yt-dlp');
+			], 'yt-dlp', hasPositiveAudio);
 		} catch (error) {
 			// A confirmed no-audio post can never be salvaged by a looser format —
 			// surface the specific slideshow guidance instead of retrying.
 			if (this.isNoAudioFailure(error)) {
 				throw error instanceof NoAudioError ? error : new NoAudioError();
+			}
+			// ffprobe couldn't read the audio codec on a post that HAS audio (#479):
+			// a mismatched/old ffprobe, not a slideshow. A looser format won't fix a
+			// codec-introspection problem, so surface the actionable error now.
+			if (error instanceof AudioCodecReadError) {
+				throw error;
 			}
 			// A missing binary (yt-dlp/ffmpeg) can't be fixed by a looser format —
 			// surface the typed error immediately so callers can offer onboarding (#382).
@@ -222,7 +266,7 @@ export class AudioExtractor {
 				...ffmpegLocation,
 				'-o', outputPath,
 				sanitizedUrl,
-			], 'yt-dlp');
+			], 'yt-dlp', hasPositiveAudio);
 		}
 
 		return { audioPath: outputPath, metadata };
@@ -431,7 +475,41 @@ export class AudioExtractor {
 		return false;
 	}
 
-	private runCommand(cmd: string, args: string[], label = cmd): Promise<string> {
+	/**
+	 * Does the dump carry POSITIVE evidence of an audio stream — a top-level
+	 * `acodec`, or at least one format's `acodec`, that is a real string other
+	 * than `'none'`? Stricter than the inverse of {@link isNoAudioPost}: it
+	 * demands affirmative proof of audio, not merely the absence of a no-audio
+	 * signal, so a `null`/inconclusive dump returns `false`.
+	 *
+	 * Used to veto the reactive slideshow verdict (#479): when metadata proves
+	 * audio exists, a later `unable to obtain file audio codec` stderr line is an
+	 * ffprobe-can't-read-the-codec problem (see {@link AudioCodecReadError}), not
+	 * a photo slideshow. The reactive {@link NoAudioError} is only trusted when
+	 * the dump was inconclusive.
+	 */
+	private hasPositiveAudio(dump: YtDlpDumpJson | null): boolean {
+		if (!dump) {
+			return false;
+		}
+		if (typeof dump.acodec === 'string' && dump.acodec !== 'none') {
+			return true;
+		}
+		const formats = dump.formats;
+		return !!formats && formats.some((f) => typeof f.acodec === 'string' && f.acodec !== 'none');
+	}
+
+	/**
+	 * Run `cmd`, resolving stdout or rejecting with a classified error.
+	 *
+	 * `hasPositiveAudio` gates the reactive no-audio classification: when the
+	 * caller's `--dump-json` metadata proved the post has audio, a
+	 * {@link NO_AUDIO_STDERR} match becomes an {@link AudioCodecReadError}
+	 * (real video, unreadable codec) instead of a {@link NoAudioError} slideshow
+	 * verdict (#479). Defaults to `false` so non-URL callers keep the slideshow
+	 * classification for a genuinely inconclusive/absent dump.
+	 */
+	private runCommand(cmd: string, args: string[], label = cmd, hasPositiveAudio = false): Promise<string> {
 		return new Promise((resolve, reject) => {
 			this.node.execFile(cmd, args, {
 				env: shellEnv(),
@@ -462,12 +540,17 @@ export class AudioExtractor {
 					// Classify against the FULL stderr (not just the last line) so
 					// yt-dlp's "Connection refused"/"Failed to resolve host" lines are caught.
 					const stderrText = stderr?.trim() || '';
-					// No-audio/slideshow: ffprobe ran but found no audio codec. Map to
-					// the specific, actionable slideshow message. Checked before the
-					// generic fallback so the raw "unable to obtain file audio codec"
-					// line never reaches the user.
+					// ffprobe ran but couldn't read an audio codec. Two very different
+					// causes, disambiguated by the dump evidence the caller threaded in:
+					//  - dump proved audio exists -> a mismatched/old ffprobe can't
+					//    introspect the stream (e.g. HEVC): AudioCodecReadError, which
+					//    points at the ffmpeg-path setting (#479);
+					//  - dump inconclusive/absent -> the post genuinely has no audio
+					//    (photo slideshow): NoAudioError.
+					// Checked before the generic fallback so the raw "unable to obtain
+					// file audio codec" line never reaches the user either way.
 					if (NO_AUDIO_STDERR.test(stderrText)) {
-						reject(new NoAudioError());
+						reject(hasPositiveAudio ? new AudioCodecReadError() : new NoAudioError());
 						return;
 					}
 					// ffmpeg/ffprobe present-but-not-found (distinct from the binary
