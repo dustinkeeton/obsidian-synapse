@@ -18,6 +18,7 @@ stacks:
   - code-quality
   - obsidian-dev
   - orchestration
+  - wafflestack
 # Per-item pulls from the engineering-team bundle: Synapse needs the general
 # architect and the remediating security agent, not the whole app-team roster.
 include:

@@ -23,5 +23,13 @@ Type `/<name>` in your agent to run one. Regenerated on every `wafflestack rende
 - **`/qa`** `<PR#, number, or PR URL> (omit for the current branch's PR)` — Functional QA of a green PR against the linked issue's intent — read the full diff plus the issue's acceptance criteria, best-effort run the project's tests and exercise the changed behavior, and…
 - **`/standup`** `[optional focus area]` — Round up a quick status pulse from every installed agent — each reports in ≤3 lines, strictly from its own role's seat, where the Synapse code stands and where it's headed.
 - **`/tdd`** — Test-Driven Development skill.
+- **`/waffle-doctor`** `(no refs — --allow-missing tolerates absent managed files; --verify-render also checks the lock against a fresh render of the config)` — Check whether this repo's rendered wafflestack files still match the lock (drift detection).
+- **`/waffle-eject`** `<skills/NAME | agents/NAME | files/PATH>` — Stop wafflestack managing one item (skill/agent/file) and hand it to the project.
+- **`/waffle-init`** `(no refs — add --gitignore to also seed .waffle/waffle.local.yaml into .gitignore)` — Scaffold a starter `.waffle/waffle.yaml` so wafflestack can render into this repo.
+- **`/waffle-install`** `<ref…> e.g. github-workflow skills/issue files/.github/workflows/waffle-doctor.yml (bare = re-render only; --force overrides the overwrite guard; --gitignore adds recommended entries)` — Install wafflestack stacks or individual items into this repo — persists the refs to `.waffle/waffle.yaml`, then re-renders.
+- **`/waffle-render`** `(no refs — use /waffle-install to add one; --force overwrites unmanaged collisions; --gitignore adds recommended entries)` — Re-render this repo's current wafflestack selection into harness-native files (.claude/ etc.) and refresh the lock.
+- **`/waffle-setup`** `(no arguments)` — Print the wafflestack setup playbook and full stack/skill/agent inventory for this repo, then help pick stacks and config.
+- **`/waffle-upgrade`** `(no arguments)` — Move this repo's wafflestack pin to the toolkit's current version — runs migrations, re-renders, and doctors.
+- **`/waffle-validate`** `(no arguments)` — Validate wafflestack's own toolkit definitions — manifests, frontmatter, and placeholder declarations.
 
-_18 commands · generated — do not edit._
+_26 commands · generated — do not edit._
