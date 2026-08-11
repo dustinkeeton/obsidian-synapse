@@ -5,6 +5,7 @@ import {
 	findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags,
 } from '../shared';
 import { TitleProposalStore } from './title-store';
+import { collectInboundLinks, rewriteContent, InboundLinkRef } from './backlink-remediation';
 import { TitleSuggester } from './title-suggester';
 import { isUntitled } from './title-detector';
 import { titleContentKey } from './content-key';
@@ -304,6 +305,9 @@ export class TitleModule {
 	 * Auto-accept passes `silent: true` and lets the resolution default to
 	 * `settings.title.duplicateHandling`. Returns a {@link TitleAcceptOutcome} so
 	 * auto-accept can announce the real result.
+	 *
+	 * Every resolving branch remediates inbound links afterwards, preserving
+	 * each link's rendered display text (#485) — see {@link remediateBacklinks}.
 	 */
 	async acceptProposal(
 		id: string,
@@ -326,11 +330,17 @@ export class TitleModule {
 		const existing = this.plugin.app.vault.getAbstractFileByPath(targetPath);
 		const collision = !!existing && existing.path !== file.path;
 
+		// Snapshot inbound links BEFORE any rename/merge: vault.rename does not
+		// update links, so every branch below remediates them afterwards (#485).
+		const oldPath = file.path;
+		const inboundLinks = collectInboundLinks(this.plugin.app, file);
+
 		try {
 			if (!collision) {
 				// Happy path: target is free (or the collision vanished since the
 				// proposal was created) — plain rename, no suffix.
 				await this.plugin.app.vault.rename(file, targetPath);
+				await this.remediateBacklinks(inboundLinks, oldPath, targetPath);
 				await this.store.updateStatus(id, 'accepted');
 				await this.announceAccept(options?.silent, `Renamed to "${this.baseName(targetPath)}"`);
 				return { status: 'renamed', path: targetPath };
@@ -356,6 +366,9 @@ export class TitleModule {
 			if (resolution === 'merge') {
 				if (existing instanceof TFile) {
 					await this.mergeNotes(file, existing);
+					// The source's content (and identity) now lives in the target:
+					// retarget links from the trashed title to the survivor (#485).
+					await this.remediateBacklinks(inboundLinks, oldPath, existing.path);
 					await this.store.updateStatus(id, 'accepted');
 					await this.announceAccept(options?.silent, `Merged into "${this.baseName(existing.path)}"`);
 					return { status: 'merged', into: existing.path };
@@ -364,6 +377,7 @@ export class TitleModule {
 				// plain rename so the accept still resolves, with a heads-up.
 				this.notifications.info('Nothing to merge into — renamed instead');
 				await this.plugin.app.vault.rename(file, targetPath);
+				await this.remediateBacklinks(inboundLinks, oldPath, targetPath);
 				await this.store.updateStatus(id, 'accepted');
 				if (!options?.silent) await this.refreshView();
 				return { status: 'renamed', path: targetPath };
@@ -373,6 +387,7 @@ export class TitleModule {
 			// note is never clobbered.
 			const freePath = findAvailableVaultPath(this.plugin.app, targetPath);
 			await this.plugin.app.vault.rename(file, freePath);
+			await this.remediateBacklinks(inboundLinks, oldPath, freePath);
 			await this.store.updateStatus(id, 'accepted');
 			await this.announceAccept(options?.silent, `Renamed to "${this.baseName(freePath)}"`);
 			return { status: 'renamed', path: freePath };
@@ -380,6 +395,45 @@ export class TitleModule {
 			const msg = error instanceof Error ? error.message : String(error);
 			this.notifications.notifyError('Failed to rename note', error);
 			throw new Error(`Rename failed: ${msg}`);
+		}
+	}
+
+	/**
+	 * Rewrite the pre-rename snapshot of inbound links so each still resolves
+	 * after the note moved from `oldPath` to `newPath`, preserving rendered
+	 * display text (#485). Per-file rewrites are independent and atomic
+	 * (`vault.process` + exact-match replacement), so one failure neither
+	 * corrupts that note nor blocks the others — it is logged and skipped, and
+	 * the accept itself never fails on remediation.
+	 */
+	private async remediateBacklinks(
+		refs: InboundLinkRef[],
+		oldPath: string,
+		newPath: string
+	): Promise<void> {
+		if (refs.length === 0) return;
+
+		const bySource = new Map<string, string[]>();
+		for (const ref of refs) {
+			// A self-link's content now lives at the new path (rename) or inside
+			// the merge target — remediate it there.
+			const sourcePath = ref.sourcePath === oldPath ? newPath : ref.sourcePath;
+			const originals = bySource.get(sourcePath) ?? [];
+			originals.push(ref.original);
+			bySource.set(sourcePath, originals);
+		}
+
+		for (const [sourcePath, originals] of bySource) {
+			try {
+				const refFile = this.plugin.app.vault.getAbstractFileByPath(sourcePath);
+				if (!(refFile instanceof TFile)) continue;
+				await this.plugin.app.vault.process(refFile, (content) =>
+					rewriteContent(content, originals, oldPath, newPath)
+				);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				console.warn(`[Synapse] Backlink update failed for ${sourcePath}: ${msg}`);
+			}
 		}
 	}
 
