@@ -8,7 +8,7 @@ user-invocable: false
 
 ## Purpose
 
-Produce documentation that LLMs and agents can parse efficiently. The machine docs for this project are a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files. Prioritize:
+Produce documentation that LLMs and agents can parse efficiently. The machine docs for this project are a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way. Prioritize:
 
 - **Explicit over implicit** — spell out types, dependencies, and contracts
 - **Structured data** — use tables, typed signatures, and consistent headings
@@ -17,20 +17,29 @@ Produce documentation that LLMs and agents can parse efficiently. The machine do
 
 ## Documentation Files
 
-### `AGENTS.md` (root)
+Match the doc set to how the codebase is actually organized: always produce
+the root `AGENTS.md`; add per-feature files only when the code is split into
+feature or module directories.
+
+### `AGENTS.md` (root) — always
 
 Primary entry point for agents. Contains:
 
 - Project purpose (1-2 sentences)
-- Module registry: table of modules with path, purpose, public API summary
+- Module/component registry: table of the codebase's units — feature/module
+  directories when they exist, otherwise the individual source files or
+  layers of a flat `src/` — with path, purpose, and public API summary
 - Dependency graph (text-based DAG)
 - Settings/configuration schema summary with types and defaults
 - Command registry: table of commands / entry points with descriptions
 - Build/test commands
 
-### `src/<feature>/AGENTS.md`
+### `src/<feature>/AGENTS.md` — only when the codebase has feature/module directories
 
-Per-feature docs:
+Add one per feature directory. Skip this entirely for a flat `src/` (a handful
+of files rather than per-feature subdirectories): do not create docs for
+directories that don't exist — fold that detail into the root registry above.
+When feature directories do exist, each file contains:
 
 - Feature purpose (1 sentence)
 - Public API: exported functions/classes with full type signatures

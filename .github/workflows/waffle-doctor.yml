@@ -1,6 +1,6 @@
-# Managed by wafflestack (github-workflow bundle) — do not edit by hand; re-render instead.
+# Managed by wafflestack (github-workflow stack) — do not edit by hand; re-render instead.
 # Fails CI when a managed file drifts from .waffle/waffle.lock.json: either a rendered file
-# was hand-edited, or the repo never committed its render + lock. See the bundle setup note.
+# was hand-edited, or the repo never committed its render + lock. See the stack setup note.
 name: waffle-doctor
 
 on:
@@ -27,4 +27,4 @@ jobs:
         with:
           node-version: 20
       - name: Check wafflestack drift
-        run: npx --yes github:dustinkeeton/wafflestack#v0.8.0 doctor --allow-missing
+        run: npx --yes github:dustinkeeton/wafflestack#v0.13.0 doctor --allow-missing

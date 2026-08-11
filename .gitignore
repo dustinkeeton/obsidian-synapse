@@ -35,7 +35,12 @@ coverage/
 # (see .waffle/waffle.yaml; the rest of the rendered files are committed)
 .claude/skills/delegate/
 .claude/skills/git-workflow/
+.claude/skills/pr-response/
+.waffle/AVATARS.md
 .waffle/waffle.local.yaml
+# Records what the local overlay rendered; machine-specific, like the overlay.
+# .waffle/waffle.lock.json stays canonical and is the committed one.
+.waffle/waffle.local.lock.json
 .agents/
 .codex/
 

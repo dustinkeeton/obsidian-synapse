@@ -1,0 +1,38 @@
+name: Rough idea
+description: A one-liner is enough. File it as-is and the enrichment pass fleshes it out into the full template.
+labels: ["Needs Inference"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This is the low-friction path — a sentence is a complete submission.** Do not pre-write the
+        Problem / Proposed Solution / Sub-issues / Context sections; that is exactly the work this
+        form hands off.
+
+        Filing here applies the `Needs Inference` label, which is the **queue** the
+        enrichment pass reads: running the `/issue` skill with no argument re-drafts every open issue
+        carrying that label into the full template (type + priority labels, board placement, and all),
+        preserving your original text verbatim at the end. The label is removed once the issue is
+        enriched.
+
+        The label is a **queue marker, not a trigger**: applying it dispatches no CI run and spends no
+        API budget. The labels that *do* dispatch a paid run are applied by a human, deliberately,
+        after the issue exists — never by this form.
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: >-
+        One or two sentences in your own words. What is bugging you, or what should exist? Half-formed
+        is fine — that is the point.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: >-
+        Anything that would save the enrichment pass a search — a file, a link, an error message, a
+        conversation. Optional.
+    validations:
+      required: false
