@@ -3,10 +3,11 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar, isInFlow } from '../commands';
 import {
 	buildCallout, CALLOUT_TYPES, getMarkdownFiles,
-	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager, generateId,
+	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager,
+	NoteOperationQueue, generateId,
 	fireAndForget, reviewAction, openScanFolderPicker,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator, proposalContentKey } from './proposer';
@@ -43,6 +44,7 @@ export class ElaborationModule {
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
 		private registrar: CommandRegistrar,
+		private noteQueue: NoteOperationQueue,
 		shouldAutoAccept?: () => boolean
 	) {
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
@@ -154,6 +156,28 @@ export class ElaborationModule {
 	}
 
 	/**
+	 * One note's generate + save + auto-accept for the batch paths (vault scan,
+	 * checkpoint resume). Callers wrap this in that note's queue slot (#483), so
+	 * it must never re-enter the queue itself.
+	 */
+	private async generateForBatch(
+		detection: DetectionResult
+	): Promise<{ proposal: Proposal | null; autoAccepted: boolean }> {
+		const guard = await this.guardProposal(detection);
+		// Already proposed (unchanged note) or per-note cap reached: skip
+		// generate+save and the AI call.
+		if (guard.skip) return { proposal: null, autoAccepted: false };
+
+		const proposal = await this.proposer.generate(detection, guard.key);
+		// Link-only note whose links all failed: skip without creating a
+		// fabricated proposal.
+		if (!proposal) return { proposal: null, autoAccepted: false };
+
+		await this.store.save(proposal);
+		return { proposal, autoAccepted: await this.maybeAutoAccept(proposal, true) };
+	}
+
+	/**
 	 * Resume elaboration from a checkpoint (C1).
 	 * Re-generates proposals for the remaining detected files.
 	 */
@@ -181,26 +205,17 @@ export class ElaborationModule {
 				const result = await this.detector.detect(file);
 				if (!result) continue;
 
-				const guard = await this.guardProposal(result);
-				if (guard.skip) {
-					// Already proposed (unchanged note) or per-note cap reached:
-					// skip generate+save but still complete the item so resume
-					// advances past it.
-					await this.checkpointManager.completeItem(checkpoint.id, item.id);
-					continue;
+				// #483: serialized per note; a skipped/failed generate still
+				// completes the item so resume advances past it.
+				const outcome = await this.noteQueue.run(
+					result.notePath,
+					() => this.generateForBatch(result)
+				);
+				if (outcome.proposal) {
+					createdProposalIds.push(outcome.proposal.id);
+					proposalCount++;
+					if (outcome.autoAccepted) autoAcceptedCount++;
 				}
-
-				const proposal = await this.proposer.generate(result, guard.key);
-				if (!proposal) {
-					// Link-only note whose links all failed: skip the fabricated
-					// proposal but still complete the item so resume advances.
-					await this.checkpointManager.completeItem(checkpoint.id, item.id);
-					continue;
-				}
-				await this.store.save(proposal);
-				createdProposalIds.push(proposal.id);
-				proposalCount++;
-				if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
 
 				await this.checkpointManager.completeItem(checkpoint.id, item.id);
 			}
@@ -319,33 +334,17 @@ export class ElaborationModule {
 
 				genOp.progress(i + 1, detected.length, 'Generating proposals');
 
-				const guard = await this.guardProposal(detected[i]);
-				if (guard.skip) {
-					// Already proposed (unchanged note) or per-note cap reached:
-					// skip generate+save (and the AI call) but still mark the item
-					// done so the checkpoint advances.
-					await this.checkpointManager.completeItem(
-						checkpoint.id,
-						checkpointItems[i].id
-					);
-					continue;
+				// #483: serialized per note; a skipped/failed generate still marks
+				// the item done so the checkpoint advances.
+				const outcome = await this.noteQueue.run(
+					detected[i].notePath,
+					() => this.generateForBatch(detected[i])
+				);
+				if (outcome.proposal) {
+					createdProposalIds.push(outcome.proposal.id);
+					proposalCount++;
+					if (outcome.autoAccepted) autoAcceptedCount++;
 				}
-
-				const proposal = await this.proposer.generate(detected[i], guard.key);
-				if (!proposal) {
-					// Link-only note whose links all failed: skip without creating a
-					// fabricated proposal, but still mark the item done so the
-					// checkpoint advances.
-					await this.checkpointManager.completeItem(
-						checkpoint.id,
-						checkpointItems[i].id
-					);
-					continue;
-				}
-				await this.store.save(proposal);
-				createdProposalIds.push(proposal.id);
-				proposalCount++;
-				if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
 
 				// Save checkpoint progress
 				await this.checkpointManager.completeItem(
@@ -398,6 +397,26 @@ export class ElaborationModule {
 			`Scanning ${file.basename}`,
 			`scan-${file.path}`
 		);
+		// #483: serialize the whole detect -> generate -> accept cycle against
+		// every other AI operation on this note. Without this, elaborating while
+		// a transcription is in flight reads the pre-transcript body and
+		// elaborates an unreadable media link.
+		await this.noteQueue.run(
+			file.path,
+			() => this.generateForNote(file, userInvoked, op),
+			{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
+		);
+	}
+
+	/**
+	 * Detect + generate + save + auto-accept for one note, already holding that
+	 * note's queue slot (#483). Never re-enter the queue from here.
+	 */
+	private async generateForNote(
+		file: TFile,
+		userInvoked: boolean,
+		op: OperationHandle
+	): Promise<void> {
 		try {
 			const detectorResult = await this.detector.detect(file);
 
@@ -471,6 +490,27 @@ export class ElaborationModule {
 	): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
+		// #483: the append must not land inside another operation's read -> write
+		// window. Queued silently — an accept from the review panel is immediate
+		// from the user's point of view.
+		await this.noteQueue.run(
+			proposal.sourceNotePath,
+			() => this.applyProposal(id, editedContent, options)
+		);
+	}
+
+	/**
+	 * Append an accepted proposal to its note, already holding that note's queue
+	 * slot (#483). Re-loads the proposal so the status guard is evaluated under
+	 * the queue, not against a snapshot taken before waiting.
+	 */
+	private async applyProposal(
+		id: string,
+		editedContent?: string,
+		options?: { silent?: boolean }
+	): Promise<void> {
+		const proposal = await this.store.load(id);
+		if (!proposal) return;
 		// Guard against double-acceptance (cascade safety): a proposal that is
 		// no longer pending has already been applied — never apply it twice.
 		if (proposal.status !== 'pending') return;
@@ -504,7 +544,8 @@ export class ElaborationModule {
 	 */
 	private async maybeAutoAccept(proposal: Proposal, batch = false): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
-		await this.acceptProposal(proposal.id, proposal.proposedAdditions, { silent: batch });
+		// Callers already hold the note's queue slot (#483), so apply directly.
+		await this.applyProposal(proposal.id, proposal.proposedAdditions, { silent: batch });
 		if (!batch) {
 			this.notifications.info(`Auto-accepted elaboration for ${proposal.sourceNotePath}`);
 		}

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-07-03
+last-updated: 2026-08-17
 ---
 
 # Video Module
@@ -21,15 +21,16 @@ class VideoModule {
     audioModule: AudioModule,
     notifications: NotificationManager,
     checkpointManager: CheckpointManager,
-    registrar: CommandRegistrar
-  )                                                              // index.ts:L33
+    registrar: CommandRegistrar,
+    noteQueue: NoteOperationQueue                                // #483; appended after registrar
+  )                                                              // index.ts:L43
   onload(): Promise<void>                                        // index.ts:L44
   onunload(): void                                               // index.ts:L55
   transcribeUrl(url: string, parentOp?: { update: (msg: string) => void }): Promise<string>  // index.ts:L62
   processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>  // index.ts:L70
   transcribeUrlToActiveNote(url: string, timeRange?: TimeRange): Promise<void>  // index.ts:L149
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>    // index.ts:L208
-  transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>  // index.ts:L216
+  transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>  // index.ts:L159; acquires noteFile's queue slot (#483), then delegates
 }
 
 class AudioExtractor {                                           // audio-extractor.ts:L152
@@ -82,6 +83,12 @@ interface VideoSource {
 }
 ```
 
+Private (index.ts), documented because it is the queue-free core of `transcribeAndInsert`:
+
+```ts
+private insertTranscriptions(noteFile: TFile, embeds: VideoUrlEmbed[], op: OperationHandle): Promise<void>  // index.ts:L180
+```
+
 Exported by source files but NOT re-exported through `index.ts`:
 
 ```ts
@@ -108,7 +115,7 @@ class FrameExtractor {                          // frame-extractor.ts:L6 — pla
 | `settings-section.ts` | `renderVideoSettings` | Video settings accordion renderer for settings-tab.ts |
 | `settings-section.test.ts` | Tests | Settings section tests |
 | `mobile-safety.test.ts` | Tests | Desktop-only guard tests |
-| `index.ts` | `VideoModule` | Orchestrator; public API barrel |
+| `index.ts` | `VideoModule` | Orchestrator; public API barrel; serializes the batch note insert through the shared `NoteOperationQueue` (private `insertTranscriptions` is the queue-free core, #483) |
 | `index.test.ts` | Tests | VideoModule integration tests |
 
 ## Data Flow
@@ -208,7 +215,7 @@ Settings UI: `renderVideoSettings` (`settings-section.ts:L150`) renders the acco
 In:
 - `../audio` — `AudioModule` (runtime value edge: reuses the transcription pipeline), `TranscriptionResult` (type)
 - `../commands` — `CommandRegistrar`
-- `../shared` — `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `formatTimeRange`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findMatchingRule`, `findAvailableVaultPath`, `TimeRange`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` (index.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
+- `../shared` — `NoteOperationQueue` (#483), `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `formatTimeRange`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findMatchingRule`, `findAvailableVaultPath`, `TimeRange`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` (index.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
 - `../settings` — `SynapseSettings`, `VideoSettings`, `FrameExtractionSettings` (types)
 
 Out (consumed by):
@@ -240,6 +247,7 @@ VideoModule → AudioModule is the one documented cross-feature runtime dependen
 - `--ffmpeg-location` is emitted only when `ffmpegPath` is a concrete path (contains `/` or `\`); a bare name relies on PATH discovery.
 - `downloadVideoToVault` uses `vault.createBinary()` (not the adapter API); collision-safe naming is delegated to `findAvailableVaultPath` (shared) on a `normalizePath`-ed target, appending `-1`, `-2`, ... before the extension.
 - Back-compat re-exports (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) come from `../shared`; prefer direct `shared` imports in new code.
+- Per-note serialization (#483): `transcribeAndInsert` acquires `noteFile.path` on the shared `NoteOperationQueue` (index.ts:L172) with an `onWait` that updates the operation toast (`Waiting for another Synapse operation on <basename>`), then runs private `insertTranscriptions` (index.ts:L180). The core must never re-enter the queue — acquire at most once per operation. `processUrl`/`transcribe` paths that only produce text (no note write) stay unqueued; the caller that writes owns the slot.
 
 ## Security
 

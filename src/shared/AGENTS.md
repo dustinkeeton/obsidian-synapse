@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-07-03
+last-updated: 2026-08-17
 ---
 
 # Shared Module
 
-Cross-cutting base layer used by all feature modules: AI client, secret redaction, file operations, base64 encoding, notifications, in-app update checking, validation, frontmatter parsing, checkpoint management, ID generation, note-title predicates, URL platform detection / classification, web / Reddit / tweet content fetching, credential validation, JSON utilities, and Node.js desktop-only loader. Depends on NO feature module — this is the bottom of the dependency graph.
+Cross-cutting base layer used by all feature modules: AI client, secret redaction, file operations, base64 encoding, notifications, in-app update checking, validation, frontmatter parsing, checkpoint management, per-note AI-operation serialization, ID generation, note-title predicates, URL platform detection / classification, web / Reddit / tweet content fetching, credential validation, JSON utilities, and Node.js desktop-only loader. Depends on NO feature module — this is the bottom of the dependency graph.
 
 Canonical homes (re-exported elsewhere for back-compat — import from the `shared` barrel, never an internal file):
 - `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) — moved here from `src/video/` to break the former shared⇄video import cycle; `video` re-exports for back-compat.
@@ -193,6 +193,19 @@ function isValidCheckpointId(id: string): boolean // /^[a-z0-9]+$/
 // title-detector.ts
 function isUntitled(title: string): boolean       // matches Obsidian 'Untitled' / 'Untitled N' default (case-insensitive)
 function isGenericTitle(title: string): boolean   // generic = Untitled default | date-style daily-note name | bare URL
+
+// note-operation-queue.ts (#483; path-keyed FIFO serialization of note read -> AI -> write cycles)
+interface NoteOperationOptions {
+  onWait?: () => void   // called SYNCHRONOUSLY at submission time, only when the operation must wait for a predecessor
+}
+class NoteOperationQueue {
+  isBusy(notePath: string): boolean   // an operation is queued or running for this path
+  get size(): number                  // number of paths with queued/running operations (diagnostics/tests)
+  run<T>(notePath: string, operation: () => Promise<T>, options?: NoteOperationOptions): Promise<T>
+}
+// One instance per plugin (created in main.ts:122), injected into every module that mutates a note after an AI call.
+// Chain entries never reject (built from internal resolve-only promises), so a failing operation cannot poison a key;
+// `run` rejections still propagate to the caller and still release the slot (note-operation-queue.ts:85).
 
 // checkpoint-manager.ts
 class CheckpointManager {
@@ -398,6 +411,8 @@ function scoreLyricsContent(content: string): number
 | `checkpoint-types.ts` | `CheckpointModule`, `CheckpointStatus`, `CheckpointWorkItem`, `DeferredTask`, `Checkpoint` | Checkpoint data model types |
 | `checkpoint-manager.ts` | `CheckpointManager` | CRUD and lifecycle management for resumable operation checkpoints |
 | `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
+| `note-operation-queue.ts` | `NoteOperationQueue`, `NoteOperationOptions` | Per-note serialization of AI operations (#483): path-keyed FIFO promise chain (same pattern as `CheckpointManager.withLock`, but keyed on note path and used by feature modules). Operations submitted for the same path run in submission order, so each reads what the previous one wrote. Contract: key on the note the operation reads/writes; acquire AT MOST ONCE per operation (no nesting → no lock ordering → no deadlock) — public entry points acquire, the private cores they delegate to do not; incidental writes to OTHER notes (title backlink remediation, merge targets) stay unqueued. Fire-and-forget post-op follow-ups (enrichment / title check) started from inside a queued operation enqueue BEHIND it and run against the post-write content (nothing awaits them → no cycle). A rename inside a queued operation (title accept) is keyed on the PRE-rename path; work queued under the old path runs afterwards, finds no file and exits early |
+| `note-operation-queue.test.ts` | Tests | Ordering, cross-path independence, lost-update, rejection-does-not-poison, `onWait`-only-on-wait, `isBusy`, burst-drain tests |
 | `tweet-fetcher.ts` | `fetchTweetContent`, `isTwitterUrl`, `TweetContent` | Twitter/X.com tweet fetching with oEmbed → fxtwitter → vxtwitter fallback chain |
 | `tweet-fetcher.test.ts` | Tests | Tweet fetcher tests |
 | `reddit-fetcher.ts` | `fetchRedditContent`, `isRedditUrl`, `extractCanonicalPostUrl`, `RedditContent` | Reddit post fetching via the per-post `.rss` Atom feed (the `.json` API now 403s unauthenticated clients). Resolves `/s/` share + `redd.it` short links to canonical `/comments/` permalinks from share-page HTML, retries 429/503 with backoff, formats post body + top `MAX_COMMENTS` comments. Uses Obsidian `requestUrl` (never native fetch) for mobile CSP (#88) |
@@ -545,6 +560,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `classifyNetworkError` / `describeNetworkError` | audio/transcriber (retry gating + failure disclosure) |
 | `NotificationManager` | all feature modules (injected via constructor) |
 | `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive, rem (all injected via constructor) |
+| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:122`), audio, video, image, elaboration, enrichment, title (injected via constructor), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
 | `classifyUrl` / `extractUrls` | summarize, enrichment, intake (URL routing) |
 | `detectPlatform` / `isSupportedUrl` | video/index, transcription/, summarize (platform gating) |

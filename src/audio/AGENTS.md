@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-07-03
+last-updated: 2026-08-17
 ---
 
 # Audio Module
@@ -12,14 +12,14 @@ Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTra
 
 ```ts
 class AudioModule {
-  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager, extractor?: AudioExtractor)
+  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager, noteQueue: NoteOperationQueue, extractor?: AudioExtractor)   // noteQueue (#483) inserted before the optional extractor
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
-  transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void>
-  transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>
-  transcribeAndInsertCombined(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // #214; <2 embeds falls back to transcribeAndInsert; ffmpeg concat (desktop) or per-file text merge (mobile) -> one combined callout
+  transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void>   // queued on the active note (#483)
+  transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // queued on noteFile (#483)
+  transcribeAndInsertCombined(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // #214; queued on noteFile (#483); <2 embeds falls back to transcribeAndInsert; ffmpeg concat (desktop) or per-file text merge (mobile) -> one combined callout
   onTranscriptionComplete: ((filePath: string) => void) | null
 }
 
@@ -69,7 +69,7 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 | `transcription-credentials.ts` | `renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext)` | Transcription-provider dropdown + per-provider API-key fields rendered into the AI Configuration section (#332/#335). Re-exported from `index.ts` (the module's public API) so `settings-tab.ts` wires it through the `./audio` barrel rather than deep-importing this file. Imports `PROVIDER_METADATA`/`decorateCredentialField` and types `CredentialProvider`/`CredentialFieldHandle`/`SettingsSectionContext` via the `../shared` barrel (no deep `../shared/<file>` imports) |
 | `note-scanner.ts` | `findAudioEmbeds`, `hasTranscriptionBelow`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` | Scan note content for audio embeds |
 | `note-scanner.test.ts` | Tests | Note scanner tests |
-| `index.ts` | `AudioModule` (+ `renderAudioSettings`, `renderTranscriptionCredentials`, note-scanner & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307); schema-reformat failures log through shared `redactError` |
+| `index.ts` | `AudioModule` (+ `renderAudioSettings`, `renderTranscriptionCredentials`, note-scanner & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307); serializes every note-mutating insert through the shared `NoteOperationQueue` (internal `queued`, `insertFileTranscription`, `insertTranscriptions`, `insertCombinedTranscription`, #483); schema-reformat failures log through shared `redactError` |
 
 ## Data Flow
 
@@ -105,6 +105,21 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
    > [!synapse-transcription]- Transcription of filename.mp3
    > ...transcribed text...
 ```
+
+## Per-Note Serialization (#483)
+
+Every public insert path acquires the target note's slot on the shared `NoteOperationQueue` exactly once, then delegates to a private core that must NOT re-enter the queue.
+
+| Public entry point | Queue key | Private core |
+|---|---|---|
+| `transcribeFileToActiveNote(file, timeRange?)` | active note path | `insertFileTranscription(activeFile, file, op, timeRange?)` (index.ts:L194) |
+| `transcribeAndInsert(noteFile, embeds)` | `noteFile.path` | `insertTranscriptions(noteFile, embeds, op)` (index.ts:L282) |
+| `transcribeAndInsertCombined(noteFile, embeds)` | `noteFile.path` (2+ embeds only) | `insertCombinedTranscription(noteFile, embeds, op)` (index.ts:L413) |
+
+- `private queued<T>(file, op, run)` (index.ts:L83) wraps `noteQueue.run(file.path, run, { onWait })`; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (audio commands are user-invoked, so a wait is surfaced).
+- `transcribeAndInsertCombined` with `<2` embeds short-circuits to the PUBLIC `transcribeAndInsert` BEFORE acquiring (index.ts:L398), so the slot is still taken exactly once.
+- The combined-transcription fallbacks call `insertTranscriptions` DIRECTLY (index.ts:L445) — they already hold the note's slot, and re-entering would self-deadlock.
+- `transcribe(audioData, fileName, options?)` is queue-free: it takes bytes, not a note, and is also called by `VideoModule.processUrl()`.
 
 ## Note Scanning
 

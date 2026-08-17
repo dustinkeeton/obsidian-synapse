@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { TitleModule } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile, TFolder } from '../__mocks__/obsidian';
+import { NoteOperationQueue } from '../shared';
 import type { NoticeAction } from '../shared';
 
 /** Spy-backed stand-in for the NotificationManager surface the module calls. */
@@ -96,6 +97,7 @@ describe('TitleModule Review toast action (#340)', () => {
 			mockPlugin as never,
 			() => settings,
 			notifications as never,
+			new NoteOperationQueue(),
 			shouldAutoAccept
 		);
 	}

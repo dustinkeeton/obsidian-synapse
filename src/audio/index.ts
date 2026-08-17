@@ -3,10 +3,12 @@ import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, calloutForTranscriptionResult,
 	sanitizeAIResponse, AIClient, detectSchemaFor,
-	CheckpointManager, generateId, formatTimeRange, loadNodeModules,
+	CheckpointManager, NoteOperationQueue, generateId, formatTimeRange, loadNodeModules,
 	isPathExcluded, findMatchingRule, redactError,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, TimeRange } from '../shared';
+import type {
+	Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange,
+} from '../shared';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
 import { Transcriber, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
@@ -38,6 +40,7 @@ export class AudioModule {
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
+		private noteQueue: NoteOperationQueue,
 		private extractor?: AudioExtractor
 	) {
 		this.transcriber = new Transcriber(getSettings);
@@ -70,6 +73,18 @@ export class AudioModule {
 	}
 
 	onunload(): void {}
+
+	/**
+	 * Serialize a note-mutating transcription behind the per-note queue (#483)
+	 * so a concurrent elaboration/enrichment pass can never read the note
+	 * between our read and our insert. User-invoked, so a wait is surfaced on
+	 * the operation toast rather than queued silently.
+	 */
+	private queued<T>(file: TFile, op: OperationHandle, run: () => Promise<T>): Promise<T> {
+		return this.noteQueue.run(file.path, run, {
+			onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`),
+		});
+	}
 
 	async transcribe(
 		audioData: ArrayBuffer,
@@ -169,6 +184,19 @@ export class AudioModule {
 			`Transcribing ${file.name}...`,
 			`audio-${file.path}`
 		);
+		// #483: serialize against any other AI operation on the target note.
+		await this.queued(activeFile, op, () =>
+			this.insertFileTranscription(activeFile, file, op, timeRange)
+		);
+	}
+
+	/** Transcribe + append, already holding the target note's queue slot (#483). */
+	private async insertFileTranscription(
+		activeFile: TFile,
+		file: TFile,
+		op: OperationHandle,
+		timeRange?: TimeRange
+	): Promise<void> {
 		try {
 			let data = await this.plugin.app.vault.readBinary(file);
 
@@ -236,13 +264,28 @@ export class AudioModule {
 		// Path exclusion (#307): batch insert into the note → silent skip.
 		if (isPathExcluded(noteFile.path, 'audio', this.getSettings())) return;
 
-		const total = embeds.length;
-		let completed = 0;
-
 		const op = this.notifications.startOperation(
-			`Transcribing ${total} audio file(s)...`,
+			`Transcribing ${embeds.length} audio file(s)...`,
 			`audio-batch-${noteFile.path}`
 		);
+		// #483: serialize against any other AI operation on this note.
+		await this.queued(noteFile, op, () =>
+			this.insertTranscriptions(noteFile, embeds, op)
+		);
+	}
+
+	/**
+	 * Batch transcribe + insert, already holding the note's queue slot (#483).
+	 * Callers that are themselves queued (the combined-transcription fallbacks)
+	 * invoke this directly — re-entering the queue would self-deadlock.
+	 */
+	private async insertTranscriptions(
+		noteFile: TFile,
+		embeds: AudioEmbed[],
+		op: OperationHandle
+	): Promise<void> {
+		const total = embeds.length;
+		let completed = 0;
 
 		// Create checkpoint for batch transcription
 		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({
@@ -360,6 +403,18 @@ export class AudioModule {
 			`Combining ${embeds.length} audio files...`,
 			`audio-combined-${noteFile.path}`
 		);
+		// #483: serialize against any other AI operation on this note.
+		await this.queued(noteFile, op, () =>
+			this.insertCombinedTranscription(noteFile, embeds, op)
+		);
+	}
+
+	/** Combined transcribe + insert, already holding the note's queue slot (#483). */
+	private async insertCombinedTranscription(
+		noteFile: TFile,
+		embeds: AudioEmbed[],
+		op: OperationHandle
+	): Promise<void> {
 		try {
 			let text: string;
 
@@ -385,7 +440,16 @@ export class AudioModule {
 					);
 					if (fallback) {
 						op.finish('Falling back to per-file transcription');
-						await this.transcribeAndInsert(noteFile, embeds);
+						// Already inside this note's queue slot — call the core
+						// directly rather than re-entering the queue (#483).
+						await this.insertTranscriptions(
+							noteFile,
+							embeds,
+							this.notifications.startOperation(
+								`Transcribing ${embeds.length} audio file(s)...`,
+								`audio-batch-${noteFile.path}`
+							)
+						);
 						return;
 					}
 				}

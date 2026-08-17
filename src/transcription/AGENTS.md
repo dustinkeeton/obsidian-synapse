@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-08-17
 ---
 
 # Transcription Module
@@ -86,6 +86,21 @@ interface DurationResult {
 }
 
 type NodeDeps = NodeModules  // injection seam for tests; alias of shared NodeModules (not barrel-exported)
+
+// insert-url-transcript.ts
+interface InsertUrlTranscriptDeps {
+  app: App
+  getSettings: () => SynapseSettings
+  notifications: NotificationManager
+  router: UrlTranscriptionRouter
+  noteQueue: NoteOperationQueue                     // #483; injected by main.ts (the one shared instance)
+  onComplete?: (filePath: string) => void           // post-transcription hook (enrichment/title check)
+}
+function insertUrlTranscript(
+  deps: InsertUrlTranscriptDeps,
+  url: string,
+  timeRange?: TimeRange
+): Promise<void>
 ```
 
 ## File Inventory
@@ -97,6 +112,7 @@ type NodeDeps = NodeModules  // injection seam for tests; alias of shared NodeMo
 | `time-range-slider.ts` | `TimeRangeSlider`, `TimeRangeSliderOptions` | Dual-handle range slider (pure DOM, no Obsidian deps beyond createEl) |
 | `time-range-toast.ts` | `showTimeRangeToast`, `TimeRangeToastOptions` | Non-dismissible Notice with embedded TimeRangeSlider |
 | `duration-detector.ts` | `detectLocalFileDuration`, `detectUrlDuration`, `formatTimestamp`, `MIN_SLIDER_DURATION`, `DurationResult`, `NodeDeps` | Duration detection via ffprobe (local) and yt-dlp (URL); desktop-only, mobile returns undefined |
+| `insert-url-transcript.ts` | `insertUrlTranscript`, `InsertUrlTranscriptDeps` | Transcribes a media URL through the injected `UrlTranscriptionRouter` and appends the block to the ACTIVE note. Guards: active note required, #307 path exclusion (`findMatchingRule(path, 'video', settings)`). The whole transcribe → append cycle runs inside the active note's `NoteOperationQueue` slot (#483, `insert-url-transcript.ts:55`) with an `onWait` that updates the operation toast (`Waiting for another Synapse operation on <basename>`); `deps.onComplete?.(activeFile.path)` fires from inside that slot, so the chained enrichment/title work enqueues BEHIND the append |
 | `duration-detector.test.ts` | Tests | Duration detector unit tests with NodeDeps injection |
 | `note-media-modal.test.ts` | Tests | NoteMediaModal unit tests |
 | `index.ts` | Re-exports | Barrel file |
@@ -200,7 +216,8 @@ In (all imports; type-only where noted):
 | `ImageEmbed` | `../image` | yes |
 | `TimeRange` | `../shared` | yes |
 | `NotificationManager` | `../shared` | yes |
-| `sanitizePath`, `sanitizeUrl`, `validateTimeRange`, `isPathExcluded` | `../shared` | no |
+| `sanitizePath`, `sanitizeUrl`, `validateTimeRange`, `isPathExcluded`, `findMatchingRule` | `../shared` | no |
+| `NoteOperationQueue` | `../shared` | yes (type-only; the instance is injected via `InsertUrlTranscriptDeps`) |
 | `loadNodeModules`, `shellEnv`, `isRecord`, `parseJson` | `../shared` | no |
 | `SynapseSettings` | `../settings` | yes |
 
@@ -217,7 +234,8 @@ Out: nothing — this module is consumed only by `main.ts` (modal construction) 
 
 ## Invariants / Gotchas
 
-- This module contains NO transcription logic; it is a pure UI delegation layer
+- This module contains NO transcription logic; it is a pure UI delegation layer. `insert-url-transcript.ts` is the one write path: it owns the active note's `NoteOperationQueue` slot for the transcribe → append cycle (#483) and must never be called from inside another queued operation on the same note
+- Docs drift: the URL-transcription router/strategy surface exported from the barrel (`UrlTranscriptionRouter`, `NoTranscriptionPathError`, `buildUrlTranscriptBlock`, `CaptionStrategy`, `LocalExtractionStrategy`, `fetchYouTubeTranscript`, `TimeRangeModal`) is not yet documented in this file
 - `detectPlatform` is imported from `../video` (not `../shared` directly); `../video` re-exports it from `../shared` for back-compat
 - `NoteMediaModal` constructor signature changed: added `ffmpegAvailable?: boolean` parameter and `onTranscribeAudio` callback now receives `combine: boolean` as second arg (#214)
 - Both modals take an injected `NotificationManager` and route all user-facing messages through `notifications.info(...)` instead of constructing `Notice` directly; `UnifiedTranscriptionModal.notifications` is the 5th constructor param, `NoteMediaModal.notifications` is the 6th (before `ffmpegAvailable`)

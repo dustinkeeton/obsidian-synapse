@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-07-03
+last-updated: 2026-08-17
 ---
 
 # Synapse — Agent Reference
@@ -42,7 +42,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes | `OrganizeModule`, types |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
 | title | `src/title/` | AI title suggestions for untitled/mismatched notes | `TitleModule`, types |
-| shared | `src/shared/` | AI client (multi-modal + opt-in response cache), file utils, validation, notifications, callouts, frontmatter, checkpoints, credential metadata + validation, secret redaction, settings migrations, content hashing, untrusted-content wrapping, review-toast gate, update check, title predicates | `AIClient`, `NotificationManager`, `CheckpointManager`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `redactError`, `reviewAction`, `migrateSettings`, `hashString`/`contentKey`, `wrapUntrusted`, `findAvailableVaultPath`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, file/validation utils, callout registry, id-utils |
+| shared | `src/shared/` | AI client (multi-modal + opt-in response cache), file utils, validation, notifications, callouts, frontmatter, checkpoints, per-note operation queue, credential metadata + validation, secret redaction, settings migrations, content hashing, untrusted-content wrapping, review-toast gate, update check, title predicates | `AIClient`, `NotificationManager`, `CheckpointManager`, `NoteOperationQueue`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `redactError`, `reviewAction`, `migrateSettings`, `hashString`/`contentKey`, `wrapUntrusted`, `findAvailableVaultPath`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, file/validation utils, callout registry, id-utils |
 | views | `src/views/` | Unified proposal/checkpoint sidebar + registry-driven Synapse actions sidebar | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `SynapseActionsView`, `SYNAPSE_ACTIONS_VIEW_TYPE` |
 | onboarding | `src/onboarding.ts` | First-run welcome gate + required-API-key emphasis (#89) | `needsApiKey`, `planFirstRun`, `applyApiKeyEmphasis`, `FirstRunPlan`, `WELCOME_MESSAGE` |
 | brand-icons | `src/brand-icons.ts` | Registers Synapse SVG icons (S-Signal identity mark + feature glyphs) | `registerSynapseIcons`, `SYNAPSE_ICONS`, `SYNAPSE_ICON_SVG` |
@@ -89,6 +89,7 @@ Key constraints:
 - `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
 - All feature modules depend on `shared`; no circular dependencies
 - Modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) receive `CheckpointManager`; `tidy`, `title`, `transcription`, `intake` do not
+- Modules that mutate a note after an AI call (audio, video, image, elaboration, enrichment, title) receive the single `NoteOperationQueue` (#483), as does `transcription/insert-url-transcript` via `InsertUrlTranscriptDeps.noteQueue`. Public entry points take the note's slot exactly ONCE and delegate to a queue-free private core; acquiring twice (or a second key) would deadlock. Not yet routed: `summarize`, `deep-dive`, `organize`, `tidy` — their own writes stay unserialized, though the enrichment/title work they chain is queued
 - `views` imports types only from feature modules (incl. `rem`) and `Checkpoint` from shared
 - Path exclusion is centralized (#307): the single `settings.exclusions: ExclusionRule[]` (model + matcher in `shared/exclusions.ts`) replaces the former per-module `excludeFolders` fields. Modules gate via `isPathExcluded(path, FeatureId, settings)` / `findMatchingRule`. Tag exclusion (`excludeTags`) stays per-module. `main.loadSettings()` runs a one-time `buildMigratedExclusions()` migration for upgraders whose persisted data has no `exclusions` key
 
@@ -101,6 +102,7 @@ onload()
   |-- migrateDataFolder()  (.auto-notes -> .synapse, one-time)
   |-- new NotificationManager(); status bar attached on desktop only
   |-- new CheckpointManager(app)  (single instance, injected into all modules)
+  |-- new NoteOperationQueue()  (#483; single instance, main.ts:122 — injected into every module that mutates a note after an AI call)
   |-- new CommandRegistrar(this)
   |-- construct modules (audio before video; video desktop-only); each gets a () => autoAccept[kind] getter
   |-- new UpdateChecker({ currentVersion, app, notifications, getSettings, saveSettings })  (#365)
@@ -438,6 +440,8 @@ Deep-dive organize wired when `deepDive.autoOrganizeOnAccept && organize.enabled
 Summarize organize wired when `summarize.autoOrganizeOnSummarize && organize.enabled`.
 Title checks wired when `title.enabled && title.checkAfterOperations`.
 Auto-accept getters wired for elaboration, enrichment, organize, deep-dive, title, rem (default `false`).
+
+All callbacks are dispatched through `fireAndForget` (never awaited, `main.ts:310-375`). For the queued modules (elaboration, audio, video, image) the callback fires from INSIDE the primary operation's `NoteOperationQueue` slot, so the chained `enrichment.enrich` / `title.checkTitle` enqueue BEHIND the primary write and run against the content it produced — nothing awaits them, so there is no cycle and no deadlock (#483). `title.acceptProposal` holds the PRE-rename key; work already queued under the old path runs afterwards, finds no file and exits early.
 
 Automatic post-op chained calls pass `{ postOp: true }` (`enrichment.enrich(path, trigger, { postOp: true })`, `title.checkTitle(path, { postOp: true })`) so the secondary auto-run never surfaces an extra "Review" toast — the centralized `reviewAction` gate (#366) suppresses the affordance on post-op runs. `onTitleAccept(id, resolution?)` forwards the user's duplicate-resolution choice (`'iterate'` | `'merge'`, #408) into `title.acceptProposal`.
 
