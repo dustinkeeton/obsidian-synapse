@@ -176,7 +176,7 @@ export default class SynapsePlugin extends Plugin {
 		}
 
 		this.summarize = new SummarizeModule(
-			this, getSettings, this.notifications, this.checkpointManager, registrar,
+			this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue,
 			async (url, parentOp) => {
 				const result = await urlTranscription.transcribe(url, {
 					update: parentOp ? (msg) => parentOp.update(msg) : undefined,
@@ -189,9 +189,9 @@ export default class SynapsePlugin extends Plugin {
 				return result.processed || result.raw;
 			}
 		);
-		this.tidy = new TidyModule(this, getSettings, this.notifications, registrar);
-		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.organize);
-		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept['deep-dive']);
+		this.tidy = new TidyModule(this, getSettings, this.notifications, registrar, this.noteQueue);
+		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept.organize);
+		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept['deep-dive']);
 		this.title = new TitleModule(this, getSettings, this.notifications, this.noteQueue, () => this.settings.autoAccept.title);
 		this.rem = new RemModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.rem);
 

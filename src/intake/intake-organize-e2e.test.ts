@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { IntakeModule } from './index';
 import { OrganizeModule } from '../organize';
 import { CommandRegistrar } from '../commands';
+import { NoteOperationQueue } from '../shared';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile, TFolder } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
@@ -252,6 +253,7 @@ describe('intake → real organize handshake (#227)', () => {
 			createMockNotifications() as never,
 			createMockCheckpointManager() as never,
 			new CommandRegistrar(plugin),
+			new NoteOperationQueue(),
 			() => false, // auto-accept off (default): a proposal never moves the note
 		);
 		await organize.onload();

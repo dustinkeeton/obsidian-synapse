@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
-import { fetchPageContent, fetchRedditContent } from '../shared';
+import { fetchPageContent, fetchRedditContent, NoteOperationQueue } from '../shared';
 import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import type { Mock } from 'vitest';
 import type { Plugin } from 'obsidian';
@@ -71,6 +71,9 @@ vi.mock('../shared', async () => ({
 	// Use the REAL content-schema registry (recipe/receipt detection + prompts)
 	// so auto-format behavior is exercised faithfully through the shared barrel.
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
+	// Real queue primitive (#483): the summarize write paths acquire a note slot,
+	// so a mocked-away queue would never run the operation at all.
+	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
@@ -163,6 +166,7 @@ describe('SummarizeModule organize scope', () => {
 			new CommandRegistrar(
 				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
 			),
+			new NoteOperationQueue(),
 		);
 	});
 
@@ -300,6 +304,7 @@ describe('SummarizeModule content-aware templates', () => {
 			new CommandRegistrar(
 				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
 			),
+			new NoteOperationQueue(),
 		);
 	});
 
@@ -424,6 +429,7 @@ describe('SummarizeModule note content (#367)', () => {
 			new CommandRegistrar(
 				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
 			),
+			new NoteOperationQueue(),
 		);
 	});
 

@@ -6,6 +6,7 @@ import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import { SummarizeTarget } from './types';
 import type { Plugin } from 'obsidian';
+import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { AudioEmbed } from '../audio';
 
@@ -70,6 +71,9 @@ vi.mock('../shared', async () => ({
 	// Use the REAL content-schema registry so auto-format detection runs as in
 	// production (the combined path consults detectSchemaFor on the combined text).
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
+	// Real queue primitive (#483): the summarize write paths acquire a note slot,
+	// so a mocked-away queue would never run the operation at all.
+	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
@@ -175,6 +179,7 @@ describe('SummarizeModule combined summarization (#367)', () => {
 			new CommandRegistrar(
 				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
 			),
+			new NoteOperationQueue(),
 			undefined,
 			transcribeAudio,
 		);

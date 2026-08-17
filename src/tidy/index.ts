@@ -1,7 +1,8 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
-import { AIClient, NotificationManager, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId, isPathExcluded, findMatchingRule } from '../shared';
+import { AIClient, NotificationManager, NoteOperationQueue, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId, isPathExcluded, findMatchingRule } from '../shared';
+import type { OperationHandle } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
 
@@ -37,7 +38,8 @@ export class TidyModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
-		private registrar: CommandRegistrar
+		private registrar: CommandRegistrar,
+		private noteQueue: NoteOperationQueue
 	) {
 		this.aiClient = new AIClient(getSettings);
 		this.store = new TidyStore(plugin.app, getSettings);
@@ -127,7 +129,17 @@ export class TidyModule {
 			`Tidying ${file.basename}`,
 			`tidy-${file.path}`
 		);
+		// #483: tidy rewrites the WHOLE note from a read taken before a
+		// multi-second AI call, so it must own the note for the entire cycle or
+		// it silently clobbers whatever landed in between. `scanVault` calls this
+		// per file, so the batch acquires one slot per note, never one per batch.
+		await this.noteQueue.run(file.path, () => this.runTidy(file, op), {
+			onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`),
+		});
+	}
 
+	/** One note's tidy cycle, already holding that note's queue slot (#483). */
+	private async runTidy(file: TFile, op: OperationHandle): Promise<void> {
 		try {
 			const content = await this.plugin.app.vault.read(file);
 
@@ -181,9 +193,14 @@ export class TidyModule {
 			return;
 		}
 
-		await this.plugin.app.vault.process(file, () => snapshot.originalContent);
-		await this.store.remove(file.path);
-		this.notifications.success('Tidy undone');
+		// #483: a whole-note restore must not land inside another operation's
+		// read -> write window. Queued silently — the restore is instant, so
+		// there is nothing to report waiting on.
+		await this.noteQueue.run(file.path, async () => {
+			await this.plugin.app.vault.process(file, () => snapshot.originalContent);
+			await this.store.remove(file.path);
+			this.notifications.success('Tidy undone');
+		});
 	}
 
 }
