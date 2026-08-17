@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-07-02
+last-updated: 2026-08-11
 ---
 
 # title module
@@ -57,6 +57,7 @@ type TitleAcceptOutcome =
 | `title-suggester.ts` | `TitleSuggester` | AI title suggestion and mismatch detection |
 | `title-store.ts` | `TitleProposalStore` | JSON persistence in `settings.title.proposalFolderPath` |
 | `content-key.ts` | `titleContentKey` | Deterministic input-keyed dedup hash for proposals (#408) |
+| `backlink-remediation.ts` | `collectInboundLinks`, `rewriteLinkText`, `rewriteContent` | Inbound-link snapshot + display-text-preserving rewrite for accepted renames (#485) |
 | `settings-section.ts` | `renderTitleSettings` | Title settings accordion (enabled toggle + duplicate-handling dropdown) (#408) |
 | `title-detector.ts` | re-exports `isUntitled` | Thin re-export of `isUntitled` through the `../shared` barrel (never the internal `shared/title-detector` file, per the shared-import rule); canonical home is `shared/title-detector.ts` |
 | `types.ts` | -- | All title types |
@@ -145,13 +146,21 @@ acceptProposal(id, options?)  -> TitleAcceptOutcome
   --> guard: { status:'skipped' } if proposal.status !== 'pending'
   --> if source note no longer a TFile: info notice, updateStatus 'rejected', refreshView, { status:'skipped' }
   --> targetPath = computeTargetPath(file, proposedTitle); collision = a different file occupies targetPath  [live recheck #408]
-  --> no collision: vault.rename(file, targetPath), accepted, announce --> { status:'renamed', path }
+  --> snapshot inbound links: collectInboundLinks(app, file) BEFORE any rename/merge (#485)
+  --> no collision: vault.rename(file, targetPath), remediateBacklinks, accepted, announce --> { status:'renamed', path }
   --> collision: resolution = options.resolution ?? (shouldAutoAccept() ? settings.title.duplicateHandling : undefined)
         --> no resolution (plain manual accept): persist conflictsWith, info 'choose Add suffix or Merge', stay pending --> { status:'conflict', target }
-        --> 'merge' & target is TFile: mergeNotes(file, existing), accepted, announce --> { status:'merged', into }
-        --> 'merge' & target not a TFile: info 'Nothing to merge into — renamed instead', rename, accepted --> { status:'renamed', path }
-        --> 'iterate': findAvailableVaultPath(targetPath), rename to free suffixed path, accepted --> { status:'renamed', path }
+        --> 'merge' & target is TFile: mergeNotes(file, existing), remediateBacklinks(-> existing.path), accepted, announce --> { status:'merged', into }
+        --> 'merge' & target not a TFile: info 'Nothing to merge into — renamed instead', rename, remediateBacklinks, accepted --> { status:'renamed', path }
+        --> 'iterate': findAvailableVaultPath(targetPath), rename to free suffixed path, remediateBacklinks, accepted --> { status:'renamed', path }
   --> on rename/process throw: notifyError, rethrow Error('Rename failed: ...')
+
+remediateBacklinks(refs, oldPath, newPath)  [private, #485]
+  --> group refs by sourcePath (a self-link's source remaps to newPath — its content moved)
+  --> per referencing note: vault.process(refFile, c => rewriteContent(c, originals, oldPath, newPath))
+      [[Old]] -> [[New|Old]]; [[Old|Custom]] -> [[New|Custom]]; [[Old#H]] -> [[New#H|Old]];
+      [t](Old%20.md) -> path-only; ![[Old]] -> ![[New]] (no alias) — display text byte-identical
+  --> per-file failure: console.warn + skip (never corrupts, never fails the accept)
 
 mergeNotes(source, target)  [private]
   --> read source; vault.process(target): union frontmatter (target wins scalar conflicts; tags+aliases unioned),
@@ -223,6 +232,7 @@ Out: consumed by `main.ts` (TitleModule, checkTitle), `views/` (TitleProposal, T
 - Reject-loop dedup (#408): both check methods skip when an existing proposal has the same `contentKey` and `status !== 'accepted'`. Editing the note changes the content hash → key → a new proposal is allowed; an `accepted` proposal never blocks.
 - `contentKey` is computed from inputs BEFORE the AI call (temperature>0 output would otherwise vary every run).
 - Auto-accept for title RENAMES (or MERGES) the file; the notice reflects the REAL outcome (suffixed name / merge target), not the originally proposed title (#408).
+- Renames use `vault.rename` (NOT `fileManager.renameFile`) on purpose: Obsidian's automatic link update would rewrite the visible prose of referencing notes. Instead every resolving accept branch snapshots inbound links first (`collectInboundLinks`, feature-detected `metadataCache.getBacklinksForFile` — no-op if absent) and rewrites them afterwards with display text preserved byte-for-byte; embeds retarget without an alias (#485). Merge retargets links from the trashed source title to the surviving note.
 - `checkTitle` is silent: no notifications until a proposal is confirmed or auto-accepted. The Review toast is gated through `reviewAction()` and suppressed for `postOp` invocations (#366) and when auto-accept is on.
 - `checkMismatch` skips notes that are already untitled (let `checkUntitled` handle those).
 - Both check methods skip if any pending proposal already exists for the note.
@@ -250,5 +260,6 @@ Out: consumed by `main.ts` (TitleModule, checkTitle), `views/` (TitleProposal, T
 | `content-key.test.ts` | titleContentKey determinism + input sensitivity (#408) |
 | `settings-section.test.ts` | renderTitleSettings accordion + duplicateHandling default (#408) |
 | `duplicate-handling.test.ts` | collision resolution: conflict flag, iterate, merge, live recheck, reject-loop dedup (#408) |
+| `backlink-remediation.test.ts` | link rewrite forms + collection, remediation across plain/iterate/merge/auto-accept branches, per-file failure isolation (#485) |
 | `auto-accept.test.ts` | Auto-accept flow (#228) |
 | `review-toast.test.ts` | Review toast notification behavior |
