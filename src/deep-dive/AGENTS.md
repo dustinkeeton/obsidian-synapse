@@ -61,31 +61,18 @@ Re-exported settings renderer: `renderDeepDiveSettings` (from `./settings-sectio
 
 ## Note Queue (#483)
 
-Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`. Deep dive has ONE
-acquisition site.
+Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`. ONE acquisition site.
 
 | Site | Key | Wrapped core | onWait |
 |------|-----|--------------|--------|
 | `acceptProposal` (index.ts:150) | `queued.proposedPath` | `applyAccept(id, options)` | none |
 
-- Key choice: `proposal.proposedPath` is the note the accept CREATES — the same note that
-  `onNoteAccepted` (enrichment) and `onOrganizeRequested` then target, so those follow-ups enqueue
-  behind this accept instead of racing it.
-- `applyAccept` (index.ts:158) re-loads the proposal so the double-accept guard
-  (`status !== 'pending'`, index.ts:163) is evaluated UNDER the slot, not against a pre-wait
-  snapshot.
-- `updateRunNavigation` (index.ts:547) rewrites the syllabus note (index.ts:574) and every
-  previously-accepted sibling note in the run (index.ts:586, index.ts:592). Those are OTHER notes
-  and stay UNQUEUED — acquiring a second key while holding one is the lock-ordering case the
-  contract forbids.
-- `maybeAutoAcceptRun` (index.ts:207) loops over distinct proposals calling the public
-  `acceptProposal` (index.ts:213); each iteration takes a DIFFERENT key sequentially, so this is
-  not a nested acquisition.
-- `rejectProposal` (index.ts:228) is unqueued: it has no note of its own, and its
-  `updateRunNavigation(proposal.runId)` refresh only touches the syllabus + remaining accepted
-  notes, i.e. the same other-note writes that stay unqueued above.
-- The generation loop (`deepDive`) is unqueued — it writes proposals to the store, not to vault
-  notes; nothing exists at `proposedPath` until an accept.
+- Key choice: `proposal.proposedPath` is the note the accept CREATES — also what `onNoteAccepted` (enrichment) and `onOrganizeRequested` then target, so those follow-ups enqueue behind the accept instead of racing it.
+- `applyAccept` (index.ts:158) re-loads the proposal so the double-accept guard (`status !== 'pending'`, index.ts:163) is evaluated UNDER the slot, not against a pre-wait snapshot.
+- `updateRunNavigation` (index.ts:547) rewrites the syllabus note (index.ts:574) and every previously-accepted sibling note in the run (index.ts:586, index.ts:592). Those are OTHER notes and stay UNQUEUED — acquiring a second key while holding one is the lock-ordering case the contract forbids.
+- `maybeAutoAcceptRun` (index.ts:207) loops over distinct proposals calling the public `acceptProposal` (index.ts:213); each iteration takes a DIFFERENT key sequentially — not a nested acquisition.
+- `rejectProposal` (index.ts:228) is unqueued: no note of its own, and its `updateRunNavigation(proposal.runId)` refresh only touches the same other-note writes as above.
+- The generation loop (`deepDive`) is unqueued — it writes proposals to the store, not to vault notes; nothing exists at `proposedPath` until an accept.
 
 ## Internal File Map
 
