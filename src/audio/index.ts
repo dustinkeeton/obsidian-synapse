@@ -74,12 +74,7 @@ export class AudioModule {
 
 	onunload(): void {}
 
-	/**
-	 * Serialize a note-mutating transcription behind the per-note queue (#483)
-	 * so a concurrent elaboration/enrichment pass can never read the note
-	 * between our read and our insert. User-invoked, so a wait is surfaced on
-	 * the operation toast rather than queued silently.
-	 */
+	/** Serialize a note-mutating transcription behind the per-note queue (#483). */
 	private queued<T>(file: TFile, op: OperationHandle, run: () => Promise<T>): Promise<T> {
 		return this.noteQueue.run(file.path, run, {
 			onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`),
@@ -184,7 +179,6 @@ export class AudioModule {
 			`Transcribing ${file.name}...`,
 			`audio-${file.path}`
 		);
-		// #483: serialize against any other AI operation on the target note.
 		await this.queued(activeFile, op, () =>
 			this.insertFileTranscription(activeFile, file, op, timeRange)
 		);
@@ -268,17 +262,12 @@ export class AudioModule {
 			`Transcribing ${embeds.length} audio file(s)...`,
 			`audio-batch-${noteFile.path}`
 		);
-		// #483: serialize against any other AI operation on this note.
 		await this.queued(noteFile, op, () =>
 			this.insertTranscriptions(noteFile, embeds, op)
 		);
 	}
 
-	/**
-	 * Batch transcribe + insert, already holding the note's queue slot (#483).
-	 * Callers that are themselves queued (the combined-transcription fallbacks)
-	 * invoke this directly — re-entering the queue would self-deadlock.
-	 */
+	/** Batch transcribe + insert, already holding the note's queue slot (#483). */
 	private async insertTranscriptions(
 		noteFile: TFile,
 		embeds: AudioEmbed[],
@@ -403,7 +392,6 @@ export class AudioModule {
 			`Combining ${embeds.length} audio files...`,
 			`audio-combined-${noteFile.path}`
 		);
-		// #483: serialize against any other AI operation on this note.
 		await this.queued(noteFile, op, () =>
 			this.insertCombinedTranscription(noteFile, embeds, op)
 		);
@@ -440,8 +428,7 @@ export class AudioModule {
 					);
 					if (fallback) {
 						op.finish('Falling back to per-file transcription');
-						// Already inside this note's queue slot — call the core
-						// directly rather than re-entering the queue (#483).
+						// Already inside this note's queue slot — must not re-enter the queue (#483).
 						await this.insertTranscriptions(
 							noteFile,
 							embeds,

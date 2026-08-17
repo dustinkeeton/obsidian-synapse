@@ -180,8 +180,7 @@ export class SummarizeModule {
 				if (!(file instanceof TFile)) continue;
 				if (this.isExcluded(file)) continue;
 
-				// #483: one slot per note (never one per batch), taken BEFORE the
-				// read so the target line numbers cannot go stale under us.
+				// #483: slot taken before the read so target line numbers cannot go stale
 				const result = await this.noteQueue.run(file.path, async () => {
 					const content = await this.plugin.app.vault.read(file);
 					const targets = this.collectTargets(content, file.path);
@@ -275,15 +274,12 @@ export class SummarizeModule {
 			`summarize-${file.path}`
 		);
 
-		// #483: the summary write replaces the whole note from a pre-AI read, so
-		// the read -> summarize -> write cycle owns the note's queue slot.
 		const result = await this.noteQueue.run(
 			file.path,
 			() => this.processTargetsForFile(file, targets, op, content, true),
 			{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
 		);
-		// Fired AFTER the slot is released: enrichment/title enqueue behind us and
-		// read the summary we just wrote; organize is fire-and-forget in main.ts.
+		// Fired after the slot is released so post-ops enqueue behind us (#483)
 		this.fireEnrichmentCallbacks(file.path, result);
 
 		if (!op.cancelled) {
@@ -1003,8 +999,7 @@ export class SummarizeModule {
 			// line numbers match the current file state (content may have
 			// changed since the initial scan, e.g. a previous file's
 			// enrichment callback modifying this file).
-			// #483: one slot per note (never one per batch), taken BEFORE the read
-			// so nothing can mutate the note between the scan and the write.
+			// #483: slot taken before the read so nothing mutates the note before the write
 			const result = await this.noteQueue.run(file.path, async () => {
 				const content = await this.plugin.app.vault.read(file);
 				const targets = this.collectTargets(content, file.path);

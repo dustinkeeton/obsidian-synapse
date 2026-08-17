@@ -29,9 +29,8 @@ class DeepDiveModule {
   onunload(): void
   getPendingProposals(): Promise<DeepDiveProposal[]>
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
-  acceptProposal(id: string, options?: { silent?: boolean }): Promise<void>   // index.ts:138, queue wrapper over applyAccept
+  acceptProposal(id: string, options?: { silent?: boolean }): Promise<void>
   rejectProposal(id: string): Promise<void>
-  // private applyAccept(id: string, options?: { silent?: boolean }): Promise<void>   // index.ts:158, queue-free core
 }
 
 function buildDeepDivePath(

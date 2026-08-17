@@ -191,9 +191,6 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		// 16 MB: above the 15 MB Gemini inline cap, below the generic 25 MB heuristic.
 		extractor = createFakeExtractor(16 * 1024 * 1024);
 		const module = makeModule(extractor, 'gemini');
-		// The fallback runs INSIDE the note's operation queue slot (#483), so it
-		// calls the private core rather than re-entering the public method (which
-		// would wait on the slot it already holds). Private -> bracket access.
 		const spy = vi
 			.spyOn(module as unknown as { insertTranscriptions: () => Promise<void> }, 'insertTranscriptions')
 			.mockResolvedValue();

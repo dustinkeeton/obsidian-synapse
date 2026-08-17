@@ -73,7 +73,7 @@ export class TitleModule {
 		// on a live collision, so a colliding title is resolved automatically. The
 		// notice reflects the ACTUAL outcome (suffixed name / merge target), not
 		// the originally proposed title (#408). Callers already hold the note's
-		// queue slot (#483), so apply directly rather than re-entering the queue.
+		// queue slot (#483), so apply directly.
 		const outcome = await this.applyAccept(proposal.id, { silent: true });
 		if (outcome.status === 'renamed') {
 			this.notifications.info(`Auto-accepted title "${this.baseName(outcome.path)}"`);
@@ -111,10 +111,6 @@ export class TitleModule {
 
 		if (!isUntitled(file.basename)) return;
 
-		// #483: read -> suggest -> (auto-accept) rename runs inside this note's
-		// queue slot, so a post-op title check never reads content a still
-		// in-flight operation is about to replace. Queued silently: the title
-		// check is an automatic post-op side effect, not a user command.
 		await this.noteQueue.run(filePath, () => this.proposeUntitled(file, filePath, options));
 	}
 
@@ -340,22 +336,14 @@ export class TitleModule {
 	): Promise<TitleAcceptOutcome> {
 		const queued = await this.store.load(id);
 		if (!queued) return { status: 'skipped' };
-		// #483: the rename must not land inside another operation's read -> write
-		// window on the same note. Keyed on the PRE-rename path: work already
-		// queued behind us for that path runs afterwards, finds no file there and
-		// exits early — deliberately preferred over re-keying, which would mean
-		// holding two keys at once.
+		// Keyed on the pre-rename path; work queued behind us finds no file there and exits early.
 		return this.noteQueue.run(
 			queued.sourceNotePath,
 			() => this.applyAccept(id, options)
 		);
 	}
 
-	/**
-	 * Apply an accepted title proposal, already holding the source note's queue
-	 * slot (#483). Re-loads the proposal so the status guard is evaluated under
-	 * the queue rather than against a snapshot taken before waiting.
-	 */
+	/** Queue-free core of acceptProposal; runs holding the source note's queue slot (#483). */
 	private async applyAccept(
 		id: string,
 		options?: { silent?: boolean; resolution?: TitleDuplicateStrategy }

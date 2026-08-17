@@ -138,7 +138,6 @@ export class EnrichmentModule {
 				if (!(file instanceof TFile)) continue;
 				if (this.isExcluded(file)) continue;
 
-				// #483: serialized per note.
 				const id = await this.noteQueue.run(
 					file.path,
 					() => this.enrichFile(file, 'manual')
@@ -172,7 +171,6 @@ export class EnrichmentModule {
 		let autoAcceptedCount = 0;
 		if (this.shouldAutoAccept()) {
 			for (const { id, notePath } of createdProposals) {
-				// #483: each apply takes its note's queue slot.
 				if (await this.noteQueue.run(notePath, () => this.maybeAutoAccept(id, true))) {
 					autoAcceptedCount++;
 				}
@@ -297,7 +295,6 @@ export class EnrichmentModule {
 					eligible.length,
 					'Generating enrichment proposals'
 				);
-				// #483: serialized per note.
 				const id = await this.noteQueue.run(
 					eligible[i].path,
 					() => this.enrichFile(eligible[i], 'manual')
@@ -358,7 +355,6 @@ export class EnrichmentModule {
 		let autoAcceptedCount = 0;
 		if (this.shouldAutoAccept()) {
 			for (const { id, notePath } of createdProposals) {
-				// #483: each apply takes its note's queue slot.
 				if (await this.noteQueue.run(notePath, () => this.maybeAutoAccept(id, true))) {
 					autoAcceptedCount++;
 				}
@@ -427,11 +423,6 @@ export class EnrichmentModule {
 			`enrich-${filePath}`
 		);
 
-		// #483: the whole read -> classify -> apply cycle runs inside this note's
-		// queue slot, so a post-op enrichment always sees the content the primary
-		// operation just wrote, and its own apply can never land inside another
-		// operation's read -> write window. Queued silently: enrichment is an
-		// automatic post-op side effect, not a user-invoked command.
 		await this.noteQueue.run(file.path, () => this.runEnrichment(file, trigger, op, options));
 	}
 
@@ -558,9 +549,6 @@ export class EnrichmentModule {
 	): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
-		// #483: the apply must not land inside another operation's read -> write
-		// window. Queued silently (an accept from the review panel is immediate
-		// from the user's point of view).
 		await this.noteQueue.run(
 			proposal.sourceNotePath,
 			() => this.acceptSelected(id, accepted, options)

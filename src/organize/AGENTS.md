@@ -29,11 +29,8 @@ class OrganizeModule {
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   organizeNote(file: TFile): Promise<OrganizeResult | null>
   scanDirectory(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>
-  acceptProposal(id: string, options?: { silent?: boolean }): Promise<void>   // index.ts:444, queue wrapper over applyAccept
+  acceptProposal(id: string, options?: { silent?: boolean }): Promise<void>
   rejectProposal(id: string): Promise<void>
-  // private applyAccept(id: string, options?: { silent?: boolean }): Promise<void>   // index.ts:465, queue-free core
-  // private organizeFile(file: TFile, batch?: boolean, batchProposedDirs?: Map<string, string>): Promise<OrganizeResult | null>   // index.ts:604, queue-free core
-  // private undoOrganize(file: TFile): Promise<void>   // index.ts:561, queued silently
 }
 
 function buildSummaryPath(timestamp: string): string

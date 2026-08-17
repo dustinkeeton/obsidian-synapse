@@ -114,11 +114,7 @@ export default class SynapsePlugin extends Plugin {
 		// Single shared checkpoint manager for all modules (I5)
 		this.checkpointManager = new CheckpointManager(this.app);
 
-		// Single shared per-note operation queue (#483). Every AI operation that
-		// reads and writes a note takes its path's slot, so operations on one note
-		// run in submission order instead of interleaving (e.g. elaboration reading
-		// a note before an in-flight transcription's insert lands). It MUST be one
-		// instance: a per-module queue would serialize nothing across features.
+		// Single shared per-note operation queue (#483)
 		this.noteQueue = new NoteOperationQueue();
 
 		const getSettings = () => this.settings;

@@ -50,8 +50,6 @@ export async function insertUrlTranscript(
 		'Processing video URL...',
 		`video-url-${Date.now()}`
 	);
-	// #483: serialize the whole transcribe -> append cycle against every other
-	// AI operation on this note, so nothing reads it mid-flight.
 	await noteQueue.run(activeFile.path, async () => {
 		try {
 			const result = await router.transcribe(url, {

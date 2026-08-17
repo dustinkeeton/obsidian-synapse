@@ -127,7 +127,6 @@ export class OrganizeModule {
 
 				try {
 					const originalPath = file.path;
-					// #483: one slot per note, never one per batch.
 					const result = await this.noteQueue.run(
 						file.path,
 						() => this.organizeFile(file, true, batchProposedDirs)
@@ -220,11 +219,6 @@ export class OrganizeModule {
 		);
 
 		try {
-			// #483: analyze -> move (or propose + auto-accept) owns the note's
-			// queue slot, so the move can never land inside another feature's
-			// read -> write window. `organizeNote` is also the target of
-			// summarize/deep-dive `onOrganizeRequested`, which main.ts dispatches
-			// through fireAndForget — never awaited, so those simply enqueue.
 			const result = await this.noteQueue.run(
 				file.path,
 				() => this.organizeFile(file),
@@ -355,7 +349,6 @@ export class OrganizeModule {
 			genOp.progress(i + 1, eligible.length, 'Organizing notes');
 			try {
 				const originalPath = eligible[i].path;
-				// #483: one slot per note, never one per batch.
 				const result = await this.noteQueue.run(
 					eligible[i].path,
 					() => this.organizeFile(eligible[i], true, batchProposedDirs)
@@ -447,21 +440,11 @@ export class OrganizeModule {
 			this.notifications.info('Proposal not found');
 			return;
 		}
-		// #483: keyed on the PRE-move path (a move changes the key, exactly like a
-		// title rename). Work already queued under the old path runs afterwards,
-		// finds no file there and exits early.
+		// Keyed on the pre-move path; work queued behind us finds no file there and exits early.
 		await this.noteQueue.run(queued.sourceNotePath, () => this.applyAccept(id, options));
 	}
 
-	/**
-	 * Move the note for an accepted proposal, already holding its queue slot
-	 * (#483). Re-loads the proposal so the double-accept guard is evaluated under
-	 * the slot rather than against a pre-wait snapshot.
-	 *
-	 * `maybeAutoAccept` calls this DIRECTLY: it runs inside `organizeFile`, which
-	 * its callers already queued, so going through the public `acceptProposal`
-	 * would re-enter the same key and self-deadlock.
-	 */
+	/** Queue-free core of acceptProposal; runs holding the note's queue slot (#483). */
 	private async applyAccept(id: string, options?: { silent?: boolean }): Promise<void> {
 		const proposal = await this.store.loadProposal(id);
 		if (!proposal) return;
@@ -567,9 +550,6 @@ export class OrganizeModule {
 		}
 
 		try {
-			// #483: keyed on the CURRENT path (the move-back changes the key, as
-			// every rename does). Queued silently — the undo is a local move with
-			// no AI call, so there is nothing worth reporting a wait on.
 			await this.noteQueue.run(file.path, async () => {
 				// Ensure original parent folder still exists
 				const originalParent = snapshot.originalPath.substring(

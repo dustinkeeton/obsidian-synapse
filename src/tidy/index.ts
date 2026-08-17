@@ -129,10 +129,6 @@ export class TidyModule {
 			`Tidying ${file.basename}`,
 			`tidy-${file.path}`
 		);
-		// #483: tidy rewrites the WHOLE note from a read taken before a
-		// multi-second AI call, so it must own the note for the entire cycle or
-		// it silently clobbers whatever landed in between. `scanVault` calls this
-		// per file, so the batch acquires one slot per note, never one per batch.
 		await this.noteQueue.run(file.path, () => this.runTidy(file, op), {
 			onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`),
 		});
@@ -193,9 +189,6 @@ export class TidyModule {
 			return;
 		}
 
-		// #483: a whole-note restore must not land inside another operation's
-		// read -> write window. Queued silently — the restore is instant, so
-		// there is nothing to report waiting on.
 		await this.noteQueue.run(file.path, async () => {
 			await this.plugin.app.vault.process(file, () => snapshot.originalContent);
 			await this.store.remove(file.path);

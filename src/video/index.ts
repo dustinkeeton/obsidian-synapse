@@ -167,8 +167,6 @@ export class VideoModule {
 			`Transcribing ${embeds.length} video(s)...`,
 			`video-batch-${noteFile.path}`
 		);
-		// #483: serialize against any other AI operation on this note, so the
-		// insert can never land inside another feature's read -> write window.
 		await this.noteQueue.run(
 			noteFile.path,
 			() => this.insertTranscriptions(noteFile, embeds, op),

@@ -8,24 +8,6 @@ import { NotificationManager, NoteOperationQueue } from '../shared';
 import type { CheckpointManager } from '../shared';
 import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
-/**
- * Regression: "Transcribe current note" immediately followed by "Elaborate
- * current note" on a note whose only body is an audio embed (#483).
- *
- * Before the per-note operation queue, elaboration read the note WHILE the
- * transcription's API call was still in flight. The body it saw was just the
- * `![[...m4a]]` wikilink — non-empty, so the proposer took the user-requested
- * branch and asked the model to expand an audio link it cannot open. The result
- * was a hallucinated elaboration, and once the transcript landed a second
- * (correct) elaboration could be generated for the now-changed content hash,
- * leaving the note with TWO elaboration callouts.
- *
- * The control case at the bottom drives the same scenario with the modules on
- * SEPARATE queues — i.e. unserialized, exactly the pre-fix wiring — and asserts
- * the stale read comes back. That is what makes the assertions above meaningful:
- * they fail without the queue.
- */
-
 const AUDIO_EMBED = '![[lecture.m4a]]';
 const TRANSCRIPT = 'Kant argues that the categorical imperative is unconditional.';
 

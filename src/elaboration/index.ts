@@ -155,22 +155,14 @@ export class ElaborationModule {
 		return { skip: false, key };
 	}
 
-	/**
-	 * One note's generate + save + auto-accept for the batch paths (vault scan,
-	 * checkpoint resume). Callers wrap this in that note's queue slot (#483), so
-	 * it must never re-enter the queue itself.
-	 */
+	/** One note's generate + save + auto-accept; runs holding the note's queue slot (#483). */
 	private async generateForBatch(
 		detection: DetectionResult
 	): Promise<{ proposal: Proposal | null; autoAccepted: boolean }> {
 		const guard = await this.guardProposal(detection);
-		// Already proposed (unchanged note) or per-note cap reached: skip
-		// generate+save and the AI call.
 		if (guard.skip) return { proposal: null, autoAccepted: false };
 
 		const proposal = await this.proposer.generate(detection, guard.key);
-		// Link-only note whose links all failed: skip without creating a
-		// fabricated proposal.
 		if (!proposal) return { proposal: null, autoAccepted: false };
 
 		await this.store.save(proposal);
@@ -205,8 +197,6 @@ export class ElaborationModule {
 				const result = await this.detector.detect(file);
 				if (!result) continue;
 
-				// #483: serialized per note; a skipped/failed generate still
-				// completes the item so resume advances past it.
 				const outcome = await this.noteQueue.run(
 					result.notePath,
 					() => this.generateForBatch(result)
@@ -334,8 +324,6 @@ export class ElaborationModule {
 
 				genOp.progress(i + 1, detected.length, 'Generating proposals');
 
-				// #483: serialized per note; a skipped/failed generate still marks
-				// the item done so the checkpoint advances.
 				const outcome = await this.noteQueue.run(
 					detected[i].notePath,
 					() => this.generateForBatch(detected[i])
@@ -397,10 +385,6 @@ export class ElaborationModule {
 			`Scanning ${file.basename}`,
 			`scan-${file.path}`
 		);
-		// #483: serialize the whole detect -> generate -> accept cycle against
-		// every other AI operation on this note. Without this, elaborating while
-		// a transcription is in flight reads the pre-transcript body and
-		// elaborates an unreadable media link.
 		await this.noteQueue.run(
 			file.path,
 			() => this.generateForNote(file, userInvoked, op),
@@ -408,10 +392,7 @@ export class ElaborationModule {
 		);
 	}
 
-	/**
-	 * Detect + generate + save + auto-accept for one note, already holding that
-	 * note's queue slot (#483). Never re-enter the queue from here.
-	 */
+	/** Detect + generate + save + auto-accept, already holding the note's queue slot (#483). */
 	private async generateForNote(
 		file: TFile,
 		userInvoked: boolean,
@@ -490,20 +471,13 @@ export class ElaborationModule {
 	): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
-		// #483: the append must not land inside another operation's read -> write
-		// window. Queued silently — an accept from the review panel is immediate
-		// from the user's point of view.
 		await this.noteQueue.run(
 			proposal.sourceNotePath,
 			() => this.applyProposal(id, editedContent, options)
 		);
 	}
 
-	/**
-	 * Append an accepted proposal to its note, already holding that note's queue
-	 * slot (#483). Re-loads the proposal so the status guard is evaluated under
-	 * the queue, not against a snapshot taken before waiting.
-	 */
+	/** Queue-free core of acceptProposal; runs holding the note's queue slot (#483). */
 	private async applyProposal(
 		id: string,
 		editedContent?: string,

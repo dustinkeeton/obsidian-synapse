@@ -61,8 +61,7 @@ vi.mock('../audio', () => ({
 
 vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
-	// Real queue primitive (#483): the summarize write paths acquire a note slot,
-	// so a mocked-away queue would never run the operation at all.
+	// Real queue primitive (#483): a mocked-away queue would never run the operation
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),

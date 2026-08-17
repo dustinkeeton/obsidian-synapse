@@ -141,20 +141,10 @@ export class DeepDiveModule {
 			this.notifications.info('Proposal not found');
 			return;
 		}
-		// #483: keyed on the note this accept is ABOUT — the note it creates.
-		// The syllabus and sibling-note nav rewrites inside updateRunNavigation
-		// touch OTHER notes and stay unqueued: acquiring a second key while
-		// holding this one is the lock-ordering case the contract forbids.
-		// `maybeAutoAcceptRun` loops over distinct proposals, so each iteration
-		// takes a different key sequentially — never a nested acquisition.
 		await this.noteQueue.run(queued.proposedPath, () => this.applyAccept(id, options));
 	}
 
-	/**
-	 * Create the accepted note and refresh run navigation, already holding the
-	 * new note's queue slot (#483). Re-loads the proposal so the double-accept
-	 * guard is evaluated under the slot, not against a pre-wait snapshot.
-	 */
+	/** Queue-free core of acceptProposal; runs holding the new note's queue slot (#483). */
 	private async applyAccept(id: string, options?: { silent?: boolean }): Promise<void> {
 		const proposal = await this.store.loadProposal(id);
 		if (!proposal) return;

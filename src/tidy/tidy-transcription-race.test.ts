@@ -8,21 +8,6 @@ import { NoteOperationQueue } from '../shared';
 import type { CheckpointManager, NotificationManager } from '../shared';
 import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
-/**
- * Regression: a whole-note rewrite must not clobber a concurrent insert (#483).
- *
- * Tidy is the sharpest case in the codebase. It reads the entire note, spends
- * seconds in an AI call, then writes the result back over the WHOLE note
- * (`vault.process(file, () => cleaned)`). Run while a transcription is in
- * flight for the same note, an unserialized tidy silently deletes the
- * transcript: its pre-AI snapshot never contained the callout, and its write
- * replaces everything.
- *
- * The CONTROL case at the bottom drives the identical scenario with the two
- * modules on SEPARATE queues — the pre-#483 topology — and asserts the
- * transcript is lost. That is what makes the assertions above meaningful.
- */
-
 const AUDIO_EMBED = '![[lecture.m4a]]';
 const TRANSCRIPT = 'Kant argues that the categorical imperative is unconditional.';
 

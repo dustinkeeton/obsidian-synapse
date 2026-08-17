@@ -31,10 +31,7 @@ export class ImageModule {
 	async onload(): Promise<void> {}
 	onunload(): void {}
 
-	/**
-	 * Serialize a note-mutating OCR insert behind the per-note queue (#483).
-	 * User-invoked, so a wait shows on the operation toast.
-	 */
+	/** Serialize a note-mutating OCR insert behind the per-note queue (#483). */
 	private queued<T>(file: TFile, op: OperationHandle, run: () => Promise<T>): Promise<T> {
 		return this.noteQueue.run(file.path, run, {
 			onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`),
@@ -62,7 +59,6 @@ export class ImageModule {
 			`Extracting text from ${file.name}...`,
 			`image-${file.path}`
 		);
-		// #483: serialize against any other AI operation on the target note.
 		await this.queued(activeFile, op, () =>
 			this.insertFileExtraction(activeFile, file, op)
 		);
@@ -118,7 +114,6 @@ export class ImageModule {
 			`Extracting text from ${embeds.length} image(s)...`,
 			`image-batch-${noteFile.path}`
 		);
-		// #483: serialize against any other AI operation on this note.
 		await this.queued(noteFile, op, () =>
 			this.insertExtractions(noteFile, embeds, op)
 		);

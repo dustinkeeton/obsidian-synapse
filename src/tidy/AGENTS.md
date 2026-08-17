@@ -20,9 +20,8 @@ class TidyModule {
   onload(): Promise<void>
   onunload(): void
   scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>
-  tidy(file: TFile): Promise<void>     // queue wrapper (index.ts:127) over private runTidy
-  // private runTidy(file: TFile, op: OperationHandle): Promise<void>   // index.ts:142, queue-free core
-  // private undoTidy(file: TFile): Promise<void>                       // index.ts:188, queued silently
+  tidy(file: TFile): Promise<void>
+  // private undoTidy(file: TFile): Promise<void>
 }
 
 interface TidySnapshot {
