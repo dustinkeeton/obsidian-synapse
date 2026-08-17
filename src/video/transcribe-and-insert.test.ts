@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import { TFile } from '../__mocks__/obsidian';
 import { VideoModule } from './index';
+import { NoteOperationQueue } from '../shared';
 import type { VideoUrlEmbed } from './types';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
@@ -53,7 +54,8 @@ function makeModule() {
 		{} as never,
 		notifications as never,
 		createMockCheckpointManager() as never,
-		{} as never
+		{} as never,
+		new NoteOperationQueue()
 	);
 	const processUrl = vi.spyOn(mod, 'processUrl');
 	return { mod, store, noteFile, notifications, processUrl };

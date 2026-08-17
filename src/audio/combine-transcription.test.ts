@@ -22,6 +22,7 @@ import { AudioModule } from './index';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
+import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { AudioExtractor } from '../video';
 import type { AudioEmbed } from './types';
@@ -115,6 +116,7 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 				}) as unknown as SynapseSettings,
 			notifications as unknown as NotificationManager,
 			createMockCheckpointManager() as unknown as CheckpointManager,
+			new NoteOperationQueue(),
 			ex as unknown as AudioExtractor | undefined
 		);
 	}
@@ -189,7 +191,9 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		// 16 MB: above the 15 MB Gemini inline cap, below the generic 25 MB heuristic.
 		extractor = createFakeExtractor(16 * 1024 * 1024);
 		const module = makeModule(extractor, 'gemini');
-		const spy = vi.spyOn(module, 'transcribeAndInsert').mockResolvedValue();
+		const spy = vi
+			.spyOn(module as unknown as { insertTranscriptions: () => Promise<void> }, 'insertTranscriptions')
+			.mockResolvedValue();
 		notifications.confirm.mockResolvedValue(true); // user picks per-file
 
 		await module.transcribeAndInsertCombined(tfile('notes/lecture.md'), embeds());

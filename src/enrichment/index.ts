@@ -3,10 +3,10 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	getMarkdownFiles, NotificationManager, parseFrontmatter,
-	CheckpointManager, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
+	CheckpointManager, NoteOperationQueue, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentStore } from './enrichment-store';
 import { LinkResolver } from './link-resolver';
@@ -56,6 +56,7 @@ export class EnrichmentModule {
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
 		private registrar: CommandRegistrar,
+		private noteQueue: NoteOperationQueue,
 		shouldAutoAccept?: () => boolean
 	) {
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
@@ -137,7 +138,10 @@ export class EnrichmentModule {
 				if (!(file instanceof TFile)) continue;
 				if (this.isExcluded(file)) continue;
 
-				const id = await this.enrichFile(file, 'manual');
+				const id = await this.noteQueue.run(
+					file.path,
+					() => this.enrichFile(file, 'manual')
+				);
 				if (id) {
 					createdProposals.push({ id, notePath: file.path });
 					proposalCount++;
@@ -166,8 +170,10 @@ export class EnrichmentModule {
 		// so each stored proposal is final. Batch mode: one summary Notice.
 		let autoAcceptedCount = 0;
 		if (this.shouldAutoAccept()) {
-			for (const { id } of createdProposals) {
-				if (await this.maybeAutoAccept(id, true)) autoAcceptedCount++;
+			for (const { id, notePath } of createdProposals) {
+				if (await this.noteQueue.run(notePath, () => this.maybeAutoAccept(id, true))) {
+					autoAcceptedCount++;
+				}
 			}
 		}
 
@@ -289,7 +295,10 @@ export class EnrichmentModule {
 					eligible.length,
 					'Generating enrichment proposals'
 				);
-				const id = await this.enrichFile(eligible[i], 'manual');
+				const id = await this.noteQueue.run(
+					eligible[i].path,
+					() => this.enrichFile(eligible[i], 'manual')
+				);
 				if (id) {
 					createdProposals.push({ id, notePath: eligible[i].path });
 					proposalCount++;
@@ -345,8 +354,10 @@ export class EnrichmentModule {
 		// the merged cross-note candidates. Batch mode: one summary Notice.
 		let autoAcceptedCount = 0;
 		if (this.shouldAutoAccept()) {
-			for (const { id } of createdProposals) {
-				if (await this.maybeAutoAccept(id, true)) autoAcceptedCount++;
+			for (const { id, notePath } of createdProposals) {
+				if (await this.noteQueue.run(notePath, () => this.maybeAutoAccept(id, true))) {
+					autoAcceptedCount++;
+				}
 			}
 		}
 
@@ -412,6 +423,16 @@ export class EnrichmentModule {
 			`enrich-${filePath}`
 		);
 
+		await this.noteQueue.run(file.path, () => this.runEnrichment(file, trigger, op, options));
+	}
+
+	/** One note's enrichment cycle, already holding that note's queue slot (#483). */
+	private async runEnrichment(
+		file: TFile,
+		trigger: EnrichmentTrigger,
+		op: OperationHandle,
+		options?: { postOp?: boolean }
+	): Promise<void> {
 		try {
 			const id = await this.enrichFile(file, trigger);
 			// Single-note enrichment has no cross-note evidence for new notes,
@@ -526,7 +547,12 @@ export class EnrichmentModule {
 		accepted: AcceptedItems,
 		options?: { silent?: boolean }
 	): Promise<void> {
-		await this.acceptSelected(id, accepted, options);
+		const proposal = await this.store.load(id);
+		if (!proposal) return;
+		await this.noteQueue.run(
+			proposal.sourceNotePath,
+			() => this.acceptSelected(id, accepted, options)
+		);
 	}
 
 	/**
@@ -556,7 +582,8 @@ export class EnrichmentModule {
 		// Guard against double-acceptance (cascade safety).
 		if (!proposal || proposal.status !== 'pending') return false;
 		const acceptAll = this.buildAcceptAll(proposal.result);
-		await this.acceptSelectedFromView(proposalId, acceptAll, { silent: batch });
+		// Callers already hold the note's queue slot (#483), so apply directly.
+		await this.acceptSelected(proposalId, acceptAll, { silent: batch });
 		if (!batch) {
 			this.notifications.info(`Auto-accepted enrichment for ${proposal.sourceNotePath}`);
 		}

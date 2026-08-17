@@ -3,7 +3,7 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	getMarkdownFiles, NotificationManager, ensureFolder,
-	writeNote, generateOrganizeSummary, CheckpointManager, generateId, fireAndForget,
+	writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
@@ -50,6 +50,7 @@ export class OrganizeModule {
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
 		private registrar: CommandRegistrar,
+		private noteQueue: NoteOperationQueue,
 		shouldAutoAccept?: () => boolean
 	) {
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
@@ -126,7 +127,10 @@ export class OrganizeModule {
 
 				try {
 					const originalPath = file.path;
-					const result = await this.organizeFile(file, true, batchProposedDirs);
+					const result = await this.noteQueue.run(
+						file.path,
+						() => this.organizeFile(file, true, batchProposedDirs)
+					);
 
 					if (result) {
 						if (result.movedDirectly && result.action.type === 'move') {
@@ -215,7 +219,11 @@ export class OrganizeModule {
 		);
 
 		try {
-			const result = await this.organizeFile(file);
+			const result = await this.noteQueue.run(
+				file.path,
+				() => this.organizeFile(file),
+				{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
+			);
 
 			if (!result) {
 				op.finish('No organization needed');
@@ -341,7 +349,10 @@ export class OrganizeModule {
 			genOp.progress(i + 1, eligible.length, 'Organizing notes');
 			try {
 				const originalPath = eligible[i].path;
-				const result = await this.organizeFile(eligible[i], true, batchProposedDirs);
+				const result = await this.noteQueue.run(
+					eligible[i].path,
+					() => this.organizeFile(eligible[i], true, batchProposedDirs)
+				);
 
 				if (result) {
 					if (result.movedDirectly && result.action.type === 'move') {
@@ -424,11 +435,19 @@ export class OrganizeModule {
 	 * Notice and refresh once. (Error and "cannot move" Notices still fire.)
 	 */
 	async acceptProposal(id: string, options?: { silent?: boolean }): Promise<void> {
-		const proposal = await this.store.loadProposal(id);
-		if (!proposal) {
+		const queued = await this.store.loadProposal(id);
+		if (!queued) {
 			this.notifications.info('Proposal not found');
 			return;
 		}
+		// Keyed on the pre-move path; work queued behind us finds no file there and exits early.
+		await this.noteQueue.run(queued.sourceNotePath, () => this.applyAccept(id, options));
+	}
+
+	/** Queue-free core of acceptProposal; runs holding the note's queue slot (#483). */
+	private async applyAccept(id: string, options?: { silent?: boolean }): Promise<void> {
+		const proposal = await this.store.loadProposal(id);
+		if (!proposal) return;
 		// Guard against double-acceptance (cascade safety): only act on a
 		// still-pending proposal so the note is never moved twice.
 		if (proposal.status !== 'pending') return;
@@ -502,7 +521,8 @@ export class OrganizeModule {
 	 */
 	private async maybeAutoAccept(proposalId: string, batch = false): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
-		await this.acceptProposal(proposalId, { silent: batch });
+		// Callers already hold the note's queue slot (#483), so apply directly.
+		await this.applyAccept(proposalId, { silent: batch });
 		if (!batch) {
 			this.notifications.info('Auto-accepted organize proposal');
 		}
@@ -530,18 +550,20 @@ export class OrganizeModule {
 		}
 
 		try {
-			// Ensure original parent folder still exists
-			const originalParent = snapshot.originalPath.substring(
-				0,
-				snapshot.originalPath.lastIndexOf('/')
-			);
-			if (originalParent) {
-				await ensureFolder(this.plugin.app, originalParent);
-			}
+			await this.noteQueue.run(file.path, async () => {
+				// Ensure original parent folder still exists
+				const originalParent = snapshot.originalPath.substring(
+					0,
+					snapshot.originalPath.lastIndexOf('/')
+				);
+				if (originalParent) {
+					await ensureFolder(this.plugin.app, originalParent);
+				}
 
-			await this.plugin.app.vault.rename(file, snapshot.originalPath);
-			await this.store.removeSnapshot(file.path);
-			this.notifications.success('Organize undone -- note moved back');
+				await this.plugin.app.vault.rename(file, snapshot.originalPath);
+				await this.store.removeSnapshot(file.path);
+				this.notifications.success('Organize undone -- note moved back');
+			});
 		} catch (error) {
 			this.notifications.notifyError('Failed to undo organize', error);
 		}

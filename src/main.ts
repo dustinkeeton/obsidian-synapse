@@ -17,7 +17,7 @@ import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID } f
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
-import { openScanFolderPicker, NotificationManager, CheckpointManager, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION, redactError } from './shared';
+import { openScanFolderPicker, NotificationManager, CheckpointManager, NoteOperationQueue, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION, redactError } from './shared';
 import type { DeferredTask } from './shared';
 import {
 	UnifiedTranscriptionModal,
@@ -55,6 +55,8 @@ export default class SynapsePlugin extends Plugin {
 	settings!: SynapseSettings;
 	notifications!: NotificationManager;
 	private checkpointManager!: CheckpointManager;
+	/** Shared per-note AI-operation queue (#483). One instance for the whole plugin. */
+	private noteQueue!: NoteOperationQueue;
 	private updateChecker!: UpdateChecker;
 
 	private elaboration!: ElaborationModule;
@@ -112,6 +114,9 @@ export default class SynapsePlugin extends Plugin {
 		// Single shared checkpoint manager for all modules (I5)
 		this.checkpointManager = new CheckpointManager(this.app);
 
+		// Single shared per-note operation queue (#483)
+		this.noteQueue = new NoteOperationQueue();
+
 		const getSettings = () => this.settings;
 
 		// Central command registrar — the single wiring point to addCommand, gated
@@ -126,16 +131,16 @@ export default class SynapsePlugin extends Plugin {
 
 		// Initialize modules (Audio before Video since Video depends on Audio)
 		// Pass checkpointManager to each module instead of letting them create their own
-		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.elaboration);
+		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept.elaboration);
 		// Create a shared AudioExtractor on desktop for clipping support
 		const audioExtractor = Platform.isDesktop ? new AudioExtractor(getSettings) : undefined;
 		this.audioExtractor = audioExtractor;
-		this.audio = new AudioModule(this, getSettings, this.notifications, this.checkpointManager, audioExtractor);
+		this.audio = new AudioModule(this, getSettings, this.notifications, this.checkpointManager, this.noteQueue, audioExtractor);
 		if (Platform.isDesktop) {
-			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager, registrar);
+			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager, registrar, this.noteQueue);
 		}
-		this.image = new ImageModule(this, getSettings, this.notifications, this.checkpointManager);
-		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.enrichment);
+		this.image = new ImageModule(this, getSettings, this.notifications, this.checkpointManager, this.noteQueue);
+		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept.enrichment);
 
 		// URL transcription router (#184): ordered tiers behind one seam.
 		// Captions work on every platform; the yt-dlp/ffmpeg extraction tier
@@ -167,7 +172,7 @@ export default class SynapsePlugin extends Plugin {
 		}
 
 		this.summarize = new SummarizeModule(
-			this, getSettings, this.notifications, this.checkpointManager, registrar,
+			this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue,
 			async (url, parentOp) => {
 				const result = await urlTranscription.transcribe(url, {
 					update: parentOp ? (msg) => parentOp.update(msg) : undefined,
@@ -180,10 +185,10 @@ export default class SynapsePlugin extends Plugin {
 				return result.processed || result.raw;
 			}
 		);
-		this.tidy = new TidyModule(this, getSettings, this.notifications, registrar);
-		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.organize);
-		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept['deep-dive']);
-		this.title = new TitleModule(this, getSettings, this.notifications, () => this.settings.autoAccept.title);
+		this.tidy = new TidyModule(this, getSettings, this.notifications, registrar, this.noteQueue);
+		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept.organize);
+		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept['deep-dive']);
+		this.title = new TitleModule(this, getSettings, this.notifications, this.noteQueue, () => this.settings.autoAccept.title);
 		this.rem = new RemModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.rem);
 
 		// In-app "newer Synapse available" check (#365). Self-gated on the settings
@@ -614,6 +619,7 @@ export default class SynapsePlugin extends Plugin {
 						getSettings: () => this.settings,
 						notifications: this.notifications,
 						router: this.urlTranscription,
+						noteQueue: this.noteQueue,
 						onComplete: (filePath) => this.audio.onTranscriptionComplete?.(filePath),
 					},
 					url,

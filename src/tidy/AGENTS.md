@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-07-03
+last-updated: 2026-08-17
 ---
 
 # Tidy Module
@@ -14,7 +14,8 @@ class TidyModule {
     plugin: Plugin,
     getSettings: () => SynapseSettings,
     notifications: NotificationManager,
-    registrar: CommandRegistrar
+    registrar: CommandRegistrar,
+    noteQueue: NoteOperationQueue      // #483, after registrar
   )
   onload(): Promise<void>
   onunload(): void
@@ -33,7 +34,24 @@ interface TidySnapshot {
 function renderTidySettings(ctx: SettingsSectionContext): void
 ```
 
-Re-exports from `index.ts`: type `TidySnapshot` (index.ts:L8), `renderTidySettings` (index.ts:L192).
+Re-exports from `index.ts`: type `TidySnapshot` (index.ts:9), `renderTidySettings` (index.ts:209).
+
+## Note Queue (#483)
+
+Tidy is the sharpest lost-update case in the codebase: its write is a whole-note replace
+(`vault.process(file, () => cleaned)`, index.ts:177) computed from a read taken BEFORE a
+multi-second AI call. Unserialized, a tidy silently deletes anything that landed during that
+call (its pre-AI snapshot never contained it, and its write replaces everything).
+
+Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`. Acquisition sites:
+
+| Site | Key | Wrapped core | onWait |
+|------|-----|--------------|--------|
+| `tidy(file)` (index.ts:136) | `file.path` | `runTidy(file, op)` | `op.update("Waiting for another Synapse operation on <basename>")` |
+| `undoTidy(file)` (index.ts:199) | `file.path` | inline restore + snapshot removal | none (silent — the restore is instant) |
+
+`scanVault` calls the PUBLIC `tidy` per file (index.ts:112), so the batch takes one slot per
+note, never one per batch. `runTidy` acquires nothing — it already holds the slot.
 
 ## File Inventory
 
@@ -45,6 +63,7 @@ Re-exports from `index.ts`: type `TidySnapshot` (index.ts:L8), `renderTidySettin
 | `settings-section.ts` | `renderTidySettings` | Tidy settings accordion (toggle only, no options) |
 | `tidy-store.test.ts` | Tests | TidyStore tests |
 | `tidy-module.test.ts` | Tests | TidyModule tests |
+| `tidy-transcription-race.test.ts` | Tests | Regression (#483): a tidy submitted while an audio transcription is in flight for the same note serializes behind it, writes second (`writeOrder === ['transcription','tidy']`), tidies the transcript-inclusive body, and preserves the transcript. CONTROL case drives the identical interleaving with `AudioModule`/`TidyModule` on SEPARATE `NoteOperationQueue` instances (pre-#483 topology) and asserts the transcript IS lost — that is what makes the other assertions meaningful |
 | `settings-section.test.ts` | Tests | Settings section tests |
 
 ## TidyStore (`tidy-store.ts`, internal)
@@ -67,17 +86,20 @@ class TidyStore {
 - Write via `vault.adapter.write()` (overwrites regardless of prior existence).
 - Delete via `app.fileManager.trashFile()` (respects user "Deleted files" preference; recoverable).
 
-## Data Flow — tidy(file) (index.ts:L125)
+## Data Flow — tidy(file) (index.ts:127)
 
 ```
 startOperation("Tidying <basename>", "tidy-<path>")
+noteQueue.run(file.path, () => runTidy(file, op), { onWait })   -- index.ts:136
+  |
+  v  runTidy(file, op)  (index.ts:142, holds the slot for the whole cycle)
 1. vault.read(file) -> content
 2. snapshot { id: generateId(), filePath, originalContent: content, createdAt: ISO }
    store.save(snapshot)                       -- snapshot taken before any write
 3. parseFrontmatter(content) -> { frontmatter, body }
 4. if !body.trim(): op.finish("Nothing to tidy — note is empty"); return
 5. withRetry(() => aiClient.complete(body, SYSTEM_PROMPT), 3, 2000)
-     SYSTEM_PROMPT (index.ts:L10) constrains AI to:
+     SYSTEM_PROMPT (index.ts:11) constrains AI to:
        - spelling correction only (no grammar/word-choice/meaning changes)
        - markdown formatting (lists, quotes, headers, code blocks, emphasis)
        - no content add/remove/rephrase; preserve frontmatter/links/tags/embeds
@@ -91,19 +113,20 @@ startOperation("Tidying <basename>", "tidy-<path>")
 catch: op.error("Tidy failed — <msg>")
 ```
 
-## Data Flow — undoTidy(file) (index.ts:L176, private)
+## Data Flow — undoTidy(file) (index.ts:188, private)
 
 ```
 1. store.load(file.path) -> snapshot | null
 2. if !snapshot: notifications.info("No tidy to undo for this note"); return
-3. vault.process(file, () => snapshot.originalContent)
-4. store.remove(file.path)                    -- trashes snapshot (recoverable)
-5. notifications.success("Tidy undone")
+3. noteQueue.run(file.path, ...)              -- index.ts:199, silent (no onWait)
+     3a. vault.process(file, () => snapshot.originalContent)
+     3b. store.remove(file.path)              -- trashes snapshot (recoverable)
+     3c. notifications.success("Tidy undone")
 ```
 
 Reachable in code only via the `undo-tidy` command, which is gated off (registry status `disabled`); not invokable from the palette today.
 
-## Data Flow — scanVault(folderPath?, skipConfirmation?, onlyFile?) (index.ts:L76)
+## Data Flow — scanVault(folderPath?, skipConfirmation?, onlyFile?) (index.ts:78)
 
 ```
 1. getMarkdownFiles(app, folderPath) -> allFiles
@@ -118,6 +141,7 @@ Reachable in code only via the `undo-tidy` command, which is gated off (registry
      op.progress(i+1, total, "Tidying notes")
      if isPathExcluded(path, "tidy", settings): continue   (silent skip, #307)
      try { tidy(file); tidied++ } catch { console.warn(...) }
+        (public tidy => one queue slot per note, index.ts:112)
 7. if !op.cancelled: op.finish("Tidied N notes")
 8. return tidied
 ```
@@ -134,8 +158,8 @@ Registry entries live in `src/commands/registry.ts`. Source ids are bare; Obsidi
 | `undo-tidy` | Undo last tidy on current note | disabled | palette | note | editorCallback → `undoTidy(file)` | never (gated off by status) |
 | `tidy-vault` | Scan folder for notes to tidy | active | fire-synapse | vault | pipeline → `scanVault()` | synthetic; never passed to `register()` |
 
-- `tidy-current-note` editorCallback (index.ts:L49): if `findMatchingRule(path, "tidy", settings)` matches, shows a Notice naming the rule pattern and skips; otherwise runs `tidy(file)`.
-- `undo-tidy` is attempted in `onload()` (index.ts:L65) but its registry status is `disabled`, so `addCommand` is never called.
+- `tidy-current-note` editorCallback (index.ts:52): if `findMatchingRule(path, "tidy", settings)` matches, shows a Notice naming the rule pattern and skips; otherwise runs `tidy(file)`.
+- `undo-tidy` is attempted in `onload()` (index.ts:67) but its registry status is `disabled`, so `addCommand` is never called.
 - `tidy-vault` (registry.ts:L66) is pipeline-only with `pipelineKey: 'tidy'`; Fire Synapse runs `scanVault()` vault-wide. It has no matching palette command (the palette `tidy-current-note` runs `tidy()` on one note — a different operation).
 
 ## Configuration
@@ -167,7 +191,8 @@ Settings UI: `renderTidySettings` (settings-section.ts:L7) renders an accordion 
 | Imports | From |
 |---------|------|
 | `Plugin`, `TFile`, `App` | `obsidian` |
-| `AIClient`, `NotificationManager`, `getMarkdownFiles`, `parseFrontmatter`, `sanitizeAIResponse`, `stripCodeFences`, `serializeFrontmatter`, `withRetry`, `generateId`, `isPathExcluded`, `findMatchingRule`, `ensureFolder`, `SettingsSectionContext` | `../shared` |
+| `AIClient`, `NotificationManager`, `NoteOperationQueue`, `getMarkdownFiles`, `parseFrontmatter`, `sanitizeAIResponse`, `stripCodeFences`, `serializeFrontmatter`, `withRetry`, `generateId`, `isPathExcluded`, `findMatchingRule`, `ensureFolder`, `SettingsSectionContext` | `../shared` |
+| `OperationHandle` | `../shared` (type-only, index.ts:5) |
 | `CommandRegistrar` | `../commands` |
 | `SynapseSettings` | `../settings` |
 | `TidyStore` | `./tidy-store` |

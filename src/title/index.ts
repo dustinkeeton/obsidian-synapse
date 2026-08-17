@@ -1,7 +1,7 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
-	AIClient, NotificationManager, generateId, readNote, isPathExcluded, reviewAction,
+	AIClient, NotificationManager, NoteOperationQueue, generateId, readNote, isPathExcluded, reviewAction,
 	findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags,
 } from '../shared';
 import { TitleProposalStore } from './title-store';
@@ -48,6 +48,7 @@ export class TitleModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
+		private noteQueue: NoteOperationQueue,
 		shouldAutoAccept?: () => boolean
 	) {
 		const aiClient = new AIClient(getSettings);
@@ -68,11 +69,12 @@ export class TitleModule {
 	 */
 	private async maybeAutoAccept(proposal: TitleProposal): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
-		// acceptProposal derives the resolution from the duplicateHandling setting
+		// applyAccept derives the resolution from the duplicateHandling setting
 		// on a live collision, so a colliding title is resolved automatically. The
 		// notice reflects the ACTUAL outcome (suffixed name / merge target), not
-		// the originally proposed title (#408).
-		const outcome = await this.acceptProposal(proposal.id, { silent: true });
+		// the originally proposed title (#408). Callers already hold the note's
+		// queue slot (#483), so apply directly.
+		const outcome = await this.applyAccept(proposal.id, { silent: true });
 		if (outcome.status === 'renamed') {
 			this.notifications.info(`Auto-accepted title "${this.baseName(outcome.path)}"`);
 		} else if (outcome.status === 'merged') {
@@ -109,6 +111,15 @@ export class TitleModule {
 
 		if (!isUntitled(file.basename)) return;
 
+		await this.noteQueue.run(filePath, () => this.proposeUntitled(file, filePath, options));
+	}
+
+	/** Untitled-note proposal cycle, already holding the note's queue slot (#483). */
+	private async proposeUntitled(
+		file: TFile,
+		filePath: string,
+		options?: { postOp?: boolean }
+	): Promise<void> {
 		// Read content BEFORE the guards: the dedup key is computed from it (#408).
 		const content = await readNote(this.plugin.app, filePath);
 		if (!content || content.trim().length === 0) return;
@@ -184,6 +195,16 @@ export class TitleModule {
 		// Don't check mismatch if the note is already untitled (handled by checkUntitled)
 		if (isUntitled(file.basename)) return;
 
+		// #483: serialized per note, silently — see {@link checkUntitled}.
+		await this.noteQueue.run(filePath, () => this.proposeFromMismatch(file, filePath, options));
+	}
+
+	/** Mismatch proposal cycle, already holding the note's queue slot (#483). */
+	private async proposeFromMismatch(
+		file: TFile,
+		filePath: string,
+		options?: { postOp?: boolean }
+	): Promise<void> {
 		// Read content BEFORE the guards: the dedup key is computed from it (#408).
 		const content = await readNote(this.plugin.app, filePath);
 		if (!content || content.trim().length === 0) return;
@@ -310,6 +331,20 @@ export class TitleModule {
 	 * each link's rendered display text (#485) — see {@link remediateBacklinks}.
 	 */
 	async acceptProposal(
+		id: string,
+		options?: { silent?: boolean; resolution?: TitleDuplicateStrategy }
+	): Promise<TitleAcceptOutcome> {
+		const queued = await this.store.load(id);
+		if (!queued) return { status: 'skipped' };
+		// Keyed on the pre-rename path; work queued behind us finds no file there and exits early.
+		return this.noteQueue.run(
+			queued.sourceNotePath,
+			() => this.applyAccept(id, options)
+		);
+	}
+
+	/** Queue-free core of acceptProposal; runs holding the source note's queue slot (#483). */
+	private async applyAccept(
 		id: string,
 		options?: { silent?: boolean; resolution?: TitleDuplicateStrategy }
 	): Promise<TitleAcceptOutcome> {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ElaborationModule } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
-import { NotificationManager } from '../shared';
+import { NotificationManager, NoteOperationQueue } from '../shared';
 import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import { requestUrl } from '../__mocks__/obsidian';
 import type { App, Plugin, TFile } from 'obsidian';
@@ -96,7 +96,8 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 			() => settings,
 			notifications,
 			createMockCheckpointManager() as unknown as CheckpointManager,
-			new CommandRegistrar(mockPlugin)
+			new CommandRegistrar(mockPlugin),
+			new NoteOperationQueue()
 		);
 	});
 

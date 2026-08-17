@@ -2,9 +2,9 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
-	CheckpointManager, generateId, isPathExcluded, findMatchingRule,
+	CheckpointManager, NoteOperationQueue, generateId, isPathExcluded, findMatchingRule,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle } from '../shared';
 import { ImageEmbed } from './types';
 import { ImageExtractor } from './extractor';
 
@@ -22,13 +22,21 @@ export class ImageModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager
+		private checkpointManager: CheckpointManager,
+		private noteQueue: NoteOperationQueue
 	) {
 		this.extractor = new ImageExtractor(getSettings, notifications);
 	}
 
 	async onload(): Promise<void> {}
 	onunload(): void {}
+
+	/** Serialize a note-mutating OCR insert behind the per-note queue (#483). */
+	private queued<T>(file: TFile, op: OperationHandle, run: () => Promise<T>): Promise<T> {
+		return this.noteQueue.run(file.path, run, {
+			onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`),
+		});
+	}
 
 	async extractFromFile(file: TFile): Promise<void> {
 		const activeFile = this.plugin.app.workspace.getActiveFile();
@@ -51,6 +59,17 @@ export class ImageModule {
 			`Extracting text from ${file.name}...`,
 			`image-${file.path}`
 		);
+		await this.queued(activeFile, op, () =>
+			this.insertFileExtraction(activeFile, file, op)
+		);
+	}
+
+	/** OCR + append, already holding the target note's queue slot (#483). */
+	private async insertFileExtraction(
+		activeFile: TFile,
+		file: TFile,
+		op: OperationHandle
+	): Promise<void> {
 		try {
 			const data = await this.plugin.app.vault.readBinary(file);
 			const result = await this.extractor.extract(data, file.name);
@@ -91,13 +110,23 @@ export class ImageModule {
 		// once for the whole note (not per embed).
 		if (isPathExcluded(noteFile.path, 'image', this.getSettings())) return;
 
-		const total = embeds.length;
-		let completed = 0;
-
 		const op = this.notifications.startOperation(
-			`Extracting text from ${total} image(s)...`,
+			`Extracting text from ${embeds.length} image(s)...`,
 			`image-batch-${noteFile.path}`
 		);
+		await this.queued(noteFile, op, () =>
+			this.insertExtractions(noteFile, embeds, op)
+		);
+	}
+
+	/** Batch OCR + insert, already holding the note's queue slot (#483). */
+	private async insertExtractions(
+		noteFile: TFile,
+		embeds: ImageEmbed[],
+		op: OperationHandle
+	): Promise<void> {
+		const total = embeds.length;
+		let completed = 0;
 
 		// Create checkpoint for batch OCR
 		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({

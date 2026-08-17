@@ -3,7 +3,7 @@ import { SynapseSettings, DeepDiveNestingMode } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	NotificationManager, readNote, writeNote, wordCount,
-	CheckpointManager, generateId, fireAndForget,
+	CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
@@ -76,6 +76,7 @@ export class DeepDiveModule {
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
 		private registrar: CommandRegistrar,
+		private noteQueue: NoteOperationQueue,
 		shouldAutoAccept?: () => boolean
 	) {
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
@@ -135,11 +136,18 @@ export class DeepDiveModule {
 	 * still fire (they are the intended, acyclic chain).
 	 */
 	async acceptProposal(id: string, options?: { silent?: boolean }): Promise<void> {
-		const proposal = await this.store.loadProposal(id);
-		if (!proposal) {
+		const queued = await this.store.loadProposal(id);
+		if (!queued) {
 			this.notifications.info('Proposal not found');
 			return;
 		}
+		await this.noteQueue.run(queued.proposedPath, () => this.applyAccept(id, options));
+	}
+
+	/** Queue-free core of acceptProposal; runs holding the new note's queue slot (#483). */
+	private async applyAccept(id: string, options?: { silent?: boolean }): Promise<void> {
+		const proposal = await this.store.loadProposal(id);
+		if (!proposal) return;
 		// Guard against double-acceptance (cascade safety): never create the
 		// note twice for the same proposal.
 		if (proposal.status !== 'pending') return;

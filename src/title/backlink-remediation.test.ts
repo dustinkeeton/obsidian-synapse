@@ -7,7 +7,7 @@ import {
 } from './backlink-remediation';
 import { TitleModule } from './index';
 import { DEFAULT_SETTINGS } from '../settings';
-import { NotificationManager } from '../shared';
+import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile, TFolder, Notice } from '../__mocks__/obsidian';
 
 const OLD = 'Inbox/Untitled.md';
@@ -248,6 +248,7 @@ function harness(
 		mockPlugin as never,
 		() => settings,
 		notifications,
+		new NoteOperationQueue(),
 		() => settings.autoAccept.title,
 	);
 
