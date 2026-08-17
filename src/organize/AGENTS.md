@@ -62,7 +62,7 @@ exactly like a title rename — work already queued under the old path runs afte
 there and exits early.
 
 `maybeAutoAccept` (index.ts:539) calls `applyAccept` DIRECTLY, never the public `acceptProposal`.
-It runs inside `organizeFile` (index.ts:677), which every caller has already queued on that note's
+It runs inside `organizeFile` (called at index.ts:678), which every caller has already queued on that note's
 key; routing it through `acceptProposal` would re-enter the same key and self-deadlock. This is the
 "acquire at most once per operation" rule in its sharpest form.
 
