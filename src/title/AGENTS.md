@@ -131,7 +131,7 @@ proposeUntitled(file, filePath, options?)  [private, holds the note's queue slot
   --> build proposal {trigger:'untitled', contentKey:key}
   --> computeTargetPath(file, title); if a different file occupies it, set proposal.conflictsWith  [UI hint]
   --> store.save(proposal)
-  --> maybeAutoAccept(proposal)  [if shouldAutoAccept(): acceptProposal(id,{silent:true}); announces REAL outcome]
+  --> maybeAutoAccept(proposal)  [if shouldAutoAccept(): applyAccept(id,{silent:true}) — direct, the slot is already held (#483); announces REAL outcome]
   --> action = reviewAction({ generated:true, shouldAutoAccept, openProposalView, postOp: options?.postOp })
   --> if action: notifications.success('Title proposal ready', undefined, action)
   --> refreshView() --> onViewRefreshNeeded?()
