@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-14
 ---
 
 # Video Module
@@ -207,6 +207,7 @@ Registered via `registrar.register('check-dependencies', ...)` (index.ts:61); Ob
 | `video.tempFolder` | `string` | `'.synapse/temp'` | Vault folder ensured on load for temp work |
 | `video.downloadFolder` | `string` | `'Media'` | Vault folder to save downloaded videos (empty = do not save) |
 | `video.embedInNote` | `boolean` | `true` | Add `![[video.mp4]]` embed to note when a video is saved |
+| `video.captionsFirst` | `boolean` | `true` | Prefer the YouTube caption tier over download+transcribe (#184; `settings.ts:127`); consumed by `transcription/caption-strategy.ts` `canHandle`, toggle rendered at `settings-section.ts:173` |
 | `video.frameExtraction.enabled` | `boolean` | `false` | Frame extraction gate (unimplemented) |
 | `video.frameExtraction.intervalSeconds` | `number` | `30` | Seconds between extracted frames |
 | `video.frameExtraction.visionModel` | `string` | `'gpt-4o'` | Vision model for frame analysis |

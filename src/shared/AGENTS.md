@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-14
 ---
 
 # Shared Module
@@ -186,6 +186,22 @@ function addEnhancedSlider(setting: Setting, options: SliderOptions): void
 // folder-picker-modal.ts
 class FolderPickerModal extends SuggestModal<TFolder> { ... }
 
+// open-scan-folder-picker.ts:9
+function openScanFolderPicker(app: App, onChoose: (path: string | undefined) => void): void   // undefined = vault root
+
+// confirm-modal.ts:4 / :22 (#420; settle-once yes/no modal; dismiss = false)
+interface ConfirmModalOptions { title: string; message: string; confirmLabel?: string }   // confirmLabel default 'Reset'
+class ConfirmModal extends Modal {
+  constructor(app: App, opts: ConfirmModalOptions)
+  openAndConfirm(): Promise<boolean>   // confirm-modal.ts:74
+}
+
+// settings-reset.ts (per-section + global settings reset)
+function sectionHasReset(key: string): boolean                                   // :25; false only for 'about'
+function applySectionReset(settings: SynapseSettings, key: string): void         // :57; mutates in place; special keys: 'general', 'ai', 'audio'
+function sectionMatchesDefaults(settings: SynapseSettings, key: string): boolean // :141
+function applyResetAll(current: SynapseSettings): SynapseSettings               // :193; fresh defaults, preserves settingsVersion/onboarding.hasSeenWelcome/ui.collapsedSections/updates.lastUpdateCheck+dismissedUpdateVersion
+
 // id-utils.ts
 function generateId(): string                    // timestamp(base36) + random(base36)
 function isValidCheckpointId(id: string): boolean // /^[a-z0-9]+$/
@@ -203,7 +219,7 @@ class NoteOperationQueue {
   get size(): number                  // number of paths with queued/running operations (diagnostics/tests)
   run<T>(notePath: string, operation: () => Promise<T>, options?: NoteOperationOptions): Promise<T>
 }
-// One instance per plugin (created in main.ts:122), injected into every module that mutates a note after an AI call.
+// One instance per plugin (created in main.ts:118), injected into every module that mutates a note after an AI call.
 // Chain entries never reject (built from internal resolve-only promises), so a failing operation cannot poison a key;
 // `run` rejections still propagate to the caller and still release the slot (note-operation-queue.ts:85).
 
@@ -323,10 +339,12 @@ function assertDesktop(context?: string): void
 function loadNodeModules(): NodeModules
 function shellEnv(): NodeJS.ProcessEnv
 
-// settings-section.ts
+// settings-section.ts (imports `type SynapsePlugin` from ../main — type-only back-edge, erased at compile time)
+interface SectionRegistryEntry { key: string; title: string; bodyEl: HTMLElement; reset?: () => Promise<void> }   // settings-section.ts:21
 interface SettingsSectionContext {
   containerEl: HTMLElement
   plugin: SynapsePlugin
+  sections: SectionRegistryEntry[]   // every rendered accordion, in render order
   featureSection(key: string, title: string, getEnabled: () => boolean, setEnabled: (value: boolean) => void, toggleDesc?: string): HTMLElement
   configSection(key: string, title: string): HTMLElement
   rerender: () => void
@@ -407,6 +425,12 @@ function scoreLyricsContent(content: string): number
 | `slider-helper.ts` | `addEnhancedSlider` | Settings UI helper for range sliders with ticks |
 | `folder-picker-modal.ts` | `FolderPickerModal` | Modal for folder selection with autocomplete |
 | `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests |
+| `open-scan-folder-picker.ts` | `openScanFolderPicker` | Unified scan-folder picker wrapper over `FolderPickerModal`; root-first sort so Enter-on-open scans the whole vault; `onChoose(undefined)` = root. Used by main (`fire`) and the elaboration, enrichment, summarize, organize, rem folder-scan commands |
+| `open-scan-folder-picker.test.ts` | Tests | Scan folder picker tests |
+| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Used by `settings-section.ts` reset controls |
+| `confirm-modal.test.ts` | Tests | ConfirmModal tests |
+| `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |
+| `settings-reset.test.ts` | Tests | Reset helper tests |
 | `id-utils.ts` | `generateId`, `isValidCheckpointId` | ID generation and validation for checkpoint paths |
 | `checkpoint-types.ts` | `CheckpointModule`, `CheckpointStatus`, `CheckpointWorkItem`, `DeferredTask`, `Checkpoint` | Checkpoint data model types |
 | `checkpoint-manager.ts` | `CheckpointManager` | CRUD and lifecycle management for resumable operation checkpoints |
@@ -438,7 +462,7 @@ function scoreLyricsContent(content: string): number
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
 | `json-utils.ts` | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` | Type-safe JSON helpers. `parseJson` returns `unknown` (not `any`). `readJsonFile` reads via `DataAdapter`, validates with a type guard, returns `null` on any failure |
 | `node-loader.ts` | `loadNodeModules`, `assertDesktop`, `shellEnv`, `DesktopOnlyError`, `NodeModules` | Single sanctioned entry point for desktop-only Node.js builtins (os/path/fs/child_process). Lazy-loads inside function body so importing never triggers a module load on mobile. `shellEnv()` builds a narrowed subprocess environment with PATH augmented for common tool install locations |
-| `settings-section.ts` | `createSettingsSectionContext`, `isSectionCollapsed`, `persistCollapse`, `SettingsSectionContext`, `SettingsSectionContextOptions` | Shared accordion plumbing for the settings tab (#243). Feature renderers receive a `SettingsSectionContext` and call `featureSection()`/`configSection()` to build accordions without importing `settings-tab.ts` |
+| `settings-section.ts` | `createSettingsSectionContext`, `isSectionCollapsed`, `persistCollapse`, `SettingsSectionContext`, `SettingsSectionContextOptions`, `SectionRegistryEntry` | Shared accordion plumbing for the settings tab (#243). Feature renderers receive a `SettingsSectionContext` and call `featureSection()`/`configSection()` to build accordions without importing `settings-tab.ts` |
 | `markdown.d.ts` | ambient `declare module '*.md'` | Types `import X from '*.md'` as a string (esbuild inlines the file at build time); used by `changelog-modal.ts` to bundle CHANGELOG.md (#375). Not part of the barrel |
 | `index.ts` | re-exports | Barrel file |
 
@@ -560,7 +584,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `classifyNetworkError` / `describeNetworkError` | audio/transcriber (retry gating + failure disclosure) |
 | `NotificationManager` | all feature modules (injected via constructor) |
 | `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive, rem (all injected via constructor) |
-| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:122`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via constructor), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
+| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:118`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via constructor), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
 | `classifyUrl` / `extractUrls` | summarize, enrichment, intake (URL routing) |
 | `detectPlatform` / `isSupportedUrl` | video/index, transcription/, summarize (platform gating) |

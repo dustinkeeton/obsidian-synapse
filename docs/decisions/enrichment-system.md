@@ -1,7 +1,7 @@
 # Enrichment System -- Design Decisions
 
 **Date**: 2026-03-13
-**Status**: Planned
+**Status**: Implemented (status updated 2026-09-14 — the module shipped under `src/enrichment/`; the as-built file layout is in `docs/agent/enrichment-module.md` and differs from the planned table below)
 **Module path**: `src/enrichment/`
 
 ---
