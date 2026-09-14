@@ -98,6 +98,7 @@ export type {
 	SettingsSectionContext,
 	SettingsSectionContextOptions,
 	SectionRegistryEntry,
+	FeatureToggleListener,
 } from './settings-section';
 export { ConfirmModal } from './confirm-modal';
 export type { ConfirmModalOptions } from './confirm-modal';
