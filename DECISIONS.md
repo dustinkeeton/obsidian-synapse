@@ -4,6 +4,73 @@ Decisions listed in reverse chronological order.
 
 ---
 
+## 2026-08-17: Per-note AI operations are serialized behind one path-keyed queue (#483)
+
+**Context**: Nothing serialized operations that read and write the same note. "Transcribe current note" followed by "Elaborate current note" interleaved destructively: elaboration read the note before the transcript landed, asked the model to expand an audio link it cannot open (a hallucinated "the audio isn't accessible to me" callout), then a second, correct elaboration ran once the content hash changed — two callouts, a stale `status: empty` frontmatter, and a rename contradicting the transcript. The dedup key was correct; the missing piece was serialization.
+
+**Decision**: Add `NoteOperationQueue` (`src/shared/note-operation-queue.ts`) — a path-keyed FIFO promise chain, one instance created in `main.ts` and injected into every module whose write follows a read → AI cycle (audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive, and `transcription/insert-url-transcript`). Contract: a public entry point acquires the note's slot **exactly once** and delegates to a queue-free private core; incidental writes to *other* notes (backlink remediation, merge targets, deep-dive syllabus, organize summaries) stay unqueued; fire-and-forget post-op follow-ups started inside a slot enqueue behind it; a rename keys on the pre-rename path. Chain entries never reject, so a failing operation cannot poison a key. User-invoked work passes `onWait` to update its toast ("Waiting for another Synapse operation on <note>"); automatic follow-ups wait silently.
+
+**Alternatives considered**:
+- **Tighten the content-hash dedup key** — rejected; the guard is correct for changed notes in isolation and only misfires because a mid-flight mutation lands between two runs.
+- **One queue per module** — rejected; it would serialize nothing across features, which is exactly where the race lives.
+- **Re-key a queued operation after a rename** — rejected; it would require holding two keys at once, the one thing the no-nesting contract forbids.
+- **A modal while waiting** — rejected; a wait is informational, not a decision (see the 2026-07-15 modal entry).
+
+**Rationale**: The same pattern `CheckpointManager.withLock` already used per checkpoint, lifted to the note path so every feature reads what the previous one wrote. Acquire-once with no lock ordering is what keeps it deadlock-free.
+
+**Impact**: New `shared/note-operation-queue.ts` (+ tests); ten changed constructor signatures; public/private splits in every queued module (`maybeAutoAccept` calls the cores). Regression tests `elaboration/transcribe-elaborate-race.test.ts` and `tidy/tidy-transcription-race.test.ts` each carry a CONTROL case on separate queues that reproduces the old bug. REM accept/undo and intake stamp/move stay unqueued by design — they re-derive inside atomic `vault.process` callbacks. PR #489.
+
+---
+
+## 2026-08-17: Title renames remediate their own backlinks, preserving display text (#485)
+
+**Context**: Accepting a title proposal renamed the note with `vault.rename`, which bypasses Obsidian's link updating — every inbound `[[wikilink]]` was orphaned.
+
+**Decision**: All three accept branches in `TitleModule.acceptProposal` (plain rename, iterate/suffix, merge) snapshot inbound links **before** the rename via `metadataCache.getBacklinksForFile` and rewrite each referencing note **after**, retargeting the link while keeping its rendered text byte-for-byte: `[[Old]]` → `[[New|Old]]`, `[[Old|Custom]]` → `[[New|Custom]]`, heading/block refs keep their anchor and gain the old title as alias, markdown links get a path-only re-encoded update, embeds retarget without an alias. The cache method is not in the public typings, so it is feature-detected — without it, remediation is a no-op. Only exact matches of the recorded link text are replaced; per-file rewrites are independent and atomic; a failing note is logged and skipped, never failing the accept. The merge branch also retargets the source's self-links, which now live in the merged body.
+
+**Alternatives considered**:
+- **Switch to `fileManager.renameFile`** — rejected; its automatic rewrite changes how referencing notes *read* (the visible prose), not just where the link points.
+- **Leave links orphaned** — the status quo; rejected as a silent data-loss path on every accepted rename.
+
+**Rationale**: A rename should be invisible to readers of other notes. Aliasing the old title preserves that while still moving the link, and exact-match replacement means a stale cache entry can never corrupt prose.
+
+**Impact**: New `src/title/backlink-remediation.ts` (`collectInboundLinks`, `rewriteLinkText`, `rewriteContent`) + 30 tests; `remediateBacklinks` applier in `src/title/index.ts`; auto-accept flows through the same path. These other-note writes stay outside the per-note queue by design (see the #483 entry). PR #487.
+
+---
+
+## 2026-07-15: The time-range choice is a first-class modal; dismissal cancels (#464)
+
+**Context**: When a transcription needed a follow-up decision (which part of a long file to transcribe), the slider lived in a non-dismissible Notice (`time-range-toast.ts`). Its handles rendered as detached white blobs in-app — Obsidian styles `input[type='range']` at `(0,1,1)` specificity, beating the plugin's bare class selectors — and a stray click could dismiss it, silently transcribing the whole file. A first commit fixed the clipping and restyled the slider; after design feedback the whole interaction was promoted.
+
+**Decision**: Replace the toast with `TimeRangeModal` (`src/transcription/time-range-modal.ts`). `openAndChoose()` settles exactly once with `selection`, `full`, or `cancelled`; Escape, ✕, or click-away resolve `cancelled`, and the caller **does nothing**. The modal absorbs the old fallback text-input toast: an unknown duration renders manual start/end fields in the same surface. Every slider rule now uses `input[type='range'].synapse-time-range-input` so it wins Obsidian's specificity. `unified-modal.ts` routes file and URL flows through one `chooseTimeRange` helper and skips transcription entirely on cancel.
+
+**Alternatives considered**:
+- **Keep the toast, fix the CSS** — rejected after design review; a decision the operation blocks on should be front and center, and a dismissible surface with a default action turns a slip into an unwanted transcription.
+- **Treat dismissal as "full file"** — rejected; dismissal means cancel, never a default action.
+
+**Rationale**: House rule established here: an action that blocks on a follow-up decision gets a first-class Modal (the `ConfirmModal` settle-once pattern), never a toast; dismissal is cancel.
+
+**Impact**: `time-range-toast.ts` deleted; new `time-range-modal.ts` (+ 10 tests: full / selection / cancelled / settle-once / manual-input validation); `unified-modal.ts` `chooseTimeRange`; `styles.css` slider rules. Rendered in headless Chromium against a simulated Obsidian range rule to prove the specificity fix.
+
+---
+
+## 2026-07-15: Post-processing keeps complete raw text over truncated cleanup; filler removal is opt-in (#468)
+
+**Context**: `PostProcessor.process` sends the whole transcript through one AI call capped at `ai.maxTokens` (default 2048). Because post-processing *rewrites* the transcript, anything past roughly 1,500 words came back truncated — and the truncated text landed in `processed`, which every consumer prefers over `raw`. Found while testing caption transcription of a 70-minute video (#466). Separately, "Remove filler words" defaulted on, silently rewording interviews and talks users wanted verbatim.
+
+**Decision**: Add a token guard: estimate the output budget (`chars / 4`) and, when it exceeds `maxTokens`, keep the complete raw transcript with a console diagnostic naming the remedy. Flip `audio.postProcessing.removeFiller` to `false` for new installs; existing vaults keep their saved value. The toggle now explains the trade-off (voice memos yes, quoted speech no).
+
+**Alternatives considered**:
+- **Chunked post-processing for long transcripts** — deferred to #467; the guard stops the silent data loss today.
+- **Migrate existing users to filler-off** — rejected; a saved preference is a preference.
+- **Move filler removal into tidy** — parked on the #465 UX review.
+
+**Rationale**: Raw-but-complete beats clean-but-truncated, and an always-on default should never rewrite content users did not ask to change.
+
+**Impact**: `audio/post-processor.ts` guard (+ 2 tests); `settings.ts` default; audio settings description. Closes #466.
+
+---
+
 ## 2026-07-14: URL transcription ships as a transcript-level strategy router, not #180's MediaExtractor (#184/#112/#455)
 
 **Context**: Mobile video transcription (Android-first) finally lands. The 2026-03-19 "revised hybrid" entry below sketched a caption-first tier cascade but was never built; issue #180 proposed abstracting extraction behind a `MediaExtractor` interface whose unit of exchange is *extracted audio*. The caption tier, however, never produces audio — it goes straight from URL to transcript — so an audio-returning interface cannot host it.
@@ -18,6 +85,8 @@ Decisions listed in reverse chronological order.
 **Rationale**: The lightest seam that hosts today's two tiers and Phase 2's server tier without rework, keeps the module-boundary rule (strategies reach feature modules through injected callbacks), and reuses the existing post-processing, callout, exclusion, and onboarding machinery instead of duplicating any of it.
 
 **Impact**: New `src/transcription/{url-transcription,youtube-captions,caption-strategy,local-extraction-strategy,insert-url-transcript}.ts` (+ tests); `AudioModule.processTranscriptText`; `main.ts` wiring (summarize callback, intake branch, modal, ribbon/command ungating); `video.captionsFirst` + mobile-aware video settings; `intake.adoptSharedCaptures` + root-create adoption; docs. Supersedes the #112 stub. #180 closes as superseded by this seam.
+
+**Update (2026-07-15)**: #463 routed the last bypass — batch "Transcribe media" in a note — through the router (it still called `processUrl` directly, so long captioned videos hit Whisper's 413 limit); `main.ts` injects the router into `VideoModule` as `urlTranscriber`. #469 made caption output deterministic: `>>` speaker changes become paragraphs, description chapters become `###` headings linked to their timestamp, silences of 2.5 s or more break auto-generated captions into paragraphs, and strongly structured output skips AI post-processing (a rewrite would only flatten it). Shipped in 1.0.13.
 
 ---
 

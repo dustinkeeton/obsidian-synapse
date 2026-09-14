@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-14
 ---
 
 # Synapse — Agent Reference
 
-AI-powered Obsidian plugin: stub note elaboration, audio/video transcription, image OCR, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, REM wikilink discovery, intake-folder auto-processing, Fire Synapse multi-phase pipeline, and checkpoint-based operation resumability.
+AI-powered Obsidian plugin: stub note elaboration, audio/video transcription (caption-first URL tier on every platform, #184), image OCR, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, REM wikilink discovery, intake-folder auto-processing, Fire Synapse multi-phase pipeline, and checkpoint-based operation resumability.
 
 ## Build and Test
 
@@ -27,15 +27,15 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | main | `src/main.ts` | Plugin entry, module orchestration, command/view registration, checkpoint dispatch | `SynapsePlugin` (default) |
 | settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `SynapseSettingTab` |
-| commands | `src/commands/` | Command registry: developer source of truth + master control (status/flow/context gating), central registrar, drift audit, palette-action derivation | `CommandRegistrar`, `COMMAND_REGISTRY`, `isInFlow`, `isPipelineKeyInFlow`, `listPaletteActions`, `auditCommands` |
+| commands | `src/commands/` | Command registry: developer source of truth + master control (status/flow/context gating), central registrar, drift audit, palette-action derivation | `CommandRegistrar`, `COMMAND_REGISTRY`, `REGISTRY_BY_ID`, `REGISTRY_BY_PIPELINE_KEY`, `isInFlow`, `isPipelineKeyInFlow`, `listPaletteActions`, `FEATURE_ICONS`, `resolveActionIcon`, `auditCommands`, types (`CommandDefinition`, `CommandContext`, `CommandFlow`, `CommandStatus`, `FeatureKey`) |
 | pipeline | `src/pipeline/` | Fire Synapse orchestration: ordered multi-phase run over a folder or single note | `SynapseRunner`, `SYNAPSE_PIPELINE`, `PipelineModuleKey`, `PipelineModuleMap`, `PipelineScanFn` |
-| intake | `src/intake/` | Watches intake folder, auto-routes + pipeline-processes new notes (#111) | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute` |
+| intake | `src/intake/` | Watches intake folder, auto-routes + pipeline-processes new notes (#111); opt-in adoption of root-level shared captures (#455) | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute`, `SYNAPSE_PROCESSED_FLAG`, `SYNAPSE_PROCESSED_AT_FLAG`, `renderIntakeSettings` |
 | rem | `src/rem/` | REM: discover linkable references, propose in-place `[[wikilink]]` insertions | `RemModule`, types |
 | elaboration | `src/elaboration/` | Stub note detection, AI proposal generation, image analysis for proposals | `ElaborationModule`, `ImageAnalyzer`, types |
-| audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, types |
+| audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `renderAudioSettings`, `renderTranscriptionCredentials`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, types |
-| image | `src/image/` | Image OCR via multi-modal AI (vision models), batch extraction with checkpoints | `ImageModule`, `findImageEmbeds`, `ImageExtractor`, types |
-| transcription | `src/transcription/` | Unified transcription/OCR UI modals, duration detection, time-range clipping UI | `UnifiedTranscriptionModal`, `NoteMediaModal`, `TimeRangeSlider`, `showTimeRangeToast`, `detectLocalFileDuration`, `detectUrlDuration`, `formatTimestamp` |
+| image | `src/image/` | Image OCR via multi-modal AI (vision models), batch extraction with checkpoints | `ImageModule`, `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `arrayBufferToBase64`, `preprocessImage`, `renderImageSettings`, types (`ImageExtractor` is internal, not barrel-exported) |
+| transcription | `src/transcription/` | Unified transcription/OCR UI modals, duration detection, time-range modal, tiered URL-transcription router (#184: YouTube captions → desktop yt-dlp/ffmpeg) | `UnifiedTranscriptionModal`, `NoteMediaModal`, `TimeRangeSlider`, `TimeRangeModal`, `UrlTranscriptionRouter`, `CaptionStrategy`, `LocalExtractionStrategy`, `NoTranscriptionPathError`, `buildUrlTranscriptBlock`, `fetchYouTubeTranscript`, `insertUrlTranscript`, `detectLocalFileDuration`, `detectUrlDuration`, `formatTimestamp`, `MIN_SLIDER_DURATION`, types (`UrlTranscriptionStrategy`, `UrlTranscript`, `UrlTranscriptOptions`, `InsertUrlTranscriptDeps`, `TimeRangeChoice`, `TimeRangeModalOptions`, `DurationResult`, `YouTubeTranscript`) |
 | enrichment | `src/enrichment/` | Metadata classification, topic extraction, link resolution, external refs, frontmatter | `EnrichmentModule`, types |
 | summarize | `src/summarize/` | URL and transcription summarization, standalone summary notes, audio-embed summarization | `SummarizeModule`, types |
 | tidy | `src/tidy/` | Spelling correction and markdown formatting via AI | `TidyModule`, `TidySnapshot` |
@@ -58,20 +58,21 @@ main.ts
   |-- commands/   (depends on NOTHING in src/ — never in a cycle)
   |-- shared/     (base layer: depends on NO feature module; owns url-detector)
   |-- pipeline/ --> commands/ (isPipelineKeyInFlow); modules injected via PipelineModuleMap
-  |-- views/unified-proposal-view.ts --> elaboration/types, enrichment/types, organize/types, deep-dive/types, title/types, rem/types, shared/checkpoint-types
+  |-- views/ --> type-only: elaboration, enrichment, organize, deep-dive, title, rem, shared (Checkpoint, NotificationManager), commands (CommandDefinition, FeatureKey);
+  |            runtime: shared (fireAndForget, views/unified-proposal-view.ts:9), commands (FEATURE_ICONS, views/synapse-actions-view.ts:3)
   |-- elaboration/ --> shared/, commands/, image/ (ImageAnalyzer uses shared AIClient + image/preprocessImage)
   |-- audio/ --> shared/, commands/; type-only edge to video/ (`import type { AudioExtractor }` — erased at compile time, no runtime cycle)
   |-- video/ --> shared/ (CheckpointManager, url-detector), commands/, audio/ (reuses transcription pipeline; runtime value edge)
   |-- image/ --> shared/ (CheckpointManager, AIClient, callouts, validation), commands/
-  |-- transcription/ --> audio/ (types), video/ (types), image/ (types), shared/ (detectPlatform, TimeRange, validation)
+  |-- transcription/ --> audio/ (AUDIO_EXTENSIONS runtime; AudioEmbed, TranscriptionResult types), video/ (detectPlatform runtime re-export; VideoUrlEmbed type), image/ (ImageEmbed type), shared/ (url-detector, validation, callouts, redact, json-utils, node-loader; TimeRange/NotificationManager/NoteOperationQueue types)
   |-- enrichment/ --> shared/, commands/
-  |-- summarize/ --> shared/ (incl. isSupportedUrl/detectPlatform), commands/, audio/ (findAudioEmbeds); video.transcribeUrl injected at runtime (NO static video import edge)
+  |-- summarize/ --> shared/ (incl. isSupportedUrl/detectPlatform), commands/, audio/ (findAudioEmbeds); URL transcription injected at runtime (main.ts:176-181 -> UrlTranscriptionRouter.transcribe; NO static video/transcription import edge)
   |-- tidy/ --> shared/, commands/
   |-- organize/ --> shared/, commands/
   |-- deep-dive/ --> shared/, commands/, organize/ (ContentAnalyzer, DirectoryMatcher)
   |-- title/ --> shared/
   |-- rem/ --> shared/, commands/
-  +-- intake/ --> shared/ ONLY (cross-module work via injected IntakeDeps.fireOnFile)
+  +-- intake/ --> shared/ ONLY (cross-module work via injected IntakeDeps.fireOnFile / transcribeUrlToNote)
 ```
 
 Key constraints:
@@ -81,9 +82,9 @@ Key constraints:
 - `commands` imports nothing in `src/`; `pipeline` imports `commands` but never the feature modules
   (they are injected via `PipelineModuleMap` in main.ts).
 - `intake` imports only `obsidian` + `src/shared/*`; all cross-module work goes through `IntakeDeps`.
-- `video` depends on `audio` (reuses transcription pipeline, runtime value import). `audio` has only a type-only back-edge to `video` (`import type { AudioExtractor }`), so the value-level dependency stays one-directional `video → audio` (no runtime cycle)
-- `transcription` is UI-only; delegates work to `audio`, `video`, and `image` modules
-- `summarize` has NO static import of `video`; URL-platform helpers (`isSupportedUrl`/`detectPlatform`) resolve from `shared/url-detector`. It receives `video.transcribeUrl` and an audio transcribe callback via constructor injection
+- `video` depends on `audio` (reuses transcription pipeline, runtime value import). Type-only back-edges (erased at compile time, no runtime cycle): `audio → video` (`import type { AudioExtractor }`, `audio/index.ts`) and `shared/settings-section.ts:1 → main` (`import type SynapsePlugin`)
+- `transcription` owns the URL-transcription tier router (#184: `CaptionStrategy` on every platform, `LocalExtractionStrategy` desktop-only via an injected `VideoModule.processUrl` delegate) plus the modals; media decoding/AI work stays in `audio`, `video`, `image`
+- `summarize` has NO static import of `video` or `transcription`; URL-platform helpers (`isSupportedUrl`/`detectPlatform`) resolve from `shared/url-detector`. It receives a URL-transcription callback (`main.ts:176-181`, delegating to `UrlTranscriptionRouter.transcribe`) and an audio transcribe callback via constructor injection
 - `deep-dive` reuses `organize` for auto-organize nesting mode
 - `image` module uses multi-modal `AIClient.chat()` with `ContentBlock[]` for vision
 - `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
@@ -91,7 +92,7 @@ Key constraints:
 - Modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) receive `CheckpointManager`; `tidy`, `title`, `transcription`, `intake` do not
 - Every feature whose write follows read -> AI -> write receives the single `NoteOperationQueue` (#483): audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive — plus `transcription/insert-url-transcript` via `InsertUrlTranscriptDeps.noteQueue`. Public entry points take the note's slot exactly ONCE and delegate to a queue-free private core; acquiring twice (the same key or a second one) would deadlock. Batch scans take one slot per note, never one per batch. Writes to OTHER notes while holding a key stay unqueued by design (title backlink remediation + merge targets, deep-dive syllabus/sibling nav, organize summary notes)
 - Unqueued by design, because they re-derive inside the atomic callback instead of writing a pre-computed snapshot: `rem` accept/undo (`rem/index.ts:389,457` — `vault.process` recomputes the link application against fresh content) and `intake` stamp/move/breadcrumb (`intake/index.ts:404,474,495,554` — frontmatter stamps and a separate log note, run after every pipeline phase has finished). `SynapseRunner.fireOnFile` awaits its phases in sequence, so each phase acquires and releases the note's slot in turn
-- `views` imports types only from feature modules (incl. `rem`) and `Checkpoint` from shared
+- `views` imports feature modules as types only; its runtime imports are `fireAndForget` (`shared`) and `FEATURE_ICONS` (`commands`)
 - Path exclusion is centralized (#307): the single `settings.exclusions: ExclusionRule[]` (model + matcher in `shared/exclusions.ts`) replaces the former per-module `excludeFolders` fields. Modules gate via `isPathExcluded(path, FeatureId, settings)` / `findMatchingRule`. Tag exclusion (`excludeTags`) stays per-module. `main.loadSettings()` runs a one-time `buildMigratedExclusions()` migration for upgraders whose persisted data has no `exclusions` key
 
 ## Plugin Lifecycle (main.ts)
@@ -103,9 +104,10 @@ onload()
   |-- migrateDataFolder()  (.auto-notes -> .synapse, one-time)
   |-- new NotificationManager(); status bar attached on desktop only
   |-- new CheckpointManager(app)  (single instance, injected into all modules)
-  |-- new NoteOperationQueue()  (#483; single instance, main.ts:122 — injected into every module that mutates a note after an AI call)
+  |-- new NoteOperationQueue()  (#483; single instance, main.ts:118 — injected into every module that mutates a note after an AI call)
   |-- new CommandRegistrar(this)
   |-- construct modules (audio before video; video desktop-only); each gets a () => autoAccept[kind] getter
+  |-- new UrlTranscriptionRouter([CaptionStrategy, LocalExtractionStrategy?])  (#184; main.ts:150-164; extraction tier only when video exists; also set as video.urlTranscriber, main.ts:168-172)
   |-- new UpdateChecker({ currentVersion, app, notifications, getSettings, saveSettings })  (#365)
   |-- registerView(UNIFIED_VIEW_TYPE), registerView(SYNAPSE_ACTIONS_VIEW_TYPE)
   |-- registerPropertiesAutoFold(this, () => settings)  (#381; auto-fold note Properties on open)
@@ -165,7 +167,7 @@ All ribbon glyphs are custom Synapse brand icons registered by `registerSynapseI
 | Icon | Label | Action |
 |------|-------|--------|
 | `synapse` | Review proposals | Opens unified proposal sidebar |
-| `synapse-transcribe` | Transcribe media | Opens unified transcription modal (desktop only) |
+| `synapse-transcribe` | Transcribe media | Opens unified transcription modal (every platform since #184, `main.ts:398`) |
 | `synapse-actions` | Synapse actions | Opens registry-driven actions sidebar |
 
 ## View Types
@@ -175,7 +177,7 @@ All ribbon glyphs are custom Synapse brand icons registered by `registerSynapseI
 | `synapse-proposals` | `UnifiedProposalView` | `src/views/unified-proposal-view.ts` |
 | `synapse-actions` | `SynapseActionsView` | `src/views/synapse-actions-view.ts` |
 
-Legacy views (`ProposalReviewView`, `EnrichmentReviewView`) exist in source but are not registered.
+Legacy view `ProposalReviewView` (`src/elaboration/proposal-view.ts:7`) exists in source but is not registered.
 
 ## Callout Types
 
@@ -235,7 +237,7 @@ SynapseSettings {
     autoFormatLyrics: boolean                       // default: true (auto-detect song transcripts, format as lyrics, #234)
     postProcessing: PostProcessingSettings {
       enabled: boolean                              // default: true
-      removeFiller: boolean                         // default: true
+      removeFiller: boolean                         // default: false (#465; opt-in per vault)
       addStructure: boolean                         // default: true
       extractKeyPoints: boolean                     // default: false
       customPrompt: string                          // default: ''
@@ -248,6 +250,7 @@ SynapseSettings {
     tempFolder: string                              // default: '.synapse/temp'
     downloadFolder: string                          // default: 'Media'
     embedInNote: boolean                            // default: true
+    captionsFirst: boolean                          // default: true (#184; prefer the YouTube caption tier; off = always download+transcribe on desktop)
     frameExtraction: FrameExtractionSettings {
       enabled: boolean                              // default: false
       intervalSeconds: number                       // default: 30
@@ -332,6 +335,7 @@ SynapseSettings {
     settleSeconds: number                           // default: 5 (debounce settle window)
     captureLog: boolean                             // default: true
     captureLogFolder: string                        // default: '_captured'
+    adoptSharedCaptures: boolean                    // default: false (#455; also watch newly created root-level bare-URL notes and move them into intakeFolder)
   }
   ui: UISettings {
     collapsedSections: Record<string, boolean>      // default: {} (settings accordion state, #235)
@@ -429,7 +433,7 @@ rem.onViewRefreshNeeded()                --> main.refreshUnifiedView()
 
 // Intake (IntakeDeps injected into IntakeModule)
 intake.deps.fireOnFile(file)             --> SynapseRunner.fireOnFile(file)   // whole pipeline on one note
-intake.deps.transcribeUrlToNote(...)     --> STUB (#112), no-op notice
+intake.deps.transcribeUrlToNote(url, _, file) --> urlTranscription.transcribe(url) + buildUrlTranscriptBlock -> vault.process append (main.ts:466-489); rethrows so the note stays un-stamped/retriable
 
 // Per-proposal-type auto-accept (#228): each module gets a live getter
 <module>.shouldAutoAccept()              --> () => settings.autoAccept[kind]
@@ -442,7 +446,7 @@ Summarize organize wired when `summarize.autoOrganizeOnSummarize && organize.ena
 Title checks wired when `title.enabled && title.checkAfterOperations`.
 Auto-accept getters wired for elaboration, enrichment, organize, deep-dive, title, rem (default `false`).
 
-All callbacks are dispatched through `fireAndForget` (never awaited, `main.ts:310-375`). For the queued modules (elaboration, audio, video, image) the callback fires from INSIDE the primary operation's `NoteOperationQueue` slot, so the chained `enrichment.enrich` / `title.checkTitle` enqueue BEHIND the primary write and run against the content it produced — nothing awaits them, so there is no cycle and no deadlock (#483). `title.acceptProposal` holds the PRE-rename key; work already queued under the old path runs afterwards, finds no file and exits early.
+All callbacks are dispatched through `fireAndForget` (never awaited, `main.ts:305-385`). For the queued modules (elaboration, audio, video, image) the callback fires from INSIDE the primary operation's `NoteOperationQueue` slot, so the chained `enrichment.enrich` / `title.checkTitle` enqueue BEHIND the primary write and run against the content it produced — nothing awaits them, so there is no cycle and no deadlock (#483). `title.acceptProposal` holds the PRE-rename key; work already queued under the old path runs afterwards, finds no file and exits early.
 
 Automatic post-op chained calls pass `{ postOp: true }` (`enrichment.enrich(path, trigger, { postOp: true })`, `title.checkTitle(path, { postOp: true })`) so the secondary auto-run never surfaces an extra "Review" toast — the centralized `reviewAction` gate (#366) suppresses the affordance on post-op runs. `onTitleAccept(id, resolution?)` forwards the user's duplicate-resolution choice (`'iterate'` | `'merge'`, #408) into `title.acceptProposal`.
 

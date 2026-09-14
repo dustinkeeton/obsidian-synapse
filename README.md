@@ -97,11 +97,12 @@ flowchart TD
         IU -->|"no — general / mixed / text"| FT["Fire pipeline on note"]
         IU -->|yes| IC{"Classify URL"}
         IC -->|article| FA["Fetch article + Fire pipeline"]
-        IC -->|"video / audio"| VS["Transcribe — stub, no-op today"]
+        IC -->|"video / audio"| VS["Transcribe URL (captions first) + Fire pipeline"]
         IC -->|unknown| FT
     end
 
     FA -.->|fireOnFile| fire
+    VS -.->|fireOnFile| fire
     FT -.->|fireOnFile| fire
 ```
 
@@ -276,7 +277,7 @@ way (see DECISIONS.md).
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Enable audio | Toggle audio transcription | On |
-| Transcription provider | Whisper API, Deepgram, or Local Whisper (desktop only) | Whisper API |
+| Transcription provider | Whisper API, Deepgram, or Google Gemini | Whisper API |
 | Post-processing | Clean up transcriptions with AI | On |
 | Remove filler words | Strip filler words from transcripts (best for voice memos; alters quoted speech) | Off |
 

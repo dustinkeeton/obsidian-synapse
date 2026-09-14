@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-14
 ---
 
 # Audio Module
@@ -131,7 +131,7 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 
 ## Settings Keys
 
-All under `settings.audio` (interface `AudioSettings`, `settings.ts:L93`; defaults `settings.ts:L367`):
+All under `settings.audio` (interface `AudioSettings`, `settings.ts:93`; defaults `settings.ts:411`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -151,7 +151,7 @@ All under `settings.audio` (interface `AudioSettings`, `settings.ts:L93`; defaul
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `postProcessing.enabled` | boolean | `true` | Master switch; off returns the raw transcript unchanged |
-| `postProcessing.removeFiller` | boolean | `true` | Strip filler words / false starts |
+| `postProcessing.removeFiller` | boolean | `false` | Strip filler words / false starts (opt-in per vault, `settings.ts:426`; #465) |
 | `postProcessing.addStructure` | boolean | `true` | Add punctuation, paragraph breaks, headers |
 | `postProcessing.extractKeyPoints` | boolean | `false` | Prepend a "Key Points" summary section |
 | `postProcessing.customPrompt` | string | `''` | Extra instruction appended to the cleanup prompt |

@@ -1,9 +1,8 @@
 # Project Status
 
-**Last updated**: 2026-07-03
-**Version**: 1.0.11
-**Branch**: `chore/audit-2026-07-03`
-**Health**: Green — `tsc` clean, **1872/1872 tests passing (138 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
+**Last updated**: 2026-09-14
+**Version**: 1.0.13
+**Health**: Green — `tsc` clean, **2007/2007 tests passing (150 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
@@ -12,15 +11,12 @@
 ## At a Glance
 
 - **17 modules** under `src/` plus top-level `main.ts`, `settings.ts`, `settings-tab.ts`, `onboarding.ts`, `brand-icons.ts`, `changelog.ts`/`changelog-modal.ts`, and `properties-fold.ts`.
-- **Fire Synapse pipeline** runs features in order: elaboration → summarize → enrichment → REM → tidy → organize.
-- **Intake folder** auto-processes dropped notes/URLs through that same pipeline.
-- All AI output is reviewed in one **unified proposal sidebar**; per-feature **auto-accept** (#228) is available and defaults off. A second **Synapse actions sidebar** (#289) gives touch-friendly buttons for every enabled command.
-- **REM** now runs semantic matching **always-on**, down-weighting literal title matches (#380); **elaboration** uses the note title as a signal with anti-fabrication guards (#387).
-- **Summarize** can include a note's own prose and emit one combined summary (#367, both default on).
-- **Idempotency bundle** (#395–#398): proposals dedup by content key (`maxProposalsPerNote` now enforced), duplicate notices are throttled, AI requests coalesce + cache (opt-in via `ai.cacheResponses`, automatic at temperature 0), and fetched external content is fenced against prompt injection (`wrapUntrusted`).
-- A **version-stamped settings-migration framework** (#93) replays ordered, tested migrations on load; **title rename collisions** resolve via `iterate`/`merge` and surface as a distinct review state (#408, #414).
-- An **in-app update check** (#365) and a **"What's new" changelog modal** (#375) keep users current; **on-brand icons** appear throughout (1.0.5).
-- **Settings hygiene**: every folder-scan picker defaults to the vault root (1.0.9), and each settings section — plus a global **"Reset all settings"** — can be restored to defaults after a confirm (1.0.10). The 2026 **Iris + Gold** brand refresh reskinned the marks and in-app glyphs.
+- **No source changes since 2026-08-17.** PRs #491–#493 (2026-09-13/14) were tooling only: vitest devDep bump, wafflestack 0.8.0 → 0.15.0, and pruning non-development files (`START.md`, `docs/PRD-MVP.md`, generated `.waffle` overviews) from the public tree.
+- **YouTube transcribes from captions on every platform** (#184, 1.0.13): a tiered `UrlTranscriptionRouter` tries free HTTP captions first, then desktop yt-dlp/ffmpeg. Caption transcripts get speaker turns, linked chapter headings, and pause paragraphs with no AI cost (#469). The Transcribe ribbon and commands are registered on desktop **and** mobile.
+- **Intake media branch is real** (#112 closed): a bare video URL dropped in the inbox is transcribed, run through the full pipeline, and stamped; on failure the note stays un-stamped so a synced desktop vault retries. Opt-in `intake.adoptSharedCaptures` (#455) pulls share-sheet captures from the vault root into the inbox.
+- **August fixes**: one shared `NoteOperationQueue` (#483) serializes every read → AI → write cycle on the same note, ending the transcribe-then-elaborate race; title renames now rewrite inbound `[[wikilinks]]` with display text preserved byte-for-byte (#485).
+- **Time-range choice is a modal** (#464): dismissing it cancels — it never silently transcribes the whole file.
+- **Fire Synapse pipeline** runs elaboration → summarize → enrichment → REM → tidy → organize; the **intake folder** auto-feeds it. All AI output lands in one **unified proposal sidebar**; a **Synapse actions sidebar** (#289) gives touch-friendly buttons.
 
 ---
 
@@ -29,46 +25,41 @@
 | Module | Path | Role | Status |
 |--------|------|------|--------|
 | elaboration | `src/elaboration/` | Detect stubs, propose content (image-aware); title signal + anti-fabrication guards (#387) | Working |
-| audio | `src/audio/` | Transcribe audio (Whisper / Deepgram / Gemini); auto-lyrics (#234) | Working (local-whisper not impl.) |
-| video | `src/video/` | Download + transcribe YouTube/TikTok/Instagram; dependency onboarding notice (#382) | Working (desktop only; local file + frames not impl.) |
+| audio | `src/audio/` | Transcribe audio (Whisper / Deepgram / Gemini); auto-lyrics (#234); token guard on post-processing (#468) | Working (local-whisper not impl.) |
+| video | `src/video/` | Download + transcribe YouTube/TikTok/Instagram via yt-dlp/ffmpeg; `captionsFirst` toggle (#184) | Working (download tier desktop only; local file + frames not impl.) |
 | image | `src/image/` | OCR via vision models, auto-downscale, batch + checkpoints | Working |
-| transcription | `src/transcription/` | Unified transcription/OCR UI + time-range clipping | Working (desktop-only clipping) |
+| transcription | `src/transcription/` | Unified modals, time-range modal (#464), URL tier router + YouTube caption fetcher (#184) | Working (clipping desktop only) |
 | enrichment | `src/enrichment/` | Tags, links, refs, frontmatter | Working |
 | summarize | `src/summarize/` | URL/transcription/audio + note prose; per-item or combined (#367) | Working |
 | tidy | `src/tidy/` | Spelling/formatting fixes (+ undo) | Working |
 | organize | `src/organize/` | AI directory structuring, folder coalescing (#172) | Working |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction + child notes | Working |
-| title | `src/title/` | Untitled/mismatch detection → rename; filename-collision handling `iterate`/`merge` (#408, #414) | Working |
+| title | `src/title/` | Untitled/mismatch detection → rename; collision handling (#408); backlink remediation (#485) | Working |
 | rem | `src/rem/` | In-place `[[wikilink]]` discovery; always-on semantic matching (#380) | Working |
-| intake | `src/intake/` | Watch folder, auto-process notes (#111) | Working (media branch stubbed, #112) |
+| intake | `src/intake/` | Watch folder, auto-process notes (#111); media-URL transcription (#112); shared-capture adoption (#455) | Working |
 | pipeline | `src/pipeline/` | Fire Synapse ordered multi-phase runner | Working |
 | commands | `src/commands/` | Command registry + registrar + drift audit | Working |
-| shared | `src/shared/` | AIClient (+ response cache/coalescing, #397), validation, checkpoints, callouts, URL detection, exclusions, node-loader, credential validation, secret redaction (`redactSecrets`/`redactError`), settings migrations (#93), content hashing (#395), untrusted-content fence (#398), review-action gate (#366), update checker | Working (base layer) |
+| shared | `src/shared/` | AIClient (+ cache/coalescing), `NoteOperationQueue` (#483), validation, checkpoints, callouts, URL detection, exclusions, node-loader, credential validation, secret redaction, settings migrations + reset, untrusted-content fence, review-action gate, update checker | Working (base layer) |
 | views | `src/views/` | Unified proposal sidebar + Synapse actions sidebar | Working |
-
-Top-level helpers: `onboarding.ts` (first-run welcome, #89), `brand-icons.ts` (Synapse SVG icons), `changelog.ts`/`changelog-modal.ts` ("What's new" modal, #375), `properties-fold.ts` (auto-fold Properties, #381).
 
 ---
 
 ## Current Focus
 
-- **Codebase audit (2026-07-03)** — architecture and security passes clean; the Obsidian-compliance pass capitalized three notification strings to match the sentence-case convention; machine docs (`AGENTS.md`) and these human docs regrounded. Chores since the last audit: **release 1.0.11**; the **redaction lint gate** (#418) — a custom type-aware ESLint rule (`synapse/no-unredacted-console`) that makes the "every console sink is redacted" contract regression-proof; the **automated-review triage** (#454) — v1.0.11 store-review findings triaged into a reviewer-facing `docs/automated-review-notes.md`, with one real fix (summarize now uses Obsidian's typed `containerEl.findAll()` instead of deprecated `querySelectorAll`); and a dev-tooling bump (wafflestack 0.6.0 → 0.8.0, agent/skill bundles only — no shipped code).
-- **Recent feature work (1.0.7 → 1.0.10)**: idempotency bundle — proposal dedup + `maxProposalsPerNote` (#395), notice throttle (#396), AI cache/coalescing (#397), prompt-injection fence (#398); version-stamped settings migrations (#93); title collision handling (#408, #414); centralized Review-toast gate (#366); combined / note-content summaries (#367); in-app update check (#365) + "What's new" modal (#375); always-on REM semantic matching (#380); elaboration title signal + anti-fabrication guards (#387); unified folder-scan pickers defaulting to vault root (1.0.9); per-section and global reset-to-defaults (1.0.10).
+- **Codebase audit (2026-09-14)** — architecture and security re-verified clean; machine docs (`AGENTS.md`, `docs/agent/*`) and these human docs regrounded against 1.0.13 and the August fixes. No shipped code changed.
+- **Shipped since the last audit (2026-07-03)**: release **1.0.12** (sentence-case notices, lint-enforced redaction) and **1.0.13** (caption-first URL transcription on every platform #461/#463, deterministic caption formatting #469, time-range modal #464, post-processing token guard + filler removal off by default #468, mobile share-sheet intake #455). Post-release fixes: TikTok slideshow false positive (#480), README banner wordmark (#481), per-note operation queue (#483), backlink remediation on rename (#485).
+- **Open follow-ups**: chunked post-processing for long transcripts (#467); server-side extractor for non-YouTube URLs on mobile (#181); transcription UX review (#465).
 
 ---
 
 ## Security Posture
 
-- The full audit found **no critical or high vulnerabilities**; the codebase is security-mature.
-- API keys live in `data.json`, which is **gitignored and never committed** — no secrets in the repo.
-- Subprocess calls use `execFile` with argument arrays (no shell); API auth is header-based and HTTPS-only; AI responses are sanitized before being written to notes.
-- Secret redaction has a single source of truth (`shared/redact.ts`), used on **every error path** — the AI client, credential validation, and all of `notifications.ts` (error toast, `notifyError`, per-operation `console.error`). `redactError(value)` extends the same scrub to **raw caught errors** (Error `.stack`/`.message`) at **every** direct error console sink: audio, rem, elaboration (×2), and fire-and-forget, plus `main.ts` lifecycle paths (settings migration, first-run onboarding, incomplete-checkpoint scan, data-folder migration), the update checker, the credential Test-button chip, the image-downscale fallback (`image/preprocess.ts`), and the clipboard-copy catches (`notifications.ts`, `video/settings-section.ts`). Covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Google `AIza` keys. The contract is now **lint-enforced** (#418): a custom type-aware ESLint rule (`synapse/no-unredacted-console`) fails CI if any value reaching a `console.*` sink isn't statically string-like (i.e. already scrubbed).
-- **Prompt-injection fence** (#398): fetched untrusted content (article/tweet/Reddit bodies, image analysis) is wrapped via `wrapUntrusted` — labeled delimiters + data-not-instructions frame + anti-breakout scrubbing — a structural (not lexical) defense. Gemini audio instructions also go in `system_instruction`.
-- Credential validation (#335) probes each provider with one minimal GET; results route through redaction and are **ephemeral** (never persisted).
-- Multipart Whisper bodies sanitize vault-derived field/file names (`sanitizeMultipartHeaderValue`).
-- Desktop-only Node access is gated behind `assertDesktop()`/`loadNodeModules()` (`shared/node-loader.ts`), keeping `isDesktopOnly: false` mobile-safe. Notification ellipsis timers are torn down on unload.
-- **Accepted risk**: `sanitizeUrl` permits arbitrary hosts (an SSRF surface) — accepted because URLs are author-supplied within the user's own vault.
-- **Not yet wired**: an `ensureWithinVault` helper exists but is **not** yet enforced on write paths.
+- **No critical or high vulnerabilities**; API keys live in gitignored `data.json` and never reach the repo.
+- **Redaction is lint-enforced** (#418): `synapse/no-unredacted-console` fails CI on any console sink that is not already a redacted string. `redactSecrets`/`redactError` in `shared/redact.ts` are the single source.
+- **Subprocesses** use `execFile` with argument arrays and an allowlisted env; **Node access** is behind `assertDesktop()`/`loadNodeModules()` so `isDesktopOnly: false` stays mobile-safe.
+- **Fetched content is fenced** against prompt injection (`wrapUntrusted`, #398); YouTube caption fetches go through `sanitizeUrl` and Obsidian `requestUrl` with a 30 s timeout.
+- **Accepted risk**: `sanitizeUrl` permits arbitrary hosts (author-supplied URLs in the user's own vault).
+- **Not yet wired**: `ensureWithinVault` exists but is not enforced on write paths.
 
 ---
 
@@ -76,30 +67,25 @@ Top-level helpers: `onboarding.ts` (first-run welcome, #89), `brand-icons.ts` (S
 
 | Item | Severity | Notes |
 |------|----------|-------|
-| Local Whisper provider | Medium | `local-whisper` throws on use |
-| Local video file transcription | Medium | Command shows "coming soon" |
-| Video frame extraction | Medium | `FrameExtractor` is a placeholder |
-| Intake media-transcription branch | Medium | Stubbed, no-ops with a notice (#112) |
+| Non-YouTube URLs on mobile | Medium | TikTok/Instagram need yt-dlp; on mobile the note stays un-stamped for desktop sync until #181 ships |
+| Long-transcript post-processing | Medium | Transcripts over `ai.maxTokens` keep raw text instead of cleanup (#468); chunking is #467 |
+| Not implemented: local Whisper, local video files, frame extraction | Medium | `local-whisper` hidden from the dropdown and throws; "coming soon" command; `FrameExtractor` placeholder |
 | `ensureWithinVault` not wired to writes | Low | Helper exists; no write-boundary enforcement yet |
-| Ribbon icons always visible | Low | Obsidian has no `removeRibbonIcon` API |
-| Image checkpoint resume is a no-op | Low | Discards + asks user to re-run (same as deep-dive) |
-| `audio → video` type-only back-edge | Low | No runtime cycle; cleanup = move `AudioExtractor` into `shared/` |
+| Ribbon icons always visible; image checkpoint resume is a no-op | Low | No `removeRibbonIcon` API; resume discards + asks to re-run (same as deep-dive) |
+| Type-only back-edges | Low | `audio → video` (`AudioExtractor`) and `shared/settings-section.ts → main`; erased at compile time, no runtime cycle |
 | `rem.titleMatchWeight` has no UI | Low | Edit `data.json` to change (#380) |
 
 ---
 
-## External Dependencies
+## External Dependencies (no npm runtime dependencies)
 
 | Dependency | Required for | Status |
 |------------|--------------|--------|
-| yt-dlp | Video download | User-installed; PATH auto-resolved (desktop only) |
+| youtube.com (HTTP) | YouTube caption tier — no install needed | Works on every platform |
+| yt-dlp | Video download (captionless YouTube, TikTok, Instagram, time-range clips) | User-installed; PATH auto-resolved (desktop only) |
 | ffmpeg / ffprobe | Audio extraction, duration, clipping | User-installed; PATH auto-resolved (desktop only) |
-| OpenAI API key | Whisper, GPT models (incl. vision) | User-configured |
-| Anthropic API key | Claude models (incl. vision) | User-configured |
-| Gemini API key | Gemini models + Gemini audio transcription (optional) | User-configured |
+| OpenAI / Anthropic / Gemini API keys | Chat models (incl. vision); Whisper + Gemini audio transcription | User-configured |
 | Deepgram API key | Deepgram transcription (optional) | User-configured |
-
-No npm runtime dependencies.
 
 ---
 
@@ -109,6 +95,5 @@ No npm runtime dependencies.
 |---------|---------|
 | `npm run dev` | esbuild watch (development) |
 | `npm run build` | `tsc -noEmit -skipLibCheck` + esbuild production bundle |
-| `npm test` | Vitest — **1872/1872 passing** (138 files) |
-| `npm run test:coverage` | Vitest with coverage |
-| `npm run lint` | ESLint — `obsidianmd/*` store-review mirror + custom `synapse/no-unredacted-console` redaction gate (#418) |
+| `npm test` | Vitest — **2007/2007 passing** (150 files) |
+| `npm run lint` | ESLint — `obsidianmd/*` store-review mirror + `synapse/no-unredacted-console` (#418) |

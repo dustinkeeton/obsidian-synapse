@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-14
 ---
 
 # Summarize Module
@@ -194,7 +194,7 @@ Routing order for a target URL:
 3. `isRedditUrl(url)` -> `fetchRedditContent(url, max)` (Reddit is generic 'article'; routed explicitly to the RSS fetcher).
 4. else -> `fetchPageContent(url, max)`.
 
-`transcribeUrl`/`transcribeAudio` are injected by `main.ts:178` (after `noteQueue`). On mobile (no VideoModule) `transcribeUrl` throws "Video transcription is not available on mobile". `isSupportedUrl`, `detectPlatform`, `isRedditUrl` all resolve from the `shared` barrel; there is NO static import of `video/`.
+`transcribeUrl`/`transcribeAudio` are injected by `main.ts:174-189` (after `noteQueue`). `transcribeUrl` delegates to `UrlTranscriptionRouter.transcribe(url, { update })` and returns `result.text` (`main.ts:176-181`); the router runs the caption tier on every platform and the yt-dlp tier on desktop only, so a non-YouTube or caption-less URL on mobile rejects with `NoTranscriptionPathError` (#184). `isSupportedUrl`, `detectPlatform`, `isRedditUrl` all resolve from the `shared` barrel; there is NO static import of `video/` or `transcription/`.
 
 ## Combined Summaries (#367)
 

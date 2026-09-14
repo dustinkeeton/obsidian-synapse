@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-09-14
 ---
 
 # Views Module
@@ -157,7 +157,7 @@ Output: callbacks return `Promise<void>`; modules mutate the vault/proposal stor
 
 ## Wiring (main.ts)
 
-`main.ts:L157-L174` registers `UNIFIED_VIEW_TYPE` with the third `notifications` arg:
+`main.ts:206-224` registers `UNIFIED_VIEW_TYPE` with the third `notifications` arg:
 
 ```ts
 new UnifiedProposalView(leaf, {
@@ -179,7 +179,7 @@ new UnifiedProposalView(leaf, {
 }, this.notifications);
 ```
 
-`main.ts:L183-L187` registers `SYNAPSE_ACTIONS_VIEW_TYPE`:
+`main.ts:232-236` registers `SYNAPSE_ACTIONS_VIEW_TYPE`; `main.ts:239-242` calls `refresh()` on `active-leaf-change`:
 
 ```ts
 new SynapseActionsView(leaf, {
@@ -208,8 +208,8 @@ The six proposal feature modules are imported as TYPES ONLY (no runtime feature-
 
 ## Error States
 
-- Individual Accept/Reject: handlers run via `onClick()`/`fireAndForget` (`:L158`), so a rejected promise is surfaced to the user instead of failing silently.
-- Bulk Accept all / Reject all: on first failure the loop stops, sets the in-progress flag false, and calls `notifications.error(...)` with the failing item label, the error message, and a `X/total accepted, N remaining` summary (`:L207-L217`, `:L313-L323`). Already-applied items are not rolled back.
-- `setItems()` exits any active review mode whose proposal id is no longer pending (`:L90-L125`).
-- `openNote()` no-ops when the path resolves to no file (`:L165-L171`).
-- `SynapseActionsView`: empty `getActions()` renders an "enable features in settings" message (`:L88-L94`); `context:'note'` buttons are `disabled` with `aria-disabled` and no click handler when no note is active (`:L114-L126`).
+- Individual Accept/Reject: handlers run via `onClick()`/`fireAndForget` (`unified-proposal-view.ts:160`), so a rejected promise is surfaced to the user instead of failing silently.
+- Bulk Accept all / Reject all: on first failure the loop stops, sets the in-progress flag false, and calls `notifications.error(...)` with the failing item label, the error message, and a `X/total accepted, N remaining` summary (`unified-proposal-view.ts:211-213`, `:317-319`). Already-applied items are not rolled back.
+- `setItems()` exits any active review mode whose proposal id is no longer pending (`unified-proposal-view.ts:87`).
+- `openNote()` no-ops when the path resolves to no file (`unified-proposal-view.ts:165`).
+- `SynapseActionsView`: empty `getActions()` renders an "enable features in settings" message (`synapse-actions-view.ts:90`); `context:'note'` buttons are `disabled` with `aria-disabled` and no click handler when no note is active (`synapse-actions-view.ts:114-123`).

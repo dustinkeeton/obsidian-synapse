@@ -1,353 +1,152 @@
 ---
-last-updated: 2026-03-13
-status: planned
+last-updated: 2026-09-14
+status: implemented
 module-path: src/enrichment/
 ---
 
 # Enrichment Module
 
-Analyzes vault context (tags, links, folder structure) to propose metadata enrichments for notes -- tags, internal/external links, and frontmatter fields -- using proximity-weighted scoring and AI-assisted relevance ranking.
+Adds tags, internal links, external references, and frontmatter attributes to notes using vocabulary-based metadata classification, AI topic extraction, vault graph analysis (proximity-weighted), and AI suggestions. Proposals are reviewed in the unified proposal sidebar. Detailed per-file reference: `src/enrichment/AGENTS.md`.
 
 ## Status
 
-This module does not yet exist in the codebase. This document is a design specification for implementation.
+Implemented. This file mirrors the shipped layout; the original planned spec (`weight-engine.ts`, `enricher.ts`, `proposal-store.ts`, `undo-manager.ts`, `views/enrichment-view.ts`) was superseded by the files below.
 
 ## File Structure
 
 ```
 src/enrichment/
-  index.ts           # EnrichmentModule class (public API)
-  types.ts           # All enrichment-specific interfaces
-  weight-engine.ts   # Proximity-weighted tag/link scoring
-  enricher.ts        # AI-driven enrichment generation
-  proposal-store.ts  # Persistence for EnrichmentProposal objects
-  undo-manager.ts    # Tracks applied enrichments for rollback
-  views/
-    enrichment-view.ts  # Sidebar ItemView for reviewing proposals
+  index.ts                 # EnrichmentModule (public API), command registration, scan/resume, queue wrappers
+  types.ts                 # WeightConfig, TagCandidate, InternalLinkCandidate, ExternalLinkCandidate,
+                           # FrontmatterEnrichment, EnrichmentResult, EnrichmentTrigger, EnrichmentStatus,
+                           # AcceptedItems, EnrichmentProposal, TagIndex, LinkGraph
+  vault-analyzer.ts        # VaultAnalyzer — cached TagIndex + LinkGraph from MetadataCache
+  weight-calculator.ts     # computeProximityWeight — folder-proximity scoring
+  metadata-classifier.ts   # MetadataClassifier — AI tag classification against user vocabulary
+  topic-extractor.ts       # TopicExtractor — AI topic extraction -> link candidates
+  link-resolver.ts         # LinkResolver — graph-based internal link candidates
+  prompt-builder.ts        # PromptBuilder — external link + frontmatter prompts
+  enrichment-store.ts      # EnrichmentStore — proposal JSON persistence
+  enrichment-applier.ts    # EnrichmentApplier — apply/undo via vault.process
+  enrichment-modal.ts      # EnrichmentDetailModal — per-item toggle modal
+  settings-section.ts      # renderEnrichmentSettings — settings accordion (#243)
+  *.test.ts                # co-located Vitest suites
+```
+
+## Public API (index.ts)
+
+```ts
+// index.ts:31
+class EnrichmentModule {
+  onViewRefreshNeeded: (() => Promise<void>) | null      // wired by main.ts
+  onOpenProposalView: (() => void) | null                // wired by main.ts (#340)
+
+  constructor(                                            // index.ts:53
+    plugin: Plugin,
+    getSettings: () => SynapseSettings,
+    notifications: NotificationManager,
+    checkpointManager: CheckpointManager,
+    registrar: CommandRegistrar,
+    noteQueue: NoteOperationQueue,                        // #483
+    shouldAutoAccept?: () => boolean                      // #228; default () => false
+  )
+
+  onload(): Promise<void>                                 // index.ts:72; store.init, metadataCache 'resolved' invalidation, 3 command registrations
+  onunload(): void                                        // index.ts:107; no-op
+  getPendingProposals(): Promise<EnrichmentProposal[]>    // index.ts:110
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>   // index.ts:118
+  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:208
+  enrich(filePath: string, trigger: EnrichmentTrigger, options?: { postOp?: boolean }): Promise<void>   // index.ts:397; queued per note
+  acceptSelectedFromView(id: string, accepted: AcceptedItems, options?: { silent?: boolean }): Promise<void>   // index.ts:545; queued per note
+  rejectFromView(id: string): Promise<void>               // index.ts:594; no note write
+}
+
+function renderEnrichmentSettings(ctx: SettingsSectionContext): void   // re-exported, index.ts:722
+
+// re-exported types (index.ts:19-28): AcceptedItems, EnrichmentProposal, EnrichmentResult, EnrichmentTrigger,
+//   TagCandidate, InternalLinkCandidate, ExternalLinkCandidate, WeightConfig
 ```
 
 ## Types (types.ts)
 
 ```ts
-interface WeightConfig {
-  sameFolder: number;       // default: 1.0
-  siblingFolder: number;    // default: 0.8
-  cousinFolder: number;     // default: 0.5
-  distantFolder: number;    // default: 0.2
-  decayPerLevel: number;    // default: 0.15
-  minWeight: number;        // default: 0.1
-}
-
-interface TagCandidate {
-  tag: string;              // e.g. "#project/web"
-  rawScore: number;         // pre-weight score from global frequency
-  weightedScore: number;    // after proximity weighting
-  sources: string[];        // vault paths of files that contributed this tag
-}
-
-interface InternalLinkCandidate {
-  targetPath: string;       // vault-relative path to target note
-  displayText: string;      // link display text
-  relevanceScore: number;   // 0.0-1.0
-  reason: string;           // human-readable justification
-}
-
-interface ExternalLinkCandidate {
-  url: string;              // validated via sanitizeUrl
-  title: string;
-  reason: string;
-}
-
-interface FrontmatterEnrichment {
-  key: string;
-  value: string | string[];
-  action: 'add' | 'merge';  // add: set key; merge: append to existing array
-}
-
-interface EnrichmentResult {
-  tags: TagCandidate[];
-  internalLinks: InternalLinkCandidate[];
-  externalLinks: ExternalLinkCandidate[];
-  frontmatter: FrontmatterEnrichment[];
-}
-
-type EnrichmentTrigger = 'elaboration' | 'transcription' | 'manual';
-type EnrichmentStatus = 'pending' | 'accepted' | 'partially-accepted' | 'rejected';
-
-interface AcceptedItems {
-  tags: string[];                // accepted tag strings
-  internalLinks: string[];       // accepted target paths
-  externalLinks: string[];       // accepted URLs
-  frontmatter: string[];         // accepted frontmatter keys
-}
-
-interface EnrichmentProposal {
-  id: string;                    // unique ID (UUID or nanoid)
-  sourceNotePath: string;        // vault-relative path of enriched note
-  createdAt: string;             // ISO 8601
-  triggerSource: EnrichmentTrigger;
-  result: EnrichmentResult;
-  status: EnrichmentStatus;
-  acceptedItems?: AcceptedItems;
-}
+interface WeightConfig { sameFolder: number; siblingFolder: number; cousinFolder: number; distantFolder: number; decayPerLevel: number; minWeight: number }   // :2
+interface TagCandidate { tag: string; category: string; confidence: number; rawScore: number; weightedScore: number; sources: string[] }   // :17
+interface InternalLinkCandidate { targetPath: string; displayText: string; relevanceScore: number; reason: string }   // :31
+interface ExternalLinkCandidate { url: string; title: string; reason: string }   // :39
+interface FrontmatterEnrichment { key: string; value: string | string[]; action: 'add' | 'merge' }   // :45
+interface EnrichmentResult { tags: TagCandidate[]; internalLinks: InternalLinkCandidate[]; externalLinks: ExternalLinkCandidate[]; frontmatter: FrontmatterEnrichment[] }   // :51
+type EnrichmentTrigger = 'elaboration' | 'transcription' | 'summarization' | 'deep-dive' | 'manual'   // :58
+type EnrichmentStatus = 'pending' | 'accepted' | 'partially-accepted' | 'rejected'   // :60
+interface AcceptedItems { tags: string[]; internalLinks: string[]; externalLinks: string[]; frontmatter: string[] }   // :66
+interface EnrichmentProposal { id: string; sourceNotePath: string; createdAt: string; triggerSource: EnrichmentTrigger; result: EnrichmentResult; status: EnrichmentStatus; acceptedItems?: AcceptedItems }   // :73
+interface TagIndex { tags: Map<string, { count: number; files: string[] }> }   // :84
+interface LinkGraph { outgoing: Map<string, Set<string>>; incoming: Map<string, Set<string>> }   // :90
 ```
 
-## Settings (extends SynapseSettings)
+## Settings (`settings.enrichment`, `EnrichmentSettings` settings.ts:154)
 
-The enrichment module adds `SynapseSettings.enrichment` of type `EnrichmentSettings`:
+| Key | Type | Default |
+|-----|------|---------|
+| `enabled` | boolean | `true` |
+| `autoEnrich` | boolean | `true` |
+| `maxTags` | number | `5` |
+| `maxInternalLinks` | number | `15` |
+| `maxExternalLinks` | number | `3` |
+| `maxTopicLinks` | number | `10` |
+| `suggestNewNotes` | boolean | `true` |
+| `tagVocabulary` | `TagVocabularyEntry[]` (`{ category, tags, description }`) | 3 entries: Status, Type, Source |
+| `internalLinkThreshold` | number | `0.3` |
+| `weights` | `EnrichmentWeightSettings` | sameFolder 1.0, siblingFolder 0.8, cousinFolder 0.5, distantFolder 0.2, decayPerLevel 0.15, minWeight 0.1 |
+| `enrichmentFolderPath` | string | `'.synapse/enrichments'` |
+| `excludeTags` | string[] | `['no-enrich']` |
+| `relatedNotesHeading` | string | `'Related Notes'` |
+| `referencesHeading` | string | `'References'` |
 
-```ts
-interface EnrichmentSettings {
-  enabled: boolean;                 // default: false
-  autoEnrichOnElaboration: boolean; // default: true
-  autoEnrichOnTranscription: boolean; // default: true
-  weightConfig: WeightConfig;
-  maxTagSuggestions: number;        // default: 10
-  maxLinkSuggestions: number;       // default: 5
-  maxExternalLinks: number;         // default: 3
-  frontmatterKeys: string[];       // default: ['topics', 'related']
-  proposalFolder: string;          // default: '.synapse/enrichments'
-}
-```
+Path exclusion uses the top-level `settings.exclusions` with feature id `'enrichment'` (#307). Auto-accept: `settings.autoAccept.enrichment` (#228).
 
-This requires adding `enrichment: EnrichmentSettings` to `SynapseSettings` in `src/settings.ts:L110-115` and a corresponding default block in `DEFAULT_SETTINGS`.
+## Commands (`src/commands/registry.ts`)
 
-## Public API (index.ts)
+| Command ID | Name | Status | Handler (index.ts) |
+|-----------|------|--------|--------------------|
+| `synapse:enrich-current-note` | Enrich current note | active | `enrich(ctx.file.path, 'manual')` (:82) |
+| `synapse:scan-vault-enrichment` | Scan folder for enrichment | active; Fire Synapse phase `enrichment` | `openScanFolderPicker` → `scanVault(path)` (:90) |
+| `synapse:undo-enrichment` | Undo last enrichment on current note | disabled (registry master switch) | private `undoLastEnrichment(path)` (:98, :650) |
 
-```ts
-class EnrichmentModule {
-  constructor(
-    plugin: Plugin,
-    getSettings: () => SynapseSettings,
-    notifications: NotificationManager
-  )
-
-  async onload(): Promise<void>
-  onunload(): void
-
-  // Trigger enrichment for a specific note
-  async enrichNote(file: TFile, trigger: EnrichmentTrigger): Promise<EnrichmentProposal>
-
-  // Accept an enrichment proposal (full or partial)
-  async acceptProposal(proposalId: string, acceptedItems?: AcceptedItems): Promise<void>
-
-  // Reject a proposal
-  async rejectProposal(proposalId: string): Promise<void>
-
-  // Undo a previously accepted enrichment
-  async undoEnrichment(proposalId: string): Promise<void>
-
-  // Open the enrichment review sidebar
-  activateEnrichmentView(): void
-}
-```
-
-## Weight Algorithm (weight-engine.ts)
-
-### computeProximityWeight
-
-```ts
-function computeProximityWeight(
-  sourcePath: string,
-  targetPath: string,
-  config: WeightConfig
-): number
-```
-
-Algorithm:
+## Integration (main.ts)
 
 ```
-1. Split sourcePath and targetPath into folder segments
-2. Find longest common prefix length (sharedDepth)
-3. sourceDepth = sourcePath segment count (excluding filename)
-4. targetDepth = targetPath segment count (excluding filename)
-5. hops = (sourceDepth - sharedDepth) + (targetDepth - sharedDepth)
-6. Map hops to tier:
-   hops == 0  -> config.sameFolder    (1.0)
-   hops == 1  -> config.siblingFolder  (0.8)
-   hops == 2  -> config.cousinFolder   (0.5)
-   hops >= 3  -> config.distantFolder  (0.2)
-7. Apply decay: weight = tierWeight * (1 - config.decayPerLevel) ^ (hops - tierMinHops)
-8. Clamp: max(config.minWeight, min(tierWeight, weight))
-9. Return weight
+enrichment.enabled && enrichment.autoEnrich  (main.ts:305-347):
+  elaboration.onProposalAccepted(path) --> enrich(path, 'elaboration', { postOp: true })
+  audio/video.onTranscriptionComplete   --> enrich(path, 'transcription', { postOp: true })
+  image.onExtractionComplete            --> enrich(path, 'transcription', { postOp: true })
+  summarize.onSummaryComplete           --> enrich(path, 'summarization', { postOp: true })
+  deepDive.onNoteAccepted (autoEnrichOnAccept) --> enrich(path, 'deep-dive', { postOp: true })
+All dispatched via fireAndForget from inside the primary operation's NoteOperationQueue slot (#483).
+
+Proposals surface in UnifiedProposalView ('synapse-proposals'); accept/reject wired at main.ts:210-211
+  onEnrichmentAcceptSelected(id, accepted) --> acceptSelectedFromView(id, accepted)
+  onEnrichmentReject(id)                   --> rejectFromView(id)
 ```
 
-### computeTagScore
-
-```ts
-function computeTagScore(
-  tag: string,
-  sourcePath: string,
-  vault: MetadataCache
-): TagCandidate
-```
-
-Formula:
-
-```
-finalScore = SUM(proximityWeight(sourcePath, fileUsingTag)) * log2(1 + globalTagCount)
-```
-
-Where `globalTagCount` is the total number of files in the vault using this tag.
-
-### computeLinkRelevance
-
-```ts
-function computeLinkRelevance(
-  sourcePath: string,
-  candidatePath: string,
-  vault: MetadataCache
-): number
-```
-
-Factors proximity weight with shared-tag overlap and backlink density.
-
-## Dependency Graph
-
-```
-src/enrichment/
-  index.ts
-    <- types.ts
-    <- weight-engine.ts
-    <- enricher.ts
-    <- proposal-store.ts
-    <- undo-manager.ts
-    <- views/enrichment-view.ts
-    <- shared/notifications.ts       (NotificationManager, OperationHandle)
-    <- shared/file-utils.ts          (ensureFolder, writeNote)
-
-  weight-engine.ts
-    <- types.ts                      (WeightConfig, TagCandidate)
-    <- obsidian                      (MetadataCache, getAllTags, resolvedLinks)
-
-  enricher.ts
-    <- types.ts                      (EnrichmentResult)
-    <- weight-engine.ts
-    <- shared/ai-client.ts           (AIClient)
-    <- shared/validation.ts          (sanitizeAIResponse, sanitizeUrl)
-    <- obsidian                      (MetadataCache, TFile)
-
-  proposal-store.ts
-    <- types.ts                      (EnrichmentProposal)
-    <- shared/file-utils.ts          (ensureFolder)
-
-  undo-manager.ts
-    <- types.ts                      (EnrichmentProposal, AcceptedItems)
-    <- shared/frontmatter-utils.ts   (parseFrontmatter, serializeFrontmatter) [NEW]
-    <- obsidian                      (processFrontMatter, TFile)
-
-  views/enrichment-view.ts
-    <- types.ts
-    <- obsidian                      (ItemView, WorkspaceLeaf)
-```
-
-Cross-module dependencies:
-
-```
-main.ts
-  -> enrichment/index.ts             (EnrichmentModule)
-
-enrichment/index.ts
-  -> shared/ai-client.ts
-  -> shared/notifications.ts
-  -> shared/file-utils.ts
-  -> shared/validation.ts
-  -> shared/frontmatter-utils.ts     [NEW - must be created]
-```
-
-No dependencies on other feature modules (elaboration, audio, video). Integration is via callback hooks in `main.ts`.
-
-## Integration Points
-
-### Callback Hooks (main.ts)
-
-```ts
-// After elaboration proposal is accepted:
-onProposalAccepted(sourceNotePath: string): void
-  -> enrichmentModule.enrichNote(file, 'elaboration')
-
-// After transcription completes:
-onTranscriptionComplete(outputPath: string): void
-  -> enrichmentModule.enrichNote(file, 'transcription')
-```
-
-These hooks must be wired in `main.ts` after the enrichment module is loaded.
-
-### Commands
-
-| Command ID | Name | Callback |
-|-----------|------|----------|
-| `synapse:enrich-current-note` | Enrich current note | `enrichNote(activeFile, 'manual')` |
-| `synapse:review-enrichments` | Review enrichment proposals | `activateEnrichmentView()` |
-| `synapse:undo-enrichment` | Undo last enrichment | `undoEnrichment(lastAcceptedId)` |
-
-### Views
-
-| View Type Constant | Class | Location |
-|--------------------|-------|----------|
-| `ENRICHMENT_VIEW_TYPE` | `EnrichmentView extends ItemView` | Right sidebar leaf |
-
-### Obsidian APIs Used
-
-| API | Usage |
-|-----|-------|
-| `MetadataCache` | Read vault tag index, resolved links graph |
-| `processFrontMatter(file, fn)` | Mutate frontmatter on acceptance |
-| `generateMarkdownLink(file, sourcePath)` | Create wiki/markdown links |
-| `resolvedLinks` | Traverse existing link graph for relevance scoring |
-| `getAllTags(cache)` | Enumerate tags from a file's metadata cache entry |
-| `TFile` | File references throughout |
-
-## New Shared Dependency: frontmatter-utils.ts
-
-Must be created at `src/shared/frontmatter-utils.ts`:
-
-```ts
-function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string }
-function serializeFrontmatter(frontmatter: Record<string, unknown>, body: string): string
-```
-
-Add re-export in `src/shared/index.ts`.
+No dedicated enrichment view exists; the sidebar is shared (`src/views/unified-proposal-view.ts`).
 
 ## Data Flow
 
 ```
-Manual command / elaboration hook / transcription hook
-  |
-  v
-EnrichmentModule.enrichNote(file, trigger)
-  |
-  v
-weight-engine: scan vault tags + links, compute proximity-weighted scores
-  |
-  v
-enricher: send note content + top candidates to AI for relevance ranking
-  |
-  v
-EnrichmentResult (tags, internalLinks, externalLinks, frontmatter)
-  |
-  v
-proposal-store: persist as EnrichmentProposal with status='pending'
-  |
-  v
-EnrichmentView sidebar: display proposals for user review
-  |
-  v
-User accepts/partially-accepts/rejects
-  |
-  v
-[accept] -> apply tags, links, frontmatter to note; record in undo-manager
-[reject] -> update proposal status, no file changes
-[undo]   -> undo-manager reverts applied changes
+command / post-op hook / scanVault
+  --> enrich(path, trigger)  [NoteOperationQueue slot for path]
+  --> VaultAnalyzer: TagIndex + LinkGraph (cached; invalidated on metadataCache 'resolved')
+  --> MetadataClassifier (tags vs vocabulary) + TopicExtractor (topics -> links) + LinkResolver (graph links)
+      + PromptBuilder (external links, frontmatter) via AIClient
+  --> EnrichmentResult -> EnrichmentStore (.synapse/enrichments/<id>.json, status 'pending')
+  --> auto-accept (settings.autoAccept.enrichment) or Review toast (reviewAction, suppressed when postOp)
+  --> UnifiedProposalView accept/reject -> EnrichmentApplier (vault.process, %% synapse-enrichment-start/end %% markers)
 ```
 
-## Error States
+## Storage
 
-| Error | Handling |
-|-------|----------|
-| AI client failure | `OperationHandle.error()`, proposal not created |
-| No active file (manual command) | `notifications.info('No active file')`, no-op |
-| File deleted before acceptance | `notifications.notifyError()`, proposal marked rejected |
-| Frontmatter parse failure | Skip frontmatter enrichments, log warning |
-| Invalid external URL from AI | `sanitizeUrl` throws, URL excluded from result |
-| Vault metadata cache not ready | Wait for `metadataCache.on('resolved')` event |
+| Purpose | Path | Format |
+|---------|------|--------|
+| Proposals | `.synapse/enrichments/*.json` | `EnrichmentProposal` |
+| Checkpoints (vault scan) | `.synapse/checkpoints/*.json` | `Checkpoint` (module `enrichment`) |

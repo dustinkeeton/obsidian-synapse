@@ -32,7 +32,8 @@ coverage/
 .claude/agents/brand-manager.md
 .claude/skills/brand-guidelines
 # wafflestack renders that embed the account-specific local overlay
-# (see .waffle/waffle.yaml; the rest of the rendered files are committed)
+# (see .waffle/waffle.yaml; other renders are committed except the generated
+# overview docs ignored below)
 .claude/skills/delegate/
 .claude/skills/git-workflow/
 .claude/skills/pr-response/
