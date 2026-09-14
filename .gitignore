@@ -51,3 +51,11 @@ yarn-error.log*
 
 # Internal Docs
 docs/reviews/
+
+# Generated wafflestack overview docs (reading material, not agent behavior;
+# absent files are tolerated by doctor --allow-missing — see .waffle/waffle.yaml)
+.waffle/CHEATSHEET.md
+.waffle/cheatsheet.html
+.waffle/TEAM.md
+.waffle/team.html
+.waffle/avatars/
