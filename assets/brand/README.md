@@ -38,7 +38,7 @@ Exceptions: `synapse-main` is deliberately impulse-free (neutral fallback). `syn
 - On white, the identity spike keeps its Ground chip; never remove it.
 - Flat only — no glows, blurs, shadows; gradients allowed on backgrounds, never in the mark.
 - Use `icon-small.svg` at or below ~24px; the canonical spike merges below that.
-- Keep `glyphs/` byte-synced with `registerSynapseIcons()` in `src/brand-icons.ts`.
+- Keep `glyphs/` byte-synced with `registerSynapseIcons()` in `src/brand-icons/brand-icons.ts`.
 
 ## Notes
 

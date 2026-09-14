@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createEl, ToggleComponent, ButtonComponent, Setting, type StubEl } from './__mocks__/obsidian';
+import { createEl, ToggleComponent, ButtonComponent, Setting, type StubEl } from '../__mocks__/obsidian';
 
 // Mock the changelog modal so this suite never resolves the real CHANGELOG.md
 // import (a build-time `.md` text import that Vitest can't transform), and so
 // the About link's open behavior can be asserted (#375).
 const { changelogOpen } = vi.hoisted(() => ({ changelogOpen: vi.fn() }));
-vi.mock('./changelog-modal', () => ({
+vi.mock('../changelog', () => ({
 	// A regular function (not an arrow) so it's usable with `new` while staying a
 	// spy for construction assertions.
 	ChangelogModal: vi.fn(function (this: { open: () => void }) {
@@ -18,19 +18,19 @@ vi.mock('./changelog-modal', () => ({
 // without opening a real modal (#420). Mocking the leaf module also covers the
 // `./shared` barrel re-export that settings-tab imports.
 const { confirmResult } = vi.hoisted(() => ({ confirmResult: vi.fn() }));
-vi.mock('./shared/confirm-modal', () => ({
+vi.mock('../shared/confirm-modal', () => ({
 	ConfirmModal: vi.fn(function (this: { openAndConfirm: () => Promise<boolean> }) {
 		this.openAndConfirm = confirmResult;
 	}),
 }));
 
-import { ChangelogModal } from './changelog-modal';
-import { ConfirmModal } from './shared/confirm-modal';
+import { ChangelogModal } from '../changelog';
+import { ConfirmModal } from '../shared/confirm-modal';
 import { SynapseSettingTab } from './settings-tab';
-import { DEFAULT_SETTINGS } from './settings';
-import type { SynapseSettings } from './settings';
-import { createSettingsSectionContext } from './shared';
-import { METADATA_CONTAINER_SELECTOR, PROPERTIES_COLLAPSED_CLASS } from './properties-fold';
+import { DEFAULT_SETTINGS } from '../settings';
+import type { SynapseSettings } from '../settings';
+import { createSettingsSectionContext } from '../shared';
+import { METADATA_CONTAINER_SELECTOR, PROPERTIES_COLLAPSED_CLASS } from '../properties-fold';
 
 /**
  * Tooltip of the REM feature's accordion-header enable toggle (see

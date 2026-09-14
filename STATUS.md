@@ -10,7 +10,7 @@
 
 ## At a Glance
 
-- **17 modules** under `src/` plus top-level `main.ts`, `settings.ts`, `settings-tab.ts`, `onboarding.ts`, `brand-icons.ts`, `changelog.ts`/`changelog-modal.ts`, and `properties-fold.ts`.
+- **22 modules** under `src/` (including the thin `settings-ui/`, `onboarding/`, `brand-icons/`, `changelog/`, and `properties-fold/` folders) plus top-level `main.ts` and `settings.ts`.
 - **No source changes since 2026-08-17.** PRs #491–#493 (2026-09-13/14) were tooling only: vitest devDep bump, wafflestack 0.8.0 → 0.15.0, and pruning non-development files (`START.md`, `docs/PRD-MVP.md`, generated `.waffle` overviews) from the public tree.
 - **YouTube transcribes from captions on every platform** (#184, 1.0.13): a tiered `UrlTranscriptionRouter` tries free HTTP captions first, then desktop yt-dlp/ffmpeg. Caption transcripts get speaker turns, linked chapter headings, and pause paragraphs with no AI cost (#469). The Transcribe ribbon and commands are registered on desktop **and** mobile.
 - **Intake media branch is real** (#112 closed): a bare video URL dropped in the inbox is transcribed, run through the full pipeline, and stamped; on failure the note stays un-stamped so a synced desktop vault retries. Opt-in `intake.adoptSharedCaptures` (#455) pulls share-sheet captures from the vault root into the inbox.

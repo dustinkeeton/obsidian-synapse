@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { DEFAULT_SETTINGS } from './settings';
-import type { SynapseSettings, AIProvider } from './settings';
+import { DEFAULT_SETTINGS } from '../settings';
+import type { SynapseSettings, AIProvider } from '../settings';
 import {
 	needsApiKey,
 	planFirstRun,

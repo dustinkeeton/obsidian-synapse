@@ -50,7 +50,7 @@
 /*
  * Brand impulse gold (2026 Iris+Gold refresh). Every registered glyph draws
  * its body in currentColor and its single gold gesture in this var (see
- * src/brand-icons.ts / assets/brand/README.md). Deepened on light surfaces
+ * src/brand-icons/brand-icons.ts / assets/brand/README.md). Deepened on light surfaces
  * for contrast against white.
  */
 body {
