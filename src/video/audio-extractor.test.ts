@@ -413,3 +413,75 @@ describe('AudioExtractor.extractFromUrl ffmpeg-location & fallback', () => {
 		expect(extractCalls()).toHaveLength(1);
 	});
 });
+
+describe('AudioExtractor yt-dlp argv boundary', () => {
+	const URL = 'https://www.tiktok.com/@user/video/123';
+
+	beforeEach(() => {
+		execFileMock.mockReset();
+		execFileMock.mockImplementation(
+			(_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) => {
+				if (args.includes('--dump-json')) {
+					cb(null, JSON.stringify({ title: 'Clip', formats: [{ acodec: 'aac', vcodec: 'h264' }] }), '');
+				} else {
+					cb(null, '', '');
+				}
+			}
+		);
+	});
+
+	function makeExtractor(): AudioExtractor {
+		const ex = new AudioExtractor(() => structuredClone(DEFAULT_SETTINGS));
+		(ex as unknown as { _node: unknown })._node = { os, path, execFile: execFileMock };
+		return ex;
+	}
+
+	function ytDlpArgv(): string[][] {
+		return execFileMock.mock.calls
+			.filter(([cmd]) => cmd === DEFAULT_SETTINGS.video.ytDlpPath)
+			.map(([, args]) => args);
+	}
+
+	it('terminates every yt-dlp argv with -- before the URL positional', async () => {
+		const ex = makeExtractor();
+		await ex.extractFromUrl(URL);
+		await ex.downloadVideo(URL);
+
+		const argv = ytDlpArgv();
+		expect(argv).toHaveLength(3);
+		for (const args of argv) {
+			expect(args.slice(-2)).toEqual(['--', URL]);
+			expect(args.indexOf('--')).toBe(args.length - 2);
+		}
+		expect(argv[0].slice(0, 2)).toEqual(['--dump-json', '--no-download']);
+	});
+
+	it('keeps the -- terminator on the loosened-format retry', async () => {
+		const error = Object.assign(new Error('Command failed'), { code: 1 });
+		let extractAttempts = 0;
+		execFileMock.mockImplementation(
+			(_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, o: string, s: string) => void) => {
+				if (args.includes('--dump-json')) {
+					cb(null, JSON.stringify({ title: 'Clip', formats: [{ acodec: 'aac' }] }), '');
+					return;
+				}
+				extractAttempts += 1;
+				if (extractAttempts === 1) cb(error, '', 'ERROR: Requested format is not available');
+				else cb(null, '', '');
+			}
+		);
+
+		await makeExtractor().extractFromUrl(URL);
+		const retry = ytDlpArgv()[2];
+		expect(retry.slice(0, 2)).toEqual(['-f', 'bestaudio/best']);
+		expect(retry.slice(-2)).toEqual(['--', URL]);
+	});
+
+	it('dumpJson validates the URL at its own boundary and never spawns on rejection', async () => {
+		const ex = makeExtractor() as unknown as { dumpJson(url: string): Promise<unknown> };
+		expect(await ex.dumpJson('-o /tmp/x')).toBeNull();
+		expect(await ex.dumpJson('file:///etc/hosts')).toBeNull();
+		expect(await ex.dumpJson('https://example.com/a;b')).toBeNull();
+		expect(execFileMock).not.toHaveBeenCalled();
+	});
+});

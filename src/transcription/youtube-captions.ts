@@ -99,6 +99,18 @@ export const INNERTUBE_ANDROID_CLIENT = {
 /** Innertube player endpoint (attempt B). */
 const INNERTUBE_PLAYER_URL = 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false';
 
+/** Upper bound on a player response handed to JSON.parse; overflow = no captions. */
+const MAX_PLAYER_JSON_CHARS = 8 * 1024 * 1024;
+
+/** Upper bound on a json3 track body handed to JSON.parse; overflow = no captions. */
+const MAX_TRACK_JSON_CHARS = 16 * 1024 * 1024;
+
+/** Upper bound on title/chapter text carried into the note. */
+const MAX_INLINE_TEXT_CHARS = 300;
+
+/** Hosts a caption track may be fetched from; anything else drops the track. */
+const TRACK_HOST_ALLOWLIST = ['youtube.com', 'googlevideo.com'];
+
 /**
  * Fetch and clean the caption transcript for a YouTube URL.
  *
@@ -232,16 +244,27 @@ async function fetchInnertubePlayer(videoId: string): Promise<unknown> {
 			racyCheckOk: true,
 		}),
 	});
-	return parseJson(response.text);
+	return parseBoundedJson(response.text, MAX_PLAYER_JSON_CHARS);
+}
+
+/** parseJson with a size cap; oversized input is treated as unparseable (null). */
+function parseBoundedJson(text: string, maxChars: number): unknown {
+	if (text.length > maxChars) return null;
+	return parseJson(text);
 }
 
 /**
  * Extract the JSON object assigned right after `marker` in a script-bearing
  * HTML page by balanced-brace scanning (string- and escape-aware). A greedy
  * regex is not safe here: the player response is a huge object with nested
- * braces and embedded `};` sequences inside string values.
+ * braces and embedded `};` sequences inside string values. Objects longer
+ * than `maxChars` are abandoned (null) before they reach JSON.parse.
  */
-export function extractJsonAfterMarker(source: string, marker: string): unknown {
+export function extractJsonAfterMarker(
+	source: string,
+	marker: string,
+	maxChars: number = MAX_PLAYER_JSON_CHARS
+): unknown {
 	const markerIdx = source.indexOf(marker);
 	if (markerIdx === -1) return null;
 	const start = source.indexOf('{', markerIdx);
@@ -250,7 +273,8 @@ export function extractJsonAfterMarker(source: string, marker: string): unknown 
 	let depth = 0;
 	let inString = false;
 	let escaped = false;
-	for (let i = start; i < source.length; i++) {
+	const end = Math.min(source.length, start + maxChars);
+	for (let i = start; i < end; i++) {
 		const ch = source[i];
 		if (escaped) {
 			escaped = false;
@@ -308,7 +332,28 @@ function extractVideoTitle(player: unknown): string | undefined {
 	if (!isRecord(player)) return undefined;
 	const details = player.videoDetails;
 	if (!isRecord(details)) return undefined;
-	return typeof details.title === 'string' ? details.title : undefined;
+	if (typeof details.title !== 'string') return undefined;
+	const title = sanitizeInlineText(details.title);
+	return title.length > 0 ? title : undefined;
+}
+
+/** Collapse control characters and whitespace runs to one line, bounded in length. */
+function sanitizeInlineText(text: string): string {
+	return text
+		.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, MAX_INLINE_TEXT_CHARS);
+}
+
+/** Backslash-escape the characters that end or open markdown link/bracket syntax. */
+function escapeLinkText(text: string): string {
+	return sanitizeInlineText(text).replace(/[\\[\]()<>]/g, '\\$&');
+}
+
+/** Escape bracket/embed/HTML openers in body text so cues cannot inject links, embeds, or tags. */
+function escapeBodyText(text: string): string {
+	return text.replace(/[[\]<]/g, '\\$&');
 }
 
 /** `videoDetails.shortDescription` — where creators declare chapters. */
@@ -381,25 +426,38 @@ async function fetchCaptionCues(baseUrl: string): Promise<CaptionCue[]> {
 
 	let parsed: unknown;
 	try {
-		parsed = parseJson(response.text);
+		parsed = parseBoundedJson(response.text, MAX_TRACK_JSON_CHARS);
 	} catch {
 		return [];
 	}
 	return collectJson3Cues(parsed);
 }
 
-/** Force `fmt=json3` onto a track URL; tolerate a protocol-relative/path base. */
+/**
+ * Force `fmt=json3` onto a track URL; tolerate a path-only base. The result
+ * must be `https:` on an allowlisted host with no embedded credentials —
+ * a player response cannot redirect the caption GET anywhere else.
+ */
 function buildTrackUrl(baseUrl: string): string | null {
-	const absolute = baseUrl.startsWith('/')
+	const absolute = baseUrl.startsWith('/') && !baseUrl.startsWith('//')
 		? `https://www.youtube.com${baseUrl}`
 		: baseUrl;
+	let url: URL;
 	try {
-		const url = new URL(absolute);
-		url.searchParams.set('fmt', 'json3');
-		return url.toString();
+		url = new URL(absolute);
 	} catch {
 		return null;
 	}
+	if (url.protocol !== 'https:' || url.username || url.password) return null;
+	if (!isAllowlistedTrackHost(url.hostname)) return null;
+	url.searchParams.set('fmt', 'json3');
+	return url.toString();
+}
+
+/** True for an allowlisted host or any of its subdomains. */
+function isAllowlistedTrackHost(hostname: string): boolean {
+	const host = hostname.toLowerCase();
+	return TRACK_HOST_ALLOWLIST.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
 }
 
 /**
@@ -570,7 +628,7 @@ export function formatCaptionTranscript(
 			lines.push(chapterHeading(chapters[chapterIdx], videoId));
 			chapterIdx++;
 		}
-		lines.push(block.text);
+		lines.push(escapeBodyText(block.text));
 	}
 	// Trailing chapters with no caption text after them (e.g. an outro card).
 	while (chapterIdx < chapters.length) {
@@ -586,7 +644,7 @@ export function formatCaptionTranscript(
 
 /** `### [Title](watch?v=…&t=…)` — a heading that jumps to the chapter. */
 function chapterHeading(chapter: VideoChapter, videoId: string): string {
-	const title = chapter.title.replace(/[[\]]/g, '');
+	const title = escapeLinkText(chapter.title);
 	const seconds = Math.floor(chapter.startMs / 1000);
 	return `### [${title}](https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&t=${seconds})`;
 }

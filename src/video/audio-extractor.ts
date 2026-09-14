@@ -236,7 +236,7 @@ export class AudioExtractor {
 				'-x', '--audio-format', 'mp3',
 				...ffmpegLocation,
 				'-o', outputPath,
-				sanitizedUrl,
+				'--', sanitizedUrl,
 			], 'yt-dlp', hasPositiveAudio);
 		} catch (error) {
 			// A confirmed no-audio post can never be salvaged by a looser format —
@@ -265,7 +265,7 @@ export class AudioExtractor {
 				'-x', '--audio-format', 'mp3',
 				...ffmpegLocation,
 				'-o', outputPath,
-				sanitizedUrl,
+				'--', sanitizedUrl,
 			], 'yt-dlp', hasPositiveAudio);
 		}
 
@@ -336,7 +336,7 @@ export class AudioExtractor {
 			'-f', 'mp4/best',
 			...this.ffmpegLocationArgs(),
 			'-o', outputPath,
-			sanitizedUrl,
+			'--', sanitizedUrl,
 		], 'yt-dlp');
 
 		return outputPath;
@@ -417,7 +417,7 @@ export class AudioExtractor {
 		const settings = this.getSettings().video;
 		try {
 			const output = await this.runCommand(sanitizePath(settings.ytDlpPath), [
-				'--dump-json', '--no-download', url,
+				'--dump-json', '--no-download', '--', sanitizeUrl(url),
 			], 'yt-dlp');
 			return asYtDlpDumpJson(parseJson(output));
 		} catch {

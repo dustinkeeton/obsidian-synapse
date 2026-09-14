@@ -198,6 +198,118 @@ describe('fetchYouTubeTranscript', () => {
 	it('throws on a URL rejected by sanitizeUrl', async () => {
 		await expect(fetchYouTubeTranscript('not-a-url', ['en'])).rejects.toThrow();
 	});
+
+	it.each([
+		['foreign https host', 'https://captions.example.net/api/timedtext?v=x'],
+		['javascript scheme', 'javascript:void(0)'],
+		['file scheme', 'file:///etc/hosts'],
+		['plain http', 'http://www.youtube.com/api/timedtext?v=x'],
+		['protocol-relative foreign host', '//captions.example.net/api/timedtext?v=x'],
+		['lookalike host', 'https://youtube.com.example.net/api/timedtext?v=x'],
+		['embedded credentials', 'https://user:pw@www.youtube.com/api/timedtext?v=x'],
+	])('drops a caption track whose baseUrl is a %s', async (_label, baseUrl) => {
+		const player = playerResponse([{ baseUrl, languageCode: 'en' }]);
+		stubInnertubeSuccess(player, json3(SIMPLE_EVENTS));
+
+		expect(await fetchYouTubeTranscript(WATCH_URL, ['en'])).toBeNull();
+
+		const requested = mockRequestUrl.mock.calls.map(([params]) =>
+			typeof params === 'string' ? params : params.url
+		);
+		expect(requested.some((url) => url.includes('timedtext'))).toBe(false);
+		for (const url of requested) {
+			expect(new URL(url).hostname).toBe('www.youtube.com');
+		}
+	});
+
+	it.each([
+		['path-only base', '/api/timedtext?v=x&lang=en'],
+		['googlevideo host', 'https://r1---sn-abc.googlevideo.com/api/timedtext?v=x'],
+	])('fetches a caption track from a %s', async (_label, baseUrl) => {
+		const player = playerResponse([{ baseUrl, languageCode: 'en' }]);
+		stubInnertubeSuccess(player, json3(SIMPLE_EVENTS));
+
+		const result = await fetchYouTubeTranscript(WATCH_URL, ['en']);
+		expect(result?.text).toBe("hello world\n\nit's fine");
+	});
+
+	it('flattens a title carrying newlines and link syntax to one bounded line', async () => {
+		const player = playerResponse(
+			[{ baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=en', languageCode: 'en' }],
+			{ videoDetails: { title: '  Line one\r\n\tLine two](https://example.net) ' + 'x'.repeat(500) } }
+		);
+		stubInnertubeSuccess(player, json3(SIMPLE_EVENTS));
+
+		const result = await fetchYouTubeTranscript(WATCH_URL, ['en']);
+		expect(result?.title).toMatch(/^Line one Line two\]\(https:\/\/example\.net\) x+$/);
+		expect(result?.title).not.toMatch(/[\r\n\t]/);
+		expect(result?.title?.length).toBe(300);
+	});
+
+	it('drops a whitespace-only title', async () => {
+		const player = playerResponse(
+			[{ baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=en', languageCode: 'en' }],
+			{ videoDetails: { title: ' \n\t ' } }
+		);
+		stubInnertubeSuccess(player, json3(SIMPLE_EVENTS));
+
+		const result = await fetchYouTubeTranscript(WATCH_URL, ['en']);
+		expect(result?.title).toBeUndefined();
+	});
+
+	it('returns null when the watch-page player JSON exceeds the size bound', async () => {
+		const player = playerResponse(
+			[{ baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=en', languageCode: 'en' }],
+			{ padding: 'p'.repeat(8 * 1024 * 1024) }
+		);
+		mockRequestUrl.mockImplementation((params) => {
+			const url = typeof params === 'string' ? params : params.url;
+			if (url.includes('/youtubei/v1/player')) {
+				return Promise.reject(new Error('400 FAILED_PRECONDITION'));
+			}
+			if (url.includes('/watch?v=')) {
+				return Promise.resolve({ status: 200, text: watchPageHtml(player) });
+			}
+			return Promise.resolve({ status: 200, text: json3(SIMPLE_EVENTS) });
+		});
+
+		expect(await fetchYouTubeTranscript(WATCH_URL, ['en'])).toBeNull();
+		const requested = mockRequestUrl.mock.calls.map(([params]) =>
+			typeof params === 'string' ? params : params.url
+		);
+		expect(requested.some((url) => url.includes('timedtext'))).toBe(false);
+	});
+
+	it('returns null when the Innertube player JSON exceeds the size bound', async () => {
+		const player = playerResponse(
+			[{ baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=en', languageCode: 'en' }],
+			{ padding: 'p'.repeat(8 * 1024 * 1024) }
+		);
+		mockRequestUrl.mockImplementation((params) => {
+			const url = typeof params === 'string' ? params : params.url;
+			if (url.includes('/youtubei/v1/player')) {
+				return Promise.resolve({ status: 200, text: JSON.stringify(player) });
+			}
+			if (url.includes('/watch?v=')) {
+				return Promise.resolve({ status: 200, text: '<html></html>' });
+			}
+			return Promise.resolve({ status: 200, text: json3(SIMPLE_EVENTS) });
+		});
+
+		expect(await fetchYouTubeTranscript(WATCH_URL, ['en'])).toBeNull();
+	});
+
+	it('returns null when the json3 track body exceeds the size bound', async () => {
+		const player = playerResponse([
+			{ baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=en', languageCode: 'en' },
+		]);
+		const oversized = json3([
+			{ tStartMs: 0, dDurationMs: 1, segs: [{ utf8: 'x'.repeat(16 * 1024 * 1024) }] },
+		]);
+		stubInnertubeSuccess(player, oversized);
+
+		expect(await fetchYouTubeTranscript(WATCH_URL, ['en'])).toBeNull();
+	});
 });
 
 describe('extractJsonAfterMarker', () => {
@@ -215,6 +327,17 @@ describe('extractJsonAfterMarker', () => {
 
 	it('returns null on an unbalanced object', () => {
 		expect(extractJsonAfterMarker('ytInitialPlayerResponse = {"a": {', 'ytInitialPlayerResponse')).toBeNull();
+	});
+
+	it('abandons an object longer than the size bound without parsing it', () => {
+		const html = `ytInitialPlayerResponse = {"a":"${'x'.repeat(100)}"};`;
+		expect(extractJsonAfterMarker(html, 'ytInitialPlayerResponse', 50)).toBeNull();
+		expect(extractJsonAfterMarker(html, 'ytInitialPlayerResponse', 200)).toEqual({ a: 'x'.repeat(100) });
+	});
+
+	it('does not scan past the size bound on a never-closing object', () => {
+		const html = `ytInitialPlayerResponse = {"a":"${'x'.repeat(10_000)}`;
+		expect(extractJsonAfterMarker(html, 'ytInitialPlayerResponse', 50)).toBeNull();
 	});
 });
 
@@ -369,9 +492,34 @@ describe('formatCaptionTranscript', () => {
 		const { text, structured } = formatCaptionTranscript(cues, chapters, VIDEO_ID);
 		expect(structured).toBe(true);
 		expect(text).toContain('### [Intro](https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=0)');
-		expect(text).toContain('### [Big Story](https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=305)');
-		expect(text.indexOf('Big Story')).toBeGreaterThan(text.indexOf('Glad to be here.'));
-		expect(text.indexOf('Now the big story.')).toBeGreaterThan(text.indexOf('Big Story'));
+		expect(text).toContain('### [Big \\[Story\\]](https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=305)');
+		expect(text.indexOf('Big \\[Story')).toBeGreaterThan(text.indexOf('Glad to be here.'));
+		expect(text.indexOf('Now the big story.')).toBeGreaterThan(text.indexOf('Big \\[Story'));
+	});
+
+	it('keeps a chapter title with link syntax and line breaks inside the heading link', () => {
+		const cues = [cue(0, '>> One. >> Two.')];
+		const chapters = [
+			{ title: 'Intro](https://example.net) ![x](https://example.net/p.png)\r<b>', startMs: 0 },
+			{ title: 'Outro \\', startMs: 1000 },
+		];
+		const { text } = formatCaptionTranscript(cues, chapters, VIDEO_ID);
+		const [heading] = text.split('\n\n');
+		expect(heading).toBe(
+			'### [Intro\\]\\(https://example.net\\) !\\[x\\]\\(https://example.net/p.png\\) \\<b\\>]' +
+				'(https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=0)'
+		);
+		expect(text).toContain('### [Outro \\\\](https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1)');
+	});
+
+	it('escapes link, embed, and tag openers in cue text', () => {
+		const cues = [
+			cue(0, '![[Secret Note]] and ![pixel](https://example.net/p.png) <img src=x> [Music]'),
+		];
+		const { text } = formatCaptionTranscript(cues, [], VIDEO_ID);
+		expect(text).toBe(
+			'!\\[\\[Secret Note\\]\\] and !\\[pixel\\](https://example.net/p.png) \\<img src=x> \\[Music\\]'
+		);
 	});
 
 	it('paragraphs marker-less ASR at pauses (not structured)', () => {
