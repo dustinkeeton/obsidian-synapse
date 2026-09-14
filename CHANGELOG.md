@@ -5,6 +5,14 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.14] - 2026-09-14
+
+### Fixed
+
+- AI operations on the same note now run one at a time, so chaining commands like Transcribe then Elaborate on a note no longer interleaves: elaboration waits for the transcript to land instead of expanding an unreadable audio link, and you no longer get duplicate elaboration callouts or stale enrichment and title checks
+- Accepting a title proposal now updates every note that links to the renamed note, so inbound wikilinks, heading and block references, embeds, and markdown links keep working. Each link's visible text is preserved exactly as it was, whether renamed outright, suffixed, or merged
+- Real TikTok videos are no longer misreported as photo slideshows when the local ffprobe can't read their audio codec. When the post clearly has audio, Synapse now points you at the ffmpeg path setting or a yt-dlp update instead
+
 ## [1.0.13] - 2026-07-15
 
 ### Added

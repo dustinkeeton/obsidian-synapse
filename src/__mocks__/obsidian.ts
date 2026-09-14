@@ -46,7 +46,7 @@ export class TFolder {
 
 export class Plugin {
 	app: unknown = {};
-	manifest = { id: 'synapse', name: 'Synapse', version: '1.0.13' };
+	manifest = { id: 'synapse', name: 'Synapse', version: '1.0.14' };
 	addCommand = vi.fn();
 	addRibbonIcon = vi.fn();
 	addSettingTab = vi.fn();
