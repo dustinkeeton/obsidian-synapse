@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TitleModule } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
-import { NotificationManager } from '../shared';
+import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile, TFolder } from '../__mocks__/obsidian';
 
 // Stub the title suggester so checkUntitled produces a deterministic proposal
@@ -96,6 +96,7 @@ describe('TitleModule auto-accept (#228)', () => {
 			mockPlugin as never,
 			() => settings,
 			notifications,
+			new NoteOperationQueue(),
 			shouldAutoAccept
 		);
 	}

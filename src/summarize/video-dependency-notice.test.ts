@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from '../settings';
 import { TFile, createEl } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
+import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
 
 /** The slice of an Obsidian Command the test reads back off addCommand. */
@@ -60,6 +61,8 @@ vi.mock('../audio', () => ({
 
 vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
+	// Real queue primitive (#483): a mocked-away queue would never run the operation
+	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
@@ -135,6 +138,7 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 			new CommandRegistrar(
 				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
 			),
+			new NoteOperationQueue(),
 			transcribeUrl,
 		);
 	}

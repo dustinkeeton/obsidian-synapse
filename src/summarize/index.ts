@@ -3,7 +3,7 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
 	getMarkdownFiles, NotificationManager, buildCallout,
-	CALLOUT_TYPES, CheckpointManager, generateId, fireAndForget,
+	CALLOUT_TYPES, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
@@ -125,6 +125,7 @@ export class SummarizeModule {
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
 		private registrar: CommandRegistrar,
+		private noteQueue: NoteOperationQueue,
 		transcribeUrl?: TranscribeUrlFn,
 		transcribeAudio?: TranscribeAudioFn
 	) {
@@ -179,17 +180,21 @@ export class SummarizeModule {
 				if (!(file instanceof TFile)) continue;
 				if (this.isExcluded(file)) continue;
 
-				const content = await this.plugin.app.vault.read(file);
-				const targets = this.collectTargets(content, file.path);
-				if (targets.length === 0) continue;
+				// #483: slot taken before the read so target line numbers cannot go stale
+				const result = await this.noteQueue.run(file.path, async () => {
+					const content = await this.plugin.app.vault.read(file);
+					const targets = this.collectTargets(content, file.path);
+					if (targets.length === 0) return null;
+					return this.processTargetsForFile(
+						file,
+						targets,
+						genOp,
+						content,
+						this.getSettings().summarize.combineSummaries
+					);
+				});
+				if (!result) continue;
 
-				const result = await this.processTargetsForFile(
-					file,
-					targets,
-					genOp,
-					content,
-					this.getSettings().summarize.combineSummaries
-				);
 				totalInline += result.inlineCompleted;
 				totalEnrichment += result.enrichmentCompleted;
 				totalLinksUpdated += result.linksUpdated;
@@ -269,7 +274,12 @@ export class SummarizeModule {
 			`summarize-${file.path}`
 		);
 
-		const result = await this.processTargetsForFile(file, targets, op, content, true);
+		const result = await this.noteQueue.run(
+			file.path,
+			() => this.processTargetsForFile(file, targets, op, content, true),
+			{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
+		);
+		// Fired after the slot is released so post-ops enqueue behind us (#483)
 		this.fireEnrichmentCallbacks(file.path, result);
 
 		if (!op.cancelled) {
@@ -502,7 +512,12 @@ export class SummarizeModule {
 			`summarize-${file.path}`
 		);
 
-		const result = await this.processFileTargets(file, targets, op, content);
+		// #483: see processTargetsCombined — the whole cycle owns the note's slot.
+		const result = await this.noteQueue.run(
+			file.path,
+			() => this.processFileTargets(file, targets, op, content),
+			{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
+		);
 
 		if (!op.cancelled) {
 			const totalDone = result.inlineCompleted + result.enrichmentCompleted + result.linksUpdated;
@@ -984,16 +999,21 @@ export class SummarizeModule {
 			// line numbers match the current file state (content may have
 			// changed since the initial scan, e.g. a previous file's
 			// enrichment callback modifying this file).
-			const content = await this.plugin.app.vault.read(file);
-			const targets = this.collectTargets(content, file.path);
-			if (targets.length === 0) continue;
-			const result = await this.processTargetsForFile(
-				file,
-				targets,
-				genOp,
-				content,
-				this.getSettings().summarize.combineSummaries
-			);
+			// #483: slot taken before the read so nothing mutates the note before the write
+			const result = await this.noteQueue.run(file.path, async () => {
+				const content = await this.plugin.app.vault.read(file);
+				const targets = this.collectTargets(content, file.path);
+				if (targets.length === 0) return null;
+				return this.processTargetsForFile(
+					file,
+					targets,
+					genOp,
+					content,
+					this.getSettings().summarize.combineSummaries
+				);
+			});
+			if (!result) continue;
+
 			totalInline += result.inlineCompleted;
 			totalEnrichment += result.enrichmentCompleted;
 			totalLinksUpdated += result.linksUpdated;

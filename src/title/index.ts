@@ -1,10 +1,11 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
-	AIClient, NotificationManager, generateId, readNote, isPathExcluded, reviewAction,
+	AIClient, NotificationManager, NoteOperationQueue, generateId, readNote, isPathExcluded, reviewAction,
 	findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags,
 } from '../shared';
 import { TitleProposalStore } from './title-store';
+import { collectInboundLinks, rewriteContent, InboundLinkRef } from './backlink-remediation';
 import { TitleSuggester } from './title-suggester';
 import { isUntitled } from './title-detector';
 import { titleContentKey } from './content-key';
@@ -47,6 +48,7 @@ export class TitleModule {
 		private plugin: Plugin,
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager,
+		private noteQueue: NoteOperationQueue,
 		shouldAutoAccept?: () => boolean
 	) {
 		const aiClient = new AIClient(getSettings);
@@ -67,11 +69,12 @@ export class TitleModule {
 	 */
 	private async maybeAutoAccept(proposal: TitleProposal): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
-		// acceptProposal derives the resolution from the duplicateHandling setting
+		// applyAccept derives the resolution from the duplicateHandling setting
 		// on a live collision, so a colliding title is resolved automatically. The
 		// notice reflects the ACTUAL outcome (suffixed name / merge target), not
-		// the originally proposed title (#408).
-		const outcome = await this.acceptProposal(proposal.id, { silent: true });
+		// the originally proposed title (#408). Callers already hold the note's
+		// queue slot (#483), so apply directly.
+		const outcome = await this.applyAccept(proposal.id, { silent: true });
 		if (outcome.status === 'renamed') {
 			this.notifications.info(`Auto-accepted title "${this.baseName(outcome.path)}"`);
 		} else if (outcome.status === 'merged') {
@@ -108,6 +111,15 @@ export class TitleModule {
 
 		if (!isUntitled(file.basename)) return;
 
+		await this.noteQueue.run(filePath, () => this.proposeUntitled(file, filePath, options));
+	}
+
+	/** Untitled-note proposal cycle, already holding the note's queue slot (#483). */
+	private async proposeUntitled(
+		file: TFile,
+		filePath: string,
+		options?: { postOp?: boolean }
+	): Promise<void> {
 		// Read content BEFORE the guards: the dedup key is computed from it (#408).
 		const content = await readNote(this.plugin.app, filePath);
 		if (!content || content.trim().length === 0) return;
@@ -183,6 +195,16 @@ export class TitleModule {
 		// Don't check mismatch if the note is already untitled (handled by checkUntitled)
 		if (isUntitled(file.basename)) return;
 
+		// #483: serialized per note, silently — see {@link checkUntitled}.
+		await this.noteQueue.run(filePath, () => this.proposeFromMismatch(file, filePath, options));
+	}
+
+	/** Mismatch proposal cycle, already holding the note's queue slot (#483). */
+	private async proposeFromMismatch(
+		file: TFile,
+		filePath: string,
+		options?: { postOp?: boolean }
+	): Promise<void> {
 		// Read content BEFORE the guards: the dedup key is computed from it (#408).
 		const content = await readNote(this.plugin.app, filePath);
 		if (!content || content.trim().length === 0) return;
@@ -304,8 +326,25 @@ export class TitleModule {
 	 * Auto-accept passes `silent: true` and lets the resolution default to
 	 * `settings.title.duplicateHandling`. Returns a {@link TitleAcceptOutcome} so
 	 * auto-accept can announce the real result.
+	 *
+	 * Every resolving branch remediates inbound links afterwards, preserving
+	 * each link's rendered display text (#485) — see {@link remediateBacklinks}.
 	 */
 	async acceptProposal(
+		id: string,
+		options?: { silent?: boolean; resolution?: TitleDuplicateStrategy }
+	): Promise<TitleAcceptOutcome> {
+		const queued = await this.store.load(id);
+		if (!queued) return { status: 'skipped' };
+		// Keyed on the pre-rename path; work queued behind us finds no file there and exits early.
+		return this.noteQueue.run(
+			queued.sourceNotePath,
+			() => this.applyAccept(id, options)
+		);
+	}
+
+	/** Queue-free core of acceptProposal; runs holding the source note's queue slot (#483). */
+	private async applyAccept(
 		id: string,
 		options?: { silent?: boolean; resolution?: TitleDuplicateStrategy }
 	): Promise<TitleAcceptOutcome> {
@@ -326,11 +365,17 @@ export class TitleModule {
 		const existing = this.plugin.app.vault.getAbstractFileByPath(targetPath);
 		const collision = !!existing && existing.path !== file.path;
 
+		// Snapshot inbound links BEFORE any rename/merge: vault.rename does not
+		// update links, so every branch below remediates them afterwards (#485).
+		const oldPath = file.path;
+		const inboundLinks = collectInboundLinks(this.plugin.app, file);
+
 		try {
 			if (!collision) {
 				// Happy path: target is free (or the collision vanished since the
 				// proposal was created) — plain rename, no suffix.
 				await this.plugin.app.vault.rename(file, targetPath);
+				await this.remediateBacklinks(inboundLinks, oldPath, targetPath);
 				await this.store.updateStatus(id, 'accepted');
 				await this.announceAccept(options?.silent, `Renamed to "${this.baseName(targetPath)}"`);
 				return { status: 'renamed', path: targetPath };
@@ -356,6 +401,9 @@ export class TitleModule {
 			if (resolution === 'merge') {
 				if (existing instanceof TFile) {
 					await this.mergeNotes(file, existing);
+					// The source's content (and identity) now lives in the target:
+					// retarget links from the trashed title to the survivor (#485).
+					await this.remediateBacklinks(inboundLinks, oldPath, existing.path);
 					await this.store.updateStatus(id, 'accepted');
 					await this.announceAccept(options?.silent, `Merged into "${this.baseName(existing.path)}"`);
 					return { status: 'merged', into: existing.path };
@@ -364,6 +412,7 @@ export class TitleModule {
 				// plain rename so the accept still resolves, with a heads-up.
 				this.notifications.info('Nothing to merge into — renamed instead');
 				await this.plugin.app.vault.rename(file, targetPath);
+				await this.remediateBacklinks(inboundLinks, oldPath, targetPath);
 				await this.store.updateStatus(id, 'accepted');
 				if (!options?.silent) await this.refreshView();
 				return { status: 'renamed', path: targetPath };
@@ -373,6 +422,7 @@ export class TitleModule {
 			// note is never clobbered.
 			const freePath = findAvailableVaultPath(this.plugin.app, targetPath);
 			await this.plugin.app.vault.rename(file, freePath);
+			await this.remediateBacklinks(inboundLinks, oldPath, freePath);
 			await this.store.updateStatus(id, 'accepted');
 			await this.announceAccept(options?.silent, `Renamed to "${this.baseName(freePath)}"`);
 			return { status: 'renamed', path: freePath };
@@ -380,6 +430,45 @@ export class TitleModule {
 			const msg = error instanceof Error ? error.message : String(error);
 			this.notifications.notifyError('Failed to rename note', error);
 			throw new Error(`Rename failed: ${msg}`);
+		}
+	}
+
+	/**
+	 * Rewrite the pre-rename snapshot of inbound links so each still resolves
+	 * after the note moved from `oldPath` to `newPath`, preserving rendered
+	 * display text (#485). Per-file rewrites are independent and atomic
+	 * (`vault.process` + exact-match replacement), so one failure neither
+	 * corrupts that note nor blocks the others — it is logged and skipped, and
+	 * the accept itself never fails on remediation.
+	 */
+	private async remediateBacklinks(
+		refs: InboundLinkRef[],
+		oldPath: string,
+		newPath: string
+	): Promise<void> {
+		if (refs.length === 0) return;
+
+		const bySource = new Map<string, string[]>();
+		for (const ref of refs) {
+			// A self-link's content now lives at the new path (rename) or inside
+			// the merge target — remediate it there.
+			const sourcePath = ref.sourcePath === oldPath ? newPath : ref.sourcePath;
+			const originals = bySource.get(sourcePath) ?? [];
+			originals.push(ref.original);
+			bySource.set(sourcePath, originals);
+		}
+
+		for (const [sourcePath, originals] of bySource) {
+			try {
+				const refFile = this.plugin.app.vault.getAbstractFileByPath(sourcePath);
+				if (!(refFile instanceof TFile)) continue;
+				await this.plugin.app.vault.process(refFile, (content) =>
+					rewriteContent(content, originals, oldPath, newPath)
+				);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				console.warn(`[Synapse] Backlink update failed for ${sourcePath}: ${msg}`);
+			}
 		}
 	}
 

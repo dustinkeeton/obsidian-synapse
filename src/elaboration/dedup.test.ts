@@ -3,7 +3,7 @@ import { ElaborationModule } from './index';
 import { ProposalStore } from './proposal-store';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
-import { NotificationManager } from '../shared';
+import { NotificationManager, NoteOperationQueue } from '../shared';
 import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { TFile } from 'obsidian';
 import { Proposal } from './types';
@@ -142,6 +142,7 @@ describe('ElaborationModule proposal idempotency (#395)', () => {
 			notifications,
 			createMockCheckpointManager() as never,
 			new CommandRegistrar(mockPlugin),
+			new NoteOperationQueue(),
 			() => settings.autoAccept.elaboration
 		);
 	}

@@ -6,6 +6,7 @@ import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { Mock } from 'vitest';
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
+import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { AudioEmbed } from '../audio';
 
@@ -74,6 +75,8 @@ vi.mock('../shared', async () => ({
 	// Use the REAL content-schema registry so auto-format detection runs as in
 	// production rather than throwing on an undefined mock.
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
+	// Real queue primitive (#483): a mocked-away queue would never run the operation
+	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
@@ -180,6 +183,7 @@ describe('SummarizeModule audio target detection', () => {
 			new CommandRegistrar(
 				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
 			),
+			new NoteOperationQueue(),
 			undefined,
 			transcribeAudioFn
 		);
@@ -289,6 +293,7 @@ describe('SummarizeModule audio target detection', () => {
 			new CommandRegistrar(
 				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
 			),
+			new NoteOperationQueue(),
 			undefined,
 			undefined
 		);

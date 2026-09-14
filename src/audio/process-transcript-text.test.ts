@@ -10,6 +10,7 @@ vi.mock('./post-processor', () => ({
 }));
 
 import { AudioModule } from './index';
+import { NoteOperationQueue } from '../shared';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
 function makeModule(): AudioModule {
@@ -18,6 +19,7 @@ function makeModule(): AudioModule {
 		() => ({ audio: { autoFormatLyrics: false, transcriptionProvider: 'whisper-api' } }) as never,
 		{ info: vi.fn() } as never,
 		createMockCheckpointManager() as never,
+		new NoteOperationQueue(),
 		undefined
 	);
 }

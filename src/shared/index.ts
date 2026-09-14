@@ -143,6 +143,8 @@ export {
 	DesktopOnlyError,
 } from './node-loader';
 export type { NodeModules } from './node-loader';
+export { NoteOperationQueue } from './note-operation-queue';
+export type { NoteOperationOptions } from './note-operation-queue';
 export { CheckpointManager } from './checkpoint-manager';
 export type {
 	Checkpoint,

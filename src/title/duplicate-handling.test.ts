@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TitleModule } from './index';
 import { DEFAULT_SETTINGS } from '../settings';
-import { NotificationManager } from '../shared';
+import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile, TFolder, Notice } from '../__mocks__/obsidian';
 
 // Deterministic suggester output, mutated per test via hoisted state. `calls`
@@ -119,6 +119,7 @@ function harness(notes: Record<string, string>, opts?: { autoAccept?: boolean })
 		mockPlugin as never,
 		() => settings,
 		notifications,
+		new NoteOperationQueue(),
 		() => settings.autoAccept.title,
 	);
 

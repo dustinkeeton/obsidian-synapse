@@ -4,10 +4,10 @@ import { CommandRegistrar } from '../commands';
 import { AudioModule, TranscriptionResult } from '../audio';
 import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, calloutForTranscriptionResult,
-	CheckpointManager, generateId, detectPlatform, loadNodeModules,
+	CheckpointManager, NoteOperationQueue, generateId, detectPlatform, loadNodeModules,
 	isPathExcluded, findAvailableVaultPath,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle } from '../shared';
 import { AudioExtractor, DependencyMissingError } from './audio-extractor';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
 import type { RoutedUrlTranscriber, RoutedUrlTranscript } from './types';
@@ -46,7 +46,8 @@ export class VideoModule {
 		private audioModule: AudioModule,
 		private notifications: NotificationManager,
 		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar
+		private registrar: CommandRegistrar,
+		private noteQueue: NoteOperationQueue
 	) {
 		this.extractor = new AudioExtractor(getSettings);
 	}
@@ -162,13 +163,25 @@ export class VideoModule {
 		// Path exclusion (#307): batch insert into the note → silent skip.
 		if (isPathExcluded(noteFile.path, 'video', this.getSettings())) return;
 
-		const total = embeds.length;
-		let completed = 0;
-
 		const op = this.notifications.startOperation(
-			`Transcribing ${total} video(s)...`,
+			`Transcribing ${embeds.length} video(s)...`,
 			`video-batch-${noteFile.path}`
 		);
+		await this.noteQueue.run(
+			noteFile.path,
+			() => this.insertTranscriptions(noteFile, embeds, op),
+			{ onWait: () => op.update(`Waiting for another Synapse operation on ${noteFile.basename}`) }
+		);
+	}
+
+	/** Batch transcribe + insert, already holding the note's queue slot (#483). */
+	private async insertTranscriptions(
+		noteFile: TFile,
+		embeds: VideoUrlEmbed[],
+		op: OperationHandle
+	): Promise<void> {
+		const total = embeds.length;
+		let completed = 0;
 
 		// Create checkpoint for batch video transcription
 		const checkpointItems: CheckpointWorkItem[] = embeds.map((e, i) => ({

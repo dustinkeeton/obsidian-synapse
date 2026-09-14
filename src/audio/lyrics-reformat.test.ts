@@ -37,7 +37,7 @@ vi.mock('./post-processor', () => ({
 }));
 
 import { AudioModule } from './index';
-import { AIClient } from '../shared';
+import { AIClient, NoteOperationQueue } from '../shared';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
 const REFORMATTED =
@@ -49,6 +49,7 @@ function makeModule(autoFormatLyrics: boolean): AudioModule {
 		() => ({ audio: { autoFormatLyrics, transcriptionProvider: 'whisper-api' } }) as never,
 		{ info: vi.fn() } as never,
 		createMockCheckpointManager() as never,
+		new NoteOperationQueue(),
 		undefined
 	);
 }

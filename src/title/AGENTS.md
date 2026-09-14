@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-07-02
+last-updated: 2026-08-17
 ---
 
 # title module
@@ -17,20 +17,21 @@ class TitleModule {
     plugin: Plugin,
     getSettings: () => SynapseSettings,
     notifications: NotificationManager,
+    noteQueue: NoteOperationQueue,        // #483; after notifications, before shouldAutoAccept
     shouldAutoAccept?: () => boolean
   )
 
   onload(): Promise<void>
   onunload(): void
   getPendingProposals(): Promise<TitleProposal[]>
-  checkTitle(filePath: string, options?: { postOp?: boolean }): Promise<void>
-  checkUntitled(filePath: string, options?: { postOp?: boolean }): Promise<void>
-  checkMismatch(filePath: string, options?: { postOp?: boolean }): Promise<void>
+  checkTitle(filePath: string, options?: { postOp?: boolean }): Promise<void>   // unqueued router; delegates to one of the two queued checks
+  checkUntitled(filePath: string, options?: { postOp?: boolean }): Promise<void>   // queue wrapper over private proposeUntitled (#483)
+  checkMismatch(filePath: string, options?: { postOp?: boolean }): Promise<void>   // queue wrapper over private proposeFromMismatch (#483)
   acceptProposal(
     id: string,
     options?: { silent?: boolean; resolution?: TitleDuplicateStrategy }
-  ): Promise<TitleAcceptOutcome>
-  rejectProposal(id: string): Promise<void>
+  ): Promise<TitleAcceptOutcome>   // queue wrapper over private applyAccept (#483), keyed on the PRE-rename path
+  rejectProposal(id: string): Promise<void>   // no note write; unqueued
 }
 
 function isUntitled(title: string): boolean              // re-exported from shared/title-detector
@@ -53,10 +54,11 @@ type TitleAcceptOutcome =
 
 | File | Class/Function | Role |
 |------|---------------|------|
-| `index.ts` | `TitleModule`, re-exports | Module entry point and public API |
+| `index.ts` | `TitleModule`, re-exports | Module entry point and public API; per-note queue serialization (private `proposeUntitled`, `proposeFromMismatch`, `applyAccept` are the queue-free cores, #483) |
 | `title-suggester.ts` | `TitleSuggester` | AI title suggestion and mismatch detection |
 | `title-store.ts` | `TitleProposalStore` | JSON persistence in `settings.title.proposalFolderPath` |
 | `content-key.ts` | `titleContentKey` | Deterministic input-keyed dedup hash for proposals (#408) |
+| `backlink-remediation.ts` | `collectInboundLinks`, `rewriteLinkText`, `rewriteContent` | Inbound-link snapshot + display-text-preserving rewrite for accepted renames (#485) |
 | `settings-section.ts` | `renderTitleSettings` | Title settings accordion (enabled toggle + duplicate-handling dropdown) (#408) |
 | `title-detector.ts` | re-exports `isUntitled` | Thin re-export of `isUntitled` through the `../shared` barrel (never the internal `shared/title-detector` file, per the shared-import rule); canonical home is `shared/title-detector.ts` |
 | `types.ts` | -- | All title types |
@@ -116,6 +118,10 @@ checkTitle(filePath, options?)  [main.ts wires it as { postOp: true } after enri
 
 checkUntitled(filePath, options?)
   --> return if not a TFile, or if !isUntitled(basename)
+  --> noteQueue.run(filePath, () => proposeUntitled(file, filePath, options))  [#483, silent — the
+      title check is an automatic post-op side effect, not a user command]
+
+proposeUntitled(file, filePath, options?)  [private, holds the note's queue slot]
   --> readNote(); return if content empty/whitespace
   --> key = titleContentKey(filePath, content, basename, 'untitled', settings)
   --> loadForNote(filePath); skip if any pending proposal exists
@@ -125,13 +131,16 @@ checkUntitled(filePath, options?)
   --> build proposal {trigger:'untitled', contentKey:key}
   --> computeTargetPath(file, title); if a different file occupies it, set proposal.conflictsWith  [UI hint]
   --> store.save(proposal)
-  --> maybeAutoAccept(proposal)  [if shouldAutoAccept(): acceptProposal(id,{silent:true}); announces REAL outcome]
+  --> maybeAutoAccept(proposal)  [if shouldAutoAccept(): applyAccept(id,{silent:true}) — direct, the slot is already held (#483); announces REAL outcome]
   --> action = reviewAction({ generated:true, shouldAutoAccept, openProposalView, postOp: options?.postOp })
   --> if action: notifications.success('Title proposal ready', undefined, action)
   --> refreshView() --> onViewRefreshNeeded?()
 
 checkMismatch(filePath, options?)
   --> return if not a TFile, or if isUntitled (handled by checkUntitled)
+  --> noteQueue.run(filePath, () => proposeFromMismatch(file, filePath, options))  [#483, silent]
+
+proposeFromMismatch(file, filePath, options?)  [private, holds the note's queue slot]
   --> readNote(); return if content empty/whitespace
   --> key = titleContentKey(..., 'content-mismatch', settings)
   --> loadForNote; skip if pending; skip if same contentKey and status !== 'accepted'
@@ -142,16 +151,30 @@ checkMismatch(filePath, options?)
 
 acceptProposal(id, options?)  -> TitleAcceptOutcome
   --> store.load(id); { status:'skipped' } if not found
+  --> noteQueue.run(proposal.sourceNotePath, () => applyAccept(id, options))  [#483, silent; keyed on
+      the PRE-rename path — work queued behind us under the old path runs afterwards, finds no file
+      and exits early, which is preferred over re-keying (that would mean holding two keys)]
+
+applyAccept(id, options?)  [private, holds the source note's queue slot]  -> TitleAcceptOutcome
+  --> store.load(id) AGAIN (guard evaluated under the slot, not on a pre-wait snapshot)
   --> guard: { status:'skipped' } if proposal.status !== 'pending'
   --> if source note no longer a TFile: info notice, updateStatus 'rejected', refreshView, { status:'skipped' }
   --> targetPath = computeTargetPath(file, proposedTitle); collision = a different file occupies targetPath  [live recheck #408]
-  --> no collision: vault.rename(file, targetPath), accepted, announce --> { status:'renamed', path }
+  --> snapshot inbound links: collectInboundLinks(app, file) BEFORE any rename/merge (#485)
+  --> no collision: vault.rename(file, targetPath), remediateBacklinks, accepted, announce --> { status:'renamed', path }
   --> collision: resolution = options.resolution ?? (shouldAutoAccept() ? settings.title.duplicateHandling : undefined)
         --> no resolution (plain manual accept): persist conflictsWith, info 'choose Add suffix or Merge', stay pending --> { status:'conflict', target }
-        --> 'merge' & target is TFile: mergeNotes(file, existing), accepted, announce --> { status:'merged', into }
-        --> 'merge' & target not a TFile: info 'Nothing to merge into — renamed instead', rename, accepted --> { status:'renamed', path }
-        --> 'iterate': findAvailableVaultPath(targetPath), rename to free suffixed path, accepted --> { status:'renamed', path }
+        --> 'merge' & target is TFile: mergeNotes(file, existing), remediateBacklinks(-> existing.path), accepted, announce --> { status:'merged', into }
+        --> 'merge' & target not a TFile: info 'Nothing to merge into — renamed instead', rename, remediateBacklinks, accepted --> { status:'renamed', path }
+        --> 'iterate': findAvailableVaultPath(targetPath), rename to free suffixed path, remediateBacklinks, accepted --> { status:'renamed', path }
   --> on rename/process throw: notifyError, rethrow Error('Rename failed: ...')
+
+remediateBacklinks(refs, oldPath, newPath)  [private, #485]
+  --> group refs by sourcePath (a self-link's source remaps to newPath — its content moved)
+  --> per referencing note: vault.process(refFile, c => rewriteContent(c, originals, oldPath, newPath))
+      [[Old]] -> [[New|Old]]; [[Old|Custom]] -> [[New|Custom]]; [[Old#H]] -> [[New#H|Old]];
+      [t](Old%20.md) -> path-only; ![[Old]] -> ![[New]] (no alias) — display text byte-identical
+  --> per-file failure: console.warn + skip (never corrupts, never fails the accept)
 
 mergeNotes(source, target)  [private]
   --> read source; vault.process(target): union frontmatter (target wins scalar conflicts; tags+aliases unioned),
@@ -210,19 +233,21 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 ## Dependencies
 
-In: `shared/` (AIClient, NotificationManager, generateId, readNote, isPathExcluded, reviewAction, findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags, contentKey, hashString, ensureFolder, isRecord, readJsonFile, sanitizeAIResponse, stripCodeFences, isUntitled, SettingsSectionContext), `settings.ts` (SynapseSettings, TitleDuplicateStrategy), `obsidian` (Plugin, TFile, normalizePath, Setting, App)
+In: `shared/` (AIClient, NotificationManager, NoteOperationQueue, generateId, readNote, isPathExcluded, reviewAction, findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags, contentKey, hashString, ensureFolder, isRecord, readJsonFile, sanitizeAIResponse, stripCodeFences, isUntitled, SettingsSectionContext), `settings.ts` (SynapseSettings, TitleDuplicateStrategy), `obsidian` (Plugin, TFile, normalizePath, Setting, App)
 
 Out: consumed by `main.ts` (TitleModule, checkTitle), `views/` (TitleProposal, TitleDuplicateStrategy types), `settings-tab.ts` (renderTitleSettings). No feature module imports from `title/`.
 
 ## Invariants / Gotchas
 
 - No `CheckpointManager` — title proposals are always single-note, never batched.
-- `acceptProposal` guards against double-acceptance: returns `{ status: 'skipped' }` if `proposal.status !== 'pending'`.
+- Per-note serialization (#483): `checkUntitled`, `checkMismatch`, and `acceptProposal` each acquire the note's `NoteOperationQueue` slot exactly ONCE (silently — no `onWait`) and delegate to a private core (`proposeUntitled`, `proposeFromMismatch`, `applyAccept`) that must never re-enter the queue. `checkTitle` only routes and takes no slot itself. `maybeAutoAccept` runs inside `proposeUntitled`/`proposeFromMismatch`, so it calls `applyAccept` directly (index.ts:77), never `acceptProposal`. Backlink remediation writes to OTHER notes and stays unqueued by design (a second key would introduce lock ordering).
+- `acceptProposal` guards against double-acceptance: returns `{ status: 'skipped' }` if `proposal.status !== 'pending'`. The guard lives in `applyAccept`, which re-loads the proposal under the queue slot so a wait cannot leave the decision on stale state.
 - Collision is rechecked LIVE at accept time (#408): `computeTargetPath` is recomputed and a stale `conflictsWith` never drives a rename. A plain manual Accept on a live collision NEVER overwrites — it surfaces "Add suffix or Merge" and leaves the proposal pending (`{ status: 'conflict' }`). Auto-accept derives the resolution from `settings.title.duplicateHandling`.
 - `iterate` renames to the next free `-1`/`-2` path via `findAvailableVaultPath`; `merge` folds the note into the existing one (frontmatter union — target wins scalars, tags+aliases unioned — bodies joined by a horizontal rule) and trashes the source (recoverable). `merge` falls back to a plain rename when the target is not a TFile.
 - Reject-loop dedup (#408): both check methods skip when an existing proposal has the same `contentKey` and `status !== 'accepted'`. Editing the note changes the content hash → key → a new proposal is allowed; an `accepted` proposal never blocks.
 - `contentKey` is computed from inputs BEFORE the AI call (temperature>0 output would otherwise vary every run).
 - Auto-accept for title RENAMES (or MERGES) the file; the notice reflects the REAL outcome (suffixed name / merge target), not the originally proposed title (#408).
+- Renames use `vault.rename` (NOT `fileManager.renameFile`) on purpose: Obsidian's automatic link update would rewrite the visible prose of referencing notes. Instead every resolving accept branch snapshots inbound links first (`collectInboundLinks`, feature-detected `metadataCache.getBacklinksForFile` — no-op if absent) and rewrites them afterwards with display text preserved byte-for-byte; embeds retarget without an alias (#485). Merge retargets links from the trashed source title to the surviving note.
 - `checkTitle` is silent: no notifications until a proposal is confirmed or auto-accepted. The Review toast is gated through `reviewAction()` and suppressed for `postOp` invocations (#366) and when auto-accept is on.
 - `checkMismatch` skips notes that are already untitled (let `checkUntitled` handle those).
 - Both check methods skip if any pending proposal already exists for the note.
@@ -250,5 +275,6 @@ Out: consumed by `main.ts` (TitleModule, checkTitle), `views/` (TitleProposal, T
 | `content-key.test.ts` | titleContentKey determinism + input sensitivity (#408) |
 | `settings-section.test.ts` | renderTitleSettings accordion + duplicateHandling default (#408) |
 | `duplicate-handling.test.ts` | collision resolution: conflict flag, iterate, merge, live recheck, reject-loop dedup (#408) |
+| `backlink-remediation.test.ts` | link rewrite forms + collection, remediation across plain/iterate/merge/auto-accept branches, per-file failure isolation (#485) |
 | `auto-accept.test.ts` | Auto-accept flow (#228) |
 | `review-toast.test.ts` | Review toast notification behavior |

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-29
+last-updated: 2026-08-17
 ---
 
 # organize module
@@ -19,6 +19,7 @@ class OrganizeModule {
     notifications: NotificationManager,
     checkpointManager: CheckpointManager,
     registrar: CommandRegistrar,
+    noteQueue: NoteOperationQueue,     // #483, after registrar, before shouldAutoAccept
     shouldAutoAccept?: () => boolean
   )
 
@@ -40,6 +41,33 @@ Re-exported classes: `ContentAnalyzer`, `DirectoryMatcher`
 Exported types: `OrganizeProposal`, `OrganizeSnapshot`, `OrganizeResult`, `ContentAnalysis`, `DirectoryScore`, `NoteTopic`, `OrganizeAction`, `OrganizeProposalStatus`
 
 Re-exported settings renderer: `renderOrganizeSettings` (from `./settings-section`)
+
+## Note Queue (#483)
+
+Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`.
+
+| Site | Key | Wrapped core | onWait |
+|------|-----|--------------|--------|
+| `organizeNote` (index.ts:228) | `file.path` | `organizeFile(file)` | `op.update("Waiting for another Synapse operation on <basename>")` |
+| `acceptProposal` (index.ts:453) | `queued.sourceNotePath` (PRE-move) | `applyAccept(id, options)` | none |
+| `undoOrganize` (index.ts:573) | `file.path` (current path) | inline `ensureFolder` + `vault.rename` back + snapshot removal | none (local move, no AI call) |
+| `resumeFromCheckpoint` loop (index.ts:131) | `file.path` | `organizeFile(file, true, batchProposedDirs)` | none |
+| `scanDirectory` loop (index.ts:359) | `eligible[i].path` | `organizeFile(eligible[i], true, batchProposedDirs)` | none |
+
+Key-lifetime note: `acceptProposal` keys on the PRE-move `sourceNotePath`. A move changes the key,
+exactly like a title rename — work already queued under the old path runs afterwards, finds no file
+there and exits early.
+
+`maybeAutoAccept` (index.ts:539) calls `applyAccept` DIRECTLY, never the public `acceptProposal`.
+It runs inside `organizeFile` (called at index.ts:678), which every caller has already queued on that note's
+key; routing it through `acceptProposal` would re-enter the same key and self-deadlock. This is the
+"acquire at most once per operation" rule in its sharpest form.
+
+`writeOrganizeSummary` (index.ts:745) writes a DIFFERENT note (`.synapse/organize/summaries/...`)
+and stays unqueued — incidental writes to other notes are never queued, including from inside
+`applyAccept` while it holds the source note's key.
+
+Batch loops (`scanDirectory`, `resumeFromCheckpoint`) take one slot per note, never one per batch.
 
 ## ContentAnalyzer (`content-analyzer.ts`)
 
@@ -89,30 +117,41 @@ class DirectoryMatcher {
 ## Data Flow
 
 ```
-organizeNote(file) / scanDirectory()
-  --> ContentAnalyzer.analyze(file)  [AI: extract topics]
-  --> DirectoryMatcher.determineAction(analysis, confidenceThreshold)
-    if existing dir matches:
-      --> vault.rename(file, newPath)  [direct move]
-      --> OrganizeStore.saveSnapshot()  [undo backup]
-    if new dir needed:
-      --> OrganizeStore.saveProposal()
-      --> maybeAutoAccept()  [if shouldAutoAccept() -> acceptProposal()]
+organizeNote(file) / scanDirectory() / resumeFromCheckpoint()
+  --> noteQueue.run(file.path, () => organizeFile(...))   [#483: slot held for the whole cycle]
+        organizeFile(file, batch?, batchProposedDirs?)    [queue-free core, index.ts:604]
+          --> ContentAnalyzer.analyze(file)  [AI: extract topics]
+          --> DirectoryMatcher.determineAction(analysis, confidenceThreshold)
+            if existing dir matches:
+              --> OrganizeStore.saveSnapshot()  [undo backup]
+              --> vault.rename(file, newPath)  [direct move]
+            if new dir needed:
+              --> OrganizeStore.saveProposal()
+              --> maybeAutoAccept()  [if shouldAutoAccept() -> applyAccept() DIRECTLY,
+                                      never acceptProposal — same key, would deadlock]
 
-acceptProposal(id, options?)
-  --> ensureFolder(proposedDirectory)
-  --> OrganizeStore.saveSnapshot()
-  --> vault.rename(file, newPath)
-  --> OrganizeStore.updateProposalStatus('accepted')
-  --> writeOrganizeSummary(moveRecords)  [Mermaid move diagram -> .synapse/organize/summaries/]
+acceptProposal(id, options?)                              [public, index.ts:444]
+  --> OrganizeStore.loadProposal(id)  [null -> "Proposal not found"]
+  --> noteQueue.run(proposal.sourceNotePath, () => applyAccept(id, options))
+        applyAccept(id, options?)                         [queue-free core, index.ts:465]
+          --> re-load proposal (double-accept guard evaluated UNDER the slot)
+          --> ensureFolder(proposedDirectory)
+          --> OrganizeStore.saveSnapshot()
+          --> vault.rename(file, newPath)                 [changes the note's queue key]
+          --> OrganizeStore.updateProposalStatus('accepted')
+          --> writeOrganizeSummary(moveRecords)  [DIFFERENT note, unqueued;
+                                                  Mermaid move diagram ->
+                                                  .synapse/organize/summaries/]
 
-rejectProposal(id)
+rejectProposal(id)                                        [no note write -> unqueued]
   --> OrganizeStore.updateProposalStatus('rejected')
 
-undoOrganize(file)  [command: 'undo-organize', private]
+undoOrganize(file)  [command: 'undo-organize', private, index.ts:561]
   --> OrganizeStore.loadSnapshot(filePath)
-  --> vault.rename(file, originalPath)
-  --> OrganizeStore.removeSnapshot()
+  --> noteQueue.run(file.path, ...)  [silent, no onWait]
+        --> ensureFolder(original parent)
+        --> vault.rename(file, originalPath)
+        --> OrganizeStore.removeSnapshot()
 ```
 
 ## Directory Scan (checkpointed)
@@ -124,13 +163,14 @@ scanDirectory(folderPath?, skipConfirmation?, onlyFile?)
   Phase 3: Checkpointed processing
     --> checkpointManager.create(module: 'organize', items)
     --> addDeferredTask('refresh-sidebar-view')
-    --> for each file: organizeFile(), completeItem()
+    --> for each file: noteQueue.run(path, () => organizeFile(file, true, batchProposedDirs)),
+                       completeItem()          [#483: one slot per note, not per batch]
     --> on cancel: checkpointManager.discard()
     --> on success: checkpointManager.complete(), dispatch deferred tasks
     --> writeOrganizeSummary() if any files moved
 
 resumeFromCheckpoint(checkpoint)
-  --> re-processes remaining items from saved checkpoint
+  --> re-processes remaining items from saved checkpoint (same per-note noteQueue.run shape)
   --> completeItem() after each file
   --> on cancel: discard()
   --> on success: complete(), dispatch deferred tasks, write summary
@@ -192,18 +232,19 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 ## Dependencies
 
-In: `shared/` (FolderPickerModal, getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary, CheckpointManager, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, Checkpoint, CheckpointWorkItem, DeferredTask, MoveRecord), `settings.ts` (SynapseSettings), `commands.ts` (CommandRegistrar)
+In: `shared/` (getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker, Checkpoint, CheckpointWorkItem, DeferredTask, MoveRecord — see `index.ts:4`), `settings.ts` (SynapseSettings), `commands.ts` (CommandRegistrar)
 
 Out: `ContentAnalyzer` and `DirectoryMatcher` are re-exported for use by `deep-dive` (auto-organize nesting mode).
 
 ## Invariants / Gotchas
 
-- `acceptProposal` guards against double-acceptance: no-ops if `proposal.status !== 'pending'`.
+- Double-acceptance guard lives in `applyAccept`, not `acceptProposal`: the proposal is re-loaded inside the queue slot and the call no-ops if `proposal.status !== 'pending'`, so a pre-wait snapshot can never authorize a second move (index.ts:470).
+- `maybeAutoAccept` must call `applyAccept`, never `acceptProposal` — it already runs under the note's queue key (#483).
 - Move skips if a file already exists at the destination (returns null, does not overwrite).
 - Batch scan coalesces near-identical proposed directories via `batchProposedDirs` map — variants like "model"/"models" resolve to a single folder (#172).
 - `organizeConfidenceThreshold` gates new-directory proposals; `minScoreThreshold` (0.6, hardcoded in `determineAction` call site) gates existing-directory moves.
 - Summary notes (Mermaid `graph LR` move diagram via `generateOrganizeSummary`) written to `.synapse/organize/summaries/{YYYY-MM-DD}-organize-summary.md` by `writeOrganizeSummary` / `buildSummaryPath`.
-- `deep-dive` calls `onOrganizeRequested` which invokes `organizeNote` on accepted deep-dive notes (when `deepDive.autoOrganizeOnAccept` is true).
+- `deep-dive` calls `onOrganizeRequested` which invokes `organizeNote` on accepted deep-dive notes (when `deepDive.autoOrganizeOnAccept` is true). Same for `summarize.autoOrganizeOnSummarize`. `main.ts` dispatches both through `fireAndForget` — never awaited — so they simply enqueue behind whatever holds the note's slot (#483), no cycle.
 - Completion toasts carry a "Review" action via `reviewAction({ generated, shouldAutoAccept, openProposalView })` (#366) — gated on `generated && !shouldAutoAccept() && !postOp`; the action opens the proposal view through `onOpenProposalView`. Used in the `finish()` handlers of `organizeNote`, `scanDirectory`, and `resumeFromCheckpoint`. When organize auto-accept is on the note is already moved, so no Review button appears.
 
 ## Tests

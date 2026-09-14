@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockApp, createMockCheckpointManager } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
+import { NoteOperationQueue } from '../shared';
 import type { NoticeAction } from '../shared';
 import type { DetectionResult, Proposal } from './types';
 
@@ -100,6 +101,7 @@ describe('ElaborationModule Review toast action (#366)', () => {
 			notifications as never,
 			createMockCheckpointManager() as never,
 			registrar as never,
+			new NoteOperationQueue(),
 			shouldAutoAccept
 		);
 	}

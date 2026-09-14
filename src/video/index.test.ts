@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { TFile } from '../__mocks__/obsidian';
 import { VideoModule } from './index';
+import { NoteOperationQueue } from '../shared';
 import { DependencyMissingError } from './audio-extractor';
 import type { VideoMetadata } from './types';
 
@@ -51,7 +52,8 @@ function makeModule(downloadFolder: string, vault: VaultStub, tempPath: string) 
 		{} as never,
 		{} as never,
 		{} as never,
-		{} as never
+		{} as never,
+		new NoteOperationQueue()
 	);
 	// Replace the real extractor with a stub that "downloads" to our temp file.
 	(mod as unknown as { extractor: { downloadVideo: ReturnType<typeof vi.fn> } }).extractor = {
@@ -177,7 +179,8 @@ describe('VideoModule.processUrl dependency-error preservation (#382)', () => {
 			{} as never,
 			{} as never,
 			{} as never,
-			{} as never
+			{} as never,
+			new NoteOperationQueue()
 		);
 		(mod as unknown as { extractor: { extractFromUrl: ReturnType<typeof vi.fn> } }).extractor = {
 			extractFromUrl,

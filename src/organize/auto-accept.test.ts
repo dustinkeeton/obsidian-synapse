@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { OrganizeModule } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
-import { NotificationManager } from '../shared';
+import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
 
@@ -107,6 +107,7 @@ describe('OrganizeModule auto-accept (#228)', () => {
 			notifications,
 			createMockCheckpointManager() as never,
 			new CommandRegistrar(mockPlugin as never),
+			new NoteOperationQueue(),
 			shouldAutoAccept
 		);
 	}

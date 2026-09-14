@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-07-03
+last-updated: 2026-08-17
 ---
 
 # Image Module
@@ -15,13 +15,14 @@ class ImageModule {
     plugin: Plugin,
     getSettings: () => SynapseSettings,
     notifications: NotificationManager,
-    checkpointManager: CheckpointManager
+    checkpointManager: CheckpointManager,
+    noteQueue: NoteOperationQueue                             // #483; appended last
   )
   onExtractionComplete: ((filePath: string) => void) | null  // wired by main.ts
   onload(): Promise<void>            // no-op (no commands/views registered)
   onunload(): void                   // no-op
-  extractFromFile(file: TFile): Promise<void>                 // OCR one image into active note
-  extractAndInsert(noteFile: TFile, embeds: ImageEmbed[]): Promise<void>  // batch OCR
+  extractFromFile(file: TFile): Promise<void>                 // OCR one image into active note (queued on the active note)
+  extractAndInsert(noteFile: TFile, embeds: ImageEmbed[]): Promise<void>  // batch OCR (queued on noteFile)
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> // notify + discard (no mid-batch resume)
 }
 
@@ -59,6 +60,14 @@ function base64EncodedLength(byteLength: number): number   // re-exported from s
 function hasExtractionBelow(lines: string[], embedLine: number, fileName: string): boolean
 ```
 
+Private members of `ImageModule` (index.ts), documented because they define the queue contract (#483):
+
+```ts
+private queued<T>(file: TFile, op: OperationHandle, run: () => Promise<T>): Promise<T>   // index.ts:38; noteQueue.run(file.path, run, { onWait })
+private insertFileExtraction(activeFile: TFile, file: TFile, op: OperationHandle): Promise<void>   // index.ts:72; queue-free core of extractFromFile
+private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHandle): Promise<void>   // index.ts:128; queue-free core of extractAndInsert
+```
+
 ## File Inventory
 
 | File | Export | Purpose |
@@ -68,21 +77,23 @@ function hasExtractionBelow(lines: string[], embedLine: number, fileName: string
 | `preprocess.ts` | `preprocessImage`, `PreprocessResult`; re-exports `arrayBufferToBase64`, `base64EncodedLength` | Auto-downscale/re-encode oversized payloads; base64 helpers re-exported from `shared/encoding.ts` |
 | `note-scanner.ts` | `findImageEmbeds`, `hasExtractionBelow`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX` | Scan note text for image embeds; skip embeds already OCR'd |
 | `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `settings-tab.ts:109`) |
-| `index.ts` | `ImageModule` + barrel re-exports | Orchestrator, public extraction methods, checkpoint management |
+| `index.ts` | `ImageModule` + barrel re-exports | Orchestrator, public extraction methods, checkpoint management, per-note queue serialization (private `queued`, `insertFileExtraction`, `insertExtractions`, #483) |
 | `extractor.test.ts`, `note-scanner.test.ts`, `preprocess.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests |
 
 ## Data Flow
 
 ```
-1. extractFromFile(file)  -- index.ts:33  (single image -> active note)
+1. extractFromFile(file)  -- index.ts:44  (single image -> active note)
    findMatchingRule(activeFile.path, 'image', settings) -> excluded: info Notice, return
+   queued(activeFile, op, ...) -> noteQueue slot on activeFile.path (#483) -> insertFileExtraction:
    vault.readBinary(file) -> ImageExtractor.extract(data, file.name)
    sanitizeAIResponse(result.text)
    buildCallout(CALLOUT_TYPES.ocr, `OCR of ${file.name}`, text, collapsed=true)
    vault.process(activeFile, append) -> onExtractionComplete?.(activeFile.path)
 
-2. extractAndInsert(noteFile, embeds)  -- index.ts:86  (batch from note scan)
+2. extractAndInsert(noteFile, embeds)  -- index.ts:109  (batch from note scan)
    isPathExcluded(noteFile.path, 'image', settings) -> excluded: silent return
+   queued(noteFile, op, ...) -> noteQueue slot on noteFile.path (#483) -> insertExtractions:
    checkpointManager.create({ module: 'image', items }) + addDeferredTask('refresh-sidebar-view')
    sort embeds by descending line; for each: 2000ms delay (i>0), extract, sanitize, buildCallout
    completeItem per embed; if op.cancelled -> break
@@ -157,6 +168,7 @@ All cross-module imports resolve through the `../shared` barrel, never an intern
 | `AIClient`, `ContentBlock`, `NotificationManager` | `shared` (extractor.ts) |
 | `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `sanitizeAIResponse`, `generateId` | `shared` (index.ts) |
 | `CheckpointManager`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `shared` (index.ts) |
+| `NoteOperationQueue`, `OperationHandle` | `shared` (index.ts) |
 | `isPathExcluded`, `findMatchingRule` | `shared` (index.ts) |
 | `arrayBufferToBase64`, `base64EncodedLength` | `shared` (preprocess.ts) |
 | `SettingsSectionContext` | `shared` (settings-section.ts) |
@@ -185,6 +197,7 @@ Downscale path re-encodes to JPEG. Lossless sources (`image/png`, `image/bmp`, `
 
 ## Invariants / Gotchas
 
+- Per-note serialization (#483): both public entry points take the target note's `NoteOperationQueue` slot exactly once via `queued()` (index.ts:38) and delegate to a queue-free core; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (OCR is user-invoked). The cores must never re-enter the queue.
 - `extractAndInsert` sorts embeds by descending line and applies all inserts atomically in one `vault.process()` so earlier splices never shift later lines.
 - A 2000ms `window.setTimeout` delay separates successive API calls to respect rate limits.
 - `preprocessImage` needs Obsidian's Electron renderer (`createEl` + `createImageBitmap`/`Image`); in non-DOM test envs it passes original bytes through (`downscaled: false`).

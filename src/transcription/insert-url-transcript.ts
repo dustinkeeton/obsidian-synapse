@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
 import { findMatchingRule } from '../shared';
-import type { NotificationManager, TimeRange } from '../shared';
+import type { NoteOperationQueue, NotificationManager, TimeRange } from '../shared';
 import type { SynapseSettings } from '../settings';
 import { buildUrlTranscriptBlock, UrlTranscriptionRouter } from './url-transcription';
 
@@ -10,6 +10,8 @@ export interface InsertUrlTranscriptDeps {
 	getSettings: () => SynapseSettings;
 	notifications: NotificationManager;
 	router: UrlTranscriptionRouter;
+	/** Per-note operation queue (#483): the insert is serialized against every other AI operation on the active note. */
+	noteQueue: NoteOperationQueue;
 	/** Post-transcription hook (enrichment/title check), same contract as the module `onTranscriptionComplete` callbacks. */
 	onComplete?: (filePath: string) => void;
 }
@@ -26,7 +28,7 @@ export async function insertUrlTranscript(
 	url: string,
 	timeRange?: TimeRange
 ): Promise<void> {
-	const { app, getSettings, notifications, router } = deps;
+	const { app, getSettings, notifications, router, noteQueue } = deps;
 
 	const activeFile = app.workspace.getActiveFile();
 	if (!activeFile) {
@@ -48,22 +50,26 @@ export async function insertUrlTranscript(
 		'Processing video URL...',
 		`video-url-${Date.now()}`
 	);
-	try {
-		const result = await router.transcribe(url, {
-			timeRange,
-			update: (message) => op.update(message),
-		});
-		const block = buildUrlTranscriptBlock(
-			result,
-			url,
-			getSettings().video.embedInNote,
-			timeRange
-		);
-		await app.vault.process(activeFile, (data) => data + block);
-		deps.onComplete?.(activeFile.path);
-		op.finish('Transcription added to note');
-	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error);
-		op.error(`URL transcription failed -- ${msg}`);
-	}
+	await noteQueue.run(activeFile.path, async () => {
+		try {
+			const result = await router.transcribe(url, {
+				timeRange,
+				update: (message) => op.update(message),
+			});
+			const block = buildUrlTranscriptBlock(
+				result,
+				url,
+				getSettings().video.embedInNote,
+				timeRange
+			);
+			await app.vault.process(activeFile, (data) => data + block);
+			deps.onComplete?.(activeFile.path);
+			op.finish('Transcription added to note');
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			op.error(`URL transcription failed -- ${msg}`);
+		}
+	}, {
+		onWait: () => op.update(`Waiting for another Synapse operation on ${activeFile.basename}`),
+	});
 }

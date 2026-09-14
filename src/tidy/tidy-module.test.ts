@@ -4,6 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import type { Plugin, Command, TFile as ObsidianTFile } from 'obsidian';
+import { NoteOperationQueue } from '../shared';
 import type { NotificationManager } from '../shared';
 
 /** The mock TFile and obsidian's real TFile differ structurally; tests only need
@@ -117,7 +118,8 @@ describe('TidyModule', () => {
 			mockPlugin as unknown as Plugin,
 			() => settings,
 			mockNotifications as unknown as NotificationManager,
-			new CommandRegistrar(mockPlugin)
+			new CommandRegistrar(mockPlugin),
+			new NoteOperationQueue()
 		);
 	});
 

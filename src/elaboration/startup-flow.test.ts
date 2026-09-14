@@ -22,6 +22,7 @@ import { ElaborationModule } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { Plugin } from 'obsidian';
+import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
 
 describe('ElaborationModule — startup flow gate', () => {
@@ -56,7 +57,8 @@ describe('ElaborationModule — startup flow gate', () => {
 			() => settings,
 			{} as unknown as NotificationManager,
 			{} as unknown as CheckpointManager,
-			new CommandRegistrar(plugin)
+			new CommandRegistrar(plugin),
+			new NoteOperationQueue()
 		);
 	}
 
