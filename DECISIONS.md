@@ -2,6 +2,8 @@
 
 Decisions listed in reverse chronological order.
 
+Decisions that cross a locked constraint (stack, dependencies, platform boundaries) also get a standalone record in [`docs/adr/`](docs/adr/README.md).
+
 ---
 
 ## 2026-08-17: Per-note AI operations are serialized behind one path-keyed queue (#483)
