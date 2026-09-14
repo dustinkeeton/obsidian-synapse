@@ -135,7 +135,7 @@ export class VideoModule implements FeatureModule {
 			result = await this.audioModule.transcribe(
 				audioData.buffer,
 				extraction.metadata.title + '.mp3',
-				{ sourceName: extraction.metadata.title }
+				{ sourceName: extraction.metadata.title, update }
 			);
 		} catch (e) {
 			throw new Error(`Transcription failed: ${e instanceof Error ? e.message : String(e)}`);

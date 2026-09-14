@@ -15,7 +15,11 @@ export interface ProcessedTranscript {
 	schemaId?: string;
 }
 
-export type ProcessTranscript = (raw: string) => Promise<ProcessedTranscript>;
+export interface ProcessTranscriptOptions {
+	update?: (message: string) => void;
+}
+
+export type ProcessTranscript = (raw: string, opts?: ProcessTranscriptOptions) => Promise<ProcessedTranscript>;
 
 /**
  * Tier 1 of URL transcription (#184): YouTube captions over HTTP. Free, fast,
@@ -70,7 +74,7 @@ export class CaptionStrategy implements UrlTranscriptionStrategy {
 		opts.update?.('Post-processing transcript...');
 		let processed: ProcessedTranscript = { text: captions.text };
 		try {
-			processed = await this.postProcess(captions.text);
+			processed = await this.postProcess(captions.text, { update: opts.update });
 		} catch (error) {
 			console.warn(
 				'[Synapse] Caption post-processing failed; keeping raw captions',

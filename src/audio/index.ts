@@ -10,7 +10,7 @@ import type {
 	Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
 } from '../shared';
 import { AudioEmbed } from './types';
-import { PostProcessor } from './post-processor';
+import { PostProcessor, type PostProcessOptions } from './post-processor';
 import { Transcriber, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 import { TranscribeOptions, TranscriptionResult } from './types';
 import type { AudioExtractor } from '../video';
@@ -50,7 +50,9 @@ export class AudioModule implements FeatureModule {
 		this.noteQueue = deps.noteQueue;
 		this.extractor = extractor;
 		this.transcriber = new Transcriber(deps.getSettings);
-		this.postProcessor = new PostProcessor(deps.getSettings);
+		this.postProcessor = new PostProcessor(deps.getSettings, {
+			notify: (message) => this.notifications.info(message),
+		});
 		this.aiClient = new AIClient(deps.getSettings);
 	}
 
@@ -97,7 +99,7 @@ export class AudioModule implements FeatureModule {
 		result.raw = sanitizeAIResponse(result.raw);
 
 		if (options?.postProcess !== false) {
-			result.processed = await this.postProcessor.process(result.raw);
+			result.processed = await this.postProcessor.process(result.raw, { update: options?.update });
 		}
 
 		await this.maybeReformatBySchema(result);
@@ -119,13 +121,14 @@ export class AudioModule implements FeatureModule {
 	 * that prefer degrading to the raw text catch and fall back themselves.
 	 */
 	async processTranscriptText(
-		raw: string
+		raw: string,
+		opts?: PostProcessOptions
 	): Promise<{ text: string; reformatted?: boolean; schemaId?: string }> {
 		const result: TranscriptionResult = {
 			raw: sanitizeAIResponse(raw),
 			sourceName: '',
 		};
-		result.processed = await this.postProcessor.process(result.raw);
+		result.processed = await this.postProcessor.process(result.raw, opts);
 		await this.maybeReformatBySchema(result);
 		return {
 			text: result.processed || result.raw,
@@ -222,7 +225,7 @@ export class AudioModule implements FeatureModule {
 				this.notifications.info('Time-range clipping requires ffmpeg (desktop only). Transcribing full file.');
 			}
 
-			const result = await this.transcribe(data, file.name);
+			const result = await this.transcribe(data, file.name, { update: (m) => op.update(m) });
 			const text = result.processed || result.raw;
 
 			const { type, verb } = calloutForTranscriptionResult(result);
@@ -318,7 +321,7 @@ export class AudioModule implements FeatureModule {
 			try {
 				op.progress(completed + 1, total, 'Transcribing audio');
 				const data = await this.plugin.app.vault.readBinary(embed.file);
-				const result = await this.transcribe(data, embed.fileName);
+				const result = await this.transcribe(data, embed.fileName, { update: (m) => op.update(m) });
 				const text = result.processed || result.raw;
 
 				const { type, verb } = calloutForTranscriptionResult(result);
@@ -448,7 +451,7 @@ export class AudioModule implements FeatureModule {
 				}
 
 				op.update('Transcribing combined audio');
-				const result = await this.transcribe(data, `combined-${noteFile.basename}.mp3`);
+				const result = await this.transcribe(data, `combined-${noteFile.basename}.mp3`, { update: (m) => op.update(m) });
 				text = result.processed || result.raw;
 			} else {
 				// Mobile / no ffmpeg: transcribe each file separately and merge

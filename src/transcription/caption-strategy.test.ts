@@ -83,7 +83,7 @@ describe('CaptionStrategy.transcribe', () => {
 
 		const result = await strategy.transcribe(YOUTUBE_URL, {});
 
-		expect(postProcess).toHaveBeenCalledWith('caption text');
+		expect(postProcess).toHaveBeenCalledWith('caption text', { update: undefined });
 		expect(result).toEqual({
 			text: 'processed: caption text',
 			raw: 'caption text',
@@ -146,5 +146,27 @@ describe('CaptionStrategy.transcribe', () => {
 		await strategy.transcribe(YOUTUBE_URL, { update });
 
 		expect(update).toHaveBeenCalledWith('Fetching YouTube captions...');
+	});
+
+	it('forwards post-processing progress to the update hook (#467)', async () => {
+		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true, structured: false });
+		const { strategy } = makeStrategy(
+			{},
+			vi.fn((raw: string, opts?: { update?: (message: string) => void }) => {
+				opts?.update?.('Post-processing (1/2)');
+				opts?.update?.('Post-processing (2/2)');
+				return Promise.resolve({ text: `processed: ${raw}` });
+			})
+		);
+		const update = vi.fn<(message: string) => void>();
+
+		await strategy.transcribe(YOUTUBE_URL, { update });
+
+		expect(update.mock.calls.map(([m]) => m)).toEqual([
+			'Fetching YouTube captions...',
+			'Post-processing transcript...',
+			'Post-processing (1/2)',
+			'Post-processing (2/2)',
+		]);
 	});
 });

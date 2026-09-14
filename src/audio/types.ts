@@ -25,6 +25,8 @@ export interface TranscribeOptions {
 	postProcess?: boolean;
 	sourceName?: string;
 	timeRange?: TimeRange;
+	/** Progress sink for long post-processing runs (e.g. an operation toast's update). */
+	update?: (message: string) => void;
 }
 
 export interface AudioEmbed {
