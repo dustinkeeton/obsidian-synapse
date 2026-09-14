@@ -73,7 +73,16 @@ export interface SettingsSectionContext {
 	 * dropdown showing/hiding provider-specific fields).
 	 */
 	rerender: () => void;
+	/**
+	 * Subscribe to feature header enable-toggle changes. Listeners run after the
+	 * new value is persisted, in registration order, so a section can update its
+	 * own rows in place (e.g. Auto-Accept greying out a disabled feature's row).
+	 */
+	onFeatureToggle(listener: FeatureToggleListener): void;
 }
+
+/** Callback fired after a feature enable toggle changes and is saved. */
+export type FeatureToggleListener = () => void | Promise<void>;
 
 /**
  * Options for {@link createSettingsSectionContext}. The orchestrator supplies
@@ -83,11 +92,10 @@ export interface SettingsSectionContextOptions {
 	containerEl: HTMLElement;
 	plugin: SynapsePlugin;
 	/**
-	 * Invoked after any feature header enable-toggle changes and the new value
-	 * is persisted. Lets the orchestrator propagate the change live (without a
-	 * full re-render) — e.g. refresh Auto-Accept rows' disabled state.
+	 * Seed listener, registered before any section renders; equivalent to calling
+	 * {@link SettingsSectionContext.onFeatureToggle} on the returned context.
 	 */
-	onFeatureToggle?: () => void | Promise<void>;
+	onFeatureToggle?: FeatureToggleListener;
 	/** Full re-render hook (defaults to a no-op). */
 	rerender?: () => void;
 }
@@ -126,8 +134,10 @@ export async function persistCollapse(
 export function createSettingsSectionContext(
 	options: SettingsSectionContextOptions,
 ): SettingsSectionContext {
-	const { containerEl, plugin, onFeatureToggle, rerender } = options;
+	const { containerEl, plugin, rerender } = options;
 	const doRerender = rerender ?? (() => {});
+	const toggleListeners: FeatureToggleListener[] = [];
+	if (options.onFeatureToggle) toggleListeners.push(options.onFeatureToggle);
 
 	// Every section is recorded here as it renders so the orchestrator can append
 	// cross-cutting footer rows (per-section reset, #442) into each body after the
@@ -173,11 +183,9 @@ export function createSettingsSectionContext(
 			onToggle: async (value) => {
 				setEnabled(value);
 				await plugin.saveSettings();
-				// Greying out a feature must propagate to its Auto-Accept row in
-				// place — the orchestrator flips the stored Setting's disabled
-				// state directly rather than re-rendering (which would jump scroll
-				// and collapse accordions).
-				await onFeatureToggle?.();
+				// Listeners update rows in place; a re-render here would jump
+				// scroll and collapse accordions.
+				for (const listener of toggleListeners) await listener();
 			},
 			onCollapseChange: async (collapsed) => {
 				await persistCollapse(plugin, key, collapsed);
@@ -206,5 +214,8 @@ export function createSettingsSectionContext(
 		featureSection,
 		configSection,
 		rerender: doRerender,
+		onFeatureToggle: (listener) => {
+			toggleListeners.push(listener);
+		},
 	};
 }

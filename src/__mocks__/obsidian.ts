@@ -404,10 +404,18 @@ export class Setting {
 	settingEl: StubEl;
 	/** Child components created via add*, mirroring Obsidian's `components`. */
 	components: ToggleComponent[] = [];
+	/** Every Setting constructed since the last reset (tests clear between cases). */
+	static instances: Setting[] = [];
+	/** Last name set via setName. */
+	name = '';
 	constructor(containerEl?: { createDiv?: (cls: string) => StubEl }) {
 		this.settingEl = containerEl?.createDiv?.('setting-item') ?? createStubEl();
+		Setting.instances.push(this);
 	}
-	setName = vi.fn().mockReturnThis();
+	setName = vi.fn(function (this: Setting, name: string) {
+		this.name = name;
+		return this;
+	});
 	setDesc = vi.fn().mockReturnThis();
 	setHeading = vi.fn().mockReturnThis();
 	addText = vi.fn().mockReturnThis();

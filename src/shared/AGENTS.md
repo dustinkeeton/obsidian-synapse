@@ -371,11 +371,13 @@ interface SettingsSectionContext {
   featureSection(key: string, title: string, getEnabled: () => boolean, setEnabled: (value: boolean) => void, toggleDesc?: string): HTMLElement
   configSection(key: string, title: string): HTMLElement
   rerender: () => void
+  onFeatureToggle(listener: FeatureToggleListener): void   // fires after a feature enable toggle is saved
 }
+type FeatureToggleListener = () => void | Promise<void>
 interface SettingsSectionContextOptions {
   containerEl: HTMLElement
   plugin: SynapsePlugin
-  onFeatureToggle?: () => void | Promise<void>
+  onFeatureToggle?: FeatureToggleListener   // seed listener
   rerender?: () => void
 }
 function createSettingsSectionContext(options: SettingsSectionContextOptions): SettingsSectionContext
@@ -491,7 +493,7 @@ function scoreLyricsContent(content: string): number
 | `data-folder-migration.test.ts` | Tests | Rename / skip / conflict / failure paths |
 | `json-utils.ts` | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` | Type-safe JSON helpers. `parseJson` returns `unknown` (not `any`). `readJsonFile` reads via `DataAdapter`, validates with a type guard, returns `null` on any failure |
 | `node-loader.ts` | `loadNodeModules`, `assertDesktop`, `shellEnv`, `DesktopOnlyError`, `NodeModules` | Single sanctioned entry point for desktop-only Node.js builtins (os/path/fs/child_process). Lazy-loads inside function body so importing never triggers a module load on mobile. `shellEnv()` builds a narrowed subprocess environment with PATH augmented for common tool install locations |
-| `settings-section.ts` | `createSettingsSectionContext`, `isSectionCollapsed`, `persistCollapse`, `SettingsSectionContext`, `SettingsSectionContextOptions`, `SectionRegistryEntry` | Shared accordion plumbing for the settings tab (#243). Feature renderers receive a `SettingsSectionContext` and call `featureSection()`/`configSection()` to build accordions without importing `settings-tab.ts` |
+| `settings-section.ts` | `createSettingsSectionContext`, `isSectionCollapsed`, `persistCollapse`, `SettingsSectionContext`, `SettingsSectionContextOptions`, `SectionRegistryEntry`, `FeatureToggleListener` | Shared accordion plumbing for the settings tab (#243). Feature renderers receive a `SettingsSectionContext` and call `featureSection()`/`configSection()` to build accordions without importing `settings-tab.ts` |
 | `markdown.d.ts` | ambient `declare module '*.md'` | Types `import X from '*.md'` as a string (esbuild inlines the file at build time); used by `changelog-modal.ts` to bundle CHANGELOG.md (#375). Not part of the barrel |
 | `index.ts` | re-exports | Barrel file |
 
