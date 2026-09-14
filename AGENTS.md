@@ -26,7 +26,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 |--------|------|---------|------------|
 | main | `src/main.ts` | Plugin entry, module orchestration, command/view registration, checkpoint dispatch | `SynapsePlugin` (default) |
 | settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
-| settings-tab | `src/settings-tab.ts` | Obsidian settings UI | `SynapseSettingTab` |
+| settings-ui | `src/settings-ui/` | Obsidian settings UI | `SynapseSettingTab` |
 | commands | `src/commands/` | Command registry: developer source of truth + master control (status/flow/context gating), central registrar, drift audit, palette-action derivation | `CommandRegistrar`, `COMMAND_REGISTRY`, `REGISTRY_BY_ID`, `REGISTRY_BY_PIPELINE_KEY`, `isInFlow`, `isPipelineKeyInFlow`, `listPaletteActions`, `FEATURE_ICONS`, `resolveActionIcon`, `auditCommands`, types (`CommandDefinition`, `CommandContext`, `CommandFlow`, `CommandStatus`, `FeatureKey`) |
 | pipeline | `src/pipeline/` | Fire Synapse orchestration: ordered multi-phase run over a folder or single note | `SynapseRunner`, `SYNAPSE_PIPELINE`, `PipelineModuleKey`, `PipelineModuleMap`, `PipelineScanFn` |
 | intake | `src/intake/` | Watches intake folder, auto-routes + pipeline-processes new notes (#111); opt-in adoption of root-level shared captures (#455) | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute`, `SYNAPSE_PROCESSED_FLAG`, `SYNAPSE_PROCESSED_AT_FLAG`, `renderIntakeSettings` |
@@ -35,7 +35,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `renderAudioSettings`, `renderTranscriptionCredentials`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, types |
 | image | `src/image/` | Image OCR via multi-modal AI (vision models), batch extraction with checkpoints | `ImageModule`, `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `arrayBufferToBase64`, `preprocessImage`, `renderImageSettings`, types (`ImageExtractor` is internal, not barrel-exported) |
-| transcription | `src/transcription/` | Unified transcription/OCR UI modals, duration detection, time-range modal, tiered URL-transcription router (#184: YouTube captions → desktop yt-dlp/ffmpeg) | `UnifiedTranscriptionModal`, `NoteMediaModal`, `TimeRangeSlider`, `TimeRangeModal`, `UrlTranscriptionRouter`, `CaptionStrategy`, `LocalExtractionStrategy`, `NoTranscriptionPathError`, `buildUrlTranscriptBlock`, `fetchYouTubeTranscript`, `insertUrlTranscript`, `detectLocalFileDuration`, `detectUrlDuration`, `formatTimestamp`, `MIN_SLIDER_DURATION`, types (`UrlTranscriptionStrategy`, `UrlTranscript`, `UrlTranscriptOptions`, `InsertUrlTranscriptDeps`, `TimeRangeChoice`, `TimeRangeModalOptions`, `DurationResult`, `YouTubeTranscript`) |
+| transcription | `src/transcription/` | Unified transcription/OCR UI modals, duration detection, time-range modal, tiered URL-transcription router (#184: YouTube captions → desktop yt-dlp/ffmpeg) | `UnifiedTranscriptionModal`, `NoteMediaModal`, `TimeRangeSlider`, `TimeRangeModal`, `UrlTranscriptionRouter`, `CaptionStrategy`, `LocalExtractionStrategy`, `NoTranscriptionPathError`, `buildUrlTranscriptBlock`, `fetchYouTubeTranscript`, `insertUrlTranscript`, `detectLocalFileDuration`, `detectUrlDuration`, `formatTimestamp`, `MIN_SLIDER_DURATION`, types (`UrlTranscriptionStrategy`, `UrlTranscript`, `UrlTranscriptOptions`, `TranscriptStore`, `InsertUrlTranscriptDeps`, `TimeRangeChoice`, `TimeRangeModalOptions`, `DurationResult`, `YouTubeTranscript`) |
 | enrichment | `src/enrichment/` | Metadata classification, topic extraction, link resolution, external refs, frontmatter | `EnrichmentModule`, types |
 | summarize | `src/summarize/` | URL and transcription summarization, standalone summary notes, audio-embed summarization | `SummarizeModule`, types |
 | tidy | `src/tidy/` | Spelling correction and markdown formatting via AI | `TidyModule`, `TidySnapshot` |
@@ -44,17 +44,21 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | title | `src/title/` | AI title suggestions for untitled/mismatched notes | `TitleModule`, types |
 | shared | `src/shared/` | AI client (multi-modal + opt-in response cache), file utils, validation, notifications, callouts, frontmatter, checkpoints, per-note operation queue, credential metadata + validation, secret redaction, settings migrations, content hashing, untrusted-content wrapping, review-toast gate, update check, title predicates | `AIClient`, `NotificationManager`, `CheckpointManager`, `NoteOperationQueue`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `redactError`, `reviewAction`, `migrateSettings`, `hashString`/`contentKey`, `wrapUntrusted`, `findAvailableVaultPath`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, file/validation utils, callout registry, id-utils |
 | views | `src/views/` | Unified proposal/checkpoint sidebar + registry-driven Synapse actions sidebar | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `SynapseActionsView`, `SYNAPSE_ACTIONS_VIEW_TYPE` |
-| onboarding | `src/onboarding.ts` | First-run welcome gate + required-API-key emphasis (#89) | `needsApiKey`, `planFirstRun`, `applyApiKeyEmphasis`, `FirstRunPlan`, `WELCOME_MESSAGE` |
-| brand-icons | `src/brand-icons.ts` | Registers Synapse SVG icons (S-Signal identity mark + feature glyphs) | `registerSynapseIcons`, `SYNAPSE_ICONS`, `SYNAPSE_ICON_SVG` |
-| changelog | `src/changelog.ts`, `src/changelog-modal.ts` | In-app "What's new" modal; parses build-inlined `CHANGELOG.md` (#375) | `parseChangelog`, `renderChangelog`, `stripInlineMarkdown`, `ChangelogEntry`, `ChangelogSection`, `ChangelogModal` |
-| properties-fold | `src/properties-fold.ts` | Auto-fold a note's Properties panel on open (#381) | `registerPropertiesAutoFold`, `applyPropertiesFold`, `foldActiveNoteProperties`, `foldPropertiesIn` |
+| onboarding | `src/onboarding/` | First-run welcome gate + required-API-key emphasis (#89) | `needsApiKey`, `planFirstRun`, `applyApiKeyEmphasis`, `FirstRunPlan`, `WELCOME_MESSAGE` |
+| brand-icons | `src/brand-icons/` | Registers Synapse SVG icons (S-Signal identity mark + feature glyphs) | `registerSynapseIcons`, `SYNAPSE_ICONS`, `SYNAPSE_ICON_SVG` |
+| changelog | `src/changelog/` | In-app "What's new" modal; parses build-inlined `CHANGELOG.md` (#375) | `parseChangelog`, `renderChangelog`, `stripInlineMarkdown`, `ChangelogEntry`, `ChangelogSection`, `ChangelogModal` |
+| properties-fold | `src/properties-fold/` | Auto-fold a note's Properties panel on open (#381) | `registerPropertiesAutoFold`, `applyPropertiesFold`, `foldActiveNoteProperties`, `foldPropertiesIn` |
 
 ## Dependency Graph
 
 ```
 main.ts
   |-- settings.ts  (type-only: ProposalKind from views/types, ExclusionRule from shared/exclusions, TitleDuplicateStrategy from title/types — all erased; PLUS runtime value CURRENT_SETTINGS_VERSION from shared/settings-migrations, the sanctioned settings->shared edge — no cycle, settings-migrations only depends on shared/exclusions)
-  |-- settings-tab.ts
+  |-- settings-ui/ --> settings.ts, shared/, views/, every feature barrel's render<Feature>Settings, onboarding/, properties-fold/, changelog/ (type-only edge to main)
+  |-- onboarding/ --> settings.ts (type-only)
+  |-- brand-icons/ --> obsidian only
+  |-- changelog/ --> CHANGELOG.md (build-inlined text); type-only edge to main
+  |-- properties-fold/ --> settings.ts (type-only); type-only edge to main
   |-- commands/   (depends on NOTHING in src/ — never in a cycle)
   |-- shared/     (base layer: depends on NO feature module; owns url-detector)
   |-- pipeline/ --> commands/ (isPipelineKeyInFlow); modules injected via PipelineModuleMap
@@ -84,7 +88,8 @@ Key constraints:
 - `intake` imports only `obsidian` + `src/shared/*`; all cross-module work goes through `IntakeDeps`.
 - `video` depends on `audio` (reuses transcription pipeline, runtime value import). Type-only back-edges (erased at compile time, no runtime cycle): `audio → video` (`import type { AudioExtractor }`, `audio/index.ts`) and `shared/settings-section.ts:1 → main` (`import type SynapsePlugin`)
 - `transcription` owns the URL-transcription tier router (#184: `CaptionStrategy` on every platform, `LocalExtractionStrategy` desktop-only via an injected `VideoModule.processUrl` delegate) plus the modals; media decoding/AI work stays in `audio`, `video`, `image`
-- `summarize` has NO static import of `video` or `transcription`; URL-platform helpers (`isSupportedUrl`/`detectPlatform`) resolve from `shared/url-detector`. It receives a URL-transcription callback (`main.ts:176-181`, delegating to `UrlTranscriptionRouter.transcribe`) and an audio transcribe callback via constructor injection
+- `summarize` has NO static import of `video` or `transcription`; URL-platform helpers (`isSupportedUrl`/`detectPlatform`) resolve from `shared/url-detector`. It receives a URL-transcription callback (delegating to `UrlTranscriptionRouter.transcribe`, on every platform) and an audio transcribe callback via constructor injection. A router-supported media URL is only ever transcribed — never page-fetched — and a failed transcription inserts no summary (#488)
+- Every URL-transcription path (unified modal, note-media batch, summarize, intake) shares ONE `UrlTranscriptionRouter` constructed over `SynapsePlugin.transcriptCache` (`shared/transcript-cache.ts`, #488): tier results are written through and later requests for the same canonical URL (+ time range) are served from the store unless `forceRefresh` is set
 - `deep-dive` reuses `organize` for auto-organize nesting mode
 - `image` module uses multi-modal `AIClient.chat()` with `ContentBlock[]` for vision
 - `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
@@ -100,7 +105,7 @@ Key constraints:
 ```
 onload()
   |-- loadSettings()  (#93 version-stamped migrations: readSettingsVersion(raw) -> migrateSettings(raw, from) replays every migration with to>from [v1 excludeFolders -> exclusions #307, v2 drop inert rem.semanticMatching] -> deepMerge over DEFAULT_SETTINGS -> stamp settingsVersion = CURRENT_SETTINGS_VERSION -> saveData once on upgrade)
-  |-- registerSynapseIcons()  (brand-icons.ts; registers all synapse-* glyphs before any ribbon/setIcon/view use)
+  |-- registerSynapseIcons()  (brand-icons/; registers all synapse-* glyphs before any ribbon/setIcon/view use)
   |-- migrateDataFolder()  (.auto-notes -> .synapse, one-time)
   |-- new NotificationManager(); status bar attached on desktop only
   |-- new CheckpointManager(app)  (single instance, injected into all modules)
@@ -162,7 +167,7 @@ Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries
 
 ## Ribbon Icons
 
-All ribbon glyphs are custom Synapse brand icons registered by `registerSynapseIcons()` (`src/brand-icons.ts`).
+All ribbon glyphs are custom Synapse brand icons registered by `registerSynapseIcons()` (`src/brand-icons/`).
 
 | Icon | Label | Action |
 |------|-------|--------|
@@ -401,6 +406,7 @@ matches the `UnifiedItem` union exactly.
 | REM proposals | `.synapse/rem/*.json` | `RemProposal` JSON |
 | Intake breadcrumbs | `‹intakeFolder›/_captured/*.md` (configurable) | Dated wiki-link breadcrumb notes |
 | Checkpoints | `.synapse/checkpoints/*.json` | `Checkpoint` JSON |
+| Transcript cache | `.synapse/transcript-cache.json` | `{ version: 1, entries: Record<key, TranscriptCacheEntry> }` (#488); key = canonical media URL (+ `#t=start-end`); LRU-capped at 200 entries / 4M chars; cleared from Video settings |
 | Temp video/audio | `.synapse/temp/` | Binary (auto-cleaned) |
 | Downloaded videos | `Media/` (configurable) | Video files |
 

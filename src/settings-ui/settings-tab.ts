@@ -1,8 +1,8 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type { ButtonComponent } from 'obsidian';
-import type SynapsePlugin from './main';
-import { MODEL_OPTIONS } from './settings';
-import type { AIProvider } from './settings';
+import type SynapsePlugin from '../main';
+import { MODEL_OPTIONS } from '../settings';
+import type { AIProvider } from '../settings';
 import {
 	addEnhancedSlider,
 	createSettingsSectionContext,
@@ -15,30 +15,30 @@ import {
 	ConfirmModal,
 	applyResetAll,
 	sectionMatchesDefaults,
-} from './shared';
+} from '../shared';
 import type {
 	SettingsSectionContext,
 	FeatureId,
 	ExclusionRule,
 	CredentialFieldHandle,
-} from './shared';
-import { PROPOSAL_KINDS } from './views';
-import type { ProposalKind } from './views';
-import { renderElaborationSettings } from './elaboration';
-import { renderIntakeSettings } from './intake';
-import { renderImageSettings } from './image';
-import { renderAudioSettings, renderTranscriptionCredentials } from './audio';
-import { renderVideoSettings } from './video';
-import { renderEnrichmentSettings } from './enrichment';
-import { renderSummarizeSettings } from './summarize';
-import { renderTidySettings } from './tidy';
-import { renderOrganizeSettings } from './organize';
-import { renderDeepDiveSettings } from './deep-dive';
-import { renderTitleSettings } from './title';
-import { renderRemSettings } from './rem';
-import { applyApiKeyEmphasis, API_KEY_NO_SUBSCRIPTION_NOTE } from './onboarding';
-import { foldActiveNoteProperties } from './properties-fold';
-import { ChangelogModal } from './changelog-modal';
+} from '../shared';
+import { PROPOSAL_KINDS } from '../views';
+import type { ProposalKind } from '../views';
+import { renderElaborationSettings } from '../elaboration';
+import { renderIntakeSettings } from '../intake';
+import { renderImageSettings } from '../image';
+import { renderAudioSettings, renderTranscriptionCredentials } from '../audio';
+import { renderVideoSettings } from '../video';
+import { renderEnrichmentSettings } from '../enrichment';
+import { renderSummarizeSettings } from '../summarize';
+import { renderTidySettings } from '../tidy';
+import { renderOrganizeSettings } from '../organize';
+import { renderDeepDiveSettings } from '../deep-dive';
+import { renderTitleSettings } from '../title';
+import { renderRemSettings } from '../rem';
+import { applyApiKeyEmphasis, API_KEY_NO_SUBSCRIPTION_NOTE } from '../onboarding';
+import { foldActiveNoteProperties } from '../properties-fold';
+import { ChangelogModal } from '../changelog';
 
 /**
  * Per-kind display copy for the Auto-Accept Proposals section (#228). MUTATING

@@ -391,7 +391,7 @@ The plugin is organized into 8 feature modules plus a shared utilities layer. Ea
 src/
   main.ts              Plugin entry point and module orchestration
   settings.ts          Settings interfaces and defaults
-  settings-tab.ts      Settings UI
+  settings-ui/         Settings UI
   elaboration/         Stub note detection and proposal generation
   audio/               Audio transcription
   video/               Video download and transcription (desktop only)

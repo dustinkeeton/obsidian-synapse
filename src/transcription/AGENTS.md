@@ -4,7 +4,7 @@ last-updated: 2026-09-14
 
 # Transcription Module
 
-Transcription UI (unified modal, note-media modal, time-range modal, duration detection) plus the tiered URL-transcription router (#184: YouTube captions on every platform → desktop yt-dlp/ffmpeg extraction). Media transcription/OCR itself lives in `audio`, `video`, `image`; this module reaches them only through injected callbacks and delegates.
+Transcription UI (unified modal, note-media modal, time-range modal, duration detection) plus the tiered URL-transcription router (#184: YouTube captions on every platform → desktop yt-dlp/ffmpeg extraction) fronted by the shared transcript store (#488: read-through / write-through, `forceRefresh` escape hatch). Media transcription/OCR itself lives in `audio`, `video`, `image`; this module reaches them only through injected callbacks and delegates.
 
 ## Public API
 
@@ -19,7 +19,7 @@ class UnifiedTranscriptionModal extends Modal {
     enabledModules: { audio: boolean; video: boolean },
     callbacks: {
       onTranscribeFile: (file: TFile, timeRange?: TimeRange) => Promise<void>;
-      onTranscribeUrl: (url: string, timeRange?: TimeRange) => Promise<void>;
+      onTranscribeUrl: (url: string, timeRange?: TimeRange, forceRefresh?: boolean) => Promise<void>;   // forceRefresh = "Fetch a fresh transcript" toggle (#488)
     },
     notifications: NotificationManager
   )
@@ -84,11 +84,16 @@ interface DurationResult { durationSeconds: number | undefined; title: string }
 type NodeDeps = NodeModules        // injection seam for tests (not barrel-exported)
 
 // url-transcription.ts — ordered-tier router for URL transcription (#184)
-interface UrlTranscriptOptions {                                  // url-transcription.ts:25
-  timeRange?: TimeRange                 // set range forces the extraction tier (captions cannot clip)
+interface UrlTranscriptOptions {
+  timeRange?: TimeRange                 // set range forces the extraction tier (captions cannot clip); part of the store key
   update?: (message: string) => void
+  forceRefresh?: boolean                // skip the transcript store and re-run the tiers (#488)
 }
-interface UrlTranscript {                                         // url-transcription.ts:35
+interface TranscriptStore {                                        // read/write slice of shared `TranscriptCache` (#488)
+  get(url: string, timeRange?: TimeRange): Promise<TranscriptCacheEntry | null>
+  put(url: string, transcript: CachedTranscript, timeRange?: TimeRange): Promise<void>
+}
+interface UrlTranscript {
   text: string                          // post-processed when available, else raw
   raw: string
   source: 'captions' | 'local-extraction'
@@ -97,6 +102,7 @@ interface UrlTranscript {                                         // url-transcr
   videoVaultPath?: string               // local extraction only
   reformatted?: boolean
   schemaId?: string                     // content schema that reformatted the text (#234)
+  cached?: boolean                      // true when served from the transcript store (#488)
 }
 interface UrlTranscriptionStrategy {                              // url-transcription.ts:54
   readonly id: string
@@ -108,9 +114,9 @@ class NoTranscriptionPathError extends Error {                    // url-transcr
   readonly url: string
   readonly attempts: string[]
 }
-class UrlTranscriptionRouter {                                    // url-transcription.ts:94
-  constructor(strategies: UrlTranscriptionStrategy[])             // array order IS the tier order
-  transcribe(url: string, opts?: UrlTranscriptOptions): Promise<UrlTranscript>
+class UrlTranscriptionRouter {
+  constructor(strategies: UrlTranscriptionStrategy[], cache?: TranscriptStore)   // array order IS the tier order; cache = shared TranscriptCache (#488)
+  transcribe(url: string, opts?: UrlTranscriptOptions): Promise<UrlTranscript>   // store hit (unless forceRefresh) -> `cached: true`; tier result -> cache.put, never on failure
 }
 function buildUrlTranscriptBlock(result: UrlTranscript, url: string, embedInNote: boolean, timeRange?: TimeRange): string   // url-transcription.ts:125
 
@@ -143,7 +149,7 @@ interface InsertUrlTranscriptDeps {
   noteQueue: NoteOperationQueue                     // #483; the one shared instance, injected by main.ts
   onComplete?: (filePath: string) => void           // post-transcription hook (enrichment/title check)
 }
-function insertUrlTranscript(deps: InsertUrlTranscriptDeps, url: string, timeRange?: TimeRange): Promise<void>
+function insertUrlTranscript(deps: InsertUrlTranscriptDeps, url: string, timeRange?: TimeRange, forceRefresh?: boolean): Promise<void>   // forceRefresh default false (#488)
 ```
 
 ## File Inventory
@@ -155,13 +161,13 @@ function insertUrlTranscript(deps: InsertUrlTranscriptDeps, url: string, timeRan
 | `time-range-slider.ts` | `TimeRangeSlider`, `TimeRangeSliderOptions` | Dual-handle range slider (pure DOM, no Obsidian deps beyond createEl) |
 | `time-range-modal.ts` | `TimeRangeModal`, `TimeRangeChoice`, `TimeRangeModalOptions` | First-class modal asking what to transcribe: slider (known duration) or manual inputs (unknown); settle-once, dismiss = cancelled (#464) |
 | `duration-detector.ts` | `detectLocalFileDuration`, `detectUrlDuration`, `formatTimestamp`, `MIN_SLIDER_DURATION`, `DurationResult`, `NodeDeps` | Duration detection via ffprobe (local) and yt-dlp (URL); desktop-only, mobile returns undefined |
-| `url-transcription.ts` | `UrlTranscriptionRouter`, `UrlTranscriptionStrategy`, `UrlTranscript`, `UrlTranscriptOptions`, `NoTranscriptionPathError`, `buildUrlTranscriptBlock` | Tier router + shared note-block builder (embed + collapsed transcription/lyrics callout) |
+| `url-transcription.ts` | `UrlTranscriptionRouter`, `UrlTranscriptionStrategy`, `UrlTranscript`, `UrlTranscriptOptions`, `TranscriptStore`, `NoTranscriptionPathError`, `buildUrlTranscriptBlock` | Tier router fronted by the transcript store (#488) + shared note-block builder (embed + collapsed transcription/lyrics callout) |
 | `caption-strategy.ts` | `CaptionStrategy`, `ProcessedTranscript`, `ProcessTranscript` | Tier 1: YouTube captions; post-processing through the injected audio pipeline |
 | `local-extraction-strategy.ts` | `LocalExtractionStrategy`, `LocalExtractionDelegate` | Tier 2: desktop yt-dlp/ffmpeg via injected `VideoModule.processUrl` delegate |
 | `youtube-captions.ts` | `fetchYouTubeTranscript`, `YouTubeTranscript` (barrel); module-level `INNERTUBE_ANDROID_CLIENT`, `extractJsonAfterMarker`, `extractCaptionTracks`, `selectCaptionTrack`, `collectJson3Cues`, `parseChaptersFromDescription`, `formatCaptionTranscript`, `CaptionCue`, `VideoChapter` (internal, test seams) | Caption fetch + deterministic transcript formatting over Obsidian `requestUrl` |
-| `insert-url-transcript.ts` | `insertUrlTranscript`, `InsertUrlTranscriptDeps` | Transcribes a media URL through the injected router and appends the block to the ACTIVE note inside its `NoteOperationQueue` slot (#483, `insert-url-transcript.ts:53`) |
+| `insert-url-transcript.ts` | `insertUrlTranscript`, `InsertUrlTranscriptDeps` | Transcribes a media URL through the injected router (store-first, `forceRefresh` bypass) and appends the block to the ACTIVE note inside its `NoteOperationQueue` slot (#483); toast reads "Cached transcription added to note" on a store hit (#488) |
 | `index.ts` | Re-exports | Barrel file |
-| `*.test.ts` | Tests | `caption-strategy`, `duration-detector`, `local-extraction-strategy`, `note-media-modal`, `time-range-modal`, `unified-modal`, `url-transcription`, `youtube-captions` |
+| `*.test.ts` | Tests | `caption-strategy`, `duration-detector`, `insert-url-transcript` (store reuse + forceRefresh, #488), `local-extraction-strategy`, `note-media-modal`, `time-range-modal`, `unified-modal`, `url-transcription`, `youtube-captions` |
 
 ## UnifiedTranscriptionModal
 
@@ -170,6 +176,7 @@ Single modal combining audio file selection and video URL input (`unified-modal.
 - Dropdown lists all audio files in vault (filtered by `AUDIO_EXTENSIONS`, honors audio path exclusions via `isPathExcluded(path, 'audio', settings)`, #323)
 - URL section rendered when `enabledModules.video` on every platform (`unified-modal.ts:76`; no desktop gate since #184)
 - URL text field with platform detection badge (`detectPlatform`); unknown non-empty input shows "Unsupported URL"
+- "Fetch a fresh transcript" toggle (`Setting.addToggle`, default off) sets `forceRefresh`, forwarded as the third `onTranscribeUrl` argument on both platforms (#488)
 - File selection and URL input are mutually exclusive (setting one clears the other)
 - On submit (`handleTranscribe`, `unified-modal.ts:120`): rejects a URL that fails `detectPlatform` via `notifications.info`; empty input prompts to select a file or enter a URL
   - Mobile (`!Platform.isDesktop`): transcribes the full file/URL with no duration step (`unified-modal.ts:135`, `:156`)
@@ -237,7 +244,7 @@ Tier order is the array handed to `UrlTranscriptionRouter` in `main.ts:150-163`:
 | `captions` (`caption-strategy.ts:39`) | no `timeRange` AND `video.captionsFirst` AND `detectPlatform(url).platform === 'youtube'` | `fetchYouTubeTranscript(url, [audio.language, 'en'])`; `null` → fall through; `structured` captions returned as-is; otherwise `postProcess(raw, { update: opts.update })`, degrading to raw captions on failure (`console.warn` via `redactError`) |
 | `local-extraction` (`local-extraction-strategy.ts:29`) | `Platform.isDesktop && isSupportedUrl(url)` | delegate (`VideoModule.processUrl(url, { insertMode: false, timeRange }, { update })`, `main.ts:155-161`); failures propagate unchanged (keeps `DependencyMissingError` onboarding, #382) |
 
-Router (`url-transcription.ts:102`): `canHandle` false → `"<id>: not applicable"`; `null` result → `"<id>: unavailable for this video"`; first transcript wins; every tier exhausted → `NoTranscriptionPathError(url, attempts)`.
+Router (`url-transcription.ts`): with a `cache` and no `forceRefresh`, `cache.get(url, timeRange)` first — a hit returns `{ ...entry, cached: true }` (source narrowed to the tier union) after `update('Using cached transcript')`. Otherwise `canHandle` false → `"<id>: not applicable"`; `null` result → `"<id>: unavailable for this video"`; first transcript wins and is written through (`cache.put(url, fields, timeRange)`); every tier exhausted → `NoTranscriptionPathError(url, attempts)` with nothing stored. Store keys are `canonicalMediaUrl(url)` + `#t=<start>-<end>` for clipped requests (shared `transcript-cache.ts`), so a clipped transcript never satisfies a full-length request or vice versa. `TranscriptStore` is the two-method slice the router depends on; production passes `SynapsePlugin.transcriptCache`.
 
 `fetchYouTubeTranscript` (`youtube-captions.ts:112`):
 1. `sanitizeUrl` (only throw path) → `detectPlatform` must be `youtube`, else `null`
@@ -251,14 +258,15 @@ Router (`url-transcription.ts:102`): `canHandle` false → `"<id>: not applicabl
 ## Data Flow
 
 ```
-main.ts:150-172  router = new UrlTranscriptionRouter([CaptionStrategy(getSettings, audio.processTranscriptText), LocalExtractionStrategy(video.processUrl)?])
-                 video.urlTranscriber = (url, parentOp) => router.transcribe(url, { update })   // batch note-media path (#184)
+main.ts          transcriptCache = new TranscriptCache(app)                                    // .synapse/transcript-cache.json (#488)
+                 router = new UrlTranscriptionRouter([CaptionStrategy(getSettings, audio.processTranscriptText), LocalExtractionStrategy(video.processUrl)?], transcriptCache)
+                 video.urlTranscriber = (url, parentOp) => router.transcribe(url, { update })   // batch note-media path (#184); store-first like every other consumer
 
 UnifiedTranscriptionModal (openUnifiedModal, main.ts:602-631)
   enabledModules = { audio: settings.audio.enabled, video: settings.video.enabled }
   onTranscribeFile(file, timeRange?) --> AudioModule.transcribeFileToActiveNote(file, timeRange)
-  onTranscribeUrl(url, timeRange?)   --> insertUrlTranscript({ app, getSettings, notifications, router, noteQueue,
-                                           onComplete: audio.onTranscriptionComplete }, url, timeRange)
+  onTranscribeUrl(url, timeRange?, forceRefresh?) --> insertUrlTranscript({ app, getSettings, notifications, router, noteQueue,
+                                           onComplete: audio.onTranscriptionComplete }, url, timeRange, forceRefresh)
 
 NoteMediaModal (transcribeMediaFromNote, main.ts:633-672; embeds from findAudioEmbeds/findVideoUrls/findImageEmbeds)
   onTranscribeAudio(embeds, combine) --> combine ? AudioModule.transcribeAndInsertCombined(file, embeds)
@@ -267,10 +275,10 @@ NoteMediaModal (transcribeMediaFromNote, main.ts:633-672; embeds from findAudioE
   onExtractImages(embeds)            --> ImageModule.extractAndInsert(file, embeds)
   ffmpegAvailable                    <-- await main.isFfmpegAvailable()
 
-Other router consumers: summarize transcribeUrl callback (main.ts:176-181), intake transcribeUrlToNote (main.ts:466-489)
+Other router consumers: summarize transcribeUrl callback, intake transcribeUrlToNote — all four entry points (unified modal, note-media batch, summarize, intake) share the ONE router and therefore the one transcript store: any of them populates it and any of them reuses it (#488). Only the unified modal exposes `forceRefresh`; "Clear transcript cache" in the Video settings section (`video/settings-section.ts`) empties the store for every path.
 ```
 
-`insertUrlTranscript` (`insert-url-transcript.ts:26`): active note required (`notifications.info` otherwise); `findMatchingRule(path, 'video', settings)` exclusion → Notice naming the rule; `noteQueue.run(activeFile.path, ...)` with `onWait` toast update; `router.transcribe` → `buildUrlTranscriptBlock(result, url, video.embedInNote, timeRange)` → `vault.process` append → `deps.onComplete?.(path)` from inside the slot; errors → `op.error(...)`, never rethrown.
+`insertUrlTranscript` (`insert-url-transcript.ts`): active note required (`notifications.info` otherwise); `findMatchingRule(path, 'video', settings)` exclusion → Notice naming the rule; `noteQueue.run(activeFile.path, ...)` with `onWait` toast update; `router.transcribe(url, { timeRange, forceRefresh, update })` → `buildUrlTranscriptBlock(result, url, video.embedInNote, timeRange)` → `vault.process` append → `deps.onComplete?.(path)` from inside the slot; `op.finish` says "Cached transcription added to note" when `result.cached`; errors → `op.error(...)`, never rethrown.
 
 ## Module Dependencies
 
@@ -287,7 +295,7 @@ In (type-only where noted):
 | `detectPlatform`, `isSupportedUrl`, `redactError`, `sanitizeUrl`, `isRecord`, `parseJson` | `../shared` | `caption-strategy.ts`, `local-extraction-strategy.ts`, `youtube-captions.ts` | no |
 | `buildCallout`, `calloutForTranscriptionResult`, `formatTimeRange` | `../shared` | `url-transcription.ts:2` | no |
 | `findMatchingRule`, `isPathExcluded`, `validateTimeRange`, `loadNodeModules`, `shellEnv` | `../shared` | `insert-url-transcript.ts`, `unified-modal.ts`, `time-range-modal.ts`, `duration-detector.ts` | no |
-| `TimeRange`, `NotificationManager`, `NoteOperationQueue` | `../shared` | various | yes |
+| `TimeRange`, `NotificationManager`, `NoteOperationQueue`, `CachedTranscript`, `TranscriptCacheEntry` | `../shared` | various | yes |
 | `SynapseSettings` | `../settings` | various | yes |
 | `requestUrl`, `Platform`, `Modal`, `Setting` | `obsidian` | various | no |
 
@@ -310,6 +318,7 @@ Out: consumed by `main.ts` only (router construction, modal construction, `inser
 - No media decoding or AI calls live here; the caption tier's post-processing and the extraction tier's download/transcribe run inside `audio`/`video` through the injected callbacks
 - `insert-url-transcript.ts` owns the active note's `NoteOperationQueue` slot for the transcribe → append cycle (#483) and must never be called from inside another queued operation on the same note
 - Tier order is the array order handed to `UrlTranscriptionRouter`; a strategy returning `null` falls through; only a real failure throws; all tiers declining raises `NoTranscriptionPathError`
+- The transcript store is consulted BEFORE any tier and written AFTER a tier succeeds, never on failure; `forceRefresh` is the only bypass and always overwrites the entry (#488). A store hit still honors `timeRange` because the range is part of the key
 - A set `timeRange` forces the extraction tier (`CaptionStrategy.canHandle` returns false), so desktop clipping never routes through captions
 - `detectPlatform` is imported from `../video` in `unified-modal.ts` and from `../shared` in the strategies; both resolve to `shared/url-detector`
 - Both modals take an injected `NotificationManager` and route all user-facing messages through `notifications.info(...)`; `UnifiedTranscriptionModal.notifications` is the 5th constructor param, `NoteMediaModal.notifications` the 6th (before `ffmpegAvailable`)

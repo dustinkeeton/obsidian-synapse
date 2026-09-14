@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createEl, type StubEl } from './__mocks__/obsidian';
+import { createEl, type StubEl } from '../__mocks__/obsidian';
 import {
 	parseChangelog,
 	renderChangelog,

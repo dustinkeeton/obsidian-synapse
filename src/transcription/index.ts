@@ -20,6 +20,7 @@ export type {
 	UrlTranscript,
 	UrlTranscriptOptions,
 	UrlTranscriptionStrategy,
+	TranscriptStore,
 } from './url-transcription';
 export { CaptionStrategy } from './caption-strategy';
 export type { ProcessedTranscript, ProcessTranscript } from './caption-strategy';

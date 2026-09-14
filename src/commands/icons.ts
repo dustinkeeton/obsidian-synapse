@@ -3,7 +3,7 @@
  * and the registered SVG glyphs.
  *
  * The glyph bodies themselves are registered via `addIcon` in
- * `src/brand-icons.ts` (and mirror the mono assets in `assets/brand/`). This
+ * `src/brand-icons/brand-icons.ts` (and mirror the mono assets in `assets/brand/`). This
  * module only holds the names so it keeps the commands module's
  * zero-`src`-dependency property (it imports nothing outside `./types`),
  * mirroring how `FEATURE_COLOR_TOKENS` names CSS tokens in the view layer
@@ -21,7 +21,7 @@ import type { CommandDefinition, FeatureKey } from './types';
  * Typed `Record<FeatureKey, string>` so the build FAILS if a feature ever loses
  * its glyph — the same exhaustiveness guard `FEATURE_COLOR_TOKENS` provides for
  * colors. Keep the names in lockstep with the `addIcon` registrations in
- * `src/brand-icons.ts`.
+ * `src/brand-icons/brand-icons.ts`.
  */
 export const FEATURE_ICONS: Record<FeatureKey, string> = {
 	main: 'synapse-main',

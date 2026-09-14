@@ -1,9 +1,9 @@
 import { App, Modal } from 'obsidian';
-import type SynapsePlugin from './main';
+import type SynapsePlugin from '../main';
 import { renderChangelog } from './changelog';
 // CHANGELOG.md lives at the repo root and is inlined as a string at build time
 // by esbuild's `.md` text loader (see esbuild.config.mjs + shared/markdown.d.ts).
-import CHANGELOG from '../CHANGELOG.md';
+import CHANGELOG from '../../CHANGELOG.md';
 
 /**
  * In-app changelog view (#375). A minimal `Modal` that renders the bundled

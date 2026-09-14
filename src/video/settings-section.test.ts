@@ -46,7 +46,8 @@ function makeCtx(mutate?: (s: SynapseSettings) => void) {
 	const saveSettings = vi.fn().mockResolvedValue(undefined);
 	// Real manager so the copy-failure path routes through it (#396); the routed
 	// info() prepends "Synapse: " and creates a real Notice under the mock.
-	const plugin = { settings, saveSettings, manifest: { version: '0.0.0-test' }, notifications: new NotificationManager() };
+	const transcriptCache = { clear: vi.fn().mockResolvedValue(undefined) };
+	const plugin = { settings, saveSettings, manifest: { version: '0.0.0-test' }, notifications: new NotificationManager(), transcriptCache };
 	const containerEl = createEl();
 	const ctx = createSettingsSectionContext({
 		containerEl,
@@ -54,7 +55,7 @@ function makeCtx(mutate?: (s: SynapseSettings) => void) {
 		onFeatureToggle: vi.fn(),
 		rerender: vi.fn(),
 	});
-	return { ctx, plugin, containerEl, saveSettings };
+	return { ctx, plugin, containerEl, saveSettings, transcriptCache };
 }
 
 describe('renderVideoSettings', () => {
@@ -87,6 +88,18 @@ describe('renderVideoSettings', () => {
 		await headerToggle._trigger(false);
 		expect(plugin.settings.video.enabled).toBe(false);
 		expect(saveSettings).toHaveBeenCalled();
+	});
+
+	it('clears the transcript cache from its settings button (#488)', async () => {
+		const { ctx, transcriptCache } = makeCtx();
+		renderVideoSettings(ctx);
+
+		const button = ButtonComponent.instances.find((b) => b.buttonText === 'Clear transcript cache');
+		expect(button).toBeDefined();
+		await button!._click();
+
+		expect(transcriptCache.clear).toHaveBeenCalledOnce();
+		expect(Notice.instances.some((n) => n.message?.includes('Transcript cache cleared'))).toBe(true);
 	});
 
 	it('renders each per-OS install command as a code row with a copy button (#382/#383)', () => {

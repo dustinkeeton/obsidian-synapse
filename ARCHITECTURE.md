@@ -4,7 +4,7 @@
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, and in-place wikilink discovery (REM). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
-The codebase has **17 modules under `src/`** (audio, commands, deep-dive, elaboration, enrichment, image, intake, organize, pipeline, rem, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts`, `settings.ts`, `settings-tab.ts`, a small pure `onboarding.ts` (first-run welcome, #89), `brand-icons.ts` (Synapse SVG icons), `changelog.ts`/`changelog-modal.ts` (in-app "What's new", #375), and `properties-fold.ts` (auto-fold note Properties, #381).
+The codebase has **22 modules under `src/`** (audio, brand-icons, changelog, commands, deep-dive, elaboration, enrichment, image, intake, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` and `settings.ts`. Five of those are thin one-file folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381).
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -110,12 +110,11 @@ Both `shared/` and `commands/` are **base layers**: every feature may depend on 
 src/
 ├── main.ts                 # Plugin entry, module orchestration, callback wiring, dependency injection
 ├── settings.ts             # Type definitions, defaults, model options (type-only imports of ProposalKind + ExclusionRule)
-├── settings-tab.ts         # Obsidian settings UI (video section on every platform; binary-path rows hidden on mobile)
-├── onboarding.ts           # Pure first-run welcome logic (#89): planFirstRun, needsApiKey
-├── brand-icons.ts          # registerSynapseIcons(): S-Signal mark + per-feature glyphs (before any ribbon/setIcon use)
-├── changelog.ts            # parseChangelog/renderChangelog of the build-inlined CHANGELOG.md (#375)
-├── changelog-modal.ts      # ChangelogModal — in-app "What's new" (#375)
-├── properties-fold.ts      # registerPropertiesAutoFold(): auto-fold note Properties panel on open (#381)
+├── settings-ui/            # SynapseSettingTab — Obsidian settings UI (video section on every platform; binary-path rows hidden on mobile)
+├── onboarding/             # Pure first-run welcome logic (#89): planFirstRun, needsApiKey
+├── brand-icons/            # registerSynapseIcons(): S-Signal mark + per-feature glyphs (before any ribbon/setIcon use)
+├── changelog/              # parseChangelog/renderChangelog + ChangelogModal over the build-inlined CHANGELOG.md (#375)
+├── properties-fold/        # registerPropertiesAutoFold(): auto-fold note Properties panel on open (#381)
 │
 ├── commands/               # Command registry (base layer; imports nothing in src/)
 │   ├── registry.ts         #   COMMAND_REGISTRY source of truth + flow/status/context gates

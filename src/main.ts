@@ -1,6 +1,6 @@
 import { MarkdownView, Platform, Plugin, TFile } from 'obsidian';
 import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
-import { SynapseSettingTab } from './settings-tab';
+import { SynapseSettingTab } from './settings-ui';
 import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule, AudioExtractor } from './video';
@@ -17,7 +17,7 @@ import { CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID } f
 import { planFirstRun, WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS } from './onboarding';
 import { SynapseRunner } from './pipeline';
 import type { PipelineModuleMap } from './pipeline';
-import { openScanFolderPicker, NotificationManager, CheckpointManager, NoteOperationQueue, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION, redactError } from './shared';
+import { openScanFolderPicker, NotificationManager, CheckpointManager, NoteOperationQueue, TranscriptCache, UpdateChecker, fireAndForget, migrateSettings, readSettingsVersion, CURRENT_SETTINGS_VERSION, redactError } from './shared';
 import type { DeferredTask } from './shared';
 import {
 	UnifiedTranscriptionModal,
@@ -74,6 +74,8 @@ export default class SynapsePlugin extends Plugin {
 	private audioExtractor: AudioExtractor | undefined;
 	/** Tiered URL transcription router (#184) — built in onload, used by the unified modal. */
 	private urlTranscription!: UrlTranscriptionRouter;
+	/** Vault-file transcript store behind every URL-transcription path (#488); cleared from Video settings. */
+	transcriptCache!: TranscriptCache;
 	private ffmpegAvailable: boolean | null = null;
 	private startupTimeout: number | null = null;
 	/**
@@ -160,7 +162,8 @@ export default class SynapsePlugin extends Plugin {
 				)
 			));
 		}
-		const urlTranscription = new UrlTranscriptionRouter(urlStrategies);
+		this.transcriptCache = new TranscriptCache(this.app);
+		const urlTranscription = new UrlTranscriptionRouter(urlStrategies, this.transcriptCache);
 		this.urlTranscription = urlTranscription;
 		if (video) {
 			// Batch note-media transcription routes through the same tiers, so
@@ -613,7 +616,7 @@ export default class SynapsePlugin extends Plugin {
 				// extraction tier, so desktop clipping behaves exactly as before.
 				// Completion reuses the audio module's post-transcription hook
 				// (enrichment + title check) — same kind, same wiring blocks.
-				onTranscribeUrl: (url, timeRange) => insertUrlTranscript(
+				onTranscribeUrl: (url, timeRange, forceRefresh) => insertUrlTranscript(
 					{
 						app: this.app,
 						getSettings: () => this.settings,
@@ -623,7 +626,8 @@ export default class SynapsePlugin extends Plugin {
 						onComplete: (filePath) => this.audio.onTranscriptionComplete?.(filePath),
 					},
 					url,
-					timeRange
+					timeRange,
+					forceRefresh
 				),
 			},
 			this.notifications

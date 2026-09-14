@@ -14,6 +14,7 @@ import { TimeRangeModal } from './time-range-modal';
 export class UnifiedTranscriptionModal extends Modal {
 	private selectedFile: TFile | null = null;
 	private url = '';
+	private forceRefresh = false;
 
 	constructor(
 		app: App,
@@ -21,7 +22,7 @@ export class UnifiedTranscriptionModal extends Modal {
 		private enabledModules: { audio: boolean; video: boolean },
 		private callbacks: {
 			onTranscribeFile: (file: TFile, timeRange?: TimeRange) => Promise<void>;
-			onTranscribeUrl: (url: string, timeRange?: TimeRange) => Promise<void>;
+			onTranscribeUrl: (url: string, timeRange?: TimeRange, forceRefresh?: boolean) => Promise<void>;
 		},
 		private notifications: NotificationManager
 	) {
@@ -99,6 +100,15 @@ export class UnifiedTranscriptionModal extends Modal {
 						}
 					});
 				});
+
+			new Setting(contentEl)
+				.setName('Fetch a fresh transcript')
+				.setDesc('Ignore a transcript cached from an earlier transcription or summary of this URL')
+				.addToggle((toggle) =>
+					toggle.setValue(this.forceRefresh).onChange((value) => {
+						this.forceRefresh = value;
+					})
+				);
 		}
 
 		// Transcribe button
@@ -155,7 +165,7 @@ export class UnifiedTranscriptionModal extends Modal {
 	private async handleUrlTranscribe(url: string): Promise<void> {
 		if (!Platform.isDesktop) {
 			this.close();
-			await this.callbacks.onTranscribeUrl(url);
+			await this.callbacks.onTranscribeUrl(url, undefined, this.forceRefresh);
 			return;
 		}
 
@@ -164,7 +174,7 @@ export class UnifiedTranscriptionModal extends Modal {
 
 		const timeRange = await this.chooseTimeRange(durationResult);
 		if (timeRange === 'cancelled') return;
-		await this.callbacks.onTranscribeUrl(url, timeRange);
+		await this.callbacks.onTranscribeUrl(url, timeRange, this.forceRefresh);
 	}
 
 	/**

@@ -165,5 +165,5 @@ consumed by:
 - Deprecate / disable a command everywhere: set `status` to `'deprecated'` or `'disabled'`.
 - Remove from one flow only: drop that flow from `flows`.
 - Remove a phase from Fire Synapse: edit the entry carrying that `pipelineKey` (for tidy, the synthetic `tidy-vault` entry).
-- Change a `main` command's glyph: edit its `icon`; change a feature's glyph: edit `FEATURE_ICONS` (must match an `addIcon` registration in `src/brand-icons.ts`).
+- Change a `main` command's glyph: edit its `icon`; change a feature's glyph: edit `FEATURE_ICONS` (must match an `addIcon` registration in `src/brand-icons/brand-icons.ts`).
 - After any edit, `npm test` runs the registry + audit tests that guard the invariants.
