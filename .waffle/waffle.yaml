@@ -54,8 +54,6 @@ config:
     buildCmd: node esbuild.config.mjs production
     testCmd: npm test
     typecheckCmd: npx tsc --noEmit --skipLibCheck
-  issue:
-    inferenceLabel: Needs Inference
   doctor:
     toolkitRef: github:dustinkeeton/wafflestack#v0.15.0
     # This repo deliberately gitignores some renders (.agents/, .codex/, and the

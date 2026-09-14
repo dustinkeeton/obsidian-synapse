@@ -2,7 +2,7 @@
 name: issue
 description: Create a well-structured GitHub issue from a brief description, or enrich an existing issue in place. Fleshes out title, body, labels, and optional sub-issues. Plans read-only first and confirms before mutating; `--yes` or a non-interactive agent/CI invocation skips the gate. Invokable by users and agents.
 user-invocable: true
-argument-hint: "<description for a new issue> | <#N, number, or issue URL to enrich> | (omit to enrich all open 'Needs Inference' issues)  [--yes]"
+argument-hint: "<description for a new issue> | <#N, number, or issue URL to enrich> | (omit to enrich all open 'waffle:needs-inference' issues)  [--yes]"
 ---
 
 # GitHub Issue Creation
@@ -30,8 +30,8 @@ With the flag removed, inspect what is left to choose a mode (same detection app
 
 | `$ARGUMENTS` (after stripping `--yes`) | Mode | What to do |
 |--------------|------|------------|
-| `#N`, a bare number, or a GitHub issue URL | **Enrich-in-place** | Flesh out that existing issue and update it — see **Enriching an existing issue (Needs Inference)** below. |
-| empty / omitted | **Batch enrich** | Enrich **every** open issue labeled `Needs Inference` — see the batch note in that section. |
+| `#N`, a bare number, or a GitHub issue URL | **Enrich-in-place** | Flesh out that existing issue and update it — see **Enriching an existing issue (waffle:needs-inference)** below. |
+| empty / omitted | **Batch enrich** | Enrich **every** open issue labeled `waffle:needs-inference` — see the batch note in that section. |
 | any other text | **Create new** | Treat the text as the description for a brand-new issue and follow the **Workflow** below. |
 
 The flag itself is orthogonal to the mode it modifies:
@@ -40,7 +40,7 @@ The flag itself is orthogonal to the mode it modifies:
 |------|--------|------------|
 | `--yes` (with or without any mode above) | **Gate skip** | Combines with any mode: skip the confirmation gate and go straight through — see [The `--yes` convention](#the---yes-convention). |
 
-`Needs Inference` is the lifecycle label: it marks an issue as awaiting AI fleshing-out, and is **removed** once the issue has been enriched.
+`waffle:needs-inference` is the lifecycle label: it marks an issue as awaiting AI fleshing-out, and is **removed** once the issue has been enriched.
 
 ## Plan first, then act
 
@@ -57,7 +57,7 @@ Two callers skip the gate: an explicit `--yes` (see [The `--yes` convention](#th
 
 ## Workflow
 
-> Steps below cover **Create new** mode. Enrich-in-place reuses the context (1), classification (2), drafting incl. priority inference (3), confirmation (4), priority-label (6), and project-integration (7) steps — see **Enriching an existing issue (Needs Inference)**.
+> Steps below cover **Create new** mode. Enrich-in-place reuses the context (1), classification (2), drafting incl. priority inference (3), confirmation (4), priority-label (6), and project-integration (7) steps — see **Enriching an existing issue (waffle:needs-inference)**.
 
 ### 1. Gather context
 
@@ -289,7 +289,7 @@ Output the issue URL so the user (or calling agent) can reference it. Include:
 - Board status set (or skipped with reason)
 - Milestone assigned (or skipped with reason)
 
-## Enriching an existing issue (Needs Inference)
+## Enriching an existing issue (waffle:needs-inference)
 
 Use this when `$ARGUMENTS` is an issue reference (`#N`, a bare number, or an issue URL), or for each issue in **Batch enrich** mode. Instead of creating a new issue, you flesh out the existing one and update it in place.
 
@@ -297,7 +297,7 @@ Use this when `$ARGUMENTS` is an issue reference (`#N`, a bare number, or an iss
    ```bash
    gh issue view <N> --json number,title,body,labels,milestone,state
    ```
-   This mode is intended for issues carrying the `Needs Inference` label. If the issue lacks it but was explicitly referenced, proceed anyway and note that it wasn't labeled.
+   This mode is intended for issues carrying the `waffle:needs-inference` label. If the issue lacks it but was explicitly referenced, proceed anyway and note that it wasn't labeled.
 
 2. **Gather context** — read the relevant source files to understand the problem/feature area (same as Workflow step 1). The issue's existing body is your brief.
 
@@ -312,12 +312,12 @@ Use this when `$ARGUMENTS` is an issue reference (`#N`, a bare number, or an iss
    </details>
    ```
 
-   Also settle the rest of the plan, without applying it: the type label (Workflow step 2), the inferred priority label (Workflow step 3), the removal of the `Needs Inference` lifecycle label, and the intended board/milestone placement.
+   Also settle the rest of the plan, without applying it: the type label (Workflow step 2), the inferred priority label (Workflow step 3), the removal of the `waffle:needs-inference` lifecycle label, and the intended board/milestone placement.
 
 4. **Confirm the plan** — the gate. Steps 1–3 read and draft; everything below mutates the issue. Present, and gate on an explicit yes:
    - the **current → proposed title**;
    - the full **proposed body** (an in-place rewrite replaces what's there — show it before it lands);
-   - the **label changes** — type + priority added, `Needs Inference` removed;
+   - the **label changes** — type + priority added, `waffle:needs-inference` removed;
    - the intended **board placement + milestone**.
 
    On a decline, **stop** — the issue is untouched. Skipped by `--yes` and by non-interactive agent/CI callers, exactly as in the create-mode gate ([The `--yes` convention](#the---yes-convention), [When called by agents](#when-called-by-agents)).
@@ -329,19 +329,19 @@ Use this when `$ARGUMENTS` is an issue reference (`#N`, a bare number, or an iss
 
 6. **Labels** — add the type label and priority label from the confirmed plan, and **remove the lifecycle label**:
    ```bash
-   gh issue edit <N> --add-label "<type label>" --add-label "<priority label>" --remove-label "Needs Inference"
+   gh issue edit <N> --add-label "<type label>" --add-label "<priority label>" --remove-label "waffle:needs-inference"
    ```
 
 7. **Project board + milestone** — ensure the issue is on the board with a Status (Backlog if open) and has a milestone, reusing **Workflow step 7** (project integration). Skip whichever is already set.
 
-8. **Report back** — issue URL, a one-line summary of what changed, and confirmation that `Needs Inference` was removed and the board/milestone were applied.
+8. **Report back** — issue URL, a one-line summary of what changed, and confirmation that `waffle:needs-inference` was removed and the board/milestone were applied.
 
 ### Batch enrich (no argument)
 
 When `$ARGUMENTS` is empty, process the whole queue:
 
 ```bash
-gh issue list --state open --label "Needs Inference" --json number,title,body,labels
+gh issue list --state open --label "waffle:needs-inference" --json number,title,body,labels
 ```
 
 Batch mode plans the **whole queue** before it touches any of it — a bad inference rewriting a dozen issues in one unreviewed pass is exactly what the gate exists to prevent.
@@ -351,10 +351,10 @@ Batch mode plans the **whole queue** before it touches any of it — a bad infer
 
    | # | Current title | Proposed title | Type | Priority | Lifecycle label |
    |---|---------------|----------------|------|----------|-----------------|
-   | 41 | fix the thing | Fix silent retry on expired tokens | bug | high | `Needs Inference` removed |
+   | 41 | fix the thing | Fix silent retry on expired tokens | bug | high | `waffle:needs-inference` removed |
 
    Offer the full drafted bodies alongside the table, or on request if the batch is large — but never apply a body the user hasn't been offered a look at.
-3. **Apply only what was approved.** The user may approve the batch, or a **subset** ("all but #41", "just 39 and 40") — enrich exactly the approved issues and leave the rest untouched, still labeled `Needs Inference` for a later pass. A decline enriches nothing.
+3. **Apply only what was approved.** The user may approve the batch, or a **subset** ("all but #41", "just 39 and 40") — enrich exactly the approved issues and leave the rest untouched, still labeled `waffle:needs-inference` for a later pass. A decline enriches nothing.
 4. **Then act** — run **enrich steps 5–8** (update in place, labels, board + milestone, report) for each approved issue, and print a summary of every issue enriched (number, new title, labels, milestone). Enrich steps, not Workflow steps: Workflow step 5 *creates* an issue, enrich step 5 rewrites one in place.
 
 `--yes` and non-interactive agent/CI callers skip the combined review and enrich the whole queue straight through.
@@ -383,13 +383,13 @@ Same as the first example with no pause — drafts and creates straight through.
 ```
 /issue 360
 ```
-Fetches issue #360 (labeled `Needs Inference`), reads the relevant code, and re-drafts its title and body into the full template — preserving the original report in a collapsed block. **Shows the current → proposed title, the new body, and the label changes, and waits for a yes** before editing anything. On approval: applies the type + priority labels, removes `Needs Inference`, puts it on the board as "Backlog", and assigns a milestone. On a decline, #360 is exactly as it was.
+Fetches issue #360 (labeled `waffle:needs-inference`), reads the relevant code, and re-drafts its title and body into the full template — preserving the original report in a collapsed block. **Shows the current → proposed title, the new body, and the label changes, and waits for a yes** before editing anything. On approval: applies the type + priority labels, removes `waffle:needs-inference`, puts it on the board as "Backlog", and assigns a milestone. On a decline, #360 is exactly as it was.
 
 ### Enrich the whole queue
 ```
 /issue
 ```
-With no argument, drafts an enrichment for *every* open issue labeled `Needs Inference`, presents them in **one combined review**, and enriches only the ones approved (the whole batch, or a subset) — then summarizes the results.
+With no argument, drafts an enrichment for *every* open issue labeled `waffle:needs-inference`, presents them in **one combined review**, and enriches only the ones approved (the whole batch, or a subset) — then summarizes the results.
 
 ## When called by agents
 
