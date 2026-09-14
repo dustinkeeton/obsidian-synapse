@@ -118,7 +118,7 @@ fire(folderPath?)  /  fireOnFile(file)
 
 ## Post-Op Hooks (`post-op-hooks.ts`)
 
-Wired in `main.ts:208-222`: one `PostOpHookDeps` (`main.ts:208-214`) feeds `buildPostOpHook` for each source (`elaboration.onProposalAccepted`, `audio.onTranscriptionComplete`, `video.onTranscriptionComplete`, `image.onExtractionComplete`, `summarize.onSummaryComplete`, `deepDive.onNoteAccepted`) and `buildAutoOrganizeHook` for `deepDive.onOrganizeRequested` / `summarize.onOrganizeRequested`.
+Wired in `main.ts:180-194`: one `PostOpHookDeps` (`main.ts:180-186`) feeds `buildPostOpHook` for each source (`elaboration.onProposalAccepted`, `audio.onTranscriptionComplete`, `video.onTranscriptionComplete`, `image.onExtractionComplete`, `summarize.onSummaryComplete`, `deepDive.onNoteAccepted`) and `buildAutoOrganizeHook` for `deepDive.onOrganizeRequested` / `summarize.onOrganizeRequested`.
 
 `buildPostOpHook(deps, source)` (`post-op-hooks.ts:31`), evaluated once at wire time:
 
@@ -159,7 +159,7 @@ Wired in `main.ts:208-222`: one `PostOpHookDeps` (`main.ts:208-214`) feeds `buil
 | `NotificationManager` (type) | `../shared` |
 | `SynapseSettings` (type) | `../settings` |
 | `TFile` (type) | `obsidian` (`types.ts:1`, `post-op-hooks.ts:1`) |
-| `PipelineModuleMap` instances | injected by `main.ts:269-276` from each feature module's scan fn |
-| `PostOpHookDeps` instance | injected by `main.ts:208-214` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote` wrapped with `{ postOp: true }` where applicable) |
+| `PipelineModuleMap` instances | injected by `main.ts:92-99` from each feature module's scan fn |
+| `PostOpHookDeps` instance | injected by `main.ts:180-186` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote` wrapped with `{ postOp: true }` where applicable) |
 
 Pipeline imports `commands` (for the `fire-synapse` flow gate) and `shared` (`fireAndForget`) but NOT the feature modules directly — `main.ts` injects the `PipelineModuleMap` and `PostOpHookDeps`, keeping the runner and the hooks decoupled from concrete feature implementations.

@@ -122,7 +122,7 @@ class FrameExtractor {                          // frame-extractor.ts:L6 — pla
 | `note-scanner.test.ts` | Tests | Note scanner unit tests |
 | `audio-extractor.ts` | `AudioExtractor`, `DependencyMissingError` | yt-dlp/ffmpeg via `execFile` (no shell); URL download, file extract, clip, concat, dependency check, no-audio detection |
 | `audio-extractor.test.ts` | Tests | AudioExtractor unit tests |
-| `ffmpeg-availability.ts` | `createFfmpegAvailability` | Memoized ffmpeg probe factory; consumed by `main.ts:233` as `NoteMediaTranscriptionDeps.isFfmpegAvailable` (combine-audio gate in `NoteMediaModal`) |
+| `ffmpeg-availability.ts` | `createFfmpegAvailability` | Memoized ffmpeg probe factory; consumed by `main.ts:205` as `NoteMediaTranscriptionDeps.isFfmpegAvailable` (combine-audio gate in `NoteMediaModal`) |
 | `ffmpeg-availability.test.ts` | Tests | Memoization, no-extractor false, probe-failure false |
 | `frame-extractor.ts` | `FrameExtractor` | Placeholder; `extractFrames` throws unless disabled (unimplemented) |
 | `settings-section.ts` | `renderVideoSettings` | Video settings accordion renderer for settings-tab.ts |

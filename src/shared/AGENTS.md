@@ -4,7 +4,7 @@ last-updated: 2026-09-14
 
 # Shared Module
 
-Cross-cutting base layer used by all feature modules: AI client, secret redaction, file operations, base64 encoding, notifications, in-app update checking, validation, frontmatter parsing, checkpoint management, per-note AI-operation serialization, the media-URL transcript store, ID generation, note-title predicates, URL platform detection / classification, web / Reddit / tweet content fetching, credential validation, JSON utilities, and Node.js desktop-only loader. Depends on NO feature module — this is the bottom of the dependency graph.
+Cross-cutting base layer used by all feature modules: AI client, secret redaction, file operations, base64 encoding, notifications, in-app update checking, validation, frontmatter parsing, checkpoint management, per-note AI-operation serialization, the media-URL transcript store, ID generation, note-title predicates, URL platform detection / classification, web / Reddit / tweet content fetching, credential validation, JSON utilities, Node.js desktop-only loader, and the feature-module lifecycle contract (`ModuleDeps` / `FeatureModule` / `FeatureSettingsKey`, #504). Depends on NO feature module — this is the bottom of the dependency graph (one type-only edge to `commands/` for `CommandRegistrar`, erased at compile time).
 
 Canonical homes (re-exported elsewhere for back-compat — import from the `shared` barrel, never an internal file):
 - `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) — moved here from `src/video/` to break the former shared⇄video import cycle; `video` re-exports for back-compat.
@@ -219,9 +219,28 @@ class NoteOperationQueue {
   get size(): number                  // number of paths with queued/running operations (diagnostics/tests)
   run<T>(notePath: string, operation: () => Promise<T>, options?: NoteOperationOptions): Promise<T>
 }
-// One instance per plugin (created in main.ts:72), injected into every module that mutates a note after an AI call.
+// One instance per plugin (created in main.ts:56), injected into every module that mutates a note after an AI call.
 // Chain entries never reject (built from internal resolve-only promises), so a failing operation cannot poison a key;
 // `run` rejections still propagate to the caller and still release the slot (note-operation-queue.ts:85).
+
+// feature-module.ts (#504; the contract every src/<feature>/index.ts module class implements; driven by modules/registry.ts)
+interface ModuleDeps {
+  plugin: Plugin
+  getSettings: () => SynapseSettings
+  notifications: NotificationManager
+  checkpointManager: CheckpointManager
+  registrar: CommandRegistrar        // type-only import from ../commands (commands imports nothing in src/ → no cycle)
+  noteQueue: NoteOperationQueue
+}
+// Every module constructor takes ModuleDeps FIRST; module-specific inputs follow positionally (see modules/registry.ts).
+type FeatureSettingsKey = 'elaboration' | 'audio' | 'video' | 'image' | 'enrichment' | 'summarize' | 'tidy' | 'organize' | 'deepDive' | 'title' | 'rem' | 'intake'
+// derived: keys of SynapseSettings whose value has `enabled: boolean`; adding such a section forces a registry entry (FeatureModules is mapped over it)
+interface FeatureModule {
+  onload(): Promise<void>
+  onunload(): void
+  onViewRefreshNeeded?: (() => Promise<void>) | null   // proposal-sidebar slots; main.ts assigns them only where the slot exists (!== undefined)
+  onOpenProposalView?: (() => void) | null
+}
 
 // checkpoint-manager.ts
 class CheckpointManager {
@@ -329,7 +348,7 @@ function migrateSettings(raw: Record<string, unknown>, fromVersion: number): Rec
 // settings-merge.ts:10 — persisted settings over defaults; nested records recurse, arrays/primitives overwrite; drops __proto__/constructor/prototype keys; NOT a deep clone (untouched nested defaults shared by reference)
 function deepMergeSettings<T extends object>(target: T, source: Record<string, unknown>): T
 
-// data-folder-migration.ts:5 / :6 / :13 — one-time `.auto-notes/` -> `.synapse/` rename at load (main.ts:66); never throws
+// data-folder-migration.ts:5 / :6 / :13 — one-time `.auto-notes/` -> `.synapse/` rename at load (main.ts:50); never throws
 const LEGACY_DATA_FOLDER = '.auto-notes'
 const DATA_FOLDER = '.synapse'
 function migrateDataFolder(adapter: DataAdapter, notifications: NotificationManager): Promise<void>   // absent old folder = silent return; both present = console.warn, no rename; failure = console.error(redactError) + notifications.error
@@ -460,6 +479,7 @@ function scoreLyricsContent(content: string): number
 | `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
 | `note-operation-queue.ts` | `NoteOperationQueue`, `NoteOperationOptions` | Per-note serialization of AI operations (#483): path-keyed FIFO promise chain (same pattern as `CheckpointManager.withLock`, but keyed on note path and used by feature modules). Operations submitted for the same path run in submission order, so each reads what the previous one wrote. Contract: key on the note the operation reads/writes; acquire AT MOST ONCE per operation (no nesting → no lock ordering → no deadlock) — public entry points acquire, the private cores they delegate to do not; incidental writes to OTHER notes (title backlink remediation + merge targets, deep-dive syllabus/sibling nav, organize summary notes) stay unqueued; batch scans take one slot per note, never one per batch. Fire-and-forget post-op follow-ups (enrichment / title check) started from inside a queued operation enqueue BEHIND it and run against the post-write content (nothing awaits them → no cycle). A rename inside a queued operation (title accept) is keyed on the PRE-rename path; work queued under the old path runs afterwards, finds no file and exits early |
 | `note-operation-queue.test.ts` | Tests | Ordering, cross-path independence, lost-update, rejection-does-not-poison, `onWait`-only-on-wait, `isBusy`, burst-drain tests |
+| `feature-module.ts` | `ModuleDeps`, `FeatureModule`, `FeatureSettingsKey` | Feature-module lifecycle contract (#504): the service bundle every module constructor takes first, the `onload`/`onunload` + optional proposal-hook-slot interface `modules/registry.ts` drives, and the settings-key union that gates load. Type-only imports (`obsidian` `Plugin`, `../settings`, `../commands` `CommandRegistrar`); no runtime code |
 | `transcript-cache.ts` | `TranscriptCache`, `canonicalMediaUrl`, `transcriptCacheKey`, `CachedTranscript`, `TranscriptCacheEntry`, `TranscriptCacheOptions` | Persistent media-URL transcript store (#488) at `.synapse/transcript-cache.json`, keyed by canonical URL + time range. Consumed by `transcription/url-transcription.ts` (router read-through/write-through via the `TranscriptStore` slice), constructed once in `main.ts` (`SynapsePlugin.transcriptCache`), cleared from `video/settings-section.ts`. Imports `url-detector`, `json-utils`, `file-utils` (`ensureFolder`), `redact` |
 | `transcript-cache.test.ts` | Tests | Canonicalization, key/time-range separation, round-trip persistence, LRU entry + char eviction, corrupt-file tolerance, write-failure tolerance |
 | `tweet-fetcher.ts` | `fetchTweetContent`, `isTwitterUrl`, `TweetContent` | Twitter/X.com tweet fetching with oEmbed → fxtwitter → vxtwitter fallback chain |
@@ -485,9 +505,9 @@ function scoreLyricsContent(content: string): number
 | `untrusted-content.test.ts` | Tests | Fence/sanitization tests |
 | `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag |
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
-| `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:337`) |
+| `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:285`) |
 | `settings-merge.test.ts` | Tests | Merge semantics + pollution-key tests |
-| `data-folder-migration.ts` | `migrateDataFolder`, `LEGACY_DATA_FOLDER`, `DATA_FOLDER` | One-time `.auto-notes/` -> `.synapse/` data-folder rename via `DataAdapter` (skip when absent, warn when both exist, `notifications.success`/`error` outcome). Imports `redact`, `notifications` (type). Called once at `main.ts:66` |
+| `data-folder-migration.ts` | `migrateDataFolder`, `LEGACY_DATA_FOLDER`, `DATA_FOLDER` | One-time `.auto-notes/` -> `.synapse/` data-folder rename via `DataAdapter` (skip when absent, warn when both exist, `notifications.success`/`error` outcome). Imports `redact`, `notifications` (type). Called once at `main.ts:50` |
 | `data-folder-migration.test.ts` | Tests | Rename / skip / conflict / failure paths |
 | `json-utils.ts` | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` | Type-safe JSON helpers. `parseJson` returns `unknown` (not `any`). `readJsonFile` reads via `DataAdapter`, validates with a type guard, returns `null` on any failure |
 | `node-loader.ts` | `loadNodeModules`, `assertDesktop`, `shellEnv`, `DesktopOnlyError`, `NodeModules` | Single sanctioned entry point for desktop-only Node.js builtins (os/path/fs/child_process). Lazy-loads inside function body so importing never triggers a module load on mobile. `shellEnv()` builds a narrowed subprocess environment with PATH augmented for common tool install locations |
@@ -602,20 +622,21 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 |---------|---------|
 | `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `redactSecrets` | ai-client (safeRequest error bodies + API-error wrap), credential-validator (probe error messages), credential-field (Test-button validation-catch chip message), update-checker (fetch-failure detail), notifications (`error`/`notifyError`/operation-error toast + console paths) |
-| `redactError` | main (settings-migration console sink only, `main.ts:333`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, image/preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
+| `redactError` | main (settings-migration console sink only, `main.ts:281`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, image/preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
 | `wrapUntrusted` | elaboration/proposer (fetched-link content + image-analysis prompt fencing) |
 | `findAvailableVaultPath` | video/index (same-day re-download), title/index (duplicate "iterate" resolution, #408) |
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
-| `deepMergeSettings` | main (`loadSettings`, `main.ts:337`: migrated raw record over `DEFAULT_SETTINGS`) |
-| `migrateDataFolder` | main (`onload`, `main.ts:66`, right after `NotificationManager` construction) |
+| `deepMergeSettings` | main (`loadSettings`, `main.ts:285`: migrated raw record over `DEFAULT_SETTINGS`) |
+| `migrateDataFolder` | main (`onload`, `main.ts:50`, right after `NotificationManager` construction) |
 | `extractGeminiResponseText` | ai-client (callGemini), audio/transcriber (Gemini provider) |
 | `arrayBufferToBase64` / `base64EncodedLength` | image/preprocess (re-exports), audio/transcriber (Gemini inline audio), elaboration/image-analyzer |
 | `classifyNetworkError` / `describeNetworkError` | audio/transcriber (retry gating + failure disclosure) |
-| `NotificationManager` | all feature modules (injected via constructor) |
-| `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive, rem (all injected via constructor) |
-| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:72`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via constructor), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
+| `NotificationManager` | all feature modules (injected via `ModuleDeps`) |
+| `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive, rem (all injected via `ModuleDeps`) |
+| `ModuleDeps` / `FeatureModule` / `FeatureSettingsKey` | every feature module (`implements FeatureModule`, `constructor(deps: ModuleDeps, ...)`), modules/registry (`FeatureModules` mapped over `FeatureSettingsKey`; construct/load/unload loops), main (builds the ONE `ModuleDeps`, `main.ts:60-67`), `__test-utils__/mock-factories.makeModuleDeps` |
+| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:56`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via `ModuleDeps`), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
 | `classifyUrl` / `extractUrls` | summarize, enrichment, intake (URL routing) |
 | `detectPlatform` / `isSupportedUrl` | video/index, transcription/, summarize (platform gating) |

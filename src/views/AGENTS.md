@@ -173,15 +173,15 @@ Sequential because organize accepts may move files. Mutually exclusive via `acce
 
 ## Data Flow
 
-Input: `refreshUnifiedView(workspace, sources)` (`view-activation.ts:49`) reads every `UnifiedViewSources` reader into `UnifiedItem[]` plus incomplete checkpoints, then calls `setItems()` / `setCheckpoints()` on each open unified leaf. The `UnifiedViewSources` instance is built in `main.ts:126-134` (six `getPendingProposals()` readers + `checkpointManager.listIncomplete()`).
+Input: `refreshUnifiedView(workspace, sources)` (`view-activation.ts:49`) reads every `UnifiedViewSources` reader into `UnifiedItem[]` plus incomplete checkpoints, then calls `setItems()` / `setCheckpoints()` on each open unified leaf. The `UnifiedViewSources` instance is built in `main.ts:109-117` (six `getPendingProposals()` readers + `checkpointManager.listIncomplete()`).
 
 Processing: view stores items, re-renders. User clicks invoke `UnifiedViewCallbacks` (proposal accept/reject) or `SynapseActionsCallbacks.runAction` (command dispatch via `runRegisteredCommand`). The view holds no proposal store and never touches `app`/vault for state — only `openNote()` opens files in the editor.
 
-Output: callbacks return `Promise<void>`; modules mutate the vault/proposal store and re-trigger `refreshUnifiedView` through their `onViewRefreshNeeded` slot (`main.ts:190-193`). `SynapseActionsView.refresh()` re-renders on `active-leaf-change` to enable/disable `context:'note'` buttons.
+Output: callbacks return `Promise<void>`; modules mutate the vault/proposal store and re-trigger `refreshUnifiedView` through their `onViewRefreshNeeded` slot (`main.ts:173-176`). `SynapseActionsView.refresh()` re-renders on `active-leaf-change` to enable/disable `context:'note'` buttons.
 
 ## Wiring (main.ts)
 
-`main.ts:160-176` registers `UNIFIED_VIEW_TYPE` with the third `notifications` arg; the checkpoint callbacks delegate to `CheckpointRecoveryModule.discard/resume` (`src/checkpoints`):
+`main.ts:143-159` registers `UNIFIED_VIEW_TYPE` with the third `notifications` arg; the checkpoint callbacks delegate to `CheckpointRecoveryModule.discard/resume` (`src/checkpoints`):
 
 ```ts
 new UnifiedProposalView(leaf, {
@@ -203,7 +203,7 @@ new UnifiedProposalView(leaf, {
 }, this.notifications);
 ```
 
-`main.ts:179-183` registers `SYNAPSE_ACTIONS_VIEW_TYPE`; `main.ts:184-187` calls `refresh()` on `active-leaf-change`:
+`main.ts:162-166` registers `SYNAPSE_ACTIONS_VIEW_TYPE`; `main.ts:167-170` calls `refresh()` on `active-leaf-change`:
 
 ```ts
 new SynapseActionsView(leaf, {
@@ -213,7 +213,7 @@ new SynapseActionsView(leaf, {
 });
 ```
 
-Activation entry points: ribbon `synapse` and every module's `onOpenProposalView` slot call `activateUnifiedView` (`main.ts:136-137`, `:190-193`, `:235`); command `review-proposals` (`main.ts:241-243`); ribbon `synapse-actions` calls `activateSynapseActionsView` (`main.ts:237-239`).
+Activation entry points: ribbon `synapse` and every module's `onOpenProposalView` slot call `activateUnifiedView` (`main.ts:123-124`, `:173-176`, `:207`); command `review-proposals` (`main.ts:213-215`); ribbon `synapse-actions` calls `activateSynapseActionsView` (`main.ts:209-211`).
 
 ## Dependencies
 
