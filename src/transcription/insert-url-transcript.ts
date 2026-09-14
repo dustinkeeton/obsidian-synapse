@@ -1,4 +1,4 @@
-import type { App } from 'obsidian';
+import type { App, TFile } from 'obsidian';
 import { findMatchingRule } from '../shared';
 import type { NoteOperationQueue, NotificationManager, TimeRange } from '../shared';
 import type { SynapseSettings } from '../settings';
@@ -74,4 +74,30 @@ export async function insertUrlTranscript(
 	}, {
 		onWait: () => op.update(`Waiting for another Synapse operation on ${activeFile.basename}`),
 	});
+}
+
+/** Intake variant (#112/#184): append the transcript to `file` under an operation toast; rethrows so the note stays un-stamped/retriable. */
+export async function appendUrlTranscript(
+	deps: Pick<InsertUrlTranscriptDeps, 'app' | 'getSettings' | 'notifications' | 'router'>,
+	url: string,
+	file: TFile
+): Promise<void> {
+	const op = deps.notifications.startOperation(
+		'Transcribing shared URL...',
+		`intake-url-${file.path}`
+	);
+	try {
+		const result = await deps.router.transcribe(url, {
+			update: (msg) => op.update(msg),
+		});
+		const block = buildUrlTranscriptBlock(
+			result, url, deps.getSettings().video.embedInNote
+		);
+		await deps.app.vault.process(file, (data) => data + block);
+		op.finish('Transcript added');
+	} catch (error) {
+		const msg = error instanceof Error ? error.message : String(error);
+		op.error(`URL transcription failed -- ${msg}`);
+		throw error;
+	}
 }

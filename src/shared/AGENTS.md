@@ -8,7 +8,7 @@ Cross-cutting base layer used by all feature modules: AI client, secret redactio
 
 Canonical homes (re-exported elsewhere for back-compat — import from the `shared` barrel, never an internal file):
 - `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) — moved here from `src/video/` to break the former shared⇄video import cycle; `video` re-exports for back-compat.
-- `redact.ts` (`redactSecrets`, `redactError`) — single source of truth for API-key/token redaction; `ai-client.ts` re-exports `redactSecrets` (only). `redactSecrets` is consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts` (Test-button validation-catch message), `update-checker.ts` (fetch-failure detail), and `notifications.ts` (operation-error + notifyError paths). `redactError(value)` renders a caught error to a redacted, log-safe string (prefers `.stack`, falls back to `name: message`, then `redactSecrets`); it is the one sanctioned way to log a raw error, routed through by every raw-error console sink (`main.ts` startup/migration/onboarding/checkpoint paths, `update-checker.ts` unexpected-error catch, audio, rem/semantic-matcher, elaboration/image-analyzer, elaboration/proposer, image/preprocess, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, shared/fire-and-forget). Previously `ai-client` and the former `api-utils.notifyError` each kept inline copies that drifted (the `notifyError` copy lacked the Google `AIza` pattern). The console-sink contract is lint-enforced (#418) by the custom type-aware rule `synapse/no-unredacted-console` (`scripts/eslint-rules/no-unredacted-console.mjs`, scoped in `eslint.config.mjs` to shipped `src/**/*.ts`, excluding tests/mocks/test-utils): every value reaching `console.*` must be statically string-like or routed through `redactError`/`redactSecrets`.
+- `redact.ts` (`redactSecrets`, `redactError`) — single source of truth for API-key/token redaction; `ai-client.ts` re-exports `redactSecrets` (only). `redactSecrets` is consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts` (Test-button validation-catch message), `update-checker.ts` (fetch-failure detail), and `notifications.ts` (operation-error + notifyError paths). `redactError(value)` renders a caught error to a redacted, log-safe string (prefers `.stack`, falls back to `name: message`, then `redactSecrets`); it is the one sanctioned way to log a raw error, routed through by every raw-error console sink (`main.ts` settings-migration catch, `shared/data-folder-migration.ts`, `onboarding/onboarding.ts` first-run catch, `checkpoints/checkpoint-recovery.ts`, `update-checker.ts` unexpected-error catch, `transcript-cache.ts`, audio, intake, rem/semantic-matcher, elaboration/image-analyzer, elaboration/proposer, image/preprocess, transcription/caption-strategy + youtube-captions, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, shared/fire-and-forget). Previously `ai-client` and the former `api-utils.notifyError` each kept inline copies that drifted (the `notifyError` copy lacked the Google `AIza` pattern). The console-sink contract is lint-enforced (#418) by the custom type-aware rule `synapse/no-unredacted-console` (`scripts/eslint-rules/no-unredacted-console.mjs`, scoped in `eslint.config.mjs` to shipped `src/**/*.ts`, excluding tests/mocks/test-utils): every value reaching `console.*` must be statically string-like or routed through `redactError`/`redactSecrets`.
 - `encoding.ts` (`arrayBufferToBase64`, `base64EncodedLength`) — base64 helpers; `image/preprocess.ts` re-exports them so audio + image + elaboration share one implementation.
 - `title-detector.ts` (`isUntitled`, `isGenericTitle`) — note-title predicates; lives here (not in `title/`) so non-title features can reuse them without a cross-feature import. `title/title-detector.ts` re-exports `isUntitled`.
 
@@ -219,7 +219,7 @@ class NoteOperationQueue {
   get size(): number                  // number of paths with queued/running operations (diagnostics/tests)
   run<T>(notePath: string, operation: () => Promise<T>, options?: NoteOperationOptions): Promise<T>
 }
-// One instance per plugin (created in main.ts:118), injected into every module that mutates a note after an AI call.
+// One instance per plugin (created in main.ts:72), injected into every module that mutates a note after an AI call.
 // Chain entries never reject (built from internal resolve-only promises), so a failing operation cannot poison a key;
 // `run` rejections still propagate to the caller and still release the slot (note-operation-queue.ts:85).
 
@@ -326,6 +326,14 @@ const SETTINGS_MIGRATIONS: SettingsMigration[]         // ordered chain: v1 excl
 function readSettingsVersion(raw: Record<string, unknown> | null | undefined): number   // 0 when absent/non-numeric
 function migrateSettings(raw: Record<string, unknown>, fromVersion: number): Record<string, unknown>   // clones, replays migrations with to > fromVersion
 
+// settings-merge.ts:10 — persisted settings over defaults; nested records recurse, arrays/primitives overwrite; drops __proto__/constructor/prototype keys; NOT a deep clone (untouched nested defaults shared by reference)
+function deepMergeSettings<T extends object>(target: T, source: Record<string, unknown>): T
+
+// data-folder-migration.ts:5 / :6 / :13 — one-time `.auto-notes/` -> `.synapse/` rename at load (main.ts:66); never throws
+const LEGACY_DATA_FOLDER = '.auto-notes'
+const DATA_FOLDER = '.synapse'
+function migrateDataFolder(adapter: DataAdapter, notifications: NotificationManager): Promise<void>   // absent old folder = silent return; both present = console.warn, no rename; failure = console.error(redactError) + notifications.error
+
 // json-utils.ts
 function parseJson(text: string): unknown                                         // throws SyntaxError on malformed input
 function isRecord(v: unknown): v is Record<string, unknown>
@@ -412,7 +420,7 @@ function scoreLyricsContent(content: string): number
 | File | Exports | Purpose |
 |------|---------|---------|
 | `ai-client.ts` | `AIClient`, `AIRequestOptions`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support. `chat()`/`complete()` accept `opts?: AIRequestOptions` and wrap a private `dispatch()` with an opt-in per-instance LRU response cache (max 50) + in-flight coalescing (#397; key via `contentKey`); `safeRequest`, `resolveModelId`, `cacheGet`/`cacheSet`, `to*Content` (internal). Imports `redactSecrets` from `redact.ts`, `contentKey` from `hash-utils.ts` |
-| `redact.ts` | `redactSecrets`, `redactError` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). `redactSecrets` consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts`, `update-checker.ts`, `notifications.ts`; `redactError(value)` renders a caught error to a redacted log-safe string (stack ?? `name: message` -> redactSecrets) for every raw-error console sink (main, update-checker, audio, rem, elaboration x2, image/preprocess, clipboard catches in notifications + video settings, fire-and-forget). Behavior covered by `redact.test.ts` |
+| `redact.ts` | `redactSecrets`, `redactError` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). `redactSecrets` consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts`, `update-checker.ts`, `notifications.ts`; `redactError(value)` renders a caught error to a redacted log-safe string (stack ?? `name: message` -> redactSecrets) for every raw-error console sink (main, data-folder-migration, onboarding, checkpoints, update-checker, transcript-cache, audio, intake, rem, elaboration x2, image/preprocess, transcription x2, clipboard catches in notifications + video settings, fire-and-forget). Behavior covered by `redact.test.ts` |
 | `redact.test.ts` | Tests | Redaction pattern tests |
 | `encoding.ts` | `arrayBufferToBase64`, `base64EncodedLength` | Base64 encode + exact encoded-length calc; canonical home reused by audio/image/elaboration |
 | `encoding.test.ts` | Tests | Encoding tests |
@@ -479,6 +487,10 @@ function scoreLyricsContent(content: string): number
 | `untrusted-content.test.ts` | Tests | Fence/sanitization tests |
 | `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag |
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
+| `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:337`) |
+| `settings-merge.test.ts` | Tests | Merge semantics + pollution-key tests |
+| `data-folder-migration.ts` | `migrateDataFolder`, `LEGACY_DATA_FOLDER`, `DATA_FOLDER` | One-time `.auto-notes/` -> `.synapse/` data-folder rename via `DataAdapter` (skip when absent, warn when both exist, `notifications.success`/`error` outcome). Imports `redact`, `notifications` (type). Called once at `main.ts:66` |
+| `data-folder-migration.test.ts` | Tests | Rename / skip / conflict / failure paths |
 | `json-utils.ts` | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` | Type-safe JSON helpers. `parseJson` returns `unknown` (not `any`). `readJsonFile` reads via `DataAdapter`, validates with a type guard, returns `null` on any failure |
 | `node-loader.ts` | `loadNodeModules`, `assertDesktop`, `shellEnv`, `DesktopOnlyError`, `NodeModules` | Single sanctioned entry point for desktop-only Node.js builtins (os/path/fs/child_process). Lazy-loads inside function body so importing never triggers a module load on mobile. `shellEnv()` builds a narrowed subprocess environment with PATH augmented for common tool install locations |
 | `settings-section.ts` | `createSettingsSectionContext`, `isSectionCollapsed`, `persistCollapse`, `SettingsSectionContext`, `SettingsSectionContextOptions`, `SectionRegistryEntry`, `FeatureToggleListener` | Shared accordion plumbing for the settings tab (#243). Feature renderers receive a `SettingsSectionContext` and call `featureSection()`/`configSection()` to build accordions without importing `settings-tab.ts` |
@@ -592,18 +604,20 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 |---------|---------|
 | `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `redactSecrets` | ai-client (safeRequest error bodies + API-error wrap), credential-validator (probe error messages), credential-field (Test-button validation-catch chip message), update-checker (fetch-failure detail), notifications (`error`/`notifyError`/operation-error toast + console paths) |
-| `redactError` | main (settings-migration, first-run-onboarding, incomplete-checkpoint, data-folder-migration console sinks), update-checker (unexpected-error catch), elaboration/proposer, elaboration/image-analyzer, audio/index, rem/semantic-matcher, image/preprocess (downscale fallback), notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
+| `redactError` | main (settings-migration console sink only, `main.ts:333`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, image/preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
 | `wrapUntrusted` | elaboration/proposer (fetched-link content + image-analysis prompt fencing) |
 | `findAvailableVaultPath` | video/index (same-day re-download), title/index (duplicate "iterate" resolution, #408) |
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
+| `deepMergeSettings` | main (`loadSettings`, `main.ts:337`: migrated raw record over `DEFAULT_SETTINGS`) |
+| `migrateDataFolder` | main (`onload`, `main.ts:66`, right after `NotificationManager` construction) |
 | `extractGeminiResponseText` | ai-client (callGemini), audio/transcriber (Gemini provider) |
 | `arrayBufferToBase64` / `base64EncodedLength` | image/preprocess (re-exports), audio/transcriber (Gemini inline audio), elaboration/image-analyzer |
 | `classifyNetworkError` / `describeNetworkError` | audio/transcriber (retry gating + failure disclosure) |
 | `NotificationManager` | all feature modules (injected via constructor) |
 | `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive, rem (all injected via constructor) |
-| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:118`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via constructor), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
+| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:72`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via constructor), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
 | `classifyUrl` / `extractUrls` | summarize, enrichment, intake (URL routing) |
 | `detectPlatform` / `isSupportedUrl` | video/index, transcription/, summarize (platform gating) |

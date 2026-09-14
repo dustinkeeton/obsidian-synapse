@@ -46,3 +46,13 @@ export const SYNAPSE_PIPELINE: PipelinePhase[] = [
 	{ key: 'tidy', label: 'Tidy' },
 	{ key: 'organize', label: 'Organize' },
 ];
+
+/** Feature whose completed operation chains enrichment/title checks (#483 post-op wiring). */
+export type PostOpSource = 'elaboration' | 'audio' | 'video' | 'image' | 'summarize' | 'deep-dive';
+
+/** Enrichment trigger label; mirrors `EnrichmentTrigger` minus `'manual'` (pipeline never imports feature modules). */
+export type PostOpTrigger = 'elaboration' | 'transcription' | 'summarization' | 'deep-dive';
+
+export type PostOpHook = (filePath: string) => void;
+
+export type AutoOrganizeTrigger = 'deep-dive' | 'summarize';
