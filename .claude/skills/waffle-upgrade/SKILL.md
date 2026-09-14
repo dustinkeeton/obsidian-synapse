@@ -48,7 +48,9 @@ The pins move themselves from there on: a successful `upgrade` rewrites a releas
 `waffle.toolkitRef` / `doctor.toolkitRef` in `.waffle/waffle.yaml` to the toolkit that rendered,
 before the render — so the new pin lands in the skills and the doctor workflow in the same run.
 An **unpinned** key is left floating and an absent one is never introduced; that is deliberate,
-not a miss.
+not a miss. An absent `doctor.toolkitRef` needs no introducing: since #461 its stack default
+is pinned to the release that rendered the lock (`github:dustinkeeton/wafflestack#vX.Y.Z`),
+so the re-render alone moves the workflow's pin.
 
 ## Review the diff (the point of this skill)
 

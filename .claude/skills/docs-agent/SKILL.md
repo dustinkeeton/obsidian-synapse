@@ -55,7 +55,8 @@ When feature directories do exist, each file contains:
 3. Use `file.ts:42` format for source references (line number after the colon — harnesses render it as a clickable link)
 4. No markdown emphasis (bold/italic) in structured sections
 5. Frontmatter with `last-updated` timestamp (YYYY-MM-DD)
-6. Keep each file under 300 lines — split if larger
+6. Keep each file's prose under 300 lines — language-tagged signature fences are
+   excluded from the count; split if the prose grows larger
 
 ## Type-signature conventions
 

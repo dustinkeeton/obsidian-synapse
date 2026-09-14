@@ -9,11 +9,11 @@ argument-hint: "[optional focus area]"
 
 Ask every **installed** agent for a quick, role-scoped read on the codebase, then print one compact digest. This is a **read-only pulse**: a single parallel wave of agents, each reporting from its own seat — no fixes, no file edits, no board writes, no task chains.
 
-Unlike `audit` and `docs` (fixed rosters run through a serial task chain), standup **discovers its roster at runtime** and fans out **once, with no barriers**. It reuses their spawn-and-collect scaffold minus the task dependencies.
+Unlike `audit` and `docs` (fixed rosters run through a serial task chain), standup **discovers its roster at runtime** and fans out **once, with no barriers**. It follows the `audit` skill's *Spawn-and-collect contract* minus the task chain — one wave, no barriers.
 
 ## Step 1: Enumerate the roster (dynamic — never hard-coded)
 
-Glob the harness **agents** directory — the `agents/` directory beside `.claude/skills` (take `.claude/skills`, swap the trailing `skills` segment for `agents`, and match `*.md`). Under Claude that resolves to `.claude/agents/*.md`.
+Glob the harness **agents** directory — the `agents/` directory beside `.claude/skills` (take `.claude/skills`, swap the trailing `skills` segment for `agents`, and match `*.md`). Under Claude that resolves to `.claude/agents/*.md`; under codex and agents-dir, to `.agents/agents/*.md`.
 
 For each matched file, parse the YAML frontmatter and capture:
 
@@ -26,7 +26,7 @@ Sort the files alphabetically by `name`; this is the **roster order** used for b
 
 ## Step 2: Round-up — one parallel read-only wave
 
-Spawn **every** rostered agent in a **single message** — one `Agent` call each, all in that one message — so they run concurrently as one wave. Do **not** create a team and do **not** create tasks: this skill has no coordination barriers and no side effects. (`run_in_background: true` is fine for a large roster; the point is that the whole wave goes out at once.)
+Spawn **every** rostered agent in a **single message** — one `Agent` call each, all in that one message — so they run concurrently as one wave (the contract's spawn step, with no chain behind it). Do **not** create a team and do **not** create tasks: this skill has no coordination barriers and no side effects. (`run_in_background: true` is fine for a large roster; the point is that the whole wave goes out at once.)
 
 Give each agent `subagent_type: "<name>"` and this prompt, filling in `<name>`, `<description>`, and the focus clause:
 
@@ -41,7 +41,7 @@ Give each agent `subagent_type: "<name>"` and this prompt, filling in `<name>`, 
 
 **Focus clause** — when `$ARGUMENTS` is provided, append this line to the prompt: `> - Focus your read on: $ARGUMENTS (still strictly within your role).` Otherwise omit it.
 
-**Collect via return values.** Most specialists are "silent" — they carry no `SendMessage`/`TaskUpdate` tools — so never wait on a message or a task update from them. Each agent's **final message is its report**: read it directly from the returned tool result as the agent completes.
+**Collect via return values** — the contract's collection clause, with no report-back leg. Most specialists are "silent" — they carry no `SendMessage`/`TaskUpdate` tools — so never wait on a message or a task update from them. Each agent's **final message is its report**: read it directly from the returned tool result as the agent completes.
 
 ## Step 3: Digest
 

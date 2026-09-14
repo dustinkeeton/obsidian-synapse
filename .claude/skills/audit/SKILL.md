@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Run a full codebase audit chain — architecture, security, Obsidian submission-guideline compliance, machine docs, human docs, then security again. Spawns six named agents consecutively, chained on task dependencies, and reports results.
+description: Run a full codebase audit chain — architecture, security, Obsidian submission-guideline compliance, then the docs pipeline by invoking the `docs` skill, then security again. Spawns four named agents consecutively, chained on task dependencies, and reports results.
 disable-model-invocation: true
 argument-hint: [optional focus area]
 ---
@@ -9,20 +9,28 @@ argument-hint: [optional focus area]
 
 Run the full audit pipeline in consecutive order. Each agent audits the codebase and (where its role grants edit tools) implements fixes before the next one starts; report-only agents deliver findings for the user or a later agent to fix.
 
+The documentation passes are **not this skill's to run**. A skill is the unit of work and orchestration is only sequencing: this chain **invokes the `docs` skill** for its documentation step and never re-spawns `docs-agent` or `docs-human` itself. The `docs` skill owns its own pipeline — a read-only architecture change report, then `docs-agent` fed by that report, then `docs-human` — so nothing about the doc passes is wired here.
+
 ## Chain Order
 
 1. **lead-engineer** — Audit and improve codebase structure (module patterns, file organization, naming, dependency rules, import paths)
 2. **security-engineer** (pass 1) — Full security audit per the security-audit skill checklist
 3. **plugin-architect** (Obsidian compliance) — Verify the codebase still meets the Obsidian community plugin submission guidelines (manifest correctness, lifecycle cleanup, no internal/deprecated APIs, DOM safety, mobile/`isDesktopOnly` accuracy, command & UI-copy conventions). Implement fixes.
-4. **docs-agent** — Create/update the machine docs (a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way) optimized for LLM consumption
-5. **docs-human** — Create/update the human docs (`DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root) for human stakeholders
-6. **security-engineer** (pass 2) — Re-audit the entire codebase including all changes made by earlier agents. Ensure no new issues were introduced.
+4. **`docs` skill** (invoked, not spawned) — Refresh the machine docs and the human docs. The skill runs its own three-step pipeline: a read-only architecture change report, then `docs-agent`, then `docs-human`, each step informed by the one before.
+5. **security-engineer** (pass 2) — Re-audit the entire codebase including all changes made by earlier agents and by the docs pipeline. Ensure no new issues were introduced.
+
+## Spawn-and-collect contract
+
+Every orchestrator in this stack spawns and collects agents the same way — this chain, `autopilot`'s gate loops and audit gate, `standup`'s one-wave round-up. This section is that scaffold's **one home**: the others cite it by heading and state only what differs (a task chain here; per-round persistence in `autopilot`; no barriers in `standup`). An invoked skill's spawns belong to that skill — the `docs` skill's, for instance, are spawned, collected and torn down by the `docs` skill's own prose and are never part of the invoker's roster or teardown.
+
+1. **Named spawn, name as address.** Every spawn carries `name:`. The name is the agent's address — `SendMessage(to:)` reaches it and `TaskStop(task_id:)` stops it — so the orchestrator holds nothing else to talk to or stop an agent it started.
+2. **Collection.** Each agent reports back to the orchestrator with `SendMessage`. An agent whose toolset lacks `SendMessage`/`TaskUpdate` finishes silently — its returned tool result is its report — and the orchestrator verifies the work directly and does any task bookkeeping itself. The orchestrator never waits on a message or a task update from a silent specialist.
+3. **Teardown is shutdown-then-stop.** At every exit — success, cap reached, a red round, an error — the orchestrator sends `shutdown_request` and then calls `TaskStop`, for each agent it actually spawned and only those. The request is the courtesy; the stop is the guarantee. A requested agent can go idle but stay alive, so the request alone never proves the agent is gone; the stop terminates it and is safe on an agent that has already exited. Wrap the run so an error still reaches the teardown — a leaked agent is never acceptable.
+4. **Flat-roster fallback.** If a spawn is rejected because the roster is flat (an agent cannot name its own spawns — only the main conversation loop can), omit `name:` and address the agent by the `agentId` the spawn returns. `SendMessage` and `TaskStop` both accept it in place of a name.
 
 ## Execution Steps
 
-The chain is **six named agents**, spawned one at a time and chained on task dependencies. There is no team to create or delete: the session has a **single implicit team**, and the `Agent` tool's `team_name` parameter is deprecated and ignored. An agent's `name:` is its address — `SendMessage(to: "<name>")` reaches it and `TaskStop(task_id: "<name>")` stops it.
-
-> **If a spawn is rejected because the roster is flat** (an agent cannot name its own spawns — only the main conversation loop can), omit `name:` and address the agent by the `agentId` the spawn returns. `SendMessage` and `TaskStop` both accept it in place of a name.
+The chain is **four named agents** plus one invoked skill, run one at a time and chained on task dependencies. There is no team to create or delete: the session has a **single implicit team**, and the `Agent` tool's `team_name` parameter is deprecated and ignored. An agent's `name:` is its address — `SendMessage(to: "<name>")` reaches it and `TaskStop(task_id: "<name>")` stops it. Spawning, collection, teardown and the flat-roster fallback follow the [Spawn-and-collect contract](#spawn-and-collect-contract) above.
 
 ### 1. Create the Tasks, Then Chain Them
 
@@ -32,16 +40,14 @@ The chain is **six named agents**, spawned one at a time and chained on task dep
 task1 = TaskCreate(subject: "Architecture audit", description: "Audit and improve codebase structure")
 task2 = TaskCreate(subject: "Security pass 1",    description: "Full security audit per the security-audit checklist")
 task3 = TaskCreate(subject: "obsidian compliance", description: "Verify the codebase still meets the Obsidian community plugin submission guidelines (manifest correctness, lifecycle cleanup, no internal/deprecated APIs, DOM safety, mobile/`isDesktopOnly` accuracy, command & UI-copy conventions). Implement fixes.")
-task4 = TaskCreate(subject: "Machine docs",       description: "Create/update the machine docs")
-task5 = TaskCreate(subject: "Human docs",         description: "Create/update the human docs")
-task6 = TaskCreate(subject: "Security pass 2",    description: "Re-audit including all changes made by earlier agents")
+task4 = TaskCreate(subject: "Documentation",      description: "Invoke the docs skill — change report, machine docs, human docs")
+task5 = TaskCreate(subject: "Security pass 2",    description: "Re-audit including all changes made by earlier agents")
 
 # addBlockedBy is a TaskUpdate parameter, not a TaskCreate one — and the key is taskId, not id
 TaskUpdate(taskId: task2.id, addBlockedBy: [task1.id])
 TaskUpdate(taskId: task3.id, addBlockedBy: [task2.id])
 TaskUpdate(taskId: task4.id, addBlockedBy: [task3.id])
 TaskUpdate(taskId: task5.id, addBlockedBy: [task4.id])
-TaskUpdate(taskId: task6.id, addBlockedBy: [task5.id])
 ```
 
 ### 2. Spawn Agents Sequentially
@@ -78,22 +84,11 @@ Agent(
 TaskUpdate(taskId: task3.id, status: "completed")
 ```
 
-```
-Agent(
-  subagent_type: "docs-agent",
-  name: "docs-agent",
-  prompt: <docs-agent prompt>
-)
-TaskUpdate(taskId: task4.id, status: "completed")
-```
+**Documentation (Task 4) — invoke, do not spawn.** Invoke the `docs` skill (`.claude/skills/docs/SKILL.md`) and run it to completion exactly as it documents itself: its step 1 is a **read-only** architecture change report, its step 2 hands that report to `docs-agent`, its step 3 runs `docs-human` after `docs-agent` completes. Pass the focus area along (see [Focus Area](#focus-area)). Do not spawn `docs-agent` or `docs-human` from this chain and do not thread anything between them — the `docs` skill owns that wiring. Its spawns are its own: they finish and return, and they are not part of this chain's named roster or its teardown. That the `docs` skill spawns `lead-engineer` a second time is by design — pass 1 above *remediates* structure; the docs pipeline's pass only *reports* what changed so the doc writers are informed.
 
 ```
-Agent(
-  subagent_type: "docs-human",
-  name: "docs-human",
-  prompt: <docs-human prompt>
-)
-TaskUpdate(taskId: task5.id, status: "completed")
+# After the docs skill completes:
+TaskUpdate(taskId: task4.id, status: "completed")
 ```
 
 ```
@@ -102,36 +97,32 @@ Agent(
   name: "security-final",
   prompt: <security pass 2 prompt>
 )
-TaskUpdate(taskId: task6.id, status: "completed")
+TaskUpdate(taskId: task5.id, status: "completed")
 ```
 
 ### 3. Summary and Teardown
 
-After all 6 complete, present the user a consolidated summary table of findings and fixes per agent, then tear the agents down:
+After all 5 complete, present the user a consolidated summary table of findings and fixes per step, then tear the named agents down:
 
 ```
 # Politely ask each agent to wind down…
 SendMessage(to: "architecture-pass", message: {type: "shutdown_request", reason: "Audit chain complete"})
 SendMessage(to: "security-pass1",    message: {type: "shutdown_request", reason: "Audit chain complete"})
 SendMessage(to: "obsidian-compliance", message: {type: "shutdown_request", reason: "Audit chain complete"})
-SendMessage(to: "docs-agent",        message: {type: "shutdown_request", reason: "Audit chain complete"})
-SendMessage(to: "docs-human",        message: {type: "shutdown_request", reason: "Audit chain complete"})
 SendMessage(to: "security-final",    message: {type: "shutdown_request", reason: "Audit chain complete"})
 
 # …then confirm the kill.
 TaskStop(task_id: "architecture-pass")
 TaskStop(task_id: "security-pass1")
 TaskStop(task_id: "obsidian-compliance")
-TaskStop(task_id: "docs-agent")
-TaskStop(task_id: "docs-human")
 TaskStop(task_id: "security-final")
 ```
 
-**Teardown is shutdown-then-stop.** `shutdown_request` is the polite first step, and an agent that honours it terminates cleanly. It is **not** reliable on its own — a requested agent can go idle but stay alive, still emitting idle notifications. `TaskStop(task_id: "<agent-name>")` is what actually terminates it, and it is safe to call on an agent that has already exited. Never treat a sent `shutdown_request` as proof the agent is gone; always follow through. There is nothing else to tear down — with a single implicit team per session, no team object is created and none is deleted.
+**Teardown is shutdown-then-stop.** `shutdown_request` is the polite first step, and an agent that honours it terminates cleanly. It is **not** reliable on its own — a requested agent can go idle but stay alive, still emitting idle notifications. `TaskStop(task_id: "<agent-name>")` is what actually terminates it, and it is safe to call on an agent that has already exited. Never treat a sent `shutdown_request` as proof the agent is gone; always follow through. There is nothing else to tear down — with a single implicit team per session, no team object is created and none is deleted, and the `docs` skill's own spawns are not this chain's to stop.
 
 ## Agent Prompts
 
-Each agent should:
+Each agent this chain spawns should:
 
 - Read its corresponding skill in `.claude/skills/` for standards and checklists
 - Read the full project source and root
@@ -141,6 +132,8 @@ Each agent should:
 - Mark its task as completed: `TaskUpdate(taskId: <task_id>, status: "completed")`
 
 If an agent's toolset lacks `SendMessage`/`TaskUpdate`, it finishes silently — verify its output directly and do the task bookkeeping yourself.
+
+The docs pipeline's agents take their prompts from the `docs` skill, not from here.
 
 ### Architecture (Task 1)
 
@@ -160,37 +153,36 @@ Verify the plugin still satisfies the Obsidian community plugin submission guide
 - **Repo hygiene**: `main.js` / `manifest.json` / `styles.css` are the published release artifacts; `LICENSE` and `README` present; no committed secrets; any network usage is disclosed in the README.
 Implement fixes directly (do not just report), then verify with `npx tsc --noEmit` and the production build. Respect the project's deliberate patterns (e.g. the type-only audio→video back-edge, desktop gating via `loadNodeModules`) — flag, don't "fix", anything that is intentional.
 
-### Docs-Agent (Task 4)
+### Security Pass 2 (Task 5)
 
-Create/update the machine docs — a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way. Machine-readable format and required sections per `.claude/skills/docs-agent/SKILL.md` (the skill defines the file set).
-
-### Docs-Human (Task 5)
-
-Create/update the human docs — `DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root — per `.claude/skills/docs-human/SKILL.md` (the skill defines the file set, sections, and guardrails). Derive from codebase and machine docs.
-
-### Security Pass 2 (Task 6)
-
-Repeat the full security audit checklist. Focus especially on: new files created by earlier agents, any content written to project root, ensuring no sensitive information was documented, all previous fixes still intact. Same fix-or-report behavior as pass 1.
+Repeat the full security audit checklist. Focus especially on: new files created by earlier agents and by the docs pipeline, any content written to project root, ensuring no sensitive information was documented, all previous fixes still intact. Same fix-or-report behavior as pass 1.
 
 ## Focus Area
 
-If `$ARGUMENTS` is provided, instruct all agents to pay special attention to that area while still performing their full audit. For example: `/audit data pipeline` focuses extra attention on the data-layer modules.
+If `$ARGUMENTS` is provided, instruct all agents to pay special attention to that area while still performing their full audit, and pass the same focus to the `docs` skill when you invoke it. For example: `/audit data pipeline` focuses extra attention on the data-layer modules.
+
+## Claude Workflow Variant
+
+The same chain ships as two staged Claude workflow scripts — opt-in syrup, Claude target only: `.claude/workflows/audit-stage-1.js` (architecture → security pass 1) and `.claude/workflows/audit-stage-2.js` (Obsidian compliance → the `docs` skill, step by step → security pass 2). Install both with `wafflestack install files/.claude/workflows/audit-stage-1.js files/.claude/workflows/audit-stage-2.js`. Every phase runs a section of this skill or of the `docs` skill; the scripts hold sequencing only, so the prose here stays the source of truth for what a pass does.
+
+**Sign-off happens between the two runs.** Stage 1 returns `{ stoppedAt, signOffRequired, architecture, security1 }` and sets `stoppedAt: "security-1"` when Critical/High findings remain — the gate after pass 1 above, as a hard stop. Present the findings; only after a human has reviewed them, run stage 2 with `args: { stage1: <stage-1 result>, signedOff: true }` (it refuses an un-signed-off stop). With no stop, run stage 2 with `args: { stage1: <stage-1 result> }`.
+
+This prose chain is the permanent fallback: workflows are paid-plan, version-gated and can be switched off, so a poured script may be inert — whenever the `Workflow` tool is unavailable, run the chain above.
 
 ## Summary Format
 
-After all agents complete, present:
+After all steps complete, present:
 
 ```
 ## Audit Complete
 
-| # | Agent | Findings | Fixes Applied |
-|---|-------|----------|---------------|
+| # | Step | Findings | Fixes Applied |
+|---|------|----------|---------------|
 | 1 | lead-engineer | N issues | brief list |
 | 2 | security-engineer (pass 1) | N issues | brief list |
 | 3 | plugin-architect (Obsidian compliance) | N issues | brief list or "clean" |
-| 4 | docs-agent | N files created/updated | file list |
-| 5 | docs-human | N files created/updated | file list |
-| 6 | security-engineer (pass 2) | N issues | brief list or "clean" |
+| 4 | `docs` skill (docs-agent, docs-human) | N files created/updated | file list |
+| 5 | security-engineer (pass 2) | N issues | brief list or "clean" |
 
 Build status: passing/failing
 ```

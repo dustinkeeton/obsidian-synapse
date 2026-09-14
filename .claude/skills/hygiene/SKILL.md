@@ -45,16 +45,15 @@ After a task produces changes, follow the `git-workflow` skill end-to-end:
    gh pr merge --auto --merge
    ```
 
-   `--auto` only arms when the repo has **"Allow auto-merge"** enabled *and* a required
-   status check is configured for the base branch (otherwise there is nothing for it to
-   wait on). If it cannot arm, report that the PR is open but auto-merge could not be
+   `--auto` only arms when all three hold: (1) the repo has **"Allow auto-merge"** enabled; (2) a **required status check** is configured on the base branch; (3) that check needs **branch protection or a ruleset**, which on **GitHub Free exists only for public repos** — a private repo needs GitHub Pro / Team / Enterprise. Otherwise `--auto` has nothing to wait on and the PR is left open-but-not-armed.
+   If it cannot arm, report that the PR is open but auto-merge could not be
    enabled — do **not** fall back to an immediate or `--admin` merge.
 
    On a **successful** arm, label the PR so there's a durable record that automation (not a
    human) queued the merge:
 
    ```bash
-   gh pr edit <PR#> --add-label "waffle-auto-merged"
+   gh pr edit <PR#> --add-label "waffle:auto-merged"
    ```
 
    Label **only** when `--auto` actually armed — the label means "auto-merge armed," not

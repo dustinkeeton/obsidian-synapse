@@ -10,7 +10,7 @@ description: >-
   agents". This is git + agent housekeeping — NOT source-code cleanup or
   refactoring.
 user-invocable: true
-argument-hint: "[git | agents | all]  [--yes]   — omit for a full preview-then-confirm sweep"
+argument-hint: "[git | agents | all]  [--yes]  [--run <checkpoint.json>]   — omit for a full preview-then-confirm sweep"
 ---
 
 # Clean Up
@@ -34,8 +34,10 @@ is to **show the full plan and wait for a yes** before touching anything.
 | `git` / `branches` / `worktrees` | Git scope only. |
 | `agents` / `tasks` | Harness scope only. |
 | `--yes` / `auto` | Skip the confirmation prompt. Intended for an **agent calling this right after it merges a PR** — not for interactive use unless the user explicitly says "no need to confirm". |
+| `--run <path>` | Sweep one `/delegate` run from an explicit checkpoint file instead of globbing the conventional `.claude/worktrees/.delegate/` directory — for a consumer that moved `delegate.checkpointDir`. Harness scope only. |
 
-`--yes` combines with a scope (e.g. `git --yes`).
+`--yes` combines with a scope (e.g. `git --yes`). `--run` does not combine with `--yes`: stopping agents
+is always confirm-first.
 
 ## Post-merge convention
 
@@ -128,7 +130,9 @@ name.
    ```
    TaskStop(task_id: "<id>")
    ```
-   Never stop a task that is `in_progress` — that would kill live work.
+   Never stop a task that is `in_progress` — that would kill live work. The one exception is a
+   task the [delegate sweep](#sweeping-delegate-runs-from-their-checkpoints) below has **reconciled**:
+   its work is proven landed, so the task is marked `completed` first and then stopped like any other.
 3. **Finished agents.** An agent is stopped **by name** — so first you need the names, and this is
    the step's real problem: **the harness has no agent enumeration.** There is no `AgentList`;
    `TaskList` lists *tasks*, not agents, and it will not show you an agent that never held one
@@ -141,7 +145,7 @@ name.
 
    | Run | Agent names | Where the record is |
    |---|---|---|
-   | `/delegate` | `issue-<N>-<agent-type>` | the run's checkpoint — `execution[]` carries each issue's `number` and `agent` |
+   | `/delegate` | `issue-<N>-<agent-type>` | the run's checkpoint — `execution[]` carries each issue's `number` and `agent`; procedure [below](#sweeping-delegate-runs-from-their-checkpoints) |
    | `/audit` | the fixed six-agent chain: `architecture-pass`, `security-pass1`, the compliance agent, `docs-agent`, `docs-human`, `security-final` | the skill's roster |
    | `/autopilot` | `qa-pr<N>`, `respond-qa-pr<N>`, `review-pr<N>`, `respond-rev-pr<N>` | keyed to the PR number |
 
@@ -161,6 +165,53 @@ name.
    record available; agents not swept"* — rather than reporting `Agents stopped: (none)`. The two
    read identically to a user and mean opposite things, and the second one is how a leaked agent
    goes unnoticed.
+
+### Sweeping `/delegate` runs from their checkpoints
+
+A `/delegate` run stands its own agents down in its Phase 5 teardown — **when Phase 5 runs**. A run
+interrupted before that (or an agent that crashed before its `TaskUpdate`) leaves its agents alive
+and its per-issue tasks `in_progress`, and nothing revisits that state. The checkpoint is the run
+record, so sweep from it:
+
+1. **Find the runs.** Checkpoints live one JSON document per run in the conventional
+   `.claude/worktrees/.delegate/` directory (delegate's `delegate.checkpointDir` default):
+   ```bash
+   ls .claude/worktrees/.delegate/*.json
+   ```
+   `--run <path>` names one checkpoint explicitly instead. No files → there is no run record;
+   report it that way (step 5). A `delegate-single-*` run is the single-issue fast path: it spawns
+   without a `name:` and creates no task, so its agent is **unsweepable** — list the run as such
+   rather than pretending it was cleaned.
+2. **Derive the candidates.** For each run, read `execution[]` and reconstruct
+   `issue-<number>-<agent>` per entry. One entry per line — name, `status`, `pr`, and whether the
+   `report` section exists:
+   ```bash
+   node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const e of c.execution??[])console.log(`issue-${e.number}-${e.agent}`,e.status,e.pr??"-",c.report?"reported":"unreported")' .claude/worktrees/.delegate/<runId>.json
+   ```
+   A run interrupted mid-Phase 4 has a `plan` but no `execution` section yet: take `number` and
+   `agent` from `plan.groups[].assignments[]` instead, and judge each by its `branch`'s PR
+   (`gh pr list --head <branch> --state all --json state -q '.[0].state'`).
+3. **Judge each entry by its work, not its task status.** An entry is **safe to stop** when its
+   `status` is `done`, `failed`, or `skipped` **and** either it has no `pr`, or
+   `gh pr view <pr> --json state -q .state` prints `MERGED` or `CLOSED`, or the run's `report`
+   section exists (Phase 5 ran, so the run itself already judged it). An entry with an **open** PR,
+   or `status: done` with no `report` section and no PR verdict, is **in flight** — leave it, and say
+   why in the report. A run with any in-flight entry is never reported as fully swept.
+4. **Reconcile, then stop.** For each safe entry: if its task (`Issue #<N>: …` in `TaskList`) is
+   still `in_progress`, mark it `completed` — the orchestrator's bookkeeping the interrupted run
+   never did — then run the shutdown-then-stop path above:
+   ```
+   TaskUpdate(taskId: "<task id>", status: "completed")
+   SendMessage(to: "issue-<N>-<agent>", message: {type: "shutdown_request", reason: "Cleanup: delegate run <runId> landed"})
+   TaskStop(task_id: "issue-<N>-<agent>")
+   ```
+   Most of these agents are already gone; `TaskStop` is safe on an exited agent, so the sweep costs
+   nothing when the run did clean up after itself. `shutdown_request` and `TaskStop` are
+   main-session-only — a spawned seat can build and report the plan, but cannot execute it.
+5. **Surface it.** Every run goes in the report's `Delegate runs swept:` block: its id, the entries
+   stopped and reconciled, the entries left in flight, and `unsweepable` for a single-issue run. With
+   no checkpoints at all, keep the *"no run record available; agents not swept"* line — that is the
+   honest answer, not `Agents stopped: (none)`.
 
 **Crons are out of scope.** Scheduled jobs (`CronList`) are almost always intentional recurring
 work, not leftover state, so cleanup never deletes them. If you suspect a cron is genuinely
@@ -187,6 +238,11 @@ Tasks stopped:
   <task id / subject>
 Agents stopped:
   <agent-name> — <what it finished>
+Delegate runs swept:
+  <runId>   stopped: issue-<N>-<agent> (PR #<n> MERGED), …   reconciled: <task ids>
+            in flight: issue-<N>-<agent> (PR #<n> OPEN)
+  <runId>   unsweepable (single-issue fast path)
+  (or: no run record available; agents not swept)
 
 Left untouched: current branch, open/closed-unmerged PRs, crons.
 ```
@@ -205,3 +261,6 @@ In dry-run/preview, end with **"Proceed? (y/N)"**. After executing, end with a o
   flagged because its setup PR merged. That's exactly what the confirm step is for — if the user
   says keep it, drop it from the plan.
 - **Detached HEAD** — the script handles it (no current branch to protect); proceed normally.
+- **A checkpoint that will not parse** (truncated by the interruption) — report the run id and the
+  parse error under `Delegate runs swept:` and leave its agents alone; do not guess names from a
+  half-written file.
