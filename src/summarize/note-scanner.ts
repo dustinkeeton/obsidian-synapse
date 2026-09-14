@@ -131,7 +131,20 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
 		}
 	}
 
-	return targets;
+	return dropUrlsTranscribedElsewhere(targets);
+}
+
+/** A transcription block anywhere in the note supersedes the bare URL target (#488). */
+function dropUrlsTranscribedElsewhere(targets: SummarizeTarget[]): SummarizeTarget[] {
+	const transcribed = new Set(
+		targets
+			.filter((t) => t.type === 'transcription')
+			.map((t) => normalizeSocialUrl(t.source))
+	);
+	if (transcribed.size === 0) return targets;
+	return targets.filter(
+		(t) => t.type !== 'url' || t.inEnrichmentSection || !transcribed.has(normalizeSocialUrl(t.source))
+	);
 }
 
 /**

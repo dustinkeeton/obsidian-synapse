@@ -4,7 +4,7 @@ last-updated: 2026-09-14
 
 # Shared Module
 
-Cross-cutting base layer used by all feature modules: AI client, secret redaction, file operations, base64 encoding, notifications, in-app update checking, validation, frontmatter parsing, checkpoint management, per-note AI-operation serialization, ID generation, note-title predicates, URL platform detection / classification, web / Reddit / tweet content fetching, credential validation, JSON utilities, and Node.js desktop-only loader. Depends on NO feature module — this is the bottom of the dependency graph.
+Cross-cutting base layer used by all feature modules: AI client, secret redaction, file operations, base64 encoding, notifications, in-app update checking, validation, frontmatter parsing, checkpoint management, per-note AI-operation serialization, the media-URL transcript store, ID generation, note-title predicates, URL platform detection / classification, web / Reddit / tweet content fetching, credential validation, JSON utilities, and Node.js desktop-only loader. Depends on NO feature module — this is the bottom of the dependency graph.
 
 Canonical homes (re-exported elsewhere for back-compat — import from the `shared` barrel, never an internal file):
 - `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) — moved here from `src/video/` to break the former shared⇄video import cycle; `video` re-exports for back-compat.
@@ -332,6 +332,21 @@ function isRecord(v: unknown): v is Record<string, unknown>
 function asStringArray(v: unknown): string[]
 function readJsonFile<T>(adapter: DataAdapter, path: string, guard: (v: unknown) => v is T): Promise<T | null>
 
+// transcript-cache.ts (#488) — vault-file transcript store behind every URL-transcription path
+interface CachedTranscript { text: string; raw: string; source: string; title?: string; language?: string; videoVaultPath?: string; reformatted?: boolean; schemaId?: string }   // structural subset of transcription's UrlTranscript
+interface TranscriptCacheEntry extends CachedTranscript { url: string; fetchedAt: number; lastUsedAt: number }   // url = canonicalMediaUrl(url)
+interface TranscriptCacheOptions { path?: string; maxEntries?: number; maxChars?: number }   // defaults: .synapse/transcript-cache.json, 200, 4_000_000
+function canonicalMediaUrl(url: string): string                    // youtube -> https://www.youtube.com/watch?v=<id>; instagram -> https://www.instagram.com/p/<id>; tiktok -> params stripped; else fragment + trailing slash stripped
+function transcriptCacheKey(url: string, timeRange?: TimeRange): string   // canonical + '#t=<start>-<end>' when clipped
+class TranscriptCache {
+  constructor(app: App, options?: TranscriptCacheOptions)
+  get(url: string, timeRange?: TimeRange): Promise<TranscriptCacheEntry | null>   // bumps lastUsedAt (LRU)
+  put(url: string, transcript: CachedTranscript, timeRange?: TimeRange): Promise<void>   // overwrites, then evicts LRU past maxEntries / maxChars (text+raw length)
+  clear(): Promise<void>                                            // empties memory + removes the file
+  size(): Promise<number>
+}
+// Never throws: unreadable/corrupt file = empty store, failed write = console.warn(redactError). Lazy single load, in-memory map, full-file rewrite on every put/get.
+
 // node-loader.ts
 interface NodeModules { os: typeof import('os'); path: typeof import('path'); fs: typeof import('fs'); execFile: typeof import('child_process')['execFile'] }
 class DesktopOnlyError extends Error { constructor(message?: string) }
@@ -437,6 +452,8 @@ function scoreLyricsContent(content: string): number
 | `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
 | `note-operation-queue.ts` | `NoteOperationQueue`, `NoteOperationOptions` | Per-note serialization of AI operations (#483): path-keyed FIFO promise chain (same pattern as `CheckpointManager.withLock`, but keyed on note path and used by feature modules). Operations submitted for the same path run in submission order, so each reads what the previous one wrote. Contract: key on the note the operation reads/writes; acquire AT MOST ONCE per operation (no nesting → no lock ordering → no deadlock) — public entry points acquire, the private cores they delegate to do not; incidental writes to OTHER notes (title backlink remediation + merge targets, deep-dive syllabus/sibling nav, organize summary notes) stay unqueued; batch scans take one slot per note, never one per batch. Fire-and-forget post-op follow-ups (enrichment / title check) started from inside a queued operation enqueue BEHIND it and run against the post-write content (nothing awaits them → no cycle). A rename inside a queued operation (title accept) is keyed on the PRE-rename path; work queued under the old path runs afterwards, finds no file and exits early |
 | `note-operation-queue.test.ts` | Tests | Ordering, cross-path independence, lost-update, rejection-does-not-poison, `onWait`-only-on-wait, `isBusy`, burst-drain tests |
+| `transcript-cache.ts` | `TranscriptCache`, `canonicalMediaUrl`, `transcriptCacheKey`, `CachedTranscript`, `TranscriptCacheEntry`, `TranscriptCacheOptions` | Persistent media-URL transcript store (#488) at `.synapse/transcript-cache.json`, keyed by canonical URL + time range. Consumed by `transcription/url-transcription.ts` (router read-through/write-through via the `TranscriptStore` slice), constructed once in `main.ts` (`SynapsePlugin.transcriptCache`), cleared from `video/settings-section.ts`. Imports `url-detector`, `json-utils`, `file-utils` (`ensureFolder`), `redact` |
+| `transcript-cache.test.ts` | Tests | Canonicalization, key/time-range separation, round-trip persistence, LRU entry + char eviction, corrupt-file tolerance, write-failure tolerance |
 | `tweet-fetcher.ts` | `fetchTweetContent`, `isTwitterUrl`, `TweetContent` | Twitter/X.com tweet fetching with oEmbed → fxtwitter → vxtwitter fallback chain |
 | `tweet-fetcher.test.ts` | Tests | Tweet fetcher tests |
 | `reddit-fetcher.ts` | `fetchRedditContent`, `isRedditUrl`, `extractCanonicalPostUrl`, `RedditContent` | Reddit post fetching via the per-post `.rss` Atom feed (the `.json` API now 403s unauthenticated clients). Resolves `/s/` share + `redd.it` short links to canonical `/comments/` permalinks from share-page HTML, retries 429/503 with backoff, formats post body + top `MAX_COMMENTS` comments. Uses Obsidian `requestUrl` (never native fetch) for mobile CSP (#88) |

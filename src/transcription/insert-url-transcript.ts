@@ -26,7 +26,8 @@ export interface InsertUrlTranscriptDeps {
 export async function insertUrlTranscript(
 	deps: InsertUrlTranscriptDeps,
 	url: string,
-	timeRange?: TimeRange
+	timeRange?: TimeRange,
+	forceRefresh = false
 ): Promise<void> {
 	const { app, getSettings, notifications, router, noteQueue } = deps;
 
@@ -54,6 +55,7 @@ export async function insertUrlTranscript(
 		try {
 			const result = await router.transcribe(url, {
 				timeRange,
+				forceRefresh,
 				update: (message) => op.update(message),
 			});
 			const block = buildUrlTranscriptBlock(
@@ -64,7 +66,7 @@ export async function insertUrlTranscript(
 			);
 			await app.vault.process(activeFile, (data) => data + block);
 			deps.onComplete?.(activeFile.path);
-			op.finish('Transcription added to note');
+			op.finish(result.cached ? 'Cached transcription added to note' : 'Transcription added to note');
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			op.error(`URL transcription failed -- ${msg}`);
