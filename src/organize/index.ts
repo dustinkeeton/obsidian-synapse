@@ -6,7 +6,7 @@ import {
 	writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import type { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
@@ -27,12 +27,18 @@ export type {
 export { ContentAnalyzer } from './content-analyzer';
 export { DirectoryMatcher } from './directory-matcher';
 
-export class OrganizeModule {
+export class OrganizeModule implements FeatureModule {
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 
 	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
 	onOpenProposalView: (() => void) | null = null;
 
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private checkpointManager: CheckpointManager;
+	private registrar: CommandRegistrar;
+	private noteQueue: NoteOperationQueue;
 	private analyzer: ContentAnalyzer;
 	private matcher: DirectoryMatcher;
 	private store: OrganizeStore;
@@ -44,19 +50,17 @@ export class OrganizeModule {
 	 */
 	private shouldAutoAccept: () => boolean = () => false;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar,
-		private noteQueue: NoteOperationQueue,
-		shouldAutoAccept?: () => boolean
-	) {
+	constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean) {
+		this.plugin = deps.plugin;
+		this.getSettings = deps.getSettings;
+		this.notifications = deps.notifications;
+		this.checkpointManager = deps.checkpointManager;
+		this.registrar = deps.registrar;
+		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
-		this.analyzer = new ContentAnalyzer(plugin.app, getSettings);
-		this.matcher = new DirectoryMatcher(plugin.app);
-		this.store = new OrganizeStore(plugin.app, getSettings);
+		this.analyzer = new ContentAnalyzer(deps.plugin.app, deps.getSettings);
+		this.matcher = new DirectoryMatcher(deps.plugin.app);
+		this.store = new OrganizeStore(deps.plugin.app, deps.getSettings);
 	}
 
 	async onload(): Promise<void> {

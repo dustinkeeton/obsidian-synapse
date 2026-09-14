@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DeepDiveModule } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockApp, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockApp, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NoticeAction } from '../shared';
@@ -99,12 +99,14 @@ describe('DeepDiveModule Review toast action (#366)', () => {
 	function build(shouldAutoAccept: () => boolean): DeepDiveModule {
 		const registrar = { register: vi.fn() };
 		return new DeepDiveModule(
-			plugin,
-			() => settings,
-			notifications as never,
-			createMockCheckpointManager() as never,
-			registrar as never,
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin,
+				getSettings: () => settings,
+				notifications: notifications as never,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: registrar as never,
+				noteQueue: new NoteOperationQueue(),
+			}),
 			shouldAutoAccept
 		);
 	}

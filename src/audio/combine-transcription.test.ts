@@ -20,7 +20,7 @@ vi.mock('./post-processor', () => ({
 
 import { AudioModule } from './index';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
@@ -108,15 +108,17 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 		provider = 'whisper-api',
 	) {
 		return new AudioModule(
-			mockPlugin as unknown as Plugin,
-			() =>
-				({
-					video: { ffmpegPath: 'ffmpeg' },
-					audio: { transcriptionProvider: provider },
-				}) as unknown as SynapseSettings,
-			notifications as unknown as NotificationManager,
-			createMockCheckpointManager() as unknown as CheckpointManager,
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () =>
+					({
+						video: { ffmpegPath: 'ffmpeg' },
+						audio: { transcriptionProvider: provider },
+					}) as unknown as SynapseSettings,
+				notifications: notifications as unknown as NotificationManager,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				noteQueue: new NoteOperationQueue(),
+			}),
 			ex as unknown as AudioExtractor | undefined
 		);
 	}

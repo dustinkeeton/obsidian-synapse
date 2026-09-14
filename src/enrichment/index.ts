@@ -6,7 +6,7 @@ import {
 	CheckpointManager, NoteOperationQueue, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentStore } from './enrichment-store';
 import { LinkResolver } from './link-resolver';
@@ -28,7 +28,13 @@ export type {
 } from './types';
 
 
-export class EnrichmentModule {
+export class EnrichmentModule implements FeatureModule {
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private checkpointManager: CheckpointManager;
+	private registrar: CommandRegistrar;
+	private noteQueue: NoteOperationQueue;
 	private analyzer: VaultAnalyzer;
 	private classifier: MetadataClassifier;
 	private topicExtractor: TopicExtractor;
@@ -50,15 +56,14 @@ export class EnrichmentModule {
 	 */
 	private shouldAutoAccept: () => boolean = () => false;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar,
-		private noteQueue: NoteOperationQueue,
-		shouldAutoAccept?: () => boolean
-	) {
+	constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean) {
+		const { plugin, getSettings } = deps;
+		this.plugin = plugin;
+		this.getSettings = getSettings;
+		this.notifications = deps.notifications;
+		this.checkpointManager = deps.checkpointManager;
+		this.registrar = deps.registrar;
+		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 		this.analyzer = new VaultAnalyzer(plugin.app, getSettings);
 		this.classifier = new MetadataClassifier(getSettings);

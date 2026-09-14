@@ -6,6 +6,7 @@ import { TFile } from '../__mocks__/obsidian';
 import type { Plugin, Command, TFile as ObsidianTFile } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NotificationManager } from '../shared';
+import { makeModuleDeps } from '../__test-utils__/mock-factories';
 
 /** The mock TFile and obsidian's real TFile differ structurally; tests only need
  *  the runtime instance, so cross the boundary once here. */
@@ -115,11 +116,13 @@ describe('TidyModule', () => {
 
 		mockNotifications = createMockNotifications();
 		module = new TidyModule(
-			mockPlugin as unknown as Plugin,
-			() => settings,
-			mockNotifications as unknown as NotificationManager,
-			new CommandRegistrar(mockPlugin),
-			new NoteOperationQueue()
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: mockNotifications as unknown as NotificationManager,
+				registrar: new CommandRegistrar(mockPlugin),
+				noteQueue: new NoteOperationQueue(),
+			})
 		);
 	});
 

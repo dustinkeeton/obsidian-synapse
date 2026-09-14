@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { EnrichmentProposal, AcceptedItems } from './types';
 
 // Deterministic enrichment result: one tag, one internal link, one frontmatter key.
@@ -138,12 +138,14 @@ describe('EnrichmentModule auto-accept (#228)', () => {
 
 	function build(shouldAutoAccept: () => boolean): EnrichmentModule {
 		return new EnrichmentModule(
-			mockPlugin as never,
-			() => settings,
-			notifications,
-			createMockCheckpointManager() as never,
-			new CommandRegistrar(mockPlugin as never),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as never,
+				getSettings: () => settings,
+				notifications,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: new CommandRegistrar(mockPlugin as never),
+				noteQueue: new NoteOperationQueue(),
+			}),
 			shouldAutoAccept
 		);
 	}

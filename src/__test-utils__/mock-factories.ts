@@ -1,5 +1,7 @@
 import { vi, type Mock } from 'vitest';
 import { TFile, TFolder } from '../__mocks__/obsidian';
+import { NoteOperationQueue } from '../shared';
+import type { ModuleDeps } from '../shared';
 
 /**
  * Create a TFile instance for testing.
@@ -163,5 +165,18 @@ export function createMockCheckpointManager() {
 		listByStatus: vi.fn().mockResolvedValue([]),
 		listAll: vi.fn().mockResolvedValue([]),
 		cleanup: vi.fn().mockResolvedValue(0),
+	};
+}
+
+/** ModuleDeps for feature-module constructors; unspecified services are inert stubs, the queue is real. */
+export function makeModuleDeps(overrides: Partial<ModuleDeps> = {}): ModuleDeps {
+	return {
+		plugin: {} as never,
+		getSettings: {} as never,
+		notifications: {} as never,
+		checkpointManager: {} as never,
+		registrar: {} as never,
+		noteQueue: new NoteOperationQueue(),
+		...overrides,
 	};
 }

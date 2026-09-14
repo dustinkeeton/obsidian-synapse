@@ -3,7 +3,7 @@ import { DeepDiveModule } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager, NoteOperationQueue } from '../shared';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { DeepDiveProposal } from './types';
 
 vi.mock('./topic-analyzer', () => ({
@@ -104,12 +104,14 @@ describe('DeepDiveModule auto-accept guard (#228)', () => {
 
 	function build(): DeepDiveModule {
 		return new DeepDiveModule(
-			mockPlugin as never,
-			() => settings,
-			notifications,
-			createMockCheckpointManager() as never,
-			new CommandRegistrar(mockPlugin as never),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as never,
+				getSettings: () => settings,
+				notifications,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: new CommandRegistrar(mockPlugin as never),
+				noteQueue: new NoteOperationQueue(),
+			}),
 			() => settings.autoAccept['deep-dive']
 		);
 	}

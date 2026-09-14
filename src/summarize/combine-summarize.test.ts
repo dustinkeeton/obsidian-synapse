@@ -3,7 +3,7 @@ import { SummarizeModule, TranscribeAudioFn } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import { SummarizeTarget } from './types';
 import type { Plugin } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
@@ -171,16 +171,18 @@ describe('SummarizeModule combined summarization (#367)', () => {
 
 		notifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin as unknown as Plugin,
-			() => settings,
-			notifications as unknown as NotificationManager,
-			createMockCheckpointManager() as unknown as CheckpointManager,
-			new CommandRegistrar(
-				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
-			),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: notifications as unknown as NotificationManager,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(
+					mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+				),
+				noteQueue: new NoteOperationQueue(),
+			}),
 			undefined,
-			transcribeAudio,
+			transcribeAudio
 		);
 	});
 

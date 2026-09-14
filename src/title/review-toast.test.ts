@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile, TFolder } from '../__mocks__/obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NoticeAction } from '../shared';
+import { makeModuleDeps } from '../__test-utils__/mock-factories';
 
 /** Spy-backed stand-in for the NotificationManager surface the module calls. */
 interface MockNotifications {
@@ -94,10 +95,12 @@ describe('TitleModule Review toast action (#340)', () => {
 
 	function build(shouldAutoAccept: () => boolean): TitleModule {
 		return new TitleModule(
-			mockPlugin as never,
-			() => settings,
-			notifications as never,
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as never,
+				getSettings: () => settings,
+				notifications: notifications as never,
+				noteQueue: new NoteOperationQueue(),
+			}),
 			shouldAutoAccept
 		);
 	}

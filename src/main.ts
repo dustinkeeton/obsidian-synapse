@@ -1,30 +1,23 @@
 import { Platform, Plugin } from 'obsidian';
 import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
 import { SynapseSettingTab } from './settings-ui';
-import { ElaborationModule } from './elaboration';
-import { AudioModule } from './audio';
-import { VideoModule, AudioExtractor, createFfmpegAvailability } from './video';
-import { ImageModule } from './image';
-import { EnrichmentModule } from './enrichment';
-import { SummarizeModule } from './summarize';
-import { TidyModule } from './tidy';
-import { OrganizeModule } from './organize';
-import { DeepDiveModule } from './deep-dive';
-import { TitleModule } from './title';
-import { RemModule } from './rem';
-import { IntakeModule } from './intake';
+import { createFfmpegAvailability } from './video';
 import { CheckpointRecoveryModule } from './checkpoints';
 import type { CheckpointResumeHandlers } from './checkpoints';
 import { CommandRegistrar, auditCommands, listPaletteActions } from './commands';
 import { runFirstRunOnboarding } from './onboarding';
 import { SynapseRunner, buildPostOpHook, buildAutoOrganizeHook } from './pipeline';
 import type { PipelineModuleMap, PostOpHookDeps } from './pipeline';
+import { constructFeatureModules, listFeatureModules, loadFeatureModules, unloadFeatureModules } from './modules';
+import type { FeatureModules } from './modules';
 import {
 	openScanFolderPicker, NotificationManager, CheckpointManager, NoteOperationQueue, TranscriptCache,
 	UpdateChecker, fireAndForget, migrateSettings, migrateDataFolder, deepMergeSettings,
 	readSettingsVersion, CURRENT_SETTINGS_VERSION, redactError,
 } from './shared';
+import type { ModuleDeps } from './shared';
 import { createUrlTranscriptionRouter, appendUrlTranscript, transcribeNoteMedia, openUnifiedTranscriptionModal } from './transcription';
+import type { UrlTranscriptionRouter } from './transcription';
 import {
 	UNIFIED_VIEW_TYPE, UnifiedProposalView, SYNAPSE_ACTIONS_VIEW_TYPE, SynapseActionsView,
 	activateUnifiedView, activateSynapseActionsView, refreshUnifiedView, activeMarkdownFile, runRegisteredCommand,
@@ -42,19 +35,10 @@ export default class SynapsePlugin extends Plugin {
 	private noteQueue!: NoteOperationQueue;
 	private updateChecker!: UpdateChecker;
 	private checkpoints!: CheckpointRecoveryModule;
-
-	private elaboration!: ElaborationModule;
-	private audio!: AudioModule;
-	private video: VideoModule | null = null;
-	private image!: ImageModule;
-	private enrichment!: EnrichmentModule;
-	private summarize!: SummarizeModule;
-	private tidy!: TidyModule;
-	private organize!: OrganizeModule;
-	private deepDive!: DeepDiveModule;
-	private title!: TitleModule;
-	private rem!: RemModule;
-	private intake!: IntakeModule;
+	private modules: FeatureModules | null = null;
+	/** Built after the modules; the registry wiring closures that reach these only run at operation time. */
+	private urlTranscription!: UrlTranscriptionRouter;
+	private synapseRunner!: SynapseRunner;
 	private updateCheckTimeout: number | null = null;
 	/** True when `loadData()` returned nothing: a genuine fresh install (#89). */
 	private isFreshInstall = false;
@@ -70,51 +54,50 @@ export default class SynapsePlugin extends Plugin {
 		}
 		this.checkpointManager = new CheckpointManager(this.app);
 		this.noteQueue = new NoteOperationQueue();
+		this.transcriptCache = new TranscriptCache(this.app);
 		const getSettings = () => this.settings;
 		const registrar = new CommandRegistrar(this);
-
-		// Module construction: audio before video (video depends on audio); video desktop-only.
-		this.elaboration = new ElaborationModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept.elaboration);
-		const audioExtractor = Platform.isDesktop ? new AudioExtractor(getSettings) : undefined;
-		this.audio = new AudioModule(this, getSettings, this.notifications, this.checkpointManager, this.noteQueue, audioExtractor);
-		if (Platform.isDesktop) {
-			this.video = new VideoModule(this, getSettings, this.audio, this.notifications, this.checkpointManager, registrar, this.noteQueue);
-		}
-		this.image = new ImageModule(this, getSettings, this.notifications, this.checkpointManager, this.noteQueue);
-		this.enrichment = new EnrichmentModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept.enrichment);
-
-		const video = this.video;
-		this.transcriptCache = new TranscriptCache(this.app);
-		const urlTranscription = createUrlTranscriptionRouter({
+		const deps: ModuleDeps = {
+			plugin: this,
 			getSettings,
-			processTranscriptText: (raw, opts) => this.audio.processTranscriptText(raw, opts),
+			notifications: this.notifications,
+			checkpointManager: this.checkpointManager,
+			registrar,
+			noteQueue: this.noteQueue,
+		};
+
+		const modules = constructFeatureModules(deps, {
+			transcribeUrl: (url, parentOp) =>
+				this.urlTranscription.transcribe(url, { update: parentOp ? (msg) => parentOp.update(msg) : undefined }),
+			intake: {
+				fireOnFile: (file) => this.synapseRunner.fireOnFile(file),
+				transcribeUrlToNote: (url, _mediaType, file) => appendUrlTranscript(
+					{ app: this.app, getSettings, notifications: this.notifications, router: this.urlTranscription },
+					url,
+					file
+				),
+			},
+		});
+		this.modules = modules;
+		const { elaboration, audio, video, image, enrichment, summarize, tidy, organize, deepDive, title, rem } = modules;
+
+		this.urlTranscription = createUrlTranscriptionRouter({
+			getSettings,
+			processTranscriptText: (raw, opts) => audio.processTranscriptText(raw, opts),
 			extract: video
 				? (url, opts) => video.processUrl(url, { insertMode: false, timeRange: opts.timeRange }, opts.update ? { update: opts.update } : undefined)
 				: undefined,
 			store: this.transcriptCache,
 		});
-		if (video) {
-			video.urlTranscriber = (url, parentOp) =>
-				urlTranscription.transcribe(url, { update: parentOp ? (msg) => parentOp.update(msg) : undefined });
-		}
-
-		this.summarize = new SummarizeModule(
-			this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue,
-			async (url, parentOp) => {
-				const result = await urlTranscription.transcribe(url, { update: parentOp ? (msg) => parentOp.update(msg) : undefined });
-				return result.text;
-			},
-			async (audioFile) => {
-				const data = await this.app.vault.readBinary(audioFile);
-				const result = await this.audio.transcribe(data, audioFile.name);
-				return result.processed || result.raw;
-			}
-		);
-		this.tidy = new TidyModule(this, getSettings, this.notifications, registrar, this.noteQueue);
-		this.organize = new OrganizeModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept.organize);
-		this.deepDive = new DeepDiveModule(this, getSettings, this.notifications, this.checkpointManager, registrar, this.noteQueue, () => this.settings.autoAccept['deep-dive']);
-		this.title = new TitleModule(this, getSettings, this.notifications, this.noteQueue, () => this.settings.autoAccept.title);
-		this.rem = new RemModule(this, getSettings, this.notifications, this.checkpointManager, registrar, () => this.settings.autoAccept.rem);
+		const moduleMap: PipelineModuleMap = {
+			elaboration: (fp, sc, of) => elaboration.scanVault(fp, sc, of),
+			summarize: (fp, sc, of) => summarize.scanVault(fp, sc, of),
+			enrichment: (fp, sc, of) => enrichment.scanVault(fp, sc, of),
+			rem: (fp, sc, of) => rem.remScanDirectory(fp, sc, of),
+			tidy: (fp, sc, of) => tidy.scanVault(fp, sc, of),
+			organize: (fp, sc, of) => organize.scanDirectory(fp, sc, of),
+		};
+		this.synapseRunner = new SynapseRunner(moduleMap, getSettings, this.notifications);
 		this.updateChecker = new UpdateChecker({
 			currentVersion: this.manifest.version,
 			app: this.app,
@@ -124,12 +107,12 @@ export default class SynapsePlugin extends Plugin {
 		});
 
 		const viewSources: UnifiedViewSources = {
-			elaboration: () => this.elaboration.getPendingProposals(),
-			enrichment: () => this.enrichment.getPendingProposals(),
-			organize: () => this.organize.getPendingProposals(),
-			'deep-dive': () => this.deepDive.getPendingProposals(),
-			title: () => this.title.getPendingProposals(),
-			rem: () => this.rem.getPendingProposals(),
+			elaboration: () => elaboration.getPendingProposals(),
+			enrichment: () => enrichment.getPendingProposals(),
+			organize: () => organize.getPendingProposals(),
+			'deep-dive': () => deepDive.getPendingProposals(),
+			title: () => title.getPendingProposals(),
+			rem: () => rem.getPendingProposals(),
 			checkpoints: () => this.checkpointManager.listIncomplete(),
 		};
 		const refreshView = () => refreshUnifiedView(this.app.workspace, viewSources);
@@ -137,17 +120,17 @@ export default class SynapsePlugin extends Plugin {
 			fireAndForget(activateUnifiedView(this.app.workspace, viewSources), 'Open proposal review', { notifications: this.notifications });
 
 		const resumeHandlers: CheckpointResumeHandlers = {
-			elaboration: (cp) => this.elaboration.resumeFromCheckpoint(cp),
-			enrichment: (cp) => this.enrichment.resumeFromCheckpoint(cp),
-			audio: (cp) => this.audio.resumeFromCheckpoint(cp),
+			elaboration: (cp) => elaboration.resumeFromCheckpoint(cp),
+			enrichment: (cp) => enrichment.resumeFromCheckpoint(cp),
+			audio: (cp) => audio.resumeFromCheckpoint(cp),
 			video: video
 				? (cp) => video.resumeFromCheckpoint(cp)
 				: async () => this.notifications.info('Video transcription is not available on mobile'),
-			image: (cp) => this.image.resumeFromCheckpoint(cp),
-			summarize: (cp) => this.summarize.resumeFromCheckpoint(cp),
-			organize: (cp) => this.organize.resumeFromCheckpoint(cp),
-			'deep-dive': (cp) => this.deepDive.resumeFromCheckpoint(cp),
-			rem: (cp) => this.rem.resumeFromCheckpoint(cp),
+			image: (cp) => image.resumeFromCheckpoint(cp),
+			summarize: (cp) => summarize.resumeFromCheckpoint(cp),
+			organize: (cp) => organize.resumeFromCheckpoint(cp),
+			'deep-dive': (cp) => deepDive.resumeFromCheckpoint(cp),
+			rem: (cp) => rem.resumeFromCheckpoint(cp),
 		};
 		this.checkpoints = new CheckpointRecoveryModule({
 			checkpointManager: this.checkpointManager,
@@ -158,19 +141,19 @@ export default class SynapsePlugin extends Plugin {
 		});
 
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => new UnifiedProposalView(leaf, {
-			onElaborationAccept: (id, content) => this.elaboration.acceptProposal(id, content),
-			onElaborationReject: (id) => this.elaboration.rejectProposal(id),
-			onEnrichmentAcceptSelected: (id, accepted) => this.enrichment.acceptSelectedFromView(id, accepted),
-			onEnrichmentReject: (id) => this.enrichment.rejectFromView(id),
-			onOrganizeAccept: (id) => this.organize.acceptProposal(id),
-			onOrganizeReject: (id) => this.organize.rejectProposal(id),
-			onDeepDiveAccept: (id) => this.deepDive.acceptProposal(id),
-			onDeepDiveReject: (id) => this.deepDive.rejectProposal(id),
+			onElaborationAccept: (id, content) => elaboration.acceptProposal(id, content),
+			onElaborationReject: (id) => elaboration.rejectProposal(id),
+			onEnrichmentAcceptSelected: (id, accepted) => enrichment.acceptSelectedFromView(id, accepted),
+			onEnrichmentReject: (id) => enrichment.rejectFromView(id),
+			onOrganizeAccept: (id) => organize.acceptProposal(id),
+			onOrganizeReject: (id) => organize.rejectProposal(id),
+			onDeepDiveAccept: (id) => deepDive.acceptProposal(id),
+			onDeepDiveReject: (id) => deepDive.rejectProposal(id),
 			onTitleAccept: (id, resolution) =>
-				this.title.acceptProposal(id, resolution ? { resolution } : undefined).then(() => {}),
-			onTitleReject: (id) => this.title.rejectProposal(id),
-			onRemAcceptSelected: (id, texts) => this.rem.acceptProposal(id, texts),
-			onRemReject: (id) => this.rem.rejectProposal(id),
+				title.acceptProposal(id, resolution ? { resolution } : undefined).then(() => {}),
+			onTitleReject: (id) => title.rejectProposal(id),
+			onRemAcceptSelected: (id, texts) => rem.acceptProposal(id, texts),
+			onRemReject: (id) => rem.rejectProposal(id),
 			onCheckpointDiscard: (id) => this.checkpoints.discard(id),
 			onCheckpointResume: (id) => this.checkpoints.resume(id),
 		}, this.notifications));
@@ -187,50 +170,39 @@ export default class SynapsePlugin extends Plugin {
 		}));
 		registerPropertiesAutoFold(this, getSettings);
 
-		for (const module of [this.elaboration, this.enrichment, this.organize, this.deepDive, this.title, this.rem]) {
-			module.onViewRefreshNeeded = refreshView;
-			module.onOpenProposalView = openProposalView;
+		for (const module of listFeatureModules(modules)) {
+			if (module.onViewRefreshNeeded !== undefined) module.onViewRefreshNeeded = refreshView;
+			if (module.onOpenProposalView !== undefined) module.onOpenProposalView = openProposalView;
 		}
-
-		if (this.settings.elaboration.enabled) await this.elaboration.onload();
-		if (this.settings.audio.enabled) await this.audio.onload();
-		if (this.settings.video.enabled && video) await video.onload();
-		if (this.settings.image.enabled) await this.image.onload();
-		if (this.settings.enrichment.enabled) await this.enrichment.onload();
-		if (this.settings.summarize.enabled) await this.summarize.onload();
-		if (this.settings.tidy.enabled) await this.tidy.onload();
-		if (this.settings.organize.enabled) await this.organize.onload();
-		if (this.settings.deepDive.enabled) await this.deepDive.onload();
-		if (this.settings.title.enabled) await this.title.onload();
-		if (this.settings.rem.enabled) await this.rem.onload();
+		await loadFeatureModules(modules, this.settings);
 
 		// Post-op chaining (enrich -> title check, auto-organize); each hook is gated at wire time by settings.
 		const postOpDeps: PostOpHookDeps = {
 			getSettings,
 			notifications: this.notifications,
-			enrich: (filePath, trigger) => this.enrichment.enrich(filePath, trigger, { postOp: true }),
-			checkTitle: (filePath) => this.title.checkTitle(filePath, { postOp: true }),
-			organizeNote: (file) => this.organize.organizeNote(file),
+			enrich: (filePath, trigger) => enrichment.enrich(filePath, trigger, { postOp: true }),
+			checkTitle: (filePath) => title.checkTitle(filePath, { postOp: true }),
+			organizeNote: (file) => organize.organizeNote(file),
 		};
-		this.elaboration.onProposalAccepted = buildPostOpHook(postOpDeps, 'elaboration');
-		this.audio.onTranscriptionComplete = buildPostOpHook(postOpDeps, 'audio');
+		elaboration.onProposalAccepted = buildPostOpHook(postOpDeps, 'elaboration');
+		audio.onTranscriptionComplete = buildPostOpHook(postOpDeps, 'audio');
 		if (video) video.onTranscriptionComplete = buildPostOpHook(postOpDeps, 'video');
-		this.image.onExtractionComplete = buildPostOpHook(postOpDeps, 'image');
-		this.summarize.onSummaryComplete = buildPostOpHook(postOpDeps, 'summarize');
-		this.deepDive.onNoteAccepted = buildPostOpHook(postOpDeps, 'deep-dive');
-		this.deepDive.onOrganizeRequested = buildAutoOrganizeHook(postOpDeps, 'deep-dive');
-		this.summarize.onOrganizeRequested = buildAutoOrganizeHook(postOpDeps, 'summarize');
+		image.onExtractionComplete = buildPostOpHook(postOpDeps, 'image');
+		summarize.onSummaryComplete = buildPostOpHook(postOpDeps, 'summarize');
+		deepDive.onNoteAccepted = buildPostOpHook(postOpDeps, 'deep-dive');
+		deepDive.onOrganizeRequested = buildAutoOrganizeHook(postOpDeps, 'deep-dive');
+		summarize.onOrganizeRequested = buildAutoOrganizeHook(postOpDeps, 'summarize');
 
 		const openUnifiedModal = () => openUnifiedTranscriptionModal({
 			app: this.app,
 			getSettings,
 			notifications: this.notifications,
-			router: urlTranscription,
+			router: this.urlTranscription,
 			noteQueue: this.noteQueue,
-			onTranscribeFile: (file, timeRange) => this.audio.transcribeFileToActiveNote(file, timeRange),
-			onComplete: (filePath) => this.audio.onTranscriptionComplete?.(filePath),
+			onTranscribeFile: (file, timeRange) => audio.transcribeFileToActiveNote(file, timeRange),
+			onComplete: (filePath) => audio.onTranscriptionComplete?.(filePath),
 		});
-		const isFfmpegAvailable = createFfmpegAvailability(audioExtractor);
+		const isFfmpegAvailable = createFfmpegAvailability(audio.extractor);
 
 		this.addRibbonIcon('synapse', 'Review proposals', openProposalView);
 		this.addRibbonIcon('synapse-transcribe', 'Transcribe media', openUnifiedModal);
@@ -258,39 +230,18 @@ export default class SynapsePlugin extends Plugin {
 					notifications: this.notifications,
 					isFfmpegAvailable,
 					onTranscribeAudio: (file, embeds, combine) => combine
-						? this.audio.transcribeAndInsertCombined(file, embeds)
-						: this.audio.transcribeAndInsert(file, embeds),
+						? audio.transcribeAndInsertCombined(file, embeds)
+						: audio.transcribeAndInsert(file, embeds),
 					onTranscribeVideo: video ? (file, embeds) => video.transcribeAndInsert(file, embeds) : undefined,
-					onExtractImages: (file, embeds) => this.image.extractAndInsert(file, embeds),
+					onExtractImages: (file, embeds) => image.extractAndInsert(file, embeds),
 				}, ctx.file);
 			},
 		});
 
-		const moduleMap: PipelineModuleMap = {
-			elaboration: (fp, sc, of) => this.elaboration.scanVault(fp, sc, of),
-			summarize: (fp, sc, of) => this.summarize.scanVault(fp, sc, of),
-			enrichment: (fp, sc, of) => this.enrichment.scanVault(fp, sc, of),
-			rem: (fp, sc, of) => this.rem.remScanDirectory(fp, sc, of),
-			tidy: (fp, sc, of) => this.tidy.scanVault(fp, sc, of),
-			organize: (fp, sc, of) => this.organize.scanDirectory(fp, sc, of),
-		};
-		const synapseRunner = new SynapseRunner(moduleMap, getSettings, this.notifications);
-
-		// Intake (#111) never imports feature modules; cross-module work is injected.
-		this.intake = new IntakeModule(this, getSettings, this.notifications, {
-			fireOnFile: (file) => synapseRunner.fireOnFile(file),
-			transcribeUrlToNote: (url, _mediaType, file) => appendUrlTranscript(
-				{ app: this.app, getSettings, notifications: this.notifications, router: urlTranscription },
-				url,
-				file
-			),
-		});
-		if (this.settings.intake.enabled) await this.intake.onload();
-
 		registrar.register('fire', true, {
 			callback: () => {
 				openScanFolderPicker(this.app, (path) => {
-					fireAndForget(synapseRunner.fire(path), 'Run all features on a folder', { notifications: this.notifications });
+					fireAndForget(this.synapseRunner.fire(path), 'Run all features on a folder', { notifications: this.notifications });
 				});
 			},
 		});
@@ -312,11 +263,8 @@ export default class SynapsePlugin extends Plugin {
 			window.clearTimeout(this.updateCheckTimeout);
 			this.updateCheckTimeout = null;
 		}
-		const modules = [
-			this.checkpoints, this.elaboration, this.audio, this.video, this.image, this.enrichment,
-			this.summarize, this.tidy, this.organize, this.deepDive, this.title, this.rem, this.intake,
-		];
-		for (const module of modules) module?.onunload();
+		this.checkpoints?.onunload();
+		if (this.modules) unloadFeatureModules(this.modules);
 		this.notifications?.dispose();
 	}
 

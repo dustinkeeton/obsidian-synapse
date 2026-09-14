@@ -24,7 +24,8 @@ Output: `main.js` (single bundle, Obsidian loads this)
 
 | Module | Path | Purpose | Public API |
 |--------|------|---------|------------|
-| main | `src/main.ts` | Plugin entry (lifecycle glue only, #496): settings load/save, module construction order, view/ribbon/command registration, cross-module callback injection | `SynapsePlugin` (default) |
+| main | `src/main.ts` | Plugin entry (lifecycle glue only, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, cross-module callback injection | `SynapsePlugin` (default) |
+| modules | `src/modules/` | Feature-module registry (#504): ordered factory list; construct / settings-gated load / reverse unload loops; per-entry platform gating | `MODULE_FACTORIES`, `constructFeatureModules`, `listFeatureModules`, `loadFeatureModules`, `unloadFeatureModules`, types (`FeatureModules`, `FeatureModuleKey`, `ModuleEntry`, `ModuleFactoryContext`, `ModuleWiring`) |
 | checkpoints | `src/checkpoints/` | Checkpoint recovery UX (#496): startup interrupted-operation prompt, `manage-checkpoints` command, sidebar resume/discard; resume dispatch via injected per-module handlers | `CheckpointRecoveryModule`, `STARTUP_CHECK_DELAY_MS`, `CheckpointRecoveryDeps`, `CheckpointResumeHandler`, `CheckpointResumeHandlers` |
 | settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS` |
 | settings-ui | `src/settings-ui/` | Obsidian settings UI | `SynapseSettingTab` |
@@ -43,7 +44,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes | `OrganizeModule`, types |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, types |
 | title | `src/title/` | AI title suggestions for untitled/mismatched notes | `TitleModule`, types |
-| shared | `src/shared/` | AI client (multi-modal + opt-in response cache), file utils, validation, notifications, callouts, frontmatter, checkpoints, per-note operation queue, credential metadata + validation, secret redaction, settings migrations + defaults merge, data-folder migration, content hashing, untrusted-content wrapping, review-toast gate, update check, title predicates | `AIClient`, `NotificationManager`, `CheckpointManager`, `NoteOperationQueue`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `redactError`, `reviewAction`, `migrateSettings`, `deepMergeSettings`, `migrateDataFolder`, `hashString`/`contentKey`, `wrapUntrusted`, `findAvailableVaultPath`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, file/validation utils, callout registry, id-utils |
+| shared | `src/shared/` | AI client (multi-modal + opt-in response cache), file utils, validation, notifications, callouts, frontmatter, checkpoints, per-note operation queue, credential metadata + validation, secret redaction, settings migrations + defaults merge, data-folder migration, content hashing, untrusted-content wrapping, review-toast gate, update check, title predicates, feature-module lifecycle contract (#504) | `AIClient`, `NotificationManager`, `CheckpointManager`, `NoteOperationQueue`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `redactError`, `reviewAction`, `migrateSettings`, `deepMergeSettings`, `migrateDataFolder`, `hashString`/`contentKey`, `wrapUntrusted`, `findAvailableVaultPath`, `ModuleDeps`, `FeatureModule`, `FeatureSettingsKey`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, file/validation utils, callout registry, id-utils |
 | views | `src/views/` | Unified proposal/checkpoint sidebar + registry-driven Synapse actions sidebar; sidebar activation/refresh + registry command dispatch helpers (#496) | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `SynapseActionsView`, `SYNAPSE_ACTIONS_VIEW_TYPE`, `activateUnifiedView`, `activateSynapseActionsView`, `refreshUnifiedView`, `UnifiedViewSources`, `activeMarkdownFile`, `runRegisteredCommand` |
 | onboarding | `src/onboarding/` | First-run welcome gate + required-API-key emphasis (#89) | `needsApiKey`, `planFirstRun`, `runFirstRunOnboarding`, `applyApiKeyEmphasis`, `FirstRunPlan`, `FirstRunDeps`, `WELCOME_MESSAGE` |
 | brand-icons | `src/brand-icons/` | Registers Synapse SVG icons (S-Signal identity mark + feature glyphs) | `registerSynapseIcons`, `SYNAPSE_ICONS`, `SYNAPSE_ICON_SVG` |
@@ -55,6 +56,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 ```
 main.ts
   |-- settings.ts  (type-only: ProposalKind from views/types, ExclusionRule from shared/exclusions, TitleDuplicateStrategy from title/types — all erased; PLUS runtime value CURRENT_SETTINGS_VERSION from shared/settings-migrations, the sanctioned settings->shared edge — no cycle, settings-migrations only depends on shared/exclusions)
+  |-- modules/ --> every feature barrel (runtime; the only file besides settings-ui that imports them all), shared/ (ModuleDeps / FeatureModule / FeatureSettingsKey types), settings.ts (types), obsidian Platform
   |-- settings-ui/ --> settings.ts, shared/, views/, every feature barrel's render<Feature>Settings, onboarding/, properties-fold/, changelog/ (type-only edge to main)
   |-- onboarding/ --> settings.ts (type-only), shared/ (redactError runtime; NotificationManager type)
   |-- checkpoints/ --> shared/ (redactError runtime; CheckpointManager/NotificationManager/Checkpoint types), commands/ (CommandRegistrar type); resume dispatch via injected CheckpointResumeHandlers (never imports a feature module)
@@ -62,7 +64,7 @@ main.ts
   |-- changelog/ --> CHANGELOG.md (build-inlined text); type-only edge to main
   |-- properties-fold/ --> settings.ts (type-only); type-only edge to main
   |-- commands/   (depends on NOTHING in src/ — never in a cycle)
-  |-- shared/     (base layer: depends on NO feature module; owns url-detector)
+  |-- shared/     (base layer: depends on NO feature module; owns url-detector; ONE type-only edge to commands/ — CommandRegistrar in feature-module.ts, erased at compile time)
   |-- pipeline/ --> commands/ (isPipelineKeyInFlow), shared/ (fireAndForget); modules injected via PipelineModuleMap / PostOpHookDeps
   |-- views/ --> type-only: elaboration, enrichment, organize, deep-dive, title, rem, shared (Checkpoint, NotificationManager), commands (CommandDefinition, FeatureKey);
   |            runtime: shared (fireAndForget, views/unified-proposal-view.ts:9 + views/view-activation.ts:2), commands (FEATURE_ICONS, views/synapse-actions-view.ts:3; REGISTRY_BY_ID, views/command-runner.ts:3), obsidian MarkdownView (views/command-runner.ts:1)
@@ -72,7 +74,7 @@ main.ts
   |-- image/ --> shared/ (CheckpointManager, AIClient, callouts, validation), commands/
   |-- transcription/ --> audio/ (AUDIO_EXTENSIONS, findAudioEmbeds runtime; AudioEmbed, TranscriptionResult types), video/ (detectPlatform re-export, findVideoUrls runtime; VideoUrlEmbed type), image/ (findImageEmbeds runtime; ImageEmbed type), shared/ (url-detector, validation, callouts, redact, json-utils, node-loader; TimeRange/NotificationManager/NoteOperationQueue types)
   |-- enrichment/ --> shared/, commands/
-  |-- summarize/ --> shared/ (incl. isSupportedUrl/detectPlatform), commands/, audio/ (findAudioEmbeds); URL transcription injected at runtime (main.ts:102-105 -> UrlTranscriptionRouter.transcribe; NO static video/transcription import edge)
+  |-- summarize/ --> shared/ (incl. isSupportedUrl/detectPlatform), commands/, audio/ (findAudioEmbeds); URL transcription injected at runtime (modules/registry.ts summarize entry -> ModuleWiring.transcribeUrl -> UrlTranscriptionRouter.transcribe; NO static video/transcription import edge)
   |-- tidy/ --> shared/, commands/
   |-- organize/ --> shared/, commands/
   |-- deep-dive/ --> shared/, commands/, organize/ (ContentAnalyzer, DirectoryMatcher)
@@ -89,6 +91,7 @@ Key constraints:
   (they are injected via `PipelineModuleMap` / `PostOpHookDeps` in main.ts). `checkpoints` likewise reaches
   feature modules only through the injected `CheckpointResumeHandlers`.
 - `intake` imports only `obsidian` + `src/shared/*`; all cross-module work goes through `IntakeDeps`.
+- `modules/registry.ts` (#504) is the one place that names every feature module: `MODULE_FACTORIES` order = construction = load order, unload is the reverse. Every module constructor takes `ModuleDeps` (`plugin`, `getSettings`, `notifications`, `checkpointManager`, `registrar`, `noteQueue`) first; module-specific inputs (auto-accept getter, `AudioExtractor`, `AudioModule`, summarize transcribe callbacks, `IntakeDeps`) follow positionally and are supplied by the entry's `create`. Platform gating is the entry's `platform` predicate (video: `Platform.isDesktop`), never a `main.ts` special case. Disabled modules are still constructed (reachable by views/hooks), only their `onload()` is skipped. `registry.test.ts` asserts every `src/<feature>/index.ts` `export class *Module` is constructed by the registry.
 - `video` depends on `audio` (reuses transcription pipeline, runtime value import). Type-only back-edges (erased at compile time, no runtime cycle): `audio → video` (`import type { AudioExtractor }`, `audio/index.ts`) and `shared/settings-section.ts:1 → main` (`import type SynapsePlugin`)
 - `transcription` owns the URL-transcription tier router (#184: `CaptionStrategy` on every platform, `LocalExtractionStrategy` desktop-only via an injected `VideoModule.processUrl` delegate) plus the modals; media decoding/AI work stays in `audio`, `video`, `image`
 - `summarize` has NO static import of `video` or `transcription`; URL-platform helpers (`isSupportedUrl`/`detectPlatform`) resolve from `shared/url-detector`. It receives a URL-transcription callback (delegating to `UrlTranscriptionRouter.transcribe`, on every platform) and an audio transcribe callback via constructor injection. A router-supported media URL is only ever transcribed — never page-fetched — and a failed transcription inserts no summary (#488)
@@ -97,7 +100,7 @@ Key constraints:
 - `image` module uses multi-modal `AIClient.chat()` with `ContentBlock[]` for vision
 - `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
 - All feature modules depend on `shared`; no circular dependencies
-- Modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) receive `CheckpointManager`; `tidy`, `title`, `transcription`, `intake` do not
+- Modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) retain `CheckpointManager` from `ModuleDeps`; `tidy`, `title`, `intake` receive the bundle but do not keep it; `transcription` is not a module
 - Every feature whose write follows read -> AI -> write receives the single `NoteOperationQueue` (#483): audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive — plus `transcription/insert-url-transcript` via `InsertUrlTranscriptDeps.noteQueue`. Public entry points take the note's slot exactly ONCE and delegate to a queue-free private core; acquiring twice (the same key or a second one) would deadlock. Batch scans take one slot per note, never one per batch. Writes to OTHER notes while holding a key stay unqueued by design (title backlink remediation + merge targets, deep-dive syllabus/sibling nav, organize summary notes)
 - Unqueued by design, because they re-derive inside the atomic callback instead of writing a pre-computed snapshot: `rem` accept/undo (`rem/index.ts:389,457` — `vault.process` recomputes the link application against fresh content) and `intake` stamp/move/breadcrumb (`intake/index.ts:404,474,495,554` — frontmatter stamps and a separate log note, run after every pipeline phase has finished). `SynapseRunner.fireOnFile` awaits its phases in sequence, so each phase acquires and releases the note's slot in turn
 - `views` imports feature modules as types only; its runtime imports are `fireAndForget` (`shared`), `FEATURE_ICONS` + `REGISTRY_BY_ID` (`commands`), and `MarkdownView` (`obsidian`). Sidebar activation/refresh (`view-activation.ts`) reads proposals through the injected `UnifiedViewSources`
@@ -105,37 +108,41 @@ Key constraints:
 
 ## Plugin Lifecycle (main.ts)
 
-`src/main.ts` (348 lines, #496) owns only: settings load/save, module construction order, view/ribbon/command registration, and the injection of cross-module callbacks. Every behavior it used to implement now lives behind a module barrel (see the per-cluster map below).
+`src/main.ts` (295 lines, #496/#504) owns only: settings load/save, single-instance service construction, the registry-driven module lifecycle, view/ribbon/command registration, and the injection of cross-module callbacks. It names no module in its lifecycle: `modules/registry.ts` constructs, loads and unloads them (see `src/modules/AGENTS.md`); `main.ts` only destructures the typed `FeatureModules` record to wire views, hooks and commands.
 
 ```
 onload()
-  |-- loadSettings()  (main.ts:324; #93 version-stamped migrations: readSettingsVersion(raw) -> migrateSettings(raw, from) replays every migration with to>from [v1 excludeFolders -> exclusions #307, v2 drop inert rem.semanticMatching] -> deepMergeSettings(DEFAULT_SETTINGS, migrated) (shared/settings-merge.ts) -> stamp settingsVersion = CURRENT_SETTINGS_VERSION -> saveData once on upgrade)
+  |-- loadSettings()  (main.ts:272; #93 version-stamped migrations: readSettingsVersion(raw) -> migrateSettings(raw, from) replays every migration with to>from [v1 excludeFolders -> exclusions #307, v2 drop inert rem.semanticMatching] -> deepMergeSettings(DEFAULT_SETTINGS, migrated) (shared/settings-merge.ts) -> stamp settingsVersion = CURRENT_SETTINGS_VERSION -> saveData once on upgrade)
   |-- registerSynapseIcons()  (brand-icons/; registers all synapse-* glyphs before any ribbon/setIcon/view use)
-  |-- new NotificationManager(); migrateDataFolder(vault.adapter, notifications)  (shared/data-folder-migration.ts; .auto-notes -> .synapse, one-time; main.ts:65-66)
+  |-- new NotificationManager(); migrateDataFolder(vault.adapter, notifications)  (shared/data-folder-migration.ts; .auto-notes -> .synapse, one-time; main.ts:49-50)
   |-- addSettingTab; status bar attached on desktop only
-  |-- new CheckpointManager(app), new NoteOperationQueue(), new CommandRegistrar(this)  (single instances, main.ts:71-74)
-  |-- construct modules (main.ts:76-117; audio before video; video desktop-only); each proposal module gets a () => autoAccept[kind] getter
-  |-- transcriptCache = new TranscriptCache(app); urlTranscription = createUrlTranscriptionRouter({ getSettings, processTranscriptText, extract?, store })  (#184/#488; main.ts:87-95; extraction tier only when video exists; also set as video.urlTranscriber, main.ts:96-99)
-  |-- new UpdateChecker({ currentVersion, app, notifications, getSettings, saveSettings })  (#365; main.ts:118)
-  |-- viewSources: UnifiedViewSources (main.ts:126); refreshView = views.refreshUnifiedView(workspace, viewSources); openProposalView = fireAndForget(views.activateUnifiedView(...))
-  |-- resumeHandlers: CheckpointResumeHandlers (main.ts:139; video entry notifies "not available on mobile" when VideoModule is null); checkpoints = new CheckpointRecoveryModule({ checkpointManager, notifications, registrar, resumeHandlers, refreshView })  (main.ts:152)
-  |-- registerView(UNIFIED_VIEW_TYPE) (main.ts:160), registerView(SYNAPSE_ACTIONS_VIEW_TYPE) (main.ts:179; runAction -> views.runRegisteredCommand, isNoteActive -> views.activeMarkdownFile); active-leaf-change -> SynapseActionsView.refresh()
+  |-- new CheckpointManager(app), new NoteOperationQueue(), transcriptCache = new TranscriptCache(app), new CommandRegistrar(this)  (single instances, main.ts:55-59)
+  |-- deps: ModuleDeps = { plugin, getSettings, notifications, checkpointManager, registrar, noteQueue }  (main.ts:60-67)
+  |-- modules = modules.constructFeatureModules(deps, wiring)  (main.ts:69-81; #504; MODULE_FACTORIES order, audio before video, video only when Platform.isDesktop; every module constructed, disabled ones included)
+  |     wiring.transcribeUrl -> this.urlTranscription.transcribe (set as video.urlTranscriber + summarize transcribeUrl by the registry)
+  |     wiring.intake = { fireOnFile -> this.synapseRunner.fireOnFile, transcribeUrlToNote -> transcription.appendUrlTranscript }  (closures resolve the two fields built next; they only run at operation time)
+  |-- this.urlTranscription = createUrlTranscriptionRouter({ getSettings, processTranscriptText: audio.processTranscriptText(raw, opts), extract?, store: transcriptCache })  (#184/#488; main.ts:84-91; extraction tier only when video exists)
+  |-- build PipelineModuleMap + this.synapseRunner = new SynapseRunner(...)  (main.ts:92-100)
+  |-- new UpdateChecker({ currentVersion, app, notifications, getSettings, saveSettings })  (#365; main.ts:101)
+  |-- viewSources: UnifiedViewSources (main.ts:109); refreshView = views.refreshUnifiedView(workspace, viewSources); openProposalView = fireAndForget(views.activateUnifiedView(...))
+  |-- resumeHandlers: CheckpointResumeHandlers (main.ts:122; video entry notifies "not available on mobile" when VideoModule is null); checkpoints = new CheckpointRecoveryModule({ checkpointManager, notifications, registrar, resumeHandlers, refreshView })  (main.ts:135)
+  |-- registerView(UNIFIED_VIEW_TYPE) (main.ts:143), registerView(SYNAPSE_ACTIONS_VIEW_TYPE) (main.ts:162; runAction -> views.runRegisteredCommand, isNoteActive -> views.activeMarkdownFile); active-leaf-change -> SynapseActionsView.refresh()
   |-- registerPropertiesAutoFold(this, getSettings)  (#381)
-  |-- onViewRefreshNeeded / onOpenProposalView set on the six proposal modules (main.ts:190)
-  |-- await <module>.onload() for each settings.<feature>.enabled module (main.ts:195-205)
-  |-- post-op hooks (main.ts:208-222): pipeline.buildPostOpHook(postOpDeps, source) per source; buildAutoOrganizeHook for deep-dive / summarize
-  |-- openUnifiedModal = transcription.openUnifiedTranscriptionModal(deps) (main.ts:224); isFfmpegAvailable = video.createFfmpegAvailability(audioExtractor) (main.ts:233)
-  |-- addRibbonIcon x3 (main.ts:235-239); registrar.register('review-proposals')
-  |-- checkpoints.onload()  (registers manage-checkpoints; arms the 3s startup interrupted-operation check; main.ts:244)
+  |-- for each modules.listFeatureModules(modules): assign onViewRefreshNeeded / onOpenProposalView where the slot exists (main.ts:173-176; the six proposal modules)
+  |-- await modules.loadFeatureModules(modules, settings)  (main.ts:177; onload() per settings.<key>.enabled entry, registry order, intake included)
+  |-- post-op hooks (main.ts:180-194): pipeline.buildPostOpHook(postOpDeps, source) per source; buildAutoOrganizeHook for deep-dive / summarize
+  |-- openUnifiedModal = transcription.openUnifiedTranscriptionModal(deps) (main.ts:196); isFfmpegAvailable = video.createFfmpegAvailability(audio.extractor) (main.ts:205)
+  |-- addRibbonIcon x3 (main.ts:207-211); registrar.register('review-proposals')
+  |-- checkpoints.onload()  (registers manage-checkpoints; arms the 3s startup interrupted-operation check; main.ts:216)
   |-- updateCheckTimeout = setTimeout(updateChecker.maybeCheck, 5000)  (#365; self-gated, once/day)
-  |-- registrar.register('transcribe-media' -> openUnifiedModal, 'transcribe-note-media' -> transcription.transcribeNoteMedia(deps, ctx.file))  (main.ts:249-267)
-  |-- build PipelineModuleMap + SynapseRunner (main.ts:269-277); construct IntakeModule (fireOnFile -> runner.fireOnFile; transcribeUrlToNote -> transcription.appendUrlTranscript; main.ts:280-288)
-  |-- registrar.register('fire'); auditCommands(registrar.getAttempted())  (logs drift)
-  +-- runFirstRunOnboarding({ getSettings, isFreshInstall, markSeen, notifications })  (#89; onboarding/; main.ts:299)
+  |-- registrar.register('transcribe-media' -> openUnifiedModal, 'transcribe-note-media' -> transcription.transcribeNoteMedia(deps, ctx.file))  (main.ts:221-239)
+  |-- registrar.register('fire' -> synapseRunner.fire); auditCommands(registrar.getAttempted())  (logs drift; main.ts:241-249)
+  +-- runFirstRunOnboarding({ getSettings, isFreshInstall, markSeen, notifications })  (#89; onboarding/; main.ts:250)
 
-onunload()  (main.ts:310)
+onunload()  (main.ts:261)
   |-- clearTimeout(updateCheckTimeout)
-  |-- <module>?.onunload() for checkpoints + every feature module (optional-chained; video may be null)
+  |-- checkpoints?.onunload()
+  |-- modules.unloadFeatureModules(modules)  (reverse registry order; skipped when construction never ran)
   +-- notifications.dispose()  (tears down in-flight operation ellipsis intervals + hides notices so a
                                 disable mid-operation never leaks an orphaned 400ms setInterval on a detached toast)
 ```
@@ -152,6 +159,7 @@ Cluster -> destination map (#496):
 | `migrateDataFolder`, `deepMerge` | `shared/data-folder-migration.ts`, `shared/settings-merge.ts` |
 | `runFirstRunOnboarding` | `onboarding/onboarding.ts` — `runFirstRunOnboarding` |
 | `dispatchDeferredTasks` (no callers) | removed |
+| Per-module fields, construction block, enabled-gated `onload()` list, `onunload()` list (#504) | `modules/registry.ts` — `MODULE_FACTORIES`, `constructFeatureModules`, `loadFeatureModules`, `unloadFeatureModules` |
 
 ## Command Registry
 
@@ -193,7 +201,7 @@ All ribbon glyphs are custom Synapse brand icons registered by `registerSynapseI
 | Icon | Label | Action |
 |------|-------|--------|
 | `synapse` | Review proposals | Opens unified proposal sidebar |
-| `synapse-transcribe` | Transcribe media | Opens unified transcription modal (every platform since #184; `main.ts:236` -> `transcription.openUnifiedTranscriptionModal`) |
+| `synapse-transcribe` | Transcribe media | Opens unified transcription modal (every platform since #184; `main.ts:208` -> `transcription.openUnifiedTranscriptionModal`) |
 | `synapse-actions` | Synapse actions | Opens registry-driven actions sidebar |
 
 ## View Types
@@ -433,7 +441,7 @@ matches the `UnifiedItem` union exactly.
 
 ## Cross-Module Callbacks (wired in main.ts)
 
-Post-op hooks are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook(postOpDeps, source)` / `buildAutoOrganizeHook(postOpDeps, trigger)`, `main.ts:208-222`); `PostOpHookDeps` injects `enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`.
+Post-op hooks are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook(postOpDeps, source)` / `buildAutoOrganizeHook(postOpDeps, trigger)`, `main.ts:180-194`); `PostOpHookDeps` injects `enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`.
 
 ```
 elaboration.onProposalAccepted(filePath) --> enrichment.enrich(filePath, 'elaboration')
@@ -461,12 +469,17 @@ title.onViewRefreshNeeded()              --> views.refreshUnifiedView(workspace,
 rem.onViewRefreshNeeded()                --> views.refreshUnifiedView(workspace, viewSources)
 <module>.onOpenProposalView()            --> views.activateUnifiedView(workspace, viewSources)   // "Review" toast action (#340)
 
-// Intake (IntakeDeps injected into IntakeModule)
+// Intake (IntakeDeps = ModuleWiring.intake, main.ts:72-79, handed to IntakeModule by the registry)
 intake.deps.fireOnFile(file)             --> SynapseRunner.fireOnFile(file)   // whole pipeline on one note
-intake.deps.transcribeUrlToNote(url, _, file) --> transcription.appendUrlTranscript(deps, url, file) (main.ts:282-286): urlTranscription.transcribe(url) + buildUrlTranscriptBlock -> vault.process append; rethrows so the note stays un-stamped/retriable
+intake.deps.transcribeUrlToNote(url, _, file) --> transcription.appendUrlTranscript(deps, url, file) (main.ts:74-78): urlTranscription.transcribe(url) + buildUrlTranscriptBlock -> vault.process append; rethrows so the note stays un-stamped/retriable
 
-// Per-proposal-type auto-accept (#228): each module gets a live getter
+// Per-proposal-type auto-accept (#228): each module gets a live getter, built by modules/registry.ts (autoAccept(deps, kind))
 <module>.shouldAutoAccept()              --> () => settings.autoAccept[kind]
+
+// Set by modules/registry.ts at construction (ModuleWiring.transcribeUrl = main.ts:70-71 -> urlTranscription.transcribe)
+video.urlTranscriber(url, parentOp)      --> wiring.transcribeUrl(url, parentOp)
+summarize.transcribeUrl(url, parentOp)   --> (await wiring.transcribeUrl(url, parentOp)).text
+summarize.transcribeAudio(file)          --> vault.readBinary(file) -> audio.transcribe(data, file.name) -> processed || raw
 ```
 
 Enrichment callbacks wired when `enrichment.enabled && enrichment.autoEnrich` (evaluated once at wire time).
@@ -500,7 +513,7 @@ main.ts creates single CheckpointManager, injected into all modules
   |
   |-- UnifiedProposalView: shows checkpoint banner with Resume/Discard buttons
   |     -> CheckpointRecoveryModule.resume(id) / discard(id)
-  |-- resume(id): checkpointManager.resume -> resumeHandlers[checkpoint.module](checkpoint)  (map built in main.ts:139; each entry is <module>.resumeFromCheckpoint) -> refreshView()
+  |-- resume(id): checkpointManager.resume -> resumeHandlers[checkpoint.module](checkpoint)  (map built in main.ts:122; each entry is <module>.resumeFromCheckpoint) -> refreshView()
 ```
 
 Checkpoint cleanup: completed/discarded checkpoints older than 7 days are auto-removed on startup.

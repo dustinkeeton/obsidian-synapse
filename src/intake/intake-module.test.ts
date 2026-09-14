@@ -39,6 +39,7 @@ vi.mock('../shared', async (importOriginal) => {
 });
 
 import { fetchArticleContent } from '../shared';
+import { makeModuleDeps } from '../__test-utils__/mock-factories';
 
 // The settle window is now driven by `intake.settleSeconds` (#222). Tests seed
 // `settings.intake.settleSeconds = 5` (the default), so the effective debounce
@@ -166,10 +167,12 @@ describe('IntakeModule', () => {
 		};
 
 		module = new IntakeModule(
-			plugin as unknown as Plugin,
-			() => settings,
-			notifications as unknown as NotificationManager,
-			deps,
+			makeModuleDeps({
+				plugin: plugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: notifications as unknown as NotificationManager,
+			}),
+			deps
 		);
 		vi.mocked(fetchArticleContent).mockClear();
 		vi.mocked(fetchArticleContent).mockResolvedValue('FETCHED ARTICLE BODY');

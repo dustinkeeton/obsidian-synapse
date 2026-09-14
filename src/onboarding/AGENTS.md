@@ -4,7 +4,7 @@ last-updated: 2026-09-14
 
 # Onboarding Module
 
-First-run welcome gate + required-API-key emphasis (#89). `planFirstRun` is pure and returns a plan; `runFirstRunOnboarding` applies it through injected deps (called once from `main.ts:299-307`); `settings-ui` applies the emphasis. No Obsidian runtime import.
+First-run welcome gate + required-API-key emphasis (#89). `planFirstRun` is pure and returns a plan; `runFirstRunOnboarding` applies it through injected deps (called once from `main.ts:250-258`); `settings-ui` applies the emphasis. No Obsidian runtime import.
 
 ## Public API
 
@@ -68,4 +68,4 @@ function runFirstRunOnboarding(deps: FirstRunDeps): Promise<void>
 | `redactError` (runtime) | `../shared` | `onboarding.ts:11` |
 | `NotificationManager` (type) | `../shared` | `onboarding.ts:12` |
 
-Consumers: `main.ts:299-307` (`runFirstRunOnboarding`; `markSeen` sets `settings.onboarding.hasSeenWelcome = true` then `saveSettings()`), `settings-ui/settings-tab.ts` (`applyApiKeyEmphasis`, `API_KEY_NO_SUBSCRIPTION_NOTE`). State lives in `settings.onboarding.hasSeenWelcome` (`settings.ts`).
+Consumers: `main.ts:250-258` (`runFirstRunOnboarding`; `markSeen` sets `settings.onboarding.hasSeenWelcome = true` then `saveSettings()`), `settings-ui/settings-tab.ts` (`applyApiKeyEmphasis`, `API_KEY_NO_SUBSCRIPTION_NOTE`). State lives in `settings.onboarding.hasSeenWelcome` (`settings.ts`).

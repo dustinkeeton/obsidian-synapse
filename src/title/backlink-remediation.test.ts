@@ -9,6 +9,7 @@ import { TitleModule } from './index';
 import { DEFAULT_SETTINGS } from '../settings';
 import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile, TFolder, Notice } from '../__mocks__/obsidian';
+import { makeModuleDeps } from '../__test-utils__/mock-factories';
 
 const OLD = 'Inbox/Untitled.md';
 const NEW = 'Inbox/Neural Networks.md';
@@ -245,11 +246,13 @@ function harness(
 	};
 
 	const mod = new TitleModule(
-		mockPlugin as never,
-		() => settings,
-		notifications,
-		new NoteOperationQueue(),
-		() => settings.autoAccept.title,
+		makeModuleDeps({
+			plugin: mockPlugin as never,
+			getSettings: () => settings,
+			notifications,
+			noteQueue: new NoteOperationQueue(),
+		}),
+		() => settings.autoAccept.title
 	);
 
 	return { mod, settings, contents, files, processSpy, renameSpy, trashSpy };

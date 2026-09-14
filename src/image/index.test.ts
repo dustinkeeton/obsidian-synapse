@@ -3,7 +3,7 @@ import { ImageModule } from './index';
 import { ImageExtractor } from './extractor';
 import { ImageEmbed, OCRResult } from './types';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
-import { createMockApp, mockFile as rawFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager, Checkpoint } from '../shared';
@@ -62,11 +62,13 @@ describe('ImageModule', () => {
 			fileName: 'img.png',
 		} as OCRResult);
 		module = new ImageModule(
-			plugin,
-			() => makeSettings(),
-			notifications as unknown as NotificationManager,
-			checkpointManager as unknown as CheckpointManager,
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin,
+				getSettings: () => makeSettings(),
+				notifications: notifications as unknown as NotificationManager,
+				checkpointManager: checkpointManager as unknown as CheckpointManager,
+				noteQueue: new NoteOperationQueue(),
+			})
 		);
 	});
 

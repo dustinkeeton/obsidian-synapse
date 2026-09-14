@@ -12,6 +12,7 @@ import {
 	serializeFrontmatter,
 	writeNote,
 } from '../shared';
+import type { ModuleDeps, FeatureModule } from '../shared';
 import { IntakeDispatcher } from './intake-dispatcher';
 import {
 	IntakeDeps,
@@ -65,7 +66,11 @@ const CATCHUP_STAGGER_MS = 2000;
  *   execute the branch → stamp `synapse-processed` (before any move) →
  *   optional move to `moveWhenDone`.
  */
-export class IntakeModule {
+export class IntakeModule implements FeatureModule {
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private deps: IntakeDeps;
 	private readonly dispatcher = new IntakeDispatcher();
 
 	/** Paths with a pending (debounced, not-yet-flushed) change. */
@@ -82,12 +87,12 @@ export class IntakeModule {
 	/** Startup catch-up scan timer handle (#462). */
 	private catchupTimer: number | null = null;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private deps: IntakeDeps,
-	) {}
+	constructor(moduleDeps: ModuleDeps, deps: IntakeDeps) {
+		this.plugin = moduleDeps.plugin;
+		this.getSettings = moduleDeps.getSettings;
+		this.notifications = moduleDeps.notifications;
+		this.deps = deps;
+	}
 
 	async onload(): Promise<void> {
 		// Only watch when enabled and an intake folder is configured. An empty

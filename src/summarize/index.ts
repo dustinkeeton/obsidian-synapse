@@ -6,7 +6,7 @@ import {
 	CALLOUT_TYPES, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { OperationHandle } from '../shared';
 import { isSupportedUrl, detectPlatform } from '../shared';
 import { findAudioEmbeds } from '../audio';
@@ -119,7 +119,13 @@ class MediaTranscriptionError extends Error {
 	}
 }
 
-export class SummarizeModule {
+export class SummarizeModule implements FeatureModule {
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private checkpointManager: CheckpointManager;
+	private registrar: CommandRegistrar;
+	private noteQueue: NoteOperationQueue;
 	private summarizer: Summarizer;
 	private transcribeUrl: TranscribeUrlFn | null;
 	private transcribeAudio: TranscribeAudioFn | null;
@@ -130,17 +136,14 @@ export class SummarizeModule {
 	/** Optional callback invoked after single-note summarize to organize the note. Wired by main.ts. */
 	onOrganizeRequested: ((file: TFile) => void) | null = null;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar,
-		private noteQueue: NoteOperationQueue,
-		transcribeUrl?: TranscribeUrlFn,
-		transcribeAudio?: TranscribeAudioFn
-	) {
-		this.summarizer = new Summarizer(getSettings);
+	constructor(deps: ModuleDeps, transcribeUrl?: TranscribeUrlFn, transcribeAudio?: TranscribeAudioFn) {
+		this.plugin = deps.plugin;
+		this.getSettings = deps.getSettings;
+		this.notifications = deps.notifications;
+		this.checkpointManager = deps.checkpointManager;
+		this.registrar = deps.registrar;
+		this.noteQueue = deps.noteQueue;
+		this.summarizer = new Summarizer(deps.getSettings);
 		this.transcribeUrl = transcribeUrl ?? null;
 		this.transcribeAudio = transcribeAudio ?? null;
 	}

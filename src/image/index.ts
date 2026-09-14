@@ -4,7 +4,7 @@ import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
 	CheckpointManager, NoteOperationQueue, generateId, isPathExcluded, findMatchingRule,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { ImageEmbed } from './types';
 import { ImageExtractor } from './extractor';
 
@@ -12,20 +12,24 @@ export { findImageEmbeds, IMAGE_EXTENSIONS, IMAGE_EMBED_REGEX } from './note-sca
 export { arrayBufferToBase64, preprocessImage } from './preprocess';
 export type { ImageEmbed, OCRResult } from './types';
 
-export class ImageModule {
+export class ImageModule implements FeatureModule {
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private checkpointManager: CheckpointManager;
+	private noteQueue: NoteOperationQueue;
 	private extractor: ImageExtractor;
 
 	/** Optional callback invoked after OCR extraction completes. Wired by main.ts for enrichment. */
 	onExtractionComplete: ((filePath: string) => void) | null = null;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager,
-		private noteQueue: NoteOperationQueue
-	) {
-		this.extractor = new ImageExtractor(getSettings, notifications);
+	constructor(deps: ModuleDeps) {
+		this.plugin = deps.plugin;
+		this.getSettings = deps.getSettings;
+		this.notifications = deps.notifications;
+		this.checkpointManager = deps.checkpointManager;
+		this.noteQueue = deps.noteQueue;
+		this.extractor = new ImageExtractor(deps.getSettings, deps.notifications);
 	}
 
 	async onload(): Promise<void> {}

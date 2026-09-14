@@ -3,7 +3,7 @@ import { ElaborationModule } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager, NoteOperationQueue } from '../shared';
-import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { mockFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { TFile } from 'obsidian';
 
 // The proposer uses AIClient under the hood; stub it so no network is hit.
@@ -122,12 +122,14 @@ describe('ElaborationModule auto-accept (#228)', () => {
 
 	function build(shouldAutoAccept: () => boolean): ElaborationModule {
 		return new ElaborationModule(
-			mockPlugin as never,
-			() => settings,
-			notifications,
-			createMockCheckpointManager() as never,
-			new CommandRegistrar(mockPlugin),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as never,
+				getSettings: () => settings,
+				notifications,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: new CommandRegistrar(mockPlugin),
+				noteQueue: new NoteOperationQueue(),
+			}),
 			shouldAutoAccept
 		);
 	}

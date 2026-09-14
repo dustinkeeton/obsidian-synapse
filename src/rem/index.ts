@@ -2,7 +2,7 @@ import type { Plugin } from 'obsidian';
 import { TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { CommandRegistrar } from '../commands';
-import type { NotificationManager, CheckpointManager } from '../shared';
+import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule } from '../shared';
 import type { DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
 import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction } from '../shared';
@@ -17,7 +17,12 @@ export type { RemProposal, RemLinkCandidate, RemOccurrence, RemSettings } from '
  * REM (Re-link & Enrich Mappings) module.
  * Discovers linkable references in note text and proposes in-place [[wikilink]] insertions.
  */
-export class RemModule {
+export class RemModule implements FeatureModule {
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private checkpointManager: CheckpointManager;
+	private registrar: CommandRegistrar;
 	private store!: RemStore;
 	private scanner!: MentionScanner;
 	private semanticMatcher!: SemanticMatcher;
@@ -36,14 +41,12 @@ export class RemModule {
 	 */
 	private shouldAutoAccept: () => boolean = () => false;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar,
-		shouldAutoAccept?: () => boolean
-	) {
+	constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean) {
+		this.plugin = deps.plugin;
+		this.getSettings = deps.getSettings;
+		this.notifications = deps.notifications;
+		this.checkpointManager = deps.checkpointManager;
+		this.registrar = deps.registrar;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 	}
 

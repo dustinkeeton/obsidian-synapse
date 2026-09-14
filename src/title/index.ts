@@ -4,6 +4,7 @@ import {
 	AIClient, NotificationManager, NoteOperationQueue, generateId, readNote, isPathExcluded, reviewAction,
 	findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags,
 } from '../shared';
+import type { ModuleDeps, FeatureModule } from '../shared';
 import { TitleProposalStore } from './title-store';
 import { collectInboundLinks, rewriteContent, InboundLinkRef } from './backlink-remediation';
 import { TitleSuggester } from './title-suggester';
@@ -27,7 +28,11 @@ export type TitleAcceptOutcome =
 	| { status: 'conflict'; target: string }
 	| { status: 'skipped' };
 
-export class TitleModule {
+export class TitleModule implements FeatureModule {
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private noteQueue: NoteOperationQueue;
 	private store: TitleProposalStore;
 	private suggester: TitleSuggester;
 
@@ -44,15 +49,13 @@ export class TitleModule {
 	 */
 	private shouldAutoAccept: () => boolean = () => false;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private noteQueue: NoteOperationQueue,
-		shouldAutoAccept?: () => boolean
-	) {
-		const aiClient = new AIClient(getSettings);
-		this.store = new TitleProposalStore(plugin.app, getSettings);
+	constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean) {
+		this.plugin = deps.plugin;
+		this.getSettings = deps.getSettings;
+		this.notifications = deps.notifications;
+		this.noteQueue = deps.noteQueue;
+		const aiClient = new AIClient(deps.getSettings);
+		this.store = new TitleProposalStore(deps.plugin.app, deps.getSettings);
 		this.suggester = new TitleSuggester(aiClient);
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 	}

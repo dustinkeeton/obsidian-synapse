@@ -3,7 +3,7 @@ import { EnrichmentModule } from './index';
 import { EnrichmentStore } from './enrichment-store';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockApp, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockApp, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NoticeAction } from '../shared';
@@ -76,12 +76,14 @@ describe('EnrichmentModule Review toast action (#366)', () => {
 	function build(shouldAutoAccept: () => boolean): EnrichmentModule {
 		const registrar = { register: vi.fn() };
 		return new EnrichmentModule(
-			plugin,
-			() => settings,
-			notifications as never,
-			createMockCheckpointManager() as never,
-			registrar as never,
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin,
+				getSettings: () => settings,
+				notifications: notifications as never,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: registrar as never,
+				noteQueue: new NoteOperationQueue(),
+			}),
 			shouldAutoAccept
 		);
 	}

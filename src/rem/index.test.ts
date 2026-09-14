@@ -5,7 +5,7 @@ import { MentionScanner } from './mention-scanner';
 import { SemanticMatcher } from './semantic-matcher';
 import { RemProposal, RemLinkCandidate } from './types';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
-import { createMockApp, mockFile as rawFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin, TFile } from 'obsidian';
 import type { CheckpointManager, NotificationManager, NoticeAction, Checkpoint } from '../shared';
 import type { CommandRegistrar } from '../commands';
@@ -98,11 +98,13 @@ describe('RemModule', () => {
 
 	async function loadedModule(shouldAutoAccept?: () => boolean): Promise<RemModule> {
 		const module = new RemModule(
-			plugin,
-			() => settings,
-			notifications as unknown as NotificationManager,
-			checkpointManager as unknown as CheckpointManager,
-			registrar as unknown as CommandRegistrar,
+			makeModuleDeps({
+				plugin,
+				getSettings: () => settings,
+				notifications: notifications as unknown as NotificationManager,
+				checkpointManager: checkpointManager as unknown as CheckpointManager,
+				registrar: registrar as unknown as CommandRegistrar,
+			}),
 			shouldAutoAccept
 		);
 		await module.onload();

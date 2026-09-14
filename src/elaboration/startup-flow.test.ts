@@ -24,6 +24,7 @@ import { DEFAULT_SETTINGS } from '../settings';
 import type { Plugin } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
+import { makeModuleDeps } from '../__test-utils__/mock-factories';
 
 describe('ElaborationModule — startup flow gate', () => {
 	let settings: typeof DEFAULT_SETTINGS;
@@ -53,12 +54,14 @@ describe('ElaborationModule — startup flow gate', () => {
 	function makeModule(): ElaborationModule {
 		const plugin = { app: {} } as unknown as Plugin;
 		return new ElaborationModule(
-			plugin,
-			() => settings,
-			{} as unknown as NotificationManager,
-			{} as unknown as CheckpointManager,
-			new CommandRegistrar(plugin),
-			new NoteOperationQueue()
+			makeModuleDeps({
+				plugin,
+				getSettings: () => settings,
+				notifications: {} as unknown as NotificationManager,
+				checkpointManager: {} as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(plugin),
+				noteQueue: new NoteOperationQueue(),
+			})
 		);
 	}
 

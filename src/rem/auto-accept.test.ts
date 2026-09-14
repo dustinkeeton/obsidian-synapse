@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager } from '../shared';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { RemLinkCandidate } from './types';
 
 // Fixed literal candidate the scanner "finds" — two occurrences of one term.
@@ -117,11 +117,13 @@ describe('RemModule auto-accept (#228)', () => {
 
 	function build(shouldAutoAccept: () => boolean): RemModule {
 		return new RemModule(
-			mockPlugin as never,
-			() => settings,
-			notifications,
-			createMockCheckpointManager() as never,
-			new CommandRegistrar(mockPlugin as never),
+			makeModuleDeps({
+				plugin: mockPlugin as never,
+				getSettings: () => settings,
+				notifications,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: new CommandRegistrar(mockPlugin as never),
+			}),
 			shouldAutoAccept
 		);
 	}

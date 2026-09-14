@@ -3,6 +3,7 @@ import { TitleModule } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile, TFolder } from '../__mocks__/obsidian';
+import { makeModuleDeps } from '../__test-utils__/mock-factories';
 
 // Stub the title suggester so checkUntitled produces a deterministic proposal
 // without any AI/network call.
@@ -93,10 +94,12 @@ describe('TitleModule auto-accept (#228)', () => {
 
 	function build(shouldAutoAccept: () => boolean): TitleModule {
 		return new TitleModule(
-			mockPlugin as never,
-			() => settings,
-			notifications,
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as never,
+				getSettings: () => settings,
+				notifications,
+				noteQueue: new NoteOperationQueue(),
+			}),
 			shouldAutoAccept
 		);
 	}

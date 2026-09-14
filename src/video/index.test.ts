@@ -7,6 +7,7 @@ import { VideoModule } from './index';
 import { NoteOperationQueue } from '../shared';
 import { DependencyMissingError } from './audio-extractor';
 import type { VideoMetadata } from './types';
+import { makeModuleDeps } from '../__test-utils__/mock-factories';
 
 /**
  * Focused coverage for VideoModule.downloadVideoToVault — the Vault-API
@@ -47,13 +48,15 @@ function makeModule(downloadFolder: string, vault: VaultStub, tempPath: string) 
 		}) as never;
 	const plugin = { app: { vault } } as never;
 	const mod = new VideoModule(
-		plugin,
-		getSettings,
-		{} as never,
-		{} as never,
-		{} as never,
-		{} as never,
-		new NoteOperationQueue()
+		makeModuleDeps({
+			plugin,
+			getSettings,
+			notifications: {} as never,
+			checkpointManager: {} as never,
+			registrar: {} as never,
+			noteQueue: new NoteOperationQueue(),
+		}),
+		{} as never
 	);
 	// Replace the real extractor with a stub that "downloads" to our temp file.
 	(mod as unknown as { extractor: { downloadVideo: ReturnType<typeof vi.fn> } }).extractor = {
@@ -174,13 +177,15 @@ describe('VideoModule.processUrl dependency-error preservation (#382)', () => {
 			}) as never;
 		const plugin = { app: {} } as never;
 		const mod = new VideoModule(
-			plugin,
-			getSettings,
-			{} as never,
-			{} as never,
-			{} as never,
-			{} as never,
-			new NoteOperationQueue()
+			makeModuleDeps({
+				plugin,
+				getSettings,
+				notifications: {} as never,
+				checkpointManager: {} as never,
+				registrar: {} as never,
+				noteQueue: new NoteOperationQueue(),
+			}),
+			{} as never
 		);
 		(mod as unknown as { extractor: { extractFromUrl: ReturnType<typeof vi.fn> } }).extractor = {
 			extractFromUrl,

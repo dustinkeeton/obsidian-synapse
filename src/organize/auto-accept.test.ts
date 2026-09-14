@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 
 // Analyzer finds a topic; matcher proposes a NEW directory (the only path that
 // creates an organize proposal).
@@ -102,12 +102,14 @@ describe('OrganizeModule auto-accept (#228)', () => {
 
 	function build(shouldAutoAccept: () => boolean): OrganizeModule {
 		return new OrganizeModule(
-			mockPlugin as never,
-			() => settings,
-			notifications,
-			createMockCheckpointManager() as never,
-			new CommandRegistrar(mockPlugin as never),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as never,
+				getSettings: () => settings,
+				notifications,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: new CommandRegistrar(mockPlugin as never),
+				noteQueue: new NoteOperationQueue(),
+			}),
 			shouldAutoAccept
 		);
 	}

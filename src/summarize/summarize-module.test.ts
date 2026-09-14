@@ -3,7 +3,7 @@ import { SummarizeModule } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import { fetchPageContent, fetchRedditContent, NoteOperationQueue } from '../shared';
 import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import type { Mock } from 'vitest';
@@ -158,14 +158,16 @@ describe('SummarizeModule organize scope', () => {
 
 		mockNotifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin as unknown as Plugin,
-			() => settings,
-			mockNotifications as unknown as NotificationManager,
-			createMockCheckpointManager() as unknown as CheckpointManager,
-			new CommandRegistrar(
-				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
-			),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: mockNotifications as unknown as NotificationManager,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(
+					mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+				),
+				noteQueue: new NoteOperationQueue(),
+			})
 		);
 	});
 
@@ -296,14 +298,16 @@ describe('SummarizeModule content-aware templates', () => {
 
 		mockNotifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin as unknown as Plugin,
-			() => settings,
-			mockNotifications as unknown as NotificationManager,
-			createMockCheckpointManager() as unknown as CheckpointManager,
-			new CommandRegistrar(
-				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
-			),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: mockNotifications as unknown as NotificationManager,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(
+					mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+				),
+				noteQueue: new NoteOperationQueue(),
+			})
 		);
 	});
 
@@ -421,14 +425,16 @@ describe('SummarizeModule note content (#367)', () => {
 
 		mockNotifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin as unknown as Plugin,
-			() => settings,
-			mockNotifications as unknown as NotificationManager,
-			createMockCheckpointManager() as unknown as CheckpointManager,
-			new CommandRegistrar(
-				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
-			),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: mockNotifications as unknown as NotificationManager,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(
+					mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+				),
+				noteQueue: new NoteOperationQueue(),
+			})
 		);
 	});
 

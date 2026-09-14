@@ -3,7 +3,7 @@ import { ElaborationModule } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager, NoteOperationQueue } from '../shared';
-import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { mockFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import { requestUrl } from '../__mocks__/obsidian';
 import type { App, Plugin, TFile } from 'obsidian';
 import type { CheckpointManager } from '../shared';
@@ -92,12 +92,14 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		notifications = new NotificationManager();
 
 		module = new ElaborationModule(
-			mockPlugin as unknown as Plugin,
-			() => settings,
-			notifications,
-			createMockCheckpointManager() as unknown as CheckpointManager,
-			new CommandRegistrar(mockPlugin),
-			new NoteOperationQueue()
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(mockPlugin),
+				noteQueue: new NoteOperationQueue(),
+			})
 		);
 	});
 

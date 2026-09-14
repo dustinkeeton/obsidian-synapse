@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 
 // Each note yields a topic whose RAW label differs ("models" vs "model") but
 // canonicalizes to the same key. The matcher proposes a new directory named
@@ -103,12 +103,14 @@ describe('OrganizeModule batch dedup (#172)', () => {
 
 	it('coalesces singular/plural proposals across a scan to one directory', async () => {
 		const mod = new OrganizeModule(
-			mockPlugin as never,
-			() => settings,
-			notifications,
-			createMockCheckpointManager() as never,
-			new CommandRegistrar(mockPlugin as never),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as never,
+				getSettings: () => settings,
+				notifications,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: new CommandRegistrar(mockPlugin as never),
+				noteQueue: new NoteOperationQueue(),
+			}),
 			() => false // auto-accept off: proposals stay pending for inspection
 		);
 		await mod.onload();
