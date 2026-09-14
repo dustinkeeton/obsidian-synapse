@@ -121,6 +121,8 @@ export {
 	SETTINGS_MIGRATIONS,
 } from './settings-migrations';
 export type { SettingsMigration } from './settings-migrations';
+export { migrateDataFolder, LEGACY_DATA_FOLDER, DATA_FOLDER } from './data-folder-migration';
+export { deepMergeSettings } from './settings-merge';
 export {
 	CONTENT_SCHEMAS,
 	detectSchemaFor,

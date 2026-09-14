@@ -7,6 +7,13 @@ export {
 	SynapseActionsView,
 } from './synapse-actions-view';
 export type { SynapseActionsCallbacks } from './synapse-actions-view';
+export {
+	activateUnifiedView,
+	activateSynapseActionsView,
+	refreshUnifiedView,
+} from './view-activation';
+export type { UnifiedViewSources } from './view-activation';
+export { activeMarkdownFile, runRegisteredCommand } from './command-runner';
 export { PROPOSAL_KINDS } from './types';
 export type {
 	UnifiedItem,
