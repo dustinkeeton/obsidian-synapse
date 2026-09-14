@@ -26,18 +26,12 @@ vi.mock('../shared/confirm-modal', () => ({
 
 import { ChangelogModal } from '../changelog';
 import { ConfirmModal } from '../shared/confirm-modal';
-import { SynapseSettingTab } from './settings-tab';
+import { SynapseSettingTab, SETTINGS_SECTIONS, isSectionVisible } from './settings-tab';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
 import { createSettingsSectionContext } from '../shared';
-import { METADATA_CONTAINER_SELECTOR, PROPERTIES_COLLAPSED_CLASS } from '../properties-fold';
 
-/**
- * Tooltip of the REM feature's accordion-header enable toggle (see
- * `featureSection('rem', …)` in settings-tab.ts). Used to locate that toggle
- * among all rendered toggles so a test can simulate a user enabling/disabling
- * the REM feature itself.
- */
+/** Tooltip of the REM accordion-header enable toggle (`src/rem/settings-section.ts`). */
 const REM_FEATURE_TOOLTIP =
 	'Scan notes for mentions of other note titles and propose in-place [[wikilink]] insertions. Link suggestions are ranked by AI content relevance, not just literal title matches.';
 
@@ -62,10 +56,23 @@ function makeTab(mutate?: (s: SynapseSettings) => void) {
 	return { tab, plugin, settings };
 }
 
-/** The per-kind Auto-Accept `Setting` rows the tab tracks for live updates. */
+const AUTO_ACCEPT_NAMES: Record<string, string> = {
+	elaboration: 'Elaboration',
+	organize: 'Organize',
+	'deep-dive': 'Deep dive',
+	rem: 'REM (link discovery)',
+};
+
+/** The per-kind Auto-Accept `Setting` rows, located by name inside the Auto-accept body. */
 function autoAcceptRows(tab: SynapseSettingTab): Record<string, Setting> {
-	return (tab as unknown as { autoAcceptSettings: Record<string, Setting> })
-		.autoAcceptSettings;
+	const body = sectionBody(tab, 'Auto-accept proposals');
+	const rows: Record<string, Setting> = {};
+	for (const [kind, name] of Object.entries(AUTO_ACCEPT_NAMES)) {
+		rows[kind] = Setting.instances.find(
+			(s) => s.name === name && (body?.children as unknown as StubEl[]).includes(s.settingEl),
+		)!;
+	}
+	return rows;
 }
 
 /** The Setting's first child toggle (the Auto-Accept on/off control). */
@@ -102,9 +109,99 @@ function findByText(el: StubEl, needle: string, out: StubEl[] = []): StubEl[] {
 	return out;
 }
 
+/** Recursively collect every element in a stub tree. */
+function walkEls(el: StubEl, out: StubEl[] = []): StubEl[] {
+	for (const child of el.children as unknown as StubEl[]) {
+		out.push(child);
+		walkEls(child, out);
+	}
+	return out;
+}
+function elsWithClass(root: StubEl, cls: string): StubEl[] {
+	return walkEls(root).filter((e) => e.classList.contains(cls));
+}
+function elsWithTag(root: StubEl, tag: string): StubEl[] {
+	return walkEls(root).filter((e) => e.tagName === tag);
+}
+
+/** All accordion section wrappers, in DOM order. */
+function accordions(tab: SynapseSettingTab): StubEl[] {
+	const container = (tab as unknown as { containerEl: StubEl }).containerEl;
+	return elsWithClass(container, 'synapse-accordion');
+}
+
+/** The collapsible body of the accordion whose header title matches `title`. */
+function sectionBody(tab: SynapseSettingTab, title: string): StubEl | undefined {
+	const section = accordions(tab).find((acc) =>
+		elsWithClass(acc, 'synapse-accordion-title').some((t) => t.textContent === title),
+	);
+	return section ? elsWithClass(section, 'synapse-accordion-body')[0] : undefined;
+}
+
+describe('SynapseSettingTab — section registry', () => {
+	beforeEach(() => {
+		Setting.instances.length = 0;
+	});
+
+	it('renders one accordion per declared section, under its declared key, in declared order', () => {
+		const { plugin } = makeTab();
+		const ctx = createSettingsSectionContext({
+			containerEl: createEl(),
+			plugin: plugin as never,
+			rerender: vi.fn(),
+		});
+
+		for (const entry of SETTINGS_SECTIONS) entry.render(ctx);
+
+		expect(ctx.sections.map((s) => s.key)).toEqual(SETTINGS_SECTIONS.map((e) => e.key));
+	});
+
+	it('renders the tab DOM in the declared order, About last, Video after Audio', () => {
+		const { tab, plugin } = makeTab();
+		const ctx = createSettingsSectionContext({
+			containerEl: createEl(),
+			plugin: plugin as never,
+			rerender: vi.fn(),
+		});
+		for (const entry of SETTINGS_SECTIONS) entry.render(ctx);
+		const declaredTitles = ctx.sections.map((s) => s.title);
+
+		tab.display();
+		const domTitles = accordions(tab).map(
+			(acc) => elsWithClass(acc, 'synapse-accordion-title')[0]?.textContent,
+		);
+
+		expect(domTitles).toEqual(declaredTitles);
+		expect(domTitles.at(-1)).toBe('About');
+		expect(domTitles.indexOf('Video transcription')).toBe(
+			domTitles.indexOf('Audio transcription') + 1,
+		);
+	});
+
+	it('declares Video on every platform', () => {
+		const video = SETTINGS_SECTIONS.find((e) => e.key === 'video');
+		expect(video?.platform).toBeUndefined();
+	});
+
+	it('gates a platform-flagged entry on the given platform', () => {
+		const desktopOnly = { key: 'x', render: vi.fn(), platform: 'desktop' as const };
+		const mobileOnly = { key: 'y', render: vi.fn(), platform: 'mobile' as const };
+		const everywhere = { key: 'z', render: vi.fn() };
+		const desktop = { isDesktop: true, isMobile: false };
+		const mobile = { isDesktop: false, isMobile: true };
+
+		expect(isSectionVisible(desktopOnly, desktop)).toBe(true);
+		expect(isSectionVisible(desktopOnly, mobile)).toBe(false);
+		expect(isSectionVisible(mobileOnly, desktop)).toBe(false);
+		expect(isSectionVisible(mobileOnly, mobile)).toBe(true);
+		expect(isSectionVisible(everywhere, mobile)).toBe(true);
+	});
+});
+
 describe('SynapseSettingTab — Auto-Accept disabled state', () => {
 	beforeEach(() => {
 		ToggleComponent.instances.length = 0;
+		Setting.instances.length = 0;
 	});
 
 	it('disables an Auto-Accept row when its feature is disabled, enables it when enabled', () => {
@@ -247,21 +344,6 @@ describe('SynapseSettingTab — About "What\'s new" changelog link (#375)', () =
 	});
 });
 
-/** Recursively collect every element in a stub tree. */
-function walkEls(el: StubEl, out: StubEl[] = []): StubEl[] {
-	for (const child of el.children as unknown as StubEl[]) {
-		out.push(child);
-		walkEls(child, out);
-	}
-	return out;
-}
-function elsWithClass(root: StubEl, cls: string): StubEl[] {
-	return walkEls(root).filter((e) => e.classList.contains(cls));
-}
-function elsWithTag(root: StubEl, tag: string): StubEl[] {
-	return walkEls(root).filter((e) => e.tagName === tag);
-}
-
 describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
 	/**
 	 * The `synapse-exclusion-chips` containers in DOM order: one per rule, then the
@@ -359,120 +441,6 @@ describe('SynapseSettingTab — Exclusions chip multi-select (#328)', () => {
 	});
 });
 
-describe('SynapseSettingTab — General section / auto-fold properties (#381)', () => {
-	beforeEach(() => {
-		ToggleComponent.instances.length = 0;
-	});
-
-	/**
-	 * A fake markdown view exposing a `querySelector`-able `containerEl` with a
-	 * Properties panel, so a toggle-on can be asserted to fold it. `isCollapsed`
-	 * reports whether the panel carries Obsidian's collapsed class.
-	 */
-	function makeFoldableView() {
-		const classes = new Set<string>();
-		const panel = {
-			classList: {
-				contains: (c: string) => classes.has(c),
-				add: (c: string) => { classes.add(c); },
-			},
-		};
-		const containerEl = {
-			querySelector: (sel: string) =>
-				sel === METADATA_CONTAINER_SELECTOR ? panel : null,
-		};
-		return { view: { containerEl }, isCollapsed: () => classes.has(PROPERTIES_COLLAPSED_CLASS) };
-	}
-
-	/** Render ONLY the General section so its toggles are unambiguous. */
-	function renderGeneral(
-		mutate?: (s: SynapseSettings) => void,
-		activeView?: unknown,
-	) {
-		const settings = structuredClone(DEFAULT_SETTINGS);
-		mutate?.(settings);
-		const saveSettings = vi.fn().mockResolvedValue(undefined);
-		const getActiveViewOfType = vi.fn().mockReturnValue(activeView ?? null);
-		const app = { workspace: { getActiveViewOfType } };
-		const plugin = { app, settings, saveSettings, manifest: { version: '0.0.0-test' } };
-		const tab = new SynapseSettingTab(app as never, plugin as never);
-		const containerEl = createEl();
-		const ctx = createSettingsSectionContext({
-			containerEl,
-			plugin: plugin as never,
-			rerender: vi.fn(),
-		});
-		(tab as unknown as { renderGeneralSettings(c: unknown): void }).renderGeneralSettings(ctx);
-		return { plugin, settings, saveSettings, containerEl, getActiveViewOfType };
-	}
-
-	// Toggles render in source order: auto-fold (#381) first, then update
-	// notifications (#365).
-	const generalToggle = () => ToggleComponent.instances[0];
-	const updateToggle = () => ToggleComponent.instances[1];
-
-	it('renders a "General" accordion section', () => {
-		const { containerEl } = renderGeneral();
-		const titles = elsWithClass(containerEl, 'synapse-accordion-title').map((e) => e.textContent);
-		expect(titles).toContain('General');
-	});
-
-	it('renders the auto-fold toggle reflecting the stored setting (on)', () => {
-		renderGeneral((s) => { s.ui.autoFoldProperties = true; });
-		// Two General toggles now: auto-fold (#381) + update notifications (#365).
-		expect(ToggleComponent.instances).toHaveLength(2);
-		expect(generalToggle().getValue()).toBe(true);
-	});
-
-	it('renders the auto-fold toggle reflecting the stored setting (off)', () => {
-		renderGeneral((s) => { s.ui.autoFoldProperties = false; });
-		expect(generalToggle().getValue()).toBe(false);
-	});
-
-	it('persists the flag and saves when the toggle changes', async () => {
-		const { plugin, saveSettings } = renderGeneral((s) => { s.ui.autoFoldProperties = false; });
-		await generalToggle()._trigger(true);
-		expect(plugin.settings.ui.autoFoldProperties).toBe(true);
-		expect(saveSettings).toHaveBeenCalled();
-	});
-
-	it('folds the active note Properties immediately when switched on', async () => {
-		const { view, isCollapsed } = makeFoldableView();
-		const { getActiveViewOfType } = renderGeneral(
-			(s) => { s.ui.autoFoldProperties = false; },
-			view,
-		);
-		await generalToggle()._trigger(true);
-		expect(getActiveViewOfType).toHaveBeenCalled();
-		expect(isCollapsed()).toBe(true);
-	});
-
-	it('does not fold (or reach the view) when switched off', async () => {
-		const { view, isCollapsed } = makeFoldableView();
-		const { getActiveViewOfType } = renderGeneral(
-			(s) => { s.ui.autoFoldProperties = true; },
-			view,
-		);
-		await generalToggle()._trigger(false);
-		expect(isCollapsed()).toBe(false);
-		expect(getActiveViewOfType).not.toHaveBeenCalled();
-	});
-
-	it('renders the update-notifications toggle reflecting the stored setting', () => {
-		renderGeneral((s) => { s.updates.enableUpdateNotifications = false; });
-		expect(updateToggle().getValue()).toBe(false);
-	});
-
-	it('persists the update-notifications flag and saves when the toggle changes', async () => {
-		const { plugin, saveSettings } = renderGeneral(
-			(s) => { s.updates.enableUpdateNotifications = true; },
-		);
-		await updateToggle()._trigger(false);
-		expect(plugin.settings.updates.enableUpdateNotifications).toBe(false);
-		expect(saveSettings).toHaveBeenCalled();
-	});
-});
-
 describe('SynapseSettingTab — no-subscription note in AI Configuration (#364)', () => {
 	beforeEach(() => {
 		ToggleComponent.instances.length = 0;
@@ -510,6 +478,7 @@ describe('SynapseSettingTab — per-section reset rows (#442)', () => {
 	beforeEach(() => {
 		ToggleComponent.instances.length = 0;
 		ButtonComponent.instances.length = 0;
+		Setting.instances.length = 0;
 		(ConfirmModal as unknown as ReturnType<typeof vi.fn>).mockClear();
 		confirmResult.mockReset();
 	});
@@ -531,20 +500,6 @@ describe('SynapseSettingTab — per-section reset rows (#442)', () => {
 				>;
 			}
 		).resetControls;
-	}
-
-	/** All accordion section wrappers, in DOM order. */
-	function accordions(tab: SynapseSettingTab): StubEl[] {
-		const container = (tab as unknown as { containerEl: StubEl }).containerEl;
-		return elsWithClass(container, 'synapse-accordion');
-	}
-
-	/** The collapsible body of the accordion whose header title matches `title`. */
-	function sectionBody(tab: SynapseSettingTab, title: string): StubEl | undefined {
-		const section = accordions(tab).find((acc) =>
-			elsWithClass(acc, 'synapse-accordion-title').some((t) => t.textContent === title),
-		);
-		return section ? elsWithClass(section, 'synapse-accordion-body')[0] : undefined;
 	}
 
 	it('registers a labeled "Reset" control for every section except About', () => {
