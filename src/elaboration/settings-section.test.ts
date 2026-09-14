@@ -43,3 +43,25 @@ describe('renderElaborationSettings', () => {
 		expect(saveSettings).toHaveBeenCalled();
 	});
 });
+
+describe('renderElaborationSettings -- backlink context toggle (#500)', () => {
+	beforeEach(() => { ToggleComponent.instances.length = 0; });
+
+	it('renders the toggle from includeBacklinkContext and saves on change', async () => {
+		const { ctx, plugin, saveSettings } = makeCtx((s) => {
+			s.elaboration.proposal.includeBacklinkContext = false;
+		});
+		renderElaborationSettings(ctx);
+		const toggle = ToggleComponent.instances.find(
+			(t) => t.tooltip !== FEATURE_TOOLTIP && t.getValue() === false
+		);
+		expect(toggle).toBeDefined();
+		await toggle!._trigger(true);
+		expect(plugin.settings.elaboration.proposal.includeBacklinkContext).toBe(true);
+		expect(saveSettings).toHaveBeenCalled();
+	});
+
+	it('defaults includeBacklinkContext to on', () => {
+		expect(DEFAULT_SETTINGS.elaboration.proposal.includeBacklinkContext).toBe(true);
+	});
+});

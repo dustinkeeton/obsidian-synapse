@@ -54,4 +54,16 @@ export function renderElaborationSettings(ctx: SettingsSectionContext): void {
 					await plugin.saveSettings();
 				})
 		);
+
+	new Setting(elaborationBody)
+		.setName('Include backlinks and tags as context')
+		.setDesc('Give the elaboration prompt excerpts from notes linking to the stub and titles of notes sharing its tags')
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.elaboration.proposal.includeBacklinkContext)
+				.onChange(async (value) => {
+					plugin.settings.elaboration.proposal.includeBacklinkContext = value;
+					await plugin.saveSettings();
+				})
+		);
 }
