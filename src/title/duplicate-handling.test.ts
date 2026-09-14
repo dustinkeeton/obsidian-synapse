@@ -3,6 +3,7 @@ import { TitleModule } from './index';
 import { DEFAULT_SETTINGS } from '../settings';
 import { NotificationManager, NoteOperationQueue } from '../shared';
 import { TFile, TFolder, Notice } from '../__mocks__/obsidian';
+import { makeModuleDeps } from '../__test-utils__/mock-factories';
 
 // Deterministic suggester output, mutated per test via hoisted state. `calls`
 // counts suggestTitle invocations — the dedup guard returns BEFORE the suggester
@@ -116,11 +117,13 @@ function harness(notes: Record<string, string>, opts?: { autoAccept?: boolean })
 	};
 
 	const mod = new TitleModule(
-		mockPlugin as never,
-		() => settings,
-		notifications,
-		new NoteOperationQueue(),
-		() => settings.autoAccept.title,
+		makeModuleDeps({
+			plugin: mockPlugin as never,
+			getSettings: () => settings,
+			notifications,
+			noteQueue: new NoteOperationQueue(),
+		}),
+		() => settings.autoAccept.title
 	);
 
 	return { mod, settings, adapter, files, contents, addNote, removeNote, addFolder, renameSpy, processSpy, trashSpy };

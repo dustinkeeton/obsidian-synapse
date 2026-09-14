@@ -3,7 +3,7 @@ import { TFile } from '../__mocks__/obsidian';
 import { VideoModule } from './index';
 import { NoteOperationQueue } from '../shared';
 import type { VideoUrlEmbed } from './types';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 
 /**
  * Batch note-media transcription goes through the injected tier-routed
@@ -49,13 +49,15 @@ function makeModule() {
 	const plugin = { app: { vault } } as never;
 
 	const mod = new VideoModule(
-		plugin,
-		getSettings,
-		{} as never,
-		notifications as never,
-		createMockCheckpointManager() as never,
-		{} as never,
-		new NoteOperationQueue()
+		makeModuleDeps({
+			plugin,
+			getSettings,
+			notifications: notifications as never,
+			checkpointManager: createMockCheckpointManager() as never,
+			registrar: {} as never,
+			noteQueue: new NoteOperationQueue(),
+		}),
+		{} as never
 	);
 	const processUrl = vi.spyOn(mod, 'processUrl');
 	return { mod, store, noteFile, notifications, processUrl };

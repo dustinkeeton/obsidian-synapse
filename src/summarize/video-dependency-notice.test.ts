@@ -3,7 +3,7 @@ import { SummarizeModule, TranscribeUrlFn } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile, createEl } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
@@ -131,15 +131,17 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 
 	function build(transcribeUrl: TranscribeUrlFn): SummarizeModule {
 		return new SummarizeModule(
-			mockPlugin as unknown as Plugin,
-			() => settings,
-			notifications as unknown as NotificationManager,
-			createMockCheckpointManager() as unknown as CheckpointManager,
-			new CommandRegistrar(
-				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
-			),
-			new NoteOperationQueue(),
-			transcribeUrl,
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: notifications as unknown as NotificationManager,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(
+					mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+				),
+				noteQueue: new NoteOperationQueue(),
+			}),
+			transcribeUrl
 		);
 	}
 

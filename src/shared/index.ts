@@ -32,6 +32,7 @@ export { UpdateChecker, isNewerVersion } from './update-checker';
 export type { UpdateCheckerDeps } from './update-checker';
 export { fireAndForget } from './fire-and-forget';
 export type { FireAndForgetOptions } from './fire-and-forget';
+export type { ModuleDeps, FeatureModule, FeatureSettingsKey } from './feature-module';
 export { FolderPickerModal } from './folder-picker-modal';
 export { openScanFolderPicker } from './open-scan-folder-picker';
 export {

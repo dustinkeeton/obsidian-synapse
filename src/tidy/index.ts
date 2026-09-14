@@ -2,7 +2,7 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import { AIClient, NotificationManager, NoteOperationQueue, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId, isPathExcluded, findMatchingRule } from '../shared';
-import type { OperationHandle } from '../shared';
+import type { OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
 
@@ -30,19 +30,23 @@ Rules you MUST follow:
 - Preserve all existing links, tags, embeds, and Obsidian syntax exactly.
 - Return ONLY the tidied note content — nothing else.`;
 
-export class TidyModule {
+export class TidyModule implements FeatureModule {
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private registrar: CommandRegistrar;
+	private noteQueue: NoteOperationQueue;
 	private aiClient: AIClient;
 	private store: TidyStore;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private registrar: CommandRegistrar,
-		private noteQueue: NoteOperationQueue
-	) {
-		this.aiClient = new AIClient(getSettings);
-		this.store = new TidyStore(plugin.app, getSettings);
+	constructor(deps: ModuleDeps) {
+		this.plugin = deps.plugin;
+		this.getSettings = deps.getSettings;
+		this.notifications = deps.notifications;
+		this.registrar = deps.registrar;
+		this.noteQueue = deps.noteQueue;
+		this.aiClient = new AIClient(deps.getSettings);
+		this.store = new TidyStore(deps.plugin.app, deps.getSettings);
 	}
 
 	async onload(): Promise<void> {

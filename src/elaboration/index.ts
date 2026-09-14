@@ -7,7 +7,7 @@ import {
 	NoteOperationQueue, generateId,
 	fireAndForget, reviewAction, openScanFolderPicker,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator, proposalContentKey } from './proposer';
@@ -15,7 +15,13 @@ import { DetectionResult, Proposal } from './types';
 
 export type { DetectionReason, DetectionResult, Proposal } from './types';
 
-export class ElaborationModule {
+export class ElaborationModule implements FeatureModule {
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private checkpointManager: CheckpointManager;
+	private registrar: CommandRegistrar;
+	private noteQueue: NoteOperationQueue;
 	private detector: PlaceholderDetector;
 	private proposer: ProposalGenerator;
 	private store: ProposalStore;
@@ -38,19 +44,17 @@ export class ElaborationModule {
 	 */
 	private shouldAutoAccept: () => boolean = () => false;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar,
-		private noteQueue: NoteOperationQueue,
-		shouldAutoAccept?: () => boolean
-	) {
+	constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean) {
+		this.plugin = deps.plugin;
+		this.getSettings = deps.getSettings;
+		this.notifications = deps.notifications;
+		this.checkpointManager = deps.checkpointManager;
+		this.registrar = deps.registrar;
+		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
-		this.detector = new PlaceholderDetector(plugin.app, getSettings);
-		this.proposer = new ProposalGenerator(plugin.app, getSettings, notifications);
-		this.store = new ProposalStore(plugin.app, getSettings);
+		this.detector = new PlaceholderDetector(deps.plugin.app, deps.getSettings);
+		this.proposer = new ProposalGenerator(deps.plugin.app, deps.getSettings, deps.notifications);
+		this.store = new ProposalStore(deps.plugin.app, deps.getSettings);
 	}
 
 	async onload(): Promise<void> {

@@ -7,7 +7,7 @@ import {
 	CheckpointManager, NoteOperationQueue, generateId, detectPlatform, loadNodeModules,
 	isPathExcluded, findAvailableVaultPath,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { AudioExtractor, DependencyMissingError } from './audio-extractor';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
 import type { RoutedUrlTranscriber, RoutedUrlTranscript } from './types';
@@ -27,7 +27,14 @@ export { createFfmpegAvailability } from './ffmpeg-availability';
 export { detectPlatform, isSupportedUrl } from '../shared';
 export { findVideoUrls } from './note-scanner';
 
-export class VideoModule {
+export class VideoModule implements FeatureModule {
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private audioModule: AudioModule;
+	private notifications: NotificationManager;
+	private checkpointManager: CheckpointManager;
+	private registrar: CommandRegistrar;
+	private noteQueue: NoteOperationQueue;
 	private extractor: AudioExtractor;
 
 	/** Optional callback invoked after video transcription completes. Wired by main.ts for enrichment. */
@@ -41,16 +48,15 @@ export class VideoModule {
 	 */
 	urlTranscriber: RoutedUrlTranscriber | null = null;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private audioModule: AudioModule,
-		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar,
-		private noteQueue: NoteOperationQueue
-	) {
-		this.extractor = new AudioExtractor(getSettings);
+	constructor(deps: ModuleDeps, audioModule: AudioModule) {
+		this.plugin = deps.plugin;
+		this.getSettings = deps.getSettings;
+		this.audioModule = audioModule;
+		this.notifications = deps.notifications;
+		this.checkpointManager = deps.checkpointManager;
+		this.registrar = deps.registrar;
+		this.noteQueue = deps.noteQueue;
+		this.extractor = new AudioExtractor(deps.getSettings);
 	}
 
 	async onload(): Promise<void> {

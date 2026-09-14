@@ -7,7 +7,7 @@ import {
 	isPathExcluded, findMatchingRule, redactError,
 } from '../shared';
 import type {
-	Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange,
+	Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
 } from '../shared';
 import { AudioEmbed } from './types';
 import { PostProcessor } from './post-processor';
@@ -18,10 +18,17 @@ import type { AudioExtractor } from '../video';
 export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from './note-scanner';
 export type { AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
 
-export class AudioModule {
+export class AudioModule implements FeatureModule {
 	/** Approximate Whisper file-size limit (~25 MB) used to warn before a combined transcription. */
 	private static readonly COMBINED_SIZE_WARN_BYTES = 25 * 1024 * 1024;
 
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private checkpointManager: CheckpointManager;
+	private noteQueue: NoteOperationQueue;
+	/** Desktop-only clip/concat helper; undefined on mobile (also drives ffmpeg availability, #214). */
+	readonly extractor?: AudioExtractor;
 	private transcriber: Transcriber;
 	private postProcessor: PostProcessor;
 	private aiClient: AIClient;
@@ -35,17 +42,16 @@ export class AudioModule {
 	/** Optional callback invoked after transcription completes. Wired by main.ts for enrichment. */
 	onTranscriptionComplete: ((filePath: string) => void) | null = null;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager,
-		private noteQueue: NoteOperationQueue,
-		private extractor?: AudioExtractor
-	) {
-		this.transcriber = new Transcriber(getSettings);
-		this.postProcessor = new PostProcessor(getSettings);
-		this.aiClient = new AIClient(getSettings);
+	constructor(deps: ModuleDeps, extractor?: AudioExtractor) {
+		this.plugin = deps.plugin;
+		this.getSettings = deps.getSettings;
+		this.notifications = deps.notifications;
+		this.checkpointManager = deps.checkpointManager;
+		this.noteQueue = deps.noteQueue;
+		this.extractor = extractor;
+		this.transcriber = new Transcriber(deps.getSettings);
+		this.postProcessor = new PostProcessor(deps.getSettings);
+		this.aiClient = new AIClient(deps.getSettings);
 	}
 
 	async onload(): Promise<void> {

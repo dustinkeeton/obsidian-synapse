@@ -6,7 +6,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { NoteOperationQueue } from '../shared';
 import type { CheckpointManager, NotificationManager } from '../shared';
-import { mockFile, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { mockFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 
 const AUDIO_EMBED = '![[lecture.m4a]]';
 const TRANSCRIPT = 'Kant argues that the categorical imperative is unconditional.';
@@ -117,19 +117,23 @@ function createModules(
 	const plugin = harness.plugin as unknown as Plugin;
 
 	const audio = new AudioModule(
-		plugin,
-		() => settings,
-		notifications,
-		createMockCheckpointManager() as unknown as CheckpointManager,
-		queues.audio
+		makeModuleDeps({
+			plugin,
+			getSettings: () => settings,
+			notifications,
+			checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+			noteQueue: queues.audio,
+		})
 	);
 
 	const tidy = new TidyModule(
-		plugin,
-		() => settings,
-		notifications,
-		new CommandRegistrar(harness.plugin),
-		queues.tidy
+		makeModuleDeps({
+			plugin,
+			getSettings: () => settings,
+			notifications,
+			registrar: new CommandRegistrar(harness.plugin),
+			noteQueue: queues.tidy,
+		})
 	);
 
 	return { audio, tidy, settings };

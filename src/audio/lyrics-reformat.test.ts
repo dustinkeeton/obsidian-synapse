@@ -38,18 +38,20 @@ vi.mock('./post-processor', () => ({
 
 import { AudioModule } from './index';
 import { AIClient, NoteOperationQueue } from '../shared';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 
 const REFORMATTED =
 	'## Untitled\n**Artist:** Not specified\n\n> [!verse] Verse 1\n> City lights are calling out my name';
 
 function makeModule(autoFormatLyrics: boolean): AudioModule {
 	return new AudioModule(
-		{} as never,
-		() => ({ audio: { autoFormatLyrics, transcriptionProvider: 'whisper-api' } }) as never,
-		{ info: vi.fn() } as never,
-		createMockCheckpointManager() as never,
-		new NoteOperationQueue(),
+		makeModuleDeps({
+			plugin: {} as never,
+			getSettings: () => ({ audio: { autoFormatLyrics, transcriptionProvider: 'whisper-api' } }) as never,
+			notifications: { info: vi.fn() } as never,
+			checkpointManager: createMockCheckpointManager() as never,
+			noteQueue: new NoteOperationQueue(),
+		}),
 		undefined
 	);
 }

@@ -3,7 +3,7 @@ import { SummarizeModule, TranscribeAudioFn } from './index';
 import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Mock } from 'vitest';
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
@@ -176,14 +176,16 @@ describe('SummarizeModule audio target detection', () => {
 
 		mockNotifications = createMockNotifications();
 		module = new SummarizeModule(
-			mockPlugin as unknown as Plugin,
-			() => settings,
-			mockNotifications as unknown as NotificationManager,
-			createMockCheckpointManager() as unknown as CheckpointManager,
-			new CommandRegistrar(
-				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
-			),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: mockNotifications as unknown as NotificationManager,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(
+					mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+				),
+				noteQueue: new NoteOperationQueue(),
+			}),
 			undefined,
 			transcribeAudioFn
 		);
@@ -286,14 +288,16 @@ describe('SummarizeModule audio target detection', () => {
 	it('does not detect audio embeds when no transcribeAudio callback is provided', async () => {
 		// Create module without audio callback
 		const moduleNoAudio = new SummarizeModule(
-			mockPlugin as unknown as Plugin,
-			() => settings,
-			mockNotifications as unknown as NotificationManager,
-			createMockCheckpointManager() as unknown as CheckpointManager,
-			new CommandRegistrar(
-				mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
-			),
-			new NoteOperationQueue(),
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: mockNotifications as unknown as NotificationManager,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(
+					mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+				),
+				noteQueue: new NoteOperationQueue(),
+			}),
 			undefined,
 			undefined
 		);

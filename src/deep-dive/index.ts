@@ -6,7 +6,7 @@ import {
 	CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask } from '../shared';
+import type { Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { ContentAnalyzer, DirectoryMatcher } from '../organize';
 import { DeepDiveStore } from './deep-dive-store';
 import { NoteGenerator } from './note-generator';
@@ -48,7 +48,7 @@ export {
 	injectNavigationBlock,
 } from './syllabus-navigator';
 
-export class DeepDiveModule {
+export class DeepDiveModule implements FeatureModule {
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 	onNoteAccepted: ((filePath: string) => void) | null = null;
 	onOrganizeRequested: ((file: TFile) => void) | null = null;
@@ -56,6 +56,12 @@ export class DeepDiveModule {
 	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
 	onOpenProposalView: (() => void) | null = null;
 
+	private plugin: Plugin;
+	private getSettings: () => SynapseSettings;
+	private notifications: NotificationManager;
+	private checkpointManager: CheckpointManager;
+	private registrar: CommandRegistrar;
+	private noteQueue: NoteOperationQueue;
 	private analyzer: TopicAnalyzer;
 	private generator: NoteGenerator;
 	private store: DeepDiveStore;
@@ -70,15 +76,14 @@ export class DeepDiveModule {
 	 */
 	private shouldAutoAccept: () => boolean = () => false;
 
-	constructor(
-		private plugin: Plugin,
-		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager,
-		private checkpointManager: CheckpointManager,
-		private registrar: CommandRegistrar,
-		private noteQueue: NoteOperationQueue,
-		shouldAutoAccept?: () => boolean
-	) {
+	constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean) {
+		const { plugin, getSettings } = deps;
+		this.plugin = plugin;
+		this.getSettings = getSettings;
+		this.notifications = deps.notifications;
+		this.checkpointManager = deps.checkpointManager;
+		this.registrar = deps.registrar;
+		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 		this.analyzer = new TopicAnalyzer(plugin.app, getSettings);
 		this.generator = new NoteGenerator(getSettings);

@@ -3,7 +3,7 @@ import { RemModule } from './index';
 import { RemStore } from './rem-store';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
-import { createMockApp, createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockApp, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin } from 'obsidian';
 import type { NoticeAction } from '../shared';
 import type { RemLinkCandidate } from './types';
@@ -63,11 +63,13 @@ describe('RemModule Review toast action (#366)', () => {
 	async function build(shouldAutoAccept: () => boolean): Promise<RemModule> {
 		const registrar = { register: vi.fn() };
 		const mod = new RemModule(
-			plugin,
-			() => settings,
-			notifications as never,
-			createMockCheckpointManager() as never,
-			registrar as never,
+			makeModuleDeps({
+				plugin,
+				getSettings: () => settings,
+				notifications: notifications as never,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: registrar as never,
+			}),
 			shouldAutoAccept
 		);
 		await mod.onload();

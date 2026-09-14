@@ -5,7 +5,7 @@ import { CommandRegistrar } from '../commands';
 import { NoteOperationQueue } from '../shared';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { TFile, TFolder } from '../__mocks__/obsidian';
-import { createMockCheckpointManager } from '../__test-utils__/mock-factories';
+import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
 
 /** Spy-backed stand-ins for the in-memory vault/adapter/fileManager surfaces. */
@@ -254,13 +254,15 @@ describe('intake → real organize handshake (#227)', () => {
 		};
 
 		organize = new OrganizeModule(
-			plugin as unknown as Plugin,
-			() => settings,
-			createMockNotifications() as never,
-			createMockCheckpointManager() as never,
-			new CommandRegistrar(plugin),
-			new NoteOperationQueue(),
-			() => false, // auto-accept off (default): a proposal never moves the note
+			makeModuleDeps({
+				plugin: plugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: createMockNotifications() as never,
+				checkpointManager: createMockCheckpointManager() as never,
+				registrar: new CommandRegistrar(plugin),
+				noteQueue: new NoteOperationQueue(),
+			}),
+			() => false // auto-accept off (default): a proposal never moves the note
 		);
 		await organize.onload();
 
@@ -272,7 +274,14 @@ describe('intake → real organize handshake (#227)', () => {
 			transcribeUrlToNote: vi.fn().mockResolvedValue(undefined),
 		};
 
-		intake = new IntakeModule(plugin as unknown as Plugin, () => settings, createMockNotifications() as never, deps as never);
+		intake = new IntakeModule(
+			makeModuleDeps({
+				plugin: plugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: createMockNotifications() as never,
+			}),
+			deps as never
+		);
 		await intake.onload();
 	}
 
