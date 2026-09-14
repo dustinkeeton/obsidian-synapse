@@ -1,6 +1,6 @@
 import { Platform } from 'obsidian';
 import { buildCallout, calloutForTranscriptionResult, formatTimeRange } from '../shared';
-import type { TimeRange } from '../shared';
+import type { CachedTranscript, TimeRange, TranscriptCacheEntry } from '../shared';
 
 /**
  * URL transcription router (#184) — the platform seam between "transcribe this
@@ -30,6 +30,14 @@ export interface UrlTranscriptOptions {
 	timeRange?: TimeRange;
 	/** Progress hook, same shape as NotificationManager operation updates. */
 	update?: (message: string) => void;
+	/** Skip the transcript store and re-run the tiers (#488). */
+	forceRefresh?: boolean;
+}
+
+/** Read/write surface the router needs from `TranscriptCache` (#488). */
+export interface TranscriptStore {
+	get(url: string, timeRange?: TimeRange): Promise<TranscriptCacheEntry | null>;
+	put(url: string, transcript: CachedTranscript, timeRange?: TimeRange): Promise<void>;
 }
 
 export interface UrlTranscript {
@@ -49,6 +57,8 @@ export interface UrlTranscript {
 	reformatted?: boolean;
 	/** Id of the content schema that reformatted the text, if any. */
 	schemaId?: string;
+	/** True when served from the transcript store instead of a tier (#488). */
+	cached?: boolean;
 }
 
 export interface UrlTranscriptionStrategy {
@@ -92,14 +102,25 @@ export class NoTranscriptionPathError extends Error {
 }
 
 export class UrlTranscriptionRouter {
-	constructor(private readonly strategies: UrlTranscriptionStrategy[]) {}
+	constructor(
+		private readonly strategies: UrlTranscriptionStrategy[],
+		private readonly cache?: TranscriptStore
+	) {}
 
 	/**
-	 * Try each strategy in order; first transcript wins. Real strategy failures
-	 * propagate unchanged; exhausting every tier throws
-	 * {@link NoTranscriptionPathError}.
+	 * Serve from the transcript store when possible (unless `forceRefresh`),
+	 * else try each strategy in order; first transcript wins and is written
+	 * through. Real strategy failures propagate unchanged; exhausting every
+	 * tier throws {@link NoTranscriptionPathError}.
 	 */
 	async transcribe(url: string, opts: UrlTranscriptOptions = {}): Promise<UrlTranscript> {
+		if (this.cache && !opts.forceRefresh) {
+			const hit = await this.cache.get(url, opts.timeRange);
+			if (hit) {
+				opts.update?.('Using cached transcript');
+				return toUrlTranscript(hit);
+			}
+		}
 		const attempts: string[] = [];
 		for (const strategy of this.strategies) {
 			if (!strategy.canHandle(url, opts)) {
@@ -108,12 +129,27 @@ export class UrlTranscriptionRouter {
 			}
 			const result = await strategy.transcribe(url, opts);
 			if (result) {
+				await this.cache?.put(url, toCachedTranscript(result), opts.timeRange);
 				return result;
 			}
 			attempts.push(`${strategy.id}: unavailable for this video`);
 		}
 		throw new NoTranscriptionPathError(url, attempts);
 	}
+}
+
+function toCachedTranscript(result: UrlTranscript): CachedTranscript {
+	const { text, raw, source, title, language, videoVaultPath, reformatted, schemaId } = result;
+	return { text, raw, source, title, language, videoVaultPath, reformatted, schemaId };
+}
+
+function toUrlTranscript(entry: TranscriptCacheEntry): UrlTranscript {
+	const { text, raw, source, title, language, videoVaultPath, reformatted, schemaId } = entry;
+	return {
+		text, raw, title, language, videoVaultPath, reformatted, schemaId,
+		source: source === 'local-extraction' ? 'local-extraction' : 'captions',
+		cached: true,
+	};
 }
 
 /**

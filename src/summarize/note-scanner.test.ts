@@ -191,6 +191,23 @@ describe('findSummarizeTargets', () => {
 		expect(findSummarizeTargets('')).toHaveLength(0);
 	});
 
+	it('drops a URL whose transcription block sits elsewhere in the note (#488)', () => {
+		const content = [
+			'https://youtube.com/watch?v=abc',
+			'',
+			'Some notes I took while watching.',
+			'',
+			'More prose in between.',
+			'',
+			'> [!synapse-transcription]- Transcription of https://youtube.com/watch?v=abc',
+			'> Transcribed content',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets).toHaveLength(1);
+		expect(targets[0].type).toBe('transcription');
+		expect(targets[0].content).toBe('Transcribed content');
+	});
+
 	it('finds URL and transcription as separate targets', () => {
 		const content = [
 			'https://example.com/page1',

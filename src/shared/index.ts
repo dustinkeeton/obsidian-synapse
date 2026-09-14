@@ -145,6 +145,8 @@ export {
 export type { NodeModules } from './node-loader';
 export { NoteOperationQueue } from './note-operation-queue';
 export type { NoteOperationOptions } from './note-operation-queue';
+export { TranscriptCache, canonicalMediaUrl, transcriptCacheKey } from './transcript-cache';
+export type { CachedTranscript, TranscriptCacheEntry, TranscriptCacheOptions } from './transcript-cache';
 export { CheckpointManager } from './checkpoint-manager';
 export type {
 	Checkpoint,
