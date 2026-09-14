@@ -8,6 +8,7 @@ import {
 	fetchArticleContent,
 	isPathExcluded,
 	parseFrontmatter,
+	redactError,
 	serializeFrontmatter,
 	writeNote,
 } from '../shared';
@@ -37,13 +38,21 @@ export {
  */
 const DEBOUNCE_MS = 5000;
 
+/** Startup catch-up scan delay (#462); lands after main.ts's 3s/5s startup checks. */
+const CATCHUP_DELAY_MS = 7000;
+/** Max un-stamped notes the catch-up scan schedules per session (oldest first). */
+const CATCHUP_MAX_NOTES = 10;
+/** Extra per-note delay so catch-up flushes fan out instead of bursting AI calls. */
+const CATCHUP_STAGGER_MS = 2000;
+
 /**
  * IntakeModule — watches a configurable intake folder and auto-processes new
  * notes (#111).
  *
  * Lifecycle mirrors the other feature modules (see src/tidy): `onload()`
- * registers two vault listeners (create + modify) when intake is enabled;
- * `onunload()` tears down every pending debounce timer.
+ * registers two vault listeners (create + modify) when intake is enabled and
+ * arms a one-shot startup catch-up scan for un-stamped notes (#462);
+ * `onunload()` tears down every pending timer.
  *
  * Per the architecture rule this module imports only `obsidian` and
  * `src/shared/*`; all cross-module work (running the pipeline on a note,
@@ -68,6 +77,10 @@ export class IntakeModule {
 	 * echo that our own frontmatter-stamp write triggers re-entering flush.
 	 */
 	private readonly inFlight = new Set<string>();
+	/** Paths whose processing failure has already been toasted this session (#462). */
+	private readonly failureNotified = new Set<string>();
+	/** Startup catch-up scan timer handle (#462). */
+	private catchupTimer: number | null = null;
 
 	constructor(
 		private plugin: Plugin,
@@ -89,15 +102,69 @@ export class IntakeModule {
 		this.plugin.registerEvent(
 			this.plugin.app.vault.on('modify', (file) => this.handleEvent(file, 'modify')),
 		);
+
+		// Catch-up scan (#462): synced-in or previously failed notes fire no event.
+		this.plugin.app.workspace.onLayoutReady(() => {
+			this.catchupTimer = window.setTimeout(() => {
+				this.catchupTimer = null;
+				void this.catchUp();
+			}, CATCHUP_DELAY_MS);
+		});
 	}
 
 	onunload(): void {
+		if (this.catchupTimer !== null) {
+			window.clearTimeout(this.catchupTimer);
+			this.catchupTimer = null;
+		}
 		for (const handle of this.timers.values()) {
 			window.clearTimeout(handle);
 		}
 		this.timers.clear();
 		this.pending.clear();
 		this.inFlight.clear();
+		this.failureNotified.clear();
+	}
+
+	/** Schedule un-stamped intake notes oldest-first, capped and staggered; never resets a pending path. */
+	private async catchUp(): Promise<void> {
+		const settings = this.getSettings();
+		if (!settings.intake.enabled) {
+			return;
+		}
+
+		const candidates = this.plugin.app.vault
+			.getMarkdownFiles()
+			.filter(
+				(file) =>
+					this.isInIntakeFolder(file.path, settings.intake.intakeFolder) &&
+					!isPathExcluded(file.path, 'intake', settings) &&
+					!this.pending.has(file.path) &&
+					!this.inFlight.has(file.path),
+			)
+			.sort((a, b) => a.stat.mtime - b.stat.mtime);
+
+		let scheduled = 0;
+		for (const file of candidates) {
+			if (scheduled >= CATCHUP_MAX_NOTES) {
+				break;
+			}
+			if (await this.isFileProcessed(file)) {
+				continue;
+			}
+			this.scheduleFlush(file.path, scheduled * CATCHUP_STAGGER_MS);
+			scheduled++;
+		}
+	}
+
+	/** Read-only stamp check; a read failure counts as processed so catch-up never toasts. */
+	private async isFileProcessed(file: TFile): Promise<boolean> {
+		try {
+			const content = await this.plugin.app.vault.read(file);
+			return this.isProcessed(parseFrontmatter(content).frontmatter);
+		} catch {
+			return true;
+		}
 	}
 
 	/**
@@ -137,6 +204,11 @@ export class IntakeModule {
 		// Suppress the self-echo from our own flag-stamp write.
 		if (this.inFlight.has(file.path)) {
 			return;
+		}
+
+		// Edited content deserves a fresh failure toast (#462).
+		if (kind === 'modify') {
+			this.failureNotified.delete(file.path);
 		}
 
 		this.scheduleFlush(file.path);
@@ -212,7 +284,7 @@ export class IntakeModule {
 	 * (the share-to-vault pattern) AND defers a note whose content is still
 	 * arriving (chunked sync, the user still typing) — see #222.
 	 */
-	private scheduleFlush(path: string): void {
+	private scheduleFlush(path: string, extraDelayMs = 0): void {
 		this.pending.add(path);
 
 		const existing = this.timers.get(path);
@@ -224,7 +296,7 @@ export class IntakeModule {
 			this.timers.delete(path);
 			this.pending.delete(path);
 			void this.flush(path);
-		}, this.settleWindowMs());
+		}, this.settleWindowMs() + extraDelayMs);
 
 		this.timers.set(path, handle);
 	}
@@ -275,13 +347,21 @@ export class IntakeModule {
 			await this.execute(file, route);
 		} catch (error) {
 			// Do NOT stamp on failure — leave the note retriable.
-			this.notifications.notifyError(
-				`Intake processing failed for ${file.basename}`,
-				error,
-			);
+			this.reportFailure(path, file.basename, error);
 		} finally {
 			this.inFlight.delete(path);
 		}
+	}
+
+	/** Toast a note's processing failure once per session; repeats only log (#462). */
+	private reportFailure(path: string, basename: string, error: unknown): void {
+		const message = `Intake processing failed for ${basename}`;
+		if (this.failureNotified.has(path)) {
+			console.warn(`[Synapse] ${message} (already reported this session): ${redactError(error)}`);
+			return;
+		}
+		this.failureNotified.add(path);
+		this.notifications.notifyError(message, error);
 	}
 
 	/**
