@@ -24,6 +24,7 @@ interface MockVault {
 	createFolder: Mock<(path: string) => Promise<void>>;
 	getRoot: () => TFolder;
 	getAbstractFileByPath: Mock<(path: string) => ObsidianTFile | null>;
+	getMarkdownFiles: Mock<() => ObsidianTFile[]>;
 	rename: Mock<(file: ObsidianTFile, newPath: string) => Promise<void>>;
 	adapter: MockAdapter;
 }
@@ -226,6 +227,9 @@ describe('intake → real organize handshake (#227)', () => {
 			getAbstractFileByPath: vi.fn((path: string) =>
 				store.has(path) ? makeFile(path) : null,
 			),
+			getMarkdownFiles: vi.fn(() =>
+				[...store.keys()].filter((p) => p.endsWith('.md')).map(makeFile),
+			),
 			// Organize's primary mover.
 			rename: vi.fn(async (file: ObsidianTFile, newPath: string) => moveInPlace(file, newPath)),
 			adapter,
@@ -241,8 +245,10 @@ describe('intake → real organize handshake (#227)', () => {
 			getFirstLinkpathDest: vi.fn().mockReturnValue(null),
 		};
 
+		const workspace = { onLayoutReady: vi.fn((cb: () => void) => cb()) };
+
 		const plugin = {
-			app: { vault, fileManager, metadataCache },
+			app: { vault, fileManager, metadataCache, workspace },
 			registerEvent: vi.fn(),
 			addCommand: vi.fn(),
 		};

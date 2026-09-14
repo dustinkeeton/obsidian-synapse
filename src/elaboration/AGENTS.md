@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-14
 ---
 
 # Elaboration Module
@@ -67,6 +67,11 @@ private generateForBatch(detection: DetectionResult): Promise<{ proposal: Propos
 private applyProposal(id: string, editedContent?: string, options?: { silent?: boolean }): Promise<void>   // index.ts:507; core of acceptProposal, re-loads the proposal under the slot
 
 // proposer.ts (NOT re-exported from index.ts; consumed internally by index.ts)
+class ProposalGenerator {
+  constructor(app: App, getSettings: () => SynapseSettings, notifications: NotificationManager, contextBudgetChars?: number)   // default DEFAULT_CONTEXT_BUDGET_CHARS (6000); test seam
+  generate(detection: DetectionResult, precomputedKey?: string): Promise<Proposal | null>
+}
+const DEFAULT_CONTEXT_BUDGET_CHARS = 6000
 function proposalContentKey(
   notePath: string,
   content: string,
@@ -87,7 +92,7 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
 | `types.ts` | `DetectionReason`, `DetectionResult`, `Proposal` | Type definitions |
 | `index.ts` | `ElaborationModule`, type re-exports, `renderElaborationSettings` | Orchestrator: commands, scan flows, accept/reject, checkpoints, auto-accept, per-note queue serialization (private `generateForNote`, `generateForBatch`, `applyProposal`, #483) |
 | `detector.ts` | `PlaceholderDetector` | Local stub detection; path + tag exclusions |
-| `proposer.ts` | `ProposalGenerator`, `proposalContentKey` | AI proposal generation; deterministic content-key dedup; title/link/image/external context + anti-fabrication guards |
+| `proposer.ts` | `ProposalGenerator`, `proposalContentKey`, `DEFAULT_CONTEXT_BUDGET_CHARS` | AI proposal generation; deterministic content-key dedup; title/backlink/link/tag/image/external context under a char budget + anti-fabrication guards |
 | `proposal-store.ts` | `ProposalStore` | CRUD for proposal JSON in `elaboration.proposalFolderPath` (default `.synapse/proposals`); `loadByNote` for dedup lookups |
 | `image-analyzer.ts` | `ImageAnalyzer`, `ImageAnalysis`, `MAX_IMAGES_PER_NOTE` | Multi-modal image analysis for proposal context |
 | `settings-section.ts` | `renderElaborationSettings` | Settings accordion renderer |
@@ -132,7 +137,12 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
    |
 5. ProposalGenerator.generate(detection, key?)  (proposer.ts:L56)
    |  Guard A: empty body + isGenericTitle(basename) -> notify + return null (proposer.ts:L78)
-   |  Context: up to 5 linked notes (500 chars each) if proposal.includeSourceContext
+   |  Context (if proposal.includeSourceContext), one char budget (6000), whole entries taken in priority order:
+   |    1. backlinks (<=5, 300-char excerpt around the linking line; `sparse-link.linkedFrom` first, then
+   |       metadataCache.resolvedLinks sources sorted by path) -- only if proposal.includeBacklinkContext
+   |    2. outbound links (<=5, first 500 chars each)
+   |    3. note tags (frontmatter + inline, folded) + <=10 tag-sibling titles -- only if includeBacklinkContext
+   |  the first entry that does not fit ends gathering; whole block wrapped via wrapUntrusted(_, 'related notes')
    |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:L323)
    |  Context: external URLs (<=3) -- tweet(500) / Reddit(2000) / article(2000); video hosts skipped
    |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:L234)
@@ -247,7 +257,8 @@ All under `settings.elaboration` unless noted.
 | `detection.detectEmptySections` | boolean | true | Flag headings with no body |
 | `detection.detectSparseLinks` | boolean | true | Flag inbound-linked but sparse notes |
 | `detection.excludeTags` | string[] | `['no-elaborate']` | Per-note opt-out via frontmatter tags |
-| `proposal.includeSourceContext` | boolean | true | Gather up to 5 linked notes as context |
+| `proposal.includeSourceContext` | boolean | true | Gather related-notes context (backlinks, outbound links, tags) under a 6000-char budget |
+| `proposal.includeBacklinkContext` | boolean | true | Include backlink excerpts and tag/tag-sibling context (#500); off = outbound links only |
 | `proposal.maxProposalsPerNote` | number | 3 | Per-note pending-proposal cap; `guardProposal` skips with reason `cap` once reached (index.ts:L127) |
 | `proposal.preserveFrontmatter` | boolean | true | Defined in settings; not referenced by module code |
 
@@ -269,7 +280,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 |---------|------|---------|
 | `buildCallout`, `CALLOUT_TYPES`, `FolderPickerModal`, `getMarkdownFiles`, `NotificationManager`, `NoteOperationQueue`, `sanitizeAIResponse`, `stripCodeFences`, `CheckpointManager`, `generateId`, `fireAndForget`, `reviewAction` (+ types `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`) | `../shared` | index.ts |
 | `wordCount`, `isPathExcluded`, `matchesExcludeTag`, `getIncludedMarkdownFiles` | `../shared` | detector.ts |
-| `AIClient`, `sanitizeAIResponse`, `stripCodeFences`, `isTwitterUrl`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `fetchArticleContent`, `linkLoadError`, `NotificationManager`, `isGenericTitle`, `hashString`, `contentKey`, `wrapUntrusted`, `redactError` | `../shared` | proposer.ts |
+| `AIClient`, `sanitizeAIResponse`, `stripCodeFences`, `isTwitterUrl`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `fetchArticleContent`, `linkLoadError`, `NotificationManager`, `isGenericTitle`, `hashString`, `contentKey`, `wrapUntrusted`, `redactError`, `isPathExcluded` | `../shared` | proposer.ts |
 | `AIClient`, `arrayBufferToBase64`, `NotificationManager`, `redactError` (+ type `ContentBlock`) | `../shared` | image-analyzer.ts |
 | `ensureFolder`, `isRecord`, `readJsonFile` | `../shared` | proposal-store.ts |
 | `fireAndForget` | `../shared` | proposal-view.ts |

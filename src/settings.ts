@@ -71,6 +71,8 @@ export interface ProposalSettings {
 	maxProposalsPerNote: number;
 	preserveFrontmatter: boolean;
 	includeSourceContext: boolean;
+	/** Add backlinks (linking-line excerpts) and tag siblings to the elaboration prompt (#500). */
+	includeBacklinkContext: boolean;
 }
 
 export interface ElaborationSettings {
@@ -406,6 +408,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 			maxProposalsPerNote: 3,
 			preserveFrontmatter: true,
 			includeSourceContext: true,
+			includeBacklinkContext: true,
 		},
 	},
 	audio: {

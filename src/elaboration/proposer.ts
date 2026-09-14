@@ -1,6 +1,6 @@
-import { App, TFile, normalizePath } from 'obsidian';
+import { App, TFile, getAllTags, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, redactError } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, redactError, isPathExcluded } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import { DetectionResult, DetectionReason, Proposal } from './types';
 
@@ -40,6 +40,19 @@ export function proposalContentKey(
  */
 const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
 
+/** Related-notes context caps; entries are taken whole, in priority order, until the budget is spent. */
+export const DEFAULT_CONTEXT_BUDGET_CHARS = 6000;
+const MAX_BACKLINKS = 5;
+const MAX_OUTBOUND_LINKS = 5;
+const MAX_TAG_SIBLINGS = 10;
+const BACKLINK_EXCERPT_CHARS = 300;
+const OUTBOUND_EXCERPT_CHARS = 500;
+
+interface ContextGroup {
+	header: string;
+	entries: string[];
+}
+
 export class ProposalGenerator {
 	private aiClient: AIClient;
 	private imageAnalyzer: ImageAnalyzer;
@@ -47,7 +60,8 @@ export class ProposalGenerator {
 	constructor(
 		private app: App,
 		private getSettings: () => SynapseSettings,
-		private notifications: NotificationManager
+		private notifications: NotificationManager,
+		private contextBudgetChars: number = DEFAULT_CONTEXT_BUDGET_CHARS
 	) {
 		this.aiClient = new AIClient(getSettings);
 		this.imageAnalyzer = new ImageAnalyzer(app, getSettings, notifications);
@@ -84,7 +98,7 @@ export class ProposalGenerator {
 
 		let contextNotes = '';
 		if (settings.elaboration.proposal.includeSourceContext) {
-			contextNotes = await this.gatherContext(detection.notePath);
+			contextNotes = await this.gatherContext(detection.notePath, detection.reasons);
 		}
 
 		// Gather image context if image module is enabled
@@ -278,24 +292,110 @@ export class ProposalGenerator {
 		return meaningful.length < 10;
 	}
 
-	private async gatherContext(notePath: string): Promise<string> {
-		const cache = this.app.metadataCache.getCache(notePath);
-		if (!cache?.links) return '';
+	private async gatherContext(notePath: string, reasons: DetectionReason[]): Promise<string> {
+		const settings = this.getSettings();
+		const includeGraph = settings.elaboration.proposal.includeBacklinkContext;
+		const noteFile = this.app.vault.getAbstractFileByPath(notePath);
+		if (!(noteFile instanceof TFile)) return '';
 
-		const contextParts: string[] = [];
-		for (const link of cache.links.slice(0, 5)) {
-			const resolved = this.app.metadataCache.getFirstLinkpathDest(
-				link.link,
-				notePath
-			);
-			if (resolved) {
-				const content = await this.app.vault.read(resolved);
-				contextParts.push(
-					`### ${resolved.basename}\n${content.slice(0, 500)}`
-				);
+		const backlinks: ContextGroup = { header: 'Notes linking to this note:', entries: [] };
+		const outbound: ContextGroup = { header: 'Linked from this note:', entries: [] };
+		const tags: ContextGroup = { header: '', entries: [] };
+		let remaining = this.contextBudgetChars;
+		// Whole entries only, strictly in priority order: the first entry that does not fit ends gathering.
+		const take = (group: ContextGroup, entry: string): boolean => {
+			const cost = entry.length + (group.entries.length === 0 && group.header ? group.header.length + 1 : 1);
+			if (cost > remaining) return false;
+			remaining -= cost;
+			group.entries.push(entry);
+			return true;
+		};
+
+		let fits = true;
+		if (includeGraph) {
+			for (const sourcePath of this.backlinkSources(notePath, reasons, settings)) {
+				if (!fits) break;
+				const source = this.app.vault.getAbstractFileByPath(sourcePath);
+				if (!(source instanceof TFile)) continue;
+				const content = await this.app.vault.cachedRead(source);
+				fits = take(backlinks, `### ${source.basename}\n${this.linkingExcerpt(content, noteFile)}`);
 			}
 		}
-		return contextParts.join('\n\n');
+
+		const cache = this.app.metadataCache.getCache(notePath);
+		for (const link of (cache?.links ?? []).slice(0, MAX_OUTBOUND_LINKS)) {
+			if (!fits) break;
+			const resolved = this.app.metadataCache.getFirstLinkpathDest(link.link, notePath);
+			if (!resolved) continue;
+			const content = await this.app.vault.cachedRead(resolved);
+			fits = take(outbound, `### ${resolved.basename}\n${content.slice(0, OUTBOUND_EXCERPT_CHARS)}`);
+		}
+
+		if (includeGraph && fits) {
+			const noteTags = this.tagsOf(cache);
+			if (noteTags.length > 0) {
+				fits = take(tags, `Tags on this note: ${noteTags.join(', ')}`);
+				const siblings = fits ? this.tagSiblings(noteFile, noteTags, settings) : [];
+				if (siblings.length > 0) {
+					take(tags, `Other notes sharing these tags: ${siblings.join(', ')}`);
+				}
+			}
+		}
+
+		const rendered = [backlinks, outbound, tags]
+			.filter(g => g.entries.length > 0)
+			.map(g => (g.header ? `${g.header}\n` : '') + g.entries.join('\n'));
+		if (rendered.length === 0) return '';
+		// Vault notes are user-authored but not authored *for* this prompt; fence them like fetched content.
+		return wrapUntrusted(rendered.join('\n\n'), 'related notes');
+	}
+
+	/** Backlink sources: detector-supplied `linkedFrom` first, then remaining resolvedLinks sources by path. */
+	private backlinkSources(notePath: string, reasons: DetectionReason[], settings: SynapseSettings): string[] {
+		const ordered: string[] = [];
+		for (const reason of reasons) {
+			if (reason.type !== 'sparse-link') continue;
+			for (const path of reason.linkedFrom) {
+				if (!ordered.includes(path)) ordered.push(path);
+			}
+		}
+		const resolved: Record<string, Record<string, number>> = this.app.metadataCache.resolvedLinks ?? {};
+		const discovered = Object.keys(resolved)
+			.filter(src => src !== notePath && !ordered.includes(src) && notePath in resolved[src])
+			.sort();
+		return [...ordered, ...discovered]
+			.filter(path => path !== notePath && !isPathExcluded(path, 'elaboration', settings))
+			.slice(0, MAX_BACKLINKS);
+	}
+
+	/** The linking line plus one line either side; falls back to the file head when no link text is found. */
+	private linkingExcerpt(content: string, target: TFile): string {
+		const lines = content.split('\n');
+		const stem = target.path.replace(/\.md$/i, '').toLowerCase();
+		const base = target.basename.toLowerCase();
+		const needles = [`[[${base}`, `[[${stem}`, `${base}.md`, `${stem}.md`];
+		const idx = lines.findIndex(line => {
+			const lower = line.toLowerCase();
+			return needles.some(n => lower.includes(n));
+		});
+		if (idx < 0) return content.slice(0, BACKLINK_EXCERPT_CHARS);
+		return lines.slice(Math.max(0, idx - 1), idx + 2).join('\n').trim().slice(0, BACKLINK_EXCERPT_CHARS);
+	}
+
+	private tagsOf(cache: Parameters<typeof getAllTags>[0] | null): string[] {
+		if (!cache) return [];
+		const folded = (getAllTags(cache) ?? []).map(t => `#${t.replace(/^#/, '').toLowerCase()}`);
+		return [...new Set(folded)].sort();
+	}
+
+	private tagSiblings(noteFile: TFile, noteTags: string[], settings: SynapseSettings): string[] {
+		const wanted = new Set(noteTags);
+		return this.app.vault.getMarkdownFiles()
+			.filter(f => f.path !== noteFile.path && !isPathExcluded(f.path, 'elaboration', settings))
+			.filter(f => this.tagsOf(this.app.metadataCache.getFileCache(f)).some(t => wanted.has(t)))
+			.map(f => f.basename)
+			.sort()
+			.slice(0, MAX_TAG_SIBLINGS);
 	}
 
 	private async gatherImageContext(

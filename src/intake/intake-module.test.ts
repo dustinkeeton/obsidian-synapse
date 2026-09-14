@@ -14,12 +14,16 @@ interface MockVault {
 	create: Mock<(path: string, content: string) => Promise<ObsidianTFile>>;
 	createFolder: Mock<(path: string) => Promise<void>>;
 	getAbstractFileByPath: Mock<(path: string) => ObsidianTFile | null>;
+	getMarkdownFiles: Mock<() => ObsidianTFile[]>;
+}
+interface MockWorkspace {
+	onLayoutReady: Mock<(cb: () => void) => void>;
 }
 interface MockFileManager {
 	renameFile: Mock<(file: ObsidianTFile, newPath: string) => Promise<void>>;
 }
 interface MockPlugin {
-	app: { vault: MockVault; fileManager: MockFileManager };
+	app: { vault: MockVault; fileManager: MockFileManager; workspace: MockWorkspace };
 	registerEvent: Mock<(ref: unknown) => void>;
 }
 
@@ -132,6 +136,13 @@ describe('IntakeModule', () => {
 				if (store.has(path)) return makeFile(path);
 				return null;
 			}),
+			getMarkdownFiles: vi.fn(() =>
+				[...store.keys()].filter((p) => p.endsWith('.md')).map(makeFile),
+			),
+		};
+
+		const workspace: MockWorkspace = {
+			onLayoutReady: vi.fn((cb: () => void) => cb()),
 		};
 
 		const fileManager: MockFileManager = {
@@ -144,7 +155,7 @@ describe('IntakeModule', () => {
 		};
 
 		plugin = {
-			app: { vault, fileManager },
+			app: { vault, fileManager, workspace },
 			registerEvent: vi.fn(),
 		};
 
@@ -211,6 +222,147 @@ describe('IntakeModule', () => {
 			settings.intake.enabled = false;
 			await module.onload();
 			expect(plugin.app.vault.on).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('startup catch-up scan (#462)', () => {
+		const CATCHUP_DELAY_MS = 7000;
+		const CATCHUP_STAGGER_MS = 2000;
+
+		/** Seed intake notes on disk BEFORE onload, i.e. no create/modify event. */
+		function seed(path: string, content = 'hello prose') {
+			store.set(path, content);
+		}
+
+		it('schedules an un-stamped intake note that never fired an event', async () => {
+			seed('Inbox/synced.md');
+			await module.onload();
+			expect(plugin.app.workspace.onLayoutReady).toHaveBeenCalledTimes(1);
+
+			await vi.advanceTimersByTimeAsync(CATCHUP_DELAY_MS - 1);
+			expect(plugin.app.vault.getMarkdownFiles).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(1);
+			expect(plugin.app.vault.getMarkdownFiles).toHaveBeenCalledTimes(1);
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+
+			await vi.advanceTimersByTimeAsync(SETTLE_MS);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+			expect(deps.fireOnFile.mock.calls[0][0].path).toBe('Inbox/synced.md');
+			expect(store.get('Inbox/synced.md')).toContain('synapse-processed: true');
+		});
+
+		it('skips notes already stamped synapse-processed', async () => {
+			seed('Inbox/done.md', '---\nsynapse-processed: true\n---\nhello');
+			await module.onload();
+			await vi.advanceTimersByTimeAsync(CATCHUP_DELAY_MS + SETTLE_MS);
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+		});
+
+		it('skips the capture-log subfolder, excluded paths, and notes outside the intake folder', async () => {
+			settings.exclusions.push({ pattern: 'Inbox/private/**', features: ['intake'] });
+			seed('Inbox/_captured/2026-06-01 — old.md', '[[old]]');
+			seed('Inbox/private/secret.md');
+			seed('Projects/elsewhere.md');
+			seed('Inbox/image.png', 'binary');
+			seed('Inbox/keep.md');
+			await module.onload();
+			await vi.advanceTimersByTimeAsync(CATCHUP_DELAY_MS + SETTLE_MS);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+			expect(deps.fireOnFile.mock.calls[0][0].path).toBe('Inbox/keep.md');
+		});
+
+		it('caps the scan at 10 notes, oldest first, and staggers their flushes', async () => {
+			const paths: string[] = [];
+			for (let i = 0; i < 12; i++) {
+				const path = `Inbox/n${String(i).padStart(2, '0')}.md`;
+				paths.push(path);
+				seed(path);
+			}
+			plugin.app.vault.getMarkdownFiles.mockImplementation(() =>
+				paths.map((path, i) => {
+					const file = makeFile(path);
+					file.stat.mtime = 1000 + (paths.length - i); // reverse: n00 newest
+					return file;
+				}),
+			);
+			await module.onload();
+
+			await vi.advanceTimersByTimeAsync(CATCHUP_DELAY_MS + SETTLE_MS);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+			expect(deps.fireOnFile.mock.calls[0][0].path).toBe('Inbox/n11.md');
+
+			await vi.advanceTimersByTimeAsync(CATCHUP_STAGGER_MS);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(2);
+			expect(deps.fireOnFile.mock.calls[1][0].path).toBe('Inbox/n10.md');
+
+			await vi.advanceTimersByTimeAsync(CATCHUP_STAGGER_MS * 20);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(10);
+			const processed = deps.fireOnFile.mock.calls.map((c) => c[0].path);
+			expect(processed).not.toContain('Inbox/n00.md');
+			expect(processed).not.toContain('Inbox/n01.md');
+		});
+
+		it('does nothing when intake is disabled', async () => {
+			settings.intake.enabled = false;
+			seed('Inbox/synced.md');
+			await module.onload();
+			await vi.advanceTimersByTimeAsync(CATCHUP_DELAY_MS + SETTLE_MS);
+			expect(plugin.app.workspace.onLayoutReady).not.toHaveBeenCalled();
+			expect(plugin.app.vault.getMarkdownFiles).not.toHaveBeenCalled();
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+		});
+
+		it('does nothing when intake is disabled after load but before the scan fires', async () => {
+			seed('Inbox/synced.md');
+			await module.onload();
+			settings.intake.enabled = false;
+			await vi.advanceTimersByTimeAsync(CATCHUP_DELAY_MS + SETTLE_MS);
+			expect(plugin.app.vault.getMarkdownFiles).not.toHaveBeenCalled();
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+		});
+
+		it('leaves an event-scheduled path alone instead of resetting its debounce', async () => {
+			await module.onload();
+			await vi.advanceTimersByTimeAsync(CATCHUP_DELAY_MS - 1000);
+			emit('create', 'Inbox/live.md', 'hello prose');
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(plugin.app.vault.getMarkdownFiles).toHaveBeenCalledTimes(1);
+			// The original settle deadline (1000ms after the event) still holds.
+			await vi.advanceTimersByTimeAsync(SETTLE_MS - 1000);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(SETTLE_MS * 2);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+
+		it('is cancelled by onunload before it fires', async () => {
+			seed('Inbox/synced.md');
+			await module.onload();
+			module.onunload();
+			await vi.advanceTimersByTimeAsync(CATCHUP_DELAY_MS + SETTLE_MS);
+			expect(plugin.app.vault.getMarkdownFiles).not.toHaveBeenCalled();
+			expect(deps.fireOnFile).not.toHaveBeenCalled();
+		});
+
+		it('toasts a repeatedly failing note only once per session, again after it is edited', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			deps.fireOnFile.mockRejectedValue(new Error('boom'));
+			seed('Inbox/bad.md');
+			await module.onload();
+
+			await vi.advanceTimersByTimeAsync(CATCHUP_DELAY_MS + SETTLE_MS);
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+			expect(notifications.notifyError).toHaveBeenCalledTimes(1);
+
+			handlers['create'](makeFile('Inbox/bad.md'));
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(2);
+			expect(notifications.notifyError).toHaveBeenCalledTimes(1);
+			expect(warn).toHaveBeenCalledTimes(1);
+
+			handlers['modify'](makeFile('Inbox/bad.md'));
+			await flushDebounce();
+			expect(deps.fireOnFile).toHaveBeenCalledTimes(3);
+			expect(notifications.notifyError).toHaveBeenCalledTimes(2);
 		});
 	});
 
