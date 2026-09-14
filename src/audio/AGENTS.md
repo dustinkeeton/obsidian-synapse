@@ -16,7 +16,8 @@ class AudioModule {
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
-  transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>
+  transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>   // options.update receives "Post-processing (n/total)" for sectioned runs (#467)
+  processTranscriptText(raw: string, opts?: PostProcessOptions): Promise<{ text: string; reformatted?: boolean; schemaId?: string }>   // caption-tier seam (#184); sanitize -> PostProcessor -> schema reformat; failures propagate
   transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void>   // queued on the active note (#483)
   transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // queued on noteFile (#483)
   transcribeAndInsertCombined(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // #214; queued on noteFile (#483); <2 embeds falls back to transcribeAndInsert; ffmpeg concat (desktop) or per-file text merge (mobile) -> one combined callout
@@ -53,7 +54,20 @@ interface TranscriptionResult {
 }
 
 interface TimestampEntry { start: number; end: number; text: string }
-interface TranscribeOptions { language?: string; postProcess?: boolean; sourceName?: string; timeRange?: TimeRange }
+interface TranscribeOptions { language?: string; postProcess?: boolean; sourceName?: string; timeRange?: TimeRange; update?: (message: string) => void }
+
+// post-processor.ts (module-internal; AudioModule owns the instance)
+interface PostProcessOptions { update?: (message: string) => void }          // progress sink, called once per AI call in sectioned runs
+interface PostProcessorDeps { notify?: (message: string) => void; delayMs?: number }   // notify = single end-of-run notice; delayMs default 2000
+class PostProcessor {
+  constructor(getSettings: () => SynapseSettings, deps?: PostProcessorDeps)
+  process(rawTranscript: string, opts?: PostProcessOptions): Promise<string>   // fits ai.maxTokens -> one call as before; over -> sectioned (#467)
+}
+
+// transcript-segmenter.ts (module-internal, pure)
+interface TranscriptSegment { body: string; context: string }   // bodies concatenate back to the input exactly; context = word-aligned tail of the previous body
+function segmentTranscript(text: string, maxChars: number, overlapChars: number): TranscriptSegment[]   // paragraph -> line -> sentence -> word boundaries, then hard cut
+function trimRepeatedContext(output: string, context: string): string   // drops a verbatim repeat of context from the start of a rewritten section
 interface AudioEmbed { fileName: string; file: TFile; line: number }
 ```
 
@@ -64,7 +78,10 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 | `types.ts` | `TranscriptionResult`, `TimestampEntry`, `TranscribeOptions`, `AudioEmbed` | Types |
 | `transcriber.ts` | `Transcriber`, `buildMultipartBody`, `GEMINI_MAX_INLINE_AUDIO_BYTES` | Provider-routed transcription (Whisper, Deepgram, Gemini, local stub) over `requestUrl`; manual multipart with sanitized headers (internal `sanitizeMultipartHeaderValue`, `geminiMimeType`); Gemini text via shared `extractGeminiResponseText` |
 | `transcriber.test.ts` | Tests | Transcriber + multipart + provider routing tests |
-| `post-processor.ts` | `PostProcessor` | AI transcript cleanup via `AIClient` |
+| `post-processor.ts` | `PostProcessor`, `PostProcessOptions`, `PostProcessorDeps` | AI transcript cleanup via `AIClient`; transcripts over `ai.maxTokens` run in sections (#467) |
+| `post-processor.test.ts` | Tests | Single-call path, sectioning, overlap trim, raw fallback, progress, key points, inter-call delay |
+| `transcript-segmenter.ts` | `segmentTranscript`, `trimRepeatedContext`, `TranscriptSegment` | Pure boundary-aware splitter used by `PostProcessor` |
+| `transcript-segmenter.test.ts` | Tests | Boundary selection, budget, round-trip, overlap context |
 | `settings-section.ts` | `renderAudioSettings` | Audio settings UI section |
 | `transcription-credentials.ts` | `renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext)` | Transcription-provider dropdown + per-provider API-key fields rendered into the AI Configuration section (#332/#335). Re-exported from `index.ts` (the module's public API) so `settings-tab.ts` wires it through the `./audio` barrel rather than deep-importing this file. Imports `PROVIDER_METADATA`/`decorateCredentialField` and types `CredentialProvider`/`CredentialFieldHandle`/`SettingsSectionContext` via the `../shared` barrel (no deep `../shared/<file>` imports) |
 | `note-scanner.ts` | `findAudioEmbeds`, `hasTranscriptionBelow`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` | Scan note content for audio embeds |
@@ -97,9 +114,15 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
    |       Key: audio.geminiApiKey || ai.apiKey
    |  'local-whisper' --> throws (not implemented)
    |
-4. PostProcessor.process(rawTranscript)  [if postProcess !== false]
-   |  Builds instructions from settings flags, calls AIClient.complete()
-   |  sanitizeAIResponse() on output
+4. PostProcessor.process(rawTranscript, { update })  [if postProcess !== false]
+   |  Builds instructions from settings flags
+   |  ceil(chars/4) <= ai.maxTokens: one AIClient.complete() call, sanitizeAIResponse() on output
+   |  otherwise (#467): segmentTranscript(text, maxTokens*0.6*4 chars, 10% overlap) -> one call per section,
+   |    sequential with a 2s pause, update("Post-processing (n/total)") before each call;
+   |    section prompt = instructions (minus key points) + "Preceding context" (overlap, continuity only) + "Transcript section";
+   |    error / empty reply / reply >= maxTokens*4 chars -> raw slice kept; rejoin with blank lines;
+   |    extractKeyPoints -> one extra call over the rejoined text, appended at the END;
+   |    >0 raw sections -> single notifications.info("Post-processing kept k of n sections raw")
    |
 5. Result wrapped in callout block:
    > [!synapse-transcription]- Transcription of filename.mp3

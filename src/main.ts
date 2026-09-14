@@ -148,7 +148,7 @@ export default class SynapsePlugin extends Plugin {
 		// feature modules through injected callbacks, mirroring the other
 		// cross-module callback bundles.
 		const urlStrategies: UrlTranscriptionStrategy[] = [
-			new CaptionStrategy(getSettings, (raw) => this.audio.processTranscriptText(raw)),
+			new CaptionStrategy(getSettings, (raw, opts) => this.audio.processTranscriptText(raw, opts)),
 		];
 		const video = this.video;
 		if (video) {

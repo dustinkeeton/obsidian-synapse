@@ -116,7 +116,8 @@ function buildUrlTranscriptBlock(result: UrlTranscript, url: string, embedInNote
 
 // caption-strategy.ts — tier 1: YouTube captions over HTTP (free, mobile-capable)
 interface ProcessedTranscript { text: string; reformatted?: boolean; schemaId?: string }   // caption-strategy.ts:12
-type ProcessTranscript = (raw: string) => Promise<ProcessedTranscript>                     // caption-strategy.ts:18
+interface ProcessTranscriptOptions { update?: (message: string) => void }                  // caption-strategy.ts:18; not barrel-exported
+type ProcessTranscript = (raw: string, opts?: ProcessTranscriptOptions) => Promise<ProcessedTranscript>   // caption-strategy.ts:22; opts.update carries "Post-processing (n/total)" (#467)
 class CaptionStrategy implements UrlTranscriptionStrategy {                                // caption-strategy.ts:31
   readonly id = 'captions'
   constructor(getSettings: () => SynapseSettings, postProcess: ProcessTranscript)          // postProcess = AudioModule.processTranscriptText (injected)
@@ -233,7 +234,7 @@ Tier order is the array handed to `UrlTranscriptionRouter` in `main.ts:150-163`:
 
 | Tier | `canHandle` | `transcribe` |
 |------|-------------|--------------|
-| `captions` (`caption-strategy.ts:39`) | no `timeRange` AND `video.captionsFirst` AND `detectPlatform(url).platform === 'youtube'` | `fetchYouTubeTranscript(url, [audio.language, 'en'])`; `null` → fall through; `structured` captions returned as-is; otherwise `postProcess(raw)`, degrading to raw captions on failure (`console.warn` via `redactError`) |
+| `captions` (`caption-strategy.ts:39`) | no `timeRange` AND `video.captionsFirst` AND `detectPlatform(url).platform === 'youtube'` | `fetchYouTubeTranscript(url, [audio.language, 'en'])`; `null` → fall through; `structured` captions returned as-is; otherwise `postProcess(raw, { update: opts.update })`, degrading to raw captions on failure (`console.warn` via `redactError`) |
 | `local-extraction` (`local-extraction-strategy.ts:29`) | `Platform.isDesktop && isSupportedUrl(url)` | delegate (`VideoModule.processUrl(url, { insertMode: false, timeRange }, { update })`, `main.ts:155-161`); failures propagate unchanged (keeps `DependencyMissingError` onboarding, #382) |
 
 Router (`url-transcription.ts:102`): `canHandle` false → `"<id>: not applicable"`; `null` result → `"<id>: unavailable for this video"`; first transcript wins; every tier exhausted → `NoTranscriptionPathError(url, attempts)`.
