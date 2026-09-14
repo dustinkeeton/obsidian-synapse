@@ -1,0 +1,15 @@
+# Issue-form chooser config (rendered by wafflestack — edit .waffle/waffle.yaml, not this file).
+#
+# blank_issues_enabled: whether the "Open a blank issue" escape hatch stays on the chooser.
+# The default keeps it ON — the forms are the paved path, not a wall. Set
+# `issue.blankIssuesEnabled: false` to force every hand-filed issue through a form (the
+# rough-idea form is the zero-friction escape hatch once you do).
+blank_issues_enabled: true
+# contact_links: route discussion-shaped traffic off the issue tracker. Override
+# issue.contactLinks in .waffle/waffle.yaml with a real YAML block — the value is
+# spliced in verbatim, so it must be valid YAML at column 0:
+#
+# contact_links:
+#   - name: Questions and ideas
+#     url: https://github.com/OWNER/REPO/discussions
+#     about: Ask a question or float an idea — no issue needed.

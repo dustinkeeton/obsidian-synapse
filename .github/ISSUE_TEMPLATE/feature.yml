@@ -1,0 +1,48 @@
+name: Feature request
+description: A new capability, an improvement, or a change to how something works.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form mirrors the body template the `/issue` skill drafts, so a hand-filed issue and a
+        skill-drafted one converge on one shape. Fill what you can — a maintainer (or an enrichment
+        pass) fills the gaps.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: >-
+        Why does this issue exist — what is missing, unclear, or harder than it should be? Describe
+        the problem, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: >-
+        The concrete approach, or the acceptance criteria that would make this done. Specific enough
+        to act on.
+    validations:
+      required: true
+  - type: textarea
+    id: sub-issues
+    attributes:
+      label: Sub-issues
+      description: >-
+        Break the work into discrete, independently-completable tasks when it takes more than one
+        logical step. Omit for a single-task change.
+      placeholder: |-
+        - [ ] discrete task 1
+        - [ ] discrete task 2
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: >-
+        Links to the relevant code, related issues, or docs. Omit if there is nothing useful to link.
+    validations:
+      required: false

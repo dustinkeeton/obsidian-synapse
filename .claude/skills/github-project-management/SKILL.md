@@ -384,9 +384,9 @@ gh api graphql -f query='
 
 ```bash
 gh label create "sprint:current" --description "Items in the current sprint" --color "0E8A16"
-gh label create "priority:high" --description "High priority item" --color "D93F0B"
-gh label create "priority:medium" --description "Medium priority item" --color "FBCA04"
-gh label create "priority:low" --description "Low priority item" --color "0075CA"
+gh label create "priority: high" --description "High priority item" --color "D93F0B"
+gh label create "priority: medium" --description "Medium priority item" --color "FBCA04"
+gh label create "priority: low" --description "Low priority item" --color "0075CA"
 ```
 
 ### List labels
@@ -398,7 +398,7 @@ gh label list
 ### Apply labels to an issue
 
 ```bash
-gh issue edit {issue_number} --add-label "priority:high,sprint:current"
+gh issue edit {issue_number} --add-label "priority: high,sprint:current"
 ```
 
 ### Remove labels from an issue
@@ -410,13 +410,13 @@ gh issue edit {issue_number} --remove-label "sprint:current"
 ### Query issues by label
 
 ```bash
-gh issue list --label "priority:high" --state open --json number,title,labels
+gh issue list --label "priority: high" --state open --json number,title,labels
 ```
 
 ### Query issues by multiple labels
 
 ```bash
-gh issue list --label "priority:high" --label "sprint:current" --state open --json number,title
+gh issue list --label "priority: high" --label "sprint:current" --state open --json number,title
 ```
 
 ## Status Reporting
@@ -509,9 +509,9 @@ Apply priority labels and sort within the project:
 
 ```bash
 # Set priority labels on issues
-gh issue edit 10 --add-label "priority:high"
-gh issue edit 12 --add-label "priority:medium"
-gh issue edit 15 --add-label "priority:low"
+gh issue edit 10 --add-label "priority: high"
+gh issue edit 12 --add-label "priority: medium"
+gh issue edit 15 --add-label "priority: low"
 ```
 
 ### Capacity check
@@ -551,7 +551,7 @@ MILESTONE=$(gh api repos/$OWNER/$REPO/milestones --jq '.[] | select(.title=="v0.
 # 3. Assign issues and label them
 for ISSUE in 20 21 22; do
   gh api repos/$OWNER/$REPO/issues/$ISSUE -X PATCH -F milestone=$MILESTONE
-  gh issue edit $ISSUE --add-label "priority:medium"
+  gh issue edit $ISSUE --add-label "priority: medium"
 done
 ```
 

@@ -12,7 +12,7 @@ When this skill is invoked, run the following pipeline:
 
 Spawn the `lead-engineer` agent with this prompt:
 
-> Audit the current codebase for any changes since the docs were last updated. Read the existing machine docs (a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files) and compare against the actual project. Produce a concise **change report** covering:
+> Audit the current codebase for any changes since the docs were last updated. Read the existing machine docs (a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way) and compare against the actual project. Produce a concise **change report** covering:
 >
 > - New or removed modules, files, commands, settings
 - Changed public APIs or type signatures
@@ -29,7 +29,7 @@ Take the change report and spawn the `docs-agent` agent with this prompt:
 >
 > {step-1 output}
 >
-> Update the machine docs — a root `AGENTS.md` plus per-feature `src/<feature>/AGENTS.md` files — to reflect the current state of the project. Read the actual source files to verify details — do not rely solely on the change report. Follow the docs-agent skill guidelines for format and structure.
+> Update the machine docs — a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way — to reflect the current state of the project. Read the actual source files to verify details — do not rely solely on the change report. Follow the docs-agent skill guidelines for format and structure.
 
 ## Step 3: Human Documentation
 
