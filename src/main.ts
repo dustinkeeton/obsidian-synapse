@@ -87,7 +87,7 @@ export default class SynapsePlugin extends Plugin {
 		this.transcriptCache = new TranscriptCache(this.app);
 		const urlTranscription = createUrlTranscriptionRouter({
 			getSettings,
-			processTranscriptText: (raw) => this.audio.processTranscriptText(raw),
+			processTranscriptText: (raw, opts) => this.audio.processTranscriptText(raw, opts),
 			extract: video
 				? (url, opts) => video.processUrl(url, { insertMode: false, timeRange: opts.timeRange }, opts.update ? { update: opts.update } : undefined)
 				: undefined,
