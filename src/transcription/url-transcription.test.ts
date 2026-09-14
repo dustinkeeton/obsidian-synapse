@@ -5,7 +5,8 @@ import {
 	NoTranscriptionPathError,
 	buildUrlTranscriptBlock,
 } from './url-transcription';
-import type { UrlTranscript, UrlTranscriptionStrategy } from './url-transcription';
+import type { UrlTranscript, UrlTranscriptionStrategy, TranscriptStore } from './url-transcription';
+import type { TranscriptCacheEntry } from '../shared';
 
 const URL = 'https://www.youtube.com/watch?v=abc123xyz00';
 
@@ -103,6 +104,83 @@ describe('UrlTranscriptionRouter', () => {
 		await router.transcribe(URL, { timeRange, update });
 
 		expect(only.transcribe).toHaveBeenCalledWith(URL, { timeRange, update });
+	});
+});
+
+function store(seed: Record<string, TranscriptCacheEntry> = {}): TranscriptStore & {
+	get: ReturnType<typeof vi.fn>;
+	put: ReturnType<typeof vi.fn>;
+} {
+	const entries = new Map(Object.entries(seed));
+	return {
+		get: vi.fn((url: string, range?: { startSeconds: number; endSeconds: number }) =>
+			Promise.resolve(entries.get(range ? `${url}#${range.startSeconds}` : url) ?? null)
+		),
+		put: vi.fn((url: string, t: Omit<TranscriptCacheEntry, 'url' | 'fetchedAt' | 'lastUsedAt'>, range?: { startSeconds: number }) => {
+			entries.set(range ? `${url}#${range.startSeconds}` : url, { ...t, url, fetchedAt: 1, lastUsedAt: 1 });
+			return Promise.resolve();
+		}),
+	};
+}
+
+describe('UrlTranscriptionRouter transcript store (#488)', () => {
+	it('writes a tier result through to the store', async () => {
+		const cache = store();
+		const router = new UrlTranscriptionRouter([strategy('captions', { result: transcript({ title: 'T' }) })], cache);
+
+		await router.transcribe(URL);
+
+		expect(cache.put).toHaveBeenCalledWith(
+			URL,
+			expect.objectContaining({ text: 'processed text', raw: 'raw text', source: 'captions', title: 'T' }),
+			undefined
+		);
+	});
+
+	it('serves a stored transcript without calling any tier', async () => {
+		const tier = strategy('captions', { result: transcript() });
+		const cache = store();
+		const first = new UrlTranscriptionRouter([tier], cache);
+		await first.transcribe(URL);
+		const update = vi.fn();
+
+		const result = await new UrlTranscriptionRouter([tier], cache).transcribe(URL, { update });
+
+		expect(tier.transcribe).toHaveBeenCalledOnce();
+		expect(result).toMatchObject({ text: 'processed text', source: 'captions', cached: true });
+		expect(update).toHaveBeenCalledWith('Using cached transcript');
+	});
+
+	it('forceRefresh bypasses the store and overwrites the entry', async () => {
+		const tier = strategy('captions', { result: transcript({ text: 'fresh' }) });
+		const cache = store({ [URL]: { url: URL, text: 'stale', raw: 'stale', source: 'captions', fetchedAt: 1, lastUsedAt: 1 } });
+		const router = new UrlTranscriptionRouter([tier], cache);
+
+		const result = await router.transcribe(URL, { forceRefresh: true });
+
+		expect(tier.transcribe).toHaveBeenCalledOnce();
+		expect(result.text).toBe('fresh');
+		expect(result.cached).toBeUndefined();
+		expect(cache.put).toHaveBeenCalledWith(URL, expect.objectContaining({ text: 'fresh' }), undefined);
+	});
+
+	it('keys clipped requests on the time range', async () => {
+		const tier = strategy('local-extraction', { result: transcript({ source: 'local-extraction' }) });
+		const cache = store({ [URL]: { url: URL, text: 'full', raw: 'full', source: 'captions', fetchedAt: 1, lastUsedAt: 1 } });
+		const timeRange = { startSeconds: 1, endSeconds: 2 };
+
+		await new UrlTranscriptionRouter([tier], cache).transcribe(URL, { timeRange });
+
+		expect(tier.transcribe).toHaveBeenCalledOnce();
+		expect(cache.put).toHaveBeenCalledWith(URL, expect.anything(), timeRange);
+	});
+
+	it('stores nothing when every tier is exhausted', async () => {
+		const cache = store();
+		const router = new UrlTranscriptionRouter([strategy('captions', { result: null })], cache);
+
+		await expect(router.transcribe(URL)).rejects.toBeInstanceOf(NoTranscriptionPathError);
+		expect(cache.put).not.toHaveBeenCalled();
 	});
 });
 

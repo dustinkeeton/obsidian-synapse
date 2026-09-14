@@ -177,6 +177,20 @@ export function renderVideoSettings(ctx: SettingsSectionContext): void {
 				})
 		);
 
+	new Setting(videoBody)
+		.setName('Transcript cache')
+		.setDesc(
+			'Transcripts of media URLs are kept in .synapse/transcript-cache.json so ' +
+			'summarize and transcribe reuse them instead of fetching again. Clear it ' +
+			'to force fresh transcripts.'
+		)
+		.addButton((btn) =>
+			btn.setButtonText('Clear transcript cache').onClick(async () => {
+				await plugin.transcriptCache.clear();
+				plugin.notifications.info('Transcript cache cleared');
+			})
+		);
+
 	if (!Platform.isDesktop) {
 		// Raw createEl DOM (not a Setting row) so the structure stays
 		// unit-testable under the Obsidian mock.

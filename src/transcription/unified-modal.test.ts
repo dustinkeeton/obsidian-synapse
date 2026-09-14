@@ -66,6 +66,19 @@ describe('UnifiedTranscriptionModal URL section (#184)', () => {
 
 		await (modal as unknown as { handleTranscribe: () => Promise<void> }).handleTranscribe();
 
-		expect(callbacks.onTranscribeUrl).toHaveBeenCalledWith(url);
+		expect(callbacks.onTranscribeUrl).toHaveBeenCalledWith(url, undefined, false);
+	});
+
+	it('forwards the fresh-transcript toggle as forceRefresh (#488)', async () => {
+		Platform.isDesktop = false;
+		Platform.isMobile = true;
+		const { modal, callbacks } = makeModal({ audio: false, video: true });
+		const url = 'https://www.youtube.com/watch?v=abc123xyz00';
+		(modal as unknown as { url: string; forceRefresh: boolean }).url = url;
+		(modal as unknown as { url: string; forceRefresh: boolean }).forceRefresh = true;
+
+		await (modal as unknown as { handleTranscribe: () => Promise<void> }).handleTranscribe();
+
+		expect(callbacks.onTranscribeUrl).toHaveBeenCalledWith(url, undefined, true);
 	});
 });

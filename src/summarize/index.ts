@@ -108,6 +108,17 @@ function findDependencyMissingError(error: unknown): DependencyMissingInfo | nul
 	return null;
 }
 
+/** A router-supported media URL that could not be transcribed; never falls back to page HTML (#488). */
+class MediaTranscriptionError extends Error {
+	readonly cause: unknown;
+	constructor(url: string, cause: unknown) {
+		const reason = cause instanceof Error ? cause.message : String(cause);
+		super(`Video transcription failed for ${url}: ${reason}`);
+		this.name = 'MediaTranscriptionError';
+		this.cause = cause;
+	}
+}
+
 export class SummarizeModule {
 	private summarizer: Summarizer;
 	private transcribeUrl: TranscribeUrlFn | null;
@@ -375,6 +386,8 @@ export class SummarizeModule {
 		const settings = this.getSettings().summarize;
 		const sections: string[] = [];
 		const labels: string[] = [];
+		// #488: a combined summary missing its media transcript would misdescribe the video
+		let mediaFailed = false;
 
 		for (const target of targets) {
 			if (op.cancelled) return empty;
@@ -402,6 +415,7 @@ export class SummarizeModule {
 					);
 				}
 			} catch (error) {
+				if (target.type === 'url' && isSupportedUrl(target.source)) mediaFailed = true;
 				// Standardized link-load failure notice -- identical format to the
 				// per-item summarize path and Elaborate (was notifyError, which read
 				// differently for the same underlying failure). A missing video
@@ -413,7 +427,7 @@ export class SummarizeModule {
 			}
 		}
 
-		if (op.cancelled || sections.length === 0) return empty;
+		if (op.cancelled || sections.length === 0 || mediaFailed) return empty;
 
 		const combinedText = sections.join('\n\n---\n\n').slice(0, settings.maxContentLength);
 
@@ -737,17 +751,20 @@ export class SummarizeModule {
 	}
 
 	/**
-	 * Fetch content for a URL. If the URL is a recognized video platform
-	 * and a transcription function is available, transcribe the video
-	 * instead of fetching the page HTML (which yields little useful text
-	 * from JS-rendered video pages).
+	 * Fetch content for a URL. A router-supported media URL is ONLY ever
+	 * transcribed (the router serves cached transcripts, #488); when that
+	 * fails the target fails — page HTML is never substituted, since a
+	 * JS-rendered video page carries none of the video's content.
 	 */
 	private async fetchContentForUrl(
 		url: string,
 		maxLength: number,
 		op: OperationHandle
 	): Promise<string> {
-		if (this.transcribeUrl && isSupportedUrl(url)) {
+		if (isSupportedUrl(url)) {
+			if (!this.transcribeUrl) {
+				throw new MediaTranscriptionError(url, new Error('no transcription path is configured'));
+			}
 			try {
 				op.update(`Transcribing video ${url}`);
 				const transcript = await this.transcribeUrl(url, op);
@@ -755,13 +772,11 @@ export class SummarizeModule {
 			} catch (error) {
 				// Preserve a typed video-dependency error (yt-dlp/ffmpeg) so the
 				// caller can offer onboarding (#382); matched by name to avoid a
-				// static summarize -> video import. Other failures keep the
-				// descriptive wrapper so the link-load notice stays informative.
+				// static summarize -> video import.
 				if (error instanceof Error && error.name === 'DependencyMissingError') {
 					throw error;
 				}
-				const msg = error instanceof Error ? error.message : String(error);
-				throw new Error(`Video transcription failed for ${url}: ${msg}`);
+				throw new MediaTranscriptionError(url, error);
 			}
 		}
 

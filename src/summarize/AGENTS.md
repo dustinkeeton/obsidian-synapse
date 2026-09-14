@@ -4,7 +4,7 @@ last-updated: 2026-09-14
 
 # Summarize Module
 
-Summarizes a note's own prose plus the URLs, transcription blocks, and audio embeds it references, emitting either per-item summary callouts or one combined summary, and creating standalone notes for enrichment-section links. Video URLs and audio embeds are transcribed via injected callbacks (no static `video/` import).
+Summarizes a note's own prose plus the URLs, transcription blocks, and audio embeds it references, emitting either per-item summary callouts or one combined summary, and creating standalone notes for enrichment-section links. Video URLs and audio embeds are transcribed via injected callbacks (no static `video/` import). Media URLs are transcribed on every platform (the injected callback runs the tiered router, which reads/writes the shared transcript store, #488); a media URL whose transcription fails is a failed target — page HTML is never summarized in its place.
 
 ## Public API (`index.ts`)
 
@@ -71,7 +71,7 @@ awaited, so there is no cycle).
 | `index.ts` | `SummarizeModule`, type + fn re-exports | Orchestrator, commands, scan + summarize flows |
 | `types.ts` | `SummarizeTarget` | Target type model |
 | `summarizer.ts` | `Summarizer` | AI summarization with style (bullets/paragraph/key-points) |
-| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks; note-prose extraction |
+| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks; note-prose extraction. A URL target is dropped when a transcription block for the same (social-normalized) source exists ANYWHERE in the note (`dropUrlsTranscribedElsewhere`, #488), not only within 5 lines below it |
 | `summarize-modal.ts` | `SummarizeSelectionModal`, `SummarizeModalDefaults` | Selection modal for 2+ targets; include-note + combine toggles (#367) |
 | `settings-section.ts` | `renderSummarizeSettings` | Summarize settings UI section (#243) |
 | `summarizer.test.ts` | Tests | Summarizer style/prompt tests |
@@ -82,6 +82,7 @@ awaited, so there is no cycle).
 | `summarize-modal.test.ts` | Tests | Selection-modal tests |
 | `settings-section.test.ts` | Tests | Settings-section render tests |
 | `video-dependency-notice.test.ts` | Tests | yt-dlp/ffmpeg onboarding-notice tests (#382) |
+| `media-url-summarize.test.ts` | Tests | Media-URL summarize contract (#488): transcript summarized without insertion, failed transcription inserts nothing and never fetches page HTML, combined path aborts on media failure |
 
 ## Target Types (`types.ts`)
 
@@ -125,6 +126,7 @@ processTargetsForFile(file, targets, op, content, combine)            index.ts:3
 
 combineSelectedTargets(file, targets, op, content)                    index.ts:362
   per target: reuse note-content/transcript content, else fetch URL / transcribe audio
+  --> a failed router-supported media URL sets mediaFailed -> return empty, NO callout (#488)
   --> join sections w/ '## <label>' + '---' separators, slice(maxContentLength)
   --> Summarizer.summarize(combinedText, labels, style, prompt)
         prompt = customPrompt > schema('summary') > COMPREHENSIVE_SUMMARY_PROMPT
@@ -186,15 +188,15 @@ Registered in `onload()`, both gated by `settings.summarize.enabled` (`commands/
 | `synapse:summarize-current-note` | Summarize current note | editorCallback |
 | `synapse:scan-vault-summarize` | Scan folder for notes to summarize | callback (`openScanFolderPicker`) |
 
-## URL Fetch / Video Auto-Transcription (`fetchContentForUrl`, index.ts:749)
+## URL Fetch / Video Auto-Transcription (`fetchContentForUrl`)
 
 Routing order for a target URL:
-1. `transcribeUrl` injected AND `isSupportedUrl(url)` -> call `transcribeUrl(url, op)` (video transcript).
+1. `isSupportedUrl(url)` (router-supported media) -> call `transcribeUrl(url, op)` and return the transcript. This branch NEVER falls through: a missing callback or a failed transcription throws `MediaTranscriptionError` (module-local, `name: 'MediaTranscriptionError'`, `cause` = the tier error) except a `DependencyMissingError`, which is rethrown unchanged for the #382 onboarding notice. Page HTML is never substituted for a media URL (#488).
 2. `detectPlatform(url)?.platform === 'twitter'` -> `fetchTweetContent(url, max)`.
 3. `isRedditUrl(url)` -> `fetchRedditContent(url, max)` (Reddit is generic 'article'; routed explicitly to the RSS fetcher).
-4. else -> `fetchPageContent(url, max)`.
+4. else -> `fetchPageContent(url, max)` (non-media URLs only).
 
-`transcribeUrl`/`transcribeAudio` are injected by `main.ts:174-189` (after `noteQueue`). `transcribeUrl` delegates to `UrlTranscriptionRouter.transcribe(url, { update })` and returns `result.text` (`main.ts:176-181`); the router runs the caption tier on every platform and the yt-dlp tier on desktop only, so a non-YouTube or caption-less URL on mobile rejects with `NoTranscriptionPathError` (#184). `isSupportedUrl`, `detectPlatform`, `isRedditUrl` all resolve from the `shared` barrel; there is NO static import of `video/` or `transcription/`.
+`transcribeUrl`/`transcribeAudio` are injected by `main.ts` (after `noteQueue`) on EVERY platform. `transcribeUrl` delegates to `UrlTranscriptionRouter.transcribe(url, { update })` and returns `result.text`; the router consults the shared `TranscriptCache` first (so a URL transcribed explicitly earlier is reused, wherever or whether its callout appears in the note) and writes every fresh tier result through (so an explicit "Transcribe media" after a summarize never re-runs caption fetch / download / ASR), then runs the caption tier on every platform and the yt-dlp tier on desktop only — a non-YouTube or caption-less URL on mobile rejects with `NoTranscriptionPathError` (#184). Summarize inserts only the summary callout, never the transcript. `isSupportedUrl`, `detectPlatform`, `isRedditUrl` all resolve from the `shared` barrel; there is NO static import of `video/` or `transcription/`.
 
 ## Combined Summaries (#367)
 
@@ -244,7 +246,8 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 
 | Condition | Handling |
 |-----------|----------|
-| Missing video dep (yt-dlp/ffmpeg) | `DependencyMissingError` matched by `name` through the `cause` chain (`findDependencyMissingError`, index.ts:98); shows an actionable "Open settings" notice that reveals the Video section (#382) |
+| Missing video dep (yt-dlp/ffmpeg) | `DependencyMissingError` matched by `name` through the `cause` chain (`findDependencyMissingError`); shows an actionable "Open settings" notice that reveals the Video section (#382) |
+| Media URL transcription fails (no tier, captions unavailable, mobile) | `MediaTranscriptionError` -> `linkLoadError(source, reason)` notice carrying the router's platform-aware message; NO summary callout for that target; in the combined path the whole combined callout is withheld (#488) |
 | URL fetch throws | `notifyTargetError` -> `linkLoadError(source, reason)` persistent notice; target skipped |
 | Fetch returns empty text | `linkLoadError(source, 'page returned no readable text')`; target skipped |
 | Audio file not found in vault | throws `Audio file not found in vault: <name>` |
