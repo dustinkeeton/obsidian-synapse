@@ -60,7 +60,7 @@ export class SynapseActionsView extends ItemView {
 	}
 
 	getIcon(): string {
-		// Bespoke launcher mark (registered via addIcon in src/brand-icons.ts),
+		// Bespoke launcher mark (registered via addIcon in src/brand-icons/brand-icons.ts),
 		// matching the "Synapse actions" ribbon that opens this view (#349).
 		// Distinct from the 'synapse' S-Signal used by the proposal view.
 		return 'synapse-actions';

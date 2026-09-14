@@ -1,6 +1,6 @@
 import { MarkdownView, Platform, Plugin, TFile } from 'obsidian';
 import { SynapseSettings, DEFAULT_SETTINGS } from './settings';
-import { SynapseSettingTab } from './settings-tab';
+import { SynapseSettingTab } from './settings-ui';
 import { ElaborationModule } from './elaboration';
 import { AudioModule } from './audio';
 import { VideoModule, AudioExtractor } from './video';

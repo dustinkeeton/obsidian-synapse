@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { addIcon } from 'obsidian';
 import { SYNAPSE_ICONS, SYNAPSE_ICON_SVG, registerSynapseIcons } from './brand-icons';
-import { COMMAND_REGISTRY, FEATURE_ICONS, resolveActionIcon } from './commands';
+import { COMMAND_REGISTRY, FEATURE_ICONS, resolveActionIcon } from '../commands';
 
 const registeredNames = () => new Set(Object.keys(SYNAPSE_ICONS));
 

@@ -8,7 +8,7 @@
 // test stub satisfy it. Keeping the logic here makes every branch unit-testable
 // without rendering a full settings tab.
 
-import type { SynapseSettings } from './settings';
+import type { SynapseSettings } from '../settings';
 
 /**
  * Duration (ms) of the first-run welcome notice. Longer than a routine info

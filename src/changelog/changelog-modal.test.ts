@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 
 // Mock the bundled changelog so the test is decoupled from the real CHANGELOG.md
 // (and so Vitest never tries to transform a `.md` file — only esbuild does that
-// at build time). The specifier matches changelog-modal.ts's `'../CHANGELOG.md'`.
-vi.mock('../CHANGELOG.md', () => ({
+// at build time). The specifier matches changelog-modal.ts's `'../../CHANGELOG.md'`.
+vi.mock('../../CHANGELOG.md', () => ({
 	default: `# Changelog
 
 ## [Unreleased]
@@ -20,7 +20,7 @@ vi.mock('../CHANGELOG.md', () => ({
 `,
 }));
 
-import { createEl, type StubEl } from './__mocks__/obsidian';
+import { createEl, type StubEl } from '../__mocks__/obsidian';
 import { ChangelogModal } from './changelog-modal';
 
 /** Recursively collect every element in a stub tree. */

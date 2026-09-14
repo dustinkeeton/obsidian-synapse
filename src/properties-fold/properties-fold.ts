@@ -1,7 +1,7 @@
 import { MarkdownView } from 'obsidian';
 import type { App } from 'obsidian';
-import type SynapsePlugin from './main';
-import type { SynapseSettings } from './settings';
+import type SynapsePlugin from '../main';
+import type { SynapseSettings } from '../settings';
 
 /**
  * Auto-fold note Properties on open (#381).
