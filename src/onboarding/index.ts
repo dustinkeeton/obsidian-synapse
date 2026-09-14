@@ -8,5 +8,6 @@ export {
 	needsApiKey,
 	planFirstRun,
 	applyApiKeyEmphasis,
+	runFirstRunOnboarding,
 } from './onboarding';
-export type { FirstRunPlan, EmphasisTarget } from './onboarding';
+export type { FirstRunPlan, FirstRunDeps, EmphasisTarget } from './onboarding';

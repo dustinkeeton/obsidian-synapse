@@ -5,7 +5,9 @@ import {
 	needsApiKey,
 	planFirstRun,
 	applyApiKeyEmphasis,
+	runFirstRunOnboarding,
 	WELCOME_MESSAGE,
+	WELCOME_NOTICE_DURATION_MS,
 	REQUIRED_FIELD_CLASS,
 	API_KEY_DESC,
 	API_KEY_REQUIRED_DESC,
@@ -136,5 +138,47 @@ describe('API_KEY_NO_SUBSCRIPTION_NOTE copy (#364)', () => {
 	it('stays in brand voice: no exclamation points, no emoji', () => {
 		expect(API_KEY_NO_SUBSCRIPTION_NOTE).not.toContain('!');
 		expect(API_KEY_NO_SUBSCRIPTION_NOTE).not.toMatch(/\p{Extended_Pictographic}/u);
+	});
+});
+
+describe('runFirstRunOnboarding (#89)', () => {
+	function makeDeps(isFreshInstall: boolean, hasSeenWelcome = false) {
+		const settings = makeSettings((s) => { s.onboarding.hasSeenWelcome = hasSeenWelcome; });
+		return {
+			getSettings: () => settings,
+			isFreshInstall,
+			markSeen: vi.fn().mockResolvedValue(undefined),
+			notifications: { info: vi.fn() },
+		};
+	}
+
+	it('greets a fresh install and marks it seen', async () => {
+		const deps = makeDeps(true);
+		await runFirstRunOnboarding(deps);
+		expect(deps.markSeen).toHaveBeenCalledTimes(1);
+		expect(deps.notifications.info).toHaveBeenCalledWith(WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS);
+	});
+
+	it('marks an upgrader seen silently', async () => {
+		const deps = makeDeps(false);
+		await runFirstRunOnboarding(deps);
+		expect(deps.markSeen).toHaveBeenCalledTimes(1);
+		expect(deps.notifications.info).not.toHaveBeenCalled();
+	});
+
+	it('is a no-op once seen', async () => {
+		const deps = makeDeps(true, true);
+		await runFirstRunOnboarding(deps);
+		expect(deps.markSeen).not.toHaveBeenCalled();
+		expect(deps.notifications.info).not.toHaveBeenCalled();
+	});
+
+	it('swallows a persistence failure', async () => {
+		const deps = makeDeps(true);
+		deps.markSeen.mockRejectedValue(new Error('disk'));
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		await expect(runFirstRunOnboarding(deps)).resolves.toBeUndefined();
+		expect(warn).toHaveBeenCalledTimes(1);
+		warn.mockRestore();
 	});
 });

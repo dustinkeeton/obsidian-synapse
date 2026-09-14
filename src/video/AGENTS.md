@@ -14,8 +14,8 @@ Re-exported from `index.ts` (the module barrel):
 
 ```ts
 class VideoModule {
-  onTranscriptionComplete: ((filePath: string) => void) | null  // index.ts:33
-  urlTranscriber: RoutedUrlTranscriber | null                   // index.ts:41; wired by main.ts so the batch insert uses the tier router (#184)
+  onTranscriptionComplete: ((filePath: string) => void) | null  // index.ts:34
+  urlTranscriber: RoutedUrlTranscriber | null                   // index.ts:42; wired by main.ts so the batch insert uses the tier router (#184)
   constructor(
     plugin: Plugin,
     getSettings: () => SynapseSettings,
@@ -24,12 +24,12 @@ class VideoModule {
     checkpointManager: CheckpointManager,
     registrar: CommandRegistrar,
     noteQueue: NoteOperationQueue                                // #483; appended after registrar
-  )                                                              // index.ts:43
-  onload(): Promise<void>                                        // index.ts:55
-  onunload(): void                                               // index.ts:66
-  processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>  // index.ts:68
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>    // index.ts:151
-  transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>  // index.ts:159; acquires noteFile's queue slot (#483), then delegates
+  )                                                              // index.ts:44
+  onload(): Promise<void>                                        // index.ts:56
+  onunload(): void                                               // index.ts:67
+  processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>  // index.ts:69
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>    // index.ts:152
+  transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>  // index.ts:160; acquires noteFile's queue slot (#483), then delegates
 }
 ```
 
@@ -51,6 +51,9 @@ class AudioExtractor {                                           // audio-extrac
   checkDependencies(): Promise<{ ytDlp: boolean; ffmpeg: boolean }>
 }
 
+// ffmpeg-availability.ts:4 — memoized `extractor.checkDependencies().ffmpeg` probe (#214); always false without an extractor (mobile); probe failure caches false
+function createFfmpegAvailability(extractor: AudioExtractor | undefined): () => Promise<boolean>
+
 // Re-exported from ../shared (canonical home: shared/url-detector.ts)
 function detectPlatform(url: string): UrlDetectionResult | null
 function isSupportedUrl(url: string): boolean   // true for detected platforms EXCEPT twitter
@@ -58,8 +61,8 @@ type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown'
 interface UrlDetectionResult { platform: Platform; videoId: string; url: string }
 
 // Owned by this module
-function findVideoUrls(content: string): VideoUrlEmbed[]   // re-exported via index.ts:27
-function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:374
+function findVideoUrls(content: string): VideoUrlEmbed[]   // re-exported via index.ts:28
+function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:373
 
 // Types (re-exported index.ts:15-23)
 interface VideoProcessOptions {
@@ -94,7 +97,7 @@ interface VideoSource {
 Private (index.ts), documented because it is the queue-free core of `transcribeAndInsert`:
 
 ```ts
-private insertTranscriptions(noteFile: TFile, embeds: VideoUrlEmbed[], op: OperationHandle): Promise<void>  // index.ts:180
+private insertTranscriptions(noteFile: TFile, embeds: VideoUrlEmbed[], op: OperationHandle): Promise<void>  // index.ts:179
 ```
 
 Exported by source files but NOT re-exported through `index.ts`:
@@ -119,6 +122,8 @@ class FrameExtractor {                          // frame-extractor.ts:L6 — pla
 | `note-scanner.test.ts` | Tests | Note scanner unit tests |
 | `audio-extractor.ts` | `AudioExtractor`, `DependencyMissingError` | yt-dlp/ffmpeg via `execFile` (no shell); URL download, file extract, clip, concat, dependency check, no-audio detection |
 | `audio-extractor.test.ts` | Tests | AudioExtractor unit tests |
+| `ffmpeg-availability.ts` | `createFfmpegAvailability` | Memoized ffmpeg probe factory; consumed by `main.ts:233` as `NoteMediaTranscriptionDeps.isFfmpegAvailable` (combine-audio gate in `NoteMediaModal`) |
+| `ffmpeg-availability.test.ts` | Tests | Memoization, no-extractor false, probe-failure false |
 | `frame-extractor.ts` | `FrameExtractor` | Placeholder; `extractFrames` throws unless disabled (unimplemented) |
 | `settings-section.ts` | `renderVideoSettings` | Video settings accordion renderer for settings-tab.ts |
 | `settings-section.test.ts` | Tests | Settings section tests |
@@ -134,8 +139,8 @@ class FrameExtractor {                          // frame-extractor.ts:L6 — pla
 2a. transcribeAndInsert(noteFile, embeds) -- batch from note scan; the ONLY
    |  note-writing entry point left on this module
    |  isPathExcluded silent skip (#307); acquires noteFile's NoteOperationQueue
-   |  slot (#483, index.ts:172) then delegates to private insertTranscriptions
-   |  (index.ts:180); creates checkpoint; routes each embed through
+   |  slot (#483, index.ts:171) then delegates to private insertTranscriptions
+   |  (index.ts:179); creates checkpoint; routes each embed through
    |  urlTranscriber (the #184 tier router) with a processUrl fallback;
    |  processes in reverse line order; 2s delay between API calls; atomic splice
    |  via vault.process; cancellable via NotificationManager operation
@@ -195,7 +200,7 @@ class FrameExtractor {                          // frame-extractor.ts:L6 — pla
 |-----------|------------------|---------------|
 | `synapse:check-dependencies` | `video.enabled` | Check external tool availability |
 
-Registered via `registrar.register('check-dependencies', ...)` (index.ts:61); Obsidian prefixes the manifest id with `synapse:`. The handler reports yt-dlp/ffmpeg presence and brew install hints. Transcription palette commands (`transcribe-media`, `transcribe-note-media`) are wired in `main.ts`, not here.
+Registered via `registrar.register('check-dependencies', ...)` (index.ts:62); Obsidian prefixes the manifest id with `synapse:`. The handler reports yt-dlp/ffmpeg presence and brew install hints. Transcription palette commands (`transcribe-media`, `transcribe-note-media`) are wired in `main.ts`, not here.
 
 ## Settings Keys (VideoSettings, settings.ts:L114)
 
@@ -260,7 +265,7 @@ VideoModule → AudioModule is the one documented cross-feature runtime dependen
 - `--ffmpeg-location` is emitted only when `ffmpegPath` is a concrete path (contains `/` or `\`); a bare name relies on PATH discovery.
 - `downloadVideoToVault` uses `vault.createBinary()` (not the adapter API); collision-safe naming is delegated to `findAvailableVaultPath` (shared) on a `normalizePath`-ed target, appending `-1`, `-2`, ... before the extension.
 - Back-compat re-exports (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) come from `../shared`; prefer direct `shared` imports in new code.
-- Per-note serialization (#483): `transcribeAndInsert` acquires `noteFile.path` on the shared `NoteOperationQueue` (index.ts:172) with an `onWait` that updates the operation toast (`Waiting for another Synapse operation on <basename>`), then runs private `insertTranscriptions` (index.ts:180). The core must never re-enter the queue — acquire at most once per operation. `processUrl`/`transcribe` paths that only produce text (no note write) stay unqueued; the caller that writes owns the slot.
+- Per-note serialization (#483): `transcribeAndInsert` acquires `noteFile.path` on the shared `NoteOperationQueue` (index.ts:171) with an `onWait` that updates the operation toast (`Waiting for another Synapse operation on <basename>`), then runs private `insertTranscriptions` (index.ts:179). The core must never re-enter the queue — acquire at most once per operation. `processUrl`/`transcribe` paths that only produce text (no note write) stay unqueued; the caller that writes owns the slot.
 
 ## Security
 

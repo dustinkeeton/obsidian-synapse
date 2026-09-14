@@ -10,7 +10,7 @@ import type { SynapseSettings } from '../settings';
  *  - {@link applyResetAll} rebuilds the whole settings object, preserving a small
  *    set of install bookkeeping fields.
  *
- * ALIASING GUARD: `main.ts`'s `deepMerge` is not a deep clone, so on a fresh
+ * ALIASING GUARD: `shared/settings-merge.ts`'s `deepMergeSettings` is not a deep clone, so on a fresh
  * install `settings.<key>` can be the SAME object reference as
  * `DEFAULT_SETTINGS.<key>`. Every object restored here therefore goes through
  * `structuredClone` so a later edit never mutates the shared `DEFAULT_SETTINGS`

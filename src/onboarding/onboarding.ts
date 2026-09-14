@@ -2,13 +2,14 @@
 // a one-time welcome notice that points new users at the settings tab, plus a
 // "required" emphasis on the AI provider API key field while it is still unset.
 //
-// This module is pure TypeScript with no Obsidian runtime import — the side
-// effects (showing the notice, touching the DOM) live in the caller. The DOM
-// helper takes a small structural target so both Obsidian's `Setting` and the
-// test stub satisfy it. Keeping the logic here makes every branch unit-testable
-// without rendering a full settings tab.
+// No Obsidian runtime import: the plan is pure, and `runFirstRunOnboarding`
+// performs its side effects only through injected deps. The DOM helper takes a
+// small structural target so both Obsidian's `Setting` and the test stub
+// satisfy it, so every branch is unit-testable without a full settings tab.
 
 import type { SynapseSettings } from '../settings';
+import { redactError } from '../shared';
+import type { NotificationManager } from '../shared';
 
 /**
  * Duration (ms) of the first-run welcome notice. Longer than a routine info
@@ -108,4 +109,26 @@ export function applyApiKeyEmphasis(
 	const needed = needsApiKey(settings);
 	target.settingEl.toggleClass(REQUIRED_FIELD_CLASS, needed);
 	target.setDesc(needed ? API_KEY_REQUIRED_DESC : API_KEY_DESC);
+}
+
+export interface FirstRunDeps {
+	getSettings: () => SynapseSettings;
+	isFreshInstall: boolean;
+	/** Persist `onboarding.hasSeenWelcome = true`; owned by the caller so settings stay read-only here. */
+	markSeen: () => Promise<void>;
+	notifications: Pick<NotificationManager, 'info'>;
+}
+
+/** Apply {@link planFirstRun}: mark seen, greet a genuine fresh install once. Never throws (must not break load). */
+export async function runFirstRunOnboarding(deps: FirstRunDeps): Promise<void> {
+	try {
+		const plan = planFirstRun(deps.getSettings(), deps.isFreshInstall);
+		if (!plan.markSeen) return;
+		await deps.markSeen();
+		if (plan.showWelcome) {
+			deps.notifications.info(WELCOME_MESSAGE, WELCOME_NOTICE_DURATION_MS);
+		}
+	} catch (error) {
+		console.warn('[Synapse] First-run onboarding failed:', redactError(error));
+	}
 }

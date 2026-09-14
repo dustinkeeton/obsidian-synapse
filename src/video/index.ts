@@ -23,6 +23,7 @@ export type {
 } from './types';
 export type { Platform, UrlDetectionResult } from '../shared';
 export { AudioExtractor } from './audio-extractor';
+export { createFfmpegAvailability } from './ffmpeg-availability';
 export { detectPlatform, isSupportedUrl } from '../shared';
 export { findVideoUrls } from './note-scanner';
 
