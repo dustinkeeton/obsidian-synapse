@@ -5,6 +5,29 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-09-15
+
+### Added
+
+- Long transcripts are no longer skipped by post-processing. A transcript that exceeds the AI output budget is now cleaned up in sections and rejoined, so a two-hour caption dump gets the same punctuation and paragraphing as a short voice memo. Each section sees the tail of the one before it, so sentences that straddle a boundary come back whole
+- Synapse now catches up on intake notes it never saw. Notes that synced in while Obsidian was closed — including a video URL handed off from your phone for the desktop to transcribe — and notes whose earlier processing failed are picked up on startup and processed oldest first, a few at a time
+- Elaboration reads more of the surrounding vault. Alongside outbound links, a note's backlinks (with an excerpt of the line that links to it) and its tags — plus the titles of notes sharing those tags — now feed the prompt, so a stub that is linked from many notes is elaborated with the context that explains what it is for
+- Transcripts are cached, so re-running a command on the same video or clip reuses the transcript instead of transcribing and paying for it again
+- A "Transcription model" dropdown now sits next to the transcription provider, so you can pick the model your provider uses instead of being stuck on a hardcoded one
+
+### Changed
+
+- The Anthropic and OpenAI model lists have been refreshed to the current generation
+
+### Fixed
+
+- Selecting an OpenAI reasoning model (o3, o3-mini, o4-mini) no longer fails every request with "Unsupported parameter: 'max_tokens' is not supported with this model"
+- A video or audio URL that can't be transcribed no longer gets a summary of the page's HTML instead. You now get the actual reason — captions unavailable, yt-dlp or ffmpeg missing, no path on mobile — with what to do about it, rather than a "summary" that describes the web page around the video
+
+### Security
+
+- The YouTube caption path is hardened against hostile responses: caption fetches are pinned to YouTube hosts over HTTPS, responses are size-bounded before parsing, and chapter titles and caption text are escaped so a crafted caption cannot inject links or embeds into your note
+
 ## [1.0.14] - 2026-09-14
 
 ### Fixed
