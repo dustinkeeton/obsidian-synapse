@@ -163,7 +163,7 @@ All under `settings.audio` (interface `AudioSettings`, `settings.ts:93`; default
 | `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey`, `transcriber.ts:L287`) |
 | `deepgramApiKey` | string | `''` | Deepgram API key (no fallback) |
 | `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey`, `transcriber.ts:L392`) |
-| `whisperModel` | string | `'whisper-1'` | Whisper model name (multipart `model` field) |
+| `transcriptionModel` | string | `'whisper-1'` | Model for the active provider; resolved against `TRANSCRIPTION_MODEL_OPTIONS` (`transcription-models.ts`) |
 | `localWhisperPath` | string | `''` | Reserved for `local-whisper` CLI path (provider not implemented) |
 | `language` | string | `''` | Language hint; empty = auto-detect |
 | `autoFormatLyrics` | boolean | `true` | Auto-detect song transcripts and reformat as structured lyrics (#234) |

@@ -71,7 +71,7 @@ export function applySectionReset(settings: SynapseSettings, key: string): void 
 			settings.audio.whisperApiKey = DEFAULT_SETTINGS.audio.whisperApiKey;
 			settings.audio.deepgramApiKey = DEFAULT_SETTINGS.audio.deepgramApiKey;
 			settings.audio.geminiApiKey = DEFAULT_SETTINGS.audio.geminiApiKey;
-			settings.audio.whisperModel = DEFAULT_SETTINGS.audio.whisperModel;
+			settings.audio.transcriptionModel = DEFAULT_SETTINGS.audio.transcriptionModel;
 			settings.audio.localWhisperPath = DEFAULT_SETTINGS.audio.localWhisperPath;
 			return;
 		case 'audio':
@@ -158,7 +158,7 @@ export function sectionMatchesDefaults(
 				settings.audio.whisperApiKey === DEFAULT_SETTINGS.audio.whisperApiKey &&
 				settings.audio.deepgramApiKey === DEFAULT_SETTINGS.audio.deepgramApiKey &&
 				settings.audio.geminiApiKey === DEFAULT_SETTINGS.audio.geminiApiKey &&
-				settings.audio.whisperModel === DEFAULT_SETTINGS.audio.whisperModel &&
+				settings.audio.transcriptionModel === DEFAULT_SETTINGS.audio.transcriptionModel &&
 				settings.audio.localWhisperPath === DEFAULT_SETTINGS.audio.localWhisperPath
 			);
 		case 'audio':

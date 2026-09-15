@@ -32,16 +32,10 @@ import {
 	parseJson,
 } from '../shared';
 import { TranscriptionResult } from './types';
+import { resolveTranscriptionModel, whisperResponseFormat } from './transcription-models';
 
 /** Timeout for transcription API requests (5 minutes for large audio files). */
 const TRANSCRIPTION_TIMEOUT_MS = 300_000;
-
-/**
- * Gemini model used for audio transcription. Flash-class: fast, low-cost,
- * native audio understanding. Verified stable on
- * ai.google.dev/gemini-api/docs/models (2026-09-14).
- */
-const GEMINI_TRANSCRIPTION_MODEL = 'gemini-3.5-flash';
 
 /**
  * Maximum raw audio size for Gemini inline transcription. Gemini caps the
@@ -302,10 +296,12 @@ export class Transcriber {
 			);
 		}
 
+		const model = resolveTranscriptionModel('whisper-api', settings.audio.transcriptionModel);
+
 		// Build multipart body manually since requestUrl does not support FormData
 		const fields: { name: string; value: string }[] = [
-			{ name: 'model', value: settings.audio.whisperModel },
-			{ name: 'response_format', value: 'verbose_json' },
+			{ name: 'model', value: model },
+			{ name: 'response_format', value: whisperResponseFormat(model) },
 		];
 		if (settings.audio.language) {
 			fields.push({ name: 'language', value: settings.audio.language });
@@ -357,7 +353,10 @@ export class Transcriber {
 				'Set one in Audio Transcription settings.'
 			);
 		}
+		// Pin the model explicitly: omitting it rides Deepgram's API default
+		// (base-general), so transcription quality would drift with the vendor.
 		const params = new URLSearchParams({
+			model: resolveTranscriptionModel('deepgram', settings.transcriptionModel),
 			punctuate: 'true',
 			paragraphs: 'true',
 		});
@@ -451,8 +450,10 @@ export class Transcriber {
 			generationConfig: { temperature: 0 },
 		});
 
+		const model = resolveTranscriptionModel('gemini', settings.audio.transcriptionModel);
+
 		const response = await this.requestTranscription('the Gemini transcription API', {
-			url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TRANSCRIPTION_MODEL}:generateContent`,
+			url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
 			method: 'POST',
 			headers: {
 				'x-goog-api-key': apiKey,
