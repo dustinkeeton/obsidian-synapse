@@ -58,6 +58,47 @@ export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
 	},
 };
 
+export type TranscriptionProvider = 'whisper-api' | 'deepgram' | 'gemini' | 'local-whisper';
+
+/**
+ * Per-transcription-provider model options, mirroring {@link MODEL_OPTIONS}.
+ * Dropdown values, not free text; the first entry is the fallback when the
+ * saved model is not in the active provider's list.
+ */
+export const TRANSCRIPTION_MODEL_OPTIONS: Record<TranscriptionProvider, Record<string, string>> = {
+	// Verified against developers.openai.com/api/docs/guides/speech-to-text and
+	// developers.openai.com/api/docs/deprecations (2026-09-14). Trimmed to the
+	// surviving model plus whisper-1 — the gpt-4o-transcribe variants retire
+	// 2027-02-26 alongside it and are redundant with gpt-transcribe. whisper-1
+	// is kept only because it alone returns segment timestamps.
+	'whisper-api': {
+		'whisper-1': 'Whisper v1 (retires 2027-02-26)',
+		'gpt-transcribe': 'GPT Transcribe',
+	},
+	// Verified against developers.deepgram.com/docs/model (2026-09-14).
+	deepgram: {
+		'nova-3-general': 'Nova-3 General',
+		'nova-3-medical': 'Nova-3 Medical',
+		'nova-2-general': 'Nova-2 General',
+		'nova-2-meeting': 'Nova-2 Meeting',
+		'nova-2-phonecall': 'Nova-2 Phone Call',
+		'nova-2-finance': 'Nova-2 Finance',
+		'nova-2-medical': 'Nova-2 Medical',
+		'enhanced-general': 'Enhanced General',
+		'base-general': 'Base General',
+	},
+	// Audio-capable models for the generateContent endpoint this plugin calls,
+	// verified against ai.google.dev/gemini-api/docs/generate-content/audio
+	// (2026-09-14). gemini-3.5-transcribe is excluded: it requires the
+	// Interactions API, a different request shape (see #521).
+	gemini: {
+		'gemini-3.5-flash': 'Gemini 3.5 Flash',
+		'gemini-3.8-flash': 'Gemini 3.8 Flash',
+	},
+	// No options: the local Whisper backend is an unimplemented stub.
+	'local-whisper': {},
+};
+
 export interface AISettings {
 	provider: AIProvider;
 	apiKey: string;
@@ -109,11 +150,12 @@ export interface PostProcessingSettings {
 
 export interface AudioSettings {
 	enabled: boolean;
-	transcriptionProvider: 'whisper-api' | 'deepgram' | 'gemini' | 'local-whisper';
+	transcriptionProvider: TranscriptionProvider;
 	whisperApiKey: string;
 	deepgramApiKey: string;
 	geminiApiKey: string;
-	whisperModel: string;
+	/** Model for the active `transcriptionProvider`; resolved via TRANSCRIPTION_MODEL_OPTIONS. */
+	transcriptionModel: string;
 	localWhisperPath: string;
 	language: string;
 	/** Auto-detect song transcripts and format them as structured lyrics (#234). */
@@ -432,7 +474,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		whisperApiKey: '',
 		deepgramApiKey: '',
 		geminiApiKey: '',
-		whisperModel: 'whisper-1',
+		transcriptionModel: 'whisper-1',
 		localWhisperPath: '',
 		language: '',
 		autoFormatLyrics: true,

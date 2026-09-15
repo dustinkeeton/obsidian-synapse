@@ -92,7 +92,7 @@ describe('applySectionReset — audio (scoped: keep credentials)', () => {
 		s.audio.whisperApiKey = 'sk-whisper';
 		s.audio.deepgramApiKey = 'dg-key';
 		s.audio.geminiApiKey = 'gm-key';
-		s.audio.whisperModel = 'whisper-large';
+		s.audio.transcriptionModel = 'gpt-transcribe';
 		s.audio.localWhisperPath = '/opt/whisper';
 
 		applySectionReset(s, 'audio');
@@ -107,7 +107,7 @@ describe('applySectionReset — audio (scoped: keep credentials)', () => {
 		expect(s.audio.whisperApiKey).toBe('sk-whisper');
 		expect(s.audio.deepgramApiKey).toBe('dg-key');
 		expect(s.audio.geminiApiKey).toBe('gm-key');
-		expect(s.audio.whisperModel).toBe('whisper-large');
+		expect(s.audio.transcriptionModel).toBe('gpt-transcribe');
 		expect(s.audio.localWhisperPath).toBe('/opt/whisper');
 	});
 
@@ -132,7 +132,7 @@ describe('applySectionReset — ai (restores ai + audio credentials)', () => {
 		s.audio.whisperApiKey = 'sk-whisper';
 		s.audio.deepgramApiKey = 'dg-key';
 		s.audio.geminiApiKey = 'gm-key';
-		s.audio.whisperModel = 'whisper-large';
+		s.audio.transcriptionModel = 'gpt-transcribe';
 		s.audio.localWhisperPath = '/opt/whisper';
 		// A behavior field the AI reset must NOT touch.
 		s.audio.language = 'es';
@@ -144,7 +144,7 @@ describe('applySectionReset — ai (restores ai + audio credentials)', () => {
 		expect(s.audio.whisperApiKey).toBe('');
 		expect(s.audio.deepgramApiKey).toBe('');
 		expect(s.audio.geminiApiKey).toBe('');
-		expect(s.audio.whisperModel).toBe(DEFAULT_SETTINGS.audio.whisperModel);
+		expect(s.audio.transcriptionModel).toBe(DEFAULT_SETTINGS.audio.transcriptionModel);
 		expect(s.audio.localWhisperPath).toBe('');
 		// Audio behavior is out of scope for an AI reset.
 		expect(s.audio.language).toBe('es');
@@ -256,7 +256,7 @@ describe('sectionMatchesDefaults', () => {
 			s.audio.whisperApiKey = 'sk-whisper';
 			s.audio.deepgramApiKey = 'dg-key';
 			s.audio.geminiApiKey = 'gm-key';
-			s.audio.whisperModel = 'whisper-large';
+			s.audio.transcriptionModel = 'gpt-transcribe';
 			s.audio.localWhisperPath = '/opt/whisper';
 			expect(sectionMatchesDefaults(s, 'audio')).toBe(true);
 		});
@@ -274,7 +274,7 @@ describe('sectionMatchesDefaults', () => {
 			['whisperApiKey', (s) => { s.audio.whisperApiKey = 'sk-whisper'; }],
 			['deepgramApiKey', (s) => { s.audio.deepgramApiKey = 'dg-key'; }],
 			['geminiApiKey', (s) => { s.audio.geminiApiKey = 'gm-key'; }],
-			['whisperModel', (s) => { s.audio.whisperModel = 'whisper-large'; }],
+			['transcriptionModel', (s) => { s.audio.transcriptionModel = 'gpt-transcribe'; }],
 			['localWhisperPath', (s) => { s.audio.localWhisperPath = '/opt/whisper'; }],
 		];
 		it.each(AI_CREDENTIAL_MUTATIONS)(

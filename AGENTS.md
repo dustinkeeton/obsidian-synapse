@@ -265,7 +265,7 @@ SynapseSettings {
     whisperApiKey: string                           // default: '' (fallback: ai.apiKey)
     deepgramApiKey: string                          // default: ''
     geminiApiKey: string                            // default: '' (fallback: ai.apiKey)
-    whisperModel: string                            // default: 'whisper-1'
+    transcriptionModel: string                      // default: 'whisper-1' (per-provider, TRANSCRIPTION_MODEL_OPTIONS)
     localWhisperPath: string                        // default: ''
     language: string                                // default: ''
     autoFormatLyrics: boolean                       // default: true (auto-detect song transcripts, format as lyrics, #234)

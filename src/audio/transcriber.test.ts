@@ -210,6 +210,62 @@ describe('Transcriber', () => {
 			expect(result.timestamps).toEqual([{ start: 0, end: 2.5, text: 'Hello world' }]);
 		});
 
+		it('sends the selected model in the multipart model field (#521)', async () => {
+			settings.audio.transcriptionModel = 'gpt-transcribe';
+
+			mockRequestUrl.mockResolvedValue({
+				status: 200,
+				json: { text: 'Hello world' },
+				text: '',
+				headers: {},
+			});
+
+			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			const body = new TextDecoder().decode(callArgs.body as ArrayBuffer);
+			expect(body).toContain('name="model"');
+			expect(body).toContain('gpt-transcribe');
+			// Only whisper-1 accepts verbose_json.
+			expect(body).toContain('json');
+			expect(body).not.toContain('verbose_json');
+		});
+
+		it('requests verbose_json for whisper-1, which returns segments (#521)', async () => {
+			settings.audio.transcriptionModel = 'whisper-1';
+
+			mockRequestUrl.mockResolvedValue({
+				status: 200,
+				json: { text: 'Hello world' },
+				text: '',
+				headers: {},
+			});
+
+			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			const body = new TextDecoder().decode(callArgs.body as ArrayBuffer);
+			expect(body).toContain('verbose_json');
+		});
+
+		it('falls back to the first Whisper model when the saved model is another provider\'s (#521)', async () => {
+			settings.audio.transcriptionModel = 'nova-3-general';
+
+			mockRequestUrl.mockResolvedValue({
+				status: 200,
+				json: { text: 'Hello world' },
+				text: '',
+				headers: {},
+			});
+
+			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			const body = new TextDecoder().decode(callArgs.body as ArrayBuffer);
+			expect(body).toContain('whisper-1');
+			expect(body).not.toContain('nova-3-general');
+		});
+
 		it('includes language field when configured', async () => {
 			settings.audio.language = 'fr';
 
@@ -339,6 +395,42 @@ describe('Transcriber', () => {
 			expect(result.sourceName).toBe('audio.wav');
 		});
 
+		it('sends an explicit model query parameter instead of the vendor default (#521)', async () => {
+			settings.audio.transcriptionModel = 'nova-2-meeting';
+
+			mockRequestUrl.mockResolvedValue({
+				status: 200,
+				json: {
+					results: { channels: [{ alternatives: [{ transcript: 'ok' }] }] },
+				},
+				text: '',
+				headers: {},
+			});
+
+			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			expect(callArgs.url).toContain('model=nova-2-meeting');
+		});
+
+		it('falls back to the first Deepgram model when the saved model is another provider\'s (#521)', async () => {
+			settings.audio.transcriptionModel = 'whisper-1';
+
+			mockRequestUrl.mockResolvedValue({
+				status: 200,
+				json: {
+					results: { channels: [{ alternatives: [{ transcript: 'ok' }] }] },
+				},
+				text: '',
+				headers: {},
+			});
+
+			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			expect(callArgs.url).toContain('model=nova-3-general');
+		});
+
 		it('includes language parameter when configured', async () => {
 			settings.audio.language = 'de';
 
@@ -442,6 +534,30 @@ describe('Transcriber', () => {
 			settings.ai.apiKey = '';
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
 				.rejects.toThrow('No Gemini API key configured');
+		});
+
+		it('puts the selected model in the generateContent URL (#521)', async () => {
+			settings.audio.transcriptionModel = 'gemini-3.8-flash';
+
+			mockRequestUrl.mockResolvedValue(geminiResponse('hello'));
+
+			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			expect(callArgs.url).toBe(
+				'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent'
+			);
+		});
+
+		it('falls back to the first Gemini model when the saved model is another provider\'s (#521)', async () => {
+			settings.audio.transcriptionModel = 'whisper-1';
+
+			mockRequestUrl.mockResolvedValue(geminiResponse('hello'));
+
+			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			expect(callArgs.url).toContain('/models/gemini-3.5-flash:generateContent');
 		});
 
 		it('falls back to shared AI key when geminiApiKey is empty', async () => {

@@ -22,7 +22,7 @@ import type { LegacyModuleExclusions } from './exclusions';
  * time a migration is appended to {@link SETTINGS_MIGRATIONS}; a drift-guard test
  * asserts it always equals the highest migration `to`.
  */
-export const CURRENT_SETTINGS_VERSION = 2;
+export const CURRENT_SETTINGS_VERSION = 3;
 
 /**
  * A single ordered migration. `to` is the schema version this step upgrades the
@@ -87,12 +87,37 @@ export function dropSemanticMatching(
 }
 
 /**
+ * v3 — rename the Whisper-only `audio.whisperModel` to the provider-agnostic
+ * `audio.transcriptionModel` (#521). Carries the user's value across rather
+ * than dropping it, and leaves an existing `transcriptionModel` untouched so
+ * the step stays idempotent. Tolerates a missing or non-object `audio`.
+ */
+export function renameWhisperModelToTranscriptionModel(
+	raw: Record<string, unknown>,
+): Record<string, unknown> {
+	const audio = raw.audio;
+	if (typeof audio !== 'object' || audio === null) {
+		return raw;
+	}
+	const record = audio as Record<string, unknown>;
+	if (!Object.prototype.hasOwnProperty.call(record, 'whisperModel')) {
+		return raw;
+	}
+	if (record.transcriptionModel === undefined && typeof record.whisperModel === 'string') {
+		record.transcriptionModel = record.whisperModel;
+	}
+	delete record.whisperModel;
+	return raw;
+}
+
+/**
  * The ordered migration chain, ascending by `to`. {@link migrateSettings}
  * applies, in order, every entry whose `to` exceeds the persisted version.
  */
 export const SETTINGS_MIGRATIONS: SettingsMigration[] = [
 	{ to: 1, migrate: foldExcludeFoldersIntoExclusions },
 	{ to: 2, migrate: dropSemanticMatching },
+	{ to: 3, migrate: renameWhisperModelToTranscriptionModel },
 ];
 
 /**

@@ -6,6 +6,7 @@ import {
 	migrateSettings,
 	foldExcludeFoldersIntoExclusions,
 	dropSemanticMatching,
+	renameWhisperModelToTranscriptionModel,
 } from './settings-migrations';
 import type { ExclusionRule } from './exclusions';
 
@@ -170,6 +171,62 @@ describe('dropSemanticMatching — to:2 migration (#93)', () => {
 		const raw: Record<string, unknown> = { rem: null };
 		expect(() => dropSemanticMatching(raw)).not.toThrow();
 		expect(raw.rem).toBeNull();
+	});
+});
+
+describe('renameWhisperModelToTranscriptionModel — to:3 migration (#521)', () => {
+	it('carries a customized whisperModel across to transcriptionModel', () => {
+		const raw: Record<string, unknown> = {
+			audio: { whisperModel: 'whisper-large', language: 'en' },
+		};
+		const out = renameWhisperModelToTranscriptionModel(raw);
+		const audio = out.audio as Record<string, unknown>;
+		expect(audio.transcriptionModel).toBe('whisper-large');
+		expect(audio).not.toHaveProperty('whisperModel');
+		expect(audio.language).toBe('en');
+	});
+
+	it('carries the stock whisper-1 value across', () => {
+		const raw: Record<string, unknown> = { audio: { whisperModel: 'whisper-1' } };
+		const out = renameWhisperModelToTranscriptionModel(raw);
+		expect((out.audio as Record<string, unknown>).transcriptionModel).toBe('whisper-1');
+	});
+
+	it('leaves an existing transcriptionModel untouched and still drops the old key', () => {
+		const raw: Record<string, unknown> = {
+			audio: { whisperModel: 'whisper-1', transcriptionModel: 'nova-3-general' },
+		};
+		const out = renameWhisperModelToTranscriptionModel(raw);
+		const audio = out.audio as Record<string, unknown>;
+		expect(audio.transcriptionModel).toBe('nova-3-general');
+		expect(audio).not.toHaveProperty('whisperModel');
+	});
+
+	it('is idempotent — a second run is a no-op', () => {
+		const raw: Record<string, unknown> = { audio: { whisperModel: 'whisper-large' } };
+		renameWhisperModelToTranscriptionModel(raw);
+		const out = renameWhisperModelToTranscriptionModel(raw);
+		expect((out.audio as Record<string, unknown>).transcriptionModel).toBe('whisper-large');
+	});
+
+	it('does not invent a transcriptionModel when whisperModel is absent', () => {
+		const raw: Record<string, unknown> = { audio: { language: 'en' } };
+		const out = renameWhisperModelToTranscriptionModel(raw);
+		expect(out.audio).not.toHaveProperty('transcriptionModel');
+	});
+
+	it('drops a non-string whisperModel rather than carrying it across', () => {
+		const raw: Record<string, unknown> = { audio: { whisperModel: 42 } };
+		const out = renameWhisperModelToTranscriptionModel(raw);
+		const audio = out.audio as Record<string, unknown>;
+		expect(audio).not.toHaveProperty('whisperModel');
+		expect(audio).not.toHaveProperty('transcriptionModel');
+	});
+
+	it('tolerates a missing, non-object, or null audio', () => {
+		expect(() => renameWhisperModelToTranscriptionModel({})).not.toThrow();
+		expect(() => renameWhisperModelToTranscriptionModel({ audio: 'nope' })).not.toThrow();
+		expect(() => renameWhisperModelToTranscriptionModel({ audio: null })).not.toThrow();
 	});
 });
 

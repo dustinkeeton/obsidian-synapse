@@ -2,6 +2,12 @@ import { Setting } from 'obsidian';
 import { PROVIDER_METADATA, decorateCredentialField } from '../shared';
 import type { CredentialProvider, CredentialFieldHandle, SettingsSectionContext } from '../shared';
 import { GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
+import {
+	hasTranscriptionModelOptions,
+	resolveTranscriptionModel,
+	transcriptionModelOptions,
+} from './transcription-models';
+import type { TranscriptionProvider } from '../settings';
 
 /**
  * Transcription provider options shown in the dropdown.
@@ -68,8 +74,12 @@ export function renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsS
 				.addOptions(providerOptions)
 				.setValue(plugin.settings.audio.transcriptionProvider)
 				.onChange(async (value) => {
-					plugin.settings.audio.transcriptionProvider =
-						value as 'whisper-api' | 'deepgram' | 'gemini' | 'local-whisper';
+					const provider = value as TranscriptionProvider;
+					plugin.settings.audio.transcriptionProvider = provider;
+					plugin.settings.audio.transcriptionModel = resolveTranscriptionModel(
+						provider,
+						plugin.settings.audio.transcriptionModel,
+					);
 					await plugin.saveSettings();
 					ctx.rerender(); // Re-render to show/hide provider-specific fields
 				})
@@ -82,6 +92,27 @@ export function renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsS
 			'Note: Gemini transcribes with an LLM, so spoken instructions inside untrusted ' +
 			'audio could still influence the transcript — review output before trusting it.'
 		);
+	}
+
+	// local-whisper offers no models, so the dropdown is omitted rather than empty.
+	const activeProvider = plugin.settings.audio.transcriptionProvider;
+	if (hasTranscriptionModelOptions(activeProvider)) {
+		const models = transcriptionModelOptions(activeProvider);
+		plugin.settings.audio.transcriptionModel = resolveTranscriptionModel(
+			activeProvider,
+			plugin.settings.audio.transcriptionModel,
+		);
+		new Setting(body)
+			.setName('Transcription model')
+			.setDesc('Model used by the selected transcription provider')
+			.addDropdown((dd) => {
+				dd.addOptions(models);
+				dd.setValue(plugin.settings.audio.transcriptionModel);
+				dd.onChange(async (value) => {
+					plugin.settings.audio.transcriptionModel = value;
+					await plugin.saveSettings();
+				});
+			});
 	}
 
 	// Show Whisper API key field when provider is whisper-api and AI provider isn't OpenAI
