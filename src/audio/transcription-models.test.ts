@@ -36,6 +36,25 @@ describe('TRANSCRIPTION_MODEL_OPTIONS registry shape (#521)', () => {
 		expect(Object.keys(options)).toContain(DEFAULT_SETTINGS.audio.transcriptionModel);
 	});
 
+	it('lists only the surviving OpenAI model plus whisper-1', () => {
+		expect(Object.keys(TRANSCRIPTION_MODEL_OPTIONS['whisper-api'])).toEqual([
+			'whisper-1',
+			'gpt-transcribe',
+		]);
+	});
+
+	it('omits the OpenAI models retiring 2027-02-26 alongside whisper-1', () => {
+		const ids = Object.keys(TRANSCRIPTION_MODEL_OPTIONS['whisper-api']);
+		expect(ids).not.toContain('gpt-4o-transcribe');
+		expect(ids).not.toContain('gpt-4o-mini-transcribe');
+		// Also needs diarized_json, which this code path does not handle.
+		expect(ids).not.toContain('gpt-4o-transcribe-diarize');
+	});
+
+	it('marks the retirement date of whisper-1 in its display name', () => {
+		expect(TRANSCRIPTION_MODEL_OPTIONS['whisper-api']['whisper-1']).toContain('2027-02-26');
+	});
+
 	it('pins an explicit Deepgram model so requests never ride the vendor default', () => {
 		expect(Object.keys(TRANSCRIPTION_MODEL_OPTIONS.deepgram)).toContain('nova-3-general');
 	});
@@ -89,7 +108,5 @@ describe('whisperResponseFormat (#521)', () => {
 
 	it('falls back to json for the GPT transcription models, which reject verbose_json', () => {
 		expect(whisperResponseFormat('gpt-transcribe')).toBe('json');
-		expect(whisperResponseFormat('gpt-4o-transcribe')).toBe('json');
-		expect(whisperResponseFormat('gpt-4o-mini-transcribe')).toBe('json');
 	});
 });

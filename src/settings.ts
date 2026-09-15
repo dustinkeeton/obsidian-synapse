@@ -66,15 +66,14 @@ export type TranscriptionProvider = 'whisper-api' | 'deepgram' | 'gemini' | 'loc
  * saved model is not in the active provider's list.
  */
 export const TRANSCRIPTION_MODEL_OPTIONS: Record<TranscriptionProvider, Record<string, string>> = {
-	// Verified against developers.openai.com/api/docs/guides/speech-to-text (2026-09-14).
-	// whisper-1 leads: it is the only listed model returning the segment
-	// timestamps this branch consumes, though OpenAI removes it on 2027-02-26.
+	// Verified against developers.openai.com/api/docs/guides/speech-to-text and
+	// developers.openai.com/api/docs/deprecations (2026-09-14). Trimmed to the
+	// surviving model plus whisper-1 — the gpt-4o-transcribe variants retire
+	// 2027-02-26 alongside it and are redundant with gpt-transcribe. whisper-1
+	// is kept only because it alone returns segment timestamps.
 	'whisper-api': {
-		'whisper-1': 'Whisper v1',
+		'whisper-1': 'Whisper v1 (retires 2027-02-26)',
 		'gpt-transcribe': 'GPT Transcribe',
-		'gpt-4o-transcribe': 'GPT-4o Transcribe',
-		'gpt-4o-mini-transcribe': 'GPT-4o Mini Transcribe',
-		'gpt-4o-transcribe-diarize': 'GPT-4o Transcribe Diarize',
 	},
 	// Verified against developers.deepgram.com/docs/model (2026-09-14).
 	deepgram: {

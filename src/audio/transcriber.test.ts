@@ -211,7 +211,7 @@ describe('Transcriber', () => {
 		});
 
 		it('sends the selected model in the multipart model field (#521)', async () => {
-			settings.audio.transcriptionModel = 'gpt-4o-transcribe';
+			settings.audio.transcriptionModel = 'gpt-transcribe';
 
 			mockRequestUrl.mockResolvedValue({
 				status: 200,
@@ -225,7 +225,7 @@ describe('Transcriber', () => {
 			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			const body = new TextDecoder().decode(callArgs.body as ArrayBuffer);
 			expect(body).toContain('name="model"');
-			expect(body).toContain('gpt-4o-transcribe');
+			expect(body).toContain('gpt-transcribe');
 			// Only whisper-1 accepts verbose_json.
 			expect(body).toContain('json');
 			expect(body).not.toContain('verbose_json');
