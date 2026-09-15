@@ -530,7 +530,8 @@ AIClient.chat(messages) --> dispatch(messages)
 |     Others: pass-through
 |
 |-- 'openai'    --> POST api.openai.com/v1/chat/completions
-|                   Auth: Bearer {ai.apiKey}
+|                   Auth: Bearer {ai.apiKey}; sends max_completion_tokens (never max_tokens);
+|                   temperature omitted for reasoning models
 |-- 'anthropic' --> POST api.anthropic.com/v1/messages
 |                   Auth: x-api-key, system message extracted to top-level field
 |-- 'gemini'    --> POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent

@@ -16,9 +16,12 @@ export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
 /** Provider-specific model options. Dropdown values, not free text. */
 export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
-	// Verified against platform.openai.com/docs/models (2026-09-14); held at this
-	// generation because callOpenAI sends temperature/max_tokens unconditionally.
+	// Verified against developers.openai.com/api/docs/models (2026-09-14).
 	openai: {
+		'gpt-6-astra': 'GPT-6 Astra',
+		'gpt-5.6-sol': 'GPT-5.6 Sol',
+		'gpt-5.6-terra': 'GPT-5.6 Terra',
+		'gpt-5.6-luna': 'GPT-5.6 Luna',
 		'gpt-4o': 'GPT-4o',
 		'gpt-4o-mini': 'GPT-4o Mini',
 		'o3': 'o3',
@@ -399,7 +402,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		provider: 'openai',
 		apiKey: '',
 		ollamaEndpoint: 'http://localhost:11434',
-		model: 'gpt-4o',
+		model: 'gpt-5.6-sol',
 		maxTokens: 2048,
 		temperature: 0.7,
 		cacheResponses: false,
@@ -455,7 +458,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		frameExtraction: {
 			enabled: false,
 			intervalSeconds: 30,
-			visionModel: 'gpt-4o',
+			visionModel: 'gpt-5.6-sol',
 			maxFrames: 20,
 		},
 	},

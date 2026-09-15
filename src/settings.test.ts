@@ -68,6 +68,35 @@ describe('Anthropic model options (#308, #519)', () => {
 	});
 });
 
+describe('OpenAI model options (#519)', () => {
+	it('offers the current generation alongside the retained GPT-4o/o-series entries', () => {
+		const ids = Object.keys(MODEL_OPTIONS.openai);
+		expect(ids).toEqual([
+			'gpt-6-astra',
+			'gpt-5.6-sol',
+			'gpt-5.6-terra',
+			'gpt-5.6-luna',
+			'gpt-4o',
+			'gpt-4o-mini',
+			'o3',
+			'o3-mini',
+			'o4-mini',
+		]);
+	});
+
+	it('defaults both the AI model and the video vision model to a current vision-capable model', () => {
+		expect(DEFAULT_SETTINGS.ai.model).toBe('gpt-5.6-sol');
+		expect(DEFAULT_SETTINGS.video.frameExtraction.visionModel).toBe('gpt-5.6-sol');
+		expect(Object.keys(MODEL_OPTIONS.openai)).toContain(
+			DEFAULT_SETTINGS.video.frameExtraction.visionModel
+		);
+	});
+
+	it('leaves the image vision model empty so it follows the AI model', () => {
+		expect(DEFAULT_SETTINGS.image.visionModel).toBe('');
+	});
+});
+
 describe('onboarding settings (#89)', () => {
 	it('defaults hasSeenWelcome to false so the first run is greeted', () => {
 		expect(DEFAULT_SETTINGS.onboarding.hasSeenWelcome).toBe(false);

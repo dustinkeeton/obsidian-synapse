@@ -101,6 +101,17 @@ function rejectsSamplingParams(modelId: string): boolean {
 	return !ANTHROPIC_SAMPLING_PARAM_MODELS.has(modelId);
 }
 
+/**
+ * OpenAI model IDs that still accept `temperature`/`top_p`. Inverted for the
+ * same reason as the Anthropic set: reasoning models (o-series, GPT-5.6, GPT-6)
+ * reject sampling params with a 400, and omitting them is always accepted.
+ */
+const OPENAI_SAMPLING_PARAM_MODELS = new Set(['gpt-4o', 'gpt-4o-mini']);
+
+function rejectsOpenAISamplingParams(modelId: string): boolean {
+	return !OPENAI_SAMPLING_PARAM_MODELS.has(modelId);
+}
+
 /** Fable is unavailable to zero-data-retention orgs, which get a 400 on every request. */
 function withAnthropicErrorHint(err: unknown, modelId: string): unknown {
 	if (err instanceof Error && modelId.startsWith('claude-fable') && err.message.includes('(400)')) {
@@ -479,6 +490,22 @@ export class AIClient {
 	private async callOpenAI(messages: ChatMessage[]): Promise<string> {
 		const { ai } = this.getSettings();
 		const model = resolveModelId(ai.provider, ai.model);
+		// `max_tokens` is deprecated and is a 400 on reasoning models;
+		// `max_completion_tokens` replaces it and is accepted by every model.
+		const body: Record<string, unknown> = {
+			model,
+			messages: messages.map(m => ({
+				role: m.role,
+				content: typeof m.content === 'string'
+					? m.content
+					: toOpenAIContent(m.content),
+			})),
+			max_completion_tokens: ai.maxTokens,
+		};
+		if (!rejectsOpenAISamplingParams(model)) {
+			body.temperature = ai.temperature;
+		}
+
 		const response = await safeRequest({
 			url: 'https://api.openai.com/v1/chat/completions',
 			method: 'POST',
@@ -486,17 +513,7 @@ export class AIClient {
 				'Authorization': `Bearer ${ai.apiKey}`,
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify({
-				model,
-				messages: messages.map(m => ({
-					role: m.role,
-					content: typeof m.content === 'string'
-						? m.content
-						: toOpenAIContent(m.content),
-				})),
-				max_tokens: ai.maxTokens,
-				temperature: ai.temperature,
-			}),
+			body: JSON.stringify(body),
 		});
 		return extractOpenAIResponseText(response.json);
 	}

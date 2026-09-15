@@ -26,6 +26,7 @@ function geminiResponse(text: string) {
 interface ParsedRequestBody {
 	model?: string;
 	max_tokens?: number;
+	max_completion_tokens?: number;
 	temperature?: number;
 	stream?: boolean;
 	system?: string;
@@ -291,7 +292,8 @@ describe('AIClient — OpenAI provider', () => {
 		expect(call.headers?.['Authorization']).toBe('Bearer sk-test123456789012345');
 		const body = lastRequestBody();
 		expect(body.model).toBe('gpt-4o');
-		expect(body.max_tokens).toBe(512);
+		expect(body.max_completion_tokens).toBe(512);
+		expect(body).not.toHaveProperty('max_tokens');
 		expect(body.temperature).toBe(0.5);
 		// system prompt is preserved as a system-role message for OpenAI
 		expect(body.messages[0]).toEqual({ role: 'system', content: 'Be brief.' });
@@ -313,6 +315,31 @@ describe('AIClient — OpenAI provider', () => {
 			{ type: 'text', text: 'describe' },
 			{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,Zm9v' } },
 		]);
+	});
+
+	it.each(['gpt-6-astra', 'gpt-5.6-sol', 'o3', 'o3-mini', 'o4-mini'])(
+		'omits temperature for %s, a reasoning model that rejects sampling params',
+		async (model) => {
+			mockRequestUrl.mockResolvedValue(openAIResponse('ok'));
+			settings.ai.model = model;
+
+			await client.chat([{ role: 'user', content: 'Hi' }]);
+
+			const body = lastRequestBody();
+			expect(body.model).toBe(model);
+			expect(body.temperature).toBeUndefined();
+			expect(body.max_completion_tokens).toBe(512);
+			expect(body).not.toHaveProperty('max_tokens');
+		}
+	);
+
+	it('still sends temperature for gpt-4o-mini, which accepts sampling params', async () => {
+		mockRequestUrl.mockResolvedValue(openAIResponse('ok'));
+		settings.ai.model = 'gpt-4o-mini';
+
+		await client.chat([{ role: 'user', content: 'Hi' }]);
+
+		expect(lastRequestBody().temperature).toBe(0.5);
 	});
 });
 

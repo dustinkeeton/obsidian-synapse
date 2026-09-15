@@ -236,7 +236,7 @@ SynapseSettings {
     provider: 'openai' | 'anthropic' | 'gemini' | 'ollama'   // AIProvider, default: 'openai'
     apiKey: string                                  // default: ''
     ollamaEndpoint: string                          // default: 'http://localhost:11434'
-    model: string                                   // default: 'gpt-4o' (dropdown values per provider in MODEL_OPTIONS)
+    model: string                                   // default: 'gpt-5.6-sol' (dropdown values per provider in MODEL_OPTIONS)
     maxTokens: number                               // default: 2048
     temperature: number                             // default: 0.7
     cacheResponses: boolean                         // default: false (#397; opt-in AI response cache; caching is automatic at temperature 0)
@@ -288,7 +288,7 @@ SynapseSettings {
     frameExtraction: FrameExtractionSettings {
       enabled: boolean                              // default: false
       intervalSeconds: number                       // default: 30
-      visionModel: string                           // default: 'gpt-4o'
+      visionModel: string                           // default: 'gpt-5.6-sol'
       maxFrames: number                             // default: 20
     }
   }
@@ -411,7 +411,8 @@ per-module `excludeFolders` fields were removed; `main.loadSettings()` runs a on
 `buildMigratedExclusions()` migration for upgraders whose persisted data lacks an `exclusions` key.
 
 Provider model dropdowns: `MODEL_OPTIONS: Record<AIProvider, Record<id, label>>` in `src/settings.ts`.
-openai: gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini. anthropic: fable, opus, sonnet, haiku (resolved to
+openai: gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-4o, gpt-4o-mini, o3, o3-mini,
+o4-mini. anthropic: fable, opus, sonnet, haiku (resolved to
 full IDs in `ai-client.ts`). gemini: gemini-3.8-flash, gemini-3.5-flash, gemini-3.1-flash-lite,
 gemini-2.5-pro, gemini-2.5-flash. ollama: llama3.2, llama3, gemma4, gemma3, gemma, qwen3, deepseek-r1,
 mistral, codellama.
