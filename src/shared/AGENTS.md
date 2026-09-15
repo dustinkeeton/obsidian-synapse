@@ -525,7 +525,8 @@ the private `dispatch()` shown below (behavior unchanged from the pre-cache `cha
 ```
 AIClient.chat(messages) --> dispatch(messages)
 |-- resolveModelId(provider, model)
-|     Anthropic: opus->claude-opus-4-6, sonnet->claude-sonnet-4-6, haiku->claude-haiku-4-5-20251001
+|     Anthropic: fable->claude-fable-5-1, opus->claude-opus-5, sonnet->claude-sonnet-5,
+|                haiku->claude-haiku-4-5
 |     Others: pass-through
 |
 |-- 'openai'    --> POST api.openai.com/v1/chat/completions

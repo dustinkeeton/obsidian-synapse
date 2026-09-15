@@ -411,9 +411,10 @@ per-module `excludeFolders` fields were removed; `main.loadSettings()` runs a on
 `buildMigratedExclusions()` migration for upgraders whose persisted data lacks an `exclusions` key.
 
 Provider model dropdowns: `MODEL_OPTIONS: Record<AIProvider, Record<id, label>>` in `src/settings.ts`.
-openai: gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini. anthropic: opus, sonnet, haiku (resolved to full
-IDs in `ai-client.ts`). gemini: gemini-3.5-flash, gemini-3.1-flash-lite, gemini-2.5-pro, gemini-2.5-flash.
-ollama: llama3, mistral, codellama, gemma.
+openai: gpt-4o, gpt-4o-mini, o3, o3-mini, o4-mini. anthropic: fable, opus, sonnet, haiku (resolved to
+full IDs in `ai-client.ts`). gemini: gemini-3.8-flash, gemini-3.5-flash, gemini-3.1-flash-lite,
+gemini-2.5-pro, gemini-2.5-flash. ollama: llama3.2, llama3, gemma4, gemma3, gemma, qwen3, deepseek-r1,
+mistral, codellama.
 
 `ProposalKind` (`src/views/types.ts`) is the single source of truth for `PROPOSAL_KINDS` and keys of `autoAccept`:
 `'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem'`. A compile-time guard asserts it

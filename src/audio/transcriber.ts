@@ -39,7 +39,7 @@ const TRANSCRIPTION_TIMEOUT_MS = 300_000;
 /**
  * Gemini model used for audio transcription. Flash-class: fast, low-cost,
  * native audio understanding. Verified stable on
- * ai.google.dev/gemini-api/docs/models (2026-06).
+ * ai.google.dev/gemini-api/docs/models (2026-09-14).
  */
 const GEMINI_TRANSCRIPTION_MODEL = 'gemini-3.5-flash';
 

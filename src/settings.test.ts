@@ -35,6 +35,7 @@ describe('autoAccept settings (#228)', () => {
 describe('Gemini provider settings (#251)', () => {
 	it('offers Gemini model options including flash and pro classes', () => {
 		const ids = Object.keys(MODEL_OPTIONS.gemini);
+		expect(ids).toContain('gemini-3.8-flash');
 		expect(ids).toContain('gemini-3.5-flash');
 		expect(ids).toContain('gemini-2.5-pro');
 	});
@@ -53,6 +54,17 @@ describe('Gemini provider settings (#251)', () => {
 
 	it('enables lyric auto-formatting by default (#234)', () => {
 		expect(DEFAULT_SETTINGS.audio.autoFormatLyrics).toBe(true);
+	});
+});
+
+describe('Anthropic model options (#308, #519)', () => {
+	it('offers Fable alongside the existing aliases', () => {
+		expect(Object.keys(MODEL_OPTIONS.anthropic)).toEqual(['fable', 'opus', 'sonnet', 'haiku']);
+		expect(MODEL_OPTIONS.anthropic.fable).toBe('Claude Fable');
+	});
+
+	it('keeps the default AI model inside the OpenAI option list', () => {
+		expect(Object.keys(MODEL_OPTIONS.openai)).toContain(DEFAULT_SETTINGS.ai.model);
 	});
 });
 

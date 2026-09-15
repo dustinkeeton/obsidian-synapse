@@ -344,7 +344,7 @@ describe('AIClient — Anthropic provider', () => {
 		expect(call.headers?.['x-api-key']).toBe('anthropic-key-1234567890');
 		expect(call.headers?.['anthropic-version']).toBe('2023-06-01');
 		const body = lastRequestBody();
-		expect(body.model).toBe('claude-sonnet-4-6');
+		expect(body.model).toBe('claude-sonnet-5');
 		// system message is lifted out of messages into the top-level system field
 		expect(body.system).toBe('You are terse.');
 		expect(body.messages).toEqual([{ role: 'user', content: 'Hello' }]);
@@ -374,6 +374,101 @@ describe('AIClient — Anthropic provider', () => {
 			{ type: 'text', text: 'look' },
 			{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'YmFy' } },
 		]);
+	});
+
+	it.each([
+		['fable', 'claude-fable-5-1'],
+		['opus', 'claude-opus-5'],
+		['sonnet', 'claude-sonnet-5'],
+		['haiku', 'claude-haiku-4-5'],
+	])('resolves the %s alias to the bare %s model id', async (alias, modelId) => {
+		mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
+		settings.ai.model = alias;
+
+		await client.chat([{ role: 'user', content: 'Hi' }]);
+
+		expect(lastRequestBody().model).toBe(modelId);
+	});
+
+	it.each(['fable', 'opus', 'sonnet'])(
+		'omits temperature for %s, which rejects sampling params',
+		async (alias) => {
+			mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
+			settings.ai.model = alias;
+
+			await client.chat([{ role: 'user', content: 'Hi' }]);
+
+			const body = lastRequestBody();
+			expect(body.temperature).toBeUndefined();
+			expect(body.max_tokens).toBe(2048);
+		}
+	);
+
+	it('still sends temperature for haiku, which accepts sampling params', async () => {
+		mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
+		settings.ai.model = 'haiku';
+
+		await client.chat([{ role: 'user', content: 'Hi' }]);
+
+		expect(lastRequestBody().temperature).toBe(0.2);
+	});
+
+	it('never sends a thinking parameter', async () => {
+		mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
+		settings.ai.model = 'fable';
+
+		await client.chat([{ role: 'user', content: 'Hi' }]);
+
+		expect(lastRequestBody()).not.toHaveProperty('thinking');
+	});
+
+	it('reads the first text block when thinking blocks precede it', async () => {
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			json: {
+				stop_reason: 'end_turn',
+				stop_details: null,
+				content: [
+					{ type: 'thinking', thinking: '' },
+					{ type: 'text', text: 'the answer' },
+				],
+			},
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.chat([{ role: 'user', content: 'Hi' }])).resolves.toBe('the answer');
+	});
+
+	it('surfaces a refusal stop reason instead of crashing on empty content', async () => {
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			json: {
+				stop_reason: 'refusal',
+				stop_details: { type: 'refusal', category: 'harmful_content', explanation: 'declined' },
+				content: [],
+			},
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.chat([{ role: 'user', content: 'Hi' }])).rejects.toThrow(
+			/safety refusal.*declined/
+		);
+	});
+
+	it('appends a data-retention hint to a Fable 400', async () => {
+		settings.ai.model = 'fable';
+		mockRequestUrl.mockResolvedValue({
+			status: 400,
+			json: { error: { message: 'invalid_request_error' } },
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.chat([{ role: 'user', content: 'Hi' }])).rejects.toThrow(
+			/30-day data retention/
+		);
 	});
 });
 

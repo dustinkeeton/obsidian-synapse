@@ -75,14 +75,41 @@ function extractErrorMessage(body: unknown): string | null {
 
 /**
  * Map simplified model names to actual API model IDs.
- * Anthropic models use short names (sonnet, opus, haiku) in settings
- * but need full IDs for the API.
+ * Anthropic models use short names (fable, opus, sonnet, haiku) in settings
+ * but need full IDs for the API. IDs are used bare — date-suffixed snapshots
+ * are never constructed.
  */
 const ANTHROPIC_MODEL_MAP: Record<string, string> = {
-	opus: 'claude-opus-4-6',
-	sonnet: 'claude-sonnet-4-6',
-	haiku: 'claude-haiku-4-5-20251001',
+	fable: 'claude-fable-5-1',
+	opus: 'claude-opus-5',
+	sonnet: 'claude-sonnet-5',
+	haiku: 'claude-haiku-4-5',
 };
+
+/**
+ * Anthropic model IDs that still accept `temperature`/`top_p`/`top_k`. The
+ * allowlist is inverted deliberately: every other current model rejects those
+ * with a 400, and omitting them is accepted by every model.
+ */
+const ANTHROPIC_SAMPLING_PARAM_MODELS = new Set([
+	'claude-opus-4-6',
+	'claude-sonnet-4-6',
+	'claude-haiku-4-5',
+]);
+
+function rejectsSamplingParams(modelId: string): boolean {
+	return !ANTHROPIC_SAMPLING_PARAM_MODELS.has(modelId);
+}
+
+/** Fable is unavailable to zero-data-retention orgs, which get a 400 on every request. */
+function withAnthropicErrorHint(err: unknown, modelId: string): unknown {
+	if (err instanceof Error && modelId.startsWith('claude-fable') && err.message.includes('(400)')) {
+		return new Error(
+			`${err.message} — Claude Fable requires 30-day data retention; organizations configured for zero data retention cannot call it.`
+		);
+	}
+	return err;
+}
 
 function resolveModelId(provider: string, model: string): string {
 	if (provider === 'anthropic' && model in ANTHROPIC_MODEL_MAP) {
@@ -179,6 +206,9 @@ interface OpenAIChatResponse {
 /** The subset of an Anthropic messages response needed to extract text. */
 interface AnthropicMessageResponse {
 	content?: Array<{ type?: string; text?: string }>;
+	stop_reason?: string;
+	/** Populated only for `stop_reason: "refusal"`; `null` for every other stop reason. */
+	stop_details?: { type?: string; category?: string; explanation?: string } | null;
 }
 
 /** The subset of an Ollama chat response needed to extract text. */
@@ -217,12 +247,22 @@ export function extractOpenAIResponseText(json: unknown): string {
 
 /**
  * Extract the text from an Anthropic messages response. Concatenates the text
- * of every `text` block (Anthropic may return multiple content blocks). Throws
- * a descriptive error when no text block is present instead of letting an
- * opaque `TypeError` escape from `content[0].text`.
+ * of every `text` block — models with thinking enabled return `thinking` blocks
+ * first, so the text block is not reliably at index 0. Throws a descriptive
+ * error when no text block is present instead of letting an opaque `TypeError`
+ * escape from `content[0].text`.
  */
 export function extractAnthropicResponseText(json: unknown): string {
-	const blocks = (json as AnthropicMessageResponse | null)?.content;
+	const response = json as AnthropicMessageResponse | null;
+	// Safety classifiers decline as HTTP 200 with a possibly empty `content`,
+	// so the stop reason has to be read before the content blocks.
+	if (response?.stop_reason === 'refusal') {
+		const reason = response.stop_details?.explanation ?? response.stop_details?.category;
+		throw new Error(
+			`Anthropic declined this request (safety refusal, not a network or API-key failure)${reason ? `: ${reason}` : ''}`
+		);
+	}
+	const blocks = response?.content;
 	if (Array.isArray(blocks)) {
 		const text = blocks
 			.filter(b => b?.type === 'text' && typeof b.text === 'string')
@@ -470,7 +510,6 @@ export class AIClient {
 		const body: Record<string, unknown> = {
 			model,
 			max_tokens: ai.maxTokens,
-			temperature: ai.temperature,
 			messages: nonSystemMsgs.map(m => ({
 				role: m.role,
 				content: typeof m.content === 'string'
@@ -478,22 +517,32 @@ export class AIClient {
 					: toAnthropicContent(m.content),
 			})),
 		};
+		// Sampling params are a 400 on the current generation; `thinking` is never
+		// sent because an explicit `{type: "disabled"}` is itself a 400 on Fable.
+		if (!rejectsSamplingParams(model)) {
+			body.temperature = ai.temperature;
+		}
 		if (systemMsg) {
 			body.system = typeof systemMsg.content === 'string'
 				? systemMsg.content
 				: systemMsg.content;
 		}
 
-		const response = await safeRequest({
-			url: 'https://api.anthropic.com/v1/messages',
-			method: 'POST',
-			headers: {
-				'x-api-key': ai.apiKey,
-				'anthropic-version': '2023-06-01',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(body),
-		});
+		let response: RequestUrlResponse;
+		try {
+			response = await safeRequest({
+				url: 'https://api.anthropic.com/v1/messages',
+				method: 'POST',
+				headers: {
+					'x-api-key': ai.apiKey,
+					'anthropic-version': '2023-06-01',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(body),
+			});
+		} catch (err) {
+			throw withAnthropicErrorHint(err, model);
+		}
 		return extractAnthropicResponseText(response.json);
 	}
 
