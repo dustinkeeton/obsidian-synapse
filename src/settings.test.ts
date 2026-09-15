@@ -35,6 +35,7 @@ describe('autoAccept settings (#228)', () => {
 describe('Gemini provider settings (#251)', () => {
 	it('offers Gemini model options including flash and pro classes', () => {
 		const ids = Object.keys(MODEL_OPTIONS.gemini);
+		expect(ids).toContain('gemini-3.8-flash');
 		expect(ids).toContain('gemini-3.5-flash');
 		expect(ids).toContain('gemini-2.5-pro');
 	});
@@ -53,6 +54,46 @@ describe('Gemini provider settings (#251)', () => {
 
 	it('enables lyric auto-formatting by default (#234)', () => {
 		expect(DEFAULT_SETTINGS.audio.autoFormatLyrics).toBe(true);
+	});
+});
+
+describe('Anthropic model options (#308, #519)', () => {
+	it('offers Fable alongside the existing aliases', () => {
+		expect(Object.keys(MODEL_OPTIONS.anthropic)).toEqual(['fable', 'opus', 'sonnet', 'haiku']);
+		expect(MODEL_OPTIONS.anthropic.fable).toBe('Claude Fable');
+	});
+
+	it('keeps the default AI model inside the OpenAI option list', () => {
+		expect(Object.keys(MODEL_OPTIONS.openai)).toContain(DEFAULT_SETTINGS.ai.model);
+	});
+});
+
+describe('OpenAI model options (#519)', () => {
+	it('offers the current generation alongside the retained GPT-4o/o-series entries', () => {
+		const ids = Object.keys(MODEL_OPTIONS.openai);
+		expect(ids).toEqual([
+			'gpt-6-astra',
+			'gpt-5.6-sol',
+			'gpt-5.6-terra',
+			'gpt-5.6-luna',
+			'gpt-4o',
+			'gpt-4o-mini',
+			'o3',
+			'o3-mini',
+			'o4-mini',
+		]);
+	});
+
+	it('defaults both the AI model and the video vision model to a current vision-capable model', () => {
+		expect(DEFAULT_SETTINGS.ai.model).toBe('gpt-5.6-sol');
+		expect(DEFAULT_SETTINGS.video.frameExtraction.visionModel).toBe('gpt-5.6-sol');
+		expect(Object.keys(MODEL_OPTIONS.openai)).toContain(
+			DEFAULT_SETTINGS.video.frameExtraction.visionModel
+		);
+	});
+
+	it('leaves the image vision model empty so it follows the AI model', () => {
+		expect(DEFAULT_SETTINGS.image.visionModel).toBe('');
 	});
 });
 

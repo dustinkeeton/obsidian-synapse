@@ -16,30 +16,45 @@ export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
 /** Provider-specific model options. Dropdown values, not free text. */
 export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
+	// Verified against developers.openai.com/api/docs/models (2026-09-14).
 	openai: {
+		'gpt-6-astra': 'GPT-6 Astra',
+		'gpt-5.6-sol': 'GPT-5.6 Sol',
+		'gpt-5.6-terra': 'GPT-5.6 Terra',
+		'gpt-5.6-luna': 'GPT-5.6 Luna',
 		'gpt-4o': 'GPT-4o',
 		'gpt-4o-mini': 'GPT-4o Mini',
 		'o3': 'o3',
 		'o3-mini': 'o3 Mini',
 		'o4-mini': 'o4 Mini',
 	},
+	// Short names resolved to API IDs by ANTHROPIC_MODEL_MAP, verified against
+	// docs.claude.com/en/docs/about-claude/models/overview (2026-09-14).
 	anthropic: {
+		'fable': 'Claude Fable',
 		'opus': 'Claude Opus',
 		'sonnet': 'Claude Sonnet',
 		'haiku': 'Claude Haiku',
 	},
-	// Stable Gemini model IDs verified against ai.google.dev/gemini-api/docs/models (2026-06).
+	// Stable Gemini model IDs verified against ai.google.dev/gemini-api/docs/models (2026-09-14).
 	gemini: {
+		'gemini-3.8-flash': 'Gemini 3.8 Flash',
 		'gemini-3.5-flash': 'Gemini 3.5 Flash',
 		'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
 		'gemini-2.5-pro': 'Gemini 2.5 Pro',
 		'gemini-2.5-flash': 'Gemini 2.5 Flash',
 	},
+	// Local model tags verified against ollama.com/library (2026-09-14).
 	ollama: {
+		'llama3.2': 'Llama 3.2',
 		'llama3': 'Llama 3',
+		'gemma4': 'Gemma 4',
+		'gemma3': 'Gemma 3',
+		'gemma': 'Gemma',
+		'qwen3': 'Qwen 3',
+		'deepseek-r1': 'DeepSeek-R1',
 		'mistral': 'Mistral',
 		'codellama': 'Code Llama',
-		'gemma': 'Gemma',
 	},
 };
 
@@ -387,7 +402,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		provider: 'openai',
 		apiKey: '',
 		ollamaEndpoint: 'http://localhost:11434',
-		model: 'gpt-4o',
+		model: 'gpt-5.6-sol',
 		maxTokens: 2048,
 		temperature: 0.7,
 		cacheResponses: false,
@@ -443,7 +458,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		frameExtraction: {
 			enabled: false,
 			intervalSeconds: 30,
-			visionModel: 'gpt-4o',
+			visionModel: 'gpt-5.6-sol',
 			maxFrames: 20,
 		},
 	},

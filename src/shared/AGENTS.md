@@ -525,11 +525,13 @@ the private `dispatch()` shown below (behavior unchanged from the pre-cache `cha
 ```
 AIClient.chat(messages) --> dispatch(messages)
 |-- resolveModelId(provider, model)
-|     Anthropic: opus->claude-opus-4-6, sonnet->claude-sonnet-4-6, haiku->claude-haiku-4-5-20251001
+|     Anthropic: fable->claude-fable-5-1, opus->claude-opus-5, sonnet->claude-sonnet-5,
+|                haiku->claude-haiku-4-5
 |     Others: pass-through
 |
 |-- 'openai'    --> POST api.openai.com/v1/chat/completions
-|                   Auth: Bearer {ai.apiKey}
+|                   Auth: Bearer {ai.apiKey}; sends max_completion_tokens (never max_tokens);
+|                   temperature omitted for reasoning models
 |-- 'anthropic' --> POST api.anthropic.com/v1/messages
 |                   Auth: x-api-key, system message extracted to top-level field
 |-- 'gemini'    --> POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
