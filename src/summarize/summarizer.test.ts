@@ -80,6 +80,12 @@ describe('Summarizer', () => {
 		}
 	});
 
+	it('forwards AI request options so a cache replay reaches the caller (#527)', async () => {
+		const onCacheHit = vi.fn();
+		await summarizer.summarize('Content', 'source', 'bullets', undefined, { onCacheHit });
+		expect(mockComplete.mock.calls[0][2]).toEqual({ onCacheHit });
+	});
+
 	it('sanitizes AI response', async () => {
 		mockComplete.mockResolvedValue('<script>alert("xss")</script>Clean text');
 		const result = await summarizer.summarize('Content', 'source', 'bullets');

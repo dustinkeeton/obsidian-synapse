@@ -94,11 +94,11 @@ export const MODULE_FACTORIES: readonly ModuleEntry[] = [
 			const audio = builtModule(built, 'audio');
 			return new SummarizeModule(
 				deps,
-				async (url, parentOp) => (await wiring.transcribeUrl(url, parentOp)).text,
+				(url, parentOp) => wiring.transcribeUrl(url, parentOp),
 				async (audioFile) => {
 					const data = await deps.plugin.app.vault.readBinary(audioFile);
 					const result = await audio.transcribe(data, audioFile.name);
-					return result.processed || result.raw;
+					return { text: result.processed || result.raw, aiCached: result.aiCached };
 				}
 			);
 		},

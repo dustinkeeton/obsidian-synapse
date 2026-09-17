@@ -34,9 +34,11 @@ interface MockPlugin {
 const VIDEO_URL = 'https://www.youtube.com/watch?v=abc123';
 const TRANSCRIPT = 'Welcome to the show, today we discuss transcript caching.';
 
+const summarizeMock = vi.hoisted(() => vi.fn());
+
 vi.mock('./summarizer', () => ({
 	Summarizer: class MockSummarizer {
-		summarize = vi.fn().mockResolvedValue('A genuine content summary.');
+		summarize = summarizeMock;
 	},
 }));
 
@@ -54,6 +56,7 @@ vi.mock('../audio', () => ({
 
 vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
+	...(await vi.importActual<typeof import('../shared/cache-notice')>('../shared/cache-notice')),
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
@@ -92,6 +95,7 @@ function createMockNotifications() {
 		cancelled: false,
 	};
 	return {
+		_handle: handle,
 		startOperation: vi.fn().mockReturnValue(handle),
 		info: vi.fn(),
 		success: vi.fn(),
@@ -134,6 +138,7 @@ describe('SummarizeModule media URLs (#488)', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		summarizeMock.mockReset().mockResolvedValue('A genuine content summary.');
 		settings = structuredClone(DEFAULT_SETTINGS);
 		settings.summarize.includeNoteContent = false;
 		noteContent = `# Note\n\n${VIDEO_URL}\n`;
@@ -163,7 +168,7 @@ describe('SummarizeModule media URLs (#488)', () => {
 	});
 
 	it('summarizes the transcript and never inserts transcript text into the note', async () => {
-		module = build(vi.fn().mockResolvedValue(TRANSCRIPT));
+		module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT }));
 
 		await runSummarize();
 
@@ -218,12 +223,84 @@ describe('SummarizeModule media URLs (#488)', () => {
 		vi.mocked(extractNoteProse).mockReturnValue('My notes mention the video above.');
 		const file = new TFile('notes/video.md') as unknown as ObsidianTFile;
 		vi.mocked(getMarkdownFiles).mockReturnValue([file]);
-		module = build(vi.fn().mockResolvedValue(TRANSCRIPT));
+		module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT }));
 
 		await module.scanVault(undefined, true, file);
 
 		expect(noteContent).toContain('Combined summary (2 items)');
 		expect(noteContent).not.toContain(TRANSCRIPT);
 		expect(notifications.error).not.toHaveBeenCalled();
+	});
+
+	describe('cache reporting (#527)', () => {
+		const TRANSCRIPT_NOTE = 'used a cached transcript ("Fetch a fresh transcript" in Transcribe media replaces it)';
+		const replaySummary = (...args: unknown[]): Promise<string> => {
+			(args[4] as { onCacheHit?: () => void } | undefined)?.onCacheHit?.();
+			return Promise.resolve('A replayed summary.');
+		};
+
+		it('keeps the plain finish message for a fresh transcript and a fresh summary', async () => {
+			module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT }));
+
+			await runSummarize();
+
+			expect(notifications._handle.finish).toHaveBeenCalledWith('Done -- 1 inline');
+		});
+
+		it('says the transcript was cached when a fresh summary is built on it', async () => {
+			module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT, cached: true }));
+
+			await runSummarize();
+
+			expect(notifications._handle.finish).toHaveBeenCalledWith(`Done -- 1 inline — ${TRANSCRIPT_NOTE}`);
+		});
+
+		it('says the summary was a cached AI response', async () => {
+			summarizeMock.mockImplementation(replaySummary);
+			module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT }));
+
+			await runSummarize();
+
+			expect(notifications._handle.finish).toHaveBeenCalledWith('Done -- 1 inline — used a cached AI response');
+		});
+
+		it('reports a replayed transcript post-processing pass as a cached AI response', async () => {
+			module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT, aiCached: true }));
+
+			await runSummarize();
+
+			expect(notifications._handle.finish).toHaveBeenCalledWith('Done -- 1 inline — used a cached AI response');
+		});
+
+		it('folds a cached source into the combined summary finish message', async () => {
+			settings.summarize.includeNoteContent = true;
+			settings.summarize.combineSummaries = true;
+			vi.mocked(extractNoteProse).mockReturnValue('My notes mention the video above.');
+			const file = new TFile('notes/video.md') as unknown as ObsidianTFile;
+			vi.mocked(getMarkdownFiles).mockReturnValue([file]);
+			module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT, cached: true }));
+
+			await module.scanVault(undefined, true, file);
+
+			expect(notifications._handle.finish).toHaveBeenLastCalledWith(`Done -- 1 inline summaries — ${TRANSCRIPT_NOTE}`);
+		});
+
+		it('aggregates a batch into one line instead of one notice per item', async () => {
+			settings.summarize.combineSummaries = false;
+			const second = 'https://www.youtube.com/watch?v=def456';
+			noteContent = `# Note\n\n${VIDEO_URL}\n${second}\n`;
+			vi.mocked(findSummarizeTargets).mockImplementation(() => [
+				{ type: 'url', source: VIDEO_URL, line: 2, endLine: 2 },
+				{ type: 'url', source: second, line: 3, endLine: 3 },
+			]);
+			const file = new TFile('notes/video.md') as unknown as ObsidianTFile;
+			vi.mocked(getMarkdownFiles).mockReturnValue([file]);
+			module = build(vi.fn((url: string) => Promise.resolve({ text: TRANSCRIPT, cached: url === second })));
+
+			await module.scanVault(undefined, true, file);
+
+			expect(notifications._handle.finish).toHaveBeenLastCalledWith('Done -- 2 inline summaries — 1 of 2 served from cache');
+			expect(notifications.info).not.toHaveBeenCalled();
+		});
 	});
 });

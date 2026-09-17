@@ -5,8 +5,9 @@ import {
 	getMarkdownFiles, NotificationManager, buildCallout,
 	CALLOUT_TYPES, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
+	mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { OperationHandle } from '../shared';
 import { isSupportedUrl, detectPlatform } from '../shared';
 import { findAudioEmbeds } from '../audio';
@@ -15,26 +16,20 @@ import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
 import { Summarizer } from './summarizer';
-import { SummarizeTarget } from './types';
+import { SummarizeTarget, TranscribedMedia } from './types';
 
-export type { SummarizeTarget } from './types';
+export type { SummarizeTarget, TranscribedMedia } from './types';
 
-/**
- * Function that transcribes a video URL and returns the transcript text.
- * Injected by main.ts from the VideoModule.
- */
+/** Transcribes a media URL through the tier router; injected by the module registry. */
 export type TranscribeUrlFn = (
 	url: string,
 	parentOp?: { update: (msg: string) => void }
-) => Promise<string>;
+) => Promise<TranscribedMedia>;
 
-/**
- * Function that transcribes an audio file and returns the transcript text.
- * Injected by main.ts from the AudioModule.
- */
+/** Transcribes an audio file via the AudioModule; injected by the module registry. */
 export type TranscribeAudioFn = (
 	file: TFile
-) => Promise<string>;
+) => Promise<TranscribedMedia>;
 
 const COMPREHENSIVE_SUMMARY_PROMPT =
 	'Provide a comprehensive summary of the following content. This summary will be a standalone reference note. ' +
@@ -55,6 +50,8 @@ interface ProcessResult {
 	linksUpdated: number;
 	/** Vault paths of newly created summary notes */
 	newNotePaths: string[];
+	/** One entry per summary produced (#527). */
+	cacheUses: CacheUse[];
 }
 
 /** Human-readable label for a target in combined-summary output (#367). */
@@ -183,6 +180,7 @@ export class SummarizeModule implements FeatureModule {
 		let totalInline = 0;
 		let totalEnrichment = 0;
 		let totalLinksUpdated = 0;
+		const cacheUses: CacheUse[] = [];
 
 		try {
 			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
@@ -215,6 +213,7 @@ export class SummarizeModule implements FeatureModule {
 				totalInline += result.inlineCompleted;
 				totalEnrichment += result.enrichmentCompleted;
 				totalLinksUpdated += result.linksUpdated;
+				cacheUses.push(...result.cacheUses);
 
 				this.fireEnrichmentCallbacks(file.path, result);
 				await this.checkpointManager.completeItem(checkpoint.id, item.id);
@@ -237,7 +236,7 @@ export class SummarizeModule implements FeatureModule {
 		if (totalInline > 0) parts.push(`${totalInline} inline summaries`);
 		if (totalEnrichment > 0) parts.push(`${totalEnrichment} notes created`);
 		if (totalLinksUpdated > 0) parts.push(`${totalLinksUpdated} links updated`);
-		genOp.finish(`Resumed -- ${parts.join(', ') || 'no changes'}`);
+		genOp.finish(withCacheReport(`Resumed -- ${parts.join(', ') || 'no changes'}`, cacheUses));
 	}
 
 	private async summarizeNote(file: TFile): Promise<void> {
@@ -300,7 +299,7 @@ export class SummarizeModule implements FeatureModule {
 		this.fireEnrichmentCallbacks(file.path, result);
 
 		if (!op.cancelled) {
-			op.finish('Done -- combined summary added');
+			op.finish(withCacheReport('Done -- combined summary added', result.cacheUses));
 		}
 
 		// Trigger single-note organize (never vault-wide scan)
@@ -336,6 +335,7 @@ export class SummarizeModule implements FeatureModule {
 			enrichmentCompleted: 0,
 			linksUpdated: 0,
 			newNotePaths: [],
+			cacheUses: [],
 		};
 
 		// Enrichment refs first (per-item): create notes + rewrite links.
@@ -356,6 +356,7 @@ export class SummarizeModule implements FeatureModule {
 				enrichmentCompleted: result.enrichmentCompleted + combined.enrichmentCompleted,
 				linksUpdated: result.linksUpdated + combined.linksUpdated,
 				newNotePaths: [...result.newNotePaths, ...combined.newNotePaths],
+				cacheUses: [...result.cacheUses, ...combined.cacheUses],
 			};
 		}
 
@@ -383,6 +384,7 @@ export class SummarizeModule implements FeatureModule {
 			enrichmentCompleted: 0,
 			linksUpdated: 0,
 			newNotePaths: [],
+			cacheUses: [],
 		};
 		if (targets.length === 0) return empty;
 		if (targets.length === 1) {
@@ -392,11 +394,13 @@ export class SummarizeModule implements FeatureModule {
 		const settings = this.getSettings().summarize;
 		const sections: string[] = [];
 		const labels: string[] = [];
+		const sourceUses: CacheUse[] = [];
 		// #488: a combined summary missing its media transcript would misdescribe the video
 		let mediaFailed = false;
 
 		for (const target of targets) {
 			if (op.cancelled) return empty;
+			const use: CacheUse = {};
 			try {
 				let text: string;
 				if (target.type === 'note-content' || (target.type === 'transcription' && target.content)) {
@@ -404,15 +408,16 @@ export class SummarizeModule implements FeatureModule {
 					text = target.content ?? '';
 				} else if (target.type === 'audio' && this.transcribeAudio) {
 					op.update(`Transcribing audio ${target.source}`);
-					text = await this.fetchContentForAudio(target.source, file, settings.maxContentLength);
+					text = await this.fetchContentForAudio(target.source, file, settings.maxContentLength, use);
 				} else {
 					op.update(`Fetching ${target.source}`);
-					text = await this.fetchContentForUrl(target.source, settings.maxContentLength, op);
+					text = await this.fetchContentForUrl(target.source, settings.maxContentLength, op, use);
 				}
 				if (text.trim()) {
 					const label = labelForTarget(target);
 					sections.push(`## ${label}\n\n${text.trim()}`);
 					labels.push(label);
+					sourceUses.push(use);
 				} else {
 					// Parity with the per-item path: a successful-but-empty fetch is
 					// surfaced with the same standardized notice, not silently dropped.
@@ -444,11 +449,13 @@ export class SummarizeModule implements FeatureModule {
 			if (schema) effectivePrompt = schema.prompt;
 		}
 
+		const combinedUse = mergeCacheUse(sourceUses);
 		const summary = await this.summarizer.summarize(
 			combinedText,
 			labels.join(', '),
 			settings.summaryStyle,
-			effectivePrompt || COMPREHENSIVE_SUMMARY_PROMPT
+			effectivePrompt || COMPREHENSIVE_SUMMARY_PROMPT,
+			trackAiCache(combinedUse)
 		);
 
 		const callout = buildCallout(
@@ -464,7 +471,7 @@ export class SummarizeModule implements FeatureModule {
 			return lines.join('\n');
 		});
 
-		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [] };
+		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [], cacheUses: [combinedUse] };
 	}
 
 	/**
@@ -551,7 +558,7 @@ export class SummarizeModule implements FeatureModule {
 			if (result.linksUpdated > 0) {
 				parts.push(`${result.linksUpdated} link(s) updated`);
 			}
-			op.finish(`Done -- ${parts.join(', ') || `${totalDone}/${total} processed`}`);
+			op.finish(withCacheReport(`Done -- ${parts.join(', ') || `${totalDone}/${total} processed`}`, result.cacheUses));
 		}
 
 		this.fireEnrichmentCallbacks(file.path, result);
@@ -604,10 +611,12 @@ export class SummarizeModule implements FeatureModule {
 		let linksUpdated = 0;
 		const newNotePaths: string[] = [];
 		const pendingNotes: PendingNote[] = [];
+		const cacheUses: CacheUse[] = [];
 		let processed = 0;
 
 		for (const target of sorted) {
 			if (op.cancelled) break;
+			const use: CacheUse = {};
 
 			try {
 				processed++;
@@ -627,7 +636,8 @@ export class SummarizeModule implements FeatureModule {
 						const pageContent = await this.fetchUrlContentOrNotify(
 							target.source,
 							settings.maxContentLength,
-							op
+							op,
+							use
 						);
 
 						if (pageContent === null) continue;
@@ -637,7 +647,8 @@ export class SummarizeModule implements FeatureModule {
 							pageContent,
 							target.source,
 							settings.summaryStyle,
-							COMPREHENSIVE_SUMMARY_PROMPT
+							COMPREHENSIVE_SUMMARY_PROMPT,
+							trackAiCache(use)
 						);
 
 						pendingNotes.push({
@@ -650,6 +661,7 @@ export class SummarizeModule implements FeatureModule {
 							].join('\n'),
 						});
 						newNotePaths.push(notePath);
+						cacheUses.push(use);
 					}
 
 					// Replace external link with internal link in source note
@@ -672,7 +684,8 @@ export class SummarizeModule implements FeatureModule {
 						textToSummarize = await this.fetchContentForAudio(
 							target.source,
 							file,
-							settings.maxContentLength
+							settings.maxContentLength,
+							use
 						);
 					} else if (target.type === 'transcription' && target.content) {
 						textToSummarize = target.content;
@@ -684,7 +697,8 @@ export class SummarizeModule implements FeatureModule {
 						const fetched = await this.fetchUrlContentOrNotify(
 							target.source,
 							settings.maxContentLength,
-							op
+							op,
+							use
 						);
 						if (fetched === null) continue;
 						textToSummarize = fetched;
@@ -712,7 +726,8 @@ export class SummarizeModule implements FeatureModule {
 						textToSummarize,
 						target.source,
 						settings.summaryStyle,
-						effectivePrompt
+						effectivePrompt,
+						trackAiCache(use)
 					);
 
 					const callout = buildCallout(
@@ -724,6 +739,7 @@ export class SummarizeModule implements FeatureModule {
 					lines.splice(target.endLine + 1, 0, ...callout.split('\n'));
 
 					inlineCompleted++;
+					cacheUses.push(use);
 				}
 			} catch (error) {
 				this.notifyTargetError(error, () =>
@@ -753,7 +769,7 @@ export class SummarizeModule implements FeatureModule {
 			await this.plugin.app.vault.create(pending.path, pending.content);
 		}
 
-		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths };
+		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths, cacheUses };
 	}
 
 	/**
@@ -765,7 +781,8 @@ export class SummarizeModule implements FeatureModule {
 	private async fetchContentForUrl(
 		url: string,
 		maxLength: number,
-		op: OperationHandle
+		op: OperationHandle,
+		use: CacheUse
 	): Promise<string> {
 		if (isSupportedUrl(url)) {
 			if (!this.transcribeUrl) {
@@ -774,7 +791,8 @@ export class SummarizeModule implements FeatureModule {
 			try {
 				op.update(`Transcribing video ${url}`);
 				const transcript = await this.transcribeUrl(url, op);
-				return transcript.slice(0, maxLength);
+				Object.assign(use, transcriptCacheUse(transcript));
+				return transcript.text.slice(0, maxLength);
 			} catch (error) {
 				// Preserve a typed video-dependency error (yt-dlp/ffmpeg) so the
 				// caller can offer onboarding (#382); matched by name to avoid a
@@ -808,11 +826,12 @@ export class SummarizeModule implements FeatureModule {
 	private async fetchUrlContentOrNotify(
 		source: string,
 		maxLength: number,
-		op: OperationHandle
+		op: OperationHandle,
+		use: CacheUse
 	): Promise<string | null> {
 		let content: string;
 		try {
-			content = await this.fetchContentForUrl(source, maxLength, op);
+			content = await this.fetchContentForUrl(source, maxLength, op, use);
 		} catch (error) {
 			// A missing video dependency routes to the actionable onboarding notice;
 			// every other failure keeps the standardized link-load error (#382).
@@ -837,7 +856,8 @@ export class SummarizeModule implements FeatureModule {
 	private async fetchContentForAudio(
 		fileName: string,
 		sourceFile: TFile,
-		maxLength: number
+		maxLength: number,
+		use: CacheUse
 	): Promise<string> {
 		const audioFile = this.plugin.app.metadataCache.getFirstLinkpathDest(
 			fileName,
@@ -848,7 +868,8 @@ export class SummarizeModule implements FeatureModule {
 		}
 
 		const transcript = await this.transcribeAudio!(audioFile);
-		return transcript.slice(0, maxLength);
+		Object.assign(use, transcriptCacheUse(transcript));
+		return transcript.text.slice(0, maxLength);
 	}
 
 	/**
@@ -996,6 +1017,7 @@ export class SummarizeModule implements FeatureModule {
 		let totalInline = 0;
 		let totalEnrichment = 0;
 		let totalLinksUpdated = 0;
+		const cacheUses: CacheUse[] = [];
 
 		// Create checkpoint for resumability
 		const checkpointItems: CheckpointWorkItem[] = filesWithTargets.map((ft, i) => ({
@@ -1044,6 +1066,7 @@ export class SummarizeModule implements FeatureModule {
 			totalInline += result.inlineCompleted;
 			totalEnrichment += result.enrichmentCompleted;
 			totalLinksUpdated += result.linksUpdated;
+			cacheUses.push(...result.cacheUses);
 
 			this.fireEnrichmentCallbacks(file.path, result);
 
@@ -1065,7 +1088,7 @@ export class SummarizeModule implements FeatureModule {
 			if (totalInline > 0) parts.push(`${totalInline} inline summaries`);
 			if (totalEnrichment > 0) parts.push(`${totalEnrichment} notes created`);
 			if (totalLinksUpdated > 0) parts.push(`${totalLinksUpdated} links updated`);
-			genOp.finish(`Done -- ${parts.join(', ')}`);
+			genOp.finish(withCacheReport(`Done -- ${parts.join(', ')}`, cacheUses));
 		}
 	}
 
