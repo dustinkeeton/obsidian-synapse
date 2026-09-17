@@ -103,6 +103,7 @@ interface UrlTranscript {
   reformatted?: boolean
   schemaId?: string                     // content schema that reformatted the text (#234)
   cached?: boolean                      // true when served from the transcript store (#488)
+  aiCached?: boolean                    // #527; fresh transcript whose AI post-processing replayed a cached response; never stored
 }
 interface UrlTranscriptionStrategy {                              // url-transcription.ts:54
   readonly id: string
@@ -121,7 +122,7 @@ class UrlTranscriptionRouter {
 function buildUrlTranscriptBlock(result: UrlTranscript, url: string, embedInNote: boolean, timeRange?: TimeRange): string   // url-transcription.ts:125
 
 // caption-strategy.ts — tier 1: YouTube captions over HTTP (free, mobile-capable)
-interface ProcessedTranscript { text: string; reformatted?: boolean; schemaId?: string }   // caption-strategy.ts:12
+interface ProcessedTranscript { text: string; reformatted?: boolean; schemaId?: string; aiCached?: boolean }   // caption-strategy.ts:12
 interface ProcessTranscriptOptions { update?: (message: string) => void }                  // caption-strategy.ts:18; not barrel-exported
 type ProcessTranscript = (raw: string, opts?: ProcessTranscriptOptions) => Promise<ProcessedTranscript>   // caption-strategy.ts:22; opts.update carries "Post-processing (n/total)" (#467)
 class CaptionStrategy implements UrlTranscriptionStrategy {                                // caption-strategy.ts:31
@@ -198,7 +199,7 @@ function transcribeNoteMedia(deps: NoteMediaTranscriptionDeps, file: TFile): Pro
 | `caption-strategy.ts` | `CaptionStrategy`, `ProcessedTranscript`, `ProcessTranscript` | Tier 1: YouTube captions; post-processing through the injected audio pipeline |
 | `local-extraction-strategy.ts` | `LocalExtractionStrategy`, `LocalExtractionDelegate` | Tier 2: desktop yt-dlp/ffmpeg via injected `VideoModule.processUrl` delegate |
 | `youtube-captions.ts` | `fetchYouTubeTranscript`, `YouTubeTranscript` (barrel); module-level `INNERTUBE_ANDROID_CLIENT`, `extractJsonAfterMarker`, `extractCaptionTracks`, `selectCaptionTrack`, `collectJson3Cues`, `parseChaptersFromDescription`, `formatCaptionTranscript`, `CaptionCue`, `VideoChapter` (internal, test seams) | Caption fetch + deterministic transcript formatting over Obsidian `requestUrl` |
-| `insert-url-transcript.ts` | `insertUrlTranscript`, `appendUrlTranscript`, `InsertUrlTranscriptDeps` | `insertUrlTranscript`: transcribes a media URL through the injected router (store-first, `forceRefresh` bypass) and appends the block to the ACTIVE note inside its `NoteOperationQueue` slot (#483); toast reads "Cached transcription added to note" on a store hit (#488). `appendUrlTranscript`: intake variant appending to a given `file` under toast `intake-url-<path>`, unqueued, rethrows. Both: `isNoSpeechError` -> `op.finish(noSpeechNotice('this video'))`, no write (#524) |
+| `insert-url-transcript.ts` | `insertUrlTranscript`, `appendUrlTranscript`, `InsertUrlTranscriptDeps` | `insertUrlTranscript`: transcribes a media URL through the injected router (store-first, `forceRefresh` bypass) and appends the block to the ACTIVE note inside its `NoteOperationQueue` slot (#483); finish message via `withCacheReport('Transcription added to note', [transcriptCacheUse(result)])` (#527). `appendUrlTranscript`: intake variant appending to a given `file` under toast `intake-url-<path>`, unqueued, rethrows; finish via `withCacheReport('Transcript added', ...)` (#527). Both: `isNoSpeechError` -> `op.finish(noSpeechNotice('this video'))`, no write (#524) |
 | `create-url-router.ts` | `createUrlTranscriptionRouter`, `UrlTranscriptionRouterDeps` | Tier-router factory (#184): `CaptionStrategy` always, `LocalExtractionStrategy` only when `deps.extract` is given |
 | `open-unified-modal.ts` | `openUnifiedTranscriptionModal`, `UnifiedTranscriptionDeps` | Builds + opens `UnifiedTranscriptionModal` from `settings.audio.enabled` / `settings.video.enabled`; URL submit -> `insertUrlTranscript` |
 | `note-media-transcription.ts` | `transcribeNoteMedia`, `NoteMediaTranscriptionDeps` | Scans a note (`findAudioEmbeds` / `findVideoUrls` / `findImageEmbeds`, each gated by its feature's `enabled`), notices when empty, else opens `NoteMediaModal` |
@@ -319,7 +320,7 @@ Intake (appendUrlTranscript, insert-url-transcript.ts:84; wired main.ts:72-79 as
 Other router consumers: summarize transcribeUrl callback (modules/registry.ts summarize entry via ModuleWiring.transcribeUrl), intake (above) — all four entry points (unified modal, note-media batch, summarize, intake) share the ONE router and therefore the one transcript store: any of them populates it and any of them reuses it (#488). Only the unified modal exposes `forceRefresh`; "Clear transcript cache" in the Video settings section (`video/settings-section.ts`) empties the store for every path.
 ```
 
-`insertUrlTranscript` (`insert-url-transcript.ts`): active note required (`notifications.info` otherwise); `findMatchingRule(path, 'video', settings)` exclusion → Notice naming the rule; `noteQueue.run(activeFile.path, ...)` with `onWait` toast update; `router.transcribe(url, { timeRange, forceRefresh, update })` → `buildUrlTranscriptBlock(result, url, video.embedInNote, timeRange)` → `vault.process` append → `deps.onComplete?.(path)` from inside the slot; `op.finish` says "Cached transcription added to note" when `result.cached`; no speech (#524) → `op.finish(noSpeechNotice('this video'))` with no write and no `onComplete`; other errors → `op.error(...)`, never rethrown.
+`insertUrlTranscript` (`insert-url-transcript.ts`): active note required (`notifications.info` otherwise); `findMatchingRule(path, 'video', settings)` exclusion → Notice naming the rule; `noteQueue.run(activeFile.path, ...)` with `onWait` toast update; `router.transcribe(url, { timeRange, forceRefresh, update })` → `buildUrlTranscriptBlock(result, url, video.embedInNote, timeRange)` → `vault.process` append → `deps.onComplete?.(path)` from inside the slot; `op.finish(withCacheReport('Transcription added to note', [transcriptCacheUse(result)]))` (#527: store hit and/or replayed post-processing); no speech (#524) → `op.finish(noSpeechNotice('this video'))` with no write and no `onComplete`; other errors → `op.error(...)`, never rethrown.
 
 ## Module Dependencies
 

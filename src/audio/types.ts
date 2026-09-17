@@ -12,6 +12,8 @@ export interface TranscriptionResult {
 	reformatted?: boolean;
 	/** Id of the content schema that reformatted the transcript, if any (e.g. 'lyrics'). */
 	schemaId?: string;
+	/** True when any AI pass (post-processing, schema reformat) replayed a cached response (#527). */
+	aiCached?: boolean;
 }
 
 export interface TimestampEntry {

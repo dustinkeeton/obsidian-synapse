@@ -61,6 +61,8 @@ export interface UrlTranscript {
 	schemaId?: string;
 	/** True when served from the transcript store instead of a tier (#488). */
 	cached?: boolean;
+	/** True when a fresh transcript's AI post-processing replayed a cached response (#527); never stored. */
+	aiCached?: boolean;
 }
 
 export interface UrlTranscriptionStrategy {

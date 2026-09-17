@@ -142,3 +142,48 @@ describe('VideoModule.transcribeAndInsert tier routing (#184)', () => {
 		expect(store.get(noteFile.path)).toContain('> extracted transcript');
 	});
 });
+
+describe('VideoModule.transcribeAndInsert cache reporting (#527)', () => {
+	const finishOf = (notifications: { startOperation: Mock }): Mock =>
+		(notifications.startOperation.mock.results[0].value as { finish: Mock }).finish;
+
+	it('keeps the finish message unchanged for a fresh transcript', async () => {
+		const { mod, noteFile, notifications } = makeModule();
+		mod.urlTranscriber = vi.fn().mockResolvedValue({ text: 'caption transcript' });
+
+		await mod.transcribeAndInsert(noteFile as never, [embed(1)]);
+
+		expect(finishOf(notifications)).toHaveBeenCalledWith('Done -- 1/1 video transcriptions added');
+	});
+
+	it('says a single transcript came from the transcript cache', async () => {
+		const { mod, noteFile, notifications } = makeModule();
+		mod.urlTranscriber = vi.fn().mockResolvedValue({ text: 'caption transcript', cached: true });
+
+		await mod.transcribeAndInsert(noteFile as never, [embed(1)]);
+
+		expect(finishOf(notifications)).toHaveBeenCalledWith(
+			'Done -- 1/1 video transcriptions added — used a cached transcript ("Fetch a fresh transcript" in Transcribe media replaces it)'
+		);
+	});
+
+	it('aggregates several embeds into one line', async () => {
+		vi.useFakeTimers();
+		const { mod, noteFile, notifications } = makeModule();
+		mod.urlTranscriber = vi.fn()
+			.mockResolvedValueOnce({ text: 'first', cached: true })
+			.mockResolvedValueOnce({ text: 'second' })
+			.mockResolvedValueOnce({ text: 'third', aiCached: true });
+
+		const pending = mod.transcribeAndInsert(noteFile as never, [embed(0), embed(1), embed(2)]);
+		await vi.runAllTimersAsync();
+		await pending;
+		vi.useRealTimers();
+
+		expect(finishOf(notifications)).toHaveBeenCalledWith(
+			'Done -- 3/3 video transcriptions added — 2 of 3 served from cache'
+		);
+		expect(notifications.info).not.toHaveBeenCalled();
+	});
+});
+

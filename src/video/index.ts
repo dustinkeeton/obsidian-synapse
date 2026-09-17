@@ -6,8 +6,9 @@ import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, calloutForTranscriptionResult,
 	CheckpointManager, NoteOperationQueue, generateId, detectPlatform, loadNodeModules,
 	isPathExcluded, findAvailableVaultPath, isNoSpeechError, noSpeechNotice,
+	transcriptCacheUse, withCacheReport,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { AudioExtractor, DependencyMissingError } from './audio-extractor';
 import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
 import type { RoutedUrlTranscriber, RoutedUrlTranscript } from './types';
@@ -212,6 +213,7 @@ export class VideoModule implements FeatureModule {
 		// Queue insertions (keyed by original line) and apply them atomically
 		// against fresh content after all transcription completes.
 		const inserts: Array<{ line: number; block: string }> = [];
+		const cacheUses: CacheUse[] = [];
 		const completeCheckpointItem = async (url: string): Promise<void> => {
 			const cpItemId = checkpointItems.find((ci) => ci.payload.url === url)?.id;
 			if (cpItemId) await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
@@ -239,6 +241,7 @@ export class VideoModule implements FeatureModule {
 						videoVaultPath: extracted.videoVaultPath,
 						reformatted: extracted.reformatted,
 						schemaId: extracted.schemaId,
+						aiCached: extracted.aiCached,
 					};
 				}
 
@@ -261,6 +264,7 @@ export class VideoModule implements FeatureModule {
 				blockLines.push(callout);
 
 				inserts.push({ line: embed.line, block: blockLines.join('\n') });
+				cacheUses.push(transcriptCacheUse(result));
 
 				completed++;
 
@@ -294,7 +298,7 @@ export class VideoModule implements FeatureModule {
 			// Mark checkpoint completed and dispatch deferred tasks (I1)
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
-			op.finish(`Done -- ${completed}/${total} video transcriptions added`);
+			op.finish(withCacheReport(`Done -- ${completed}/${total} video transcriptions added`, cacheUses));
 		}
 	}
 

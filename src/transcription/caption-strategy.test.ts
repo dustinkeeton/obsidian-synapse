@@ -146,6 +146,13 @@ describe('CaptionStrategy.transcribe', () => {
 		expect(result?.schemaId).toBe('lyrics');
 	});
 
+	it('carries a replayed post-processing response through as aiCached (#527)', async () => {
+		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true, structured: false });
+		const { strategy } = makeStrategy({}, vi.fn(() => Promise.resolve({ text: 'processed', aiCached: true })));
+
+		expect((await strategy.transcribe(YOUTUBE_URL, {}))?.aiCached).toBe(true);
+	});
+
 	it('reports progress through the update hook', async () => {
 		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true, structured: false });
 		const { strategy } = makeStrategy();

@@ -54,6 +54,10 @@ export interface RoutedUrlTranscript {
 	videoVaultPath?: string;
 	reformatted?: boolean;
 	schemaId?: string;
+	/** Served from the transcript store (#488). */
+	cached?: boolean;
+	/** Fresh transcript whose AI post-processing replayed a cached response (#527). */
+	aiCached?: boolean;
 }
 
 /**

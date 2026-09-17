@@ -12,6 +12,7 @@ export interface ProcessedTranscript {
 	text: string;
 	reformatted?: boolean;
 	schemaId?: string;
+	aiCached?: boolean;
 }
 
 export interface ProcessTranscriptOptions {
@@ -89,6 +90,7 @@ export class CaptionStrategy implements UrlTranscriptionStrategy {
 			language: captions.language,
 			reformatted: processed.reformatted,
 			schemaId: processed.schemaId,
+			aiCached: processed.aiCached,
 		};
 	}
 }

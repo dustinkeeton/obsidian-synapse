@@ -5,10 +5,10 @@ import {
 	sanitizeAIResponse, AIClient, detectSchemaFor,
 	CheckpointManager, NoteOperationQueue, generateId, formatTimeRange, loadNodeModules,
 	isPathExcluded, findMatchingRule, redactError,
-	NoSpeechDetectedError, hasSpeechContent, isNoSpeechError, noSpeechNotice,
+	NoSpeechDetectedError, hasSpeechContent, isNoSpeechError, noSpeechNotice, withCacheReport,
 } from '../shared';
 import type {
-	Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
+	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
 } from '../shared';
 import { AudioEmbed } from './types';
 import { PostProcessor, type PostProcessOptions } from './post-processor';
@@ -100,11 +100,12 @@ export class AudioModule implements FeatureModule {
 		result.raw = sanitizeAIResponse(result.raw);
 		if (!hasSpeechContent(result.raw)) throw new NoSpeechDetectedError();
 
+		const onCacheHit = (): void => { result.aiCached = true; };
 		if (options?.postProcess !== false) {
-			result.processed = await this.postProcessor.process(result.raw, { update: options?.update });
+			result.processed = await this.postProcessor.process(result.raw, { update: options?.update, onCacheHit });
 		}
 
-		await this.maybeReformatBySchema(result);
+		await this.maybeReformatBySchema(result, onCacheHit);
 
 		if (options?.sourceName) {
 			result.sourceName = options.sourceName;
@@ -125,17 +126,22 @@ export class AudioModule implements FeatureModule {
 	async processTranscriptText(
 		raw: string,
 		opts?: PostProcessOptions
-	): Promise<{ text: string; reformatted?: boolean; schemaId?: string }> {
+	): Promise<{ text: string; reformatted?: boolean; schemaId?: string; aiCached?: boolean }> {
 		const result: TranscriptionResult = {
 			raw: sanitizeAIResponse(raw),
 			sourceName: '',
 		};
-		result.processed = await this.postProcessor.process(result.raw, opts);
-		await this.maybeReformatBySchema(result);
+		const onCacheHit = (): void => {
+			result.aiCached = true;
+			opts?.onCacheHit?.();
+		};
+		result.processed = await this.postProcessor.process(result.raw, { ...opts, onCacheHit });
+		await this.maybeReformatBySchema(result, onCacheHit);
 		return {
 			text: result.processed || result.raw,
 			reformatted: result.reformatted,
 			schemaId: result.schemaId,
+			aiCached: result.aiCached,
 		};
 	}
 
@@ -148,7 +154,7 @@ export class AudioModule implements FeatureModule {
 	 * callout type. Detection is local (no AI cost); the AI call fires only on a
 	 * match. Any failure falls back to the unmodified transcript.
 	 */
-	private async maybeReformatBySchema(result: TranscriptionResult): Promise<void> {
+	private async maybeReformatBySchema(result: TranscriptionResult, onCacheHit: () => void): Promise<void> {
 		if (!this.getSettings().audio.autoFormatLyrics) return;
 
 		const base = result.processed ?? result.raw;
@@ -157,7 +163,7 @@ export class AudioModule implements FeatureModule {
 		if (!schema || schema.mode !== 'reformat') return;
 
 		try {
-			const reformatted = sanitizeAIResponse(await this.aiClient.complete(base, schema.prompt));
+			const reformatted = sanitizeAIResponse(await this.aiClient.complete(base, schema.prompt, { onCacheHit }));
 			if (reformatted.trim()) {
 				result.processed = reformatted;
 				result.reformatted = true;
@@ -244,7 +250,7 @@ export class AudioModule implements FeatureModule {
 
 			await this.plugin.app.vault.process(activeFile, (data) => data + transcriptionBlock);
 			this.onTranscriptionComplete?.(activeFile.path);
-			op.finish(`Transcription of ${file.name} added to note`);
+			op.finish(withCacheReport(`Transcription of ${file.name} added to note`, [{ ai: result.aiCached }]));
 		} catch (error) {
 			if (isNoSpeechError(error)) {
 				op.finish(noSpeechNotice(file.name));
@@ -317,6 +323,7 @@ export class AudioModule implements FeatureModule {
 		// Queue insertions (keyed by original line) and apply them atomically
 		// against fresh content after all transcription completes.
 		const inserts: Array<{ line: number; block: string }> = [];
+		const cacheUses: CacheUse[] = [];
 		const completeCheckpointItem = async (fileName: string): Promise<void> => {
 			const cpItemId = checkpointItems.find((ci) => ci.payload.fileName === fileName)?.id;
 			if (cpItemId) await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
@@ -345,6 +352,7 @@ export class AudioModule implements FeatureModule {
 
 				// Insert after the embed line
 				inserts.push({ line: embed.line, block: transcriptionBlock });
+				cacheUses.push({ ai: result.aiCached });
 
 				completed++;
 
@@ -379,7 +387,7 @@ export class AudioModule implements FeatureModule {
 			// Mark checkpoint completed and dispatch deferred tasks (I1)
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
-			op.finish(`Done -- ${completed}/${total} transcriptions added`);
+			op.finish(withCacheReport(`Done -- ${completed}/${total} transcriptions added`, cacheUses));
 		}
 	}
 
@@ -424,6 +432,7 @@ export class AudioModule implements FeatureModule {
 	): Promise<void> {
 		try {
 			let text: string;
+			let aiCached: boolean | undefined;
 
 			if (this.extractor) {
 				// Desktop: concatenate the audio and transcribe it in one call.
@@ -463,11 +472,12 @@ export class AudioModule implements FeatureModule {
 				op.update('Transcribing combined audio');
 				const result = await this.transcribe(data, `combined-${noteFile.basename}.mp3`, { update: (m) => op.update(m) });
 				text = result.processed || result.raw;
+				aiCached = result.aiCached;
 			} else {
 				// Mobile / no ffmpeg: transcribe each file separately and merge
 				// the TEXT into one block (the audio can't be concatenated).
 				op.update('Transcribing each audio file');
-				text = await this.transcribeEachToText(embeds.map(e => e.file), op);
+				({ text, aiCached } = await this.transcribeEachToText(embeds.map(e => e.file), op));
 				if (op.cancelled) {
 					op.finish('Cancelled');
 					return;
@@ -492,7 +502,7 @@ export class AudioModule implements FeatureModule {
 			});
 
 			this.onTranscriptionComplete?.(noteFile.path);
-			op.finish(`Combined transcription of ${embeds.length} files added to note`);
+			op.finish(withCacheReport(`Combined transcription of ${embeds.length} files added to note`, [{ ai: aiCached }]));
 		} catch (error) {
 			if (isNoSpeechError(error)) {
 				op.finish(noSpeechNotice(`${embeds.length} audio files`));
@@ -513,8 +523,9 @@ export class AudioModule implements FeatureModule {
 	private async transcribeEachToText(
 		files: TFile[],
 		op?: { cancelled: boolean; progress: (done: number, total: number, label: string) => void }
-	): Promise<string> {
+	): Promise<{ text: string; aiCached: boolean }> {
 		const parts: string[] = [];
+		let aiCached = false;
 		for (let i = 0; i < files.length; i++) {
 			if (op?.cancelled) break;
 			if (i > 0 && this.interFileDelayMs > 0) {
@@ -525,13 +536,14 @@ export class AudioModule implements FeatureModule {
 			try {
 				const result = await this.transcribe(data, files[i].name);
 				parts.push(result.processed || result.raw);
+				if (result.aiCached) aiCached = true;
 			} catch (error) {
 				if (!isNoSpeechError(error)) throw error;
 				this.notifications.info(noSpeechNotice(files[i].name));
 			}
 		}
 		if (parts.length === 0 && !op?.cancelled) throw new NoSpeechDetectedError();
-		return parts.join('\n\n');
+		return { text: parts.join('\n\n'), aiCached };
 	}
 
 	/**
