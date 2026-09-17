@@ -5,8 +5,9 @@ import {
 	getMarkdownFiles, NotificationManager, parseFrontmatter,
 	CheckpointManager, NoteOperationQueue, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
+	trackAiCache, withCacheReport,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentStore } from './enrichment-store';
 import { LinkResolver } from './link-resolver';
@@ -128,6 +129,7 @@ export class EnrichmentModule implements FeatureModule {
 			'enrichment-vault-resume'
 		);
 		const createdProposals: Array<{ id: string; notePath: string }> = [];
+		const cacheUses: CacheUse[] = [];
 		let proposalCount = 0;
 
 		try {
@@ -143,11 +145,13 @@ export class EnrichmentModule implements FeatureModule {
 				if (!(file instanceof TFile)) continue;
 				if (this.isExcluded(file)) continue;
 
+				const cacheUse: CacheUse = {};
 				const id = await this.noteQueue.run(
 					file.path,
-					() => this.enrichFile(file, 'manual')
+					() => this.enrichFile(file, 'manual', cacheUse)
 				);
 				if (id) {
+					cacheUses.push(cacheUse);
 					createdProposals.push({ id, notePath: file.path });
 					proposalCount++;
 				}
@@ -185,7 +189,7 @@ export class EnrichmentModule implements FeatureModule {
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
 		genOp.finish(
-			`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
+			withCacheReport(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,
@@ -270,6 +274,7 @@ export class EnrichmentModule implements FeatureModule {
 		);
 		// Track proposal IDs mapped to note paths for Phase 4 injection
 		const createdProposals: Array<{ id: string; notePath: string }> = [];
+		const cacheUses: CacheUse[] = [];
 		let proposalCount = 0;
 
 		// Create checkpoint for resumability
@@ -300,11 +305,13 @@ export class EnrichmentModule implements FeatureModule {
 					eligible.length,
 					'Generating enrichment proposals'
 				);
+				const cacheUse: CacheUse = {};
 				const id = await this.noteQueue.run(
 					eligible[i].path,
-					() => this.enrichFile(eligible[i], 'manual')
+					() => this.enrichFile(eligible[i], 'manual', cacheUse)
 				);
 				if (id) {
+					cacheUses.push(cacheUse);
 					createdProposals.push({ id, notePath: eligible[i].path });
 					proposalCount++;
 				}
@@ -372,7 +379,7 @@ export class EnrichmentModule implements FeatureModule {
 		// Review action only when something was generated AND enrichment
 		// auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
-			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
+			withCacheReport(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,
@@ -438,8 +445,9 @@ export class EnrichmentModule implements FeatureModule {
 		op: OperationHandle,
 		options?: { postOp?: boolean }
 	): Promise<void> {
+		const cacheUse: CacheUse = {};
 		try {
-			const id = await this.enrichFile(file, trigger);
+			const id = await this.enrichFile(file, trigger, cacheUse);
 			// Single-note enrichment has no cross-note evidence for new notes,
 			// so discard any accumulated unmatched topics
 			this.topicExtractor.clearPending();
@@ -448,7 +456,7 @@ export class EnrichmentModule implements FeatureModule {
 				// (applied right after) leaves nothing to review, and an automatic
 				// post-op run suppresses the secondary Review prompt entirely (#366).
 				op.finish(
-					'Enrichment proposal created',
+					withCacheReport('Enrichment proposal created', [cacheUse]),
 					reviewAction({
 						generated: true,
 						shouldAutoAccept: this.shouldAutoAccept,
@@ -460,7 +468,7 @@ export class EnrichmentModule implements FeatureModule {
 				// stored proposal is fully formed — safe to auto-accept (#228).
 				await this.maybeAutoAccept(id);
 			} else {
-				op.finish('No enrichments needed');
+				op.finish(withCacheReport('No enrichments needed', [cacheUse]));
 			}
 			await this.refreshView();
 		} catch (error) {
@@ -476,7 +484,8 @@ export class EnrichmentModule implements FeatureModule {
 	 */
 	private async enrichFile(
 		file: TFile,
-		trigger: EnrichmentTrigger
+		trigger: EnrichmentTrigger,
+		cacheUse: CacheUse = {}
 	): Promise<string | null> {
 		const content = await this.plugin.app.vault.read(file);
 		const parsed = parseFrontmatter(content);
@@ -490,25 +499,29 @@ export class EnrichmentModule implements FeatureModule {
 			? twitterContext + '\n\n' + parsed.body
 			: parsed.body;
 
+		const aiOpts = trackAiCache(cacheUse);
 		// Run classifiers in parallel
 		const [tags, graphLinks, topicLinks, externalLinks, frontmatter] =
 			await Promise.all([
-				this.classifier.classify(classifierBody, existingTags),
+				this.classifier.classify(classifierBody, existingTags, aiOpts),
 				Promise.resolve(
 					this.linkResolver.findInternalLinks(file, existingLinkPaths)
 				),
 				this.topicExtractor.extractTopics(
 					classifierBody,
 					file.path,
-					existingLinkPaths
+					existingLinkPaths,
+					aiOpts
 				),
 				this.promptBuilder.suggestExternalLinks(
 					classifierBody,
-					existingExternalLinks
+					existingExternalLinks,
+					aiOpts
 				),
 				this.promptBuilder.suggestFrontmatter(
 					classifierBody,
-					parsed.frontmatter
+					parsed.frontmatter,
+					aiOpts
 				),
 			]);
 

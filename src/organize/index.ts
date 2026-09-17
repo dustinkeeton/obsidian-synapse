@@ -5,8 +5,9 @@ import {
 	getMarkdownFiles, NotificationManager, ensureFolder,
 	writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
+	trackAiCache, withCacheReport,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import type { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
@@ -113,6 +114,7 @@ export class OrganizeModule implements FeatureModule {
 		let autoAcceptedCount = 0;
 		let errorCount = 0;
 		const moveRecords: MoveRecord[] = [];
+		const cacheUses: CacheUse[] = [];
 		// Coalesce new-directory proposals within this resumed run (#172).
 		const batchProposedDirs = new Map<string, string>();
 
@@ -131,10 +133,12 @@ export class OrganizeModule implements FeatureModule {
 
 				try {
 					const originalPath = file.path;
+					const cacheUse: CacheUse = {};
 					const result = await this.noteQueue.run(
 						file.path,
-						() => this.organizeFile(file, true, batchProposedDirs)
+						() => this.organizeFile(file, true, batchProposedDirs, cacheUse)
 					);
+					cacheUses.push(cacheUse);
 
 					if (result) {
 						if (result.movedDirectly && result.action.type === 'move') {
@@ -176,7 +180,7 @@ export class OrganizeModule implements FeatureModule {
 		// Review action only when a new-directory proposal was generated AND
 		// organize auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
-			`Resumed -- ${parts.length > 0 ? parts.join(', ') : 'no changes needed'}`,
+			withCacheReport(`Resumed -- ${parts.length > 0 ? parts.join(', ') : 'no changes needed'}`, cacheUses),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,
@@ -222,25 +226,26 @@ export class OrganizeModule implements FeatureModule {
 			`organize-${file.path}`
 		);
 
+		const cacheUse: CacheUse = {};
 		try {
 			const result = await this.noteQueue.run(
 				file.path,
-				() => this.organizeFile(file),
+				() => this.organizeFile(file, false, undefined, cacheUse),
 				{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
 			);
 
 			if (!result) {
-				op.finish('No organization needed');
+				op.finish(withCacheReport('No organization needed', [cacheUse]));
 				return null;
 			}
 
 			if (result.movedDirectly) {
-				op.finish(`Moved to ${result.action.type === 'move' ? result.action.targetDirectory : ''}`);
+				op.finish(withCacheReport(`Moved to ${result.action.type === 'move' ? result.action.targetDirectory : ''}`, [cacheUse]));
 			} else if (result.proposalCreated) {
 				// Review action only when the proposal stays pending — organize
 				// auto-accept moves the note, leaving nothing to review (#366).
 				op.finish(
-					'Proposal created for new directory',
+					withCacheReport('Proposal created for new directory', [cacheUse]),
 					reviewAction({
 						generated: true,
 						shouldAutoAccept: this.shouldAutoAccept,
@@ -248,7 +253,7 @@ export class OrganizeModule implements FeatureModule {
 					})
 				);
 			} else {
-				op.finish('Note is already well-placed');
+				op.finish(withCacheReport('Note is already well-placed', [cacheUse]));
 			}
 
 			return result;
@@ -323,6 +328,7 @@ export class OrganizeModule implements FeatureModule {
 		let autoAcceptedCount = 0;
 		let errorCount = 0;
 		const moveRecords: MoveRecord[] = [];
+		const cacheUses: CacheUse[] = [];
 		// Coalesce new-directory proposals within this scan so variants like
 		// "model"/"models" resolve to a single folder (#172). Maps a canonical
 		// key to the representative directory chosen for it.
@@ -353,10 +359,12 @@ export class OrganizeModule implements FeatureModule {
 			genOp.progress(i + 1, eligible.length, 'Organizing notes');
 			try {
 				const originalPath = eligible[i].path;
+				const cacheUse: CacheUse = {};
 				const result = await this.noteQueue.run(
 					eligible[i].path,
-					() => this.organizeFile(eligible[i], true, batchProposedDirs)
+					() => this.organizeFile(eligible[i], true, batchProposedDirs, cacheUse)
 				);
+				cacheUses.push(cacheUse);
 
 				if (result) {
 					if (result.movedDirectly && result.action.type === 'move') {
@@ -400,7 +408,7 @@ export class OrganizeModule implements FeatureModule {
 		// Review action only when a new-directory proposal was generated AND
 		// organize auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
-			parts.length > 0 ? parts.join(', ') : 'No changes needed',
+			withCacheReport(parts.length > 0 ? parts.join(', ') : 'No changes needed', cacheUses),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,
@@ -588,9 +596,10 @@ export class OrganizeModule implements FeatureModule {
 	private async organizeFile(
 		file: TFile,
 		batch = false,
-		batchProposedDirs?: Map<string, string>
+		batchProposedDirs?: Map<string, string>,
+		cacheUse: CacheUse = {}
 	): Promise<OrganizeResult | null> {
-		const analysis = await this.analyzer.analyze(file);
+		const analysis = await this.analyzer.analyze(file, trackAiCache(cacheUse));
 
 		if (analysis.topics.length === 0) {
 			return null;

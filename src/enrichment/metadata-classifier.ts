@@ -1,5 +1,6 @@
 import { SynapseSettings, TagVocabularyEntry } from '../settings';
 import { AIClient, isRecord, parseJson, sanitizeAIResponse } from '../shared';
+import type { AIRequestOptions } from '../shared';
 import { TagCandidate } from './types';
 
 const TAG_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_/-]{0,49}$/;
@@ -18,7 +19,8 @@ export class MetadataClassifier {
 
 	async classify(
 		noteContent: string,
-		existingTags: string[]
+		existingTags: string[],
+		aiOpts?: AIRequestOptions
 	): Promise<TagCandidate[]> {
 		const settings = this.getSettings().enrichment;
 		const vocabulary = settings.tagVocabulary;
@@ -28,7 +30,8 @@ export class MetadataClassifier {
 		const aiResults = await this.getClassificationsFromAI(
 			noteContent,
 			vocabulary,
-			existingTags
+			existingTags,
+			aiOpts
 		);
 
 		// Validate against vocabulary — reject any hallucinated tags
@@ -79,7 +82,8 @@ export class MetadataClassifier {
 	private async getClassificationsFromAI(
 		noteContent: string,
 		vocabulary: TagVocabularyEntry[],
-		existingTags: string[]
+		existingTags: string[],
+		aiOpts?: AIRequestOptions
 	): Promise<Array<{ tag: string; confidence: number }>> {
 		const truncatedContent = noteContent.slice(0, 3000);
 
@@ -109,7 +113,7 @@ ${vocabDescription}
 			'You are a note classifier. Return only valid JSON arrays. No explanations. Only use tags from the provided vocabulary.';
 
 		try {
-			const response = await this.aiClient.complete(prompt, systemPrompt);
+			const response = await this.aiClient.complete(prompt, systemPrompt, aiOpts);
 			const sanitized = sanitizeAIResponse(response);
 			const cleaned = sanitized.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
 			const parsed = parseJson(cleaned);

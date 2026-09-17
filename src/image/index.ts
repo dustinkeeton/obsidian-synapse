@@ -3,8 +3,9 @@ import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
 	CheckpointManager, NoteOperationQueue, generateId, isPathExcluded, findMatchingRule,
+	trackAiCache, withCacheReport,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { ImageEmbed } from './types';
 import { ImageExtractor } from './extractor';
 
@@ -76,7 +77,8 @@ export class ImageModule implements FeatureModule {
 	): Promise<void> {
 		try {
 			const data = await this.plugin.app.vault.readBinary(file);
-			const result = await this.extractor.extract(data, file.name);
+			const use: CacheUse = {};
+			const result = await this.extractor.extract(data, file.name, trackAiCache(use));
 			const text = sanitizeAIResponse(result.text);
 
 			const ocrBlock = buildCallout(
@@ -88,7 +90,7 @@ export class ImageModule implements FeatureModule {
 
 			await this.plugin.app.vault.process(activeFile, (data) => data + ocrBlock);
 			this.onExtractionComplete?.(activeFile.path);
-			op.finish(`OCR of ${file.name} added to note`);
+			op.finish(withCacheReport(`OCR of ${file.name} added to note`, [use]));
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			op.error(`OCR extraction failed -- ${msg}`);
@@ -157,6 +159,7 @@ export class ImageModule implements FeatureModule {
 		// Queue insertions (keyed by original line) and apply them atomically
 		// against fresh content after all OCR completes.
 		const inserts: Array<{ line: number; block: string }> = [];
+		const cacheUses: CacheUse[] = [];
 
 		for (let i = 0; i < sorted.length; i++) {
 			if (op.cancelled) break;
@@ -168,7 +171,8 @@ export class ImageModule implements FeatureModule {
 			try {
 				op.progress(completed + 1, total, 'Extracting text from image');
 				const data = await this.plugin.app.vault.readBinary(embed.file);
-				const result = await this.extractor.extract(data, embed.fileName);
+				const use: CacheUse = {};
+				const result = await this.extractor.extract(data, embed.fileName, trackAiCache(use));
 				const text = sanitizeAIResponse(result.text);
 
 				const ocrBlock = buildCallout(
@@ -180,6 +184,7 @@ export class ImageModule implements FeatureModule {
 
 				// Insert after the embed line
 				inserts.push({ line: embed.line, block: ocrBlock });
+				cacheUses.push(use);
 
 				completed++;
 
@@ -215,7 +220,7 @@ export class ImageModule implements FeatureModule {
 			// Mark checkpoint completed and dispatch deferred tasks (I1)
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
-			op.finish(`Done -- ${completed}/${total} OCR extractions added`);
+			op.finish(withCacheReport(`Done -- ${completed}/${total} OCR extractions added`, cacheUses));
 		}
 	}
 

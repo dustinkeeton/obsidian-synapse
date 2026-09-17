@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-17
 ---
 
 # organize module
@@ -74,8 +74,8 @@ Batch loops (`scanDirectory`, `resumeFromCheckpoint`) take one slot per note, ne
 ```ts
 class ContentAnalyzer {
   constructor(app: App, getSettings: () => SynapseSettings)
-  analyze(file: TFile): Promise<ContentAnalysis>
-  extractTopics(body: string, tags: string[]): Promise<NoteTopic[]>
+  analyze(file: TFile, aiOpts?: AIRequestOptions): Promise<ContentAnalysis>          // aiOpts forwarded to extractTopics (#527)
+  extractTopics(body: string, tags: string[], aiOpts?: AIRequestOptions): Promise<NoteTopic[]>   // aiOpts reaches complete() inside withRetry
   parseTopicResponse(raw: string): NoteTopic[]
   topicsFromTags(tags: string[]): NoteTopic[]
 }
@@ -119,8 +119,8 @@ class DirectoryMatcher {
 ```
 organizeNote(file) / scanDirectory() / resumeFromCheckpoint()
   --> noteQueue.run(file.path, () => organizeFile(...))   [#483: slot held for the whole cycle]
-        organizeFile(file, batch?, batchProposedDirs?)    [queue-free core, index.ts:604]
-          --> ContentAnalyzer.analyze(file)  [AI: extract topics]
+        organizeFile(file, batch?, batchProposedDirs?, cacheUse?)    [queue-free core, index.ts:596]
+          --> ContentAnalyzer.analyze(file, trackAiCache(cacheUse))  [AI: extract topics; #527]
           --> DirectoryMatcher.determineAction(analysis, confidenceThreshold)
             if existing dir matches:
               --> OrganizeStore.saveSnapshot()  [undo backup]
@@ -163,10 +163,11 @@ scanDirectory(folderPath?, skipConfirmation?, onlyFile?)
   Phase 3: Checkpointed processing
     --> checkpointManager.create(module: 'organize', items)
     --> addDeferredTask('refresh-sidebar-view')
-    --> for each file: noteQueue.run(path, () => organizeFile(file, true, batchProposedDirs)),
-                       completeItem()          [#483: one slot per note, not per batch]
+    --> for each file: noteQueue.run(path, () => organizeFile(file, true, batchProposedDirs, cacheUse)),
+                       push cacheUse, completeItem()   [#483: one slot per note, not per batch]
     --> on cancel: checkpointManager.discard()
     --> on success: checkpointManager.complete(), dispatch deferred tasks
+    --> genOp.finish(withCacheReport(parts.join(', ') | 'No changes needed', cacheUses))   // one aggregated cache line (#527)
     --> writeOrganizeSummary() if any files moved
 
 resumeFromCheckpoint(checkpoint)
@@ -232,7 +233,7 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 ## Dependencies
 
-In: `shared/` (getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker, Checkpoint, CheckpointWorkItem, DeferredTask, MoveRecord — see `index.ts:4`), `settings.ts` (SynapseSettings), `commands.ts` (CommandRegistrar)
+In: `shared/` (getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, CacheUse, AIRequestOptions, openScanFolderPicker, Checkpoint, CheckpointWorkItem, DeferredTask, MoveRecord — see `index.ts:4`), `settings.ts` (SynapseSettings), `commands.ts` (CommandRegistrar)
 
 Out: `ContentAnalyzer` and `DirectoryMatcher` are re-exported for use by `deep-dive` (auto-organize nesting mode).
 
@@ -259,3 +260,4 @@ Out: `ContentAnalyzer` and `DirectoryMatcher` are re-exported for use by `deep-d
 | `batch-dedup.test.ts` | Batch directory coalescing (#172) |
 | `settings-section.test.ts` | Settings UI renderer |
 | `review-toast.test.ts` | Review toast notification |
+| `cache-report.test.ts` | #527 finish wording: single-note hit/miss, no-topics hit, directory-scan aggregate hit/miss |

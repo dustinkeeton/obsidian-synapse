@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-17
 ---
 
 # deep-dive module
@@ -78,8 +78,8 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 | File | Class/Function | Role |
 |------|---------------|------|
 | `index.ts` | `DeepDiveModule` (L51), `buildDeepDivePath` (L701) | Module entry point and public API |
-| `topic-analyzer.ts` | `TopicAnalyzer` (L10) | AI topic extraction; matches titles against included vault notes |
-| `note-generator.ts` | `NoteGenerator` (L8) | AI content generation for a topic given parent title+content |
+| `topic-analyzer.ts` | `TopicAnalyzer` (L10) | AI topic extraction; matches titles against included vault notes. `extractTopics(content, noteTitle, ancestorTopics, aiOpts?)` — `aiOpts` reaches `complete()` (#527) |
+| `note-generator.ts` | `NoteGenerator` (L8) | AI content generation for a topic given parent title+content. `generateContent(topic, sourceTitle, sourceContent, aiOpts?)` — `aiOpts` reaches `complete()` (#527) |
 | `quality-scorer.ts` | `scoreQuality` (L30) | Local heuristic scoring: topic count, word count, genericity, overlap, depth decay |
 | `syllabus-navigator.ts` | navigation utilities (L50+) | Traversal ordering, syllabus index, prev/next navigation blocks |
 | `deep-dive-store.ts` | `DeepDiveStore` (L36) | JSON persistence for proposals and runs |
@@ -91,17 +91,18 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 
 ## Dependency on `organize` module
 
-`deep-dive` imports `ContentAnalyzer` and `DirectoryMatcher` directly from `../organize` (the public barrel). These are used only in `auto-organize` nesting mode: `buildAutoOrganizedPath` calls `ContentAnalyzer.extractTopics(topicTitle, [])` to get topic labels, then passes a synthetic `ContentAnalysis` to `DirectoryMatcher.scoreDirectories`. Falls back to `buildDeepDivePath` (nested mode) on AI failure or low score.
+`deep-dive` imports `ContentAnalyzer` and `DirectoryMatcher` directly from `../organize` (the public barrel). These are used only in `auto-organize` nesting mode: `buildAutoOrganizedPath` calls `ContentAnalyzer.extractTopics(topicTitle, [], aiOpts)` to get topic labels (the proposal's `aiOpts`, #527), then passes a synthetic `ContentAnalysis` to `DirectoryMatcher.scoreDirectories`. Falls back to `buildDeepDivePath` (nested mode) on AI failure or low score.
 
-Note: `ContentAnalyzer.extractTopics` in the organize module takes `(body: string, tags: string[])`, not the same signature as `TopicAnalyzer.extractTopics` in this module.
+Note: `ContentAnalyzer.extractTopics` in the organize module takes `(body: string, tags: string[], aiOpts?: AIRequestOptions)`, not the same signature as `TopicAnalyzer.extractTopics` in this module.
 
 ## Data Flow
 
 ```
 deepDive(file)  [private, called by command]
   Phase 1: Extract topics
-    --> TopicAnalyzer.extractTopics(content, title, [])  [AI]
+    --> TopicAnalyzer.extractTopics(content, title, [], trackAiCache(scanUse))  [AI]
     --> filter new vs existing topics
+    --> scanOp.finish(withCacheReport('Found N topics (X new, Y existing)' | 'No topics found', [scanUse]))  (#527)
   Phase 2a: Select depth
     --> selectDepth(app, defaultDepth)  [DepthSelectorModal]
   Phase 2b: User confirmation
@@ -109,9 +110,10 @@ deepDive(file)  [private, called by command]
     --> checkpointManager.create(module: 'deep-dive', items: root topics)
     --> addDeferredTask('refresh-sidebar-view')
     for each topic in BFS queue:
-      --> NoteGenerator.generateContent(topic, parentTitle, parentContent)  [AI]
-      --> buildProposedPath(title, rootFile, parentProposedPath)
-      --> if depth < maxDepth: TopicAnalyzer.extractTopics(childContent)  [AI]
+      --> aiOpts = trackAiCache(cacheUse)   [one CacheUse per proposal, #527]
+      --> NoteGenerator.generateContent(topic, parentTitle, parentContent, aiOpts)  [AI]
+      --> buildProposedPath(title, rootFile, parentProposedPath, aiOpts)   [auto-organize mode only: AI]
+      --> if depth < maxDepth: TopicAnalyzer.extractTopics(childContent, ..., aiOpts)  [AI]
       --> scoreQuality({title, childTopics, wordCount, depth, ancestors})
       --> DeepDiveStore.saveProposal()
       --> checkpointManager.completeItem(checkpoint, 'topic-<title>')
@@ -119,7 +121,7 @@ deepDive(file)  [private, called by command]
     --> DeepDiveStore.saveRun()
     --> on cancel: checkpointManager.discard()
     --> on success: checkpointManager.complete(), dispatch deferred tasks
-    --> on success: genOp.finish(summary, reviewAction({generated, shouldAutoAccept, openProposalView}))  [Review button only if generated && !shouldAutoAccept() (#366); opens via onOpenProposalView]
+    --> on success: genOp.finish(withCacheReport(`Generated N proposals (depthSummary)`, cacheUses), reviewAction({generated, shouldAutoAccept, openProposalView}))  [Review button only if generated && !shouldAutoAccept() (#366); opens via onOpenProposalView]
     --> on error: checkpointManager.discard()
     --> maybeAutoAcceptRun(run.proposalIds)  [if shouldAutoAccept()]
 
@@ -241,7 +243,7 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 ## Dependencies
 
-In: `shared/` (NotificationManager, readNote, writeNote, wordCount, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, Checkpoint, CheckpointWorkItem, DeferredTask — see `index.ts:4`), `organize/` (ContentAnalyzer, DirectoryMatcher — auto-organize mode only), `settings.ts` (SynapseSettings, DeepDiveNestingMode), `commands/` (CommandRegistrar)
+In: `shared/` (NotificationManager, readNote, writeNote, wordCount, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, CacheUse, AIRequestOptions, Checkpoint, CheckpointWorkItem, DeferredTask — see `index.ts:4`), `organize/` (ContentAnalyzer, DirectoryMatcher — auto-organize mode only), `settings.ts` (SynapseSettings, DeepDiveNestingMode), `commands/` (CommandRegistrar)
 
 Out: Nothing consumed by other feature modules.
 
@@ -252,7 +254,7 @@ Out: Nothing consumed by other feature modules.
 | Note excluded by rule or excludeTag | `isExcluded` true -> info Notice naming the matched rule pattern; abort before any AI call (L251) |
 | Empty/unreadable note | info Notice "Could not read note content"; abort (L264) |
 | Topic extraction throws (Phase 1) | `scanOp.error(...)`; abort, no run created (L279) |
-| Zero topics found / all already in vault | `scanOp.finish('No topics found')` or info Notice; abort (L284, L295) |
+| Zero topics found / all already in vault | `scanOp.finish(withCacheReport('No topics found', [scanUse]))` or info Notice; abort (index.ts:280, index.ts:292) |
 | Depth modal dismissed / user declines confirm | info Notice "Deep dive cancelled"; abort (L302, L313) |
 | Child topic extraction throws (per-node) | caught; `childTopics = []`, score from content alone, recursion stops for that branch (L429) |
 | User cancels mid-generation (`genOp.cancelled`) | run.status='cancelled', `checkpointManager.discard`, info Notice; partial proposals stay saved (L500) |
@@ -284,4 +286,5 @@ Out: Nothing consumed by other feature modules.
 | `depth-selector-modal.test.ts` | DepthSelectorModal, selectDepth |
 | `auto-accept.test.ts` | Auto-accept flow (#228) |
 | `review-toast.test.ts` | Review completion-toast gate (#366) |
+| `cache-report.test.ts` | #527 finish wording: topic-scan hit/miss, no-topics hit, generation-run aggregate hit/miss |
 | `settings-section.test.ts` | Settings UI renderer |

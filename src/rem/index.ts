@@ -3,9 +3,9 @@ import { TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule } from '../shared';
-import type { DeferredTask, CheckpointWorkItem } from '../shared';
+import type { CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction } from '../shared';
+import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport } from '../shared';
 import { MentionScanner } from './mention-scanner';
 import { SemanticMatcher } from './semantic-matcher';
 import { RemApplier } from './rem-applier';
@@ -87,7 +87,7 @@ export class RemModule implements FeatureModule {
 	 * by confidence and capped at `maxLinksPerNote` (#380). Centralizes the scan
 	 * pipeline so single-note, directory, and resumed scans behave identically.
 	 */
-	private async gatherCandidates(file: TFile, content: string): Promise<RemLinkCandidate[]> {
+	private async gatherCandidates(file: TFile, content: string, cacheUse: CacheUse): Promise<RemLinkCandidate[]> {
 		const s = this.getSettings().rem;
 		// Phase 1 — literal title/alias matches, down-weighted from their raw 1.0 so a
 		// title coincidence can't automatically outrank a content-relevant link.
@@ -95,7 +95,7 @@ export class RemModule implements FeatureModule {
 			.map(c => ({ ...c, confidence: c.confidence * s.titleMatchWeight }));
 		// Phase 2 — semantic matching, always on, given the full link budget.
 		const already = new Set(literal.map(c => c.targetPath));
-		const semantic = (await this.semanticMatcher.match(file, content, already, s.maxLinksPerNote))
+		const semantic = (await this.semanticMatcher.match(file, content, already, s.maxLinksPerNote, trackAiCache(cacheUse)))
 			.filter(c => c.confidence >= s.confidenceThreshold);
 		// Merge, re-rank by confidence descending, then cap at the per-note budget.
 		return [...literal, ...semantic]
@@ -126,10 +126,11 @@ export class RemModule implements FeatureModule {
 
 		const content = await this.plugin.app.vault.read(tFile);
 
-		const allCandidates = await this.gatherCandidates(tFile, content);
+		const cacheUse: CacheUse = {};
+		const allCandidates = await this.gatherCandidates(tFile, content, cacheUse);
 
 		if (allCandidates.length === 0) {
-			this.notifications.info('No linkable mentions found');
+			this.notifications.info(withCacheReport('No linkable mentions found', [cacheUse]));
 			return null;
 		}
 
@@ -145,7 +146,7 @@ export class RemModule implements FeatureModule {
 		// Review action only when the proposal stays pending — auto-accept
 		// (applied right after) inserts the links, leaving nothing to review (#366).
 		this.notifications.success(
-			`Found ${allCandidates.length} linkable mention${allCandidates.length === 1 ? '' : 's'}`,
+			withCacheReport(`Found ${allCandidates.length} linkable mention${allCandidates.length === 1 ? '' : 's'}`, [cacheUse]),
 			undefined,
 			reviewAction({
 				generated: true,
@@ -205,6 +206,7 @@ export class RemModule implements FeatureModule {
 		let created = 0;
 		let autoAcceptedCount = 0;
 		const createdProposalIds: string[] = [];
+		const cacheUses: CacheUse[] = [];
 
 		try {
 			for (let i = 0; i < eligible.length; i++) {
@@ -214,7 +216,9 @@ export class RemModule implements FeatureModule {
 				op.progress(i + 1, eligible.length, `Scanning ${file.basename}`);
 
 				const content = await this.plugin.app.vault.read(file);
-				const allCandidates = await this.gatherCandidates(file, content);
+				const cacheUse: CacheUse = {};
+				const allCandidates = await this.gatherCandidates(file, content, cacheUse);
+				cacheUses.push(cacheUse);
 
 				if (allCandidates.length > 0) {
 					const proposal: RemProposal = {
@@ -249,7 +253,7 @@ export class RemModule implements FeatureModule {
 			// Review action only when something was generated AND REM auto-accept
 			// is off (#366) — the deep-dive rule, centralized.
 			op.finish(
-				`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions`,
+				withCacheReport(`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions`, cacheUses),
 				reviewAction({
 					generated: created > 0,
 					shouldAutoAccept: this.shouldAutoAccept,
@@ -276,6 +280,7 @@ export class RemModule implements FeatureModule {
 		);
 
 		const createdProposalIds: string[] = [];
+		const cacheUses: CacheUse[] = [];
 		let autoAcceptedCount = 0;
 
 		try {
@@ -302,7 +307,9 @@ export class RemModule implements FeatureModule {
 				}
 
 				const content = await this.plugin.app.vault.read(file);
-				const candidates = await this.gatherCandidates(file, content);
+				const cacheUse: CacheUse = {};
+				const candidates = await this.gatherCandidates(file, content, cacheUse);
+				cacheUses.push(cacheUse);
 
 				if (candidates.length > 0) {
 					const proposal: RemProposal = {
@@ -333,7 +340,7 @@ export class RemModule implements FeatureModule {
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
 			op.finish(
-				`Resumed -- generated ${createdProposalIds.length} proposals`,
+				withCacheReport(`Resumed -- generated ${createdProposalIds.length} proposals`, cacheUses),
 				reviewAction({
 					generated: createdProposalIds.length > 0,
 					shouldAutoAccept: this.shouldAutoAccept,

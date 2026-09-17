@@ -4,9 +4,9 @@ import { CommandRegistrar } from '../commands';
 import {
 	NotificationManager, readNote, writeNote, wordCount,
 	CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
-	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction,
+	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
+import type { AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { ContentAnalyzer, DirectoryMatcher } from '../organize';
 import { DeepDiveStore } from './deep-dive-store';
 import { NoteGenerator } from './note-generator';
@@ -267,8 +267,9 @@ export class DeepDiveModule implements FeatureModule {
 		);
 
 		let rootTopics: ExtractedTopic[];
+		const scanUse: CacheUse = {};
 		try {
-			rootTopics = await this.analyzer.extractTopics(content, file.basename, []);
+			rootTopics = await this.analyzer.extractTopics(content, file.basename, [], trackAiCache(scanUse));
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			scanOp.error(`Topic extraction failed -- ${msg}`);
@@ -276,15 +277,16 @@ export class DeepDiveModule implements FeatureModule {
 		}
 
 		if (rootTopics.length === 0) {
-			scanOp.finish('No topics found');
+			scanOp.finish(withCacheReport('No topics found', [scanUse]));
 			return;
 		}
 
 		const newTopics = rootTopics.filter(t => !t.existsInVault);
 		const existingTopics = rootTopics.filter(t => t.existsInVault);
-		scanOp.finish(
-			`Found ${rootTopics.length} topics (${newTopics.length} new, ${existingTopics.length} existing)`
-		);
+		scanOp.finish(withCacheReport(
+			`Found ${rootTopics.length} topics (${newTopics.length} new, ${existingTopics.length} existing)`,
+			[scanUse]
+		));
 
 		if (newTopics.length === 0) {
 			this.notifications.info('All topics already exist in vault -- nothing to generate');
@@ -381,6 +383,7 @@ export class DeepDiveModule implements FeatureModule {
 			}];
 
 			let processedCount = 0;
+			const cacheUses: CacheUse[] = [];
 
 			while (queue.length > 0 && processedCount < settings.maxNotesPerRun) {
 				if (genOp.cancelled) break;
@@ -395,16 +398,20 @@ export class DeepDiveModule implements FeatureModule {
 					genOp.progress(processedCount, settings.maxNotesPerRun, 'Generating deep dive');
 
 					// Generate content for this topic
+					const cacheUse: CacheUse = {};
+					const aiOpts = trackAiCache(cacheUse);
 					const noteContent = await this.generator.generateContent(
 						topic,
 						item.title,
-						item.content
+						item.content,
+						aiOpts
 					);
 
 					const proposedPath = await this.buildProposedPath(
 					topic.title,
 					file,
-					item.parentProposedPath
+					item.parentProposedPath,
+					aiOpts
 				);
 
 					// Score quality using child topics (extracted from generated content)
@@ -417,7 +424,8 @@ export class DeepDiveModule implements FeatureModule {
 							childTopics = await this.analyzer.extractTopics(
 								noteContent,
 								topic.title,
-								childAncestors
+								childAncestors,
+								aiOpts
 							);
 						} catch {
 							// If child extraction fails, score based on content alone
@@ -450,6 +458,7 @@ export class DeepDiveModule implements FeatureModule {
 					};
 
 					await this.store.saveProposal(proposal);
+					cacheUses.push(cacheUse);
 					run.proposalIds.push(proposal.id);
 					run.stats.totalProposals++;
 					run.stats.byDepth[item.depth] = (run.stats.byDepth[item.depth] || 0) + 1;
@@ -507,7 +516,7 @@ export class DeepDiveModule implements FeatureModule {
 				// auto-accept is off — auto-accept (applied right after) creates
 				// every note, leaving nothing to review (#366).
 				genOp.finish(
-					`Generated ${run.stats.totalProposals} proposals (${depthSummary})`,
+					withCacheReport(`Generated ${run.stats.totalProposals} proposals (${depthSummary})`, cacheUses),
 					reviewAction({
 						generated: run.stats.totalProposals > 0,
 						shouldAutoAccept: this.shouldAutoAccept,
@@ -599,13 +608,14 @@ export class DeepDiveModule implements FeatureModule {
 	private async buildProposedPath(
 		topicTitle: string,
 		rootFile: TFile,
-		parentProposedPath?: string
+		parentProposedPath?: string,
+		aiOpts?: AIRequestOptions
 	): Promise<string> {
 		const settings = this.getSettings().deepDive;
 		const mode = settings.nestingMode || 'nested';
 
 		if (mode === 'auto-organize') {
-			return this.buildAutoOrganizedPath(topicTitle, rootFile, parentProposedPath);
+			return this.buildAutoOrganizedPath(topicTitle, rootFile, parentProposedPath, aiOpts);
 		}
 
 		return buildDeepDivePath(topicTitle, rootFile, settings, parentProposedPath);
@@ -619,13 +629,15 @@ export class DeepDiveModule implements FeatureModule {
 	private async buildAutoOrganizedPath(
 		topicTitle: string,
 		rootFile: TFile,
-		parentProposedPath?: string
+		parentProposedPath?: string,
+		aiOpts?: AIRequestOptions
 	): Promise<string> {
 		const settings = this.getSettings().deepDive;
 		try {
 			const topics = await this.contentAnalyzer.extractTopics(
 				topicTitle,
-				[]
+				[],
+				aiOpts
 			);
 
 			if (topics.length > 0) {

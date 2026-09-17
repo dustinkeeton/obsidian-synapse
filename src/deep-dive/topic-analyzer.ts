@@ -1,6 +1,7 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AIClient, isRecord, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles } from '../shared';
+import type { AIRequestOptions } from '../shared';
 import { ExtractedTopic } from './types';
 
 /**
@@ -26,7 +27,8 @@ export class TopicAnalyzer {
 	async extractTopics(
 		content: string,
 		noteTitle: string,
-		ancestorTopics: string[]
+		ancestorTopics: string[],
+		aiOpts?: AIRequestOptions
 	): Promise<ExtractedTopic[]> {
 		const systemPrompt = `You are a knowledge graph analyst. Given a note's content, extract the most important sub-topics that deserve their own dedicated notes. Each topic should be specific enough to warrant a full note, not too broad or too narrow.
 
@@ -46,7 +48,7 @@ Respond ONLY with a JSON array, no markdown fencing:
 Content:
 ${content.slice(0, 4000)}`;
 
-		const response = await this.aiClient.complete(userPrompt, systemPrompt);
+		const response = await this.aiClient.complete(userPrompt, systemPrompt, aiOpts);
 		const topics = this.parseTopics(response);
 		return this.matchVaultNotes(topics);
 	}
