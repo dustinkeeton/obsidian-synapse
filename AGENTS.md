@@ -67,7 +67,7 @@ main.ts
   |-- shared/     (base layer: depends on NO feature module; owns url-detector; ONE type-only edge to commands/ — CommandRegistrar in feature-module.ts, erased at compile time)
   |-- pipeline/ --> commands/ (isPipelineKeyInFlow), shared/ (fireAndForget); modules injected via PipelineModuleMap / PostOpHookDeps
   |-- views/ --> type-only: elaboration, enrichment, organize, deep-dive, title, rem, shared (Checkpoint, NotificationManager), commands (CommandDefinition, FeatureKey);
-  |            runtime: shared (fireAndForget, views/unified-proposal-view.ts:9 + views/view-activation.ts:2), commands (FEATURE_ICONS, views/synapse-actions-view.ts:3; REGISTRY_BY_ID, views/command-runner.ts:3), obsidian MarkdownView (views/command-runner.ts:1)
+  |            runtime: shared (fireAndForget, views/unified-proposal-view.ts:9 + views/view-activation.ts:2 + views/command-runner.ts:4), commands (FEATURE_ICONS, views/synapse-actions-view.ts:3; REGISTRY_BY_ID, views/command-runner.ts:3), obsidian MarkdownView (views/command-runner.ts:1)
   |-- elaboration/ --> shared/, commands/, image/ (ImageAnalyzer uses shared AIClient + image/preprocessImage)
   |-- audio/ --> shared/, commands/; type-only edge to video/ (`import type { AudioExtractor }` — erased at compile time, no runtime cycle)
   |-- video/ --> shared/ (CheckpointManager, url-detector), commands/, audio/ (reuses transcription pipeline; runtime value edge)

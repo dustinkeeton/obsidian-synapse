@@ -104,7 +104,7 @@ function refreshUnifiedView(workspace: Workspace, sources: UnifiedViewSources): 
 
 // command-runner.ts:7 — active file iff extension === 'md' (survives the actions sidebar stealing focus)
 function activeMarkdownFile(app: App): TFile | null
-// command-runner.ts:17 — executeCommandById(`${pluginId}:${id}`); context:'note' commands re-activate the note's markdown leaf first, or notice when no note is active
+// command-runner.ts:26 — context:'note': invoke the registered command's editorCallback(view.editor, view) directly with the active file's MarkdownView (no setActiveLeaf/focus change; rejection -> fireAndForget), or notice when no note is active; everything else (and unresolvable note handlers) -> executeCommandById(`${pluginId}:${id}`) (#352)
 function runRegisteredCommand(app: App, pluginId: string, id: string, notifications: NotificationManager): void
 ```
 
@@ -117,7 +117,7 @@ function runRegisteredCommand(app: App, pluginId: string, id: string, notificati
 | `types.ts` | `PROPOSAL_KINDS`, `ProposalKind`, `UnifiedItem`, `UnifiedViewCallbacks` | View type defs; compile-time guard binds `PROPOSAL_KINDS` to `UnifiedItem['kind']` |
 | `proposal-styles.ts` | `SYNAPSE_COLOR_TOKENS`, `FEATURE_COLOR_TOKENS`, `cardClass`, `badgeClass`, `reviewPaneLabelClass`, `actionsGroupClass` | Semantic color tokens + BEM class helpers |
 | `view-activation.ts` | `activateUnifiedView`, `activateSynapseActionsView`, `refreshUnifiedView`, `UnifiedViewSources` | Sidebar reveal/create (private `revealSidebarView`, `:26`) + unified-view data push |
-| `command-runner.ts` | `activeMarkdownFile`, `runRegisteredCommand` | Actions-sidebar dispatch through Obsidian `executeCommandById` with note-context restoration |
+| `command-runner.ts` | `activeMarkdownFile`, `runRegisteredCommand` | Actions-sidebar dispatch: direct `editorCallback` invocation for `context: 'note'` commands, Obsidian `executeCommandById` otherwise |
 | `index.ts` | barrel re-export of all the above | Public surface |
 | `*.test.ts` (5 files) | tests | `unified-proposal-view`, `synapse-actions-view`, `proposal-styles`, `view-activation`, `command-runner` |
 
@@ -226,12 +226,12 @@ Activation entry points: ribbon `synapse` and every module's `onOpenProposalView
 | `TitleProposal`, `TitleDuplicateStrategy` | `../title` | type only |
 | `RemProposal` | `../rem` | type only |
 | `Checkpoint`, `NotificationManager` | `../shared` | type only |
-| `fireAndForget` | `../shared` | runtime value (`unified-proposal-view.ts:9`, `view-activation.ts:2`) |
+| `fireAndForget` | `../shared` | runtime value (`unified-proposal-view.ts:9`, `view-activation.ts:2`, `command-runner.ts:4`) |
 | `CommandDefinition`, `FeatureKey` | `../commands` | type only |
 | `FEATURE_ICONS` | `../commands` | runtime value (`synapse-actions-view.ts:3`) |
 | `REGISTRY_BY_ID` | `../commands` | runtime value (`command-runner.ts:3`) |
 | `MarkdownView` | `obsidian` | runtime value (`command-runner.ts:1`) |
-| `App`, `TFile`, `Workspace` | `obsidian` | type only (`command-runner.ts:2`, `view-activation.ts:1`) |
+| `App`, `Command`, `TFile`, `Workspace` | `obsidian` | type only (`command-runner.ts:2`, `view-activation.ts:1`) |
 
 The six proposal feature modules are imported as TYPES ONLY (no runtime feature-module code in the view layer). Runtime imports are limited to `fireAndForget` (shared), `FEATURE_ICONS` + `REGISTRY_BY_ID` (commands), and Obsidian's `ItemView`/`setIcon`/`MarkdownView`.
 
