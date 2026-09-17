@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-09-17
 ---
 
 # Summarize Module
@@ -248,6 +248,7 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 |-----------|----------|
 | Missing video dep (yt-dlp/ffmpeg) | `DependencyMissingError` matched by `name` through the `cause` chain (`findDependencyMissingError`); shows an actionable "Open settings" notice that reveals the Video section (#382) |
 | Media URL transcription fails (no tier, captions unavailable, mobile) | `MediaTranscriptionError` -> `linkLoadError(source, reason)` notice carrying the router's platform-aware message; NO summary callout for that target; in the combined path the whole combined callout is withheld (#488) |
+| Media has no speech (#524) | `NoSpeechDetectedError` matched by `name` through the `cause` chain (`findErrorByName`); `notifications.info(message)`, target skipped, no summary written |
 | URL fetch throws | `notifyTargetError` -> `linkLoadError(source, reason)` persistent notice; target skipped |
 | Fetch returns empty text | `linkLoadError(source, 'page returned no readable text')`; target skipped |
 | Audio file not found in vault | throws `Audio file not found in vault: <name>` |

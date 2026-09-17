@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-09-17
 ---
 
 # Audio Module
@@ -16,8 +16,8 @@ class AudioModule {
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
-  transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>   // options.update receives "Post-processing (n/total)" for sectioned runs (#467)
-  processTranscriptText(raw: string, opts?: PostProcessOptions): Promise<{ text: string; reformatted?: boolean; schemaId?: string }>   // caption-tier seam (#184); sanitize -> PostProcessor -> schema reformat; failures propagate
+  transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>   // options.update receives "Post-processing (n/total)" for sectioned runs (#467); throws NoSpeechDetectedError (#524) before any AI call
+  processTranscriptText(raw: string, opts?: PostProcessOptions): Promise<{ text: string; reformatted?: boolean; schemaId?: string }>   // caption-tier seam (#184); sanitize -> PostProcessor -> schema reformat; failures propagate; blank input -> zero AI calls, returned unchanged (#524)
   transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void>   // queued on the active note (#483)
   transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // queued on noteFile (#483)
   transcribeAndInsertCombined(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // #214; queued on noteFile (#483); <2 embeds falls back to transcribeAndInsert; ffmpeg concat (desktop) or per-file text merge (mobile) -> one combined callout
@@ -36,7 +36,7 @@ function buildMultipartBody(
 const GEMINI_MAX_INLINE_AUDIO_BYTES: number      // 15 MB raw ceiling for Gemini inline transcription (20 MB request cap / ~4/3 base64 inflation)
 class Transcriber {
   constructor(getSettings: () => SynapseSettings)
-  transcribe(audioData: ArrayBuffer, fileName: string): Promise<TranscriptionResult>   // routes by audio.transcriptionProvider
+  transcribe(audioData: ArrayBuffer, fileName: string): Promise<TranscriptionResult>   // routes by audio.transcriptionProvider; throws NoSpeechDetectedError for a speechless transcript (#524)
 }
 
 const AUDIO_EXTENSIONS: RegExp   // /\.(mp3|wav|m4a|ogg|flac|webm|aac)$/i
@@ -61,7 +61,7 @@ interface PostProcessOptions { update?: (message: string) => void }          // 
 interface PostProcessorDeps { notify?: (message: string) => void; delayMs?: number }   // notify = single end-of-run notice; delayMs default 2000
 class PostProcessor {
   constructor(getSettings: () => SynapseSettings, deps?: PostProcessorDeps)
-  process(rawTranscript: string, opts?: PostProcessOptions): Promise<string>   // fits ai.maxTokens -> one call as before; over -> sectioned (#467)
+  process(rawTranscript: string, opts?: PostProcessOptions): Promise<string>   // !isWorthPostProcessing(raw) -> returns input, zero AI calls (#524); fits ai.maxTokens -> one call; over -> sectioned (#467)
 }
 
 // transcript-segmenter.ts (module-internal, pure)
@@ -79,7 +79,8 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 | `transcriber.ts` | `Transcriber`, `buildMultipartBody`, `GEMINI_MAX_INLINE_AUDIO_BYTES` | Provider-routed transcription (Whisper, Deepgram, Gemini, local stub) over `requestUrl`; manual multipart with sanitized headers (internal `sanitizeMultipartHeaderValue`, `geminiMimeType`); Gemini text via shared `extractGeminiResponseText` |
 | `transcriber.test.ts` | Tests | Transcriber + multipart + provider routing tests |
 | `post-processor.ts` | `PostProcessor`, `PostProcessOptions`, `PostProcessorDeps` | AI transcript cleanup via `AIClient`; transcripts over `ai.maxTokens` run in sections (#467) |
-| `post-processor.test.ts` | Tests | Single-call path, sectioning, overlap trim, raw fallback, progress, key points, inter-call delay |
+| `no-speech.test.ts` | Tests | `AudioModule` no-speech paths (#524): zero AI calls, note untouched, notices, batch/combined partial results |
+| `post-processor.test.ts` | Tests | Blank/short-input guard (#524), single-call path, sectioning, overlap trim, raw fallback, progress, key points, inter-call delay |
 | `transcript-segmenter.ts` | `segmentTranscript`, `trimRepeatedContext`, `TranscriptSegment` | Pure boundary-aware splitter used by `PostProcessor` |
 | `transcript-segmenter.test.ts` | Tests | Boundary selection, budget, round-trip, overlap context |
 | `settings-section.ts` | `renderAudioSettings` | Audio settings UI section |
@@ -113,8 +114,16 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
    |       Instruction in system_instruction (prompt-injection hardening); text via extractGeminiResponseText()
    |       Key: audio.geminiApiKey || ai.apiKey
    |  'local-whisper' --> throws (not implemented)
+   |  No speech (#524) --> NoSpeechDetectedError, never a result:
+   |       every provider: !hasSpeechContent(transcript)
+   |       whisper verbose_json only (whisper-1): every segment no_speech_prob >= 0.8
+   |       gemini: reply is the `[NO_SPEECH]` sentinel the system instruction asks for, or finishReason STOP with no parts
+   |  AudioModule.transcribe re-checks after sanitizeAIResponse, before post-processing
+   |  Write sites: single-file / combined -> op.finish(noSpeechNotice(...)), no vault.process, no onTranscriptionComplete;
+   |       batch + per-file merge -> notifications.info per silent file, the rest still inserted
    |
 4. PostProcessor.process(rawTranscript, { update })  [if postProcess !== false]
+   |  !isWorthPostProcessing(raw) -> return raw, no AI call (#524)
    |  Builds instructions from settings flags
    |  ceil(chars/4) <= ai.maxTokens: one AIClient.complete() call, sanitizeAIResponse() on output
    |  otherwise (#467): segmentTranscript(text, maxTokens*0.6*4 chars, 10% overlap) -> one call per section,
@@ -135,13 +144,13 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 
 | Public entry point | Queue key | Private core |
 |---|---|---|
-| `transcribeFileToActiveNote(file, timeRange?)` | active note path | `insertFileTranscription(activeFile, file, op, timeRange?)` (index.ts:L194) |
-| `transcribeAndInsert(noteFile, embeds)` | `noteFile.path` | `insertTranscriptions(noteFile, embeds, op)` (index.ts:L282) |
-| `transcribeAndInsertCombined(noteFile, embeds)` | `noteFile.path` (2+ embeds only) | `insertCombinedTranscription(noteFile, embeds, op)` (index.ts:L413) |
+| `transcribeFileToActiveNote(file, timeRange?)` | active note path | `insertFileTranscription(activeFile, file, op, timeRange?)` (index.ts:L200) |
+| `transcribeAndInsert(noteFile, embeds)` | `noteFile.path` | `insertTranscriptions(noteFile, embeds, op)` (index.ts:L287) |
+| `transcribeAndInsertCombined(noteFile, embeds)` | `noteFile.path` (2+ embeds only) | `insertCombinedTranscription(noteFile, embeds, op)` (index.ts:L420) |
 
-- `private queued<T>(file, op, run)` (index.ts:L83) wraps `noteQueue.run(file.path, run, { onWait })`; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (audio commands are user-invoked, so a wait is surfaced).
-- `transcribeAndInsertCombined` with `<2` embeds short-circuits to the PUBLIC `transcribeAndInsert` BEFORE acquiring (index.ts:L398), so the slot is still taken exactly once.
-- The combined-transcription fallbacks call `insertTranscriptions` DIRECTLY (index.ts:L445) — they already hold the note's slot, and re-entering would self-deadlock.
+- `private queued<T>(file, op, run)` (index.ts:L87) wraps `noteQueue.run(file.path, run, { onWait })`; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (audio commands are user-invoked, so a wait is surfaced).
+- `transcribeAndInsertCombined` with `<2` embeds short-circuits to the PUBLIC `transcribeAndInsert` BEFORE acquiring (index.ts:L406), so the slot is still taken exactly once.
+- The combined-transcription fallbacks call `insertTranscriptions` DIRECTLY (index.ts:L451) — they already hold the note's slot, and re-entering would self-deadlock.
 - `transcribe(audioData, fileName, options?)` is queue-free: it takes bytes, not a note, and is also called by `VideoModule.processUrl()`.
 
 ## Note Scanning
@@ -159,10 +168,10 @@ All under `settings.audio` (interface `AudioSettings`, `settings.ts:93`; default
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `enabled` | boolean | `true` | Feature toggle for the audio module |
-| `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'gemini' \| 'local-whisper'` | `'whisper-api'` | Transcription backend (routed in `transcriber.ts:L270`) |
-| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey`, `transcriber.ts:L287`) |
+| `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'gemini' \| 'local-whisper'` | `'whisper-api'` | Transcription backend (routed in `transcriber.ts:L294`) |
+| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey`, `transcriber.ts:L313`) |
 | `deepgramApiKey` | string | `''` | Deepgram API key (no fallback) |
-| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey`, `transcriber.ts:L392`) |
+| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey`, `transcriber.ts:L426`) |
 | `transcriptionModel` | string | `'whisper-1'` | Model for the active provider; resolved against `TRANSCRIPTION_MODEL_OPTIONS` (`transcription-models.ts`) |
 | `localWhisperPath` | string | `''` | Reserved for `local-whisper` CLI path (provider not implemented) |
 | `language` | string | `''` | Language hint; empty = auto-detect |

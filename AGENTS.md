@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-09-17
 ---
 
 # Synapse — Agent Reference
@@ -96,6 +96,7 @@ Key constraints:
 - `transcription` owns the URL-transcription tier router (#184: `CaptionStrategy` on every platform, `LocalExtractionStrategy` desktop-only via an injected `VideoModule.processUrl` delegate) plus the modals; media decoding/AI work stays in `audio`, `video`, `image`
 - `summarize` has NO static import of `video` or `transcription`; URL-platform helpers (`isSupportedUrl`/`detectPlatform`) resolve from `shared/url-detector`. It receives a URL-transcription callback (delegating to `UrlTranscriptionRouter.transcribe`, on every platform) and an audio transcribe callback via constructor injection. A router-supported media URL is only ever transcribed — never page-fetched — and a failed transcription inserts no summary (#488)
 - Every URL-transcription path (unified modal, note-media batch, summarize, intake) shares ONE `UrlTranscriptionRouter` constructed over `SynapsePlugin.transcriptCache` (`shared/transcript-cache.ts`, #488): tier results are written through and later requests for the same canonical URL (+ time range) are served from the store unless `forceRefresh` is set
+- No speech is a typed outcome (#524): `NoSpeechDetectedError` (`shared/no-speech.ts`) is thrown at the `Transcriber` seam and re-checked by `AudioModule.transcribe`, the extraction tier, and the router; write sites notify and write nothing, the transcript store never receives it, and blank transcripts never reach an AI prompt
 - `deep-dive` reuses `organize` for auto-organize nesting mode
 - `image` module uses multi-modal `AIClient.chat()` with `ContentBlock[]` for vision
 - `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
