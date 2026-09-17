@@ -277,6 +277,53 @@ describe('TidyModule', () => {
 		});
 	});
 
+	describe('cache reporting (#527)', () => {
+		type Complete = (prompt: string, system?: string, opts?: { onCacheHit?: () => void }) => Promise<string>;
+
+		function replayFor(paths: string[]): void {
+			let current = '';
+			mockPlugin.app.vault.read.mockImplementation((f) => {
+				current = f.path;
+				return Promise.resolve('# Test\n\nSome contnt with typos.');
+			});
+			const client = (module as unknown as { aiClient: { complete: Mock<Complete> } }).aiClient;
+			client.complete.mockImplementation((_prompt, _system, opts) => {
+				if (paths.includes(current)) opts?.onCacheHit?.();
+				return Promise.resolve('# Test\n\nSome content.');
+			});
+		}
+
+		it('says a single tidy replayed a cached AI response', async () => {
+			replayFor(['notes/test.md']);
+
+			await module.tidy(tfile('notes/test.md'));
+
+			expect(mockNotifications._handle.finish).toHaveBeenCalledWith('Note tidied — used a cached AI response');
+		});
+
+		it('aggregates a batch into one line and keeps the per-note toasts plain', async () => {
+			const files = ['Inbox/a.md', 'Inbox/b.md', 'Inbox/c.md'].map((p) => new TFile(p));
+			mockPlugin.app.vault.getMarkdownFiles = vi.fn().mockReturnValue(files);
+			replayFor(['Inbox/a.md', 'Inbox/c.md']);
+
+			await module.scanVault('Inbox', true);
+
+			const finishes = mockNotifications._handle.finish.mock.calls.map((c) => c[0] as string);
+			expect(finishes).toEqual([
+				'Note tidied', 'Note tidied', 'Note tidied',
+				'Tidied 3 notes — 2 of 3 served from cache',
+			]);
+		});
+
+		it('keeps the batch message unchanged when nothing was replayed', async () => {
+			mockPlugin.app.vault.getMarkdownFiles = vi.fn().mockReturnValue([new TFile('Inbox/a.md'), new TFile('Inbox/b.md')]);
+
+			await module.scanVault('Inbox', true);
+
+			expect(mockNotifications._handle.finish).toHaveBeenLastCalledWith('Tidied 2 notes');
+		});
+	});
+
 	describe('undoTidy', () => {
 		it('restores original content from snapshot', async () => {
 			const file = tfile('notes/test.md');

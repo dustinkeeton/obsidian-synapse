@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-09-17
 ---
 
 # Elaboration Module
@@ -69,7 +69,7 @@ private applyProposal(id: string, editedContent?: string, options?: { silent?: b
 // proposer.ts (NOT re-exported from index.ts; consumed internally by index.ts)
 class ProposalGenerator {
   constructor(app: App, getSettings: () => SynapseSettings, notifications: NotificationManager, contextBudgetChars?: number)   // default DEFAULT_CONTEXT_BUDGET_CHARS (6000); test seam
-  generate(detection: DetectionResult, precomputedKey?: string): Promise<Proposal | null>
+  generate(detection: DetectionResult, precomputedKey?: string, aiOpts?: AIRequestOptions): Promise<Proposal | null>   // aiOpts reaches the proposal call AND image analysis (#527)
 }
 const DEFAULT_CONTEXT_BUDGET_CHARS = 6000
 function proposalContentKey(
@@ -222,7 +222,7 @@ guardProposal(detection: DetectionResult): Promise<
 class ImageAnalyzer {
   constructor(app: App, getSettings: () => SynapseSettings, notifications: NotificationManager)
   findImageReferences(content: string): Array<{ reference: string; path: string; isInternal: boolean }>
-  analyzeImagesInNote(notePath: string, content: string): Promise<ImageAnalysis[]>
+  analyzeImagesInNote(notePath: string, content: string, aiOpts?: AIRequestOptions): Promise<ImageAnalysis[]>
   parseAnalysisResponse(reference: string, response: string): ImageAnalysis
 }
 
