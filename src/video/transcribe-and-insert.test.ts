@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import { TFile } from '../__mocks__/obsidian';
 import { VideoModule } from './index';
-import { NoteOperationQueue } from '../shared';
+import { NoSpeechDetectedError, NoteOperationQueue } from '../shared';
 import type { VideoUrlEmbed } from './types';
 import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 
@@ -111,6 +111,21 @@ describe('VideoModule.transcribeAndInsert tier routing (#184)', () => {
 
 		expect(notifications.notifyError).toHaveBeenCalled();
 		expect(store.get(noteFile.path)).toBe(before);
+	});
+
+	it('leaves the note untouched and shows a no-speech notice for a silent video (#524)', async () => {
+		const { mod, store, noteFile, notifications } = makeModule();
+		const before = store.get(noteFile.path);
+		const onComplete = vi.fn();
+		mod.onTranscriptionComplete = onComplete;
+		mod.urlTranscriber = vi.fn().mockRejectedValue(new NoSpeechDetectedError());
+
+		await mod.transcribeAndInsert(noteFile as never, [embed(1)]);
+
+		expect(store.get(noteFile.path)).toBe(before);
+		expect(onComplete).not.toHaveBeenCalled();
+		expect(notifications.notifyError).not.toHaveBeenCalled();
+		expect(notifications.info).toHaveBeenCalledWith(`No speech detected in ${URL} — nothing to transcribe`);
 	});
 
 	it('falls back to direct extraction when no transcriber is wired', async () => {

@@ -6,6 +6,7 @@ import {
 	buildUrlTranscriptBlock,
 } from './url-transcription';
 import type { UrlTranscript, UrlTranscriptionStrategy, TranscriptStore } from './url-transcription';
+import { NoSpeechDetectedError } from '../shared';
 import type { TranscriptCacheEntry } from '../shared';
 
 const URL = 'https://www.youtube.com/watch?v=abc123xyz00';
@@ -173,6 +174,34 @@ describe('UrlTranscriptionRouter transcript store (#488)', () => {
 
 		expect(tier.transcribe).toHaveBeenCalledOnce();
 		expect(cache.put).toHaveBeenCalledWith(URL, expect.anything(), timeRange);
+	});
+
+	it('stores nothing when a tier reports no speech (#524)', async () => {
+		const cache = store();
+		const noSpeech = new NoSpeechDetectedError();
+		const router = new UrlTranscriptionRouter([strategy('local-extraction', { error: noSpeech })], cache);
+
+		await expect(router.transcribe(URL)).rejects.toBe(noSpeech);
+		expect(cache.put).not.toHaveBeenCalled();
+	});
+
+	it('never stores or returns text invented over a blank raw transcript (#524)', async () => {
+		const cache = store();
+		const fabricated = transcript({ raw: '  ', text: 'Quarterly business review: revenue grew 12%.' });
+		const router = new UrlTranscriptionRouter([strategy('local-extraction', { result: fabricated })], cache);
+
+		await expect(router.transcribe(URL)).rejects.toBeInstanceOf(NoSpeechDetectedError);
+		expect(cache.put).not.toHaveBeenCalled();
+	});
+
+	it('ignores a stored entry whose raw transcript is blank (#524)', async () => {
+		const tier = strategy('captions', { result: transcript({ text: 'fresh' }) });
+		const cache = store({ [URL]: { url: URL, text: 'invented', raw: '', source: 'local-extraction', fetchedAt: 1, lastUsedAt: 1 } });
+
+		const result = await new UrlTranscriptionRouter([tier], cache).transcribe(URL);
+
+		expect(tier.transcribe).toHaveBeenCalledOnce();
+		expect(result.text).toBe('fresh');
 	});
 
 	it('stores nothing when every tier is exhausted', async () => {

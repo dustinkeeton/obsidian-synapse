@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TFile } from '../__mocks__/obsidian';
-import { insertUrlTranscript } from './insert-url-transcript';
+import { appendUrlTranscript, insertUrlTranscript } from './insert-url-transcript';
 import { UrlTranscriptionRouter } from './url-transcription';
 import type { UrlTranscript, UrlTranscriptionStrategy, TranscriptStore } from './url-transcription';
 import { DEFAULT_SETTINGS } from '../settings';
-import { NoteOperationQueue } from '../shared';
+import { NoSpeechDetectedError, NoteOperationQueue } from '../shared';
 import type { NotificationManager, TranscriptCacheEntry } from '../shared';
 
 const URL = 'https://www.youtube.com/watch?v=abc123xyz00';
@@ -80,5 +80,45 @@ describe('insertUrlTranscript transcript reuse (#488)', () => {
 		expect(content()).toContain('> new');
 		expect(op.finish).toHaveBeenCalledWith('Transcription added to note');
 		expect((await store.get(URL))?.text).toBe('new');
+	});
+});
+
+describe('no-speech outcome (#524)', () => {
+	function silentTier(): UrlTranscriptionStrategy {
+		return { id: 'local-extraction', canHandle: () => true, transcribe: () => Promise.reject(new NoSpeechDetectedError()) };
+	}
+
+	it('insertUrlTranscript leaves the note untouched, stores nothing, and shows a notice', async () => {
+		const store = memoryStore();
+		const { deps, op, content } = makeDeps(new UrlTranscriptionRouter([silentTier()], store));
+		const onComplete = vi.fn();
+
+		await insertUrlTranscript({ ...deps, onComplete }, URL);
+
+		expect(content()).toBe('# Note\n');
+		expect(onComplete).not.toHaveBeenCalled();
+		expect(await store.get(URL)).toBeNull();
+		expect(op.error).not.toHaveBeenCalled();
+		expect(op.finish).toHaveBeenCalledWith('No speech detected in this video — nothing to transcribe');
+	});
+
+	it('appendUrlTranscript resolves without writing so intake does not retry a silent video', async () => {
+		const { deps, op, content } = makeDeps(new UrlTranscriptionRouter([silentTier()], memoryStore()));
+
+		await expect(appendUrlTranscript(deps, URL, new TFile('Intake/a.md') as never)).resolves.toBeUndefined();
+
+		expect(content()).toBe('# Note\n');
+		expect(op.error).not.toHaveBeenCalled();
+		expect(op.finish).toHaveBeenCalledWith('No speech detected in this video — nothing to transcribe');
+	});
+
+	it('appendUrlTranscript still rethrows any other failure', async () => {
+		const failing: UrlTranscriptionStrategy = {
+			id: 'local-extraction', canHandle: () => true, transcribe: () => Promise.reject(new Error('status 500')),
+		};
+		const { deps, op } = makeDeps(new UrlTranscriptionRouter([failing], memoryStore()));
+
+		await expect(appendUrlTranscript(deps, URL, new TFile('Intake/a.md') as never)).rejects.toThrow('status 500');
+		expect(op.error).toHaveBeenCalled();
 	});
 });

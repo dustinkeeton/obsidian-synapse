@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { TFile } from '../__mocks__/obsidian';
 import { VideoModule } from './index';
-import { NoteOperationQueue } from '../shared';
+import { NoSpeechDetectedError, NoteOperationQueue } from '../shared';
 import { DependencyMissingError } from './audio-extractor';
 import type { VideoMetadata } from './types';
 import { makeModuleDeps } from '../__test-utils__/mock-factories';
@@ -219,5 +219,61 @@ describe('VideoModule.processUrl dependency-error preservation (#382)', () => {
 		expect(thrown).toBeInstanceOf(Error);
 		expect(thrown).not.toBeInstanceOf(DependencyMissingError);
 		expect((thrown as Error).message).toMatch(/Download\/audio extraction failed: boom/);
+	});
+});
+
+describe('VideoModule.processUrl no-speech preservation (#524)', () => {
+	let audioPath: string;
+
+	beforeEach(async () => {
+		audioPath = path.join(os.tmpdir(), `synapse-video-test-te-524-${Date.now()}.mp3`);
+		await fs.promises.writeFile(audioPath, Buffer.from('silence'));
+	});
+
+	afterEach(async () => {
+		try { await fs.promises.unlink(audioPath); } catch { /* removed by the unit under test */ }
+	});
+
+	function makeModule(transcribe: ReturnType<typeof vi.fn>): VideoModule {
+		const getSettings = () =>
+			({ video: { enabled: true, downloadFolder: '', tempFolder: '.synapse/temp' } }) as never;
+		const mod = new VideoModule(
+			makeModuleDeps({
+				plugin: { app: {} } as never,
+				getSettings,
+				notifications: {} as never,
+				checkpointManager: {} as never,
+				registrar: {} as never,
+				noteQueue: new NoteOperationQueue(),
+			}),
+			{ transcribe } as never
+		);
+		(mod as unknown as { extractor: { extractFromUrl: ReturnType<typeof vi.fn> } }).extractor = {
+			extractFromUrl: vi.fn().mockResolvedValue({ audioPath, metadata: { title: 'Silent clip' } }),
+		};
+		return mod;
+	}
+
+	it('rethrows NoSpeechDetectedError unchanged and removes the temp audio', async () => {
+		const noSpeech = new NoSpeechDetectedError();
+		const mod = makeModule(vi.fn().mockRejectedValue(noSpeech));
+
+		const thrown = await mod
+			.processUrl('https://www.tiktok.com/@user/video/123')
+			.catch((e: unknown) => e);
+
+		expect(thrown).toBe(noSpeech);
+		expect(fs.existsSync(audioPath)).toBe(false);
+	});
+
+	it('still flattens any other transcription failure', async () => {
+		const mod = makeModule(vi.fn().mockRejectedValue(new Error('status 500')));
+
+		const thrown = await mod
+			.processUrl('https://www.tiktok.com/@user/video/123')
+			.catch((e: unknown) => e);
+
+		expect((thrown as Error).message).toBe('Transcription failed: status 500');
+		expect(fs.existsSync(audioPath)).toBe(false);
 	});
 });

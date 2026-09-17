@@ -1,5 +1,7 @@
 import { Platform } from 'obsidian';
-import { buildCallout, calloutForTranscriptionResult, formatTimeRange } from '../shared';
+import {
+	buildCallout, calloutForTranscriptionResult, formatTimeRange, hasSpeechContent, NoSpeechDetectedError,
+} from '../shared';
 import type { CachedTranscript, TimeRange, TranscriptCacheEntry } from '../shared';
 
 /**
@@ -116,7 +118,7 @@ export class UrlTranscriptionRouter {
 	async transcribe(url: string, opts: UrlTranscriptOptions = {}): Promise<UrlTranscript> {
 		if (this.cache && !opts.forceRefresh) {
 			const hit = await this.cache.get(url, opts.timeRange);
-			if (hit) {
+			if (hit && hasSpeechContent(hit.raw)) {
 				opts.update?.('Using cached transcript');
 				return toUrlTranscript(hit);
 			}
@@ -129,6 +131,8 @@ export class UrlTranscriptionRouter {
 			}
 			const result = await strategy.transcribe(url, opts);
 			if (result) {
+				// A blank raw means any `text` was invented downstream: never store or return it (#524).
+				if (!hasSpeechContent(result.raw)) throw new NoSpeechDetectedError();
 				await this.cache?.put(url, toCachedTranscript(result), opts.timeRange);
 				return result;
 			}

@@ -224,6 +224,19 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 		expect(notifications.info.mock.calls.some((c) => c[2] !== undefined)).toBe(false);
 	});
 
+	it('shows an info notice, not an error, and writes nothing for a no-speech video (#524)', async () => {
+		module = build(vi.fn().mockRejectedValue(
+			Object.assign(new Error('No speech detected — nothing to transcribe'), { name: 'NoSpeechDetectedError' })
+		));
+
+		await runSummarize();
+
+		expect(notifications.info).toHaveBeenCalledWith('No speech detected — nothing to transcribe');
+		expect(notifications.error).not.toHaveBeenCalled();
+		expect(notifications.notifyError).not.toHaveBeenCalled();
+		expect(mockPlugin.app.vault.process).not.toHaveBeenCalled();
+	});
+
 	it('the action opens Synapse settings and reveals the expanded Video section', async () => {
 		settings.ui.collapsedSections['video'] = true; // start collapsed
 		module = build(vi.fn().mockRejectedValue(

@@ -1,5 +1,5 @@
 import { Platform } from 'obsidian';
-import { isSupportedUrl } from '../shared';
+import { hasSpeechContent, isSupportedUrl, NoSpeechDetectedError } from '../shared';
 import type { TranscriptionResult } from '../audio';
 import type { UrlTranscript, UrlTranscriptOptions, UrlTranscriptionStrategy } from './url-transcription';
 
@@ -32,6 +32,7 @@ export class LocalExtractionStrategy implements UrlTranscriptionStrategy {
 
 	async transcribe(url: string, opts: UrlTranscriptOptions): Promise<UrlTranscript> {
 		const result = await this.delegate(url, opts);
+		if (!hasSpeechContent(result.raw)) throw new NoSpeechDetectedError();
 		return {
 			text: result.processed || result.raw,
 			raw: result.raw,

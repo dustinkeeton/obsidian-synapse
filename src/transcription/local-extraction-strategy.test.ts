@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Platform } from '../__mocks__/obsidian';
 import { LocalExtractionStrategy } from './local-extraction-strategy';
 import type { TranscriptionResult } from '../audio';
+import { NoSpeechDetectedError } from '../shared';
 
 const YOUTUBE_URL = 'https://www.youtube.com/watch?v=abc123xyz00';
 const TIKTOK_URL = 'https://www.tiktok.com/@user/video/123';
@@ -72,6 +73,22 @@ describe('LocalExtractionStrategy.transcribe', () => {
 
 		const result = await strategy.transcribe(YOUTUBE_URL, {});
 		expect(result.text).toBe('raw transcript');
+	});
+
+	it('propagates a no-speech outcome unchanged (#524)', async () => {
+		const noSpeech = new NoSpeechDetectedError();
+		const strategy = new LocalExtractionStrategy(vi.fn(() => Promise.reject(noSpeech)));
+
+		await expect(strategy.transcribe(TIKTOK_URL, {})).rejects.toBe(noSpeech);
+	});
+
+	it.each(['', '   '])('rejects a processed transcript built over blank raw %j (#524)', async (raw) => {
+		const delegate = vi.fn(() =>
+			Promise.resolve(extractionResult({ raw, processed: 'Quarterly business review: revenue grew 12%.' }))
+		);
+		const strategy = new LocalExtractionStrategy(delegate);
+
+		await expect(strategy.transcribe(TIKTOK_URL, {})).rejects.toBeInstanceOf(NoSpeechDetectedError);
 	});
 
 	it('propagates delegate failures unchanged', async () => {
