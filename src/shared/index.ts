@@ -1,4 +1,5 @@
 export { AIClient, extractGeminiResponseText } from './ai-client';
+export type { AIRequestOptions } from './ai-client';
 export type { ChatMessage, ContentBlock, TextContentBlock, ImageContentBlock } from './types';
 export {
 	withRetry,
@@ -160,6 +161,8 @@ export {
 	isWorthPostProcessing,
 	noSpeechNotice,
 } from './no-speech';
+export { usedCache, mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport } from './cache-notice';
+export type { CacheUse } from './cache-notice';
 export { CheckpointManager } from './checkpoint-manager';
 export type {
 	Checkpoint,
