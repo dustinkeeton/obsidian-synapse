@@ -1,5 +1,5 @@
 import type { App, TFile } from 'obsidian';
-import { findMatchingRule } from '../shared';
+import { findMatchingRule, isNoSpeechError, noSpeechNotice } from '../shared';
 import type { NoteOperationQueue, NotificationManager, TimeRange } from '../shared';
 import type { SynapseSettings } from '../settings';
 import { buildUrlTranscriptBlock, UrlTranscriptionRouter } from './url-transcription';
@@ -68,6 +68,10 @@ export async function insertUrlTranscript(
 			deps.onComplete?.(activeFile.path);
 			op.finish(result.cached ? 'Cached transcription added to note' : 'Transcription added to note');
 		} catch (error) {
+			if (isNoSpeechError(error)) {
+				op.finish(noSpeechNotice('this video'));
+				return;
+			}
 			const msg = error instanceof Error ? error.message : String(error);
 			op.error(`URL transcription failed -- ${msg}`);
 		}
@@ -76,7 +80,7 @@ export async function insertUrlTranscript(
 	});
 }
 
-/** Intake variant (#112/#184): append the transcript to `file` under an operation toast; rethrows so the note stays un-stamped/retriable. */
+/** Intake variant (#112/#184): append the transcript to `file` under an operation toast; rethrows so the note stays un-stamped/retriable. No speech (#524) is final, not retriable: notice, no write, no throw. */
 export async function appendUrlTranscript(
 	deps: Pick<InsertUrlTranscriptDeps, 'app' | 'getSettings' | 'notifications' | 'router'>,
 	url: string,
@@ -96,6 +100,10 @@ export async function appendUrlTranscript(
 		await deps.app.vault.process(file, (data) => data + block);
 		op.finish('Transcript added');
 	} catch (error) {
+		if (isNoSpeechError(error)) {
+			op.finish(noSpeechNotice('this video'));
+			return;
+		}
 		const msg = error instanceof Error ? error.message : String(error);
 		op.error(`URL transcription failed -- ${msg}`);
 		throw error;

@@ -63,6 +63,20 @@ describe('PostProcessor', () => {
 		expect(completeSpy).not.toHaveBeenCalled();
 	});
 
+	it.each(['', '   ', '\n\t', '[Music]', 'Thank you.'])(
+		'makes no AI call and returns the input for transcript %j (#524)',
+		async (raw) => {
+			const pp = new PostProcessor(() => longSettings((s) => {
+				s.audio.postProcessing.extractKeyPoints = true;
+			}), { delayMs: 0 });
+
+			const result = await pp.process(raw);
+
+			expect(result).toBe(raw);
+			expect(completeSpy).not.toHaveBeenCalled();
+		}
+	);
+
 	it('post-processes a transcript that fits the output-token budget in a single call', async () => {
 		const update = vi.fn();
 		const notify = vi.fn();
@@ -114,7 +128,7 @@ describe('PostProcessor', () => {
 		});
 		const pp = new PostProcessor(() => settings);
 
-		const result = await pp.process('raw');
+		const result = await pp.process('raw transcript text');
 		expect(result).toBe('clean text here');
 		expect(result).not.toContain('<script>');
 	});

@@ -1,5 +1,4 @@
-import { redactError } from '../shared';
-import { detectPlatform } from '../shared';
+import { detectPlatform, hasSpeechContent, redactError } from '../shared';
 import type { SynapseSettings } from '../settings';
 import { fetchYouTubeTranscript } from './youtube-captions';
 import type { UrlTranscript, UrlTranscriptOptions, UrlTranscriptionStrategy } from './url-transcription';
@@ -53,7 +52,7 @@ export class CaptionStrategy implements UrlTranscriptionStrategy {
 			(lang) => lang.trim().length > 0
 		);
 		const captions = await fetchYouTubeTranscript(url, preferred);
-		if (!captions) {
+		if (!captions || !hasSpeechContent(captions.text)) {
 			return null;
 		}
 

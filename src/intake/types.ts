@@ -56,7 +56,8 @@ export interface IntakeDeps {
 	 * tiered URL-transcription router and append the transcript to the note.
 	 * MUST throw when transcription fails or no tier can handle the URL (e.g.
 	 * TikTok on mobile), so the note stays un-stamped and a synced desktop
-	 * vault's watcher can retry it.
+	 * vault's watcher can retry it. A no-speech outcome (#524) resolves without
+	 * writing: it is final, so the note is stamped rather than retried.
 	 */
 	transcribeUrlToNote(
 		url: string,

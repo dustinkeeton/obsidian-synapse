@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-09-17
 ---
 
 # Video Module
@@ -249,6 +249,7 @@ VideoModule → AudioModule is the one documented cross-feature runtime dependen
 | Condition | Behavior |
 |-----------|----------|
 | Missing yt-dlp/ffmpeg (ENOENT, or ffmpeg/ffprobe stderr signature) | `DependencyMissingError` (carries `tool`); rethrown untouched through processUrl/summarize so callers can show an "Open settings" notice (#382) |
+| Media has audio but no speech (#524) | `NoSpeechDetectedError` (shared) from `AudioModule.transcribe`; `processUrl` rethrows it unflattened and always unlinks the temp audio; batch insert shows `notifications.info(noSpeechNotice(url))`, completes the checkpoint item, inserts nothing for that URL |
 | TikTok photo slideshow / no audio stream | `NoAudioError` (internal); proactive from `--dump-json` (`isNoAudioPost`) and reactive from ffprobe `unable to obtain file audio codec` stderr |
 | Network failure | `describeNetworkError`-classified message; not retried |
 | Subprocess timeout (>5 min, SIGTERM) | `Error('<tool> timed out after 5 minutes')` |

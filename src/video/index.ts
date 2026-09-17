@@ -5,7 +5,7 @@ import { AudioModule, TranscriptionResult } from '../audio';
 import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, calloutForTranscriptionResult,
 	CheckpointManager, NoteOperationQueue, generateId, detectPlatform, loadNodeModules,
-	isPathExcluded, findAvailableVaultPath,
+	isPathExcluded, findAvailableVaultPath, isNoSpeechError, noSpeechNotice,
 } from '../shared';
 import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { AudioExtractor, DependencyMissingError } from './audio-extractor';
@@ -138,14 +138,11 @@ export class VideoModule implements FeatureModule {
 				{ sourceName: extraction.metadata.title, update }
 			);
 		} catch (e) {
+			// Typed no-speech outcome must reach the write sites unflattened (#524).
+			if (isNoSpeechError(e)) throw e;
 			throw new Error(`Transcription failed: ${e instanceof Error ? e.message : String(e)}`);
-		}
-
-		// Clean up temp audio file
-		try {
-			await fs.promises.unlink(audioPath);
-		} catch {
-			// Ignore cleanup errors
+		} finally {
+			try { await fs.promises.unlink(audioPath); } catch { /* ignore */ }
 		}
 
 		return { ...result, videoVaultPath };
@@ -215,6 +212,10 @@ export class VideoModule implements FeatureModule {
 		// Queue insertions (keyed by original line) and apply them atomically
 		// against fresh content after all transcription completes.
 		const inserts: Array<{ line: number; block: string }> = [];
+		const completeCheckpointItem = async (url: string): Promise<void> => {
+			const cpItemId = checkpointItems.find((ci) => ci.payload.url === url)?.id;
+			if (cpItemId) await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
+		};
 
 		for (let i = 0; i < sorted.length; i++) {
 			if (op.cancelled) break;
@@ -263,14 +264,13 @@ export class VideoModule implements FeatureModule {
 
 				completed++;
 
-				// Save checkpoint progress
-				const cpItemId = checkpointItems.find(
-					(ci) => ci.payload.url === embed.url
-				)?.id;
-				if (cpItemId) {
-					await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
-				}
+				await completeCheckpointItem(embed.url);
 			} catch (error) {
+				if (isNoSpeechError(error)) {
+					this.notifications.info(noSpeechNotice(embed.url));
+					await completeCheckpointItem(embed.url);
+					continue;
+				}
 				this.notifications.notifyError(`Video transcription failed for ${embed.url}`, error);
 			}
 		}

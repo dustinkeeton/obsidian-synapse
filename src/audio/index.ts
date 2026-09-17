@@ -5,6 +5,7 @@ import {
 	sanitizeAIResponse, AIClient, detectSchemaFor,
 	CheckpointManager, NoteOperationQueue, generateId, formatTimeRange, loadNodeModules,
 	isPathExcluded, findMatchingRule, redactError,
+	NoSpeechDetectedError, hasSpeechContent, isNoSpeechError, noSpeechNotice,
 } from '../shared';
 import type {
 	Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
@@ -97,6 +98,7 @@ export class AudioModule implements FeatureModule {
 		const result = await this.transcriber.transcribe(audioData, fileName);
 		// Defense-in-depth: sanitize raw transcription from external APIs
 		result.raw = sanitizeAIResponse(result.raw);
+		if (!hasSpeechContent(result.raw)) throw new NoSpeechDetectedError();
 
 		if (options?.postProcess !== false) {
 			result.processed = await this.postProcessor.process(result.raw, { update: options?.update });
@@ -150,6 +152,7 @@ export class AudioModule implements FeatureModule {
 		if (!this.getSettings().audio.autoFormatLyrics) return;
 
 		const base = result.processed ?? result.raw;
+		if (!hasSpeechContent(base)) return;
 		const schema = detectSchemaFor('transcription', base);
 		if (!schema || schema.mode !== 'reformat') return;
 
@@ -243,6 +246,10 @@ export class AudioModule implements FeatureModule {
 			this.onTranscriptionComplete?.(activeFile.path);
 			op.finish(`Transcription of ${file.name} added to note`);
 		} catch (error) {
+			if (isNoSpeechError(error)) {
+				op.finish(noSpeechNotice(file.name));
+				return;
+			}
 			const msg = error instanceof Error ? error.message : String(error);
 			op.error(`Transcription failed -- ${msg}`);
 		}
@@ -310,6 +317,10 @@ export class AudioModule implements FeatureModule {
 		// Queue insertions (keyed by original line) and apply them atomically
 		// against fresh content after all transcription completes.
 		const inserts: Array<{ line: number; block: string }> = [];
+		const completeCheckpointItem = async (fileName: string): Promise<void> => {
+			const cpItemId = checkpointItems.find((ci) => ci.payload.fileName === fileName)?.id;
+			if (cpItemId) await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
+		};
 
 		for (let i = 0; i < sorted.length; i++) {
 			if (op.cancelled) break;
@@ -337,14 +348,13 @@ export class AudioModule implements FeatureModule {
 
 				completed++;
 
-				// Save checkpoint progress
-				const cpItemId = checkpointItems.find(
-					(ci) => ci.payload.fileName === embed.fileName
-				)?.id;
-				if (cpItemId) {
-					await this.checkpointManager.completeItem(checkpoint.id, cpItemId);
-				}
+				await completeCheckpointItem(embed.fileName);
 			} catch (error) {
+				if (isNoSpeechError(error)) {
+					this.notifications.info(noSpeechNotice(embed.fileName));
+					await completeCheckpointItem(embed.fileName);
+					continue;
+				}
 				this.notifications.notifyError(`Transcription failed for ${embed.fileName}`, error);
 			}
 		}
@@ -484,6 +494,10 @@ export class AudioModule implements FeatureModule {
 			this.onTranscriptionComplete?.(noteFile.path);
 			op.finish(`Combined transcription of ${embeds.length} files added to note`);
 		} catch (error) {
+			if (isNoSpeechError(error)) {
+				op.finish(noSpeechNotice(`${embeds.length} audio files`));
+				return;
+			}
 			const msg = error instanceof Error ? error.message : String(error);
 			op.error(`Combined transcription failed -- ${msg}`);
 		}
@@ -508,9 +522,15 @@ export class AudioModule implements FeatureModule {
 			}
 			op?.progress(i + 1, files.length, 'Transcribing audio');
 			const data = await this.plugin.app.vault.readBinary(files[i]);
-			const result = await this.transcribe(data, files[i].name);
-			parts.push(result.processed || result.raw);
+			try {
+				const result = await this.transcribe(data, files[i].name);
+				parts.push(result.processed || result.raw);
+			} catch (error) {
+				if (!isNoSpeechError(error)) throw error;
+				this.notifications.info(noSpeechNotice(files[i].name));
+			}
 		}
+		if (parts.length === 0 && !op?.cancelled) throw new NoSpeechDetectedError();
 		return parts.join('\n\n');
 	}
 

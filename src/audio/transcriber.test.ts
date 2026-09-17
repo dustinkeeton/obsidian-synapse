@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { requestUrl, type RequestUrlParam } from '../__mocks__/obsidian';
 import { Transcriber, buildMultipartBody, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
+import { NoSpeechDetectedError } from '../shared';
 
 function makeSettings(overrides?: Partial<SynapseSettings>): SynapseSettings {
 	return { ...structuredClone(DEFAULT_SETTINGS), ...overrides };
@@ -308,6 +309,55 @@ describe('Transcriber', () => {
 			expect(result.timestamps).toBeUndefined();
 		});
 
+		describe('no speech (#524)', () => {
+			function whisperResponse(json: Record<string, unknown>) {
+				return { status: 200, json, text: '', headers: {} };
+			}
+
+			it.each(['', '   \n', '[Music]', '♪♪'])('throws NoSpeechDetectedError for transcript %j', async (text) => {
+				mockRequestUrl.mockResolvedValue(whisperResponse({ text }));
+
+				await expect(transcriber.transcribe(new ArrayBuffer(8), 'silent.mp3'))
+					.rejects.toBeInstanceOf(NoSpeechDetectedError);
+			});
+
+			it('throws when every verbose_json segment reports a high no_speech_prob', async () => {
+				mockRequestUrl.mockResolvedValue(whisperResponse({
+					text: 'Thank you for watching. Please subscribe.',
+					segments: [
+						{ start: 0, end: 4, text: 'Thank you for watching.', no_speech_prob: 0.93 },
+						{ start: 4, end: 8, text: 'Please subscribe.', no_speech_prob: 0.81 },
+					],
+				}));
+
+				await expect(transcriber.transcribe(new ArrayBuffer(8), 'silent.mp3'))
+					.rejects.toBeInstanceOf(NoSpeechDetectedError);
+			});
+
+			it('keeps the transcript when any segment is confident speech', async () => {
+				mockRequestUrl.mockResolvedValue(whisperResponse({
+					text: 'Instrumental intro. Real words here.',
+					segments: [
+						{ start: 0, end: 4, text: 'Instrumental intro.', no_speech_prob: 0.95 },
+						{ start: 4, end: 8, text: 'Real words here.', no_speech_prob: 0.05 },
+					],
+				}));
+
+				const result = await transcriber.transcribe(new ArrayBuffer(8), 'talk.mp3');
+				expect(result.raw).toBe('Instrumental intro. Real words here.');
+			});
+
+			it('keeps the transcript when segments carry no no_speech_prob', async () => {
+				mockRequestUrl.mockResolvedValue(whisperResponse({
+					text: 'Plain json models return no probabilities.',
+					segments: [{ start: 0, end: 4, text: 'Plain json models return no probabilities.' }],
+				}));
+
+				const result = await transcriber.transcribe(new ArrayBuffer(8), 'talk.mp3');
+				expect(result.raw).toBe('Plain json models return no probabilities.');
+			});
+		});
+
 		describe('network failures', () => {
 			it('classifies a persistent connection-refused failure and names the Whisper API', async () => {
 				mockRequestUrl.mockRejectedValue(new Error('net::ERR_CONNECTION_REFUSED'));
@@ -464,6 +514,18 @@ describe('Transcriber', () => {
 
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
 				.rejects.toThrow('Deepgram API request failed (status 401)');
+		});
+
+		it.each(['', '  '])('throws NoSpeechDetectedError for transcript %j (#524)', async (transcript) => {
+			mockRequestUrl.mockResolvedValue({
+				status: 200,
+				json: { results: { channels: [{ alternatives: [{ transcript }] }] } },
+				text: '',
+				headers: {},
+			});
+
+			await expect(transcriber.transcribe(new ArrayBuffer(8), 'silent.mp3'))
+				.rejects.toBeInstanceOf(NoSpeechDetectedError);
 		});
 
 		describe('network failures', () => {
@@ -657,6 +719,54 @@ describe('Transcriber', () => {
 
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
 				.rejects.toThrow(/MAX_TOKENS/);
+		});
+
+		describe('no speech (#524)', () => {
+			it('instructs the model to answer with the no-speech sentinel', async () => {
+				mockRequestUrl.mockResolvedValue(geminiResponse('hello'));
+
+				await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
+
+				const params = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+				const body = JSON.parse(params.body as string) as GeminiRequestBody;
+				const instruction = body.system_instruction.parts[0].text;
+				expect(instruction).toContain('[NO_SPEECH]');
+				expect(instruction).toMatch(/never invent/i);
+			});
+
+			it.each(['[NO_SPEECH]', ' [no_speech]\n', '', '   '])(
+				'throws NoSpeechDetectedError for reply %j',
+				async (text) => {
+					mockRequestUrl.mockResolvedValue(geminiResponse(text));
+
+					await expect(transcriber.transcribe(new ArrayBuffer(8), 'silent.mp3'))
+						.rejects.toBeInstanceOf(NoSpeechDetectedError);
+				}
+			);
+
+			it('throws NoSpeechDetectedError when the model stops normally with no parts', async () => {
+				mockRequestUrl.mockResolvedValue({
+					status: 200,
+					json: { promptFeedback: { safetyRatings: [] }, candidates: [{ content: { role: 'model' }, finishReason: 'STOP' }] },
+					text: '',
+					headers: {},
+				});
+
+				await expect(transcriber.transcribe(new ArrayBuffer(8), 'silent.mp3'))
+					.rejects.toBeInstanceOf(NoSpeechDetectedError);
+			});
+		});
+
+		it('keeps the blocked-prompt error when a block reason accompanies an empty stop (#524)', async () => {
+			mockRequestUrl.mockResolvedValue({
+				status: 200,
+				json: { promptFeedback: { blockReason: 'SAFETY' }, candidates: [{ content: { role: 'model' }, finishReason: 'STOP' }] },
+				text: '',
+				headers: {},
+			});
+
+			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
+				.rejects.toThrow(/blocked \(SAFETY\)/);
 		});
 
 		it('rejects audio above the inline size cap before any request is sent', async () => {

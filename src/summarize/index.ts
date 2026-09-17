@@ -96,12 +96,15 @@ interface DependencyMissingInfo {
  * cyclic chain.
  */
 function findDependencyMissingError(error: unknown): DependencyMissingInfo | null {
+	return findErrorByName(error, 'DependencyMissingError') as unknown as DependencyMissingInfo | null;
+}
+
+/** First error named `name` in the `cause` chain; cycle-safe. */
+function findErrorByName(error: unknown, name: string): Error | null {
 	const seen = new Set<unknown>();
 	let current: unknown = error;
 	while (current instanceof Error && !seen.has(current)) {
-		if (current.name === 'DependencyMissingError') {
-			return current as unknown as DependencyMissingInfo;
-		}
+		if (current.name === name) return current;
 		seen.add(current);
 		current = (current as { cause?: unknown }).cause;
 	}
@@ -862,6 +865,12 @@ export class SummarizeModule implements FeatureModule {
 				label: 'Open settings',
 				onClick: () => this.revealVideoSettings(),
 			});
+			return;
+		}
+		// No speech (#524) is an informational outcome, not a failure; matched by name like the dependency error.
+		const noSpeech = findErrorByName(error, 'NoSpeechDetectedError');
+		if (noSpeech) {
+			this.notifications.info(noSpeech.message);
 			return;
 		}
 		fallback();

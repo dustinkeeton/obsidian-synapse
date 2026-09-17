@@ -1,5 +1,5 @@
 import type { PostProcessingSettings, SynapseSettings } from '../settings';
-import { AIClient, redactError, sanitizeAIResponse, sleep } from '../shared';
+import { AIClient, isWorthPostProcessing, redactError, sanitizeAIResponse, sleep } from '../shared';
 import { segmentTranscript, trimRepeatedContext, type TranscriptSegment } from './transcript-segmenter';
 
 // Conservative chars-per-token estimate; real ratios are usually higher.
@@ -37,6 +37,8 @@ export class PostProcessor {
 	async process(rawTranscript: string, opts: PostProcessOptions = {}): Promise<string> {
 		const settings = this.getSettings().audio.postProcessing;
 		if (!settings.enabled) return rawTranscript;
+		// An editor prompt with no transcript under it makes the model invent one (#524).
+		if (!isWorthPostProcessing(rawTranscript)) return rawTranscript;
 
 		const keyPoints = settings.extractKeyPoints;
 		const sectionInstructions = buildInstructions(settings, false);

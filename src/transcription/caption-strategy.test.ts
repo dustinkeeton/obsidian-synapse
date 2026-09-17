@@ -112,6 +112,14 @@ describe('CaptionStrategy.transcribe', () => {
 		expect(postProcess).not.toHaveBeenCalled();
 	});
 
+	it.each(['', '  \n', '[Music]'])('falls through without post-processing for speechless captions %j (#524)', async (text) => {
+		fetchTranscript.mockResolvedValue({ text, language: 'en', auto: true, structured: false });
+		const { strategy, postProcess } = makeStrategy();
+
+		expect(await strategy.transcribe(YOUTUBE_URL, {})).toBeNull();
+		expect(postProcess).not.toHaveBeenCalled();
+	});
+
 	it('degrades to raw captions when post-processing fails', async () => {
 		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true, structured: false });
 		const { strategy } = makeStrategy(

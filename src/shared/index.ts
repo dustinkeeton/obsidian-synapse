@@ -151,6 +151,15 @@ export { NoteOperationQueue } from './note-operation-queue';
 export type { NoteOperationOptions } from './note-operation-queue';
 export { TranscriptCache, canonicalMediaUrl, transcriptCacheKey } from './transcript-cache';
 export type { CachedTranscript, TranscriptCacheEntry, TranscriptCacheOptions } from './transcript-cache';
+export {
+	NoSpeechDetectedError,
+	NO_SPEECH_MESSAGE,
+	MIN_TRANSCRIPT_CHARS_FOR_AI,
+	isNoSpeechError,
+	hasSpeechContent,
+	isWorthPostProcessing,
+	noSpeechNotice,
+} from './no-speech';
 export { CheckpointManager } from './checkpoint-manager';
 export type {
 	Checkpoint,
