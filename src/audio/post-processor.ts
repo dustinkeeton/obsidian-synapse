@@ -1,5 +1,6 @@
 import type { PostProcessingSettings, SynapseSettings } from '../settings';
 import { AIClient, isWorthPostProcessing, redactError, sanitizeAIResponse, sleep } from '../shared';
+import type { AIRequestOptions } from '../shared';
 import { segmentTranscript, trimRepeatedContext, type TranscriptSegment } from './transcript-segmenter';
 
 // Conservative chars-per-token estimate; real ratios are usually higher.
@@ -18,6 +19,12 @@ export interface PostProcessOptions {
 	update?: (message: string) => void;
 	/** Called for each AI call replayed from the response cache (#527). */
 	onCacheHit?: () => void;
+	/** Dispatch every AI pass fresh and overwrite its cache entry (#527). */
+	bypassCache?: boolean;
+}
+
+function aiRequestOptions(opts: PostProcessOptions): AIRequestOptions {
+	return { onCacheHit: opts.onCacheHit, bypassCache: opts.bypassCache };
 }
 
 export interface PostProcessorDeps {
@@ -52,7 +59,7 @@ export class PostProcessor {
 			const response = await this.aiClient.complete(
 				`${formatInstructions(buildInstructions(settings, true))}\n\nRaw transcript:\n${rawTranscript}`,
 				SYSTEM_PROMPT,
-				{ onCacheHit: opts.onCacheHit }
+				aiRequestOptions(opts)
 			);
 			return sanitizeAIResponse(response);
 		}
@@ -122,7 +129,7 @@ export class PostProcessor {
 		const prompt =
 			`${formatInstructions([...instructions, sectionNote])}\n\n${context}Transcript section:\n${segment.body}`;
 		try {
-			const response = await this.aiClient.complete(prompt, SYSTEM_PROMPT, { onCacheHit: opts.onCacheHit });
+			const response = await this.aiClient.complete(prompt, SYSTEM_PROMPT, aiRequestOptions(opts));
 			const cleaned = trimRepeatedContext(sanitizeAIResponse(response).trim(), segment.context);
 			if (cleaned.length === 0) return null;
 			if (Math.ceil(cleaned.length / CHARS_PER_TOKEN) >= maxTokens) return null;
@@ -143,7 +150,7 @@ export class PostProcessor {
 			])}\n\nTranscript:\n${text}`;
 		try {
 			const summary = sanitizeAIResponse(
-				await this.aiClient.complete(prompt, SYSTEM_PROMPT, { onCacheHit: opts.onCacheHit })
+				await this.aiClient.complete(prompt, SYSTEM_PROMPT, aiRequestOptions(opts))
 			).trim();
 			return summary.length > 0 ? summary : null;
 		} catch (error) {

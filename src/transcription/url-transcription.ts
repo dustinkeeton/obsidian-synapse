@@ -32,7 +32,7 @@ export interface UrlTranscriptOptions {
 	timeRange?: TimeRange;
 	/** Progress hook, same shape as NotificationManager operation updates. */
 	update?: (message: string) => void;
-	/** Skip the transcript store and re-run the tiers (#488). */
+	/** Skip the transcript store, re-run the tiers, and dispatch their AI post-processing fresh (#488, #527). */
 	forceRefresh?: boolean;
 }
 

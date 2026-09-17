@@ -55,10 +55,10 @@ interface TranscriptionResult {
 }
 
 interface TimestampEntry { start: number; end: number; text: string }
-interface TranscribeOptions { language?: string; postProcess?: boolean; sourceName?: string; timeRange?: TimeRange; update?: (message: string) => void }
+interface TranscribeOptions { language?: string; postProcess?: boolean; sourceName?: string; timeRange?: TimeRange; update?: (message: string) => void; bypassCache?: boolean }   // bypassCache = dispatch every AI pass on this transcript fresh (#527)
 
 // post-processor.ts (module-internal; AudioModule owns the instance)
-interface PostProcessOptions { update?: (message: string) => void; onCacheHit?: () => void }   // update = progress sink, once per AI call in sectioned runs; onCacheHit = once per replayed AI call (#527)
+interface PostProcessOptions { update?: (message: string) => void; onCacheHit?: () => void; bypassCache?: boolean }   // update = progress sink, once per AI call in sectioned runs; onCacheHit = once per replayed AI call; bypassCache forwarded to every pass incl. the lyrics reformat (#527)
 interface PostProcessorDeps { notify?: (message: string) => void; delayMs?: number }   // notify = single end-of-run notice; delayMs default 2000
 class PostProcessor {
   constructor(getSettings: () => SynapseSettings, deps?: PostProcessorDeps)

@@ -29,6 +29,8 @@ export interface TranscribeOptions {
 	timeRange?: TimeRange;
 	/** Progress sink for long post-processing runs (e.g. an operation toast's update). */
 	update?: (message: string) => void;
+	/** Dispatch every AI pass on this transcript fresh instead of replaying a cached response (#527). */
+	bypassCache?: boolean;
 }
 
 export interface AudioEmbed {

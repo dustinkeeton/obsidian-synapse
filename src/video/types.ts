@@ -20,6 +20,8 @@ export interface VideoProcessOptions {
 	outputPath?: string;
 	insertMode?: boolean;
 	timeRange?: TimeRange;
+	/** Dispatch the transcript's AI passes fresh (#527). */
+	bypassCache?: boolean;
 }
 
 export interface ExtractionResult {

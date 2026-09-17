@@ -136,7 +136,7 @@ export class VideoModule implements FeatureModule {
 			result = await this.audioModule.transcribe(
 				audioData.buffer,
 				extraction.metadata.title + '.mp3',
-				{ sourceName: extraction.metadata.title, update }
+				{ sourceName: extraction.metadata.title, update, bypassCache: options?.bypassCache }
 			);
 		} catch (e) {
 			// Typed no-speech outcome must reach the write sites unflattened (#524).

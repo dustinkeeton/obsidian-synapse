@@ -100,12 +100,16 @@ export class AudioModule implements FeatureModule {
 		result.raw = sanitizeAIResponse(result.raw);
 		if (!hasSpeechContent(result.raw)) throw new NoSpeechDetectedError();
 
-		const onCacheHit = (): void => { result.aiCached = true; };
+		const aiOpts: PostProcessOptions = {
+			update: options?.update,
+			bypassCache: options?.bypassCache,
+			onCacheHit: () => { result.aiCached = true; },
+		};
 		if (options?.postProcess !== false) {
-			result.processed = await this.postProcessor.process(result.raw, { update: options?.update, onCacheHit });
+			result.processed = await this.postProcessor.process(result.raw, aiOpts);
 		}
 
-		await this.maybeReformatBySchema(result, onCacheHit);
+		await this.maybeReformatBySchema(result, aiOpts);
 
 		if (options?.sourceName) {
 			result.sourceName = options.sourceName;
@@ -131,12 +135,15 @@ export class AudioModule implements FeatureModule {
 			raw: sanitizeAIResponse(raw),
 			sourceName: '',
 		};
-		const onCacheHit = (): void => {
-			result.aiCached = true;
-			opts?.onCacheHit?.();
+		const aiOpts: PostProcessOptions = {
+			...opts,
+			onCacheHit: () => {
+				result.aiCached = true;
+				opts?.onCacheHit?.();
+			},
 		};
-		result.processed = await this.postProcessor.process(result.raw, { ...opts, onCacheHit });
-		await this.maybeReformatBySchema(result, onCacheHit);
+		result.processed = await this.postProcessor.process(result.raw, aiOpts);
+		await this.maybeReformatBySchema(result, aiOpts);
 		return {
 			text: result.processed || result.raw,
 			reformatted: result.reformatted,
@@ -154,7 +161,7 @@ export class AudioModule implements FeatureModule {
 	 * callout type. Detection is local (no AI cost); the AI call fires only on a
 	 * match. Any failure falls back to the unmodified transcript.
 	 */
-	private async maybeReformatBySchema(result: TranscriptionResult, onCacheHit: () => void): Promise<void> {
+	private async maybeReformatBySchema(result: TranscriptionResult, opts: PostProcessOptions): Promise<void> {
 		if (!this.getSettings().audio.autoFormatLyrics) return;
 
 		const base = result.processed ?? result.raw;
@@ -163,7 +170,7 @@ export class AudioModule implements FeatureModule {
 		if (!schema || schema.mode !== 'reformat') return;
 
 		try {
-			const reformatted = sanitizeAIResponse(await this.aiClient.complete(base, schema.prompt, { onCacheHit }));
+			const reformatted = sanitizeAIResponse(await this.aiClient.complete(base, schema.prompt, { onCacheHit: opts.onCacheHit, bypassCache: opts.bypassCache }));
 			if (reformatted.trim()) {
 				result.processed = reformatted;
 				result.reformatted = true;

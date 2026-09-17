@@ -90,6 +90,39 @@ describe('AudioModule response-cache reporting (#527)', () => {
 		expect(replayed.aiCached).toBe(true);
 	});
 
+	describe('fresh-transcript bypass', () => {
+		const RAW = 'plain caption words from a video';
+
+		it('dispatches caption post-processing instead of replaying it, then serves the new response', async () => {
+			const dispatch = vi.mocked((AIClient.prototype as unknown as Dispatcher).dispatch);
+			dispatch.mockResolvedValueOnce('Stale cleanup.').mockResolvedValue('Fresh cleanup.');
+			await module.processTranscriptText(RAW);
+			const onCacheHit = vi.fn();
+
+			const fresh = await module.processTranscriptText(RAW, { bypassCache: true, onCacheHit });
+
+			expect(dispatch).toHaveBeenCalledTimes(2);
+			expect(onCacheHit).not.toHaveBeenCalled();
+			expect(fresh).toMatchObject({ text: 'Fresh cleanup.' });
+			expect(fresh.aiCached).toBeUndefined();
+
+			const next = await module.processTranscriptText(RAW);
+
+			expect(dispatch).toHaveBeenCalledTimes(2);
+			expect(next).toMatchObject({ text: 'Fresh cleanup.', aiCached: true });
+		});
+
+		it('dispatches extraction-tier post-processing instead of replaying it', async () => {
+			const dispatch = vi.mocked((AIClient.prototype as unknown as Dispatcher).dispatch);
+			await module.transcribe(new ArrayBuffer(8), 'one.mp3');
+
+			const fresh = await module.transcribe(new ArrayBuffer(8), 'one.mp3', { bypassCache: true });
+
+			expect(dispatch).toHaveBeenCalledTimes(2);
+			expect(fresh.aiCached).toBeUndefined();
+		});
+	});
+
 	it('reports the replay in the single-file finish message only', async () => {
 		await module.transcribeFileToActiveNote(tfile('audio/one.mp3'));
 		await module.transcribeFileToActiveNote(tfile('audio/one.mp3'));

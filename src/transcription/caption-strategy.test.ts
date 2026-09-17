@@ -153,6 +153,15 @@ describe('CaptionStrategy.transcribe', () => {
 		expect((await strategy.transcribe(YOUTUBE_URL, {}))?.aiCached).toBe(true);
 	});
 
+	it('dispatches post-processing fresh when the transcript is force-refreshed (#527)', async () => {
+		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true, structured: false });
+		const { strategy, postProcess } = makeStrategy();
+
+		await strategy.transcribe(YOUTUBE_URL, { forceRefresh: true });
+
+		expect(postProcess).toHaveBeenCalledWith('caption text', expect.objectContaining({ bypassCache: true }));
+	});
+
 	it('reports progress through the update hook', async () => {
 		fetchTranscript.mockResolvedValue({ text: 'caption text', language: 'en', auto: true, structured: false });
 		const { strategy } = makeStrategy();

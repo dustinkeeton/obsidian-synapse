@@ -276,4 +276,13 @@ describe('VideoModule.processUrl no-speech preservation (#524)', () => {
 		expect((thrown as Error).message).toBe('Transcription failed: status 500');
 		expect(fs.existsSync(audioPath)).toBe(false);
 	});
+
+	it('hands the fresh-transcript bypass to the transcription AI passes (#527)', async () => {
+		const transcribe = vi.fn().mockResolvedValue({ raw: 'spoken words', sourceName: 'Silent clip' });
+		const mod = makeModule(transcribe);
+
+		await mod.processUrl('https://www.tiktok.com/@user/video/123', { bypassCache: true });
+
+		expect(transcribe.mock.calls[0][2]).toMatchObject({ bypassCache: true });
+	});
 });

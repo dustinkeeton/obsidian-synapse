@@ -71,6 +71,7 @@ interface VideoProcessOptions {
   outputPath?: string
   insertMode?: boolean
   timeRange?: TimeRange
+  bypassCache?: boolean          // forwarded to AudioModule.transcribe as TranscribeOptions.bypassCache (#527)
 }
 interface ExtractionResult { audioPath: string; metadata: VideoMetadata }
 interface VideoMetadata {
