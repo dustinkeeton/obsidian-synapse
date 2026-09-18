@@ -6,7 +6,7 @@ skills:
   - accurate
 identity:
   displayName: Docs Agent
-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, SendMessage, TaskUpdate
+tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent, SendMessage, TaskUpdate
 ---
 
 You are the agent documentation specialist for the Synapse Obsidian plugin. Your responsibilities:

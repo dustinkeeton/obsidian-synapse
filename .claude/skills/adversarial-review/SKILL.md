@@ -217,10 +217,12 @@ Notes on mechanics:
   been reviewed?"* reads it — `waffle-pr-green-hook`'s duplicate-review guard and delivery check, and
   `autopilot` — and it takes repo **push access** to write, so no body can forge one. This is the
   skill's signal **on every path**: a local run emits it exactly as a CI-dispatched one does.
-- **Never paste another skill's raw marker literal — or this one — into a body.** No *workflow*
-  reads a marker any more (#338), but the **skills and `autopilot` still do**, and `autopilot`'s
-  triage gate is what **arms auto-merge**. So a review that merely *quotes* a marker can still read
-  as "already reviewed" or "already triaged". Refer to a marker **by name**, or break the literal,
+- **Never paste another skill's raw marker literal — or this one — into a body.** No *gate* reads
+  a marker any more (#338) — the workflows and `autopilot`'s triage gate, which **arms auto-merge**,
+  all read commit statuses — but the **skills and `autopilot` still do, to recover history**: each
+  skill recognizes its own prior posts by its marker, and `autopilot` seeds a replacement agent from
+  them. So a review that merely *quotes* a marker can still read as one of a skill's own posts and
+  muddle the record the next round seeds from. Refer to a marker **by name**, or break the literal,
   when a review must discuss it — reviewing a hooks PR is exactly when the temptation arrives. Your
   own *leading* marker is exempt: it is the review.
 - That split is the point of #338, and the old design is a trap that will look reasonable again.
@@ -300,6 +302,10 @@ cold-start rules below, when you are the fresh spawn that *replaces* a resumable
   was implemented, deferred, or declined — and why). Never re-raise a finding that table records
   as settled without new evidence in the new head. This keeps the continuity rules above
   satisfiable on every path, not only for an agent that lived through the earlier rounds.
+  That read is best-effort **by design**, and no gate rides on it: a marked body is prose anyone can
+  write, so a wrong read costs at most a redundant round — a re-raised finding `pr-response` declines
+  again — never a skipped gate. Whether this head *was reviewed* is the `waffle/adversarial-review`
+  commit status (step 5), and evidence in the new head always outranks recovered history.
 - **An empty context is *not* itself the signal — never infer the seed from it.** A loop may spawn
   you deliberately **cold**: autopilot's cap-escape evidence pass does precisely that, so that your
   look at the final head is *not* anchored by what earlier rounds declined — and its prompt says so
@@ -313,8 +319,9 @@ cold-start rules below, when you are the fresh spawn that *replaces* a resumable
 > **Auto-invocation on PR-green (opt-in).** The `github-workflow` stack ships a companion
 > opt-in workflow, `waffle-pr-green-hook.yml`, that dispatches the CI harness to run this skill
 > automatically the moment a PR's required checks go green — firing once per green transition
-> (per head commit), not on every check re-run, with a duplicate-review guard keyed on this
-> skill's review marker. It is **opt-in syrup** (it spends API money on every green PR), so it
+> (per head commit), not on every check re-run, with a duplicate-review guard keyed on the
+> `waffle/adversarial-review` commit status this skill writes (step 5) — never on its marker. It is
+> **opt-in syrup** (it spends API money on every green PR), so it
 > renders only when installed, and it needs this skill rendered alongside it
 > (`.claude/skills/adversarial-review/SKILL.md`) — see that stack's setup note for the opt-ins.
 > This skill remains independently useful invoked manually (`/adversarial-review <PR#>`) or by an

@@ -16,7 +16,7 @@ previously-managed files that are no longer produced. It takes **no refs** (use
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack render
+npx --yes github:dustinkeeton/wafflestack#v0.16.1 render
 ```
 
 `bake` is a pure alias — `wafflestack bake` is `wafflestack render`, same flags, same behavior.

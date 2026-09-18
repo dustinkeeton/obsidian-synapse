@@ -217,13 +217,15 @@ Notes on mechanics:
   review. It is deliberately **distinct from the adversarial-review skill's marker**; never put that
   other marker in a QA review.
 - **Never quote another skill's raw marker literal mid-body, either — naming it is not carrying
-  it, but pasting it is.** No *workflow* reads a marker any more (#338 — CI keys on commit statuses
-  and a label), but the **skills and `autopilot` still do**, and `autopilot`'s triage gate is what
-  **arms auto-merge**. QA needs this rule most: a QA review of a hooks PR naturally *discusses* those
-  markers, and pasting a raw literal anywhere in the body — a code fence, a blockquote, a table cell
-  — is enough. **This is not hypothetical: PR #296's QA review did it** (literal at offset 1103, in
-  prose about the hook) and, on the tolerant predicates of the day, that one body suppressed the real
-  adversarial review *and* spent the PR's one automated pr-response reply. Refer to a marker **by
+  it, but pasting it is.** No *gate* reads a marker any more (#338 — CI keys on commit statuses
+  and a label, and `autopilot`'s triage gate, which **arms auto-merge**, on the `waffle/pr-response`
+  status), but the **skills and `autopilot` still do, to recover history** — each skill recognizes
+  its own prior posts by its marker, and a quoted literal muddles that record. QA needs this rule
+  most: a QA review of a hooks PR naturally *discusses* those markers, and pasting a raw literal
+  anywhere in the body — a code fence, a blockquote, a table cell — is enough. **This is not
+  hypothetical: PR #296's QA review did it** (literal at offset 1103, in prose about the hook) and,
+  on the tolerant predicates of the day, that one body suppressed the real adversarial review *and*
+  spent the PR's one automated pr-response reply. Refer to a marker **by
   name** (`the adversarial-review marker`), or break the literal, when the review must discuss it.
   Your own leading `waffle-qa` marker is exempt — that is the review, and identifying it is what the
   marker is for.
@@ -246,7 +248,8 @@ changed behavior exercised or credibly covered, the suite green — **say so pla
 not invent findings to justify the run. Same rule as step 5: the body goes in a **file**,
 never inline after `--body`. `Write` the summary to the **per-PR, per-head** path
 `${TMPDIR:-/tmp}/waffle-qa-summary-$N-$HEAD_SHA.md` (same namespacing rule and same literal-path caveat
-as step 5), marker on its own line, including the criteria walked and what you ran:
+as step 5), the marker **leading** the body exactly as in step 5 — first line, offset 0, not merely
+somewhere on a line of its own — including the criteria walked and what you ran:
 
 ```markdown
 <!-- waffle-qa -->
@@ -350,6 +353,10 @@ cold-start rules below, when you are the fresh spawn that *replaces* a resumable
   implemented, deferred, or declined — and why). Never re-raise a finding that table records as
   settled without new evidence in the new head. This keeps the continuity rules above satisfiable
   on every path, not only for an agent that lived through the earlier rounds.
+  That read is best-effort **by design**, and no gate rides on it: a marked body is prose anyone can
+  write, so a wrong read costs at most a redundant round — a re-raised finding `pr-response` declines
+  again — never a skipped gate. Whether this head *was QA'd* is the `waffle/qa` commit status
+  (step 7), and evidence in the new head always outranks recovered history.
 - **An empty context is *not* itself the signal — never infer the seed from it.** A loop may spawn
   you deliberately **cold**: autopilot's cap-escape evidence pass does precisely that, so that your
   look at the final head is *not* anchored by what earlier rounds declined — and its prompt says so
