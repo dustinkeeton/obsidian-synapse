@@ -12,10 +12,12 @@ export interface ProcessedTranscript {
 	text: string;
 	reformatted?: boolean;
 	schemaId?: string;
+	aiCached?: boolean;
 }
 
 export interface ProcessTranscriptOptions {
 	update?: (message: string) => void;
+	bypassCache?: boolean;
 }
 
 export type ProcessTranscript = (raw: string, opts?: ProcessTranscriptOptions) => Promise<ProcessedTranscript>;
@@ -73,7 +75,7 @@ export class CaptionStrategy implements UrlTranscriptionStrategy {
 		opts.update?.('Post-processing transcript...');
 		let processed: ProcessedTranscript = { text: captions.text };
 		try {
-			processed = await this.postProcess(captions.text, { update: opts.update });
+			processed = await this.postProcess(captions.text, { update: opts.update, bypassCache: opts.forceRefresh });
 		} catch (error) {
 			console.warn(
 				'[Synapse] Caption post-processing failed; keeping raw captions',
@@ -89,6 +91,7 @@ export class CaptionStrategy implements UrlTranscriptionStrategy {
 			language: captions.language,
 			reformatted: processed.reformatted,
 			schemaId: processed.schemaId,
+			aiCached: processed.aiCached,
 		};
 	}
 }

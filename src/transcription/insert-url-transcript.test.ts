@@ -8,6 +8,7 @@ import { NoSpeechDetectedError, NoteOperationQueue } from '../shared';
 import type { NotificationManager, TranscriptCacheEntry } from '../shared';
 
 const URL = 'https://www.youtube.com/watch?v=abc123xyz00';
+const CACHED_TRANSCRIPT_NOTE = 'used a cached transcript ("Fetch a fresh transcript" in Transcribe media replaces it)';
 
 function tier(result: UrlTranscript): UrlTranscriptionStrategy & { transcribe: ReturnType<typeof vi.fn> } {
 	return { id: 'captions', canHandle: () => true, transcribe: vi.fn(() => Promise.resolve(result)) };
@@ -65,7 +66,7 @@ describe('insertUrlTranscript transcript reuse (#488)', () => {
 		expect(captions.transcribe).toHaveBeenCalledOnce();
 		expect(content()).toContain(`Transcription of ${URL}`);
 		expect(content()).toContain('> hello world');
-		expect(op.finish).toHaveBeenCalledWith('Cached transcription added to note');
+		expect(op.finish).toHaveBeenCalledWith(`Transcription added to note — ${CACHED_TRANSCRIPT_NOTE}`);
 	});
 
 	it('forceRefresh re-runs the tiers and replaces the stored transcript', async () => {
@@ -80,6 +81,40 @@ describe('insertUrlTranscript transcript reuse (#488)', () => {
 		expect(content()).toContain('> new');
 		expect(op.finish).toHaveBeenCalledWith('Transcription added to note');
 		expect((await store.get(URL))?.text).toBe('new');
+	});
+});
+
+describe('cache reporting (#527)', () => {
+	it('appendUrlTranscript reports a stored transcript the same way the modal insert does', async () => {
+		const store = memoryStore();
+		const captions = tier({ text: 'hello world', raw: 'hello world', source: 'captions' });
+		await new UrlTranscriptionRouter([captions], store).transcribe(URL);
+		const { deps, op } = makeDeps(new UrlTranscriptionRouter([captions], store));
+
+		await appendUrlTranscript(deps, URL, new TFile('Intake/a.md') as never);
+
+		expect(captions.transcribe).toHaveBeenCalledOnce();
+		expect(op.finish).toHaveBeenCalledWith(`Transcript added — ${CACHED_TRANSCRIPT_NOTE}`);
+	});
+
+	it('appendUrlTranscript keeps the plain message for a fresh transcript', async () => {
+		const fresh = tier({ text: 'hello world', raw: 'hello world', source: 'captions' });
+		const { deps, op } = makeDeps(new UrlTranscriptionRouter([fresh], memoryStore()));
+
+		await appendUrlTranscript(deps, URL, new TFile('Intake/a.md') as never);
+
+		expect(op.finish).toHaveBeenCalledWith('Transcript added');
+	});
+
+	it('reports a fresh transcript whose AI post-processing was replayed', async () => {
+		const replayed = tier({ text: 'hello world', raw: 'hello world', source: 'captions', aiCached: true });
+		const store = memoryStore();
+		const { deps, op } = makeDeps(new UrlTranscriptionRouter([replayed], store));
+
+		await insertUrlTranscript(deps, URL);
+
+		expect(op.finish).toHaveBeenCalledWith('Transcription added to note — used a cached AI response');
+		expect(await store.get(URL)).not.toHaveProperty('aiCached');
 	});
 });
 

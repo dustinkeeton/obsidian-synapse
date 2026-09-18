@@ -85,7 +85,7 @@ export default class SynapsePlugin extends Plugin {
 			getSettings,
 			processTranscriptText: (raw, opts) => audio.processTranscriptText(raw, opts),
 			extract: video
-				? (url, opts) => video.processUrl(url, { insertMode: false, timeRange: opts.timeRange }, opts.update ? { update: opts.update } : undefined)
+				? (url, opts) => video.processUrl(url, { insertMode: false, timeRange: opts.timeRange, bypassCache: opts.forceRefresh }, opts.update ? { update: opts.update } : undefined)
 				: undefined,
 			store: this.transcriptCache,
 		});

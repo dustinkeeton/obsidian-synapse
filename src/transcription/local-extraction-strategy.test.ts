@@ -75,6 +75,12 @@ describe('LocalExtractionStrategy.transcribe', () => {
 		expect(result.text).toBe('raw transcript');
 	});
 
+	it('carries a replayed AI pass through as aiCached (#527)', async () => {
+		const strategy = new LocalExtractionStrategy(vi.fn(() => Promise.resolve(extractionResult({ aiCached: true }))));
+
+		expect((await strategy.transcribe(YOUTUBE_URL, {})).aiCached).toBe(true);
+	});
+
 	it('propagates a no-speech outcome unchanged (#524)', async () => {
 		const noSpeech = new NoSpeechDetectedError();
 		const strategy = new LocalExtractionStrategy(vi.fn(() => Promise.reject(noSpeech)));

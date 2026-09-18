@@ -1,5 +1,5 @@
 import type { App, TFile } from 'obsidian';
-import { findMatchingRule, isNoSpeechError, noSpeechNotice } from '../shared';
+import { findMatchingRule, isNoSpeechError, noSpeechNotice, transcriptCacheUse, withCacheReport } from '../shared';
 import type { NoteOperationQueue, NotificationManager, TimeRange } from '../shared';
 import type { SynapseSettings } from '../settings';
 import { buildUrlTranscriptBlock, UrlTranscriptionRouter } from './url-transcription';
@@ -66,7 +66,7 @@ export async function insertUrlTranscript(
 			);
 			await app.vault.process(activeFile, (data) => data + block);
 			deps.onComplete?.(activeFile.path);
-			op.finish(result.cached ? 'Cached transcription added to note' : 'Transcription added to note');
+			op.finish(withCacheReport('Transcription added to note', [transcriptCacheUse(result)]));
 		} catch (error) {
 			if (isNoSpeechError(error)) {
 				op.finish(noSpeechNotice('this video'));
@@ -98,7 +98,7 @@ export async function appendUrlTranscript(
 			result, url, deps.getSettings().video.embedInNote
 		);
 		await deps.app.vault.process(file, (data) => data + block);
-		op.finish('Transcript added');
+		op.finish(withCacheReport('Transcript added', [transcriptCacheUse(result)]));
 	} catch (error) {
 		if (isNoSpeechError(error)) {
 			op.finish(noSpeechNotice('this video'));

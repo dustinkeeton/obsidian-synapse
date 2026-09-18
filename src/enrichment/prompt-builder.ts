@@ -1,5 +1,6 @@
 import { SynapseSettings } from '../settings';
 import { AIClient, isRecord, parseJson, sanitizeAIResponse } from '../shared';
+import type { AIRequestOptions } from '../shared';
 import { ExternalLinkCandidate, FrontmatterEnrichment } from './types';
 
 /** Allowlisted frontmatter key pattern: lowercase alphanumeric, hyphens, underscores. Rejects __proto__, constructor, etc. */
@@ -45,7 +46,8 @@ export class PromptBuilder {
 	 */
 	async suggestExternalLinks(
 		noteContent: string,
-		existingLinks: string[]
+		existingLinks: string[],
+		aiOpts?: AIRequestOptions
 	): Promise<ExternalLinkCandidate[]> {
 		const maxLinks = this.getSettings().enrichment.maxExternalLinks;
 		if (maxLinks === 0) return [];
@@ -73,7 +75,7 @@ ${existingLinks.length > 0 ? existingLinks.join('\n') : '(none)'}
 			'You are a research assistant. Return only valid JSON. Be conservative — only suggest links you are confident about. If uncertain, return an empty array.';
 
 		try {
-			const response = await this.aiClient.complete(prompt, systemPrompt);
+			const response = await this.aiClient.complete(prompt, systemPrompt, aiOpts);
 			const sanitized = sanitizeAIResponse(response);
 			const cleaned = sanitized.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
 			const parsed = parseJson(cleaned);
@@ -106,7 +108,8 @@ ${existingLinks.length > 0 ? existingLinks.join('\n') : '(none)'}
 	 */
 	async suggestFrontmatter(
 		noteContent: string,
-		existingFrontmatter: Record<string, unknown>
+		existingFrontmatter: Record<string, unknown>,
+		aiOpts?: AIRequestOptions
 	): Promise<FrontmatterEnrichment[]> {
 		const truncated = noteContent.slice(0, 3000);
 		const existingKeys = Object.keys(existingFrontmatter);
@@ -131,7 +134,7 @@ ${existingKeys.length > 0 ? existingKeys.join(', ') : '(none)'}
 			'You are a metadata organization assistant. Return only valid JSON. Be conservative.';
 
 		try {
-			const response = await this.aiClient.complete(prompt, systemPrompt);
+			const response = await this.aiClient.complete(prompt, systemPrompt, aiOpts);
 			const sanitized = sanitizeAIResponse(response);
 			const cleaned = sanitized.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
 			const parsed = parseJson(cleaned);

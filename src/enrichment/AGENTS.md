@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-17
 ---
 
 # Enrichment Module
@@ -112,7 +112,7 @@ Note: `TagVocabularyEntry`, `EnrichmentSettings`, and `EnrichmentWeightSettings`
 | `enrichment-applier.ts` | `EnrichmentApplier` | Applies/undoes accepted enrichments to note content non-destructively via `vault.process` |
 | `enrichment-modal.ts` | `EnrichmentDetailModal` | Per-item toggle modal for reviewing a single proposal |
 | `settings-section.ts` | `renderEnrichmentSettings` | Settings UI accordion for the enrichment feature (#243) |
-| `*.test.ts` | Co-located Vitest suites | `vault-analyzer`, `weight-calculator`, `metadata-classifier`, `topic-extractor`, `link-resolver`, `prompt-builder`, `enrichment-store`, `enrichment-applier`, `settings-section`, `auto-accept` (#228), `review-toast` (#366) |
+| `*.test.ts` | Co-located Vitest suites | `vault-analyzer`, `weight-calculator`, `metadata-classifier`, `topic-extractor`, `link-resolver`, `prompt-builder`, `enrichment-store`, `enrichment-applier`, `settings-section`, `auto-accept` (#228), `review-toast` (#366), `cache-report` (#527: single-enrich hit/miss, no-enrichment hit, vault-scan aggregate hit/miss) |
 
 ## Internal Class Signatures
 
@@ -132,12 +132,12 @@ function computeProximityWeight(sourcePath: string, targetPath: string, config: 
 // metadata-classifier.ts
 class MetadataClassifier {
   constructor(getSettings: () => SynapseSettings)
-  classify(noteContent: string, existingTags: string[]): Promise<TagCandidate[]>
+  classify(noteContent: string, existingTags: string[], aiOpts?: AIRequestOptions): Promise<TagCandidate[]>   // aiOpts reaches complete() (#527)
 }
 // topic-extractor.ts
 class TopicExtractor {
   constructor(app: App, analyzer: VaultAnalyzer, getSettings: () => SynapseSettings)
-  extractTopics(noteContent: string, notePath: string, existingLinkPaths: string[]): Promise<InternalLinkCandidate[]>
+  extractTopics(noteContent: string, notePath: string, existingLinkPaths: string[], aiOpts?: AIRequestOptions): Promise<InternalLinkCandidate[]>   // aiOpts reaches complete() (#527)
   resolveNewNoteCandidates(): Map<string, InternalLinkCandidate[]>  // notePath → candidates
   clearPending(): void
 }
@@ -150,8 +150,8 @@ class LinkResolver {
 // prompt-builder.ts
 class PromptBuilder {
   constructor(getSettings: () => SynapseSettings)
-  suggestExternalLinks(noteContent: string, existingLinks: string[]): Promise<ExternalLinkCandidate[]>
-  suggestFrontmatter(noteContent: string, existingFrontmatter: Record<string, unknown>): Promise<FrontmatterEnrichment[]>
+  suggestExternalLinks(noteContent: string, existingLinks: string[], aiOpts?: AIRequestOptions): Promise<ExternalLinkCandidate[]>   // aiOpts reaches complete() (#527)
+  suggestFrontmatter(noteContent: string, existingFrontmatter: Record<string, unknown>, aiOpts?: AIRequestOptions): Promise<FrontmatterEnrichment[]>   // aiOpts reaches complete() (#527)
 }
 // enrichment-store.ts
 class EnrichmentStore {
@@ -197,7 +197,7 @@ Registered in `EnrichmentModule.onload` via `registrar.register(id, condition, c
 ## Dependencies
 
 In (consumed by this module):
-- `src/shared`: `NoteOperationQueue` (#483), `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction`, `getIncludedMarkdownFiles`, `getMarkdownFiles`, `NotificationManager`, `CheckpointManager`, `FolderPickerModal`, `AIClient`, `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `asStringArray`, `buildCallout`, `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `sanitizeAIResponse`, `parseJson`, `isRecord`, `generateId`, `isTwitterUrl`, `fetchTweetContent`, `fireAndForget`, `ensureFolder`, `readJsonFile`, `addEnhancedSlider`; types `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `SettingsSectionContext`
+- `src/shared`: `NoteOperationQueue` (#483), `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction`, `getIncludedMarkdownFiles`, `getMarkdownFiles`, `NotificationManager`, `CheckpointManager`, `FolderPickerModal`, `AIClient`, `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `asStringArray`, `buildCallout`, `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `sanitizeAIResponse`, `parseJson`, `isRecord`, `generateId`, `isTwitterUrl`, `fetchTweetContent`, `fireAndForget`, `ensureFolder`, `readJsonFile`, `addEnhancedSlider`, `trackAiCache`, `withCacheReport`; types `AIRequestOptions`, `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `SettingsSectionContext`
 - `src/commands`: `CommandRegistrar`
 - `src/settings`: `SynapseSettings`, `TagVocabularyEntry`, `EnrichmentWeightSettings`
 
@@ -215,15 +215,16 @@ enrich(filePath, trigger, options?)
   │    └─ if trigger === 'manual' && excluded → Notice naming findMatchingRule(); else silent (#307)
   └─ noteQueue.run(file.path, runEnrichment) [#483; silent, no onWait — enrichment is an automatic
   │    post-op side effect, so it queues behind the primary operation and reads what it wrote]
-  └─ enrichFile(file, trigger) [private]  (fetchTwitterContext prepends tweet text to classifier body)
-       ├─ MetadataClassifier.classify()             → TagCandidate[]
+  └─ enrichFile(file, trigger, cacheUse?) [private]  (fetchTwitterContext prepends tweet text to classifier body)
+       ├─ aiOpts = trackAiCache(cacheUse)           [one CacheUse per enriched note, #527]
+       ├─ MetadataClassifier.classify(.., aiOpts)   → TagCandidate[]
        ├─ LinkResolver.findInternalLinks()          → InternalLinkCandidate[] (graph)
-       ├─ TopicExtractor.extractTopics()            → InternalLinkCandidate[] (topics)
-       ├─ PromptBuilder.suggestExternalLinks()      → ExternalLinkCandidate[]
-       ├─ PromptBuilder.suggestFrontmatter()        → FrontmatterEnrichment[]
+       ├─ TopicExtractor.extractTopics(.., aiOpts)  → InternalLinkCandidate[] (topics)
+       ├─ PromptBuilder.suggestExternalLinks(.., aiOpts)  → ExternalLinkCandidate[]
+       ├─ PromptBuilder.suggestFrontmatter(.., aiOpts)    → FrontmatterEnrichment[]
        ├─ LinkResolver.mergeTopicCandidates(topicLinks, graphLinks)
        └─ EnrichmentStore.save(proposal)  [skipped when totalItems === 0 → returns null]
-  └─ topicExtractor.clearPending(); op.finish(reviewAction(...)) [Review toast unless postOp/auto-accept #366]; maybeAutoAccept(id) [if shouldAutoAccept()]
+  └─ topicExtractor.clearPending(); op.finish(withCacheReport('Enrichment proposal created' | 'No enrichments needed', [cacheUse]), reviewAction(...)) [#527; Review toast unless postOp/auto-accept #366]; maybeAutoAccept(id) [if shouldAutoAccept()]
   └─ refreshView() → onViewRefreshNeeded()
 ```
 
@@ -238,6 +239,7 @@ scanVault(folderPath?, skipConfirmation?, onlyFile?)
            → merged into existing proposals via LinkResolver.mergeTopicCandidates()
   Auto-accept (#228): runs AFTER Phase 4 so merged candidates are included; batch mode (one summary Notice);
            each apply takes its own note's queue slot: noteQueue.run(notePath, () => maybeAutoAccept(id, true)) (#483)
+  Finish: withCacheReport('Generated N proposals' | 'Resumed -- generated N proposals', cacheUses, 'note') — one aggregated cache line, one CacheUse per note processed incl. notes that needed no enrichment (#527)
   On cancel/error: discard checkpoint, clearPending(), rejectProposalBatch()
 ```
 

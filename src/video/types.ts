@@ -20,6 +20,8 @@ export interface VideoProcessOptions {
 	outputPath?: string;
 	insertMode?: boolean;
 	timeRange?: TimeRange;
+	/** Dispatch the transcript's AI passes fresh (#527). */
+	bypassCache?: boolean;
 }
 
 export interface ExtractionResult {
@@ -54,6 +56,10 @@ export interface RoutedUrlTranscript {
 	videoVaultPath?: string;
 	reformatted?: boolean;
 	schemaId?: string;
+	/** Served from the transcript store (#488). */
+	cached?: boolean;
+	/** Fresh transcript whose AI post-processing replayed a cached response (#527). */
+	aiCached?: boolean;
 }
 
 /**

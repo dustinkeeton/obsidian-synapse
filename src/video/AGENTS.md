@@ -71,6 +71,7 @@ interface VideoProcessOptions {
   outputPath?: string
   insertMode?: boolean
   timeRange?: TimeRange
+  bypassCache?: boolean          // forwarded to AudioModule.transcribe as TranscribeOptions.bypassCache (#527)
 }
 interface ExtractionResult { audioPath: string; metadata: VideoMetadata }
 interface VideoMetadata {
@@ -144,6 +145,8 @@ class FrameExtractor {                          // frame-extractor.ts:L6 — pla
    |  urlTranscriber (the #184 tier router) with a processUrl fallback;
    |  processes in reverse line order; 2s delay between API calls; atomic splice
    |  via vault.process; cancellable via NotificationManager operation
+   |  finish message via withCacheReport(..., one CacheUse per inserted embed) (#527;
+   |  RoutedUrlTranscript carries cached/aiCached from the router)
    |
 2b. Single URL to the active note is NOT here -- src/transcription/
    |  insertUrlTranscript(deps, url, timeRange?) owns that flow (and its own
