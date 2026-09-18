@@ -514,6 +514,8 @@ describe('SynapseSettingTab — per-section reset rows (#442)', () => {
 		// …every registered control is the labeled "Reset" button (not the old icon)…
 		for (const key of Object.keys(controls)) {
 			expect(controls[key].button.buttonText).toBe('Reset');
+			expect(controls[key].button.classes).toContain('mod-destructive');
+			expect(controls[key].button.setWarning).not.toHaveBeenCalled();
 		}
 		// …and About hosts the global reset-all row instead of a per-section reset.
 		expect(controls['about']).toBeUndefined();
@@ -636,13 +638,14 @@ describe('SynapseSettingTab — global reset all (#420)', () => {
 		return ButtonComponent.instances.find((b) => b.buttonText === 'Reset all settings');
 	}
 
-	it('renders a "Reset all settings" warning button in About', () => {
+	it('renders a "Reset all settings" mod-destructive button in About (#533)', () => {
 		const { tab } = makeTab();
 		tab.display();
 
 		const btn = resetAllButton();
 		expect(btn).toBeDefined();
-		expect(btn!.setWarning).toHaveBeenCalled();
+		expect(btn!.classes).toContain('mod-destructive');
+		expect(btn!.setWarning).not.toHaveBeenCalled();
 	});
 
 	it('restores all settings and preserves bookkeeping when confirmed', async () => {
