@@ -150,8 +150,8 @@ export class EnrichmentModule implements FeatureModule {
 					file.path,
 					() => this.enrichFile(file, 'manual', cacheUse)
 				);
+				cacheUses.push(cacheUse);
 				if (id) {
-					cacheUses.push(cacheUse);
 					createdProposals.push({ id, notePath: file.path });
 					proposalCount++;
 				}
@@ -310,8 +310,8 @@ export class EnrichmentModule implements FeatureModule {
 					eligible[i].path,
 					() => this.enrichFile(eligible[i], 'manual', cacheUse)
 				);
+				cacheUses.push(cacheUse);
 				if (id) {
-					cacheUses.push(cacheUse);
 					createdProposals.push({ id, notePath: eligible[i].path });
 					proposalCount++;
 				}

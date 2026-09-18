@@ -239,7 +239,7 @@ scanVault(folderPath?, skipConfirmation?, onlyFile?)
            → merged into existing proposals via LinkResolver.mergeTopicCandidates()
   Auto-accept (#228): runs AFTER Phase 4 so merged candidates are included; batch mode (one summary Notice);
            each apply takes its own note's queue slot: noteQueue.run(notePath, () => maybeAutoAccept(id, true)) (#483)
-  Finish: withCacheReport('Generated N proposals' | 'Resumed -- generated N proposals', cacheUses, 'note') — one aggregated cache line (#527)
+  Finish: withCacheReport('Generated N proposals' | 'Resumed -- generated N proposals', cacheUses, 'note') — one aggregated cache line, one CacheUse per note processed incl. notes that needed no enrichment (#527)
   On cancel/error: discard checkpoint, clearPending(), rejectProposalBatch()
 ```
 

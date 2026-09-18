@@ -106,6 +106,16 @@ describe('EnrichmentModule cache reporting (#527)', () => {
 		expect(lastFinish()).toBe('Generated 3 proposals — 1 of 3 notes served from cache');
 	});
 
+	it('counts notes that replayed but needed no enrichment in the vault scan line', async () => {
+		tagsFound = false;
+		replayedPaths.add('inbox/a.md');
+		replayedPaths.add('inbox/c.md');
+
+		await mod.scanVault(undefined, true);
+
+		expect(lastFinish()).toBe('Generated 0 proposals — 2 of 3 notes served from cache');
+	});
+
 	it('keeps the vault scan message unchanged when nothing was replayed', async () => {
 		await mod.scanVault(undefined, true);
 
