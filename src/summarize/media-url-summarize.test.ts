@@ -299,7 +299,7 @@ describe('SummarizeModule media URLs (#488)', () => {
 
 			await module.scanVault(undefined, true, file);
 
-			expect(notifications._handle.finish).toHaveBeenLastCalledWith('Done -- 2 inline summaries — 1 of 2 served from cache');
+			expect(notifications._handle.finish).toHaveBeenLastCalledWith('Done -- 2 inline summaries — 1 of 2 summaries served from cache');
 			expect(notifications.info).not.toHaveBeenCalled();
 		});
 	});

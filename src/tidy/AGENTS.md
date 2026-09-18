@@ -142,7 +142,7 @@ Reachable in code only via the `undo-tidy` command, which is gated off (registry
      if isPathExcluded(path, "tidy", settings): continue   (silent skip, #307)
      try { tidy(file); tidied++ } catch { console.warn(...) }
         (public tidy => one queue slot per note, index.ts:112)
-7. if !op.cancelled: op.finish(withCacheReport("Tidied N notes", cacheUses))   // one aggregated cache line (#527)
+7. if !op.cancelled: op.finish(withCacheReport("Tidied N notes", cacheUses, 'note'))   // one aggregated cache line (#527)
 8. return tidied
 ```
 

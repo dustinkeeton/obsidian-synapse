@@ -180,7 +180,7 @@ export class OrganizeModule implements FeatureModule {
 		// Review action only when a new-directory proposal was generated AND
 		// organize auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
-			withCacheReport(`Resumed -- ${parts.length > 0 ? parts.join(', ') : 'no changes needed'}`, cacheUses),
+			withCacheReport(`Resumed -- ${parts.length > 0 ? parts.join(', ') : 'no changes needed'}`, cacheUses, 'note'),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,
@@ -408,7 +408,7 @@ export class OrganizeModule implements FeatureModule {
 		// Review action only when a new-directory proposal was generated AND
 		// organize auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
-			withCacheReport(parts.length > 0 ? parts.join(', ') : 'No changes needed', cacheUses),
+			withCacheReport(parts.length > 0 ? parts.join(', ') : 'No changes needed', cacheUses, 'note'),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,

@@ -29,6 +29,13 @@ describe('withCacheReport', () => {
 		const items: CacheUse[] = [{ ai: true }, {}, { transcript: true }, {}, { transcript: true, ai: true }, {}, {}, {}];
 		expect(withCacheReport('Tidied 8 notes', items)).toBe('Tidied 8 notes — 3 of 8 served from cache');
 	});
+
+	it('names the unit of the aggregate count', () => {
+		const items: CacheUse[] = [{ ai: true }, {}, { transcript: true }];
+		expect(withCacheReport('2 proposals', items, 'note')).toBe('2 proposals — 2 of 3 notes served from cache');
+		expect(withCacheReport('Done -- 3 inline', items, 'summary')).toBe('Done -- 3 inline — 2 of 3 summaries served from cache');
+		expect(withCacheReport('Note tidied', [{ ai: true }], 'note')).toBe('Note tidied — used a cached AI response');
+	});
 });
 
 describe('cache use helpers', () => {

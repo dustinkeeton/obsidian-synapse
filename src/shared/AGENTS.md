@@ -383,7 +383,7 @@ function usedCache(use: CacheUse): boolean
 function mergeCacheUse(uses: CacheUse[]): CacheUse                 // OR per cache (several sources -> one result)
 function transcriptCacheUse(result: { cached?: boolean; aiCached?: boolean }): CacheUse   // routed URL transcript flags -> CacheUse
 function trackAiCache(use: CacheUse): AIRequestOptions             // { onCacheHit } that sets use.ai; any replayed call in an operation marks it
-function withCacheReport(message: string, items: CacheUse[]): string   // items = one per result; no hit -> message unchanged; 1 item -> ' — used a cached transcript ("Fetch a fresh transcript" in Transcribe media replaces it)' | ' — used a cached AI response' | both; >1 -> ' — N of M served from cache'
+function withCacheReport(message: string, items: CacheUse[], unit?: string): string   // items = one per result; no hit -> message unchanged; 1 item -> ' — used a cached transcript ("Fetch a fresh transcript" in Transcribe media replaces it)' | ' — used a cached AI response' | both; >1 -> ' — N of M <unit>s served from cache' (unit = singular noun for one item: 'note' | 'proposal' | 'summary' | 'transcription' | 'extraction'; every batch caller passes one)
 
 // no-speech.ts (#524) — typed no-speech outcome shared by audio, video, transcription
 const NO_SPEECH_MESSAGE: string                                   // 'No speech detected — nothing to transcribe'

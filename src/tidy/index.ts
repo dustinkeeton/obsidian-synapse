@@ -123,7 +123,7 @@ export class TidyModule implements FeatureModule {
 		}
 
 		if (!op.cancelled) {
-			op.finish(withCacheReport(`Tidied ${tidied} note${tidied === 1 ? '' : 's'}`, cacheUses));
+			op.finish(withCacheReport(`Tidied ${tidied} note${tidied === 1 ? '' : 's'}`, cacheUses, 'note'));
 		}
 
 		return tidied;

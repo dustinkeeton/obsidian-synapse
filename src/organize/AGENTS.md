@@ -167,7 +167,7 @@ scanDirectory(folderPath?, skipConfirmation?, onlyFile?)
                        push cacheUse, completeItem()   [#483: one slot per note, not per batch]
     --> on cancel: checkpointManager.discard()
     --> on success: checkpointManager.complete(), dispatch deferred tasks
-    --> genOp.finish(withCacheReport(parts.join(', ') | 'No changes needed', cacheUses))   // one aggregated cache line (#527)
+    --> genOp.finish(withCacheReport(parts.join(', ') | 'No changes needed', cacheUses, 'note'))   // one aggregated cache line, one CacheUse per note processed (#527)
     --> writeOrganizeSummary() if any files moved
 
 resumeFromCheckpoint(checkpoint)

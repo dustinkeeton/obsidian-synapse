@@ -123,7 +123,7 @@ remScanDirectory(folderPath?, skipConfirmation?, onlyFile?)
   --> on error: rejectProposalBatch(createdIds) + return 0
   --> on cancel: discard() + rejectProposalBatch()
   --> on success: complete() + dispatchDeferredTasks
-  --> withCacheReport('REM scan complete -- N notes with linkable mentions' | 'Resumed -- generated N proposals', cacheUses) finish Notice — one aggregated cache line (#527) + reviewAction({ generated: created>0, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366); separate "Auto-accepted ..." info Notice when autoAcceptedCount > 0
+  --> withCacheReport('REM scan complete -- N notes with linkable mentions' | 'Resumed -- generated N proposals', cacheUses, 'note') finish Notice — one aggregated cache line, one CacheUse per note scanned (#527) + reviewAction({ generated: created>0, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366); separate "Auto-accepted ..." info Notice when autoAcceptedCount > 0
 
 acceptProposal(id, acceptedMatchTexts, options?)
   --> guard: only 'pending' proposals (cascade safety)

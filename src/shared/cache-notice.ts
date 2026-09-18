@@ -38,12 +38,20 @@ function cacheNote(use: CacheUse): string | null {
 	return null;
 }
 
-/** Finish message for an operation that produced one result per entry of `items`; unchanged when no cache was used. */
-export function withCacheReport(message: string, items: CacheUse[]): string {
+function plural(unit: string): string {
+	return unit.endsWith('y') ? `${unit.slice(0, -1)}ies` : `${unit}s`;
+}
+
+/**
+ * Finish message for an operation that produced one result per entry of `items`; unchanged when no
+ * cache was used. `unit` (singular) names what each item is in the aggregate line, so the count is
+ * never read against a different noun in `message`.
+ */
+export function withCacheReport(message: string, items: CacheUse[], unit?: string): string {
 	const hits = items.filter(usedCache);
 	if (hits.length === 0) return message;
 	const note = items.length === 1
 		? cacheNote(hits[0])
-		: `${hits.length} of ${items.length} served from cache`;
+		: `${hits.length} of ${items.length} ${unit ? `${plural(unit)} ` : ''}served from cache`;
 	return `${message} — ${note}`;
 }

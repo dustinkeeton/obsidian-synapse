@@ -253,7 +253,7 @@ export class RemModule implements FeatureModule {
 			// Review action only when something was generated AND REM auto-accept
 			// is off (#366) — the deep-dive rule, centralized.
 			op.finish(
-				withCacheReport(`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions`, cacheUses),
+				withCacheReport(`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions`, cacheUses, 'note'),
 				reviewAction({
 					generated: created > 0,
 					shouldAutoAccept: this.shouldAutoAccept,
@@ -340,7 +340,7 @@ export class RemModule implements FeatureModule {
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
 			op.finish(
-				withCacheReport(`Resumed -- generated ${createdProposalIds.length} proposals`, cacheUses),
+				withCacheReport(`Resumed -- generated ${createdProposalIds.length} proposals`, cacheUses, 'note'),
 				reviewAction({
 					generated: createdProposalIds.length > 0,
 					shouldAutoAccept: this.shouldAutoAccept,

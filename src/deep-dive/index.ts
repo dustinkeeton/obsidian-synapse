@@ -516,7 +516,7 @@ export class DeepDiveModule implements FeatureModule {
 				// auto-accept is off — auto-accept (applied right after) creates
 				// every note, leaving nothing to review (#366).
 				genOp.finish(
-					withCacheReport(`Generated ${run.stats.totalProposals} proposals (${depthSummary})`, cacheUses),
+					withCacheReport(`Generated ${run.stats.totalProposals} proposals (${depthSummary})`, cacheUses, 'proposal'),
 					reviewAction({
 						generated: run.stats.totalProposals > 0,
 						shouldAutoAccept: this.shouldAutoAccept,

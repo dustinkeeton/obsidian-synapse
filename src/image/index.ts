@@ -220,7 +220,7 @@ export class ImageModule implements FeatureModule {
 			// Mark checkpoint completed and dispatch deferred tasks (I1)
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
-			op.finish(withCacheReport(`Done -- ${completed}/${total} OCR extractions added`, cacheUses));
+			op.finish(withCacheReport(`Done -- ${completed}/${total} OCR extractions added`, cacheUses, 'extraction'));
 		}
 	}
 

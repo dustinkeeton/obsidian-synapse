@@ -141,7 +141,7 @@ describe('AudioModule response-cache reporting (#527)', () => {
 		await vi.runAllTimersAsync();
 		await pending;
 
-		expect(finish).toHaveBeenLastCalledWith('Done -- 2/2 transcriptions added — 1 of 2 served from cache');
+		expect(finish).toHaveBeenLastCalledWith('Done -- 2/2 transcriptions added — 1 of 2 transcriptions served from cache');
 	});
 
 	it('keeps the batch message unchanged when nothing was replayed', async () => {

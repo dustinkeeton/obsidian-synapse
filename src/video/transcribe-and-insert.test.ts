@@ -181,7 +181,7 @@ describe('VideoModule.transcribeAndInsert cache reporting (#527)', () => {
 		vi.useRealTimers();
 
 		expect(finishOf(notifications)).toHaveBeenCalledWith(
-			'Done -- 3/3 video transcriptions added — 2 of 3 served from cache'
+			'Done -- 3/3 video transcriptions added — 2 of 3 transcriptions served from cache'
 		);
 		expect(notifications.info).not.toHaveBeenCalled();
 	});

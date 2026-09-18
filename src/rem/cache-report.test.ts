@@ -110,7 +110,7 @@ describe('RemModule cache reporting (#527)', () => {
 
 		await mod.remScanDirectory('inbox');
 
-		expect(finish.mock.calls.at(-1)?.[0]).toBe('REM scan complete -- 3 notes with linkable mentions — 1 of 3 served from cache');
+		expect(finish.mock.calls.at(-1)?.[0]).toBe('REM scan complete -- 3 notes with linkable mentions — 1 of 3 notes served from cache');
 	});
 
 	it('keeps the directory scan message unchanged when nothing was replayed', async () => {

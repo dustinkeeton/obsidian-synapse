@@ -81,7 +81,7 @@ describe('ImageModule cache reporting (#527)', () => {
 
 		await mod.extractAndInsert(mockFile('notes/Doc.md'), [embed('a.png', 0), embed('b.png', 1), embed('c.png', 2)]);
 
-		expect(lastFinish()).toBe('Done -- 3/3 OCR extractions added — 2 of 3 served from cache');
+		expect(lastFinish()).toBe('Done -- 3/3 OCR extractions added — 2 of 3 extractions served from cache');
 	});
 
 	it('keeps the multi-image message unchanged when nothing was replayed', async () => {

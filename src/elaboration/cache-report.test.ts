@@ -104,7 +104,7 @@ describe('ElaborationModule cache reporting (#527)', () => {
 
 		await mod.scanVault(undefined, true);
 
-		expect(finish.mock.calls.at(-1)?.[0]).toBe('Generated 3 proposals — 2 of 3 served from cache');
+		expect(finish.mock.calls.at(-1)?.[0]).toBe('Generated 3 proposals — 2 of 3 proposals served from cache');
 	});
 
 	it('keeps the vault scan message unchanged when nothing was replayed', async () => {

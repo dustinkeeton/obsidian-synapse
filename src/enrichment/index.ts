@@ -189,7 +189,7 @@ export class EnrichmentModule implements FeatureModule {
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
 		genOp.finish(
-			withCacheReport(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses),
+			withCacheReport(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'note'),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,
@@ -379,7 +379,7 @@ export class EnrichmentModule implements FeatureModule {
 		// Review action only when something was generated AND enrichment
 		// auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
-			withCacheReport(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses),
+			withCacheReport(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'note'),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,

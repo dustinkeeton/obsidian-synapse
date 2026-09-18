@@ -118,7 +118,7 @@ describe('DeepDiveModule cache reporting (#527)', () => {
 
 		await deepDive(mockFile('notes/Root.md'));
 
-		expect(finish.mock.calls.at(-1)?.[0]).toBe('Generated 3 proposals (depth 0: 3) — 1 of 3 served from cache');
+		expect(finish.mock.calls.at(-1)?.[0]).toBe('Generated 3 proposals (depth 0: 3) — 1 of 3 proposals served from cache');
 	});
 
 	it('keeps the generation message unchanged when nothing was replayed', async () => {

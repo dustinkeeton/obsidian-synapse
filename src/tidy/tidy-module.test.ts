@@ -311,7 +311,7 @@ describe('TidyModule', () => {
 			const finishes = mockNotifications._handle.finish.mock.calls.map((c) => c[0] as string);
 			expect(finishes).toEqual([
 				'Note tidied', 'Note tidied', 'Note tidied',
-				'Tidied 3 notes — 2 of 3 served from cache',
+				'Tidied 3 notes — 2 of 3 notes served from cache',
 			]);
 		});
 

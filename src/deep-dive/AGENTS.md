@@ -121,7 +121,7 @@ deepDive(file)  [private, called by command]
     --> DeepDiveStore.saveRun()
     --> on cancel: checkpointManager.discard()
     --> on success: checkpointManager.complete(), dispatch deferred tasks
-    --> on success: genOp.finish(withCacheReport(`Generated N proposals (depthSummary)`, cacheUses), reviewAction({generated, shouldAutoAccept, openProposalView}))  [Review button only if generated && !shouldAutoAccept() (#366); opens via onOpenProposalView]
+    --> on success: genOp.finish(withCacheReport(`Generated N proposals (depthSummary)`, cacheUses, 'proposal'), reviewAction({generated, shouldAutoAccept, openProposalView}))  [Review button only if generated && !shouldAutoAccept() (#366); opens via onOpenProposalView]
     --> on error: checkpointManager.discard()
     --> maybeAutoAcceptRun(run.proposalIds)  [if shouldAutoAccept()]
 

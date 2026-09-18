@@ -236,7 +236,7 @@ export class SummarizeModule implements FeatureModule {
 		if (totalInline > 0) parts.push(`${totalInline} inline summaries`);
 		if (totalEnrichment > 0) parts.push(`${totalEnrichment} notes created`);
 		if (totalLinksUpdated > 0) parts.push(`${totalLinksUpdated} links updated`);
-		genOp.finish(withCacheReport(`Resumed -- ${parts.join(', ') || 'no changes'}`, cacheUses));
+		genOp.finish(withCacheReport(`Resumed -- ${parts.join(', ') || 'no changes'}`, cacheUses, 'summary'));
 	}
 
 	private async summarizeNote(file: TFile): Promise<void> {
@@ -558,7 +558,7 @@ export class SummarizeModule implements FeatureModule {
 			if (result.linksUpdated > 0) {
 				parts.push(`${result.linksUpdated} link(s) updated`);
 			}
-			op.finish(withCacheReport(`Done -- ${parts.join(', ') || `${totalDone}/${total} processed`}`, result.cacheUses));
+			op.finish(withCacheReport(`Done -- ${parts.join(', ') || `${totalDone}/${total} processed`}`, result.cacheUses, 'summary'));
 		}
 
 		this.fireEnrichmentCallbacks(file.path, result);
@@ -1088,7 +1088,7 @@ export class SummarizeModule implements FeatureModule {
 			if (totalInline > 0) parts.push(`${totalInline} inline summaries`);
 			if (totalEnrichment > 0) parts.push(`${totalEnrichment} notes created`);
 			if (totalLinksUpdated > 0) parts.push(`${totalLinksUpdated} links updated`);
-			genOp.finish(withCacheReport(`Done -- ${parts.join(', ')}`, cacheUses));
+			genOp.finish(withCacheReport(`Done -- ${parts.join(', ')}`, cacheUses, 'summary'));
 		}
 	}
 

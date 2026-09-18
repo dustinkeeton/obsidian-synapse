@@ -101,7 +101,7 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
    completeItem per embed; if op.cancelled -> break
    vault.process(noteFile, splice all inserts at line+1) -> onExtractionComplete
    cancelled -> checkpointManager.discard ; else complete + dispatchDeferredTasks
-   op.finish(withCacheReport(`Done -- ${completed}/${total} OCR extractions added`, cacheUses))   // one aggregated cache line (#527)
+   op.finish(withCacheReport(`Done -- ${completed}/${total} OCR extractions added`, cacheUses, 'extraction'))   // one aggregated cache line (#527)
 
 3. ImageExtractor.extract(imageData, fileName)  -- extractor.ts:17
    getMediaType(fileName) -> MIME from extension (default image/png)

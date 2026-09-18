@@ -103,7 +103,7 @@ describe('EnrichmentModule cache reporting (#527)', () => {
 
 		await mod.scanVault(undefined, true);
 
-		expect(lastFinish()).toBe('Generated 3 proposals — 1 of 3 served from cache');
+		expect(lastFinish()).toBe('Generated 3 proposals — 1 of 3 notes served from cache');
 	});
 
 	it('keeps the vault scan message unchanged when nothing was replayed', async () => {

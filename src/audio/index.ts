@@ -394,7 +394,7 @@ export class AudioModule implements FeatureModule {
 			// Mark checkpoint completed and dispatch deferred tasks (I1)
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
-			op.finish(withCacheReport(`Done -- ${completed}/${total} transcriptions added`, cacheUses));
+			op.finish(withCacheReport(`Done -- ${completed}/${total} transcriptions added`, cacheUses, 'transcription'));
 		}
 	}
 
