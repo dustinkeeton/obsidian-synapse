@@ -18,31 +18,23 @@ class EnrichmentModule {
   // Wired by main.ts to open the unified proposal view (#340)
   onOpenProposalView: (() => void) | null
 
-  constructor(
-    plugin: Plugin,
-    getSettings: () => SynapseSettings,
-    notifications: NotificationManager,
-    checkpointManager: CheckpointManager,
-    registrar: CommandRegistrar,
-    noteQueue: NoteOperationQueue,        // #483; after registrar, before shouldAutoAccept
-    shouldAutoAccept?: () => boolean
-  )
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:60; ModuleDeps = { plugin, getSettings, notifications, checkpointManager, registrar, noteQueue } (#504); shouldAutoAccept defaults to () => false (#228)
 
   onload(): Promise<void>
   onunload(): void
 
-  enrich(filePath: string, trigger: EnrichmentTrigger, options?: { postOp?: boolean }): Promise<void>  // postOp suppresses chained-auto-enrich Review toast (#366); queue wrapper over private runEnrichment (#483)
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
-  getPendingProposals(): Promise<EnrichmentProposal[]>
-  acceptSelectedFromView(id: string, accepted: AcceptedItems, options?: { silent?: boolean }): Promise<void>  // queue wrapper over private acceptSelected (#483)
-  rejectFromView(id: string): Promise<void>   // no note write; unqueued
+  enrich(filePath: string, trigger: EnrichmentTrigger, options?: { postOp?: boolean }): Promise<void>  // index.ts:409; postOp suppresses chained-auto-enrich Review toast (#366); queue wrapper over private runEnrichment (#483)
+  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:217
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>   // index.ts:124
+  getPendingProposals(): Promise<EnrichmentProposal[]>   // index.ts:116
+  acceptSelectedFromView(id: string, accepted: AcceptedItems, options?: { silent?: boolean }): Promise<void>  // index.ts:563; queue wrapper over private acceptSelected (#483)
+  rejectFromView(id: string): Promise<void>   // index.ts:612; no note write; unqueued
 }
 
-function renderEnrichmentSettings(ctx: SettingsSectionContext): void  // re-exported (index.ts:695)
+function renderEnrichmentSettings(ctx: SettingsSectionContext): void  // re-exported (index.ts:740)
 ```
 
-Types re-exported from the `index.ts` barrel (`index.ts:19-28`):
+Types re-exported from the `index.ts` barrel (`index.ts:20-29`):
 
 ```ts
 type EnrichmentTrigger = 'elaboration' | 'transcription' | 'summarization' | 'deep-dive' | 'manual'
@@ -72,7 +64,7 @@ interface AcceptedItems {
 }
 
 interface TagCandidate {
-  tag: string            // normalized, '#'-prefixed (metadata-classifier.ts:L54)
+  tag: string            // normalized, '#'-prefixed (metadata-classifier.ts:42-44)
   category: string       // vocabulary category, e.g. "Status", "Type", "Source"
   confidence: number     // AI classification confidence (0–1)
   rawScore: number       // always 0 for classifier-produced candidates
@@ -178,10 +170,10 @@ class EnrichmentDetailModal extends Modal {
 // settings-section.ts
 function renderEnrichmentSettings(ctx: SettingsSectionContext): void
 // index.ts — private queue cores (#483): callers hold the note's NoteOperationQueue slot; these must not re-enter it
-private runEnrichment(file: TFile, trigger: EnrichmentTrigger, op: OperationHandle, options?: { postOp?: boolean }): Promise<void>  // index.ts:439; core of enrich()
-private enrichFile(file: TFile, trigger: EnrichmentTrigger): Promise<string | null>   // index.ts:481; per-note core, also queued directly by scanVault + resumeFromCheckpoint
-private acceptSelected(id: string, accepted: AcceptedItems, options?: { silent?: boolean }): Promise<void>   // index.ts:612; core of acceptSelectedFromView
-private maybeAutoAccept(proposalId: string, batch?: boolean): Promise<boolean>   // index.ts:591; calls the lock-free acceptSelected directly (callers already hold the slot)
+private runEnrichment(file: TFile, trigger: EnrichmentTrigger, op: OperationHandle, options?: { postOp?: boolean }): Promise<void>  // index.ts:442; core of enrich(); owns one CacheUse (index.ts:448) and the withCacheReport finish lines (index.ts:459, index.ts:471, #527)
+private enrichFile(file: TFile, trigger: EnrichmentTrigger, cacheUse?: CacheUse): Promise<string | null>   // index.ts:485; per-note core, also queued directly by scanVault + resumeFromCheckpoint; aiOpts = trackAiCache(cacheUse) (index.ts:502)
+private acceptSelected(id: string, accepted: AcceptedItems, options?: { silent?: boolean }): Promise<void>   // index.ts:618; core of acceptSelectedFromView
+private maybeAutoAccept(proposalId: string, batch?: boolean): Promise<boolean>   // index.ts:597; calls the lock-free acceptSelected directly (callers already hold the slot)
 ```
 
 ## Registered Commands
@@ -200,9 +192,11 @@ In (consumed by this module):
 - `src/shared`: `NoteOperationQueue` (#483), `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction`, `getIncludedMarkdownFiles`, `getMarkdownFiles`, `NotificationManager`, `CheckpointManager`, `FolderPickerModal`, `AIClient`, `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `asStringArray`, `buildCallout`, `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `sanitizeAIResponse`, `parseJson`, `isRecord`, `generateId`, `isTwitterUrl`, `fetchTweetContent`, `fireAndForget`, `ensureFolder`, `readJsonFile`, `addEnhancedSlider`, `trackAiCache`, `withCacheReport`; types `AIRequestOptions`, `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `SettingsSectionContext`
 - `src/commands`: `CommandRegistrar`
 - `src/settings`: `SynapseSettings`, `TagVocabularyEntry`, `EnrichmentWeightSettings`
+- `src/shared` types `ModuleDeps`, `FeatureModule`, `OperationHandle` (constructor bundle + lifecycle contract, #504)
 
 Out (consumed by other modules):
-- `src/main.ts`: imports `EnrichmentModule`, wires `onViewRefreshNeeded`, `onOpenProposalView`, `shouldAutoAccept`; calls `enrich()`, `scanVault()`, `getPendingProposals()`, `acceptSelectedFromView()`, `rejectFromView()`, `resumeFromCheckpoint()`
+- `src/modules/registry.ts`: constructs `new EnrichmentModule(deps, autoAccept(deps, 'enrichment'))` (`modules/registry.ts:90`)
+- `src/main.ts`: wires `onViewRefreshNeeded`, `onOpenProposalView`; calls `scanVault()` (`main.ts:95`), `getPendingProposals()` (`main.ts:111`), `resumeFromCheckpoint()` (`main.ts:124`), `acceptSelectedFromView()` / `rejectFromView()` (`main.ts:146-147`), `enrich(path, trigger, { postOp: true })` via `PostOpHookDeps.enrich` (`main.ts:183`)
 
 No feature-module dependencies (enrichment does not import from elaboration, transcription, etc.).
 
@@ -258,7 +252,7 @@ User review (UnifiedProposalView / EnrichmentDetailModal):
 Exclusion uses the centralized `src/shared/exclusions.ts` API. Per-module `excludeFolders` was removed; path exclusions live in `settings.exclusions: ExclusionRule[]` at the top level, scoped by feature name.
 
 ```ts
-// index.ts:647-653
+// index.ts:692-698
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (
@@ -268,11 +262,11 @@ private isExcluded(file: TFile): boolean {
 }
 ```
 
-`findMatchingRule(file.path, 'enrichment', settings)` is called only on the manual-trigger path to surface the matching rule pattern in the user-facing notice (`index.ts:398-408`).
+`findMatchingRule(file.path, 'enrichment', settings)` is called only on the manual-trigger path to surface the matching rule pattern in the user-facing notice (`index.ts:421-428`).
 
 ## Settings Keys
 
-All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:147-162`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:434-460`).
+All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:213-228`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:513-539`).
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -293,7 +287,7 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:14
 | `settings.exclusions` (top-level) | `ExclusionRule[]` | — | Path/glob exclusions scoped by feature `'enrichment'`; replaces removed `excludeFolders` |
 | `settings.autoAccept.enrichment` (top-level) | `boolean` | — | Wired to the `shouldAutoAccept` constructor param (#228) |
 
-`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:141-145`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book). `EnrichmentWeightSettings` defaults (`settings.ts:449-454`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
+`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:207-211`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book). `EnrichmentWeightSettings` defaults (`settings.ts:527-534`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
 
 ## Invariants
 
@@ -301,13 +295,14 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:14
 - Idempotent re-write / undo: `removeEnrichmentSections` strips both callout sections AND legacy comment markers `%% synapse-enrichment-start %%` / `%% synapse-enrichment-end %%` (`ENRICHMENT_START` / `ENRICHMENT_END`, `src/shared/callouts.ts:L46-47`) before re-writing (`enrichment-applier.ts:L215-240`).
 - Writes are atomic: `apply` and `undo` re-derive content inside `vault.process` callbacks (`enrichment-applier.ts:L36,L129`).
 - Frontmatter keys never overwritten: `action: 'add'` skips if key exists; `action: 'merge'` appends new array values (dedup via `asStringArray`).
-- Frontmatter key allowlist `^[a-z][a-z0-9_-]{0,49}$` (`prompt-builder.ts:L6`); forbidden keys (`__proto__`, `constructor`, `prototype`, `toString`, `valueOf`, `hasOwnProperty`) blocked (`prompt-builder.ts:L9-16`); `tags` key also rejected.
-- Tag format `^[a-zA-Z0-9][a-zA-Z0-9_/-]{0,49}$`; only vocabulary tags accepted, hallucinated tags dropped (`metadata-classifier.ts:L5,L48-51`).
-- External URL validation: HTTP/HTTPS only, in both proposal generation (`prompt-builder.ts:L19-26`) and write-out (`enrichment-applier.ts:L196-205`).
-- New-note topic threshold: a topic must be surfaced by 2+ notes during a vault scan to become a suggestion; new-note candidate `relevanceScore` = `0.5` (`topic-extractor.ts:L122,L127`).
-- Double-acceptance guard: `acceptSelected` and `maybeAutoAccept` bail if `proposal.status !== 'pending'` (`index.ts:620`, `index.ts:595`); both re-load the proposal inside the queue slot, so a wait cannot leave the decision on stale state (#483).
-- Empty proposals skipped: `enrichFile` returns `null` when no items are produced (`index.ts:538`).
-- Per-note serialization (#483): every note-mutating path acquires the note's `NoteOperationQueue` slot exactly ONCE — `enrich` (`index.ts:435`), the `scanVault` per-file loop (`index.ts:301`), `resumeFromCheckpoint` (`index.ts:142`), the batch auto-accept loops (`index.ts:176`, `index.ts:362`), and `acceptSelectedFromView` (`index.ts:564`). All queue SILENTLY (no `onWait`): enrichment is an automatic post-op side effect and review-panel accepts are perceived as immediate. The private cores (`runEnrichment`, `enrichFile`, `acceptSelected`) never re-enter the queue; `maybeAutoAccept` therefore calls `acceptSelected` directly, never `acceptSelectedFromView`.
-- Review toast (#366): completion notices attach an optional Review action via `reviewAction({ generated, shouldAutoAccept, openProposalView, postOp })` (`src/shared`), surfaced only when proposals were generated AND enrichment auto-accept is off; `postOp` (chained auto-enrich) suppresses it. Used by `enrich` (`index.ts:L426`), `scanVault` (`index.ts:L360`), `resumeFromCheckpoint` (`index.ts:L178`).
-- Proposal JSON filename: `<sanitized-path>-enrich-<8charId>.json`; null bytes and `..` stripped (`enrichment-store.ts:L113-122`).
-- `VaultAnalyzer` caches invalidate on the `metadataCache 'resolved'` event (`index.ts:L75-79`).
+- Frontmatter key allowlist `^[a-z][a-z0-9_-]{0,49}$` (`prompt-builder.ts:7`); forbidden keys (`__proto__`, `constructor`, `prototype`, `toString`, `valueOf`, `hasOwnProperty`) blocked (`prompt-builder.ts:10-17`); `tags` key also rejected.
+- Tag format `^[a-zA-Z0-9][a-zA-Z0-9_/-]{0,49}$`; only vocabulary tags accepted, hallucinated tags dropped (`metadata-classifier.ts:6,51-54`).
+- External URL validation: HTTP/HTTPS only, in both proposal generation (`prompt-builder.ts:20-27`) and write-out (`enrichment-applier.ts:196-205`).
+- New-note topic threshold: a topic must be surfaced by 2+ notes during a vault scan to become a suggestion; new-note candidate `relevanceScore` = `0.5` (`topic-extractor.ts:124,129`).
+- Double-acceptance guard: `acceptSelected` and `maybeAutoAccept` bail if `proposal.status !== 'pending'` (`index.ts:626`, `index.ts:601`); both re-load the proposal inside the queue slot, so a wait cannot leave the decision on stale state (#483).
+- Empty proposals skipped: `enrichFile` returns `null` when no items are produced (`index.ts:547`).
+- Per-note serialization (#483): every note-mutating path acquires the note's `NoteOperationQueue` slot exactly ONCE — `enrich` (`index.ts:438`), the `scanVault` per-file loop (`index.ts:309`), `resumeFromCheckpoint` (`index.ts:149`), the batch auto-accept loops (`index.ts:183`, `index.ts:370`), and `acceptSelectedFromView` (`index.ts:570`). All queue SILENTLY (no `onWait`): enrichment is an automatic post-op side effect and review-panel accepts are perceived as immediate. The private cores (`runEnrichment`, `enrichFile`, `acceptSelected`) never re-enter the queue; `maybeAutoAccept` therefore calls `acceptSelected` directly, never `acceptSelectedFromView`.
+- Review toast (#366): completion notices attach an optional Review action via `reviewAction({ generated, shouldAutoAccept, openProposalView, postOp })` (`src/shared`), surfaced only when proposals were generated AND enrichment auto-accept is off; `postOp` (chained auto-enrich) suppresses it. Used by `enrich` (`index.ts:460`), `scanVault` (`index.ts:383`), `resumeFromCheckpoint` (`index.ts:193`).
+- Cache report (#527): every finish line goes through `withCacheReport` — single-note (`index.ts:459`, `index.ts:471`), `scanVault` aggregate with unit `'note'` (`index.ts:382`), resume aggregate (`index.ts:192`); one `CacheUse` per note processed, filled via `trackAiCache` on every analyzer call (`index.ts:502`).
+- Proposal JSON filename: `<sanitized-path>-enrich-<8charId>.json`; null bytes and `..` stripped (`enrichment-store.ts:113-121`).
+- `VaultAnalyzer` caches invalidate on the `metadataCache 'resolved'` event (`index.ts:82-86`).

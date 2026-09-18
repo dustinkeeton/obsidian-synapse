@@ -56,7 +56,7 @@ interface TimeRangeSliderOptions {
   onChange?: (start: number, end: number) => void
 }
 
-// time-range-modal.ts:10 / :18 / :39 (#464; replaced time-range-toast.ts)
+// time-range-modal.ts:10 / :18 / :39 (#464; replaced the former toast prompt)
 type TimeRangeChoice =
   | { kind: 'selection'; range: TimeRange }
   | { kind: 'full' }
@@ -105,27 +105,27 @@ interface UrlTranscript {
   cached?: boolean                      // true when served from the transcript store (#488)
   aiCached?: boolean                    // #527; fresh transcript whose AI post-processing replayed a cached response; never stored
 }
-interface UrlTranscriptionStrategy {                              // url-transcription.ts:54
+interface UrlTranscriptionStrategy {                              // url-transcription.ts:68
   readonly id: string
   canHandle(url: string, opts: UrlTranscriptOptions): boolean   // cheap gate: platform/url/settings only, no network
   transcribe(url: string, opts: UrlTranscriptOptions): Promise<UrlTranscript | null>   // null = fall through to next tier
 }
-class NoTranscriptionPathError extends Error {                    // url-transcription.ts:72
+class NoTranscriptionPathError extends Error {                    // url-transcription.ts:86
   constructor(url: string, attempts: string[])                    // message is platform-aware (mobile → desktop/sync handoff)
   readonly url: string
   readonly attempts: string[]
 }
-class UrlTranscriptionRouter {
+class UrlTranscriptionRouter {                                    // url-transcription.ts:108
   constructor(strategies: UrlTranscriptionStrategy[], cache?: TranscriptStore)   // array order IS the tier order; cache = shared TranscriptCache (#488)
   transcribe(url: string, opts?: UrlTranscriptOptions): Promise<UrlTranscript>   // store hit (unless forceRefresh) -> `cached: true`; tier result -> cache.put, never on failure
 }
-function buildUrlTranscriptBlock(result: UrlTranscript, url: string, embedInNote: boolean, timeRange?: TimeRange): string   // url-transcription.ts:125
+function buildUrlTranscriptBlock(result: UrlTranscript, url: string, embedInNote: boolean, timeRange?: TimeRange): string   // url-transcription.ts:167
 
 // caption-strategy.ts — tier 1: YouTube captions over HTTP (free, mobile-capable)
-interface ProcessedTranscript { text: string; reformatted?: boolean; schemaId?: string; aiCached?: boolean }   // caption-strategy.ts:12
+interface ProcessedTranscript { text: string; reformatted?: boolean; schemaId?: string; aiCached?: boolean }   // caption-strategy.ts:11
 interface ProcessTranscriptOptions { update?: (message: string) => void; bypassCache?: boolean }   // caption-strategy.ts:18; not barrel-exported; bypassCache = opts.forceRefresh (#527)
-type ProcessTranscript = (raw: string, opts?: ProcessTranscriptOptions) => Promise<ProcessedTranscript>   // caption-strategy.ts:22; opts.update carries "Post-processing (n/total)" (#467)
-class CaptionStrategy implements UrlTranscriptionStrategy {                                // caption-strategy.ts:31
+type ProcessTranscript = (raw: string, opts?: ProcessTranscriptOptions) => Promise<ProcessedTranscript>   // caption-strategy.ts:23; opts.update carries "Post-processing (n/total)" (#467)
+class CaptionStrategy implements UrlTranscriptionStrategy {                                // caption-strategy.ts:36
   readonly id = 'captions'
   constructor(getSettings: () => SynapseSettings, postProcess: ProcessTranscript)          // postProcess = AudioModule.processTranscriptText (injected)
 }
@@ -139,7 +139,7 @@ class LocalExtractionStrategy implements UrlTranscriptionStrategy {             
 
 // youtube-captions.ts
 interface YouTubeTranscript { text: string; language: string; auto: boolean; title?: string; structured: boolean }   // :27
-function fetchYouTubeTranscript(url: string, preferredLanguages: string[]): Promise<YouTubeTranscript | null>          // :112
+function fetchYouTubeTranscript(url: string, preferredLanguages: string[]): Promise<YouTubeTranscript | null>          // :124
 
 // insert-url-transcript.ts:8 / :26
 interface InsertUrlTranscriptDeps {
@@ -209,14 +209,14 @@ function transcribeNoteMedia(deps: NoteMediaTranscriptionDeps, file: TFile): Pro
 ## UnifiedTranscriptionModal
 
 Single modal combining audio file selection and video URL input (`unified-modal.ts`):
-- Local-file section rendered only when `enabledModules.audio || enabledModules.video` (`unified-modal.ts:38`)
+- Local-file section rendered only when `enabledModules.audio || enabledModules.video` (`unified-modal.ts:39`)
 - Dropdown lists all audio files in vault (filtered by `AUDIO_EXTENSIONS`, honors audio path exclusions via `isPathExcluded(path, 'audio', settings)`, #323)
-- URL section rendered when `enabledModules.video` on every platform (`unified-modal.ts:76`; no desktop gate since #184)
+- URL section rendered when `enabledModules.video` on every platform (`unified-modal.ts:77`; no desktop gate since #184)
 - URL text field with platform detection badge (`detectPlatform`); unknown non-empty input shows "Unsupported URL"
 - "Fetch a fresh transcript" toggle (`Setting.addToggle`, default off) sets `forceRefresh`, forwarded as the third `onTranscribeUrl` argument on both platforms (#488)
 - File selection and URL input are mutually exclusive (setting one clears the other)
-- On submit (`handleTranscribe`, `unified-modal.ts:120`): rejects a URL that fails `detectPlatform` via `notifications.info`; empty input prompts to select a file or enter a URL
-  - Mobile (`!Platform.isDesktop`): transcribes the full file/URL with no duration step (`unified-modal.ts:135`, `:156`)
+- On submit (`handleTranscribe`, `unified-modal.ts:130`): rejects a URL that fails `detectPlatform` via `notifications.info` (`:135`); empty input prompts to select a file or enter a URL
+  - Mobile (`!Platform.isDesktop`): transcribes the full file/URL with no duration step (`unified-modal.ts:145`, `:166`)
   - Desktop: duration detection (ffprobe for files, yt-dlp for URLs) → `chooseTimeRange` (`unified-modal.ts:177`)
     - Duration defined but < `MIN_SLIDER_DURATION` (10s): full file, no prompt
     - Otherwise `TimeRangeModal.openAndChoose()`: `selection` → `TimeRange`; `full` → `undefined`; `cancelled` → return without calling any callback
@@ -283,13 +283,13 @@ Tier order is the array built by `createUrlTranscriptionRouter` (`create-url-rou
 
 Router (`url-transcription.ts`): with a `cache` and no `forceRefresh`, `cache.get(url, timeRange)` first — a hit returns `{ ...entry, cached: true }` (source narrowed to the tier union) after `update('Using cached transcript')`. Otherwise `canHandle` false → `"<id>: not applicable"`; `null` result → `"<id>: unavailable for this video"`; first transcript wins and is written through (`cache.put(url, fields, timeRange)`); a result with blank `raw` throws `NoSpeechDetectedError` before the write-through and a stored entry with blank `raw` is treated as a miss (#524); every tier exhausted → `NoTranscriptionPathError(url, attempts)` with nothing stored. Store keys are `canonicalMediaUrl(url)` + `#t=<start>-<end>` for clipped requests (shared `transcript-cache.ts`), so a clipped transcript never satisfies a full-length request or vice versa. `TranscriptStore` is the two-method slice the router depends on; production passes `SynapsePlugin.transcriptCache`.
 
-`fetchYouTubeTranscript` (`youtube-captions.ts:112`):
+`fetchYouTubeTranscript` (`youtube-captions.ts:124`):
 1. `sanitizeUrl` (only throw path) → `detectPlatform` must be `youtube`, else `null`
 2. Attempt A: POST Innertube `/youtubei/v1/player` as the pinned ANDROID client (`INNERTUBE_ANDROID_CLIENT`, `:92`; bump `clientVersion` when YouTube answers 400 FAILED_PRECONDITION)
-3. Attempt B (only when A yields no tracks): GET watch page, balanced-brace extraction of `ytInitialPlayerResponse` (`extractJsonAfterMarker`, `:244`); web track URLs may be POT-gated (200 + empty body)
-4. `selectCaptionTrack` (`:341`): manual tracks before ASR, preferred languages in order, else first available
-5. Fetch json3 cues (`collectJson3Cues`, `:411`); empty → `null`
-6. `parseChaptersFromDescription` (`:472`) + `formatCaptionTranscript` (`:554`) → `{ text, structured }` (speaker-turn `>>` markers / chapters = structured)
+3. Attempt B (only when A yields no tracks): GET watch page, balanced-brace extraction of `ytInitialPlayerResponse` (`extractJsonAfterMarker`, `:263`); web track URLs may be POT-gated (200 + empty body)
+4. `selectCaptionTrack` (`:386`): manual tracks before ASR, preferred languages in order, else first available
+5. Fetch json3 cues (`collectJson3Cues`, `:469`); empty → `null`
+6. `parseChaptersFromDescription` (`:530`) + `formatCaptionTranscript` (`:612`) → `{ text, structured }` (speaker-turn `>>` markers / chapters = structured)
 7. Any fetch/parse failure → `console.warn(redactError)` + `null`; per-request timeout 30s (`:72`); consent cookies sent unconditionally (`:84`)
 
 ## Data Flow

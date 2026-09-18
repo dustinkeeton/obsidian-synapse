@@ -6,6 +6,193 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-09-17: Cache use is reported in the finish message, and only a real replay counts (#527)
+
+**Context**: Two caches can now serve a result silently — the transcript store (#488) and the AI response cache (#397). A user re-running a command could not tell a fresh result from a replayed one, and "Fetch a fresh transcript" still let a re-fetched transcript be cleaned up by a replayed AI response.
+
+**Decision**: One signal, one helper, one surface. `AIRequestOptions.onCacheHit` (`shared/ai-client.ts:31`) fires **only** when `chat()`/`complete()` replays a stored response — never on a dispatch, a `bypassCache` call, an uncacheable request, or a coalesced in-flight join. `shared/cache-notice.ts` owns the wording: `CacheUse { transcript?, ai? }`, `trackAiCache(use)`, `transcriptCacheUse(result)`, `mergeCacheUse`, and `withCacheReport(message, items, unit)` — one item names the cache(s) used, several items collapse to `N of M <unit>s served from cache`, and no hit returns the message unchanged. Every `AIClient` consumer (audio, video, transcription, summarize, tidy, elaboration, enrichment, deep-dive, organize, rem, title, image) finishes its existing operation toast through it. A new `UrlTranscript.aiCached` flag marks a fresh transcript whose post-processing was replayed; it is **never persisted** — `toCachedTranscript` drops it, and a store hit sets `cached: true` instead. `forceRefresh` now means fresh end to end: it is forwarded as `bypassCache` into both tiers' post-processing. `usedCache` stays module-internal (off the `shared` barrel) — it is the filter behind `withCacheReport`, not an API.
+
+**Alternatives considered**:
+- **A modal or extra notice per cache hit** — rejected; a cache hit is information, not a decision, so it belongs on the toast the operation already shows.
+- **Report a coalesced join as a hit** — rejected; a join shares a live dispatch, which is a fresh result, not a replay.
+- **Promise a "regenerate" action in the AI wording** — rejected; only URL transcription exposes a bypass, so only the transcript wording points at one.
+
+**Rationale**: A partial-hit rule (any replayed call that feeds a result marks it cached) keeps the report honest for chunked post-processing, multi-classifier enrichment, and combined summaries without per-module wording. Persisting `aiCached` would let a stale flag misreport a later store hit.
+
+**Impact**: `shared/ai-client.ts` (signal), new `shared/cache-notice.ts` (+ tests), `aiCached` threaded through `TranscriptionResult` → `UrlTranscript`; finish sites in twelve modules; `forceRefresh → bypassCache` on both tiers. One string changed: the modal's `Cached transcription added to note` became the shared wording. A fresh run shows exactly the messages it showed before. PR #530.
+
+---
+
+## 2026-09-17: No speech is a typed outcome; nothing is written and nothing is cached (#524)
+
+**Context**: Transcribing media with no speech produced a fabricated transcript. An empty string flowed into the post-processing prompt, and the model invented content that landed in the note as a normal transcription callout.
+
+**Decision**: Add `NoSpeechDetectedError` (`shared/no-speech.ts`), thrown at the `Transcriber` seam for a blank or annotation-only (`[Music]`, `(applause)`, `♪`) result from Whisper, Deepgram, and Gemini, and re-checked by `AudioModule.transcribe`, the extraction tier, and the router. Provider-side hallucination is reduced where the API allows: Whisper `whisper-1` treats a transcript whose every `verbose_json` segment has `no_speech_prob ≥ 0.8` as silence (one confident segment keeps it, so songs with instrumental stretches survive); Gemini is instructed to return an exact `[NO_SPEECH]` sentinel, because an empty completion is indistinguishable from a blocked response in that API. `PostProcessor.process()` returns its input with zero AI calls when the text has no speech content or fewer than 10 letters/digits. Every write site (audio single/batch/combined, video batch, URL insert, intake append, summarize) notifies "No speech detected in <subject> — nothing to transcribe" and writes nothing — no callout, no `onTranscriptionComplete`. The error propagates before the transcript store's write-through, and the router refuses to store or return text built over a blank `raw`. Intake treats it as a final outcome and stamps the note, since leaving it un-stamped would re-download and re-transcribe on every catch-up scan.
+
+**Alternatives considered**:
+- **Cache the no-speech result** — rejected per the issue: a silent result must never be stored as a transcript. A negative cache entry (to avoid summarize retrying the same URL) is noted as follow-up.
+- **Ask Gemini to return nothing** — rejected; empty and blocked look the same on `generateContent`, so a sentinel is the only reliable signal.
+
+**Rationale**: The pipeline's own fabrication path (an empty prompt) was the likely source of the reported output; removing it and typing the outcome makes "nothing to transcribe" a state every write site handles the same way.
+
+**Impact**: New `shared/no-speech.ts` (+ tests); `audio/transcriber.ts` (`WHISPER_NO_SPEECH_PROB = 0.8`, Gemini sentinel), `audio/post-processor.ts` guard, `audio/index.ts`, `video/index.ts` (`processUrl` rethrows the typed error and always removes the temp audio file — it previously leaked on any failure), `transcription/*`, `summarize/index.ts`, `intake/index.ts`. Known limits: `no_speech_prob` exists only on `whisper-1`; the 0.8 and 10-character thresholds are conservative constants, not measured; already-cached fabrications are not purged. PR #526.
+
+---
+
+## 2026-09-17: Per-note sidebar buttons invoke the command's `editorCallback` directly (#352)
+
+**Context**: Per-note buttons in the Synapse actions sidebar needed a second click. The sidebar holds focus, so there is no active editor, and Obsidian's `executeCommandById` silently no-ops `editorCallback` commands in that state. Re-activating the note's leaf first did not help — the active editor is not restored within the click — and yielding a macrotask between `setActiveLeaf` and the dispatch (the issue's proposal) does not reliably restore it in the real runtime either. The earlier test asserted mock call ordering and passed while the bug survived.
+
+**Decision**: `runRegisteredCommand` (`views/command-runner.ts`) looks up the registered command and, for `context: 'note'` entries, invokes its `editorCallback(view.editor, view)` directly with the `MarkdownView` whose file is the active markdown note — no `setActiveLeaf`, no focus change, no deferral. Because the leaf is not re-activated, a click no longer fires a self-induced `active-leaf-change`, so the panel is not torn down mid-click. Non-note commands still go through `executeCommandById`, as does a note command with no `editorCallback` or no matching view. The handler runs inside `fireAndForget` with `notifications`, so a rejection surfaces as an error notice. `app.commands.commands` is private API, reached through the same localized cast that already covered `executeCommandById`.
+
+**Alternatives considered**:
+- **`setActiveLeaf` + macrotask + `executeCommandById`** — tried and rejected; it does not restore the active editor reliably.
+- **Model the test on call ordering again** — rejected; the rewritten test models the gate itself (a fake `executeCommandById` that returns false for `editorCallback` commands), and 5 of its 10 cases fail against the old code.
+
+**Rationale**: All 11 `context: 'note'` registry entries register an `editorCallback` that ignores the editor argument and reads only `ctx.file`, which the `MarkdownView` provides — so direct invocation is exactly what the palette would have done with focus in the note.
+
+**Impact**: `views/command-runner.ts` (+ rewritten tests). Supersedes the 2026-06-19 #289 entry's "re-activates the note's markdown leaf first" mechanism. PR #528.
+
+---
+
+## 2026-09-15: Transcription models come from a per-provider registry; the OpenAI list is trimmed to two (#521)
+
+**Context**: Every transcription provider resolved its model differently — a Whisper-only `audio.whisperModel` setting, a hardcoded `GEMINI_TRANSCRIPTION_MODEL` constant, and Deepgram riding the vendor default (`base-general`) — and none was reachable from the settings UI.
+
+**Decision**: One `TRANSCRIPTION_MODEL_OPTIONS` registry in `settings.ts`, keyed by transcription provider and mirroring `MODEL_OPTIONS`, with a provenance comment (source URL + verification date) per block. `audio.whisperModel` is retired for the provider-agnostic `audio.transcriptionModel` (settings migration **v3** copies the user's value across and never overwrites an existing `transcriptionModel`). A "Transcription model" dropdown renders beside the provider selector and is suppressed for `local-whisper`. Deepgram sends an explicit `model` (default `nova-3-general`); Gemini reads the setting; Whisper's multipart `model` field reads it. The OpenAI list ships **only `whisper-1` and `gpt-transcribe`**: the deprecations page retires `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, and `gpt-4o-transcribe-diarize` together on 2027-02-26, so shipping four models that die on one date is the staleness the issue exists to remove. `whisper-1` stays the **default** because it alone returns the segment timestamps this code path consumes; `response_format` is now model-dependent (`verbose_json` for `whisper-1`, `json` otherwise) so `gpt-transcribe` yields a working transcript without timestamps rather than a rejected request. Model-resolution logic lives in `audio/transcription-models.ts` as plain functions, because the Obsidian test mock no-ops `Setting.addDropdown`.
+
+**Alternatives considered**:
+- **Adopt `gemini-3.5-transcribe`** — rejected for now; it is a real dedicated STT model but runs on the Interactions API, not `generateContent`, so listing it would offer a model that fails at request time. Porting the Gemini branch is its own piece of work.
+- **Keep the `gpt-4o-transcribe` variants for choice** — rejected; same retirement date, superseded by `gpt-transcribe`, and the diarize variant needs a `diarized_json` format nothing here handles.
+
+**Rationale**: Pinning stops quality from drifting with whatever the vendor promotes; the Deepgram change from `base-general` to `nova-3-general` is a deliberate accuracy (and possible cost) change for that reason.
+
+**Impact**: `settings.ts` (`TranscriptionProvider`, `TRANSCRIPTION_MODEL_OPTIONS`, `audio.transcriptionModel`), `shared/settings-migrations.ts` (`CURRENT_SETTINGS_VERSION` 2 → 3), `audio/transcriber.ts`, new `audio/transcription-models.ts`, `audio/transcription-credentials.ts`. The dropdown shows `whisper-1` as "Whisper v1 (retires 2027-02-26)". PR #522.
+
+---
+
+## 2026-09-14: OpenAI requests drop `max_tokens`; Anthropic pins move to the current generation; the default model becomes `gpt-5.6-sol` (#308/#519)
+
+**Context**: `callOpenAI` sent the deprecated `max_tokens` and `temperature` on every request. Both are rejected by o-series reasoning models, and `o3`, `o3-mini`, and `o4-mini` were already three of the five shipped dropdown options — selecting any of them failed every call with "Unsupported parameter: 'max_tokens'". The Anthropic side had the mirror problem waiting: bumping the pins without the request-shape work would have broken that provider outright.
+
+**Decision**: OpenAI sends `max_completion_tokens` unconditionally (accepted by non-reasoning models too, so there is no branch) and omits `temperature` for reasoning models via an inverted allowlist of the models that still accept sampling (`gpt-4o`, `gpt-4o-mini`); unrecognised IDs fail safe by omitting. `reasoning_effort` is not added (it needs its own settings surface). Anthropic aliases repoint to bare current IDs — `fable` → `claude-fable-5-1` (not the issue's `claude-fable-5`, which 5.1 had already superseded at the same tier and price), `opus` → `claude-opus-5`, `sonnet` → `claude-sonnet-5`, `haiku` → `claude-haiku-4-5`; `temperature` is conditional on the same inverted-allowlist shape; no `thinking` parameter is sent (an explicit disable is a 400 on Fable); `stop_reason: "refusal"` is surfaced as a safety refusal instead of the generic "Unexpected Anthropic response". Provider lists were re-verified against live vendor docs on 2026-09-14 (OpenAI gains `gpt-6-astra`, `gpt-5.6-sol/terra/luna`; Gemini gains `gemini-3.8-flash`; Ollama gains `llama3.2`, `gemma4`, `gemma3`, `qwen3`, `deepseek-r1`). `DEFAULT_SETTINGS.ai.model` and `video.frameExtraction.visionModel` move from `gpt-4o` to `gpt-5.6-sol` for new installs only.
+
+**Alternatives considered**:
+- **Branch `max_tokens` vs `max_completion_tokens` per model** — rejected; the replacement is accepted everywhere, so a branch is dead weight.
+- **Server-side refusal fallbacks (beta)** — deliberately not implemented; it silently re-serves a refused request on a different model against the user's own billing, a spend decision the user should opt into.
+- **Keep `gpt-4o` as the default** — flagged as the easy veto; the reasoning-model default changes cost and latency for new vaults.
+
+**Rationale**: Fixing a live 400 came first; the pins and defaults follow the same "verified against the vendor, never from memory" rule as the transcription registry.
+
+**Impact**: `shared/ai-client.ts` (request shapes, `ANTHROPIC_MODEL_MAP`, refusal handling, Fable zero-data-retention hint on 400), `settings.ts` (`MODEL_OPTIONS`, defaults). Vision paths reuse `callOpenAI`, so they inherit the fix. PR #520.
+
+---
+
+## 2026-09-14: `main.ts` becomes lifecycle glue; a registry constructs every feature module with `ModuleDeps` first (#496/#497/#504/#506)
+
+**Context**: `src/main.ts` had grown to 1018 lines — it named, constructed, `onload()`ed and `onunload()`ed every module by hand, carried the ~20-entry post-op hook table, the checkpoint UX, view activation, sidebar command dispatch, modal openers, and the router assembly. Six source files also sat loose at the `src/` root, and the settings tab spliced its video section with an inline conditional.
+
+**Decision**: Four pure refactors, each with no behavior change:
+- **#497** moves the stray root files into feature folders behind an `index.ts` (`onboarding/`, `changelog/`, `settings-ui/`, `properties-fold/`, `brand-icons/`); `settings.ts` deliberately stays at the root.
+- **#496** slims `main.ts` to 348 lines by extracting each cluster to its owner: post-op hooks → `pipeline/post-op-hooks.ts` (`buildPostOpHook`, `buildAutoOrganizeHook`, gating semantics preserved); checkpoint UX → new `checkpoints/` (`CheckpointRecoveryModule`, resume through injected handlers, never importing a feature); view activation and sidebar dispatch → `views/view-activation.ts`, `views/command-runner.ts`; modal openers, intake append, router assembly → `transcription/`; `isFfmpegAvailable` → `video/ffmpeg-availability.ts`; `deepMerge` and `migrateDataFolder` → `shared/`; the unused plugin-level `dispatchDeferredTasks` is removed.
+- **#506** makes the settings tab a declarative `SETTINGS_SECTIONS` list (`settings-ui/settings-tab.ts`, 796 → 147 lines); the cross-feature sections move to `global-sections.ts` with the same `(ctx) => void` signature as the feature renderers; auto-accept's live greyed-out rows use a new `ctx.onFeatureToggle` hook instead of tab-owned state.
+- **#504** adds `shared/feature-module.ts` (`ModuleDeps` = `plugin`, `getSettings`, `notifications`, `checkpointManager`, `registrar`, `noteQueue`; `FeatureModule`; `FeatureSettingsKey`) and `modules/registry.ts` (`MODULE_FACTORIES`, `constructFeatureModules`, `loadFeatureModules`, `unloadFeatureModules`). Every module constructor takes `ModuleDeps` **first**; module-specific inputs follow positionally from the registry entry. `FeatureModules` is mapped over `FeatureSettingsKey`, so an `enabled`-flagged settings section without a registry entry is a compile error. Video declares `platform: () => Platform.isDesktop` on its entry instead of a `main.ts` special case. `main.ts` ends at 295 lines.
+
+**Alternatives considered**:
+- **Leave construction order hand-written in `main.ts`** — rejected; #516 kept it in one block precisely so #504 could replace it with a list that also drives load and unload.
+- **Import features from `pipeline/` or `checkpoints/` directly** — rejected; both reach feature modules only through injected deps, keeping the graph acyclic.
+
+**Rationale**: One list that constructs, loads, and unloads means adding a module is one entry plus a settings section, and a test (`registry.test.ts`) can assert every `src/<feature>/index.ts` module class is constructed.
+
+**Impact**: Behavior notes called out for review: `onunload()` now walks reverse load order (every `onunload` is independent, so not observable); `intake.onload()` runs inside the registry loop rather than last (its closures resolve `synapseRunner`/`urlTranscription` lazily, so no event can observe it); disabled modules are still constructed, only `onload()` is skipped. 42 test call sites migrated mechanically to `makeModuleDeps({...})`. PRs #513, #516, #517, #518.
+
+---
+
+## 2026-09-14: Media URLs are transcribe-only for summarize, and transcripts persist in a vault-file store (#488)
+
+**Context**: When every transcription tier failed for a video URL (captions unavailable, yt-dlp/ffmpeg missing, no path on mobile), summarize fell back to fetching the page HTML and inserted a "summary" describing the web page around the video. Separately, transcribing a URL after summarizing it re-ran caption fetch / download / ASR and paid for it again.
+
+**Decision**: `fetchContentForUrl()` treats a router-supported media URL as transcribe-only: on failure the target fails with the router's actionable message and **no summary callout is inserted** (the combined path withholds its callout too); the web-page fallback remains for non-media URLs only. A new `shared/transcript-cache.ts` (`TranscriptCache`) persists transcripts at `.synapse/transcript-cache.json`, keyed by canonical URL (`youtu.be`/shorts/`m.youtube.com` collapse; TikTok/Instagram share params stripped) plus time range for clipped requests, LRU-capped at 200 entries / 4M chars, never throwing (corrupt file = miss, failed write = warn). `UrlTranscriptionRouter` takes the store, so every entry point that already shares the one router (unified modal, note-media batch, summarize, intake) reads and writes through it. `UrlTranscriptOptions.forceRefresh` bypasses and overwrites, surfaced as a "Fetch a fresh transcript" toggle in the unified modal; a "Clear transcript cache" button lives in the Video settings section. The summarize scanner now drops a URL target when a transcription block for the same source exists anywhere in the note (previously only within 5 lines below).
+
+**Alternatives considered**:
+- **Keep the page-HTML fallback with a warning** — rejected; a summary of the page chrome is wrong content, not degraded content.
+
+**Rationale**: The router is already the single seam for URL transcription, so a store behind it makes caching a property of every path at once.
+
+**Impact**: New `shared/transcript-cache.ts` (+ tests), router store tests, `summarize/index.ts` + `note-scanner.ts`, `transcription/unified-modal.ts` (toggle), `video/settings-section.ts` (clear button). YouTube caption routing unchanged. PR #512.
+
+---
+
+## 2026-09-14: Long transcripts are post-processed in overlapping sections instead of skipped (#467)
+
+**Context**: The 2026-07-15 guard (#468) kept the complete raw transcript when the post-processing output would exceed `ai.maxTokens` — stopping silent truncation, but leaving long caption dumps unpunctuated and unparagraphed.
+
+**Decision**: A transcript that fits `ai.maxTokens` still runs in one call, byte-for-byte the same prompt. A longer one is split by a pure segmenter (`audio/transcript-segmenter.ts`) — paragraph boundaries first, then line, sentence, word, and a hard cut only for a whitespace-free run; a line is never split unless it alone exceeds the budget. Section body = 60% of `ai.maxTokens` at 4 chars/token. Each section carries the word-aligned tail (10% of the budget) of the previous raw section as a labelled "Preceding context" block the model is told not to repeat; a verbatim repeat is trimmed on rejoin. Sections run one at a time with the same 2 s pause the audio module uses between provider calls, with `Post-processing (n/total)` on the toast. A section whose call throws, returns empty, or hits the token cap keeps its raw slice; the rest still run; one notice reports `kept k of n sections raw`. Key points, when enabled, are one extra pass over the rejoined text, appended at the end. The custom prompt applies to every section.
+
+**Alternatives considered**:
+- **Merge per-section key-point lists** — rejected for a single second pass over the cleaned text (one call, no list merging).
+- **Announce the call count up front / cancel mid-way** — not added; the first progress update already shows the total, and no cancel signal reaches `PostProcessor` yet.
+
+**Rationale**: Raw-but-complete still beats clean-but-truncated (the #468 principle); sectioning is how a long transcript gets both.
+
+**Impact**: New `audio/transcript-segmenter.ts` (+ 13 tests), `audio/post-processor.ts` (+ 17 tests), `TranscribeOptions.update` / `processTranscriptText(raw, opts)` forward the progress sink; the "skipping post-processing" console warning is gone. Supersedes the "chunked post-processing deferred" alternative in the 2026-07-15 #468 entry. PR #514.
+
+---
+
+## 2026-09-14: Intake catches up on un-stamped notes at startup (#462)
+
+**Context**: The intake watcher was event-driven only. Two kinds of un-stamped notes sat in the inbox with nothing to trigger them: notes synced in while desktop Obsidian was closed (the mobile → desktop handoff for URLs no mobile tier can handle) and notes whose earlier run threw (deliberately left retriable).
+
+**Decision**: `IntakeModule.onload` arms a one-shot catch-up scan inside `workspace.onLayoutReady`, 7 s after load (landing after the 3 s checkpoint and 5 s update checks). It enumerates markdown files inside the intake folder (capture-log subfolder and path-excluded notes dropped), skips stamped notes, sorts oldest-first by mtime, and hands at most 10 to the unchanged `scheduleFlush` path with a 2 s per-note stagger — so every downstream guard (settle window, idempotency, routing, stamp, move, breadcrumb) applies as-is and a backlog never bursts AI calls. Paths already pending or in flight are never reset. A note that keeps failing toasts once per path per session; repeats only `console.warn` (redacted), and a `modify` event clears the entry.
+
+**Alternatives considered**:
+- **Process the whole backlog at once** — rejected; the cap and stagger exist so a synced-in pile cannot burst AI spend. Notes beyond the cap are picked up on the next startup or their next event.
+
+**Rationale**: Re-using `scheduleFlush` means the catch-up path has no logic of its own to drift from the event path.
+
+**Impact**: `intake/index.ts` (`catchUp`, `isFileProcessed`, `reportFailure`, `CATCHUP_*` constants, timer cleanup in `onunload`); `main.ts` untouched. PR #510.
+
+---
+
+## 2026-09-14: Elaboration reads backlinks and tags under one context budget (#500)
+
+**Context**: `ProposalGenerator.gatherContext()` built "Context from related notes" from only the first 5 outbound links. A stub linked from many notes (the `sparse-link` case) or tagged into a topic cluster was elaborated without the context that best explains what it is for.
+
+**Decision**: Inbound links are gathered from the `sparse-link` reason's `linkedFrom` list first, then from `metadataCache.resolvedLinks` sources; each contributes a 300-char excerpt around the line that links to the note (one line either side), capped at 5, path exclusions honored. The note's frontmatter + inline tags are added, plus up to 10 titles of other notes sharing any of them. One char budget (`DEFAULT_CONTEXT_BUDGET_CHARS = 6000`) is spent in priority order backlinks > outbound links > tag siblings; entries are taken whole and gathering stops at the first that does not fit, so truncation is deterministic. The assembled block is wrapped via `wrapUntrusted(_, 'related notes')`, consistent with fetched-article and image context. A new `elaboration.proposal.includeBacklinkContext` toggle (default on) restores outbound-only context when off; `includeSourceContext` off still disables the whole block.
+
+**Alternatives considered**:
+- **Unfenced related-notes text** — rejected; a linking note could forge a closing fence or smuggle instructions, the same threat the #398 fence exists for.
+
+**Rationale**: Backlinks say what a stub is *for* better than its own body does; a fixed budget in a fixed order keeps the prompt bounded and the output reproducible.
+
+**Impact**: `elaboration/proposer.ts` (`gatherContext(notePath, reasons)`, `backlinkSources`, `linkingExcerpt`, `tagsOf`, `tagSiblings`), `settings.ts`, elaboration settings section. No change for a note with no backlinks or tags beyond the fence. PR #511.
+
+---
+
+## 2026-09-14: The caption path trusts nothing in the response (#501)
+
+**Context**: The caption-first tier (`transcription/youtube-captions.ts`) parsed player and track responses from the network and rendered caption text into the note with no bound on size, no restriction on where the track URL pointed, and no escaping of the text.
+
+**Decision**: `buildTrackUrl()` returns `null` unless the resolved URL is `https:` on `youtube.com`/`googlevideo.com` (or a subdomain) with no embedded credentials; protocol-relative bases are no longer treated as paths. Player responses (Innertube and watch page) are capped at 8 MiB and the json3 track body at 16 MiB before `JSON.parse`, with overflow treated as "no captions"; the marker brace-scan stops at the same bound. At the render boundary, chapter titles are flattened to one bounded line and backslash-escaped inside the heading link, cue text has `[`, `]`, `<` escaped, and the video title is control-char-stripped, whitespace-collapsed, and length-bounded (300). Every yt-dlp invocation ends its option list with `--` before the URL positional, and `dumpJson()` calls `sanitizeUrl()` at its own boundary.
+
+**Rationale**: Routing was left untouched; the change only removes the ways a tampered or proxied response could redirect a fetch, exhaust memory, or inject a wikilink, embed, image beacon, or tag into the vault.
+
+**Impact**: `transcription/youtube-captions.ts` (+ hostile-`baseUrl` table, oversize, and escaping tests), `video/audio-extractor.ts` (argv snapshot tests). PR #515.
+
+---
+
+## 2026-09-14: A self-hosted extraction service is the third URL tier (ADR 001, #181)
+
+**Context**: Mobile has no `child_process`, so TikTok, Instagram, and captionless YouTube cannot be transcribed on a mobile-only setup; the current answer leaves the intake note un-stamped for a synced desktop vault. Closing that gap crosses two locked constraints — no runtime npm dependencies, and media tooling only as local desktop processes — so it needs a standalone record.
+
+**Decision**: Recorded in [`docs/adr/001-self-hosted-extractor-tier.md`](docs/adr/001-self-hosted-extractor-tier.md): a `ServerExtractionStrategy` that POSTs the URL to a **user-operated, self-hosted** service (its own repository, a container bundling yt-dlp and ffmpeg) over `requestUrl`, opt-in via `video.serverEndpoint`, with the key in `video.serverApiKey` handled like every provider key, `https://` required except for loopback/private addresses, and the response validated at the edge. Tier order is fixed at **captions → local → server**. This entry establishes `docs/adr/` as the home for decisions that cross a locked constraint; the dated log here remains the full history.
+
+**Alternatives considered** (detail in the ADR): a bundled WASM extractor (rejected 2026-03-19), a project-operated service (maintainer becomes a relay for user URLs and copyrighted media), third-party download APIs (outside the user's control).
+
+**Impact**: Accepted, not shipped; gates #181 (strategy) and #182 (override + connectivity status). Without an endpoint, behavior is unchanged. PR #507.
+
+---
+
 ## 2026-08-17: Per-note AI operations are serialized behind one path-keyed queue (#483)
 
 **Context**: Nothing serialized operations that read and write the same note. "Transcribe current note" followed by "Elaborate current note" interleaved destructively: elaboration read the note before the transcript landed, asked the model to expand an audio link it cannot open (a hallucinated "the audio isn't accessible to me" callout), then a second, correct elaboration ran once the content hash changed — two callouts, a stale `status: empty` frontmatter, and a rename contradicting the transcript. The dedup key was correct; the missing piece was serialization.
@@ -70,6 +257,8 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 **Rationale**: Raw-but-complete beats clean-but-truncated, and an always-on default should never rewrite content users did not ask to change.
 
 **Impact**: `audio/post-processor.ts` guard (+ 2 tests); `settings.ts` default; audio settings description. Closes #466.
+
+**Update (2026-09-14)**: chunked post-processing shipped — see the 2026-09-14 #467 entry. The guard now applies per section (a section at or over the cap keeps its raw slice) rather than to the whole transcript.
 
 ---
 

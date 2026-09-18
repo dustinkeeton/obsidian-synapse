@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-06-25
+last-updated: 2026-09-17
 ---
 
 # Commands Module
@@ -8,17 +8,17 @@ Declarative command registry: the developer-facing source of truth for every use
 
 ## Public API
 
-Barrel re-exports from `index.ts` (`index.ts:L14`). Note: `buildPipelineKeyMap` is exported from `registry.ts` but NOT re-exported through the barrel (test-only).
+Barrel re-exports from `index.ts` (`index.ts:14-33`). Note: `buildPipelineKeyMap` is exported from `registry.ts` but NOT re-exported through the barrel (test-only).
 
 ```ts
 // types.ts
-type CommandStatus = 'active' | 'deprecated' | 'disabled'   // only 'active' registers/runs   (types.ts:L11)
-type CommandFlow = 'palette' | 'fire-synapse' | 'startup'                                       // (types.ts:L14)
-type CommandContext = 'note' | 'vault' | 'global'           // runtime env; drives sidebar gating (types.ts:L25)
+type CommandStatus = 'active' | 'deprecated' | 'disabled'   // only 'active' registers/runs   (types.ts:11)
+type CommandFlow = 'palette' | 'fire-synapse' | 'startup'                                       // (types.ts:14)
+type CommandContext = 'note' | 'vault' | 'global'           // runtime env; drives sidebar gating (types.ts:25)
 type FeatureKey = 'main' | 'elaboration' | 'enrichment' | 'organize' | 'deep-dive'
-               | 'summarize' | 'tidy' | 'rem' | 'video'                                          // (types.ts:L28)
+               | 'summarize' | 'tidy' | 'rem' | 'video'                                          // (types.ts:28)
 
-interface CommandDefinition {                                                                   // (types.ts:L40)
+interface CommandDefinition {                                                                   // (types.ts:40)
   id: string                       // command id WITHOUT plugin prefix, e.g. 'scan-vault' (Obsidian -> 'synapse:scan-vault')
   name: string                     // command-palette display name
   feature: FeatureKey
@@ -31,30 +31,30 @@ interface CommandDefinition {                                                   
 }
 
 // registry.ts
-const COMMAND_REGISTRY: readonly CommandDefinition[]                                             // (registry.ts:L15)
-const REGISTRY_BY_ID: ReadonlyMap<string, CommandDefinition>                                     // (registry.ts:L70)
-function buildPipelineKeyMap(commands: readonly CommandDefinition[]): Map<string, CommandDefinition>  // throws on dup pipelineKey (registry.ts:L78)
-const REGISTRY_BY_PIPELINE_KEY: ReadonlyMap<string, CommandDefinition>   // 1:1, built via buildPipelineKeyMap (registry.ts:L93)
-function isInFlow(id: string, flow: CommandFlow): boolean                // exists && active && in flow (registry.ts:L97)
-function isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean  // fail-OPEN on unmapped key (registry.ts:L107)
+const COMMAND_REGISTRY: readonly CommandDefinition[]                                             // (registry.ts:15)
+const REGISTRY_BY_ID: ReadonlyMap<string, CommandDefinition>                                     // (registry.ts:70)
+function buildPipelineKeyMap(commands: readonly CommandDefinition[]): Map<string, CommandDefinition>  // throws on dup pipelineKey (registry.ts:78)
+const REGISTRY_BY_PIPELINE_KEY: ReadonlyMap<string, CommandDefinition>   // 1:1, built via buildPipelineKeyMap (registry.ts:93)
+function isInFlow(id: string, flow: CommandFlow): boolean                // exists && active && in flow (registry.ts:97)
+function isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean  // fail-OPEN on unmapped key (registry.ts:107)
 
 // icons.ts
-const FEATURE_ICONS: Record<FeatureKey, string>     // default glyph name per feature; build fails if a key is missing (icons.ts:L26)
-function resolveActionIcon(def: CommandDefinition): string   // def.icon ?? FEATURE_ICONS[def.feature] (icons.ts:L44)
+const FEATURE_ICONS: Record<FeatureKey, string>     // default glyph name per feature; build fails if a key is missing (icons.ts:26)
+function resolveActionIcon(def: CommandDefinition): string   // def.icon ?? FEATURE_ICONS[def.feature] (icons.ts:44)
 
 // actions.ts
-function listPaletteActions(registered: ReadonlySet<string>): CommandDefinition[]   // registry entries that passed register()'s gate, in registry order (actions.ts:L22)
+function listPaletteActions(registered: ReadonlySet<string>): CommandDefinition[]   // registry entries that passed register()'s gate, in registry order (actions.ts:22)
 
 // registrar.ts
-class CommandRegistrar {                                                                         // (registrar.ts:L22)
+class CommandRegistrar {                                                                         // (registrar.ts:22)
   constructor(host: { addCommand: (command: Command) => unknown })
-  register(id: string, userEnabled: boolean, spec: Omit<Command, 'id' | 'name'>): void   // (registrar.ts:L38)
-  getAttempted(): ReadonlySet<string>                                                     // (registrar.ts:L61)
-  getRegistered(): ReadonlySet<string>                                                    // (registrar.ts:L66)
+  register(id: string, userEnabled: boolean, spec: Omit<Command, 'id' | 'name'>): void   // (registrar.ts:38)
+  getAttempted(): ReadonlySet<string>                                                     // (registrar.ts:61)
+  getRegistered(): ReadonlySet<string>                                                    // (registrar.ts:66)
 }
 
 // audit.ts
-function auditCommands(attempted: ReadonlySet<string>): string[]   // drift warnings; empty when consistent (audit.ts:L27)
+function auditCommands(attempted: ReadonlySet<string>): string[]   // drift warnings; empty when consistent (audit.ts:27)
 ```
 
 ## File Inventory
@@ -73,7 +73,7 @@ function auditCommands(attempted: ReadonlySet<string>): string[]   // drift warn
 ## Registration Gate
 
 ```
-CommandRegistrar.register(id, userEnabled, spec)              // registrar.ts:L38
+CommandRegistrar.register(id, userEnabled, spec)              // registrar.ts:38
   --> records id in `attempted`
   --> entry    = REGISTRY_BY_ID.get(id)
   --> active   = entry ? entry.status === 'active'        : true   (fail-open on unknown id)
@@ -98,7 +98,7 @@ Precedence (all ANDed, registry authoritative):
 
 ## Drift Audit
 
-`auditCommands(attempted)` (`audit.ts:L27`) returns warnings for:
+`auditCommands(attempted)` (`audit.ts:27`) returns warnings for:
 - (a) an `active` palette entry whose feature loaded (>=1 attempt) but was never registered — handler missing.
 - (b) a registered id with no `COMMAND_REGISTRY` entry — command in code, missing from registry.
 
@@ -106,7 +106,7 @@ A fully disabled feature (onload never runs) produces zero attempts and so canno
 
 ## Command Registry
 
-24 entries: 23 real (registered via `register()`) + 1 synthetic pipeline-only (`tidy-vault`, never registered). 6 ship `status: 'disabled'` as a developer master switch and are gated out of registration. Source: `registry.ts:L15`. All palette entries omit an explicit `icon` and inherit `FEATURE_ICONS[feature]` except the 5 `main` entries (icons: `review-proposals`=synapse, `manage-checkpoints`=synapse-checkpoints, `transcribe-media`=synapse-transcribe, `transcribe-note-media`=synapse-transcribe, `fire`=synapse-fire).
+24 entries: 23 real (registered via `register()`) + 1 synthetic pipeline-only (`tidy-vault`, never registered). 6 ship `status: 'disabled'` as a developer master switch and are gated out of registration. Source: `registry.ts:15`. All palette entries omit an explicit `icon` and inherit `FEATURE_ICONS[feature]` except the 5 `main` entries (icons: `review-proposals`=synapse, `manage-checkpoints`=synapse-checkpoints, `transcribe-media`=synapse-transcribe, `transcribe-note-media`=synapse-transcribe, `fire`=synapse-fire).
 
 | id | name | feature | status | flows | context | pipelineKey |
 |----|------|---------|--------|-------|---------|-------------|
@@ -135,7 +135,7 @@ A fully disabled feature (onload never runs) produces zero attempts and so canno
 | `check-dependencies` | Check external tool availability | video | active | palette | global | — |
 | `tidy-vault` | Scan folder for notes to tidy | tidy | active | fire-synapse | vault | tidy |
 
-`tidy-vault` is synthetic: pipeline-only, never passed to `register()`. The pipeline runs `tidy.scanVault()` (vault-wide) under `pipelineKey: 'tidy'`, distinct from the `tidy-current-note` palette command which runs `tidy()` on one note. See `registry.ts:L60`.
+`tidy-vault` is synthetic: pipeline-only, never passed to `register()`. The pipeline runs `tidy.scanVault()` (vault-wide) under `pipelineKey: 'tidy'`, distinct from the `tidy-current-note` palette command which runs `tidy()` on one note. See `registry.ts:66`.
 
 ## Consumers
 
