@@ -379,7 +379,7 @@ class TranscriptCache {
 
 // cache-notice.ts (#527) — single source of "served from cache" finish wording
 interface CacheUse { transcript?: boolean; ai?: boolean }          // which caches served any part of ONE result
-function usedCache(use: CacheUse): boolean
+function usedCache(use: CacheUse): boolean                         // module-only (not on the barrel); the filter behind withCacheReport
 function mergeCacheUse(uses: CacheUse[]): CacheUse                 // OR per cache (several sources -> one result)
 function transcriptCacheUse(result: { cached?: boolean; aiCached?: boolean }): CacheUse   // routed URL transcript flags -> CacheUse
 function trackAiCache(use: CacheUse): AIRequestOptions             // { onCacheHit } that sets use.ai; any replayed call in an operation marks it
@@ -504,7 +504,7 @@ function scoreLyricsContent(content: string): number
 | `feature-module.ts` | `ModuleDeps`, `FeatureModule`, `FeatureSettingsKey` | Feature-module lifecycle contract (#504): the service bundle every module constructor takes first, the `onload`/`onunload` + optional proposal-hook-slot interface `modules/registry.ts` drives, and the settings-key union that gates load. Type-only imports (`obsidian` `Plugin`, `../settings`, `../commands` `CommandRegistrar`); no runtime code |
 | `transcript-cache.ts` | `TranscriptCache`, `canonicalMediaUrl`, `transcriptCacheKey`, `CachedTranscript`, `TranscriptCacheEntry`, `TranscriptCacheOptions` | Persistent media-URL transcript store (#488) at `.synapse/transcript-cache.json`, keyed by canonical URL + time range. Consumed by `transcription/url-transcription.ts` (router read-through/write-through via the `TranscriptStore` slice), constructed once in `main.ts` (`SynapsePlugin.transcriptCache`), cleared from `video/settings-section.ts`. Imports `url-detector`, `json-utils`, `file-utils` (`ensureFolder`), `redact` |
 | `no-speech.ts` | `NoSpeechDetectedError`, `isNoSpeechError`, `hasSpeechContent`, `isWorthPostProcessing`, `noSpeechNotice`, `NO_SPEECH_MESSAGE`, `MIN_TRANSCRIPT_CHARS_FOR_AI` | No-speech outcome (#524). Thrown by `audio/transcriber.ts`, `audio/index.ts`, `transcription/url-transcription.ts`, `transcription/local-extraction-strategy.ts`; branched on by the audio/video/transcription write sites; `summarize` matches it by name. No imports |
-| `cache-notice.ts` | `CacheUse`, `usedCache`, `mergeCacheUse`, `transcriptCacheUse`, `trackAiCache`, `withCacheReport` | Cache-hit reporting (#527): wording + batch aggregation for operation finish messages. Type-only import of `ai-client`. Used by audio, video, transcription, summarize, tidy, elaboration, enrichment, deep-dive, organize, rem, title, image |
+| `cache-notice.ts` | `CacheUse`, `mergeCacheUse`, `transcriptCacheUse`, `trackAiCache`, `withCacheReport` (barrel); `usedCache` (module-only) | Cache-hit reporting (#527): wording + batch aggregation for operation finish messages. Type-only import of `ai-client`. Used by audio, video, transcription, summarize, tidy, elaboration, enrichment, deep-dive, organize, rem, title, image |
 | `cache-notice.test.ts` | Tests | Unchanged-on-miss, per-cache wording, batch aggregation, flag mapping |
 | `no-speech.test.ts` | Tests | Error name/message, cause-chain + cycle matching, blank/annotation detection, AI minimum length, notice wording |
 | `transcript-cache.test.ts` | Tests | Canonicalization, key/time-range separation, round-trip persistence, LRU entry + char eviction, corrupt-file tolerance, write-failure tolerance |

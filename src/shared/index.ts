@@ -161,7 +161,7 @@ export {
 	isWorthPostProcessing,
 	noSpeechNotice,
 } from './no-speech';
-export { usedCache, mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport } from './cache-notice';
+export { mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport } from './cache-notice';
 export type { CacheUse } from './cache-notice';
 export { CheckpointManager } from './checkpoint-manager';
 export type {
