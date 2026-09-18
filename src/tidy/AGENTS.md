@@ -98,7 +98,7 @@ noteQueue.run(file.path, () => runTidy(file, op), { onWait })   -- index.ts:136
    store.save(snapshot)                       -- snapshot taken before any write
 3. parseFrontmatter(content) -> { frontmatter, body }
 4. if !body.trim(): op.finish("Nothing to tidy — note is empty"); return
-5. withRetry(() => aiClient.complete(body, SYSTEM_PROMPT), 3, 2000)
+5. withRetry(() => aiClient.complete(body, SYSTEM_PROMPT, trackAiCache(use)), 3, 2000)   // use: CacheUse (#527)
      SYSTEM_PROMPT (index.ts:11) constrains AI to:
        - spelling correction only (no grammar/word-choice/meaning changes)
        - markdown formatting (lists, quotes, headers, code blocks, emphasis)
