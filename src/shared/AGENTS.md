@@ -224,7 +224,7 @@ class NoteOperationQueue {
 }
 // One instance per plugin (created in main.ts:56), injected into every module that mutates a note after an AI call.
 // Chain entries never reject (built from internal resolve-only promises), so a failing operation cannot poison a key;
-// `run` rejections still propagate to the caller and still release the slot (note-operation-queue.ts:85).
+// `run` rejections still propagate to the caller and still release the slot (note-operation-queue.ts:46-47).
 
 // feature-module.ts (#504; the contract every src/<feature>/index.ts module class implements; driven by modules/registry.ts)
 interface ModuleDeps {
@@ -459,6 +459,7 @@ function scoreLyricsContent(content: string): number
 | File | Exports | Purpose |
 |------|---------|---------|
 | `ai-client.ts` | `AIClient`, `AIRequestOptions`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support. `chat()`/`complete()` accept `opts?: AIRequestOptions` and wrap a private `dispatch()` with an opt-in per-instance LRU response cache (max 50) + in-flight coalescing (#397; key via `contentKey`); `safeRequest`, `resolveModelId`, `cacheGet`/`cacheSet`, `to*Content` (internal). Imports `redactSecrets` from `redact.ts`, `contentKey` from `hash-utils.ts` |
+| `ai-client.test.ts` | Tests | Per-provider request/response shapes (Gemini, OpenAI, Anthropic) + `redactSecrets` re-export |
 | `redact.ts` | `redactSecrets`, `redactError` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). `redactSecrets` consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts`, `update-checker.ts`, `notifications.ts`; `redactError(value)` renders a caught error to a redacted log-safe string (stack ?? `name: message` -> redactSecrets) for every raw-error console sink (main, data-folder-migration, onboarding, checkpoints, update-checker, transcript-cache, audio, intake, rem, elaboration x2, image/preprocess, transcription x2, clipboard catches in notifications + video settings, fire-and-forget). Behavior covered by `redact.test.ts` |
 | `redact.test.ts` | Tests | Redaction pattern tests |
 | `encoding.ts` | `arrayBufferToBase64`, `base64EncodedLength` | Base64 encode + exact encoded-length calc; canonical home reused by audio/image/elaboration |
@@ -469,7 +470,9 @@ function scoreLyricsContent(content: string): number
 | `update-checker.ts` | `UpdateChecker`, `isNewerVersion`, `UpdateCheckerDeps` | In-app "newer Synapse available" check (#365). Polls the plugin's own public GitHub Releases API at most once/24h (gated on `settings.updates.enableUpdateNotifications`), compares the latest tag to the running version, and shows a sticky notice via `notifications.infoSticky` whose button opens Settings → Community plugins. Fails silently (offline/non-200/malformed → logged `null`); the fetch-failure detail is logged through `redactSecrets` and the outer unexpected-error catch through `redactError`. Records the shown version so it never nags twice. `isNewerVersion` is pure semver gt |
 | `update-checker.test.ts` | Tests | UpdateChecker + isNewerVersion tests |
 | `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `getIncludedMarkdownFiles`, `wordCount`, `findAvailableVaultPath` | Vault file operations. `getIncludedMarkdownFiles` drops notes excluded by centralized exclusion rules for a given `FeatureId`. `findAvailableVaultPath` resolves a non-colliding vault path (Obsidian-style `-1`/`-2` suffix before the extension); used by video re-downloads + title duplicate "iterate" resolution (#408) |
+| `file-utils.test.ts` | Tests | `getIncludedMarkdownFiles` exclusion filtering, `findAvailableVaultPath` suffixing |
 | `api-utils.ts` | `withRetry`, `sleep`, `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError` | Retry with exponential backoff + per-error `shouldRetry` gate, network-error classification/disclosure. `notifyError` no longer lives here — error display moved to `NotificationManager` |
+| `api-utils.test.ts` | Tests | `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError`, `withRetry` |
 | `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
 | `validation.test.ts` | Tests | Validation tests |
 | `url-detector.ts` | `detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult` | Regex platform detection (moved here from video/) |
@@ -519,10 +522,15 @@ function scoreLyricsContent(content: string): number
 | `content-schemas.ts` | `ContentSchema`, `PipelineStage`, `SchemaMode`, `CONTENT_SCHEMAS`, `detectSchemaFor`, `isRecipeContent`, `scoreRecipeContent`, `isReceiptContent`, `scoreReceiptContent`, `isLyricsContent`, `scoreLyricsContent` | Content-aware formatting registry (#233): recipe/receipt/lyrics detection heuristics + prompts, stage-gated via `appliesTo` and `mode`. `isLyricsContent`/`scoreLyricsContent` added for audio transcription lyric reformatting (#234) |
 | `content-schemas.test.ts` | Tests | Schema detection + scoring + stage-gate lock tests |
 | `provider-metadata.ts` | `PROVIDER_METADATA`, `aiProviderToCredential`, `CredentialProvider`, `ProviderMetadata`, `ProbeSpec` | Per-provider credential metadata: console URL, placeholder, format hint, minimal authenticated probe spec. Pure data module (no Obsidian runtime import). Covers openai/anthropic/gemini/deepgram/ollama |
+| `provider-metadata.test.ts` | Tests | `PROVIDER_METADATA` probe specs (keyed + keyless ollama), `aiProviderToCredential` |
 | `credential-validator.ts` | `validateCredentials`, `ValidationResult`, `ValidationStatus`, `ValidateOptions` | Live credential validation via provider probe; 10s timeout; never throws; redacts secrets from all error messages. Status: `valid`/`invalid`/`error`/`skipped` |
+| `credential-validator.test.ts` | Tests | `validateCredentials` successful probes, invalid keys, other failures |
 | `credential-field.ts` | `decorateCredentialField`, `CredentialFieldOptions`, `CredentialFieldHandle` | Decorates a Setting row with a Test button, get-key deep link, and live status chip. Result applied via `setTimeout(0)` (macrotask) to avoid Obsidian settings DOM freeze (#335). The validation-catch path renders its error into the status chip through `redactSecrets` so a key echoed in a thrown message never reaches the chip |
+| `credential-field.test.ts` | Tests | `decorateCredentialField` Test button, deep link, status chip |
 | `feature-chip-select.ts` | `renderFeatureChipSelect`, `FeatureChipSelectOptions` | Renders a chip multi-select for exclusion rule feature scope. Self-redraws its container on every edit; caller's `onChange` only needs to persist |
+| `feature-chip-select.test.ts` | Tests | `renderFeatureChipSelect` chip rendering, dropdown options, add via dropdown, remove via chips |
 | `fire-and-forget.ts` | `fireAndForget`, `FireAndForgetOptions` | Attaches rejection handling to an intentionally un-awaited promise. Routes errors through `NotificationManager.notifyError` when available; both the background-mode and no-manager-fallback `console.error` sinks route through `redactError` (single redaction source). Supports background mode (log only, no toast) |
+| `fire-and-forget.test.ts` | Tests | `fireAndForget` resolve path, rejection with and without a notification manager |
 | `review-action.ts` | `reviewAction`, `ReviewActionOptions` | Centralized "Review" completion-toast gate (#366): returns a `NoticeAction` opening the unified proposal view iff something was generated, auto-accept is off for the kind, and it is not an automatic post-op side effect. Shared by elaboration, enrichment, organize, deep-dive, title, rem |
 | `review-action.test.ts` | Tests | reviewAction gate tests |
 | `hash-utils.ts` | `hashString`, `contentKey` | Browser-safe FNV-1a string hashing (no Node `crypto`); content-addressing only, NOT security. `hashString` -> 16-char hex; `contentKey` length-prefixes parts before hashing. Used by ai-client cache key, elaboration proposal dedup, title content keys |
@@ -536,7 +544,9 @@ function scoreLyricsContent(content: string): number
 | `data-folder-migration.ts` | `migrateDataFolder`, `LEGACY_DATA_FOLDER`, `DATA_FOLDER` | One-time `.auto-notes/` -> `.synapse/` data-folder rename via `DataAdapter` (skip when absent, warn when both exist, `notifications.success`/`error` outcome). Imports `redact`, `notifications` (type). Called once at `main.ts:50` |
 | `data-folder-migration.test.ts` | Tests | Rename / skip / conflict / failure paths |
 | `json-utils.ts` | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` | Type-safe JSON helpers. `parseJson` returns `unknown` (not `any`). `readJsonFile` reads via `DataAdapter`, validates with a type guard, returns `null` on any failure |
+| `json-utils.test.ts` | Tests | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` |
 | `node-loader.ts` | `loadNodeModules`, `assertDesktop`, `shellEnv`, `DesktopOnlyError`, `NodeModules` | Single sanctioned entry point for desktop-only Node.js builtins (os/path/fs/child_process). Lazy-loads inside function body so importing never triggers a module load on mobile. `shellEnv()` builds a narrowed subprocess environment with PATH augmented for common tool install locations |
+| `node-loader.test.ts` | Tests | Desktop guard (`loadNodeModules`, `assertDesktop`), `shellEnv` allowlist |
 | `settings-section.ts` | `createSettingsSectionContext`, `isSectionCollapsed`, `persistCollapse`, `SettingsSectionContext`, `SettingsSectionContextOptions`, `SectionRegistryEntry`, `FeatureToggleListener` | Shared accordion plumbing for the settings tab (#243). Feature renderers receive a `SettingsSectionContext` and call `featureSection()`/`configSection()` to build accordions without importing `settings-tab.ts` |
 | `markdown.d.ts` | ambient `declare module '*.md'` | Types `import X from '*.md'` as a string (esbuild inlines the file at build time); used by `changelog-modal.ts` to bundle CHANGELOG.md (#375). Not part of the barrel |
 | `index.ts` | re-exports | Barrel file |

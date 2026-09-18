@@ -12,7 +12,7 @@ Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTra
 
 ```ts
 class AudioModule {
-  constructor(plugin: Plugin, getSettings: () => SynapseSettings, notifications: NotificationManager, checkpointManager: CheckpointManager, noteQueue: NoteOperationQueue, extractor?: AudioExtractor)   // noteQueue (#483) inserted before the optional extractor
+  constructor(deps: ModuleDeps, extractor?: AudioExtractor)   // index.ts:46; ModuleDeps bundle first (#504: plugin, getSettings, notifications, checkpointManager, registrar, noteQueue); extractor = desktop-only clipping/concat
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
@@ -79,6 +79,9 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 | `types.ts` | `TranscriptionResult`, `TimestampEntry`, `TranscribeOptions`, `AudioEmbed` | Types |
 | `transcriber.ts` | `Transcriber`, `buildMultipartBody`, `GEMINI_MAX_INLINE_AUDIO_BYTES` | Provider-routed transcription (Whisper, Deepgram, Gemini, local stub) over `requestUrl`; manual multipart with sanitized headers (internal `sanitizeMultipartHeaderValue`, `geminiMimeType`); Gemini text via shared `extractGeminiResponseText` |
 | `transcriber.test.ts` | Tests | Transcriber + multipart + provider routing tests |
+| `transcription-models.test.ts` | Tests | `TRANSCRIPTION_MODEL_OPTIONS` registry shape, `transcriptionModelOptions` / `hasTranscriptionModelOptions`, `resolveTranscriptionModel`, `whisperResponseFormat` (#521) |
+| `transcription-credentials.test.ts` | Tests | `renderTranscriptionCredentials` provider dropdown + per-provider key fields |
+| `settings-section.test.ts` | Tests | `renderAudioSettings` section rendering |
 | `post-processor.ts` | `PostProcessor`, `PostProcessOptions`, `PostProcessorDeps` | AI transcript cleanup via `AIClient`; transcripts over `ai.maxTokens` run in sections (#467) |
 | `no-speech.test.ts` | Tests | `AudioModule` no-speech paths (#524): zero AI calls, note untouched, notices, batch/combined partial results |
 | `post-processor.test.ts` | Tests | Blank/short-input guard (#524), single-call path, sectioning, overlap trim, raw fallback, progress, key points, inter-call delay |
@@ -88,6 +91,10 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 | `transcription-credentials.ts` | `renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext)` | Transcription-provider dropdown + per-provider API-key fields rendered into the AI Configuration section (#332/#335). Re-exported from `index.ts` (the module's public API) so `settings-tab.ts` wires it through the `./audio` barrel rather than deep-importing this file. Imports `PROVIDER_METADATA`/`decorateCredentialField` and types `CredentialProvider`/`CredentialFieldHandle`/`SettingsSectionContext` via the `../shared` barrel (no deep `../shared/<file>` imports) |
 | `note-scanner.ts` | `findAudioEmbeds`, `hasTranscriptionBelow`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` | Scan note content for audio embeds |
 | `note-scanner.test.ts` | Tests | Note scanner tests |
+| `cache-report.test.ts` | Tests | `AudioModule` response-cache reporting (#527): `aiCached` flag + finish wording, fresh-transcript bypass |
+| `combine-transcription.test.ts` | Tests | `AudioModule.transcribeAndInsertCombined` (#214): ffmpeg concat vs per-file merge, <2-embed fallback |
+| `lyrics-reformat.test.ts` | Tests | `AudioModule.transcribe` lyrics schema reformatting (#234) |
+| `process-transcript-text.test.ts` | Tests | `AudioModule.processTranscriptText` caption-tier seam (#184) |
 | `index.ts` | `AudioModule` (+ `renderAudioSettings`, `renderTranscriptionCredentials`, note-scanner & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307); serializes every note-mutating insert through the shared `NoteOperationQueue` (internal `queued`, `insertFileTranscription`, `insertTranscriptions`, `insertCombinedTranscription`, #483); schema-reformat failures log through shared `redactError` |
 
 ## Data Flow
@@ -145,46 +152,46 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 
 | Public entry point | Queue key | Private core |
 |---|---|---|
-| `transcribeFileToActiveNote(file, timeRange?)` | active note path | `insertFileTranscription(activeFile, file, op, timeRange?)` (index.ts:L200) |
-| `transcribeAndInsert(noteFile, embeds)` | `noteFile.path` | `insertTranscriptions(noteFile, embeds, op)` (index.ts:L287) |
-| `transcribeAndInsertCombined(noteFile, embeds)` | `noteFile.path` (2+ embeds only) | `insertCombinedTranscription(noteFile, embeds, op)` (index.ts:L420) |
+| `transcribeFileToActiveNote(file, timeRange?)` | active note path | `insertFileTranscription(activeFile, file, op, timeRange?)` (index.ts:213) |
+| `transcribeAndInsert(noteFile, embeds)` | `noteFile.path` | `insertTranscriptions(noteFile, embeds, op)` (index.ts:300) |
+| `transcribeAndInsertCombined(noteFile, embeds)` | `noteFile.path` (2+ embeds only) | `insertCombinedTranscription(noteFile, embeds, op)` (index.ts:435) |
 
-- `private queued<T>(file, op, run)` (index.ts:L87) wraps `noteQueue.run(file.path, run, { onWait })`; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (audio commands are user-invoked, so a wait is surfaced).
-- `transcribeAndInsertCombined` with `<2` embeds short-circuits to the PUBLIC `transcribeAndInsert` BEFORE acquiring (index.ts:L406), so the slot is still taken exactly once.
-- The combined-transcription fallbacks call `insertTranscriptions` DIRECTLY (index.ts:L451) — they already hold the note's slot, and re-entering would self-deadlock.
+- `private queued<T>(file, op, run)` (index.ts:87) wraps `noteQueue.run(file.path, run, { onWait })`; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (audio commands are user-invoked, so a wait is surfaced).
+- `transcribeAndInsertCombined` with `<2` embeds short-circuits to the PUBLIC `transcribeAndInsert` BEFORE acquiring (index.ts:420), so the slot is still taken exactly once.
+- The combined-transcription fallbacks call `insertTranscriptions` DIRECTLY (index.ts:467) — they already hold the note's slot, and re-entering would self-deadlock.
 - `transcribe(audioData, fileName, options?)` is queue-free: it takes bytes, not a note, and is also called by `VideoModule.processUrl()`.
 
 ## Note Scanning
 
-`findAudioEmbeds(content, sourcePath, metadataCache)` in `note-scanner.ts:L8`:
+`findAudioEmbeds(content, sourcePath, metadataCache)` in `note-scanner.ts:8`:
 - Regex `AUDIO_EMBED_REGEX`: `![[*.mp3|wav|m4a|ogg|flac|webm|aac]]`
 - Resolves files via `metadataCache.getFirstLinkpathDest()`; only `TFile` matches passing `AUDIO_EXTENSIONS` are kept
-- Skips embeds already transcribed via `hasTranscriptionBelow` (`note-scanner.ts:L38`): scans lines `embedLine+1..+3` for the legacy `**Transcription of X**`, the `[!synapse-transcription]` callout, or the `[!...lyrics]` callout `Lyrics of X` (#234)
+- Skips embeds already transcribed via `hasTranscriptionBelow` (`note-scanner.ts:38`): scans lines `embedLine+1..+3` for the legacy `**Transcription of X**`, the `[!synapse-transcription]` callout, or the `[!...lyrics]` callout `Lyrics of X` (#234)
 - Returns `AudioEmbed[]` with file references and line numbers
 
 ## Settings Keys
 
-All under `settings.audio` (interface `AudioSettings`, `settings.ts:93`; defaults `settings.ts:411`):
+All under `settings.audio` (interface `AudioSettings`, `settings.ts:151`; defaults `settings.ts:471`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `enabled` | boolean | `true` | Feature toggle for the audio module |
-| `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'gemini' \| 'local-whisper'` | `'whisper-api'` | Transcription backend (routed in `transcriber.ts:L294`) |
-| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey`, `transcriber.ts:L313`) |
+| `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'gemini' \| 'local-whisper'` | `'whisper-api'` | Transcription backend (routed in `transcriber.ts:295`) |
+| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey`, `transcriber.ts:314`) |
 | `deepgramApiKey` | string | `''` | Deepgram API key (no fallback) |
-| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey`, `transcriber.ts:L426`) |
+| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey`, `transcriber.ts:427`) |
 | `transcriptionModel` | string | `'whisper-1'` | Model for the active provider; resolved against `TRANSCRIPTION_MODEL_OPTIONS` (`transcription-models.ts`) |
 | `localWhisperPath` | string | `''` | Reserved for `local-whisper` CLI path (provider not implemented) |
 | `language` | string | `''` | Language hint; empty = auto-detect |
 | `autoFormatLyrics` | boolean | `true` | Auto-detect song transcripts and reformat as structured lyrics (#234) |
-| `postProcessing` | `PostProcessingSettings` | see below | AI transcript cleanup block (`settings.ts:L85`) |
+| `postProcessing` | `PostProcessingSettings` | see below | AI transcript cleanup block (`settings.ts:143`) |
 
-`postProcessing` (`PostProcessingSettings`, `settings.ts:L85`), consumed by `post-processor.ts`:
+`postProcessing` (`PostProcessingSettings`, `settings.ts:143`), consumed by `post-processor.ts`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `postProcessing.enabled` | boolean | `true` | Master switch; off returns the raw transcript unchanged |
-| `postProcessing.removeFiller` | boolean | `false` | Strip filler words / false starts (opt-in per vault, `settings.ts:426`; #465) |
+| `postProcessing.removeFiller` | boolean | `false` | Strip filler words / false starts (opt-in per vault, `settings.ts:486`; #465) |
 | `postProcessing.addStructure` | boolean | `true` | Add punctuation, paragraph breaks, headers |
 | `postProcessing.extractKeyPoints` | boolean | `false` | Prepend a "Key Points" summary section |
 | `postProcessing.customPrompt` | string | `''` | Extra instruction appended to the cleanup prompt |

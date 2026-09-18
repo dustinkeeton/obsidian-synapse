@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-09-17
 ---
 
 # Views Module
@@ -102,7 +102,7 @@ function activateSynapseActionsView(workspace: Workspace): Promise<void>
 // view-activation.ts:49 — setItems/setCheckpoints on every open unified leaf; no-op when none open
 function refreshUnifiedView(workspace: Workspace, sources: UnifiedViewSources): Promise<void>
 
-// command-runner.ts:7 — active file iff extension === 'md' (survives the actions sidebar stealing focus)
+// command-runner.ts:8 — active file iff extension === 'md' (survives the actions sidebar stealing focus)
 function activeMarkdownFile(app: App): TFile | null
 // command-runner.ts:26 — context:'note': invoke the registered command's editorCallback(view.editor, view) directly with the active file's MarkdownView (no setActiveLeaf/focus change; rejection -> fireAndForget), or notice when no note is active; everything else (and unresolvable note handlers) -> executeCommandById(`${pluginId}:${id}`) (#352)
 function runRegisteredCommand(app: App, pluginId: string, id: string, notifications: NotificationManager): void

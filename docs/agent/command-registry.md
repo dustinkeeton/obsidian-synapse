@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-09-17
 status: implemented
 module-path: src/commands/
 ---
@@ -130,11 +130,11 @@ A `deprecated`/`disabled` entry never registers or runs in any flow, regardless 
 - palette — `CommandRegistrar.register` gates `addCommand`. All 23 real commands participate; the 6 `disabled` ones are attempted (so the audit sees them) but never added.
 - fire-synapse — `SynapseRunner.fire()` / `fireOnFile()` (`src/pipeline/synapse-runner.ts:18`, `:74`) AND `isPipelineKeyInFlow(phase.key, 'fire-synapse')` into the `settings[phase.key].enabled` filter. Matched via `pipelineKey` (6 pipeline entries).
 - startup — `ElaborationModule.onload()` ANDs `isInFlow('scan-vault', 'startup')` into the `scanOnStartup` and `autoScanInterval` conditions.
-- actions sidebar (#289) — `main.ts:232` builds `SynapseActionsView` from `listPaletteActions(registrar.getRegistered())`; `context: 'note'` buttons are disabled when no markdown note is active.
+- actions sidebar (#289) — `main.ts:162-163` builds `SynapseActionsView` from `listPaletteActions(registrar.getRegistered())`; `context: 'note'` buttons are disabled when no markdown note is active; `views/command-runner.ts` invokes a `context: 'note'` command's `editorCallback` directly with the note's `MarkdownView` (#352).
 
 ## Drift detection (audit.ts)
 
-Run once at the end of `SynapsePlugin.onload()` (`main.ts:503`); reused by `audit.test.ts` so CI fails on drift.
+Run once at the end of `SynapsePlugin.onload()` (`main.ts:249`); reused by `audit.test.ts` so CI fails on drift.
 
 - (a) an `active` palette entry whose feature loaded (>=1 attempt) but was never registered → "no handler".
 - (b) a registered id with no `COMMAND_REGISTRY` entry → "missing from registry".
@@ -151,10 +151,11 @@ src/commands/  (depends on nothing else in src/ — never in an import cycle)
   audit.ts     -> registry.ts
 
 consumed by:
-  main.ts                       -> CommandRegistrar, auditCommands, listPaletteActions, REGISTRY_BY_ID
+  main.ts                       -> CommandRegistrar, auditCommands, listPaletteActions (main.ts:7)
   elaboration|enrichment|organize|deep-dive|summarize|tidy|rem|video  -> CommandRegistrar (+ elaboration: isInFlow)
   pipeline/synapse-runner.ts    -> isPipelineKeyInFlow
   views/synapse-actions-view.ts -> FEATURE_ICONS (runtime), CommandDefinition + FeatureKey (types)
+  views/command-runner.ts       -> REGISTRY_BY_ID (runtime, views/command-runner.ts:3)
   views/proposal-styles.ts      -> FeatureKey (type)
 ```
 

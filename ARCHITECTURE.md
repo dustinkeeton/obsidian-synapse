@@ -1,22 +1,25 @@
 # Architecture Overview
 
-**Last updated**: 2026-09-14 · **Version**: 1.0.13
+**Last updated**: 2026-09-17 · **Version**: 1.1.0
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, and in-place wikilink discovery (REM). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
-The codebase has **22 modules under `src/`** (audio, brand-icons, changelog, commands, deep-dive, elaboration, enrichment, image, intake, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` and `settings.ts`. Five of those are thin one-file folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381).
+The codebase has **24 modules under `src/`** (audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496).
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
 ### How the pieces fit (plain language)
 
 - **Feature modules** do the actual work (transcribe, enrich, summarize…). Each one is self-contained in `src/<feature>/` and exposes its public surface through a single `index.ts` barrel.
-- **`shared/`** is the foundation everything stands on — the AI client, validation, checkpoints, callouts, and URL detection. It depends on no feature module.
+- **`modules/registry.ts` is the one list of feature modules** (#504). `main.ts` never names a module in its lifecycle: it builds one `ModuleDeps` bundle (plugin, settings getter, notifications, checkpoint manager, command registrar, note queue), hands it to the registry, and the registry constructs every module in order, calls `onload()` on the enabled ones, and unloads them in reverse. Every module constructor takes `ModuleDeps` first. Adding a module is one registry entry plus an `enabled`-flagged settings section — leaving either out is a compile error.
+- **`shared/`** is the foundation everything stands on — the AI client, validation, checkpoints, callouts, URL detection, the transcript cache, and the cache-hit / no-speech helpers. It depends on no feature module.
 - **`commands/`** is a developer-level master switch for every command, sitting *above* user settings. It also depends on nothing else in `src/`.
 - **`pipeline/`** runs features in order; **`intake/`** decides what to feed the pipeline. Neither imports a feature module directly — `main.ts` injects the features into them. This is what keeps the dependency graph acyclic.
 - **`views/`** holds the two sidebars: the **unified proposal view** (review/accept every proposal type) and the **Synapse actions view** (registry-driven, touch-friendly buttons so mobile users reach any command without the palette).
-- **`transcription/`** holds the transcription modals and the **URL tier router** (#184): YouTube captions over plain HTTP first, desktop yt-dlp/ffmpeg second. It reaches `audio` and `video` only through callbacks injected by `main.ts`.
+- **`transcription/`** holds the transcription modals and the **URL tier router** (#184): YouTube captions over plain HTTP first, desktop yt-dlp/ffmpeg second. It reaches `audio` and `video` only through callbacks injected by `main.ts`. Every URL path shares one router built over a **persistent transcript cache** (`shared/transcript-cache.ts`, #488), so a URL is transcribed once and reused by the modal, summarize, and intake.
+- **`checkpoints/`** owns the checkpoint *recovery* UX (#496) — the delayed startup "interrupted operations" prompt, the `manage-checkpoints` command, and the sidebar's resume/discard buttons. Persistence stays in `shared/checkpoint-manager.ts`; resume reaches a feature module only through an injected handler map.
 - **One note, one operation at a time.** A single `NoteOperationQueue` (`shared/note-operation-queue.ts`, #483) is injected into every module that reads a note, calls the AI, and writes it back, so two features never interleave writes on the same note.
+- **Cache use is never silent** (#527). When a result came from the transcript cache or the AI response cache, the operation's finish message says so — one shared wording in `shared/cache-notice.ts`, and a single "N of M notes served from cache" line for batches.
 - **Mobile safety**: the plugin ships `isDesktopOnly: false`. Anything that needs Node.js (yt-dlp, ffmpeg, the filesystem) is funneled through one guarded loader (`shared/node-loader.ts`) that refuses to run off-desktop, so the bundle loads cleanly on mobile and desktop-only features degrade gracefully.
 
 ---
@@ -26,11 +29,14 @@ The codebase has **22 modules under `src/`** (audio, brand-icons, changelog, com
 ```mermaid
 graph TB
     subgraph Obsidian["Obsidian"]
-        Main["main.ts<br/>SynapsePlugin"]
+        Main["main.ts<br/>SynapsePlugin (lifecycle glue)"]
+        Registry["modules/registry.ts<br/>(constructs · loads · unloads features)"]
         Settings["Settings + Tab"]
         Sidebar["Unified Proposal View<br/>(sidebar)"]
         Actions["Synapse Actions View<br/>(registry-driven sidebar)"]
         CkptMgr["CheckpointManager<br/>(shared, singleton)"]
+        CkptUX["Checkpoint recovery<br/>(checkpoints/)"]
+        TCache["TranscriptCache<br/>(shared, .synapse/transcript-cache.json)"]
 
         subgraph Coord["Coordination Layers"]
             Pipe["Pipeline<br/>(Fire Synapse runner)"]
@@ -67,9 +73,14 @@ graph TB
     Main --> Sidebar
     Main --> Actions
     Main --> CkptMgr
+    Main --> CkptUX
+    Main --> TCache
     Main --> Commands
     Main --> Coord
-    Main --> Features
+    Main --> Registry
+    Registry -->|ModuleDeps-first constructors| Features
+    CkptUX -.->|injected resume handlers| Features
+    Trans --> TCache
     Commands -.->|derives buttons| Actions
     Pipe -.->|injected modules| Features
     Intake -.->|injected fireOnFile| Pipe
@@ -95,12 +106,15 @@ graph TB
     style Sidebar fill:#bbf,stroke:#333
     style Actions fill:#bbf,stroke:#333
     style CkptMgr fill:#ffd,stroke:#333
+    style CkptUX fill:#ffd,stroke:#333
+    style TCache fill:#ffd,stroke:#333
+    style Registry fill:#fde,stroke:#333
     style Commands fill:#fde,stroke:#333
     style Shared fill:#def,stroke:#333
     style Image fill:#e8f5e9,stroke:#333
 ```
 
-Both `shared/` and `commands/` are **base layers**: every feature may depend on them, but they depend on no feature module. `pipeline/` and `intake/` reach the features only through dependencies injected by `main.ts`, never by importing them — that is what keeps the whole graph acyclic.
+Both `shared/` and `commands/` are **base layers**: every feature may depend on them, but they depend on no feature module. `pipeline/`, `intake/`, and `checkpoints/` reach the features only through dependencies injected by `main.ts`, never by importing them. `modules/registry.ts` is the one file (besides the settings tab) that imports every feature barrel — it sits at the top, so the whole graph stays acyclic.
 
 ---
 
@@ -108,22 +122,35 @@ Both `shared/` and `commands/` are **base layers**: every feature may depend on 
 
 ```
 src/
-├── main.ts                 # Plugin entry, module orchestration, callback wiring, dependency injection
-├── settings.ts             # Type definitions, defaults, model options (type-only imports of ProposalKind + ExclusionRule)
-├── settings-ui/            # SynapseSettingTab — Obsidian settings UI (video section on every platform; binary-path rows hidden on mobile)
-├── onboarding/             # Pure first-run welcome logic (#89): planFirstRun, needsApiKey
+├── main.ts                 # Plugin entry — lifecycle glue only (295 lines, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, callback injection
+├── settings.ts             # Type definitions, defaults, MODEL_OPTIONS + TRANSCRIPTION_MODEL_OPTIONS (#521); type-only imports of ProposalKind + ExclusionRule
+├── settings-ui/            # SynapseSettingTab — declarative SETTINGS_SECTIONS list (#506); cross-feature sections in global-sections.ts
+├── onboarding/             # Pure first-run welcome logic (#89): planFirstRun, needsApiKey, runFirstRunOnboarding
 ├── brand-icons/            # registerSynapseIcons(): S-Signal mark + per-feature glyphs (before any ribbon/setIcon use)
 ├── changelog/              # parseChangelog/renderChangelog + ChangelogModal over the build-inlined CHANGELOG.md (#375)
 ├── properties-fold/        # registerPropertiesAutoFold(): auto-fold note Properties panel on open (#381)
+│
+├── modules/                # Feature-module registry (#504) — the one list of feature modules
+│   ├── registry.ts         #   MODULE_FACTORIES (ordered) + constructFeatureModules / loadFeatureModules / unloadFeatureModules
+│   └── index.ts            #   Barrel export
+│
+├── checkpoints/            # Checkpoint recovery UX (#496)
+│   ├── checkpoint-recovery.ts # CheckpointRecoveryModule: startup prompt (3 s), manage-checkpoints command, resume/discard
+│   ├── types.ts            #   CheckpointResumeHandlers — per-module resume map injected by main.ts
+│   └── index.ts            #   Barrel export
 │
 ├── commands/               # Command registry (base layer; imports nothing in src/)
 │   ├── registry.ts         #   COMMAND_REGISTRY source of truth + flow/status/context gates
 │   ├── registrar.ts        #   Single wiring point to plugin.addCommand
 │   ├── audit.ts            #   Registry <-> handler drift detection
-│   └── index.ts            #   Barrel export (listPaletteActions for the actions sidebar)
+│   ├── actions.ts          #   listPaletteActions — buttons for the actions sidebar
+│   ├── icons.ts            #   FEATURE_ICONS / resolveActionIcon
+│   ├── types.ts            #   CommandDefinition, CommandContext, CommandFlow, CommandStatus, FeatureKey
+│   └── index.ts            #   Barrel export
 │
 ├── pipeline/               # Fire Synapse: ordered multi-phase runner
 │   ├── synapse-runner.ts   #   Sequential phase executor (fire / fireOnFile)
+│   ├── post-op-hooks.ts    #   buildPostOpHook / buildAutoOrganizeHook — the enrich → title-check and auto-organize wiring (#496)
 │   ├── types.ts            #   SYNAPSE_PIPELINE phase list + scan-fn contract
 │   └── index.ts            #   Barrel export
 │
@@ -131,7 +158,7 @@ src/
 │   ├── intake-dispatcher.ts#   Route a note (article / media / general); bareUrl() reused by adoption
 │   ├── settings-section.ts #   Settings accordion incl. adoptSharedCaptures (#455)
 │   ├── types.ts            #   Route + IntakeDeps types, processed-flag constants
-│   └── index.ts            #   IntakeModule (debounce, idempotency, fireOnFile, transcribeUrlToNote, shared-capture adoption)
+│   └── index.ts            #   IntakeModule (debounce, idempotency, fireOnFile, transcribeUrlToNote, shared-capture adoption, startup catch-up scan #462)
 │
 ├── rem/                    # In-place [[wikilink]] discovery
 │   ├── mention-scanner.ts  #   Literal title/alias matches (down-weighted by titleMatchWeight, #380)
@@ -142,21 +169,27 @@ src/
 │
 ├── elaboration/            # Stub note detection + AI content proposals (image-aware)
 │   ├── detector.ts         #   PlaceholderDetector (short notes, TODOs, empty sections)
-│   ├── proposer.ts         #   ProposalGenerator (context gathering + AI generation)
+│   ├── proposer.ts         #   ProposalGenerator (context gathering — backlinks > outbound links > tag siblings under a 6000-char budget (#500) — + AI generation)
 │   ├── image-analyzer.ts   #   Multi-modal image analysis for proposal enrichment
 │   ├── proposal-store.ts   #   JSON file persistence
 │   └── index.ts            #   ElaborationModule orchestrator
 │
 ├── audio/                  # Audio transcription
-│   ├── transcriber.ts      #   Whisper / Deepgram / Gemini / local routing; manual multipart w/ sanitized headers
-│   ├── post-processor.ts   #   AI transcript cleanup
+│   ├── transcriber.ts      #   Whisper / Deepgram / Gemini / local routing; manual multipart w/ sanitized headers; no-speech detection (#524)
+│   ├── post-processor.ts   #   AI transcript cleanup — single call when it fits ai.maxTokens, otherwise sectioned (#467)
+│   ├── transcript-segmenter.ts # Pure splitter: paragraph → line → sentence → word boundaries, word-aligned overlap (#467)
+│   ├── transcription-models.ts # Resolve audio.transcriptionModel against the active provider's registry (#521)
+│   ├── transcription-credentials.ts # Provider + model dropdowns + key fields rendered inside AI Configuration
 │   ├── note-scanner.ts     #   Find audio embeds in note content
 │   └── index.ts            #   AudioModule orchestrator
 │                           #   NOTE: type-only `import type { AudioExtractor }` from video/ (no runtime cycle)
 │
 ├── video/                  # Video download + transcription
-│   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile
+│   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile (`--` before every URL positional, #501)
+│   ├── ffmpeg-availability.ts # createFfmpegAvailability — memoized ffmpeg probe (#496)
+│   ├── frame-extractor.ts  #   Placeholder — frame extraction is not implemented
 │   ├── note-scanner.ts     #   Find video URLs in note content (uses shared/url-detector)
+│   ├── settings-section.ts #   Video settings incl. captionsFirst + "Clear transcript cache" (#488)
 │   └── index.ts            #   VideoModule orchestrator (delegates to Audio)
 │                           #   NOTE: url-detector.ts moved to shared/ (decycling, 2026-06-08)
 │
@@ -172,11 +205,14 @@ src/
 │   ├── time-range-slider.ts#   Dual-handle range slider (pure DOM component)
 │   ├── time-range-modal.ts #   TimeRangeModal — what to transcribe; dismiss = cancelled (#464)
 │   ├── duration-detector.ts#   Media duration via ffprobe (local) / yt-dlp (URL)
-│   ├── url-transcription.ts#   UrlTranscriptionRouter + strategy contract + NoTranscriptionPathError + buildUrlTranscriptBlock
+│   ├── url-transcription.ts#   UrlTranscriptionRouter (read-/write-through the transcript store, #488) + strategy contract + NoTranscriptionPathError + buildUrlTranscriptBlock
+│   ├── create-url-router.ts#   createUrlTranscriptionRouter — assembles the tiers over the store (#496)
 │   ├── caption-strategy.ts #   Tier 1: YouTube captions (every platform); post-process via injected AudioModule callback
 │   ├── local-extraction-strategy.ts # Tier 2: desktop yt-dlp/ffmpeg via injected VideoModule.processUrl delegate
-│   ├── youtube-captions.ts #   Caption fetch (Innertube ANDROID → watch page) + deterministic formatting (#469)
-│   ├── insert-url-transcript.ts # Transcribe a URL through the router and append to the active note (queued, #483)
+│   ├── youtube-captions.ts #   Caption fetch (Innertube ANDROID → watch page), host allowlist + size bounds + escaping (#501), deterministic formatting (#469)
+│   ├── insert-url-transcript.ts # insertUrlTranscript (modal) + appendUrlTranscript (intake): route, append, report cache use (queued, #483)
+│   ├── note-media-transcription.ts # transcribeNoteMedia — "Transcribe current note" entry point (#496)
+│   ├── open-unified-modal.ts #  openUnifiedTranscriptionModal — ribbon/command entry point (#496)
 │   └── index.ts            #   Barrel export
 │
 ├── enrichment/             # Tags, links, refs, frontmatter
@@ -225,10 +261,16 @@ src/
 │   └── title-detector.ts   #   Re-exports isUntitled from ../shared (canonical home is shared/)
 │
 ├── shared/                 # Cross-cutting utilities (base layer)
-│   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); per-instance LRU response cache + in-flight coalescing (#397); re-exports redactSecrets
+│   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); per-instance LRU response cache + in-flight coalescing (#397); onCacheHit signal (#527); re-exports redactSecrets
 │   ├── redact.ts           #   redactSecrets() (strings) + redactError() (raw caught errors) — single source of truth for API-key/token redaction
 │   ├── note-operation-queue.ts # NoteOperationQueue — path-keyed FIFO so read → AI → write cycles on one note never interleave (#483)
-│   ├── settings-migrations.ts # Version-stamped migration runner (#93): migrateSettings/readSettingsVersion/CURRENT_SETTINGS_VERSION
+│   ├── feature-module.ts   #   ModuleDeps + FeatureModule + FeatureSettingsKey — the contract every feature module implements (#504)
+│   ├── transcript-cache.ts #   TranscriptCache — persistent media-URL transcript store, LRU-capped at 200 entries / 4M chars (#488)
+│   ├── cache-notice.ts     #   CacheUse + withCacheReport — one wording for "served from cache" finish lines (#527)
+│   ├── no-speech.ts        #   NoSpeechDetectedError + hasSpeechContent/isWorthPostProcessing — typed no-speech outcome (#524)
+│   ├── settings-merge.ts   #   deepMergeSettings — prototype-safe deep merge over DEFAULT_SETTINGS (#496)
+│   ├── data-folder-migration.ts # migrateDataFolder — one-time .auto-notes → .synapse rename (#496)
+│   ├── settings-migrations.ts # Version-stamped migration runner (#93): migrateSettings/readSettingsVersion/CURRENT_SETTINGS_VERSION (now 3)
 │   ├── hash-utils.ts       #   hashString/contentKey — dependency-free input-keyed hashing for idempotency (#395)
 │   ├── untrusted-content.ts#   wrapUntrusted() — structural prompt-injection fence for fetched external content (#398)
 │   ├── review-action.ts    #   reviewAction() — centralized "Review" completion-toast gate (#366)
@@ -256,7 +298,7 @@ src/
 │   ├── folder-picker-modal.ts # Modal for folder selection
 │   ├── open-scan-folder-picker.ts # Unified scan-folder picker; Enter-on-open = vault root (1.0.9)
 │   ├── confirm-modal.ts    #   ConfirmModal — settle-once yes/no; dismiss = false (#420)
-│   ├── settings-reset.ts   #   Per-section + global reset-to-defaults helpers (1.0.10)
+│   ├── settings-reset.ts   #   Per-section + global reset-to-defaults helpers (1.0.10); the one runtime shared → settings import (DEFAULT_SETTINGS)
 │   ├── api-utils.ts        #   Retry logic + error handling helpers
 │   ├── json-utils.ts       #   Safe JSON parse + record/string-array guards + readJsonFile
 │   ├── content-fetcher.ts  #   HTTP fetch + HTML-to-text + JSON-LD recipe extraction
@@ -273,22 +315,28 @@ src/
 └── views/                  # UI components
     ├── unified-proposal-view.ts  # Single sidebar for all proposal types + checkpoints
     ├── synapse-actions-view.ts   # Registry-driven action buttons sidebar (mobile-friendly)
-    └── types.ts                  # UnifiedItem, UnifiedViewCallbacks
+    ├── view-activation.ts        # activateUnifiedView / activateSynapseActionsView / refreshUnifiedView (#496)
+    ├── command-runner.ts         # runRegisteredCommand — per-note commands invoke their editorCallback directly (#352)
+    ├── proposal-styles.ts        # Semantic color tokens + card/badge class helpers
+    ├── types.ts                  # UnifiedItem, UnifiedViewCallbacks
+    └── index.ts                  # Barrel export
 ```
 
 ---
 
 ## Dependency Graph
 
-The graph is **acyclic**. `shared/` and `commands/` form the base layer (bottom); feature modules depend down onto them; the coordination layers (`pipeline/`, `intake/`) sit on top and receive features only by injection from `main.ts`.
+The graph is **acyclic**. `shared/` and `commands/` form the base layer (bottom); feature modules depend down onto them; the coordination layers (`pipeline/`, `intake/`, `checkpoints/`) sit on top and receive features only by injection from `main.ts`. `modules/registry.ts` is the single place that imports every feature barrel.
 
 ```mermaid
 graph TD
     Main["main.ts"]
+    Registry["modules/registry.ts<br/>(imports every feature barrel)"]
 
     subgraph Coordination["Coordination (top — features injected, never imported)"]
         Pipe["pipeline/"]
         Intake["intake/"]
+        Ckpts["checkpoints/"]
     end
 
     subgraph FeatureLayer["Feature Modules"]
@@ -314,11 +362,17 @@ graph TD
 
     Main --> Pipe
     Main --> Intake
-    Main --> FeatureLayer
+    Main --> Ckpts
+    Main --> Registry
     Main --> BaseLayer
+    Registry --> FeatureLayer
+    Registry --> Shared
 
     Pipe --> Commands
+    Pipe --> Shared
     Pipe -. injected modules .-> FeatureLayer
+    Ckpts --> Shared
+    Ckpts -. injected resume handlers .-> FeatureLayer
     Intake --> Shared
     Intake -. injected fireOnFile .-> Pipe
 
@@ -348,6 +402,7 @@ graph TD
     Views --> Shared
     Views --> Commands
     Shared -. type only .-> Main
+    Shared -. DEFAULT_SETTINGS (settings-reset) .-> Main
 
     Elab --> Commands
     Audio --> Commands
@@ -364,23 +419,29 @@ graph TD
     style Commands fill:#fde,stroke:#333
     style Pipe fill:#ffd,stroke:#333
     style Intake fill:#ffd,stroke:#333
+    style Ckpts fill:#ffd,stroke:#333
+    style Registry fill:#fde,stroke:#333
 ```
 
 Key constraints:
 - **Acyclic graph.** `shared` and `commands` are base layers depending on no feature module. The former `shared ⇄ video` cycle was removed on 2026-06-08 by moving `url-detector.ts` into `shared` — the edge is now one-directional `video → shared`.
 - **`settings` → `shared` is one sanctioned edge.** `settings.ts` imports the runtime value `CURRENT_SETTINGS_VERSION` from `shared/settings-migrations.ts` (#93), which depends only on `shared/exclusions.ts` and never on `../settings` — so `settings → settings-migrations → exclusions` stays acyclic. (`settings.ts` also type-only-imports `ProposalKind`, `ExclusionRule`, `TitleDuplicateStrategy`, all erased at compile time.)
-- **`commands` imports nothing in `src/`.** `pipeline` imports `commands` (for flow gating) but never the feature modules — `main.ts` injects them via `PipelineModuleMap`.
+- **`shared` → `settings` is the mirror-image sanctioned edge.** `shared/settings-reset.ts:1` imports the runtime value `DEFAULT_SETTINGS` from `settings.ts` (the reset-to-defaults helpers). There is no cycle because `settings.ts` never reaches `settings-reset.ts` — its only path into `shared` is `settings-migrations.ts → exclusions.ts`. Several other `shared/` files import `SynapseSettings`/`AIProvider` as interfaces only (erased).
+- **`modules/registry.ts` is the one feature-module list** (#504). It imports every feature barrel and constructs each module with `ModuleDeps` first; per-entry `platform` predicates (video: `Platform.isDesktop`) replace `main.ts` special cases. Disabled modules are still constructed — only their `onload()` is skipped. A test asserts every `src/<feature>/index.ts` module class is constructed by the registry.
+- **`commands` imports nothing in `src/`.** `pipeline` imports `commands` (for flow gating) and `shared` but never the feature modules — `main.ts` injects them via `PipelineModuleMap` / `PostOpHookDeps`. `checkpoints` likewise reaches feature modules only through injected `CheckpointResumeHandlers`.
 - **`intake` imports only `obsidian` + `shared`.** All cross-module work routes through an injected `IntakeDeps` (notably `fireOnFile`).
 - **Video depends on Audio** — reuses the transcription pipeline (runtime edge `video → audio`).
 - **Two type-only back-edges, no runtime cycle.** `audio/index.ts` does `import type { AudioExtractor } from '../video'` for time-range clipping, and `shared/settings-section.ts:1` does `import type SynapsePlugin from '../main'`. Both are erased at compile time; the audio one is flagged for a future cleanup (move `AudioExtractor` to `shared/` or pass a structural interface).
 - **Transcription owns the URL tier router** (#184) — `CaptionStrategy` runs on every platform; `LocalExtractionStrategy` is appended only when `VideoModule` exists (desktop) and calls it through an injected `processUrl` delegate. Media decoding and AI calls stay in Audio, Video, and Image; the modals reach them via callbacks.
 - **Elaboration uses ImageAnalyzer** — analyzes embedded images during proposal generation (dotted line to Image).
-- **Summarize and Intake receive URL transcription by injection only** — `main.ts` hands each a callback that delegates to `UrlTranscriptionRouter.transcribe`; neither has a static import of `video` or `transcription`. URL-platform helpers resolve from `shared`; summarize also calls `audio.findAudioEmbeds`.
+- **Summarize and Intake receive URL transcription by injection only** — the registry hands summarize (and `video.urlTranscriber`) a callback that delegates to `UrlTranscriptionRouter.transcribe`, and intake gets `transcribeUrlToNote`; neither has a static import of `video` or `transcription`. URL-platform helpers resolve from `shared`; summarize also calls `audio.findAudioEmbeds`. A router-supported media URL is only ever transcribed, never page-fetched, and a failed transcription inserts no summary (#488).
+- **One router, one transcript store** (#488). Every URL path (unified modal, note-media batch, summarize, intake) shares a single `UrlTranscriptionRouter` built over `SynapsePlugin.transcriptCache`. Tier results are written through; later requests for the same canonical URL (+ time range) are served from the store unless `forceRefresh` is set — which also bypasses the AI response cache for post-processing (#527).
+- **No speech is a typed outcome** (#524). `NoSpeechDetectedError` (`shared/no-speech.ts`) is thrown at the transcriber seam and re-checked by `AudioModule`, the extraction tier, and the router. Write sites notify and write nothing; the transcript store never receives it; blank text never reaches an AI prompt.
 - **Shared utilities are imported via the `../shared` barrel** — never through a sibling feature module or an internal `shared/` file. Canonical homes (`url-detector`, `redact`, `encoding`) live in `shared/` and re-export elsewhere only for back-compat.
 - **Deep Dive reuses Organize** for `auto-organize` nesting mode.
 - **Views imports feature modules as types only** (including REM); its runtime imports are `fireAndForget` from `shared` and `FEATURE_ICONS` from `commands`.
-- **One shared `NoteOperationQueue`** (#483) is injected into audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive, and `transcription/insert-url-transcript`. A public entry point takes the note's slot exactly once and delegates to a queue-free private core; acquiring twice would deadlock.
-- **CheckpointManager is a singleton** — created in `main.ts`, injected into modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem). `tidy`, `title`, `transcription`, and `intake` do not use it.
+- **One shared `NoteOperationQueue`** (#483) arrives in every module via `ModuleDeps` and is used by audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive, and `transcription/insert-url-transcript`. A public entry point takes the note's slot exactly once and delegates to a queue-free private core; acquiring twice would deadlock.
+- **CheckpointManager is a singleton** — created in `main.ts` and delivered through `ModuleDeps`; modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) keep it. `tidy`, `title`, and `intake` receive the bundle but do not use it; `transcription` is not a module.
 
 ---
 
@@ -400,6 +461,7 @@ graph LR
 - **Gating.** A phase runs only if its feature is `enabled` *and* the command registry lists it in the `fire-synapse` flow.
 - **Decoupling.** The runner never imports the feature modules. `main.ts` builds a `PipelineModuleMap` (phase key → scan function) and injects it, so the runner stays independent of concrete features.
 - **Two entry points.** `fire(folder?)` scans a whole folder; `fireOnFile(file)` scopes every phase to a single note (this is what the intake watcher calls).
+- **Post-op hooks live here too** (`pipeline/post-op-hooks.ts`, #496). `buildPostOpHook(deps, source)` produces the "enrich, then check the title" follow-up each feature fires after it writes; `buildAutoOrganizeHook` produces the optional organize step for deep-dive and summarize. `main.ts` builds them once and assigns them to the modules — the gating rules are in the Cross-Module Communication section below.
 
 ---
 
@@ -434,7 +496,8 @@ graph TB
 - **Settle-then-process.** A per-path debounce waits until the note stops changing, so notes aren't reprocessed mid-edit.
 - **Idempotency.** A `synapse-processed` frontmatter flag is stamped *before* any relocation, so the move's rename echo can't trigger reprocessing.
 - **Leaf of the graph.** Intake imports only `obsidian` + `shared`; the pipeline and URL transcription arrive via injected `IntakeDeps` (`fireOnFile`, `transcribeUrlToNote`).
-- **Media branch.** `transcribeUrlToNote` (`main.ts:466-489`) runs the URL tier router, appends the transcript block, then the full pipeline runs. It **rethrows on failure** so the note stays un-stamped and retriable — on mobile, a TikTok/Instagram URL has no tier, and a synced desktop vault's watcher finishes it.
+- **Media branch.** `transcribeUrlToNote` (`transcription.appendUrlTranscript`, wired in `main.ts:74-78`) runs the URL tier router, appends the transcript block, then the full pipeline runs. It **rethrows on failure** so the note stays un-stamped and retriable — on mobile, a TikTok/Instagram URL has no tier, and a synced desktop vault's watcher finishes it. A **no-speech** result is different: it is final, so the note is stamped rather than re-downloaded on every catch-up (#524).
+- **Startup catch-up scan (#462).** Events never fire for notes that synced in while Obsidian was closed or whose earlier run threw. So `onload` arms a one-shot scan 7 s after layout is ready (after the 3 s checkpoint and 5 s update checks): un-stamped notes inside the intake folder are queued oldest-first, at most 10 per session, staggered 2 s apart so a backlog never bursts AI calls. Paths already pending are left alone. A note that keeps failing toasts once per session; repeats only log.
 - **Shared-capture adoption (#455, off by default).** Obsidian's mobile share receiver creates notes at the vault root. With `intake.adoptSharedCaptures` on, a newly created root-level note whose body is one bare media/article URL is moved into the intake folder and queued. Prose, multiple URLs, and unknown links are left where the user created them.
 
 ---
@@ -445,38 +508,40 @@ graph TB
 sequenceDiagram
     participant O as Obsidian
     participant M as main.ts
+    participant R as modules/registry.ts
     participant Reg as CommandRegistrar
     participant Mod as Feature Modules
-    participant Coord as Pipeline + Intake
     participant CK as CheckpointManager
+    participant CR as checkpoints/ (recovery)
 
     O->>M: onload()
-    M->>M: loadSettings() (version-stamped migrateSettings replay → deep-merge → stamp settingsVersion, #93; v1 excludeFolders→exclusions #307, v2 drop rem.semanticMatching)
+    M->>M: loadSettings() (version-stamped migrateSettings replay → deepMergeSettings → stamp settingsVersion, #93; v1 excludeFolders→exclusions #307, v2 drop rem.semanticMatching, v3 whisperModel→transcriptionModel #521)
     M->>M: registerSynapseIcons() (brand S-Signal mark + feature glyphs, before any ribbon/setIcon use)
-    M->>M: migrateDataFolder() (.auto-notes -> .synapse)
+    M->>M: NotificationManager() (status bar on desktop only); migrateDataFolder() (.auto-notes -> .synapse)
     M->>M: addSettingTab()
-    M->>M: NotificationManager() (status bar on desktop only)
     M->>CK: new CheckpointManager(app)
-    M->>M: new NoteOperationQueue() (#483, one shared instance)
-    M->>Reg: new CommandRegistrar(plugin)
-    M->>Mod: Initialize feature modules<br/>(Audio before Video; Video desktop-only; inject CheckpointManager, registrar, noteQueue, shouldAutoAccept getter)
-    M->>M: new UrlTranscriptionRouter([CaptionStrategy, LocalExtractionStrategy?]) (#184; extraction tier only when Video exists)
-    M->>M: new UpdateChecker(...) (#365)
+    M->>M: new NoteOperationQueue() (#483), new TranscriptCache(app) (#488), new CommandRegistrar(plugin) — one instance each
+    M->>R: constructFeatureModules(ModuleDeps, wiring)<br/>(MODULE_FACTORIES order: elaboration, audio, video (desktop only), image, enrichment, summarize, tidy, organize, deepDive, title, rem, intake — every module constructed, disabled ones included)
+    R->>Mod: new <Module>(deps, …extras) — wiring.transcribeUrl → video.urlTranscriber + summarize.transcribeUrl; wiring.intake → IntakeDeps
+    M->>M: createUrlTranscriptionRouter({ processTranscriptText, extract?, store: transcriptCache }) (#184/#488; extraction tier only when Video exists)
+    M->>M: new SynapseRunner(PipelineModuleMap); new UpdateChecker(...) (#365)
+    M->>CR: new CheckpointRecoveryModule({ checkpointManager, notifications, registrar, resumeHandlers, refreshView })
     M->>M: registerView(UnifiedProposalView) + registerView(SynapseActionsView)
     M->>M: registerPropertiesAutoFold(plugin, () => settings) (#381)
-    M->>M: Wire view refresh + onOpenProposalView + cross-module callbacks<br/>(enrichment, title, organize)
-    M->>Mod: Conditional module.onload()<br/>(registers commands via registrar if enabled)
+    M->>Mod: assign onViewRefreshNeeded / onOpenProposalView on the six proposal modules
+    M->>R: loadFeatureModules(modules, settings) — onload() per settings.<key>.enabled, registry order (registers commands via registrar)
+    M->>Mod: assign post-op hooks (pipeline.buildPostOpHook / buildAutoOrganizeHook)
     M->>M: addRibbonIcon x3 (synapse; synapse-transcribe; synapse-actions — all platforms since #184)
-    M->>Reg: registrar.register(main commands)
-    M->>CK: startupTimeout = checkForIncompleteCheckpoints() (delayed 3s)
+    M->>Reg: registrar.register(review-proposals, transcribe-media, transcribe-note-media, fire)
+    M->>CR: checkpoints.onload() — registers manage-checkpoints; arms the 3 s interrupted-operation check
     M->>M: updateCheckTimeout = updateChecker.maybeCheck() (delayed 5s, self-gated once/day, #365)
-    M->>Coord: Build SynapseRunner (inject PipelineModuleMap)<br/>+ IntakeModule (inject IntakeDeps.fireOnFile + transcribeUrlToNote)
     M->>Reg: auditCommands(attempted) — warn on drift
     M->>M: runFirstRunOnboarding() (#89, fresh installs only)
 
     O->>M: onunload()
-    M->>M: clearTimeout(startupTimeout); clearTimeout(updateCheckTimeout)
-    M->>Mod: module?.onunload() for every module (video may be null)
+    M->>M: clearTimeout(updateCheckTimeout)
+    M->>CR: checkpoints.onunload() (clears the startup timer)
+    M->>R: unloadFeatureModules(modules) — onunload() in reverse registry order
     M->>M: notifications.dispose() (tear down ellipsis timers + hide notices)
 ```
 
@@ -500,7 +565,7 @@ graph TB
 
 - **One sanctioned site.** `shared/node-loader.ts` is the *only* place Node builtins are required, and it's the only file allowed to disable the `no-var-requires` lint rule. Every desktop-only path routes through it.
 - **Explicit assertion, not truthiness.** Code paths call `assertDesktop()` (which throws a descriptive `DesktopOnlyError`) rather than relying on a `this.extractor` being defined.
-- **Construction-time gating too.** `main.ts` only builds `VideoModule` and the shared `AudioExtractor` when `Platform.isDesktop`, and the URL router gets its extraction tier only when `VideoModule` exists. The `synapse-transcribe` ribbon, both transcription commands, and the settings-tab video section render on every platform (binary-path rows are hidden on mobile, `video/settings-section.ts:180`).
+- **Construction-time gating too.** The video registry entry declares `platform: () => Platform.isDesktop` (#504), so `VideoModule` and the `AudioExtractor` exist only on desktop and the slot is `null` elsewhere; the URL router gets its extraction tier only when `VideoModule` exists. The `synapse-transcribe` ribbon, both transcription commands, and the settings-tab video section render on every platform (binary-path rows are hidden on mobile, `video/settings-section.ts:180`).
 - **Graceful degradation.** On mobile, YouTube URLs transcribe through the caption tier; any other URL raises a platform-aware `NoTranscriptionPathError`; duration detection returns undefined so the modal skips the time-range step and transcribes the full file. All non-Node features (elaboration, enrichment, summarize, tidy, organize, deep-dive, title, REM, audio API transcription, image OCR) run on both platforms.
 
 ---
@@ -528,7 +593,7 @@ Settings evolve through a version-stamped, append-only migration chain in `share
 
 - **One stamp, ordered replay.** A persisted `settingsVersion` records the schema version of `data.json`. On load, `migrateSettings(raw, from)` clones the raw object once and applies every migration whose `to > from` in ascending order, *before* the deep-merge over `DEFAULT_SETTINGS`. `main.loadSettings()` then stamps `settingsVersion = CURRENT_SETTINGS_VERSION` and saves once on upgrade.
 - **Pure & tested.** Each step is a pure `Record<string, unknown> → Record<string, unknown>` function; a drift-guard test asserts `CURRENT_SETTINGS_VERSION` equals the highest migration `to`.
-- **Current chain (v2):** `v1` folds legacy `excludeFolders` into `exclusions` (#307); `v2` drops the inert `rem.semanticMatching` flag left by the always-on REM change (#380).
+- **Current chain (v3):** `v1` folds legacy `excludeFolders` into `exclusions` (#307); `v2` drops the inert `rem.semanticMatching` flag left by the always-on REM change (#380); `v3` renames the Whisper-only `audio.whisperModel` to the provider-agnostic `audio.transcriptionModel` (#521), carrying the user's value across and never overwriting an existing `transcriptionModel`.
 - **Layering.** Lives in `shared/`, imports only `shared/exclusions.ts`, never `../settings` — so the sanctioned `settings → settings-migrations → exclusions` edge stays acyclic.
 
 ---
@@ -537,8 +602,9 @@ Settings evolve through a version-stamped, append-only migration chain in `share
 
 A second sidebar (`SynapseActionsView`, `synapse-actions` view, opened by the `synapse-actions` ribbon icon) gives mobile users — where the command palette is hardest to reach — a touch-friendly button for every enabled command.
 
-- **Registry-derived.** Buttons come from `listPaletteActions(registrar.getRegistered())`; no command behavior is re-declared. Each button dispatches the already-registered command via Obsidian's `executeCommandById`, honoring the same editor/check gating as the palette.
-- **Context-aware.** Every registry entry carries a `context` (`note` | `vault` | `global`). Per-note buttons disable when no note is active; for `note` commands the opener re-activates the note's markdown leaf first, so opening the panel (which can steal editor focus) never makes a button silently no-op.
+- **Registry-derived.** Buttons come from `listPaletteActions(registrar.getRegistered())`; no command behavior is re-declared. Vault and global buttons dispatch the already-registered command via Obsidian's `executeCommandById`.
+- **Per-note buttons run on the first click (#352).** The sidebar holds focus, so there is no active editor and `executeCommandById` silently no-ops `editorCallback` commands. `views/command-runner.ts` therefore looks up the registered command and invokes its `editorCallback(view.editor, view)` directly, using the `MarkdownView` whose file is the active markdown note — no leaf re-activation, no focus change, so the panel is not torn down mid-click. A note command falls back to `executeCommandById` only when no `editorCallback` or no matching view exists.
+- **Context-aware.** Every registry entry carries a `context` (`note` | `vault` | `global`). Per-note buttons disable when no note is active.
 
 ---
 
@@ -566,6 +632,7 @@ graph TB
 - Each module implements `resumeFromCheckpoint(checkpoint)` to continue work
 - Users can also discard checkpoints (completed items are kept, remaining items abandoned)
 - The unified sidebar shows a banner for any incomplete checkpoints
+- **Recovery UX is its own module** (`checkpoints/`, #496): `CheckpointRecoveryModule` arms the 3 s startup "interrupted operations" prompt, registers `manage-checkpoints`, and backs the sidebar's Resume/Discard buttons. It reaches a feature module only through an injected `CheckpointResumeHandlers` map (on mobile the `video` entry reports "not available on mobile" instead).
 
 ---
 
@@ -639,11 +706,35 @@ Every URL transcription path — the unified modal, "Transcribe media" in a note
 |------|-----------|--------------|---------|
 | 1 · `captions` | No time range set, `video.captionsFirst` on (default), URL is YouTube | Fetches the caption track over HTTP (Innertube ANDROID client first, watch page fallback), cleans json3, formats speaker turns / linked chapter headings / pause paragraphs deterministically (#469), then post-processes plain ASR through `AudioModule.processTranscriptText` | Returns `null` → next tier |
 | 2 · `local-extraction` | Desktop and `isSupportedUrl(url)` | Delegates to `VideoModule.processUrl` (yt-dlp download → ffmpeg → Whisper/Deepgram/Gemini) | Real failures throw, so the `DependencyMissingError` onboarding notice (#382) still fires |
+| 3 · `server-extraction` | *Planned* — `video.serverEndpoint` set | POSTs the URL to a user-operated, self-hosted extraction service and hands the audio to `AudioModule.transcribe` ([ADR 001](docs/adr/001-self-hosted-extractor-tier.md), #181) | Not shipped |
 
 - **Contract.** `canHandle` is a cheap gate (no network). `transcribe` returns `null` to fall through and throws only on real failures. When every tier declines, the router throws a platform-aware `NoTranscriptionPathError`.
 - **A time range forces extraction.** Captions cannot be clipped, so a set `timeRange` makes the caption tier decline and desktop clipping is unchanged.
-- **Mobile.** Only the caption tier exists, so YouTube works and TikTok/Instagram raise `NoTranscriptionPathError` until the server extractor (#181) ships.
-- **Guard rails.** Post-processing keeps the complete raw transcript when its output would exceed `ai.maxTokens` (#468); strongly structured caption output skips AI post-processing entirely.
+- **Mobile.** Only the caption tier exists, so YouTube works and TikTok/Instagram raise `NoTranscriptionPathError` until the self-hosted extractor (#181) ships.
+- **Caption fetch is hardened (#501).** Track URLs must be `https:` on `youtube.com`/`googlevideo.com` (or a subdomain) with no embedded credentials — anything else drops the track. Player JSON is capped at 8 MiB and the json3 track body at 16 MiB before parsing. Chapter titles and cue text are escaped at the render boundary so a crafted caption cannot inject a wikilink, embed, image beacon, or HTML tag into the note.
+- **Guard rails.** Strongly structured caption output skips AI post-processing entirely; long plain transcripts are post-processed in sections (below) rather than skipped.
+
+### Transcript Cache (#488)
+
+Every routed transcription is written to `.synapse/transcript-cache.json` and read back before any tier runs, so a URL is transcribed once — whether the first request came from the modal, "Transcribe current note", summarize, or intake.
+
+- **Key.** Canonical media URL (`youtu.be`, shorts, and `m.youtube.com` collapse onto one watch URL; TikTok/Instagram share params stripped) plus `#t=start-end` for clipped requests.
+- **Bounded.** LRU-capped at 200 entries / 4M characters; never throws (a corrupt file is an empty store, a failed write only warns). "Clear transcript cache" lives in the Video settings section on every platform.
+- **Fresh on demand.** The "Fetch a fresh transcript" toggle in the Transcribe media dialog sets `forceRefresh`, which bypasses the store, overwrites the entry, and — since #527 — also bypasses the AI response cache for the transcript's post-processing.
+- **Media URLs are transcribe-only.** Summarize never page-fetches a router-supported media URL; when every tier fails, the router's actionable message is shown and no summary callout is inserted.
+
+### Sectioned Post-Processing (#467)
+
+A transcript that fits `ai.maxTokens` runs in one call, byte-for-byte the same prompt as before. A longer one is split by `audio/transcript-segmenter.ts` and cleaned section by section:
+
+- **Budget.** A section body is 60% of `ai.maxTokens` at 4 chars/token, leaving headroom for a rewrite that grows.
+- **Boundaries.** Paragraph first, then line, sentence, word; a hard cut only for a whitespace-free run. A line is never split unless it alone exceeds the budget, so speaker lines, timestamps, and headings stay intact.
+- **Overlap.** Each section carries the word-aligned tail (10% of the budget) of the previous raw section as a "Preceding context" block the model is told not to repeat; a verbatim repeat is trimmed on rejoin.
+- **Fallback.** A section whose call throws, comes back empty, or hits the token cap keeps its raw slice; the rest still run, and one notice reports "kept k of n sections raw". Key points, when enabled, are one extra pass over the rejoined text.
+
+### No Speech (#524)
+
+"No speech" is a typed outcome, not an empty string that flows into a prompt. `NoSpeechDetectedError` (`shared/no-speech.ts`) is thrown at the transcriber seam for a blank or annotation-only (`[Music]`, `♪`) result from any provider; Whisper `whisper-1` additionally treats a transcript whose every segment has `no_speech_prob ≥ 0.8` as hallucinated over silence, and Gemini is asked for an explicit `[NO_SPEECH]` sentinel. Write sites (audio single/batch/combined, video batch, URL insert, intake append, summarize) notify "No speech detected in <subject> — nothing to transcribe" and write nothing; the transcript store never receives it; post-processing makes zero AI calls for text with fewer than 10 letters/digits.
 
 ### Time-Range Clipping (#464)
 
@@ -673,7 +764,7 @@ URL detection (`shared/url-detector.ts`) recognizes:
 
 ## Cross-Module Communication
 
-All inter-module communication flows through `main.ts` via nullable callback assignments. No event bus, no pub-sub.
+All inter-module communication flows through nullable callback assignments made in `main.ts`. No event bus, no pub-sub. The hook functions themselves are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook`, `buildAutoOrganizeHook`, #496) from an injected `PostOpHookDeps` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`); the URL-transcription and intake callbacks are attached by `modules/registry.ts` at construction (#504).
 
 > This diagram is the wiring-level detail behind the per-note cascade — subgraph **a** of the master command-pipeline overview in [`README.md` → How it all fits together](README.md#how-it-all-fits-together), which is the canonical birds-eye view. The setting names and defaults on the edges below match that diagram.
 
@@ -884,6 +975,7 @@ All module data is stored as individual JSON files under `.synapse/`:
 |   +-- {id}.json                 # Wikilink proposals (+ pre-apply body snapshot for undo)
 +-- checkpoints/                  # Checkpoint/resume
 |   +-- {id}.json                 # Operation state (completed + remaining items)
++-- transcript-cache.json         # Media-URL transcript store (#488): { version: 1, entries } keyed by canonical URL (+ time range); LRU 200 entries / 4M chars
 +-- temp/                         # Temporary video/audio (auto-cleaned)
 ```
 
@@ -902,8 +994,8 @@ Design principles:
 graph TB
     AIC["AIClient<br/>(shared/ai-client.ts)"]
 
-    AIC -->|"'openai'"| OAI["POST api.openai.com/v1/chat/completions<br/>Auth: Bearer {ai.apiKey}"]
-    AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>Models: opus/sonnet/haiku resolved to full IDs in ai-client.ts"]
+    AIC -->|"'openai'"| OAI["POST api.openai.com/v1/chat/completions<br/>Auth: Bearer {ai.apiKey}<br/>max_completion_tokens; temperature omitted for reasoning models"]
+    AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>Models: fable/opus/sonnet/haiku resolved to full IDs in ai-client.ts"]
     AIC -->|"'gemini'"| GEM["POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent<br/>Auth: x-goog-api-key · system -> system_instruction"]
     AIC -->|"'ollama'"| OLL["POST {ollamaEndpoint}/api/chat<br/>HTTPS required (HTTP localhost only)"]
 
@@ -917,6 +1009,13 @@ graph TB
 - **In-flight coalescing** — a concurrent identical request joins the live dispatch promise (in-flight `Map`, entry cleared in `.finally()`) instead of issuing a second network call.
 - **Response cache** — a per-instance, bounded LRU of request key → successful response. Participates when `temperature === 0` (deterministic) **or** the user opts in via `ai.cacheResponses`; populated **only on success** (errors are never cached).
 - **Bypass** — a `bypassCache` option skips both the cache read and coalescing so a "regenerate" action always re-dispatches.
+- **Replay signal** (#527) — `AIRequestOptions.onCacheHit` fires only when a stored response is replayed: never on a dispatch, a bypass, an uncacheable request, or a coalesced in-flight join. Modules pass `trackAiCache(use)` and finish their toast through `withCacheReport(message, uses, unit)` so any cached input is named.
+
+### Request Shape by Provider (#308/#519)
+
+- **OpenAI** sends `max_completion_tokens` (never the deprecated `max_tokens`) and omits `temperature` for reasoning models — an inverted allowlist of the models that still accept sampling (`gpt-4o`, `gpt-4o-mini`); unknown IDs fail safe by omitting. This is what fixed the "Unsupported parameter: 'max_tokens'" error on o3/o3-mini/o4-mini.
+- **Anthropic** aliases resolve to bare current-generation IDs; `temperature` is sent only where the model accepts it; no `thinking` parameter is sent; a `stop_reason: "refusal"` is surfaced as a safety refusal rather than a generic error.
+- **Default model** for new installs is `gpt-5.6-sol` (existing vaults keep their saved selection).
 
 ### Multi-Modal Vision Support
 
@@ -935,10 +1034,10 @@ Provider-specific format conversion:
 
 Used by: `image/extractor.ts` (OCR), `elaboration/image-analyzer.ts` (image analysis for proposals)
 
-Audio transcription uses provider-specific APIs over Obsidian `requestUrl` (not `AIClient`, not native `fetch`):
-- **Whisper**: OpenAI `/v1/audio/transcriptions` — manual `multipart/form-data` via `buildMultipartBody()` (sanitized headers; `requestUrl` has no `FormData`)
-- **Deepgram**: `/v1/listen` — raw `ArrayBuffer` body
-- **Gemini**: `…:generateContent` — inline base64 audio (≤ 15 MB); instruction in `system_instruction` (prompt-injection hardening)
+Audio transcription uses provider-specific APIs over Obsidian `requestUrl` (not `AIClient`, not native `fetch`). The model comes from `audio.transcriptionModel`, resolved against the per-provider `TRANSCRIPTION_MODEL_OPTIONS` registry in `settings.ts` (#521) — dropdown values, not free text; the first entry is the fallback when the saved model is not in the active provider's list:
+- **Whisper**: OpenAI `/v1/audio/transcriptions` — manual `multipart/form-data` via `buildMultipartBody()` (sanitized headers; `requestUrl` has no `FormData`). Registry lists `whisper-1` (default — the only OpenAI model that returns segment timestamps; retires 2027-02-26) and `gpt-transcribe`; `response_format` is `verbose_json` for `whisper-1`, plain `json` otherwise
+- **Deepgram**: `/v1/listen` — raw `ArrayBuffer` body; sends an explicit `model` query parameter (default `nova-3-general`) instead of riding the vendor default
+- **Gemini**: `…:generateContent` — inline base64 audio (≤ 15 MB); instruction in `system_instruction` (prompt-injection hardening); asks for a `[NO_SPEECH]` sentinel on silent media (#524)
 
 ---
 
@@ -962,13 +1061,14 @@ All AI-generated content uses Obsidian callouts from a shared registry:
 
 ```
 SynapseSettings
-+-- settingsVersion -> Persisted schema version (#93); drives the migration runner, stamped to CURRENT_SETTINGS_VERSION on save
-+-- ai              -> Provider, API key, model, temperature, max tokens,
++-- settingsVersion -> Persisted schema version (#93); drives the migration runner, stamped to CURRENT_SETTINGS_VERSION (3) on save
++-- ai              -> Provider, API key, model (default gpt-5.6-sol), temperature, max tokens,
 |                     cacheResponses (#397, opt-in; caching automatic at temperature 0)
 +-- elaboration     -> Detection thresholds, scan behavior, proposal storage
 |   +-- detection   -> Word threshold, TODO markers, empty sections, exclude tags
-|   +-- proposal    -> Max per note, preserve frontmatter, include context
-+-- audio           -> Transcription provider, API keys, language, post-processing, auto-format lyrics (#234)
+|   +-- proposal    -> Max per note, preserve frontmatter, include context,
+|                     includeBacklinkContext (#500, default on: backlink excerpts + tag siblings in the prompt)
++-- audio           -> Transcription provider + transcriptionModel (#521, per-provider registry), API keys, language, post-processing, auto-format lyrics (#234)
 |   +-- postProcessing -> Filler removal (off by default since #468), structure, key points, custom prompt
 +-- video           -> yt-dlp/ffmpeg paths, download folder, embed setting,
 |                     captionsFirst (#184, default on: prefer YouTube captions over download)
@@ -1019,7 +1119,9 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | API key protection | `redactSecrets()` (strings) + `redactError()` (raw caught errors — Error `.stack`/`.message`) — **single source of truth** scrubbing keys from error messages/console on **every error path**; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts`, `credential-validator.ts`, all of `notifications.ts`; `redactError` at audio/index, rem/semantic-matcher, elaboration/image-analyzer + proposer, image/preprocess, shared/fire-and-forget, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, `main.ts` lifecycle paths, and `update-checker.ts`; `redactSecrets` also at the credential Test chip `credential-field.ts` and the `update-checker.ts` fetch-fail log) |
 | Redaction enforcement (lint) | Custom type-aware ESLint rule `synapse/no-unredacted-console` (#418): every value reaching a `console.*` sink must be **statically string-like** — i.e. already rendered through `redactError`/`redactSecrets`, which return `string`. Flags `String()`/`JSON.stringify()` of non-strings and direct `.message`/`.stack` access as bypasses; fails closed if type info is unavailable; scoped to shipped `src` (tests/mocks excluded). Runs in CI via `npm run lint` | `scripts/eslint-rules/no-unredacted-console.mjs`, `eslint.config.mjs` |
 | Prompt-injection defense | `wrapUntrusted()` fences fetched untrusted content (article/tweet/Reddit, image analysis) in labeled delimiters + data-not-instructions frame + anti-breakout scrub — structural, not lexical (#398); Gemini audio instruction in `system_instruction` | `shared/untrusted-content.ts` (used by `elaboration/proposer.ts`), `audio/transcriber.ts` |
-| Caption fetch hardening | YouTube caption URLs pass `sanitizeUrl` (the only throw path) and go over Obsidian `requestUrl` with a 30 s per-request timeout; any fetch/parse failure logs via `redactError` and falls through to the next tier | `transcription/youtube-captions.ts` |
+| Caption fetch hardening | YouTube caption URLs pass `sanitizeUrl` and go over Obsidian `requestUrl` with a 30 s per-request timeout. Since #501: caption tracks fetch only over `https:` from `youtube.com`/`googlevideo.com` with no embedded credentials; player JSON is bounded at 8 MiB and the track body at 16 MiB before `JSON.parse`; chapter titles and cue text are markdown-escaped at the render boundary; the video title is control-char-stripped and length-bounded. Any fetch/parse failure logs via `redactError` and falls through to the next tier | `transcription/youtube-captions.ts` |
+| yt-dlp argv hardening | Every yt-dlp invocation ends its option list with `--` before the URL positional; `dumpJson()` re-runs `sanitizeUrl()` at its own boundary (#501) | `video/audio-extractor.ts` |
+| Related-notes fencing | Elaboration's backlink/outbound/tag context block is wrapped via `wrapUntrusted(_, 'related notes')`, so a linking note cannot forge a closing fence or smuggle instructions (#500) | `elaboration/proposer.ts` |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
 | Credential validation | Live key probe is one minimal authenticated GET; result is **ephemeral** (never persisted) and routed through `redactSecrets` so an echoed key can't reach the status chip | `shared/credential-validator.ts`, `shared/provider-metadata.ts` |
@@ -1027,7 +1129,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
 | Lifecycle hygiene | `NotificationManager.dispose()` tears down in-flight ellipsis timers + hides notices on unload (no orphaned `setInterval`) | `shared/notifications.ts`, `main.ts:onunload()` |
 
-**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). The 2026-06-25 audit pass (v1.0.6) brought the per-operation error `console.error` under `redactSecrets`, so the single redaction source now guards **every** error sink in `notifications.ts`. The 2026-06-29 audit pass (v1.0.7) added `redactError()` so raw caught errors logged directly to the console get the same scrub (five direct error sinks routed through it); the idempotency bundle also landed a structural prompt-injection fence (`wrapUntrusted`, #398) for fetched external content. The 2026-07-02 audit pass (v1.0.10) completed the `redactError` rollout — the **remaining** direct error-log call sites (`main.ts` lifecycle paths, the update checker, the credential Test chip, the image-downscale fallback, and the two clipboard-copy catches) now route through the scrub — and rerouted the `title` module's back-compat re-export of `isUntitled` through the `../shared` barrel instead of the internal `shared/title-detector` file (barrel-import rule; the canonical home has been `shared/` since #387). The 2026-07-03 audit pass (v1.0.11) re-verified architecture and security as clean and made the redaction contract **regression-proof**: the custom `synapse/no-unredacted-console` lint rule (#418) now fails CI on any console sink that isn't statically string-like. Separately, the v1.0.11 store automated-review findings were triaged into a reviewer-facing `docs/automated-review-notes.md` (#454) — its one code fix replaced summarize's deprecated `querySelectorAll` usage with Obsidian's typed `containerEl.findAll()`. The 2026-09-14 audit pass (v1.0.13) re-verified architecture and security as clean with no source changes since 2026-08-17. `data.json` (live API keys) is gitignored and never committed.
+**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). The 2026-06-25 audit pass (v1.0.6) brought the per-operation error `console.error` under `redactSecrets`, so the single redaction source now guards **every** error sink in `notifications.ts`. The 2026-06-29 audit pass (v1.0.7) added `redactError()` so raw caught errors logged directly to the console get the same scrub (five direct error sinks routed through it); the idempotency bundle also landed a structural prompt-injection fence (`wrapUntrusted`, #398) for fetched external content. The 2026-07-02 audit pass (v1.0.10) completed the `redactError` rollout — the **remaining** direct error-log call sites (`main.ts` lifecycle paths, the update checker, the credential Test chip, the image-downscale fallback, and the two clipboard-copy catches) now route through the scrub — and rerouted the `title` module's back-compat re-export of `isUntitled` through the `../shared` barrel instead of the internal `shared/title-detector` file (barrel-import rule; the canonical home has been `shared/` since #387). The 2026-07-03 audit pass (v1.0.11) re-verified architecture and security as clean and made the redaction contract **regression-proof**: the custom `synapse/no-unredacted-console` lint rule (#418) now fails CI on any console sink that isn't statically string-like. Separately, the v1.0.11 store automated-review findings were triaged into a reviewer-facing `docs/automated-review-notes.md` (#454) — its one code fix replaced summarize's deprecated `querySelectorAll` usage with Obsidian's typed `containerEl.findAll()`. The 2026-09-14 audit pass (v1.0.13) re-verified architecture and security as clean with no source changes since 2026-08-17. The 1.1.0 cycle (2026-09-14/15) added the caption-path and yt-dlp argv hardening (#501) and fenced elaboration's related-notes context (#500); the 2026-09-17 docs pass re-verified the graph as acyclic after the `main.ts` refactor family (#496/#504). `data.json` (live API keys) is gitignored and never committed.
 
 **Known posture / not-yet-enforced:**
 - `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths** — there is no active vault-boundary enforcement on writes today.
@@ -1040,7 +1142,9 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 1. Clone into Obsidian vault's plugin directory
 2. `npm install` then `npm run dev` (watch mode)
 3. Module pattern: each feature in `src/<module>/` with `index.ts` exporting the module class
-4. Follow the FeatureModule contract: `constructor(plugin, getSettings, notifications, …)`, `onload()`, `onunload()`. `main.ts` injects the rest — the shared `CheckpointManager` (for resumable scans), the `CommandRegistrar`, and a `() => settings.autoAccept[kind]` getter where applicable — never reach for globals.
+4. Follow the `FeatureModule` contract (`shared/feature-module.ts`, #504): `constructor(deps: ModuleDeps, …moduleSpecificExtras)`, `onload()`, `onunload()`. `ModuleDeps` carries `plugin`, `getSettings`, `notifications`, `checkpointManager`, `registrar`, and `noteQueue`; extras (auto-accept getter, `AudioExtractor`, transcribe callbacks, `IntakeDeps`) follow positionally. Never reach for globals.
+   - **Registering it**: add one entry to `MODULE_FACTORIES` in `modules/registry.ts` and an `enabled`-flagged section in `settings.ts`. `FeatureModules` is mapped over the settings keys, so a section without a registry entry is a compile error, and `registry.test.ts` fails if a `*Module` class is not constructed by the registry.
+   - **Finish messages**: any operation that calls the AI passes `trackAiCache(use)` as its request options and finishes its toast through `withCacheReport(message, uses, unit)` (#527), so a cached transcript or AI response is always reported.
 5. Types go in `<module>/types.ts`, tests co-located as `<name>.test.ts`
 6. All shared utilities imported from `../shared` (barrel export) — never from a sibling feature module or an internal `shared/` file. Where you only need a *type* from a higher layer, use `import type` (erased at compile time, no runtime cycle).
 7. Need a Node builtin (`fs`/`path`/`os`/`child_process`)? Go through `loadNodeModules()`/`assertDesktop()` only — never `require` at module top level (keeps the bundle mobile-loadable).

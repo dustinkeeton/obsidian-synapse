@@ -9,15 +9,9 @@ OCR text extraction from vault images via multi-modal AI vision models: single-f
 ## Public API (barrel exports from index.ts)
 
 ```ts
-// index.ts:15
+// index.ts:16
 class ImageModule {
-  constructor(
-    plugin: Plugin,
-    getSettings: () => SynapseSettings,
-    notifications: NotificationManager,
-    checkpointManager: CheckpointManager,
-    noteQueue: NoteOperationQueue                             // #483; appended last
-  )
+  constructor(deps: ModuleDeps)                               // index.ts:27; #504 bundle (plugin, getSettings, notifications, checkpointManager, noteQueue)
   onExtractionComplete: ((filePath: string) => void) | null  // wired by main.ts
   onload(): Promise<void>            // no-op (no commands/views registered)
   onunload(): void                   // no-op
@@ -26,19 +20,19 @@ class ImageModule {
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> // notify + discard (no mid-batch resume)
 }
 
-// re-exported from ./note-scanner (index.ts:11)
+// re-exported from ./note-scanner (index.ts:12)
 function findImageEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): ImageEmbed[]
 const IMAGE_EXTENSIONS: RegExp   // /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i
 const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi
 
-// re-exported from ./preprocess (index.ts:12)
+// re-exported from ./preprocess (index.ts:13)
 function arrayBufferToBase64(buffer: ArrayBuffer): string   // canonical home: shared/encoding.ts
 function preprocessImage(data: ArrayBuffer, mediaType: string, maxBytes: number): Promise<PreprocessResult>
 
-// re-exported from ./settings-section (index.ts:205)
+// re-exported from ./settings-section (index.ts:243)
 function renderImageSettings(ctx: SettingsSectionContext): void
 
-// re-exported types from ./types (index.ts:13)
+// re-exported types from ./types (index.ts:14)
 interface ImageEmbed { fileName: string; file: TFile; line: number }
 interface OCRResult  { text: string; sourceName?: string }
 ```
@@ -63,9 +57,9 @@ function hasExtractionBelow(lines: string[], embedLine: number, fileName: string
 Private members of `ImageModule` (index.ts), documented because they define the queue contract (#483):
 
 ```ts
-private queued<T>(file: TFile, op: OperationHandle, run: () => Promise<T>): Promise<T>   // index.ts:38; noteQueue.run(file.path, run, { onWait })
-private insertFileExtraction(activeFile: TFile, file: TFile, op: OperationHandle): Promise<void>   // index.ts:72; queue-free core of extractFromFile
-private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHandle): Promise<void>   // index.ts:128; queue-free core of extractAndInsert
+private queued<T>(file: TFile, op: OperationHandle, run: () => Promise<T>): Promise<T>   // index.ts:40; noteQueue.run(file.path, run, { onWait })
+private insertFileExtraction(activeFile: TFile, file: TFile, op: OperationHandle): Promise<void>   // index.ts:73; queue-free core of extractFromFile
+private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHandle): Promise<void>   // index.ts:129; queue-free core of extractAndInsert
 ```
 
 ## File Inventory
@@ -76,7 +70,7 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
 | `extractor.ts` | `ImageExtractor` | Multi-modal OCR via `AIClient.chat()` with `ContentBlock[]`; applies vision-model override |
 | `preprocess.ts` | `preprocessImage`, `PreprocessResult`; re-exports `arrayBufferToBase64`, `base64EncodedLength` | Auto-downscale/re-encode oversized payloads; base64 helpers re-exported from `shared/encoding.ts` |
 | `note-scanner.ts` | `findImageEmbeds`, `hasExtractionBelow`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX` | Scan note text for image embeds; skip embeds already OCR'd |
-| `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `settings-tab.ts:109`) |
+| `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `src/settings-ui/settings-tab.ts:41`) |
 | `index.ts` | `ImageModule` + barrel re-exports | Orchestrator, public extraction methods, checkpoint management, per-note queue serialization (private `queued`, `insertFileExtraction`, `insertExtractions`, #483) |
 | `extractor.test.ts`, `note-scanner.test.ts`, `preprocess.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests |
 | `cache-report.test.ts` | Tests | #527 finish wording: single-OCR hit/miss, batch aggregate hit/miss |
@@ -84,7 +78,7 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
 ## Data Flow
 
 ```
-1. extractFromFile(file)  -- index.ts:44  (single image -> active note)
+1. extractFromFile(file)  -- index.ts:46  (single image -> active note)
    findMatchingRule(activeFile.path, 'image', settings) -> excluded: info Notice, return
    queued(activeFile, op, ...) -> noteQueue slot on activeFile.path (#483) -> insertFileExtraction:
    vault.readBinary(file) -> ImageExtractor.extract(data, file.name, trackAiCache(use))
@@ -93,7 +87,7 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
    vault.process(activeFile, append) -> onExtractionComplete?.(activeFile.path)
    op.finish(withCacheReport(`OCR of ${file.name} added to note`, [use]))   // #527
 
-2. extractAndInsert(noteFile, embeds)  -- index.ts:109  (batch from note scan)
+2. extractAndInsert(noteFile, embeds)  -- index.ts:111  (batch from note scan)
    isPathExcluded(noteFile.path, 'image', settings) -> excluded: silent return
    queued(noteFile, op, ...) -> noteQueue slot on noteFile.path (#483) -> insertExtractions:
    checkpointManager.create({ module: 'image', items }) + addDeferredTask('refresh-sidebar-view')
@@ -145,7 +139,7 @@ Path exclusions use the centralized `settings.exclusions: ExclusionRule[]`:
 
 ## Settings
 
-`ImageSettings` (settings.ts:124); defaults at settings.ts:428. All under `settings.image`:
+`ImageSettings` (settings.ts:190); defaults at settings.ts:507. All under `settings.image`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -201,7 +195,7 @@ Downscale path re-encodes to JPEG. Lossless sources (`image/png`, `image/bmp`, `
 
 ## Invariants / Gotchas
 
-- Per-note serialization (#483): both public entry points take the target note's `NoteOperationQueue` slot exactly once via `queued()` (index.ts:38) and delegate to a queue-free core; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (OCR is user-invoked). The cores must never re-enter the queue.
+- Per-note serialization (#483): both public entry points take the target note's `NoteOperationQueue` slot exactly once via `queued()` (index.ts:40) and delegate to a queue-free core; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (OCR is user-invoked). The cores must never re-enter the queue.
 - `extractAndInsert` sorts embeds by descending line and applies all inserts atomically in one `vault.process()` so earlier splices never shift later lines.
 - A 2000ms `window.setTimeout` delay separates successive API calls to respect rate limits.
 - `preprocessImage` needs Obsidian's Electron renderer (`createEl` + `createImageBitmap`/`Image`); in non-DOM test envs it passes original bytes through (`downscaled: false`).

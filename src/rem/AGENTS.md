@@ -13,14 +13,7 @@ class RemModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null
 
-  constructor(
-    plugin: Plugin,
-    getSettings: () => SynapseSettings,
-    notifications: NotificationManager,
-    checkpointManager: CheckpointManager,
-    registrar: CommandRegistrar,
-    shouldAutoAccept?: () => boolean    // #228; default () => false
-  )
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:44; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar); #228 getter default () => false
   onload(): Promise<void>
   onunload(): void
   remScanNote(filePath: string): Promise<RemProposal | null>
