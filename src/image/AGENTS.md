@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-17
 ---
 
 # Image Module
@@ -49,7 +49,7 @@ interface OCRResult  { text: string; sourceName?: string }
 // extractor.ts:7 — internal class, constructed by ImageModule
 class ImageExtractor {
   constructor(getSettings: () => SynapseSettings, notifications: NotificationManager)
-  extract(imageData: ArrayBuffer, fileName: string): Promise<OCRResult>
+  extract(imageData: ArrayBuffer, fileName: string, aiOpts?: AIRequestOptions): Promise<OCRResult>   // aiOpts reaches the vision chat() call (#527)
 }
 
 // preprocess.ts:25 / :17 — exported from preprocess.ts only
@@ -79,6 +79,7 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
 | `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `settings-tab.ts:109`) |
 | `index.ts` | `ImageModule` + barrel re-exports | Orchestrator, public extraction methods, checkpoint management, per-note queue serialization (private `queued`, `insertFileExtraction`, `insertExtractions`, #483) |
 | `extractor.test.ts`, `note-scanner.test.ts`, `preprocess.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests |
+| `cache-report.test.ts` | Tests | #527 finish wording: single-OCR hit/miss, batch aggregate hit/miss |
 
 ## Data Flow
 
@@ -86,10 +87,11 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
 1. extractFromFile(file)  -- index.ts:44  (single image -> active note)
    findMatchingRule(activeFile.path, 'image', settings) -> excluded: info Notice, return
    queued(activeFile, op, ...) -> noteQueue slot on activeFile.path (#483) -> insertFileExtraction:
-   vault.readBinary(file) -> ImageExtractor.extract(data, file.name)
+   vault.readBinary(file) -> ImageExtractor.extract(data, file.name, trackAiCache(use))
    sanitizeAIResponse(result.text)
    buildCallout(CALLOUT_TYPES.ocr, `OCR of ${file.name}`, text, collapsed=true)
    vault.process(activeFile, append) -> onExtractionComplete?.(activeFile.path)
+   op.finish(withCacheReport(`OCR of ${file.name} added to note`, [use]))   // #527
 
 2. extractAndInsert(noteFile, embeds)  -- index.ts:109  (batch from note scan)
    isPathExcluded(noteFile.path, 'image', settings) -> excluded: silent return
@@ -98,7 +100,8 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
    sort embeds by descending line; for each: 2000ms delay (i>0), extract, sanitize, buildCallout
    completeItem per embed; if op.cancelled -> break
    vault.process(noteFile, splice all inserts at line+1) -> onExtractionComplete
-   cancelled -> checkpointManager.discard ; else complete + dispatchDeferredTasks + op.finish
+   cancelled -> checkpointManager.discard ; else complete + dispatchDeferredTasks
+   op.finish(withCacheReport(`Done -- ${completed}/${total} OCR extractions added`, cacheUses, 'extraction'))   // one aggregated cache line (#527)
 
 3. ImageExtractor.extract(imageData, fileName)  -- extractor.ts:17
    getMediaType(fileName) -> MIME from extension (default image/png)
@@ -165,7 +168,8 @@ All cross-module imports resolve through the `../shared` barrel, never an intern
 
 | Import | From |
 |--------|------|
-| `AIClient`, `ContentBlock`, `NotificationManager` | `shared` (extractor.ts) |
+| `AIClient`, `ContentBlock`, `NotificationManager`, `AIRequestOptions` | `shared` (extractor.ts) |
+| `trackAiCache`, `withCacheReport`, `CacheUse` | `shared` (index.ts, #527) |
 | `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `sanitizeAIResponse`, `generateId` | `shared` (index.ts) |
 | `CheckpointManager`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `shared` (index.ts) |
 | `NoteOperationQueue`, `OperationHandle` | `shared` (index.ts) |

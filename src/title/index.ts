@@ -3,8 +3,9 @@ import { SynapseSettings } from '../settings';
 import {
 	AIClient, NotificationManager, NoteOperationQueue, generateId, readNote, isPathExcluded, reviewAction,
 	findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags,
+	trackAiCache, withCacheReport,
 } from '../shared';
-import type { ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, ModuleDeps, FeatureModule } from '../shared';
 import { TitleProposalStore } from './title-store';
 import { collectInboundLinks, rewriteContent, InboundLinkRef } from './backlink-remediation';
 import { TitleSuggester } from './title-suggester';
@@ -70,7 +71,7 @@ export class TitleModule implements FeatureModule {
 	 * the same `shouldAutoAccept()` signal, so an auto-accepted proposal yields no
 	 * action and therefore no toast (#340, #366, #402).
 	 */
-	private async maybeAutoAccept(proposal: TitleProposal): Promise<boolean> {
+	private async maybeAutoAccept(proposal: TitleProposal, cacheUse: CacheUse): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
 		// applyAccept derives the resolution from the duplicateHandling setting
 		// on a live collision, so a colliding title is resolved automatically. The
@@ -79,9 +80,9 @@ export class TitleModule implements FeatureModule {
 		// queue slot (#483), so apply directly.
 		const outcome = await this.applyAccept(proposal.id, { silent: true });
 		if (outcome.status === 'renamed') {
-			this.notifications.info(`Auto-accepted title "${this.baseName(outcome.path)}"`);
+			this.notifications.info(withCacheReport(`Auto-accepted title "${this.baseName(outcome.path)}"`, [cacheUse]));
 		} else if (outcome.status === 'merged') {
-			this.notifications.info(`Auto-merged into "${this.baseName(outcome.into)}"`);
+			this.notifications.info(withCacheReport(`Auto-merged into "${this.baseName(outcome.into)}"`, [cacheUse]));
 		}
 		return true;
 	}
@@ -136,8 +137,9 @@ export class TitleModule implements FeatureModule {
 		// proposal is allowed; an 'accepted' proposal never blocks (the file moved).
 		if (existing.some(p => p.contentKey === key && p.status !== 'accepted')) return;
 
+		const cacheUse: CacheUse = {};
 		try {
-			const { title, reasoning } = await this.suggester.suggestTitle(content, file.basename);
+			const { title, reasoning } = await this.suggester.suggestTitle(content, file.basename, trackAiCache(cacheUse));
 			if (!title || isUntitled(title)) return;
 
 			const proposal: TitleProposal = {
@@ -162,7 +164,7 @@ export class TitleModule implements FeatureModule {
 
 			await this.store.save(proposal);
 			// maybeAutoAccept applies + announces the rename when auto-accept is on.
-			await this.maybeAutoAccept(proposal);
+			await this.maybeAutoAccept(proposal, cacheUse);
 			// Title's check is otherwise silent: the success toast exists ONLY to
 			// carry the Review button. Gate it through the centralized helper (like
 			// every other module) — it yields an action only when a proposal was
@@ -175,7 +177,7 @@ export class TitleModule implements FeatureModule {
 				postOp: options?.postOp,
 			});
 			if (action) {
-				this.notifications.success('Title proposal ready', undefined, action);
+				this.notifications.success(withCacheReport('Title proposal ready', [cacheUse]), undefined, action);
 			}
 			await this.refreshView();
 		} catch (error) {
@@ -220,8 +222,9 @@ export class TitleModule implements FeatureModule {
 		// content; editing the note changes the key and re-enables proposals.
 		if (existing.some(p => p.contentKey === key && p.status !== 'accepted')) return;
 
+		const cacheUse: CacheUse = {};
 		try {
-			const result = await this.suggester.checkTitleMismatch(content, file.basename);
+			const result = await this.suggester.checkTitleMismatch(content, file.basename, trackAiCache(cacheUse));
 			if (!result.isMismatch || !result.suggestedTitle) return;
 
 			const proposal: TitleProposal = {
@@ -246,7 +249,7 @@ export class TitleModule implements FeatureModule {
 
 			await this.store.save(proposal);
 			// maybeAutoAccept applies + announces the rename when auto-accept is on.
-			await this.maybeAutoAccept(proposal);
+			await this.maybeAutoAccept(proposal, cacheUse);
 			// As in checkUntitled: gate the Review toast through the centralized
 			// helper — it yields an action only for a generated proposal when
 			// auto-accept is off and this isn't an automatic post-op side effect (#366).
@@ -257,7 +260,7 @@ export class TitleModule implements FeatureModule {
 				postOp: options?.postOp,
 			});
 			if (action) {
-				this.notifications.success('Title proposal ready', undefined, action);
+				this.notifications.success(withCacheReport('Title proposal ready', [cacheUse]), undefined, action);
 			}
 			await this.refreshView();
 		} catch (error) {

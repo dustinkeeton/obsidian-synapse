@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-17
 ---
 
 # title module
@@ -68,8 +68,8 @@ type TitleAcceptOutcome =
 ```ts
 class TitleSuggester {
   constructor(aiClient: AIClient)
-  suggestTitle(content: string, currentTitle: string): Promise<{ title: string; reasoning: string }>
-  checkTitleMismatch(content: string, currentTitle: string): Promise<{ isMismatch: boolean; suggestedTitle?: string; reasoning?: string }>
+  suggestTitle(content: string, currentTitle: string, aiOpts?: AIRequestOptions): Promise<{ title: string; reasoning: string }>   // aiOpts reaches complete() (#527)
+  checkTitleMismatch(content: string, currentTitle: string, aiOpts?: AIRequestOptions): Promise<{ isMismatch: boolean; suggestedTitle?: string; reasoning?: string }>   // aiOpts reaches complete() (#527)
 }
 ```
 
@@ -126,14 +126,14 @@ proposeUntitled(file, filePath, options?)  [private, holds the note's queue slot
   --> key = titleContentKey(filePath, content, basename, 'untitled', settings)
   --> loadForNote(filePath); skip if any pending proposal exists
   --> skip if existing proposal has same contentKey and status !== 'accepted'  [reject-loop dedup #408]
-  --> TitleSuggester.suggestTitle(content, basename)  [AI]
+  --> TitleSuggester.suggestTitle(content, basename, trackAiCache(cacheUse))  [AI]
   --> return if suggested title empty or itself isUntitled()
   --> build proposal {trigger:'untitled', contentKey:key}
   --> computeTargetPath(file, title); if a different file occupies it, set proposal.conflictsWith  [UI hint]
   --> store.save(proposal)
-  --> maybeAutoAccept(proposal)  [if shouldAutoAccept(): applyAccept(id,{silent:true}) — direct, the slot is already held (#483); announces REAL outcome]
+  --> maybeAutoAccept(proposal, cacheUse)  [if shouldAutoAccept(): applyAccept(id,{silent:true}) — direct, the slot is already held (#483); announces REAL outcome via withCacheReport('Auto-accepted title "X"' | 'Auto-merged into "Y"', [cacheUse]), #527]
   --> action = reviewAction({ generated:true, shouldAutoAccept, openProposalView, postOp: options?.postOp })
-  --> if action: notifications.success('Title proposal ready', undefined, action)
+  --> if action: notifications.success(withCacheReport('Title proposal ready', [cacheUse]), undefined, action)   // #527; no action (post-op / auto-accept) = no toast, so no cache surface
   --> refreshView() --> onViewRefreshNeeded?()
 
 checkMismatch(filePath, options?)
@@ -144,7 +144,7 @@ proposeFromMismatch(file, filePath, options?)  [private, holds the note's queue 
   --> readNote(); return if content empty/whitespace
   --> key = titleContentKey(..., 'content-mismatch', settings)
   --> loadForNote; skip if pending; skip if same contentKey and status !== 'accepted'
-  --> TitleSuggester.checkTitleMismatch(content, basename)  [AI]
+  --> TitleSuggester.checkTitleMismatch(content, basename, trackAiCache(cacheUse))  [AI]
   --> return unless result.isMismatch && result.suggestedTitle
   --> build proposal {trigger:'content-mismatch', contentKey:key}; flag conflictsWith
   --> store.save; maybeAutoAccept; reviewAction toast; refreshView
@@ -233,7 +233,7 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 ## Dependencies
 
-In: `shared/` (AIClient, NotificationManager, NoteOperationQueue, generateId, readNote, isPathExcluded, reviewAction, findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags, contentKey, hashString, ensureFolder, isRecord, readJsonFile, sanitizeAIResponse, stripCodeFences, isUntitled, SettingsSectionContext), `settings.ts` (SynapseSettings, TitleDuplicateStrategy), `obsidian` (Plugin, TFile, normalizePath, Setting, App)
+In: `shared/` (AIClient, NotificationManager, NoteOperationQueue, generateId, readNote, isPathExcluded, reviewAction, trackAiCache, withCacheReport, CacheUse, AIRequestOptions, findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags, contentKey, hashString, ensureFolder, isRecord, readJsonFile, sanitizeAIResponse, stripCodeFences, isUntitled, SettingsSectionContext), `settings.ts` (SynapseSettings, TitleDuplicateStrategy), `obsidian` (Plugin, TFile, normalizePath, Setting, App)
 
 Out: consumed by `main.ts` (TitleModule, checkTitle), `views/` (TitleProposal, TitleDuplicateStrategy types), `settings-tab.ts` (renderTitleSettings). No feature module imports from `title/`.
 
@@ -278,3 +278,4 @@ Out: consumed by `main.ts` (TitleModule, checkTitle), `views/` (TitleProposal, T
 | `backlink-remediation.test.ts` | link rewrite forms + collection, remediation across plain/iterate/merge/auto-accept branches, per-file failure isolation (#485) |
 | `auto-accept.test.ts` | Auto-accept flow (#228) |
 | `review-toast.test.ts` | Review toast notification behavior |
+| `cache-report.test.ts` | #527 finish wording: 'Title proposal ready' hit/miss, auto-accepted hit/miss, auto-merged hit |

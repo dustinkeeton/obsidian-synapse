@@ -74,6 +74,16 @@ describe('module registry', () => {
 		expect(modules.video?.urlTranscriber).toBe(wiring.transcribeUrl);
 	});
 
+	it('hands summarize the routed transcript with its cache flags intact (#527)', async () => {
+		const { modules, wiring } = build();
+		const routed = { text: 'transcript', cached: true };
+		vi.mocked(wiring.transcribeUrl).mockResolvedValue(routed);
+		const { transcribeUrl } = modules.summarize as unknown as {
+			transcribeUrl: (url: string) => Promise<unknown>;
+		};
+		expect(await transcribeUrl('https://youtu.be/abc')).toBe(routed);
+	});
+
 	it('loads only modules whose settings section is enabled, in registry order', async () => {
 		const { modules, settings } = build({
 			audio: { ...DEFAULT_SETTINGS.audio, enabled: false },

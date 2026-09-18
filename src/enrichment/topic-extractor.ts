@@ -1,6 +1,7 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AIClient, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles } from '../shared';
+import type { AIRequestOptions } from '../shared';
 import { InternalLinkCandidate } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
 import { computeProximityWeight } from './weight-calculator';
@@ -42,11 +43,12 @@ export class TopicExtractor {
 	async extractTopics(
 		noteContent: string,
 		notePath: string,
-		existingLinkPaths: string[]
+		existingLinkPaths: string[],
+		aiOpts?: AIRequestOptions
 	): Promise<InternalLinkCandidate[]> {
 		const settings = this.getSettings().enrichment;
 
-		const topics = await this.getTopicsFromAI(noteContent);
+		const topics = await this.getTopicsFromAI(noteContent, aiOpts);
 		if (topics.length === 0) return [];
 
 		// Build a case-insensitive map of vault note titles → file paths
@@ -153,7 +155,7 @@ export class TopicExtractor {
 		return map;
 	}
 
-	private async getTopicsFromAI(noteContent: string): Promise<string[]> {
+	private async getTopicsFromAI(noteContent: string, aiOpts?: AIRequestOptions): Promise<string[]> {
 		const truncatedContent = noteContent.slice(0, 3000);
 
 		const prompt = `Identify the key concepts, people, technologies, theories, and topics in this note that would make good links to other notes in a knowledge base.
@@ -173,7 +175,7 @@ ${truncatedContent}
 			'You are a knowledge graph assistant. Return only valid JSON arrays of topic strings. No explanations.';
 
 		try {
-			const response = await this.aiClient.complete(prompt, systemPrompt);
+			const response = await this.aiClient.complete(prompt, systemPrompt, aiOpts);
 			const sanitized = sanitizeAIResponse(response);
 			const cleaned = sanitized.trim().replace(/^```json\s*/, '').replace(/\s*```$/, '');
 			const parsed = parseJson(cleaned);

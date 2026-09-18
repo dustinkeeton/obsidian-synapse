@@ -1,8 +1,8 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
-import { AIClient, NotificationManager, NoteOperationQueue, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId, isPathExcluded, findMatchingRule } from '../shared';
-import type { OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import { AIClient, NotificationManager, NoteOperationQueue, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId, isPathExcluded, findMatchingRule, trackAiCache, withCacheReport } from '../shared';
+import type { CacheUse, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
 
@@ -105,6 +105,7 @@ export class TidyModule implements FeatureModule {
 		);
 
 		let tidied = 0;
+		const cacheUses: CacheUse[] = [];
 		for (let i = 0; i < allFiles.length; i++) {
 			if (op.cancelled) break;
 			op.progress(i + 1, allFiles.length, 'Tidying notes');
@@ -113,7 +114,7 @@ export class TidyModule implements FeatureModule {
 			if (isPathExcluded(allFiles[i].path, 'tidy', this.getSettings())) continue;
 
 			try {
-				await this.tidy(allFiles[i]);
+				await this.tidy(allFiles[i], cacheUses);
 				tidied++;
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);
@@ -122,24 +123,26 @@ export class TidyModule implements FeatureModule {
 		}
 
 		if (!op.cancelled) {
-			op.finish(`Tidied ${tidied} note${tidied === 1 ? '' : 's'}`);
+			op.finish(withCacheReport(`Tidied ${tidied} note${tidied === 1 ? '' : 's'}`, cacheUses, 'note'));
 		}
 
 		return tidied;
 	}
 
-	async tidy(file: TFile): Promise<void> {
+	/** A `batchUses` collector moves cache reporting to the caller's aggregated finish line (#527). */
+	async tidy(file: TFile, batchUses?: CacheUse[]): Promise<void> {
 		const op = this.notifications.startOperation(
 			`Tidying ${file.basename}`,
 			`tidy-${file.path}`
 		);
-		await this.noteQueue.run(file.path, () => this.runTidy(file, op), {
+		await this.noteQueue.run(file.path, () => this.runTidy(file, op, batchUses), {
 			onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`),
 		});
 	}
 
 	/** One note's tidy cycle, already holding that note's queue slot (#483). */
-	private async runTidy(file: TFile, op: OperationHandle): Promise<void> {
+	private async runTidy(file: TFile, op: OperationHandle, batchUses?: CacheUse[]): Promise<void> {
+		const use: CacheUse = {};
 		try {
 			const content = await this.plugin.app.vault.read(file);
 
@@ -162,7 +165,7 @@ export class TidyModule implements FeatureModule {
 
 			op.update('Correcting spelling and formatting');
 			const tidiedBody = await withRetry(
-				() => this.aiClient.complete(parsed.body, SYSTEM_PROMPT),
+				() => this.aiClient.complete(parsed.body, SYSTEM_PROMPT, trackAiCache(use)),
 				3,
 				2000
 			);
@@ -178,7 +181,8 @@ export class TidyModule implements FeatureModule {
 				const fm = parseFrontmatter(data).frontmatter;
 				return fm ? serializeFrontmatter(fm, cleaned) : cleaned;
 			});
-			op.finish('Note tidied');
+			batchUses?.push(use);
+			op.finish(batchUses ? 'Note tidied' : withCacheReport('Note tidied', [use]));
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			op.error(`Tidy failed — ${msg}`);

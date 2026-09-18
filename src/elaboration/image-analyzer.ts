@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { AIClient, arrayBufferToBase64, NotificationManager, redactError } from '../shared';
-import type { ContentBlock } from '../shared';
+import type { AIRequestOptions, ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
 import { preprocessImage } from '../image';
 
@@ -71,7 +71,7 @@ export class ImageAnalyzer {
 	 * Analyze all images found in a note.
 	 * Returns descriptions for each image that could be resolved and analyzed.
 	 */
-	async analyzeImagesInNote(notePath: string, content: string): Promise<ImageAnalysis[]> {
+	async analyzeImagesInNote(notePath: string, content: string, aiOpts?: AIRequestOptions): Promise<ImageAnalysis[]> {
 		const refs = this.findImageReferences(content);
 		if (refs.length === 0) return [];
 
@@ -82,7 +82,7 @@ export class ImageAnalyzer {
 
 		for (const ref of refs) {
 			try {
-				const analysis = await this.analyzeImage(ref, notePath);
+				const analysis = await this.analyzeImage(ref, notePath, aiOpts);
 				if (analysis) {
 					results.push(analysis);
 				}
@@ -97,7 +97,8 @@ export class ImageAnalyzer {
 
 	private async analyzeImage(
 		ref: { reference: string; path: string; isInternal: boolean },
-		notePath: string
+		notePath: string,
+		aiOpts?: AIRequestOptions
 	): Promise<ImageAnalysis | null> {
 		// Resolve the vault file
 		const file = this.app.metadataCache.getFirstLinkpathDest(ref.path, notePath);
@@ -155,7 +156,7 @@ METADATA: Any observable metadata clues (timestamps visible in the image, camera
 					content: 'You are an image analysis assistant. Analyze images and provide structured descriptions. Be concise but thorough. Focus on factual observations.',
 				},
 				{ role: 'user', content: contentBlocks },
-			]);
+			], aiOpts);
 
 			return this.parseAnalysisResponse(ref.reference, response);
 		} finally {

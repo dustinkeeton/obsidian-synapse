@@ -29,17 +29,22 @@ class SummarizeModule {
   scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<void>
 }
 
-// Injected callback: transcribes a video URL (from VideoModule).
+// types.ts; structurally matches the router's UrlTranscript (#527)
+interface TranscribedMedia { text: string; cached?: boolean; aiCached?: boolean }
+
+// Injected callback: tier-routed media URL transcription (modules/registry.ts).
 type TranscribeUrlFn = (
   url: string,
   parentOp?: { update: (msg: string) => void }
-) => Promise<string>
+) => Promise<TranscribedMedia>
 
 // Injected callback: transcribes a single audio TFile (from AudioModule).
-type TranscribeAudioFn = (file: TFile) => Promise<string>
+type TranscribeAudioFn = (file: TFile) => Promise<TranscribedMedia>
 ```
 
-Exported types: `SummarizeTarget` (re-export of `./types`), `TranscribeUrlFn`, `TranscribeAudioFn`.
+Exported types: `SummarizeTarget`, `TranscribedMedia` (re-exports of `./types`), `TranscribeUrlFn`, `TranscribeAudioFn`.
+
+Cache reporting (#527): every produced summary records a `CacheUse` (`transcript` from the transcriber's `cached`, `ai` from its `aiCached` or a replayed `Summarizer.summarize` call via `trackAiCache`); `ProcessResult.cacheUses` carries one entry per summary (a combined summary merges its sources into one). Every finish message (`processTargets`, `processTargetsCombined`, `scanVault`, `resumeFromCheckpoint`) goes through `withCacheReport`. `Summarizer.summarize` takes a trailing `opts?: AIRequestOptions`.
 Exported functions: `renderSummarizeSettings(ctx: SettingsSectionContext): void` (re-export of `./settings-section`).
 
 ## Note Queue (#483)

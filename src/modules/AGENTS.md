@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-09-17
 ---
 
 # Modules Registry
@@ -17,7 +17,7 @@ type FeatureModuleKey = keyof FeatureModules                                    
 
 // registry.ts:39
 interface ModuleWiring {
-  transcribeUrl: RoutedUrlTranscriber   // tier-routed URL transcription; set as video.urlTranscriber and wrapped as summarize's transcribeUrl
+  transcribeUrl: RoutedUrlTranscriber   // tier-routed URL transcription; set as video.urlTranscriber and handed to summarize as transcribeUrl
   intake: IntakeDeps                    // fireOnFile + transcribeUrlToNote
 }
 
@@ -57,7 +57,7 @@ function unloadFeatureModules(modules: FeatureModules): void                    
 | `video` | `VideoModule` | desktop | `built.audio`; `urlTranscriber = wiring.transcribeUrl` |
 | `image` | `ImageModule` | all | none |
 | `enrichment` | `EnrichmentModule` | all | `() => settings.autoAccept.enrichment` |
-| `summarize` | `SummarizeModule` | all | `transcribeUrl` (wraps `wiring.transcribeUrl`, returns `.text`), `transcribeAudio` (`vault.readBinary` -> `built.audio.transcribe`) |
+| `summarize` | `SummarizeModule` | all | `transcribeUrl` (`wiring.transcribeUrl` result passed through whole, keeping `cached`/`aiCached`, #527), `transcribeAudio` (`vault.readBinary` -> `built.audio.transcribe` -> `{ text, aiCached }`) |
 | `tidy` | `TidyModule` | all | none |
 | `organize` | `OrganizeModule` | all | `() => settings.autoAccept.organize` |
 | `deepDive` | `DeepDiveModule` | all | `() => settings.autoAccept['deep-dive']` |

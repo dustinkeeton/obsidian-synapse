@@ -42,6 +42,7 @@ export class LocalExtractionStrategy implements UrlTranscriptionStrategy {
 			videoVaultPath: result.videoVaultPath,
 			reformatted: result.reformatted,
 			schemaId: result.schemaId,
+			aiCached: result.aiCached,
 		};
 	}
 }

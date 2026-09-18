@@ -1,4 +1,5 @@
 import { AIClient, sanitizeAIResponse } from '../shared';
+import type { AIRequestOptions } from '../shared';
 import { SynapseSettings } from '../settings';
 
 type SummaryStyle = 'bullets' | 'paragraph' | 'key-points';
@@ -20,13 +21,14 @@ export class Summarizer {
 		content: string,
 		source: string,
 		style: SummaryStyle,
-		customPrompt?: string
+		customPrompt?: string,
+		opts?: AIRequestOptions
 	): Promise<string> {
 		const systemPrompt = customPrompt || STYLE_PROMPTS[style];
 
 		const userPrompt = `Source: ${source}\n\nIf image URLs are present in the source content, preserve them as markdown image embeds (![alt](url)) rather than describing the image. For internal images like [[image.jpg]], embed them as ![[image.jpg]].\n\n${content}`;
 
-		const response = await this.client.complete(userPrompt, systemPrompt);
+		const response = await this.client.complete(userPrompt, systemPrompt, opts);
 		return sanitizeAIResponse(response);
 	}
 }

@@ -1,5 +1,6 @@
 import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse, stripCodeFences } from '../shared';
+import type { AIRequestOptions } from '../shared';
 import { ExtractedTopic } from './types';
 
 /**
@@ -21,7 +22,8 @@ export class NoteGenerator {
 	async generateContent(
 		topic: ExtractedTopic,
 		sourceTitle: string,
-		sourceContent: string
+		sourceContent: string,
+		aiOpts?: AIRequestOptions
 	): Promise<string> {
 		const systemPrompt = `You are a knowledge base author. Write a comprehensive note about a specific topic. The note should be well-structured markdown suitable for an Obsidian vault.
 
@@ -46,7 +48,7 @@ Parent note: "${sourceTitle}"${urlContext}
 Context from parent note (for reference, do not repeat):
 ${sourceContent.slice(0, 2000)}`;
 
-		const content = await this.aiClient.complete(userPrompt, systemPrompt);
+		const content = await this.aiClient.complete(userPrompt, systemPrompt, aiOpts);
 		return this.cleanContent(stripCodeFences(sanitizeAIResponse(content)), topic, sourceTitle);
 	}
 

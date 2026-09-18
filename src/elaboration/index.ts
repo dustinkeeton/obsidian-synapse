@@ -5,9 +5,9 @@ import {
 	buildCallout, CALLOUT_TYPES, getMarkdownFiles,
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager,
 	NoteOperationQueue, generateId,
-	fireAndForget, reviewAction, openScanFolderPicker,
+	fireAndForget, reviewAction, openScanFolderPicker, trackAiCache, withCacheReport,
 } from '../shared';
-import type { Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator, proposalContentKey } from './proposer';
@@ -162,15 +162,16 @@ export class ElaborationModule implements FeatureModule {
 	/** One note's generate + save + auto-accept; runs holding the note's queue slot (#483). */
 	private async generateForBatch(
 		detection: DetectionResult
-	): Promise<{ proposal: Proposal | null; autoAccepted: boolean }> {
+	): Promise<{ proposal: Proposal | null; autoAccepted: boolean; cacheUse: CacheUse }> {
+		const cacheUse: CacheUse = {};
 		const guard = await this.guardProposal(detection);
-		if (guard.skip) return { proposal: null, autoAccepted: false };
+		if (guard.skip) return { proposal: null, autoAccepted: false, cacheUse };
 
-		const proposal = await this.proposer.generate(detection, guard.key);
-		if (!proposal) return { proposal: null, autoAccepted: false };
+		const proposal = await this.proposer.generate(detection, guard.key, trackAiCache(cacheUse));
+		if (!proposal) return { proposal: null, autoAccepted: false, cacheUse };
 
 		await this.store.save(proposal);
-		return { proposal, autoAccepted: await this.maybeAutoAccept(proposal, true) };
+		return { proposal, autoAccepted: await this.maybeAutoAccept(proposal, true), cacheUse };
 	}
 
 	/**
@@ -183,6 +184,7 @@ export class ElaborationModule implements FeatureModule {
 			'vault-generate-resume'
 		);
 		const createdProposalIds: string[] = [];
+		const cacheUses: CacheUse[] = [];
 		let proposalCount = 0;
 		let autoAcceptedCount = 0;
 
@@ -207,6 +209,7 @@ export class ElaborationModule implements FeatureModule {
 				);
 				if (outcome.proposal) {
 					createdProposalIds.push(outcome.proposal.id);
+					cacheUses.push(outcome.cacheUse);
 					proposalCount++;
 					if (outcome.autoAccepted) autoAcceptedCount++;
 				}
@@ -231,7 +234,7 @@ export class ElaborationModule implements FeatureModule {
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
 		genOp.finish(
-			`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
+			withCacheReport(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'proposal'),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,
@@ -300,6 +303,7 @@ export class ElaborationModule implements FeatureModule {
 			'vault-generate'
 		);
 		const createdProposalIds: string[] = [];
+		const cacheUses: CacheUse[] = [];
 		let proposalCount = 0;
 		let autoAcceptedCount = 0;
 
@@ -334,6 +338,7 @@ export class ElaborationModule implements FeatureModule {
 				);
 				if (outcome.proposal) {
 					createdProposalIds.push(outcome.proposal.id);
+					cacheUses.push(outcome.cacheUse);
 					proposalCount++;
 					if (outcome.autoAccepted) autoAcceptedCount++;
 				}
@@ -368,7 +373,7 @@ export class ElaborationModule implements FeatureModule {
 		// Review action only when something was generated AND elaboration
 		// auto-accept is off (#366) — the deep-dive rule, centralized.
 		genOp.finish(
-			`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`,
+			withCacheReport(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'proposal'),
 			reviewAction({
 				generated: proposalCount > 0,
 				shouldAutoAccept: this.shouldAutoAccept,
@@ -429,7 +434,8 @@ export class ElaborationModule implements FeatureModule {
 					return;
 				}
 
-				const proposal = await this.proposer.generate(result, guard.key);
+				const cacheUse: CacheUse = {};
+				const proposal = await this.proposer.generate(result, guard.key, trackAiCache(cacheUse));
 				if (!proposal) {
 					// generate() returns null when the note is essentially just
 					// unreadable link(s): no proposal is created and the link-load
@@ -442,7 +448,7 @@ export class ElaborationModule implements FeatureModule {
 				// Review action only when the proposal stays pending — auto-accept
 				// (applied right after) leaves nothing to review (#366).
 				op.finish(
-					'Proposal generated',
+					withCacheReport('Proposal generated', [cacheUse]),
 					reviewAction({
 						generated: true,
 						shouldAutoAccept: this.shouldAutoAccept,

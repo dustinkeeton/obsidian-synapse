@@ -75,6 +75,7 @@ vi.mock('../shared', async () => ({
 	// Use the REAL content-schema registry so auto-format detection runs as in
 	// production rather than throwing on an undefined mock.
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
+	...(await vi.importActual<typeof import('../shared/cache-notice')>('../shared/cache-notice')),
 	// Real queue primitive (#483): a mocked-away queue would never run the operation
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	FolderPickerModal: vi.fn(),
@@ -145,7 +146,7 @@ describe('SummarizeModule audio target detection', () => {
 		settings.summarize.includeNoteContent = false;
 		mockFindAudioEmbeds.mockReset();
 
-		transcribeAudioFn = vi.fn<TranscribeAudioFn>().mockResolvedValue('Transcribed audio content.');
+		transcribeAudioFn = vi.fn<TranscribeAudioFn>().mockResolvedValue({ text: 'Transcribed audio content.' });
 
 		const audioFile = makeTFile('audio/recording.mp3');
 
@@ -374,7 +375,7 @@ describe('SummarizeModule audio target detection', () => {
 	});
 
 	it('handles empty transcription result', async () => {
-		transcribeAudioFn.mockResolvedValue('');
+		transcribeAudioFn.mockResolvedValue({ text: '' });
 
 		const audioFile = makeTFile('audio/recording.mp3');
 		mockFindAudioEmbeds.mockReturnValue([

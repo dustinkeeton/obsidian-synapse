@@ -18,7 +18,10 @@ Exported from `index.ts`:
 
 ```ts
 // ai-client.ts
-interface AIRequestOptions { bypassCache?: boolean }   // exported from ai-client.ts (NOT the barrel); forces fresh dispatch for "regenerate"
+interface AIRequestOptions {                          // type re-exported from the barrel (#527)
+  bypassCache?: boolean                               // forces fresh dispatch for "regenerate"
+  onCacheHit?: () => void                             // #527; called only when the response is replayed from the cache (never for a dispatch, a bypass, or a coalesced join)
+}
 class AIClient {
   constructor(getSettings: () => SynapseSettings)
   complete(prompt: string, systemPrompt?: string, opts?: AIRequestOptions): Promise<string>
@@ -374,6 +377,14 @@ class TranscriptCache {
 }
 // Never throws: unreadable/corrupt file = empty store, failed write = console.warn(redactError). Lazy single load, in-memory map, full-file rewrite on every put/get.
 
+// cache-notice.ts (#527) — single source of "served from cache" finish wording
+interface CacheUse { transcript?: boolean; ai?: boolean }          // which caches served any part of ONE result
+function usedCache(use: CacheUse): boolean                         // module-only (not on the barrel); the filter behind withCacheReport
+function mergeCacheUse(uses: CacheUse[]): CacheUse                 // OR per cache (several sources -> one result)
+function transcriptCacheUse(result: { cached?: boolean; aiCached?: boolean }): CacheUse   // routed URL transcript flags -> CacheUse
+function trackAiCache(use: CacheUse): AIRequestOptions             // { onCacheHit } that sets use.ai; any replayed call in an operation marks it
+function withCacheReport(message: string, items: CacheUse[], unit?: string): string   // items = one per result; no hit -> message unchanged; 1 item -> ' — used a cached transcript ("Fetch a fresh transcript" in Transcribe media replaces it)' | ' — used a cached AI response' | both; >1 -> ' — N of M <unit>s served from cache' (unit = singular noun for one item: 'note' | 'proposal' | 'summary' | 'transcription' | 'extraction'; every batch caller passes one)
+
 // no-speech.ts (#524) — typed no-speech outcome shared by audio, video, transcription
 const NO_SPEECH_MESSAGE: string                                   // 'No speech detected — nothing to transcribe'
 const MIN_TRANSCRIPT_CHARS_FOR_AI: number                         // 10 letters/digits
@@ -493,6 +504,8 @@ function scoreLyricsContent(content: string): number
 | `feature-module.ts` | `ModuleDeps`, `FeatureModule`, `FeatureSettingsKey` | Feature-module lifecycle contract (#504): the service bundle every module constructor takes first, the `onload`/`onunload` + optional proposal-hook-slot interface `modules/registry.ts` drives, and the settings-key union that gates load. Type-only imports (`obsidian` `Plugin`, `../settings`, `../commands` `CommandRegistrar`); no runtime code |
 | `transcript-cache.ts` | `TranscriptCache`, `canonicalMediaUrl`, `transcriptCacheKey`, `CachedTranscript`, `TranscriptCacheEntry`, `TranscriptCacheOptions` | Persistent media-URL transcript store (#488) at `.synapse/transcript-cache.json`, keyed by canonical URL + time range. Consumed by `transcription/url-transcription.ts` (router read-through/write-through via the `TranscriptStore` slice), constructed once in `main.ts` (`SynapsePlugin.transcriptCache`), cleared from `video/settings-section.ts`. Imports `url-detector`, `json-utils`, `file-utils` (`ensureFolder`), `redact` |
 | `no-speech.ts` | `NoSpeechDetectedError`, `isNoSpeechError`, `hasSpeechContent`, `isWorthPostProcessing`, `noSpeechNotice`, `NO_SPEECH_MESSAGE`, `MIN_TRANSCRIPT_CHARS_FOR_AI` | No-speech outcome (#524). Thrown by `audio/transcriber.ts`, `audio/index.ts`, `transcription/url-transcription.ts`, `transcription/local-extraction-strategy.ts`; branched on by the audio/video/transcription write sites; `summarize` matches it by name. No imports |
+| `cache-notice.ts` | `CacheUse`, `mergeCacheUse`, `transcriptCacheUse`, `trackAiCache`, `withCacheReport` (barrel); `usedCache` (module-only) | Cache-hit reporting (#527): wording + batch aggregation for operation finish messages. Type-only import of `ai-client`. Used by audio, video, transcription, summarize, tidy, elaboration, enrichment, deep-dive, organize, rem, title, image |
+| `cache-notice.test.ts` | Tests | Unchanged-on-miss, per-cache wording, batch aggregation, flag mapping |
 | `no-speech.test.ts` | Tests | Error name/message, cause-chain + cycle matching, blank/annotation detection, AI minimum length, notice wording |
 | `transcript-cache.test.ts` | Tests | Canonicalization, key/time-range separation, round-trip persistence, LRU entry + char eviction, corrupt-file tolerance, write-failure tolerance |
 | `tweet-fetcher.ts` | `fetchTweetContent`, `isTwitterUrl`, `TweetContent` | Twitter/X.com tweet fetching with oEmbed → fxtwitter → vxtwitter fallback chain |
@@ -635,9 +648,10 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 
 | Utility | Used By |
 |---------|---------|
-| `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
+| `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index, summarize/summarizer, organize/content-analyzer, deep-dive/topic-analyzer, deep-dive/note-generator, rem/semantic-matcher, title/title-suggester |
 | `redactSecrets` | ai-client (safeRequest error bodies + API-error wrap), credential-validator (probe error messages), credential-field (Test-button validation-catch chip message), update-checker (fetch-failure detail), notifications (`error`/`notifyError`/operation-error toast + console paths) |
 | `redactError` | main (settings-migration console sink only, `main.ts:281`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, image/preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
+| `withCacheReport` / `trackAiCache` / `transcriptCacheUse` / `mergeCacheUse` | audio/index, video/index, transcription/insert-url-transcript, summarize/index, tidy/index, elaboration/index, enrichment/index, deep-dive/index, organize/index, rem/index, title/index, image/index (#527 finish messages) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
 | `wrapUntrusted` | elaboration/proposer (fetched-link content + image-analysis prompt fencing) |

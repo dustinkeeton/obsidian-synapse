@@ -17,7 +17,7 @@ class AudioModule {
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   transcribe(audioData: ArrayBuffer, fileName: string, options?: TranscribeOptions): Promise<TranscriptionResult>   // options.update receives "Post-processing (n/total)" for sectioned runs (#467); throws NoSpeechDetectedError (#524) before any AI call
-  processTranscriptText(raw: string, opts?: PostProcessOptions): Promise<{ text: string; reformatted?: boolean; schemaId?: string }>   // caption-tier seam (#184); sanitize -> PostProcessor -> schema reformat; failures propagate; blank input -> zero AI calls, returned unchanged (#524)
+  processTranscriptText(raw: string, opts?: PostProcessOptions): Promise<{ text: string; reformatted?: boolean; schemaId?: string; aiCached?: boolean }>   // caption-tier seam (#184); sanitize -> PostProcessor -> schema reformat; failures propagate; blank input -> zero AI calls, returned unchanged (#524)
   transcribeFileToActiveNote(file: TFile, timeRange?: TimeRange): Promise<void>   // queued on the active note (#483)
   transcribeAndInsert(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // queued on noteFile (#483)
   transcribeAndInsertCombined(noteFile: TFile, embeds: AudioEmbed[]): Promise<void>   // #214; queued on noteFile (#483); <2 embeds falls back to transcribeAndInsert; ffmpeg concat (desktop) or per-file text merge (mobile) -> one combined callout
@@ -51,13 +51,14 @@ interface TranscriptionResult {
   timestamps?: TimestampEntry[]
   reformatted?: boolean   // #234; true when a content schema (e.g. lyrics) reformatted the transcript
   schemaId?: string       // #234; id of the schema that reformatted (e.g. 'lyrics')
+  aiCached?: boolean      // #527; any AI pass (post-processing section, key points, schema reformat) replayed a cached response
 }
 
 interface TimestampEntry { start: number; end: number; text: string }
-interface TranscribeOptions { language?: string; postProcess?: boolean; sourceName?: string; timeRange?: TimeRange; update?: (message: string) => void }
+interface TranscribeOptions { language?: string; postProcess?: boolean; sourceName?: string; timeRange?: TimeRange; update?: (message: string) => void; bypassCache?: boolean }   // bypassCache = dispatch every AI pass on this transcript fresh (#527)
 
 // post-processor.ts (module-internal; AudioModule owns the instance)
-interface PostProcessOptions { update?: (message: string) => void }          // progress sink, called once per AI call in sectioned runs
+interface PostProcessOptions { update?: (message: string) => void; onCacheHit?: () => void; bypassCache?: boolean }   // update = progress sink, once per AI call in sectioned runs; onCacheHit = once per replayed AI call; bypassCache forwarded to every pass incl. the lyrics reformat (#527)
 interface PostProcessorDeps { notify?: (message: string) => void; delayMs?: number }   // notify = single end-of-run notice; delayMs default 2000
 class PostProcessor {
   constructor(getSettings: () => SynapseSettings, deps?: PostProcessorDeps)

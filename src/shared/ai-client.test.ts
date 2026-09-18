@@ -731,4 +731,35 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 		expect(third).toBe('v2');
 		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
 	});
+
+	it('calls onCacheHit only for a cache replay, through chat and complete (#527)', async () => {
+		settings.ai.temperature = 0;
+		mockRequestUrl.mockResolvedValue(openAIResponse('Paris'));
+		const onCacheHit = vi.fn();
+
+		await client.chat(QUESTION, { onCacheHit });
+		expect(onCacheHit).not.toHaveBeenCalled();
+
+		await client.chat(QUESTION, { onCacheHit });
+		expect(onCacheHit).toHaveBeenCalledTimes(1);
+
+		await client.complete('Hi', 'System', { onCacheHit });
+		expect(onCacheHit).toHaveBeenCalledTimes(1);
+		await client.complete('Hi', 'System', { onCacheHit });
+		expect(onCacheHit).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not call onCacheHit for a bypass, an uncacheable request, or a coalesced join (#527)', async () => {
+		const onCacheHit = vi.fn();
+		settings.ai.temperature = 0;
+		mockRequestUrl.mockResolvedValue(openAIResponse('Paris'));
+		await client.chat(QUESTION);
+		await client.chat(QUESTION, { bypassCache: true, onCacheHit });
+
+		settings.ai.temperature = 0.7;
+		await client.chat(QUESTION, { onCacheHit });
+		await Promise.all([client.chat(QUESTION, { onCacheHit }), client.chat(QUESTION, { onCacheHit })]);
+
+		expect(onCacheHit).not.toHaveBeenCalled();
+	});
 });

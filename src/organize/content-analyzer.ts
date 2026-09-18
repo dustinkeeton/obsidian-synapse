@@ -1,6 +1,7 @@
 import { App, TFile, getAllTags } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AIClient, isRecord, parseFrontmatter, parseJson, sanitizeAIResponse, withRetry } from '../shared';
+import type { AIRequestOptions } from '../shared';
 import { ContentAnalysis, NoteTopic } from './types';
 
 const SYSTEM_PROMPT = `You are a note organization assistant. Given the content of a note, determine its primary topics/categories.
@@ -38,7 +39,7 @@ export class ContentAnalyzer {
 	 * Analyze a note's content to determine its topical categories.
 	 * Combines AI topic extraction with existing metadata signals.
 	 */
-	async analyze(file: TFile): Promise<ContentAnalysis> {
+	async analyze(file: TFile, aiOpts?: AIRequestOptions): Promise<ContentAnalysis> {
 		const content = await this.app.vault.read(file);
 		const parsed = parseFrontmatter(content);
 
@@ -48,7 +49,7 @@ export class ContentAnalyzer {
 		const existingLinks = this.getOutgoingLinks(file);
 
 		// Extract topics from content via AI
-		const topics = await this.extractTopics(parsed.body, existingTags);
+		const topics = await this.extractTopics(parsed.body, existingTags, aiOpts);
 
 		return {
 			notePath: file.path,
@@ -62,7 +63,7 @@ export class ContentAnalyzer {
 	 * Extract topics from note body text using AI.
 	 * Falls back to tag-based heuristics if AI fails.
 	 */
-	async extractTopics(body: string, tags: string[]): Promise<NoteTopic[]> {
+	async extractTopics(body: string, tags: string[], aiOpts?: AIRequestOptions): Promise<NoteTopic[]> {
 		const trimmedBody = body.trim();
 		if (!trimmedBody) {
 			return this.topicsFromTags(tags);
@@ -81,7 +82,7 @@ export class ContentAnalyzer {
 
 		try {
 			const raw = await withRetry(
-				() => this.aiClient.complete(contextParts.join('\n'), SYSTEM_PROMPT),
+				() => this.aiClient.complete(contextParts.join('\n'), SYSTEM_PROMPT, aiOpts),
 				2,
 				2000
 			);

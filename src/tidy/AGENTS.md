@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-08-17
+last-updated: 2026-09-17
 ---
 
 # Tidy Module
@@ -20,7 +20,7 @@ class TidyModule {
   onload(): Promise<void>
   onunload(): void
   scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>
-  tidy(file: TFile): Promise<void>
+  tidy(file: TFile, batchUses?: CacheUse[]): Promise<void>   // batchUses (#527): push this note's CacheUse and keep the per-note toast plain
   // private undoTidy(file: TFile): Promise<void>
 }
 
@@ -98,7 +98,7 @@ noteQueue.run(file.path, () => runTidy(file, op), { onWait })   -- index.ts:136
    store.save(snapshot)                       -- snapshot taken before any write
 3. parseFrontmatter(content) -> { frontmatter, body }
 4. if !body.trim(): op.finish("Nothing to tidy — note is empty"); return
-5. withRetry(() => aiClient.complete(body, SYSTEM_PROMPT), 3, 2000)
+5. withRetry(() => aiClient.complete(body, SYSTEM_PROMPT, trackAiCache(use)), 3, 2000)   // use: CacheUse (#527)
      SYSTEM_PROMPT (index.ts:11) constrains AI to:
        - spelling correction only (no grammar/word-choice/meaning changes)
        - markdown formatting (lists, quotes, headers, code blocks, emphasis)
@@ -109,7 +109,7 @@ noteQueue.run(file.path, () => runTidy(file, op), { onWait })   -- index.ts:136
      fm = parseFrontmatter(data).frontmatter
      return fm ? serializeFrontmatter(fm, cleaned) : cleaned
    })                                         -- atomic; frontmatter re-parsed from fresh content
-8. op.finish("Note tidied")
+8. op.finish(withCacheReport("Note tidied", [use]))   // plain "Note tidied" when called with batchUses (#527)
 catch: op.error("Tidy failed — <msg>")
 ```
 
@@ -142,7 +142,7 @@ Reachable in code only via the `undo-tidy` command, which is gated off (registry
      if isPathExcluded(path, "tidy", settings): continue   (silent skip, #307)
      try { tidy(file); tidied++ } catch { console.warn(...) }
         (public tidy => one queue slot per note, index.ts:112)
-7. if !op.cancelled: op.finish("Tidied N notes")
+7. if !op.cancelled: op.finish(withCacheReport("Tidied N notes", cacheUses, 'note'))   // one aggregated cache line (#527)
 8. return tidied
 ```
 

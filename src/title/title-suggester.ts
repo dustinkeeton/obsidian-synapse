@@ -1,4 +1,5 @@
 import { AIClient, sanitizeAIResponse, stripCodeFences } from '../shared';
+import type { AIRequestOptions } from '../shared';
 
 /**
  * Uses the AI client to suggest a concise, descriptive title for a note
@@ -7,7 +8,7 @@ import { AIClient, sanitizeAIResponse, stripCodeFences } from '../shared';
 export class TitleSuggester {
 	constructor(private aiClient: AIClient) {}
 
-	async suggestTitle(content: string, currentTitle: string): Promise<{ title: string; reasoning: string }> {
+	async suggestTitle(content: string, currentTitle: string, aiOpts?: AIRequestOptions): Promise<{ title: string; reasoning: string }> {
 		const truncated = content.slice(0, 4000);
 
 		const systemPrompt = [
@@ -32,13 +33,17 @@ export class TitleSuggester {
 		].join('\n');
 
 		const response = stripCodeFences(sanitizeAIResponse(
-			await this.aiClient.complete(prompt, systemPrompt)
+			await this.aiClient.complete(prompt, systemPrompt, aiOpts)
 		));
 
 		return this.parseResponse(response);
 	}
 
-	async checkTitleMismatch(content: string, currentTitle: string): Promise<{ isMismatch: boolean; suggestedTitle?: string; reasoning?: string }> {
+	async checkTitleMismatch(
+		content: string,
+		currentTitle: string,
+		aiOpts?: AIRequestOptions
+	): Promise<{ isMismatch: boolean; suggestedTitle?: string; reasoning?: string }> {
 		const truncated = content.slice(0, 4000);
 
 		const systemPrompt = [
@@ -59,7 +64,7 @@ export class TitleSuggester {
 		].join('\n');
 
 		const response = stripCodeFences(sanitizeAIResponse(
-			await this.aiClient.complete(prompt, systemPrompt)
+			await this.aiClient.complete(prompt, systemPrompt, aiOpts)
 		));
 
 		return this.parseMismatchResponse(response);

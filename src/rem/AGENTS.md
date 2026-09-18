@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-09-17
 ---
 
 # REM Module
@@ -98,18 +98,19 @@ interface RemSettings {
 | `index.test.ts` | Tests | RemModule integration tests |
 | `settings-section.test.ts` | Tests | Settings section tests |
 | `review-toast.test.ts` | Tests | Review-toast action: forwarded when auto-accept off, omitted when on (#366) |
+| `cache-report.test.ts` | Tests | #527 finish wording: single-note hit/miss, no-candidate hit, directory-scan aggregate hit/miss |
 
 ## Data Flow
 
 ```
 remScanNote(filePath)
   --> isExcluded? (isPathExcluded 'rem' + enrichment.excludeTags)
-  --> gatherCandidates(file, content):
+  --> gatherCandidates(file, content, cacheUse):
         MentionScanner.scan(...) literal candidates, down-weighted by titleMatchWeight
-        SemanticMatcher.match(...) always-on, filtered by confidenceThreshold
+        SemanticMatcher.match(..., trackAiCache(cacheUse)) always-on, filtered by confidenceThreshold   (#527)
         merge + re-rank by confidence desc + cap at maxLinksPerNote
   --> RemProposal { candidates, status: 'pending' } --> RemStore.save
-  --> success Notice + reviewAction({ generated, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366)
+  --> withCacheReport('Found N linkable mentions' | 'No linkable mentions found', [cacheUse]) Notice (#527) + reviewAction({ generated, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366)
   --> maybeAutoAccept(proposal)   (#228, when shouldAutoAccept())
   --> refreshView()
 
@@ -117,12 +118,12 @@ remScanDirectory(folderPath?, skipConfirmation?, onlyFile?)
   --> getMarkdownFiles filtered by isExcluded
   --> CheckpointManager.create(module: 'rem', items)
   --> addDeferredTask('refresh-sidebar-view')
-  --> for each file: gatherCandidates (literal down-weighted + always-on semantic, merged/re-ranked), save proposal, maybeAutoAccept(batch=true)
+  --> for each file: gatherCandidates(file, content, cacheUse) (literal down-weighted + always-on semantic, merged/re-ranked), push cacheUse, save proposal, maybeAutoAccept(batch=true)
   --> completeItem() per file
   --> on error: rejectProposalBatch(createdIds) + return 0
   --> on cancel: discard() + rejectProposalBatch()
   --> on success: complete() + dispatchDeferredTasks
-  --> finish Notice + reviewAction({ generated: created>0, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366); separate "Auto-accepted ..." info Notice when autoAcceptedCount > 0
+  --> withCacheReport('REM scan complete -- N notes with linkable mentions' | 'Resumed -- generated N proposals', cacheUses, 'note') finish Notice — one aggregated cache line, one CacheUse per note scanned (#527) + reviewAction({ generated: created>0, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366); separate "Auto-accepted ..." info Notice when autoAcceptedCount > 0
 
 acceptProposal(id, acceptedMatchTexts, options?)
   --> guard: only 'pending' proposals (cascade safety)
@@ -196,7 +197,7 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 
 | Import | From |
 |--------|------|
-| `generateId`, `getMarkdownFiles`, `FolderPickerModal`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction` | `../shared` |
+| `generateId`, `getMarkdownFiles`, `FolderPickerModal`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction`, `trackAiCache`, `withCacheReport`, `CacheUse` | `../shared` |
 | `NotificationManager`, `CheckpointManager`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` | `../shared` (type-only) |
 | `CommandRegistrar` | `../commands` (type-only) |
 | `SynapseSettings`, `RemSettings` | `../settings` (type-only) |
@@ -205,4 +206,4 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 | `RemApplier` | `./rem-applier` |
 | `RemStore` | `./rem-store` |
 
-Internal-file shared imports: `semantic-matcher.ts` imports `AIClient`, `isRecord`, `parseJson`, `getIncludedMarkdownFiles`, `redactError` from `../shared`. Its AI-call failure sink routes `console.warn` through `redactError` (redaction single-source-of-truth); the JSON-parse failure path logs a static message with no error payload. `rem-store.ts` imports `ensureFolder`, `isRecord`, `readJsonFile`; `settings-section.ts` imports `addEnhancedSlider`, `SettingsSectionContext`.
+Internal-file shared imports: `semantic-matcher.ts` imports `AIClient`, `AIRequestOptions` (type; `match(..., aiOpts?)` forwards it to `complete()`, #527), `isRecord`, `parseJson`, `getIncludedMarkdownFiles`, `redactError` from `../shared`. Its AI-call failure sink routes `console.warn` through `redactError` (redaction single-source-of-truth); the JSON-parse failure path logs a static message with no error payload. `rem-store.ts` imports `ensureFolder`, `isRecord`, `readJsonFile`; `settings-section.ts` imports `addEnhancedSlider`, `SettingsSectionContext`.

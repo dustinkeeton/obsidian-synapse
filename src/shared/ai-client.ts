@@ -27,6 +27,8 @@ export interface AIRequestOptions {
 	 * result when caching is active.
 	 */
 	bypassCache?: boolean;
+	/** Called when the response is replayed from the response cache (#527); never for a dispatch or a coalesced join. */
+	onCacheHit?: () => void;
 }
 
 async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse> {
@@ -396,6 +398,7 @@ export class AIClient {
 		if (cacheable && !bypass) {
 			const cached = this.cacheGet(key);
 			if (cached !== undefined) {
+				opts?.onCacheHit?.();
 				return cached;
 			}
 		}

@@ -86,6 +86,14 @@ describe('ProposalGenerator -- image embed preservation (no images)', () => {
 		vi.restoreAllMocks();
 	});
 
+	it('forwards AI request options so a cache replay reaches the caller (#527)', async () => {
+		const onCacheHit = vi.fn();
+
+		await generator.generate({ notePath: 'notes/test.md', reasons: [{ type: 'user-requested' }] }, undefined, { onCacheHit });
+
+		expect(mockComplete.mock.calls[0][2]).toEqual({ onCacheHit });
+	});
+
 	it('includes image embed preservation instruction in system prompt', async () => {
 		const detection: DetectionResult = {
 			notePath: 'notes/test.md',
