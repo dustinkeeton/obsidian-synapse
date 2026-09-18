@@ -147,4 +147,4 @@ A fully disabled feature (onload never runs) produces zero attempts and so canno
 | `auditCommands` | `main.ts` (end of onload) |
 | `listPaletteActions` | `main.ts` (Synapse actions sidebar factory) -> `views/synapse-actions-view.ts` |
 | `resolveActionIcon` / `FEATURE_ICONS` | `registrar.ts` (palette command icons); Synapse actions sidebar |
-| `context` field | `views/synapse-actions-view.ts` (disables `note` buttons when no markdown note is active); `main.runCommand` re-activates the note leaf for `context: 'note'` commands |
+| `context` field | `views/synapse-actions-view.ts` (disables `note` buttons when no markdown note is active); `views/command-runner.ts` invokes the `editorCallback` of `context: 'note'` commands directly with the note's `MarkdownView` (#352) |
