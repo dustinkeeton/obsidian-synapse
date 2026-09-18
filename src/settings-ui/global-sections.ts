@@ -503,7 +503,7 @@ export function renderAbout(ctx: SettingsSectionContext): void {
 		.addButton((btn) =>
 			btn
 				.setButtonText('Reset all settings')
-				.setWarning()
+				.setClass('mod-destructive')
 				.onClick(async () => {
 					const confirmed = await new ConfirmModal(plugin.app, {
 						title: 'Reset all settings?',

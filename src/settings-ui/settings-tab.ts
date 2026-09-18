@@ -106,7 +106,7 @@ export class SynapseSettingTab extends PluginSettingTab {
 			setting.addButton((button) => {
 				button
 					.setButtonText('Reset')
-					.setWarning()
+					.setClass('mod-destructive')
 					.setTooltip(`Reset ${entry.title} to defaults`)
 					.setDisabled(atDefaults)
 					.onClick(reset);

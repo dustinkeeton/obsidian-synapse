@@ -369,6 +369,8 @@ export class ButtonComponent {
 	buttonText = '';
 	/** Last disabled state set via setDisabled. */
 	disabled = false;
+	/** Classes added via setClass. */
+	classes: string[] = [];
 	constructor() {
 		ButtonComponent.instances.push(this);
 	}
@@ -380,6 +382,10 @@ export class ButtonComponent {
 	setTooltip = vi.fn().mockReturnThis();
 	setCta = vi.fn().mockReturnThis();
 	setWarning = vi.fn().mockReturnThis();
+	setClass = vi.fn((cls: string) => {
+		this.classes.push(cls);
+		return this;
+	});
 	setDisabled = vi.fn((d: boolean) => {
 		this.disabled = d;
 		return this;

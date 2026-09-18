@@ -426,11 +426,6 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
   margin-top: 8px;
 }
 
-.synapse-section-reset button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /*
  * The enable toggle lives inside a borderless Setting so we reuse the native
  * ToggleComponent. Strip the Setting's default block layout/border/padding so
