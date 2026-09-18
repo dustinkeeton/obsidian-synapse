@@ -27,9 +27,9 @@ agent, or a `files/` payload.
   ```
 - **Via the pinned ref (published toolkit):** confirms the release itself is valid:
   ```bash
-  npx --yes github:dustinkeeton/wafflestack validate
+  npx --yes github:dustinkeeton/wafflestack#v0.16.1 validate
   ```
-  Point `github:dustinkeeton/wafflestack` at a local path to validate a fork without publishing.
+  Point `github:dustinkeeton/wafflestack#v0.16.1` at a local path to validate a fork without publishing.
 
 ## Interpret the result
 

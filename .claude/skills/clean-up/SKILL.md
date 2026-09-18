@@ -10,7 +10,7 @@ description: >-
   agents". This is git + agent housekeeping — NOT source-code cleanup or
   refactoring.
 user-invocable: true
-argument-hint: "[git | agents | all]  [--yes]  [--run <checkpoint.json>]   — omit for a full preview-then-confirm sweep"
+argument-hint: "[git | agents | all]  [--yes | --confirm]  [--run <checkpoint.json>]   — omit for a full preview-then-confirm sweep"
 ---
 
 # Clean Up
@@ -23,8 +23,9 @@ Housekeeping after work has landed. Two independent domains:
 The guiding principle is that cleanup should only ever remove things whose work is
 **already safe elsewhere** — a branch whose PR merged, a task that completed. Anything
 still in flight, or holding the only copy of some work, is left alone. Because the
-destructive half (force-deleting branches, stopping agents) can't be undone, the default
-is to **show the full plan and wait for a yes** before touching anything.
+destructive half (force-deleting branches, stopping agents) can't be undone, the stack default
+is to **show the full plan and wait for a yes** before touching anything — the
+`cleanUp.confirmGate` key, rendered for this repo as `true` (see [The gate](#the-gate)).
 
 ## Arguments
 
@@ -33,11 +34,31 @@ is to **show the full plan and wait for a yes** before touching anything.
 | _(none)_ | Full sweep — git **and** harness — previewed, then confirmed. |
 | `git` / `branches` / `worktrees` | Git scope only. |
 | `agents` / `tasks` | Harness scope only. |
-| `--yes` / `auto` | Skip the confirmation prompt. Intended for an **agent calling this right after it merges a PR** — not for interactive use unless the user explicitly says "no need to confirm". |
+| `--yes` | Skip the confirmation prompt for this run. Intended for an **agent calling this right after it merges a PR** — not for interactive use unless the user explicitly says "no need to confirm". |
+| `--confirm` | Force the confirmation prompt for this run, even when the rendered gate is off. Both tokens at once is a contradiction — say so and stop. |
 | `--run <path>` | Sweep one `/delegate` run from an explicit checkpoint file instead of globbing the conventional `.claude/worktrees/.delegate/` directory — for a consumer that moved `delegate.checkpointDir`. Harness scope only. |
 
 `--yes` combines with a scope (e.g. `git --yes`). `--run` does not combine with `--yes`: stopping agents
-is always confirm-first.
+is always confirm-first, whatever the rendered gate says. A bare `auto` is **not** a flag any more
+(it was a second spelling of `--yes` before #487): say it was retired, name `--yes`, and gate as
+normal — never guess a skip from it.
+
+### The gate
+
+The gate is the `cleanUp.confirmGate` config key; `--yes` and `--confirm` are its declared `flag:`
+tokens, rendered from the stack, and an explicit token beats the config value. **Rendered gate for
+this repo: `true`** — the value after `.waffle/waffle.local.yaml` → `.waffle/waffle.yaml` →
+the stack default (`true`). With no token:
+
+| `cleanUp.confirmGate` | Human-attended run | Non-interactive caller (a merging agent, a CI job) |
+|---|---|---|
+| `true` | Gate: present the plan, ask "Proceed?", wait. | Skip — the key's `nonInteractive: false` fallback; the report is the audit trail. |
+| `false` | No gate: proceed as if `--yes` were passed. | Skip. |
+| `prompt` | Assume nothing: ask, which for a gate means gating exactly as `true` does. | Skip — the same `nonInteractive: false` fallback. |
+
+Two things no mode or token changes: the `--run <path>` sweep always confirms first, and the
+script's `--execute` switch is passed only once the gate — whichever way it resolved — has been
+passed. A consumer changes the default in config, never by editing this rendered file.
 
 ## Post-merge convention
 
@@ -67,7 +88,7 @@ everything local.
    whether it will fast-forward the default branch. It deletes nothing in this mode.
 3. **Build the harness plan** (if harness is in scope) — see [Harness scope](#harness-scope) below.
 4. **Present the combined plan** to the user using the [report format](#report-format).
-5. **Gate on confirmation.** Unless `--yes` was passed, ask "Proceed?" and wait. If the
+5. **Gate on confirmation.** Unless `--yes` was passed or [the gate](#the-gate) resolves off, ask "Proceed?" and wait. If the
    user vetoes specific items (e.g. "keep the dependabot worktree"), honor that — drop
    them from the plan and proceed with the rest.
 6. **Execute** the confirmed plan ([Git scope](#git-scope) + [Harness scope](#harness-scope)).
@@ -85,7 +106,12 @@ execute path is identical every time. **Always go through the script — don't h
 > **nothing** and miss merged branches. The script instead asks GitHub for merged PR state via
 > `gh`, which is the authoritative signal regardless of how the PR was merged.
 
-Run it dry-run to get the plan, then with `--execute` once confirmed:
+Run it dry-run to get the plan, then with `--execute` once confirmed. `--execute` is the
+**script's** mutation switch, not an invocation token of this skill, and it has no config key
+of its own (#488 ruling, #494 row 4): the one thing that decides whether it is passed is
+[the gate](#the-gate) — `cleanUp.confirmGate`, or its `--yes` /
+`--confirm` tokens. Never pass it before the gate has been passed, and never
+pass it on the `--run <checkpoint>` sweep, which does not touch git.
 
 ```bash
 bash .claude/skills/clean-up/scripts/clean_up.sh            # dry run → the plan

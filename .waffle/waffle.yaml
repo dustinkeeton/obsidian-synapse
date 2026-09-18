@@ -5,8 +5,8 @@
 # the toolkit — edit the toolkit source, this config, or .waffle/extensions/
 # instead of the rendered files, then re-render:
 #
-#   npx github:dustinkeeton/wafflestack#v0.15.0 render
-#   npx github:dustinkeeton/wafflestack#v0.15.0 doctor --allow-missing   # drift check
+#   npx github:dustinkeeton/wafflestack#v0.16.1 render
+#   npx github:dustinkeeton/wafflestack#v0.16.1 doctor --allow-missing   # drift check
 #
 # Account-specific values (git.botEmail, git.botName) live in the gitignored
 # .waffle/waffle.local.yaml overlay; the git.* values below reference them via
@@ -55,7 +55,7 @@ config:
     testCmd: npm test
     typecheckCmd: npx tsc --noEmit --skipLibCheck
   doctor:
-    toolkitRef: github:dustinkeeton/wafflestack#v0.15.0
+    toolkitRef: github:dustinkeeton/wafflestack#v0.16.1
     # This repo deliberately gitignores some renders (.agents/, .codex/, and the
     # .claude skills that embed the local overlay) — tolerate absent files in CI,
     # still fail on hand-edited ones. Keeps the workflow managed instead of ejected.
