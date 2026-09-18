@@ -5,6 +5,21 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-09-17
+
+### Added
+
+- Operations now tell you when a result came from cache. If a transcript was reused from the transcript cache, or any AI call behind a summary, tidy, elaboration, or enrichment was replayed from the AI response cache, the finish message says so — with one aggregated line for batch runs. A fresh run reads exactly as it did before
+
+### Changed
+
+- "Fetch a fresh transcript" is now genuinely fresh: it bypasses the AI response cache for the re-fetched transcript's post-processing too, not just the transcript download
+
+### Fixed
+
+- Transcribing media with no speech no longer fabricates a transcript and writes it into your note. Silent, music-only, or annotation-only audio (`[Music]`, applause) is now recognized as "no speech" at the provider, skipped by AI post-processing, and kept out of the transcript cache. Single-file runs finish with "No speech detected — nothing to transcribe"; batch runs notify per silent item and still insert the rest
+- Per-note action buttons in the Synapse sidebar now run on the first click instead of needing a second one to focus the note
+
 ## [1.1.0] - 2026-09-15
 
 ### Added
