@@ -88,8 +88,7 @@ So: **write your review body without them.** The skills emit their own markers a
 review needs none, and the automation handles an unmarked human review just fine — run
 `/pr-response` by hand to answer one.
 
-**This is a safety rule, not hygiene.** What changed in #338 is *which half* of the system it
-protects, not whether it matters.
+**The rule outlived #338.** What changed is *what* it protects, not whether it stands.
 
 - **CI no longer reads bodies.** pr-green's dedup and delivery check key on a
   `waffle/adversarial-review` **commit status**, pr-response's delivery check on a
@@ -97,9 +96,10 @@ protects, not whether it matters.
   push access to write, so a pasted marker can no longer suppress the bot's review or dispatch a paid
   run — which is exactly what it *could* do before (a human comment on PR #207 and a QA review on
   PR #296 each did it by quoting a literal in prose).
-- **The skills and `autopilot` still do.** `autopilot` decides which findings have been triaged, and
-  then **arms auto-merge**; the skills recognize their own prior posts. A pasted marker still muddles
-  that record — and on the merge path a body that reads as *"already triaged"* is how findings get
-  merged with nobody having answered them.
+- **No gate reads them either.** `autopilot` decides which findings have been triaged — and then
+  **arms auto-merge** — from the `waffle/pr-response` commit status, never from a marked reply.
+- **The skills and `autopilot` still do, to recover history.** The skills recognize their own prior
+  posts by marker, and a replacement agent is seeded from them. A pasted marker muddles that record:
+  a bogus verdict history, a renumbered finding, a redundant round.
 
-So the rule stands, and it is now guarding the more expensive failure, not the cheaper one.
+So the rule stands: it now guards the review record rather than a gate.

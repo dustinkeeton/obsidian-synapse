@@ -2,9 +2,9 @@
 name: hygiene
 description: >-
   Run the scheduled repo-hygiene task list: refresh managed docs via the `docs`
-  skill, then land the result as a PR (per git-workflow conventions) with
-  auto-merge enabled. Dispatched daily by the waffle-hygiene workflow; also
-  user-invocable to run hygiene on demand.
+  skill, then land the result as a PR (per git-workflow conventions), arming
+  auto-merge unless the `hygiene.autoMerge` config key is off. Dispatched daily
+  by the waffle-hygiene workflow; also user-invocable to run hygiene on demand.
 user-invocable: true
 ---
 
@@ -38,8 +38,20 @@ After a task produces changes, follow the `git-workflow` skill end-to-end:
 4. **Run the pre-flight checklist** from the `git-workflow` skill before pushing.
 5. **Push and open a PR** titled `chore: daily hygiene — <task>`. The body says this was
    an automated hygiene run and summarizes what changed.
-6. **Enable auto-merge** so the PR merges itself once required checks pass, instead of
-   waiting on a human:
+6. **Arm auto-merge — governed by `hygiene.autoMerge`.** The key is declared `default: true`,
+   `modes: [true, false]`: no `prompt` mode and no invocation token, because a dispatched CI
+   skill has no human on its turn to ask and no argument list to parse (#488, part of #478).
+   **Rendered value for this repo: `true`** — the value after
+   `.waffle/waffle.local.yaml` → `.waffle/waffle.yaml` → the stack default (`true`). A consumer
+   changes it in config, never by editing this rendered file.
+
+   | `hygiene.autoMerge` | What this step does |
+   |---|---|
+   | `true` | Arm: run the command below; on a successful arm, label the PR. |
+   | `false` | Skip this step entirely: leave the PR open for a human to merge, apply no label, and report `auto-merge: not requested (hygiene.autoMerge: false)`. |
+
+   When the rendered value is `true`, arm so the PR merges itself once required checks pass,
+   instead of waiting on a human:
 
    ```bash
    gh pr merge --auto --merge
@@ -73,4 +85,5 @@ After a task produces changes, follow the `git-workflow` skill end-to-end:
 ## Report
 
 End with: each task run and its outcome — a PR URL, `no drift`, or `skipped (docs skill
-absent)` — and whether auto-merge was armed on each PR.
+absent)` — and, per PR, whether auto-merge was armed, could not be armed, or was
+`not requested` because `hygiene.autoMerge` is `false`.

@@ -31,7 +31,7 @@ item you are unsure of, run **`/waffle-setup`** first to confirm the exact ref.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack install <refs…> [--force] [--gitignore]
+npx --yes github:dustinkeeton/wafflestack#v0.16.1 install <refs…> [--force] [--gitignore]
 ```
 
 ## Interpret the result
@@ -47,3 +47,8 @@ npx --yes github:dustinkeeton/wafflestack install <refs…> [--force] [--gitigno
   do **not** blindly `--force` (that discards their file). Explain the collision, offer to move
   the file aside or fold it into a `.waffle/extensions/` file, and only `--force` once the user
   agrees the toolkit's version should own that path.
+- **Un-eject.** Installing a ref that sits in `eject:` **un-ejects** it — the CLI prints
+  `un-ejecting <ref>` and wafflestack manages the item again. The file on disk is the user's
+  project-owned copy, so if it differs from the render the install is **refused**: the CLI
+  restores `.waffle/waffle.yaml`, the item stays ejected, and nothing was written. Treat that
+  exactly like the collision above — their edits are what `--force` would discard.

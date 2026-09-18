@@ -14,7 +14,7 @@ It **errors if a config already exists** at any generation, so it is safe to run
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack init
+npx --yes github:dustinkeeton/wafflestack#v0.16.1 init
 ```
 
 Pass `--gitignore` through if `$ARGUMENTS` asks for it — that also appends
@@ -22,7 +22,7 @@ Pass `--gitignore` through if `$ARGUMENTS` asks for it — that also appends
 chosen):
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack init --gitignore
+npx --yes github:dustinkeeton/wafflestack#v0.16.1 init --gitignore
 ```
 
 ## After it runs

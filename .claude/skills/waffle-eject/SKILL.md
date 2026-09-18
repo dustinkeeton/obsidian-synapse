@@ -30,7 +30,7 @@ running:
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack eject <skills/NAME | agents/NAME | files/PATH>
+npx --yes github:dustinkeeton/wafflestack#v0.16.1 eject <skills/NAME | agents/NAME | files/PATH>
 ```
 
 ## After it runs
@@ -38,5 +38,7 @@ npx --yes github:dustinkeeton/wafflestack eject <skills/NAME | agents/NAME | fil
 - Report the released file(s) — they remain on disk, now project-owned.
 - Confirm `.waffle/waffle.yaml` recorded the eject (and that any matching `include:` entry was
   dropped, so it isn't left orphaned).
-- Note that re-adopting the toolkit's version later means removing the `eject:` entry (and
-  re-installing if needed), then re-rendering — possibly over your now-project-owned edits.
+- `eject` never renders. If the CLI prints a `note:` naming items the ejected ref was the only
+  thing selecting, relay it: they stay rendered until the next `wafflestack render` prunes them.
+- Note that re-adopting the toolkit's version later is `wafflestack install <ref>`: it un-ejects
+  the item, and refuses without `--force` when the project-owned copy has been edited.

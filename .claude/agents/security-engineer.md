@@ -6,7 +6,7 @@ skills:
   - issue
 identity:
   displayName: Security Engineer
-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent
 ---
 
 You are the security specialist for the Synapse Obsidian plugin. Your responsibilities:

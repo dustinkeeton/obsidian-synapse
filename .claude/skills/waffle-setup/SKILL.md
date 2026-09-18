@@ -17,7 +17,7 @@ so a re-run curates an update pass.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack setup
+npx --yes github:dustinkeeton/wafflestack#v0.16.1 setup
 ```
 
 ## Interpret it for the user
@@ -33,3 +33,12 @@ Do not just dump the output — read it and help the user decide:
 - **Surface prerequisites.** If a stack lists `env:` or a `setup:` block (e.g. `gh auth`,
   labels, a Projects v2 board, secrets), call those out before rendering — the render will
   warn on missing env, but service-side setup is on the user.
+- **Name the behavioral keys.** A key whose description lists modes (`true` / `false` /
+  `prompt`) governs a behavior — a confirmation gate, auto-merge arming, a review loop — and the
+  inventory shows it like any other defaulted key. Tell the user which ones their selection pulls
+  in and how to set one: a value from the key's modes under `config:` in `.waffle/waffle.yaml`
+  (shared) or `.waffle/waffle.local.yaml` (this machine), overridden per run by the skill's own
+  token (`--yes`, `+automerge`, …), never by editing the rendered skill. Flag the locked ones: the
+  four `autopilot.*` consents are `lockMode: prompt`, so config may not pre-answer them. The
+  playbook's step 3 subsection **"Behavioral keys — the three modes, precedence, `lockMode`"**
+  has the precedence order, the error text, and the full key table.

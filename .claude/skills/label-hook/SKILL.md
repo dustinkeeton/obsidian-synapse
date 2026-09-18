@@ -56,9 +56,12 @@ workflow. Log the drafted plan in the transcript, then apply it.
    ```bash
    gh issue view <N> --json title,body,labels,comments
    ```
-   Read the relevant source files. If the issue is too vague to implement safely,
-   comment on the issue explaining exactly what's missing and **stop** — do not guess
-   at large scope.
+   If the issue carries `waffle:reassess`, it is held for human re-evaluation:
+   comment that the implement run declined because the issue is labeled
+   `waffle:reassess` and needs reconfirmation first (removing the label is that
+   signal), then **stop** — leave the label in place. Otherwise read the relevant source
+   files. If the issue is too vague to implement safely, comment on the issue explaining
+   exactly what's missing and **stop** — do not guess at large scope.
 2. Follow the `git-workflow` skill end-to-end: a feature branch named for #N,
    implement the change, run the pre-flight checklist, commit with the attribution
    trailer, push, and open a PR whose body says `Closes #N` in the standard format.
@@ -77,6 +80,8 @@ workflow. Log the drafted plan in the transcript, then apply it.
   reviewed through the PR like everything else.
 - Never apply 'waffle:enrich' or 'waffle:implement' to any
   issue — a hook run must not be able to fan out new hook runs.
+- Never add or remove 'waffle:reassess' — it is a human's hold, and only a
+  human clears it.
 - Never apply 'waffle:release' to any PR you open — that label arms
   `waffle-release-hook` to push a tag on merge, and a hook run must not be able to trigger a
   release. Cutting a release is the `release` skill's job, run deliberately.
@@ -85,4 +90,4 @@ workflow. Log the drafted plan in the transcript, then apply it.
 
 End with: the issue URL, the action taken, what changed (edits made / PR URL), and
 anything skipped and why (e.g. board steps skipped for lack of scope, a vague-issue
-stop).
+stop, a reassess-hold decline).

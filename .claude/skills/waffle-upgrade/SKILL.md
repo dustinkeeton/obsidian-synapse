@@ -16,20 +16,23 @@ before anything is committed.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack upgrade
+npx --yes github:dustinkeeton/wafflestack#v0.16.1 upgrade
 ```
 
 ## The version this moves TO is the version you RAN (read this before reporting "already up to date")
 
 `upgrade` renders the content of the toolkit npx just fetched — it cannot render a version it is
-not. So when `github:dustinkeeton/wafflestack` is pinned to an old tag, the **old** CLI runs and reports
-`already on toolkit X`. That is not "you are up to date". **Escalate, in this order:**
+not. And since #469 `waffle.toolkitRef` **defaults to a pin** — the release that rendered this repo
+— so the command above normally fetches the toolkit you are already on, and it reports
+`already on toolkit X`. **That is the expected first result, not a misconfiguration and not "you
+are up to date"**: an upgrade from a pinned ref is always a two-step move, and step 1 is asking the
+pinned CLI which release to reach for. **Escalate, in this order:**
 
 1. **The run printed `a newer toolkit release exists: vX.Y.Z — … run:` followed by a command.**
    Run *that* command verbatim, and review *its* output instead. It is the release you actually
    want, and the pinned CLI just told you how to reach it.
-2. **It said `already on toolkit X` and printed no such line** (a CLI predating this check).
-   Probe with the ref **unpinned** — strip the `#tag`:
+2. **It said `already on toolkit X` and printed no such line** (a CLI predating this check, or one
+   whose release lookup could not answer). Probe with the ref **unpinned** — strip the `#tag`:
    ```bash
    npx --yes github:OWNER/REPO upgrade
    ```
@@ -48,9 +51,10 @@ The pins move themselves from there on: a successful `upgrade` rewrites a releas
 `waffle.toolkitRef` / `doctor.toolkitRef` in `.waffle/waffle.yaml` to the toolkit that rendered,
 before the render — so the new pin lands in the skills and the doctor workflow in the same run.
 An **unpinned** key is left floating and an absent one is never introduced; that is deliberate,
-not a miss. An absent `doctor.toolkitRef` needs no introducing: since #461 its stack default
-is pinned to the release that rendered the lock (`github:dustinkeeton/wafflestack#vX.Y.Z`),
-so the re-render alone moves the workflow's pin.
+not a miss. Neither key needs introducing when absent: both stack defaults are pinned to the
+release that rendered the lock (`github:dustinkeeton/wafflestack#vX.Y.Z` — `doctor.toolkitRef`
+since #461, `waffle.toolkitRef` since #469), so the re-render alone moves the workflow's pin and
+every `/waffle-*` skill's.
 
 ## Review the diff (the point of this skill)
 
