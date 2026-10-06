@@ -263,7 +263,7 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 | Import | From |
 |--------|------|
 | `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks` | `../shared` (index.ts) |
-| `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks` | `../shared` (note-scanner.ts) |
+| `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks`, `isCalloutHeader`, `calloutHeaderSource` | `../shared` (note-scanner.ts) |
 | `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:10) |
 | `findAudioEmbeds` | `../audio` |
 | `CommandRegistrar` | `../commands` |

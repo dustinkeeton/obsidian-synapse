@@ -294,7 +294,7 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:21
 
 ## Invariants
 
-- Applied sections are Obsidian callouts `> [!synapse-enrichment]` (`CALLOUT_TYPES.enrichment`, `src/shared/callouts.ts:L15`), written via `buildCallout` (`enrichment-applier.ts:L180,L208`).
+- Applied sections are Obsidian callouts `> [!info|synapse-enrichment]` (`CALLOUT_TYPES.enrichment`, `src/shared/callouts.ts:L16`; base from `CALLOUT_BASES`, #554), written via `buildCallout` (`enrichment-applier.ts:L180,L208`); `removeEnrichmentSections` (`:L234`) strips both that form and the legacy bare `> [!synapse-enrichment]` via `calloutHeaderSource`.
 - Idempotent re-write / undo: `removeEnrichmentSections` strips both callout sections AND legacy comment markers `%% synapse-enrichment-start %%` / `%% synapse-enrichment-end %%` (`ENRICHMENT_START` / `ENRICHMENT_END`, `src/shared/callouts.ts:L46-47`) before re-writing (`enrichment-applier.ts:L215-240`).
 - Writes are atomic: `apply` and `undo` re-derive content inside `vault.process` callbacks (`enrichment-applier.ts:L36,L129`).
 - Frontmatter keys never overwritten: `action: 'add'` skips if key exists; `action: 'merge'` appends new array values (dedup via `asStringArray`).

@@ -108,7 +108,7 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
    -> OCRResult { text, sourceName: fileName }
 
 Output callout (collapsed):
-   > [!synapse-ocr]- OCR of filename.png
+   > [!quote|synapse-ocr]- OCR of filename.png
    > ...extracted text...
 ```
 
@@ -117,7 +117,7 @@ Output callout (collapsed):
 `findImageEmbeds(content, sourcePath, metadataCache)` (note-scanner.ts:8):
 - Matches `IMAGE_EMBED_REGEX` per line; resolves files via `metadataCache.getFirstLinkpathDest()`.
 - Includes only `TFile` results whose name passes `IMAGE_EXTENSIONS`.
-- Skips embeds with an existing OCR marker in the 3 lines below (`hasExtractionBelow`), matching both the legacy `**OCR of <name>**` and the `[!synapse-ocr]` callout forms.
+- Skips embeds with an existing OCR marker in the 3 lines below (`hasExtractionBelow`), matching both the legacy `**OCR of <name>**` and the `synapse-ocr` callout (either spelling, `isCalloutHeader`, #554) forms.
 - Returns `ImageEmbed[]` with `fileName`, `file`, and zero-based `line`.
 
 ## Vision Model Override
@@ -164,7 +164,7 @@ All cross-module imports resolve through the `../shared` barrel, never an intern
 |--------|------|
 | `AIClient`, `ContentBlock`, `NotificationManager`, `AIRequestOptions` | `shared` (extractor.ts) |
 | `trackAiCache`, `withCacheReport`, `CacheUse` | `shared` (index.ts, #527) |
-| `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `sanitizeAIResponse`, `generateId` | `shared` (index.ts) |
+| `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `sanitizeAIResponse`, `generateId` | `shared` (index.ts); `isCalloutHeader` (note-scanner.ts) |
 | `CheckpointManager`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `shared` (index.ts) |
 | `NoteOperationQueue`, `OperationHandle` | `shared` (index.ts) |
 | `isPathExcluded`, `findMatchingRule` | `shared` (index.ts) |

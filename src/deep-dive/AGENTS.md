@@ -211,8 +211,8 @@ Registered at runtime in `index.ts:98` and `index.ts:106` via `registrar.registe
 
 | Callout | Defined / used | Emitted by |
 |---------|----------------|-----------|
-| `synapse-nav` | `syllabus-navigator.ts:205` | `renderNavigationBlock`; injected at the top of each accepted note body and replaced on every nav refresh |
-| `synapse-deep-dive` | `shared/callouts.ts:17` (`CALLOUT_TYPES.deepDive`), command icon `commands/icons.ts:31` | registered callout type + command/brand icon; not written into note bodies by this module |
+| `synapse-nav` | `syllabus-navigator.ts:205` (`calloutHeaderLine`, written as `[!note|synapse-nav]`; `injectNavigationBlock` replaces either spelling via `calloutHeaderSource`, #554) | `renderNavigationBlock`; injected at the top of each accepted note body and replaced on every nav refresh |
+| `synapse-deep-dive` | `shared/callouts.ts:18` (`CALLOUT_TYPES.deepDive`), command icon `commands/icons.ts:31` | registered callout type + command/brand icon; not written into note bodies by this module |
 
 ## Settings Keys
 

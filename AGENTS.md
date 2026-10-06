@@ -221,19 +221,21 @@ Legacy view `ProposalReviewView` (`src/elaboration/proposal-view.ts:7`) exists i
 
 ## Callout Types
 
-All AI-generated content uses Obsidian callouts. Registry in `src/shared/callouts.ts`:
+All AI-generated content uses Obsidian callouts written as `> [!<base>|<identity>]` (#554): the type slot is a native base (`summary` / `info` / `quote` / `note`) so theme styling applies; the metadata slot is the `synapse-*` identity (`data-callout-metadata`). Registry in `src/shared/callouts.ts`: `CALLOUT_TYPES` (identities, the value consumers pass around) + `CALLOUT_BASES` (`Record<CalloutType, CalloutBase>`, `shared/callouts.ts:30`). The legacy bare form `> [!synapse-*]` is read-only: `calloutIdentity` / `isCalloutHeader` / `calloutHeaderSource` accept both spellings, `calloutHeaderLine` writes only the new one, no vault migration (rewrite on touch). `styles.css:115-160` layers the Synapse icon via `.callout[data-callout="<base>"][data-callout-metadata~="<identity>"]` and keeps bare selectors as the legacy fallback.
 
-| Key | Type string | Usage |
-|-----|-------------|-------|
-| summary | `synapse-summary` | Inline URL/transcription summaries |
-| transcription | `synapse-transcription` | Audio/video transcriptions |
-| lyrics | `synapse-lyrics` | Transcripts reformatted by the lyrics schema (#234; `calloutForTranscriptionResult`, `shared/callouts.ts:33-35`); the summarize note-scanner never re-condenses it into a summary (`shared/callouts.ts:26-28`); the audio note-scanner counts it as already transcribed (`audio/note-scanner.ts:50`) |
-| verse | `synapse-verse` | Registered only (`shared/callouts.ts:13`); no write site in `src/` — the lyrics schema prompt emits `[!verse]` (`shared/content-schemas.ts:330-333`) |
-| chorus | `synapse-chorus` | Registered only (`shared/callouts.ts:14`); no write site in `src/` — the lyrics schema prompt emits `[!chorus]` (`shared/content-schemas.ts:330-336`) |
-| enrichment | `synapse-enrichment` | Enrichment sections |
-| elaboration | `synapse-elaboration` | Legacy: no write site in `src/` since #552 (accept rewrites the body, `elaboration/index.ts:526`); registered (`shared/callouts.ts:16`) + styled (`styles.css:149`) only to render pre-#552 notes |
-| deepDive | `synapse-deep-dive` | Deep dive content |
-| nav | `synapse-nav` | Deep dive navigation blocks |
+| Key | Identity | Base | Usage |
+|-----|----------|------|-------|
+| summary | `synapse-summary` | `summary` | Inline URL/transcription summaries |
+| transcription | `synapse-transcription` | `quote` | Audio/video transcriptions |
+| lyrics | `synapse-lyrics` | `quote` | Transcripts reformatted by the lyrics schema (#234; `calloutForTranscriptionResult`, `shared/callouts.ts:53-55`); the summarize note-scanner never re-condenses it into a summary (`shared/callouts.ts:44-49`); the audio note-scanner counts it as already transcribed (`audio/note-scanner.ts:50`) |
+| verse | `synapse-verse` | `note` | Registered only (`shared/callouts.ts:14`); no write site in `src/` — the lyrics schema prompt emits `[!verse]` (`shared/content-schemas.ts:330-333`) |
+| chorus | `synapse-chorus` | `note` | Registered only (`shared/callouts.ts:15`); no write site in `src/` — the lyrics schema prompt emits `[!chorus]` (`shared/content-schemas.ts:330-336`) |
+| enrichment | `synapse-enrichment` | `info` | Enrichment sections |
+| elaboration | `synapse-elaboration` | `note` | Legacy: no write site in `src/` since #552 (accept rewrites the body, `elaboration/index.ts:526`); registered (`shared/callouts.ts:17`) + styled (`styles.css:152`, bare selector only) to render pre-#552 notes |
+| deepDive | `synapse-deep-dive` | `note` | Deep dive content |
+| nav | `synapse-nav` | `note` | Deep dive navigation blocks (`deep-dive/syllabus-navigator.ts` writes via `calloutHeaderLine`, removes via `calloutHeaderSource`) |
+| ocr | `synapse-ocr` | `quote` | Image OCR extraction results |
+| illustrate | `synapse-illustrate` | `note` | Caption + source/license/attribution under an inserted photo embed or Mermaid block (#213) |
 | ocr | `synapse-ocr` | Image OCR extraction results |
 | illustrate | `synapse-illustrate` | Caption + source/license/attribution under an inserted photo embed or Mermaid block (#213) |
 

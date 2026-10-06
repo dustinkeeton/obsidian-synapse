@@ -198,7 +198,7 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 - Skips URLs with an existing transcription callout within 3 lines below
 - Returns `VideoUrlEmbed[]` with line numbers
 
-`hasTranscriptionBelow(lines, embedLine, url)` (`note-scanner.ts:33`) matches the legacy `**Transcription of ...**` and the `[!<CALLOUT_TYPES.transcription>]` callout formats.
+`hasTranscriptionBelow(lines, embedLine, url)` (`note-scanner.ts:31`) matches the legacy `**Transcription of ...**` and the `synapse-transcription` callout (either spelling, `isCalloutHeader`, #554) formats.
 
 ## Commands Registered
 
@@ -240,7 +240,7 @@ Settings UI: `renderVideoSettings` (`settings-section.ts:152`) renders the accor
 In:
 - `../audio` — `AudioModule` (runtime value edge: reuses the transcription pipeline), `TranscriptionResult` (type)
 - `../commands` — `CommandRegistrar`
-- `../shared` — `NoteOperationQueue` (#483), `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findAvailableVaultPath`, `isNoSpeechError`, `noSpeechNotice`, `transcriptCacheUse`, `withCacheReport` (index.ts:5-10); type-only `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule` (index.ts:11); `TimeRange` (types.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES`, `findUrls` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
+- `../shared` — `NoteOperationQueue` (#483), `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findAvailableVaultPath`, `isNoSpeechError`, `noSpeechNotice`, `transcriptCacheUse`, `withCacheReport` (index.ts:5-10); type-only `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule` (index.ts:11); `TimeRange` (types.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES`, `isCalloutHeader`, `findUrls` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
 - `../settings` — `SynapseSettings`, `VideoSettings`, `FrameExtractionSettings` (types)
 
 Out (consumed by):
