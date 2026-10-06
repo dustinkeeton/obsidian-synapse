@@ -69,7 +69,8 @@ export function insertAtAnchor(content: string, anchor: string, block: string): 
 		body = `${parsed.body.trimEnd()}\n\n${trimmedBlock}\n`;
 	} else {
 		const end = blockEnd(lines, at);
-		lines.splice(end + 1, 0, '', trimmedBlock);
+		const gap = end + 1 < lines.length && lines[end + 1].trim() !== '' ? [''] : [];
+		lines.splice(end + 1, 0, '', trimmedBlock, ...gap);
 		body = lines.join('\n');
 	}
 	return serializeFrontmatter(parsed.frontmatter, body);

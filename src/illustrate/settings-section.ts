@@ -68,7 +68,7 @@ export function renderIllustrateSettings(ctx: SettingsSectionContext): void {
 		.setDesc('Only photos under a checked license are proposed. Non-commercial and no-derivatives licenses are off by default.');
 	const chips = licenseSetting.settingEl.createDiv({ cls: 'synapse-illustrate-licenses' });
 	for (const name of LICENSE_NAMES) {
-		const label = chips.createEl('label', { cls: 'synapse-checklist-row synapse-illustrate-license' });
+		const label = chips.createEl('label', { cls: ['synapse-checklist-row', 'synapse-illustrate-license'] });
 		const checkbox = label.createEl('input', { type: 'checkbox', attr: { 'data-license': name } });
 		checkbox.checked = plugin.settings.illustrate.licenseFilter.includes(name);
 		checkbox.addEventListener('change', () => {
