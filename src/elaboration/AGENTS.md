@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Elaboration Module
@@ -25,6 +25,8 @@ class ElaborationModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null
 }
+
+const ELABORATION_PROVENANCE: '*Elaboration by Synapse*'   // index.ts:21; first body line of every accepted section (#550)
 
 type DetectionReason =
   | { type: 'short-note'; wordCount: number }
@@ -82,7 +84,7 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
 | File | Class/Export | Purpose |
 |------|-------------|---------|
 | `types.ts` | `DetectionReason`, `DetectionResult`, `Proposal` | Type definitions |
-| `index.ts` | `ElaborationModule`, type re-exports, `renderElaborationSettings` | Orchestrator: commands, scan flows, accept/reject, checkpoints, auto-accept, per-note queue serialization (private `generateForNote`, `generateForBatch`, `applyProposal`, #483) |
+| `index.ts` | `ElaborationModule`, `ELABORATION_PROVENANCE`, type re-exports, `renderElaborationSettings` | Orchestrator: commands, scan flows, accept/reject, checkpoints, auto-accept, per-note queue serialization (private `generateForNote`, `generateForBatch`, `applyProposal`, #483) |
 | `detector.ts` | `PlaceholderDetector` | Local stub detection; path + tag exclusions |
 | `proposer.ts` | `ProposalGenerator`, `proposalContentKey`, `DEFAULT_CONTEXT_BUDGET_CHARS` | AI proposal generation; deterministic content-key dedup; title/backlink/link/tag/image/external context under a char budget + anti-fabrication guards |
 | `proposal-store.ts` | `ProposalStore` | CRUD for proposal JSON in `elaboration.proposalFolderPath` (default `.synapse/proposals`); `loadByNote` for dedup lookups |
@@ -159,10 +161,10 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
 9. onViewRefreshNeeded() -> main refreshes unified view
    |
 10. User action (unified view / legacy modal):
-   Accept -> acceptProposal takes the source note's queue slot (silently, index.ts:484)
+   Accept -> acceptProposal takes the source note's queue slot (silently, index.ts:489)
              -> applyProposal: stripCodeFences(sanitizeAIResponse(additions)),
-             buildCallout(CALLOUT_TYPES.elaboration,'Elaboration',...),
-             vault.process(file, d => d.trimEnd()+'\n'+callout)  (index.ts:512)
+             buildMarkerSection(MARKER_KINDS.elaboration, ELABORATION_PROVENANCE+'\n\n'+additions)  (index.ts:512),
+             vault.process(file, d => d.trimEnd()+'\n'+section)  (index.ts:517)
    Reject -> status = 'rejected'
 ```
 
@@ -212,7 +214,19 @@ guardProposal(detection: DetectionResult): Promise<
 
 ## Accept Behavior
 
-`acceptProposal(id, editedContent?, options?)` (index.ts:477) is a thin queue wrapper (#483): it loads the proposal for its `sourceNotePath`, takes that note's `NoteOperationQueue` slot silently (index.ts:484), and runs `applyProposal` (index.ts:491), which RE-loads the proposal so the status guard is evaluated under the slot rather than against a pre-wait snapshot. In `applyProposal`: no-op if `proposal.status !== 'pending'` (double-accept guard); additions sanitized via `stripCodeFences(sanitizeAIResponse(...))`, wrapped in a `synapse-elaboration` callout via `buildCallout(CALLOUT_TYPES.elaboration, 'Elaboration', ...)`, and appended with `vault.process(file, d => d.trimEnd() + '\n' + callout)`. Then `store.updateStatus(id,'accepted')` and `onProposalAccepted?.(sourceNotePath)`. `options.silent` suppresses the per-proposal Notice + refresh (used by batch auto-accept).
+`acceptProposal(id, editedContent?, options?)` (index.ts:482) is a thin queue wrapper (#483): it loads the proposal for its `sourceNotePath`, takes that note's `NoteOperationQueue` slot silently (index.ts:489), and runs `applyProposal` (index.ts:496), which RE-loads the proposal so the status guard is evaluated under the slot rather than against a pre-wait snapshot. In `applyProposal`: no-op if `proposal.status !== 'pending'` (double-accept guard); additions sanitized via `stripCodeFences(sanitizeAIResponse(...))`, wrapped as plain Markdown in an elaboration marker pair via `buildMarkerSection(MARKER_KINDS.elaboration, ELABORATION_PROVENANCE + '\n\n' + additions)` (#550), and appended with `vault.process(file, d => d.trimEnd() + '\n' + section)`. Then `store.updateStatus(id,'accepted')` and `onProposalAccepted?.(sourceNotePath, { sourceUrls, producedRegion: { kind: 'whole-note' } })`. `options.silent` suppresses the per-proposal Notice + refresh (used by batch auto-accept).
+
+Written shape (no blockquote; headings in the additions become real note headings):
+
+```
+<!-- synapse:elaboration -->
+*Elaboration by Synapse*
+
+<sanitized additions>
+<!-- /synapse:elaboration -->
+```
+
+Nothing in this module scans for its own output (idempotence is the `status !== 'pending'` guard + deterministic proposal id). Consumers that do scan — `summarize/note-scanner.ts` — skip lines inside the marker pair (as they skipped the old blockquote) and still treat a legacy `> [!synapse-elaboration]` callout as a plain blockquote; legacy notes are never rewritten and `styles.css` keeps their callout rule.
 
 ## Image Analysis
 
@@ -278,7 +292,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 
 | Symbols | From | Used in |
 |---------|------|---------|
-| `buildCallout`, `CALLOUT_TYPES`, `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `NoteOperationQueue`, `sanitizeAIResponse`, `stripCodeFences`, `CheckpointManager`, `generateId`, `fireAndForget`, `reviewAction`, `trackAiCache`, `withCacheReport` (+ types `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule`) | `../shared` | index.ts:3-10 |
+| `buildMarkerSection`, `MARKER_KINDS`, `extractUrls`, `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `NoteOperationQueue`, `sanitizeAIResponse`, `stripCodeFences`, `CheckpointManager`, `generateId`, `fireAndForget`, `reviewAction`, `trackAiCache`, `withCacheReport` (+ types `SourceContext`, `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule`) | `../shared` | index.ts:2-12 |
 | `wordCount`, `isPathExcluded`, `matchesExcludeTag`, `getIncludedMarkdownFiles` | `../shared` | detector.ts |
 | `AIClient`, `sanitizeAIResponse`, `stripCodeFences`, `isTwitterUrl`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `fetchArticleContent`, `linkLoadError`, `NotificationManager`, `isGenericTitle`, `hashString`, `contentKey`, `wrapUntrusted`, `redactError`, `isPathExcluded`, `findUrls`, `isEffectivelyEmptyProse` | `../shared` | proposer.ts |
 | `AIClient`, `arrayBufferToBase64`, `NotificationManager`, `redactError` (+ type `ContentBlock`) | `../shared` | image-analyzer.ts |

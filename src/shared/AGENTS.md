@@ -189,6 +189,23 @@ const ENRICHMENT_END: string     // '%% synapse-enrichment-end %%'
 function buildCallout(type: CalloutType, title: string, body: string, collapsed?: boolean): string
 function calloutForTranscriptionResult(result: { reformatted?: boolean; schemaId?: string }): { type: CalloutType; verb: string }
 
+// markers.ts (#550: invisible HTML-comment pair wrapping plain-Markdown generated sections; used by summarize + elaboration, legacy `[!synapse-*]` callouts stay recognised by every scanner)
+const MARKER_KINDS: { summary: 'summary'; elaboration: 'elaboration' }
+type MarkerKind = (typeof MARKER_KINDS)[keyof typeof MARKER_KINDS]
+type MarkerAttrs = Record<string, string>
+interface MarkerOpener { kind: string; attrs: MarkerAttrs }
+interface MarkerRegion extends MarkerOpener { start: number; end: number; body: string }   // start/end = opener/closer line indexes (inclusive); body = lines strictly between
+function markerOpener(kind: MarkerKind, attrs?: MarkerAttrs): string     // '<!-- synapse:summary source="X" -->'; empty-string attrs dropped
+function markerCloser(kind: MarkerKind): string                          // '<!-- /synapse:summary -->'
+function buildMarkerSection(kind: MarkerKind, body: string, attrs?: MarkerAttrs): string   // ['', opener, ...body, closer, ''] joined (same outer blank lines as buildCallout); any `<!-- [/]synapse:` inside body is neutralised to `synapse&#58;` so AI text can't close the region
+function encodeMarkerAttr(value: string): string                         // & -> &amp;, " -> &quot;, -- -> -&#45; (HTML comments may not contain `--`), newlines -> space
+function decodeMarkerAttr(value: string): string
+function parseMarkerOpener(line: string): MarkerOpener | null           // whole-line match only (leading/trailing whitespace allowed)
+function parseMarkerCloser(line: string): string | null                 // kind
+function findMarkerRegions(lines: string[], kind?: string): MarkerRegion[]   // stack-paired: a closer binds the nearest open opener of its kind; stray closers and unclosed openers are ignored; sorted by start
+function markerCoveredLines(lines: string[], kind?: string): Set<number>     // every line index inside a region, markers included
+function markerAttrsMatch(region: MarkerOpener, wanted?: MarkerAttrs): boolean   // region carries every wanted entry; undefined/{} always true
+
 // diagram-generator.ts
 function generateTreeDiagram(root: TreeNode): string
 function generateMoveDiagram(moves: MoveRecord[]): string
@@ -364,19 +381,19 @@ function wrapUntrusted(content: string, source?: string): string   // fence cont
 interface InsertionAnchor { kind: 'heading' | 'paragraph' | 'end'; text: string }   // 'heading' matches heading lines only; 'paragraph' matches any line incl. inside blocks (a heading hit promotes); 'end' = explicit append
 type InsertionStrategy = 'after-heading' | 'after-section-lead' | 'after-paragraph' | 'append'
 type InsertionBlockType = 'paragraph' | 'heading' | 'code' | 'list' | 'table' | 'quote' | 'html' | 'math'
-type RegionLocator = { kind: 'callout'; calloutType: string; title?: string } | { kind: 'whole-note' }   // the part of a note a previous action produced
+type RegionLocator = { kind: 'callout'; calloutType: string; title?: string } | { kind: 'marker'; marker: string; attrs?: MarkerAttrs } | { kind: 'whole-note' }   // the part of a note a previous action produced; 'marker' = a `<!-- synapse:<marker> -->` pair (#550), attrs-matched when given
 interface ResolveInsertionOptions { within?: RegionLocator; insideContainers?: boolean }
 interface ResolvedInsertion { strategy; line: number | null; matchedText: string | null; anchor; blockType?; container?: { prefix: string; label: string } }   // line = body line index the block goes after (always a block END; null = append); container set when the insertion lands inside a quote/callout
 interface StructBlock { type; start; end; prefix?: string; children?: StructBlock[] }   // quote blocks carry `> ` and the scan of their de-prefixed lines (child indexes relative to start)
 function scanBlocks(lines: string[]): StructBlock[]   // fences (``` / ~~~ / $$) span blank lines, loose lists + indented continuations, table header+separator+rows, contiguous `>` quotes (with inner structure), html runs
-function locateRegion(content: string, within: RegionLocator): { start; end; prefix; label; text } | null   // first quote block whose header is `[!<calloutType>]` (title-matched when given); text = de-prefixed region
-function resolveInsertionPoint(content: string, anchor: InsertionAnchor, opts?: ResolveInsertionOptions): ResolvedInsertion   // pure, frontmatter-aware; exact > starts-with > contains > (long) reverse-prefix; the containing block is the unit; heading -> after its opening paragraph ('after-section-lead') else directly after it; `within` restricts matching to the region and a miss resolves to the region END (container set, never the note end); `insideContainers` descends into quotes and lands after the inner block (container prefix accumulates per depth); neither -> a callout is one block
+function locateRegion(content: string, within: RegionLocator): { start; end; prefix; label; text } | null   // callout: first quote block whose header is `[!<calloutType>]` (title-matched when given), prefix '> ', text = de-prefixed region incl. header; marker: first region of that kind matching attrs, start/end = the lines strictly between the comment pair, prefix '', text = body (comments excluded), null for an empty pair; label = kind sans `synapse-`
+function resolveInsertionPoint(content: string, anchor: InsertionAnchor, opts?: ResolveInsertionOptions): ResolvedInsertion   // pure, frontmatter-aware; exact > starts-with > contains > (long) reverse-prefix; the containing block is the unit; heading -> after its opening paragraph ('after-section-lead') else directly after it; `within` (callout or marker) restricts matching to the region and a miss resolves to the region END (container set, never the note end; for a marker region container.prefix is '' so inserted lines stay unprefixed and land before the closer); `insideContainers` descends into quotes and lands after the inner block (container prefix accumulates per depth); neither -> a callout is one block
 function applyInsertion(content: string, resolved: ResolvedInsertion, block: string): string   // splice after `line` (stale/out-of-range -> append); exactly one blank line before and after (a bare `>` spacer inside a container); every inserted line carries container.prefix; frontmatter untouched
 function describeInsertion(resolved: ResolvedInsertion): string   // 'After heading "X"' | 'After the opening paragraph of "X"' | 'After <paragraph|list|table|code block|callout|…> "…"' | 'At end of note[ (anchor not found)]' | 'Inside the summary, after paragraph "…"' | 'Inside the summary, at its end'
 
 // source-context.ts (#213: what a completed action hands to post-op follow-ups)
 interface SourceImage { url: string; alt?: string; pageUrl: string; title?: string }
-interface SourceContext { sourceUrls?: string[]; sourceImages?: SourceImage[]; producedRegion?: RegionLocator }   // producedRegion: summarize = its summary callout (title when exactly one), URL transcription = its transcript callout, elaboration/enrichment/deep-dive = whole-note
+interface SourceContext { sourceUrls?: string[]; sourceImages?: SourceImage[]; producedRegion?: RegionLocator }   // producedRegion: summarize = { kind: 'marker', marker: 'summary', attrs } (attrs = the one section's `{ source }` / `{ title }` when exactly one, else undefined), URL transcription = its transcript callout, elaboration/enrichment/deep-dive = whole-note
 
 // content-fetcher.ts additions (#213)
 function fetchHtmlDocument(url: string): Promise<{ html: string; contentType: string }>   // raw fetch + content type (same UA/timeout as fetchHtml)
@@ -532,6 +549,8 @@ function scoreLyricsContent(content: string): number
 | `frontmatter-utils.test.ts` | Tests | Frontmatter tests |
 | `callouts.ts` | `CALLOUT_TYPES`, `buildCallout`, `calloutForTranscriptionResult`, `ENRICHMENT_START`, `ENRICHMENT_END`, `CalloutType` | Unified callout registry and builder for AI content. `CALLOUT_TYPES` adds `lyrics`/`verse`/`chorus` entries. `calloutForTranscriptionResult` selects callout type and verb based on `schemaId` |
 | `callouts.test.ts` | Tests | Callout tests |
+| `markers.ts` | `MARKER_KINDS`, `buildMarkerSection`, `markerOpener`, `markerCloser`, `parseMarkerOpener`, `parseMarkerCloser`, `findMarkerRegions`, `markerCoveredLines`, `markerAttrsMatch`, `encodeMarkerAttr`, `decodeMarkerAttr`, `MarkerKind`, `MarkerAttrs`, `MarkerOpener`, `MarkerRegion` | HTML-comment section markers for plain-Markdown generated content (#550): builder, attribute escaping (`--`/`"`-safe), whole-line parsers, stack-paired region finder. Used by summarize (output + scanner) and elaboration (accept); `insertion-point.ts` locates marker regions for post-op placement |
+| `markers.test.ts` | Tests | Opener/closer shape, attr round-trip (`--`, `"`, `&`, entities), body neutralisation, parse rejections, nested/adjacent/stray/unclosed regions, frontmatter line indexes, legacy-callout coexistence, covered lines, attrs matching |
 | `diagram-generator.ts` | `generateTreeDiagram`, `generateMoveDiagram`, `generateOrganizeSummary`, `TreeNode`, `MoveRecord` | Mermaid diagram generation for organize summaries |
 | `diagram-generator.test.ts` | Tests | Diagram generator tests |
 | `slider-helper.ts` | `addEnhancedSlider` | Settings UI helper for range sliders with ticks |
@@ -584,8 +603,8 @@ function scoreLyricsContent(content: string): number
 | `hash-utils.test.ts` | Tests | Hash + content-key tests |
 | `untrusted-content.ts` | `wrapUntrusted`, `UNTRUSTED_OPEN_TAG`, `UNTRUSTED_CLOSE_FENCE` | Structural prompt-injection defense: fences fetched external text (article/tweet/Reddit bodies, image analysis) in labeled delimiters with a data-not-instructions frame + anti-breakout sentinel scrubbing. Used by elaboration/proposer |
 | `untrusted-content.test.ts` | Tests | Fence/sanitization tests |
-| `insertion-point.ts` | `resolveInsertionPoint`, `applyInsertion`, `describeInsertion`, `scanBlocks`, `locateRegion`, `InsertionAnchor`, `InsertionStrategy`, `InsertionBlockType`, `ResolvedInsertion`, `RegionLocator`, `ResolveInsertionOptions`, `LocatedRegion`, `StructBlock` | Structure-aware, region/container-aware insertion determination (#213): scan the body into blocks (quotes carry inner structure), resolve an anchor to the END of its containing block, prefer after a heading's opening paragraph, optionally restrict to a produced region and land inside callouts with a prefix, apply with exactly one blank line each side, describe for review UIs. Resolve at proposal time for the preview, re-resolve at accept against the live note. Used by illustrate; the seam for any proposal kind that places content mid-document |
-| `insertion-point.test.ts` | Tests | Block scanner (fences with blanks, loose lists, tables, callouts, math, quote children), section-lead vs heading-only, mid-paragraph fragment, never-inside-block, blank-line discipline, stale-line fallback, region by type/title, miss-in-region, prefixed embed/nested callout/mermaid application, depth-2 prefixes, descriptions |
+| `insertion-point.ts` | `resolveInsertionPoint`, `applyInsertion`, `describeInsertion`, `scanBlocks`, `locateRegion`, `InsertionAnchor`, `InsertionStrategy`, `InsertionBlockType`, `ResolvedInsertion`, `RegionLocator`, `ResolveInsertionOptions`, `LocatedRegion`, `StructBlock` | Structure-aware, region/container-aware insertion determination (#213): scan the body into blocks (quotes carry inner structure), resolve an anchor to the END of its containing block, prefer after a heading's opening paragraph, optionally restrict to a produced region — a callout (landing inside with a `> ` prefix) or a marker pair (#550, unprefixed, before the closer) — apply with exactly one blank line each side, describe for review UIs. Resolve at proposal time for the preview, re-resolve at accept against the live note. Used by illustrate; the seam for any proposal kind that places content mid-document |
+| `insertion-point.test.ts` | Tests | Block scanner (fences with blanks, loose lists, tables, callouts, math, quote children), section-lead vs heading-only, mid-paragraph fragment, never-inside-block, blank-line discipline, stale-line fallback, region by type/title, miss-in-region, prefixed embed/nested callout/mermaid application, depth-2 prefixes, descriptions; marker regions (#550): locate by kind/attrs excluding comment lines, empty-pair null, unprefixed resolve/miss/end, apply keeps the closer last, frontmatter intact |
 | `source-context.ts` | `SourceImage`, `SourceContext` | Post-op source material types (#213): URLs and images an action acted on |
 | `extract-image-urls.test.ts` | Tests | `extractImageUrls` ordering/resolution/filters/cap; `fetchPageContentWithImages`; `fetchHtmlDocument` content type |
 | `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag |
@@ -768,3 +787,6 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `detectSchemaFor` | summarize/index (summary stage), audio/transcriber (transcription stage) |
 | `isLyricsContent` / `scoreLyricsContent` | content-schemas (internal detection), audio transcription pipeline |
 | `calloutForTranscriptionResult` | audio/transcriber, video transcription pipeline |
+| `buildMarkerSection` / `MARKER_KINDS` | summarize/index (summary + combined sections), elaboration/index (accept) |
+| `parseMarkerOpener` / `markerCoveredLines` | summarize/note-scanner (`hasSummaryBelow`, `findSummarizeTargets`, `extractNoteProse`) |
+| `findMarkerRegions` / `markerAttrsMatch` | insertion-point/locateRegion (post-op marker regions) |

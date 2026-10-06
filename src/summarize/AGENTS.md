@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Summarize Module
 
-Summarizes a note's own prose plus the URLs, transcription blocks, and audio embeds it references, emitting either per-item summary callouts or one combined summary, and creating standalone notes for enrichment-section links. Video URLs and audio embeds are transcribed via injected callbacks (no static `video/` import). Media URLs are transcribed on every platform (the injected callback runs the tiered router, which reads/writes the shared transcript store, #488); a media URL whose transcription fails is a failed target — page HTML is never summarized in its place.
+Summarizes a note's own prose plus the URLs, transcription blocks, and audio embeds it references, emitting either per-item summary sections or one combined summary (plain Markdown inside a `<!-- synapse:summary -->` marker pair, #550), and creating standalone notes for enrichment-section links. Video URLs and audio embeds are transcribed via injected callbacks (no static `video/` import). Media URLs are transcribed on every platform (the injected callback runs the tiered router, which reads/writes the shared transcript store, #488); a media URL whose transcription fails is a failed target — page HTML is never summarized in its place.
 
 ## Public API (`index.ts`)
 
@@ -71,11 +71,11 @@ awaited, so there is no cycle).
 | `index.ts` | `SummarizeModule`, type + fn re-exports | Orchestrator, commands, scan + summarize flows |
 | `types.ts` | `SummarizeTarget` | Target type model |
 | `summarizer.ts` | `Summarizer` | AI summarization with style (bullets/paragraph/key-points) |
-| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks via shared `findUrls` / `findMarkdownLinks` (paren-aware, #543); note-prose extraction. A URL target is dropped when a transcription block for the same (social-normalized) source exists ANYWHERE in the note (`dropUrlsTranscribedElsewhere`, #488), not only within 5 lines below it |
+| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks via shared `findUrls` / `findMarkdownLinks` (paren-aware, #543); note-prose extraction. A URL target is dropped when a transcription block for the same (social-normalized) source exists ANYWHERE in the note (`dropUrlsTranscribedElsewhere`, #488), not only within 5 lines below it. Lines inside ANY `<!-- synapse:* -->` region are never scanned (`markerCoveredLines`, #550 — the summary heading repeats the URL; parity with the old blockquote skip). `hasSummaryBelow` (`note-scanner.ts:169`) matches, within 3 lines, a `synapse:summary` opener whose `source` attr equals the raw or social-normalized source, OR either legacy header |
 | `summarize-modal.ts` | `SummarizeSelectionModal`, `SummarizeModalDefaults`, `countCombinable` | Selection modal for 2+ targets; include-note + combine toggles (#367). The combine toggle renders only for 2+ combinable (non-enrichment) items, hides (`.is-hidden`) while the live selection drops below 2, and `combine` is forced false for a single chosen item (#544) |
 | `settings-section.ts` | `renderSummarizeSettings` | Summarize settings UI section (#243) |
 | `summarizer.test.ts` | Tests | Summarizer style/prompt tests |
-| `note-scanner.test.ts` | Tests | Scanner + prose-extraction tests |
+| `note-scanner.test.ts` | Tests | Scanner + prose-extraction tests; marker-format cases (#550) sit beside the legacy callout/bold ones, incl. coexistence in one note |
 | `summarize-module.test.ts` | Tests | SummarizeModule integration tests |
 | `audio-summarize.test.ts` | Tests | Audio-embed summarization tests |
 | `combine-summarize.test.ts` | Tests | Combined-summary tests (#367) |
@@ -130,7 +130,7 @@ combineSelectedTargets(file, targets, op, content)                    index.ts:3
   --> join sections w/ '## <label>' + '---' separators, slice(maxContentLength)
   --> Summarizer.summarize(combinedText, labels, style, prompt)
         prompt = customPrompt > schema('summary') > COMPREHENSIVE_SUMMARY_PROMPT
-  --> vault.process(file): append ONE 'Combined summary (N items)' callout at end
+  --> vault.process(file): append ONE 'Combined summary (N items)' marker section at end  (summarySection, index.ts:73; attrs { title })
 
 processFileTargets(file, targets, op, content)                        index.ts:594
   (queue-free core — the caller holds the slot)
@@ -138,10 +138,10 @@ processFileTargets(file, targets, op, content)                        index.ts:5
     enrichment ref (inEnrichmentSection + linkTitle):
       --> if note exists: rewrite link only (linksUpdated++)
       --> else fetch + summarize(COMPREHENSIVE_SUMMARY_PROMPT) -> pendingNote + link rewrite
-    audio:        fetchContentForAudio() -> summarize -> splice inline callout
-    transcription: reuse target.content -> summarize -> splice inline callout
-    note-content:  reuse target.content -> summarize -> splice inline callout
-    inline URL:    fetchUrlContentOrNotify() -> summarize -> splice inline callout
+    audio:        fetchContentForAudio() -> summarize -> splice inline marker section (attrs { source })
+    transcription: reuse target.content -> summarize -> splice inline marker section
+    note-content:  reuse target.content -> summarize -> splice inline marker section
+    inline URL:    fetchUrlContentOrNotify() -> summarize -> splice inline marker section
                    prompt = customPrompt > schema('summary') > style default
   --> vault.process(file, finalContent)   [source written FIRST]
   --> vault.create() per pendingNote      [new notes AFTER source]
@@ -149,7 +149,7 @@ processFileTargets(file, targets, op, content)                        index.ts:5
 
 fireEnrichmentCallbacks(path, result)                                 index.ts:577
   (called only AFTER the note's queue slot is released, #483)
-  --> onSummaryComplete?.(path, ctx)  [only if inlineCompleted>0 and enrichmentCompleted==0; ctx = { sourceUrls, sourceImages, producedRegion: synapse-summary callout }] (#213)
+  --> onSummaryComplete?.(path, ctx)  [only if inlineCompleted>0 and enrichmentCompleted==0; ctx = { sourceUrls, sourceImages, producedRegion: { kind: 'marker', marker: 'summary', attrs } } — attrs = the single written section's attrs, undefined when several] (#213, #550)
   --> onSummaryComplete?.(newNotePath, ctx)  per created note (producedRegion whole-note); each distinct path fires at most once per run
   caller separately: onOrganizeRequested?.(file) if autoOrganizeOnSummarize
 ```
@@ -196,19 +196,36 @@ Routing order for a target URL:
 3. `isRedditUrl(url)` -> `fetchRedditContent(url, max)` (Reddit is generic 'article'; routed explicitly to the RSS fetcher).
 4. else -> `fetchPageContent(url, max)` (non-media URLs only).
 
-`transcribeUrl`/`transcribeAudio` are injected by `modules/registry.ts` (after `deps`) on EVERY platform. `transcribeUrl` delegates to `UrlTranscriptionRouter.transcribe(url, { update })` and returns the router's `UrlTranscript` unchanged (read here as `TranscribedMedia`: `text`, `cached`, `aiCached`); the router consults the shared `TranscriptCache` first (so a URL transcribed explicitly earlier is reused, wherever or whether its callout appears in the note) and writes every fresh tier result through (so an explicit "Transcribe media" after a summarize never re-runs caption fetch / download / ASR), then runs the caption tier on every platform and the yt-dlp tier on desktop only — a non-YouTube or caption-less URL on mobile rejects with `NoTranscriptionPathError` (#184). Summarize inserts only the summary callout, never the transcript. `isSupportedUrl`, `detectPlatform`, `isRedditUrl` all resolve from the `shared` barrel; there is NO static import of `video/` or `transcription/`.
+`transcribeUrl`/`transcribeAudio` are injected by `modules/registry.ts` (after `deps`) on EVERY platform. `transcribeUrl` delegates to `UrlTranscriptionRouter.transcribe(url, { update })` and returns the router's `UrlTranscript` unchanged (read here as `TranscribedMedia`: `text`, `cached`, `aiCached`); the router consults the shared `TranscriptCache` first (so a URL transcribed explicitly earlier is reused, wherever or whether its callout appears in the note) and writes every fresh tier result through (so an explicit "Transcribe media" after a summarize never re-runs caption fetch / download / ASR), then runs the caption tier on every platform and the yt-dlp tier on desktop only — a non-YouTube or caption-less URL on mobile rejects with `NoTranscriptionPathError` (#184). Summarize inserts only the summary section, never the transcript. `isSupportedUrl`, `detectPlatform`, `isRedditUrl` all resolve from the `shared` barrel; there is NO static import of `video/` or `transcription/`.
 
 ## Combined Summaries (#367)
 
 When `combineSummaries` (or the modal's "Combine into one summary" toggle) is set:
 - Enrichment refs are processed per-item first (they create notes + rewrite links).
 - All remaining summarizable items (note prose, URLs, transcriptions, audio) are concatenated with `## <label>` sections and summarized in ONE `summarize()` call.
-- Output is a single `Combined summary (N items)` callout appended at the end of the note via `vault.process()` (re-read after the enrichment pass when links were rewritten).
-- A single item falls back to the per-item path for a cleaner callout title.
+- Output is a single `Combined summary (N items)` marker section (`title` attr, `## Combined summary (N items)` heading, `Sources: …` line, body) appended at the end of the note via `vault.process()` (re-read after the enrichment pass when links were rewritten).
+- A single item falls back to the per-item path for a cleaner section title.
+
+## Output Format (#550)
+
+`summarySection(title, body, attrs)` (`index.ts:73`) = `buildMarkerSection(MARKER_KINDS.summary, '## ' + title + '\n\n' + body, attrs)`. No blockquote: the body is first-class note content and its headings reach the outline pane.
+
+```
+<!-- synapse:summary source="https://example.com/article" -->
+## Summary of https://example.com/article
+
+<AI body>
+<!-- /synapse:summary -->
+```
+
+- Per-item attrs `{ source: target.source }` (URL, audio file name, or transcription source); combined attrs `{ title: 'Combined summary (N items)' }`.
+- `##` heading level: the `key-points` style emits `###` (nests under it) and `COMPREHENSIVE_SUMMARY_PROMPT` emits `##` (stays a sibling); nothing in a body outranks the section heading.
+- Two-format detection: every scanner recognises the marker opener AND the legacy `> [!synapse-summary] Summary of X` / `> **Summary of X**` headers; legacy notes stay idempotent and are never rewritten. `styles.css` keeps the `synapse-summary` callout rule for them.
+- `ProcessResult.sections: MarkerAttrs[]` (was `calloutTitles`) feeds `producedSummaryRegion` (`index.ts:68`).
 
 ## Note Content (#367)
 
-`extractNoteProse(content)` (`note-scanner.ts:239`) strips YAML frontmatter and every Synapse-generated summary / transcription / lyrics block (callout and legacy formats) so the AI never re-summarizes its own output. `collectTargets` appends a `note-content` target (when `includeNoteContent`) at the note's last line so a per-item prose callout lands at the end.
+`extractNoteProse(content)` (`note-scanner.ts:247`) strips YAML frontmatter and every Synapse-generated summary / transcription / lyrics block (marker, callout, and legacy formats) so the AI never re-summarizes its own output; whole `<!-- synapse:summary -->` regions go (heading included, via `markerCoveredLines(lines, 'summary')`), while `<!-- synapse:elaboration -->` regions stay — accepted elaborations are the note's prose. `collectTargets` appends a `note-content` target (when `includeNoteContent`) at the note's last line so a per-item prose section lands at the end.
 
 Effectively-empty gate (#544): the target is appended only when `!isEffectivelyEmptyProse(prose)` (shared `prose-reduction.ts`). Prose that is just URLs, `![[embeds]]`, link labels, rules, or empty headings (fewer than `MIN_PROSE_CHARS` letters/digits after reduction) is not content; the references are already their own targets. So a URL-only or embed-only note yields no `note-content` target, no "Include note content" toggle, and a single-URL note takes the direct per-item path with no modal. Any future include-note / combine choice must reuse this gate rather than re-derive it. `NoteMediaModal` combine-audio (`transcription/note-media-modal.ts`) already gates on 2+ audio embeds to render and 2+ selected to apply; no change.
 
@@ -249,7 +266,7 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 | Condition | Handling |
 |-----------|----------|
 | Missing video dep (yt-dlp/ffmpeg) | `DependencyMissingError` matched by `name` through the `cause` chain (`findDependencyMissingError`); shows an actionable "Open settings" notice that reveals the Video section (#382) |
-| Media URL transcription fails (no tier, captions unavailable, mobile) | `MediaTranscriptionError` -> `linkLoadError(source, reason)` notice carrying the router's platform-aware message; NO summary callout for that target; in the combined path the whole combined callout is withheld (#488) |
+| Media URL transcription fails (no tier, captions unavailable, mobile) | `MediaTranscriptionError` -> `linkLoadError(source, reason)` notice carrying the router's platform-aware message; NO summary section for that target; in the combined path the whole combined section is withheld (#488) |
 | Media has no speech (#524) | `NoSpeechDetectedError` matched by `name` through the `cause` chain (`findErrorByName`); `notifications.info(message)`, target skipped, no summary written |
 | URL fetch throws | `notifyTargetError` -> `linkLoadError(source, reason)` persistent notice; target skipped |
 | Fetch returns empty text | `linkLoadError(source, 'page returned no readable text')`; target skipped |
@@ -262,9 +279,9 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 
 | Import | From |
 |--------|------|
-| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks` | `../shared` (index.ts) |
-| `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks` | `../shared` (note-scanner.ts) |
-| `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:10) |
+| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildMarkerSection`, `MARKER_KINDS`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks` | `../shared` (index.ts) |
+| `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks`, `MARKER_KINDS`, `parseMarkerOpener`, `markerCoveredLines` | `../shared` (note-scanner.ts) |
+| `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule`, `SourceContext`, `SourceImage`, `MarkerAttrs` | `../shared` (type-only, index.ts:10, index.ts:15) |
 | `findAudioEmbeds` | `../audio` |
 | `CommandRegistrar` | `../commands` |
 | `SynapseSettings` | `../settings` |
