@@ -1240,3 +1240,98 @@ describe('ProposalGenerator -- backlink and tag context (#500)', () => {
 		expect(prompt.match(/<<<END_UNTRUSTED_EXTERNAL_CONTENT>>>/g)).toHaveLength(1);
 	});
 });
+
+describe('ProposalGenerator -- full-body rewrite prompt (#552)', () => {
+	const FRONTMATTER = '---\ntitle: Photosynthesis\ntags: [bio]\n---\n';
+	const BODY = '# Photosynthesis\n\nPlants convert light into energy. ![[leaf.png]] See [[Chlorophyll]].';
+
+	function makeGenerator(noteContent: string): {
+		generator: ProposalGenerator;
+		notifications: ReturnType<typeof makeNotifications>;
+	} {
+		const mockApp = {
+			vault: {
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue(noteContent),
+				read: vi.fn(),
+				readBinary: vi.fn(),
+			},
+			metadataCache: {
+				getCache: vi.fn().mockReturnValue(null),
+				getFirstLinkpathDest: vi.fn().mockReturnValue(null),
+			},
+		};
+		const settings = makeSettings();
+		settings.elaboration.proposal.includeSourceContext = false;
+		settings.image.enabled = false;
+		const notifications = makeNotifications();
+		return {
+			generator: new ProposalGenerator(mockApp as unknown as App, () => settings, notifications),
+			notifications,
+		};
+	}
+
+	beforeEach(() => {
+		mockComplete.mockClear();
+		mockComplete.mockResolvedValue('Rewritten body.');
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('hands the prompt the body only, never the frontmatter', async () => {
+		const { generator } = makeGenerator(FRONTMATTER + BODY);
+
+		await generator.generate({ notePath: 'notes/Photosynthesis.md', reasons: [{ type: 'user-requested' }] });
+
+		const [prompt] = mockComplete.mock.calls[0];
+		expect(prompt).toContain(BODY);
+		expect(prompt).not.toContain('tags: [bio]');
+		expect(prompt).not.toContain('title: Photosynthesis');
+	});
+
+	it('asks for the complete rewritten body with the author\'s content preserved and no frontmatter', async () => {
+		const { generator } = makeGenerator(BODY);
+
+		await generator.generate({ notePath: 'notes/Photosynthesis.md', reasons: [{ type: 'short-note', wordCount: 9 }] });
+
+		const [prompt, systemPrompt] = mockComplete.mock.calls[0];
+		expect(systemPrompt).toContain('complete rewritten note body');
+		expect(systemPrompt).toContain('no frontmatter');
+		expect(systemPrompt).toContain('do not wrap the output in code fences');
+		expect(systemPrompt).toMatch(/keep every sentence, image embed, wikilink and URL/);
+		expect(prompt).toContain('Rewrite the note as a complete, expanded body');
+		expect(prompt).not.toContain('proposed additions');
+	});
+
+	it('stores the full file as originalContent and marks the proposal as a replace', async () => {
+		const { generator } = makeGenerator(FRONTMATTER + BODY);
+
+		const proposal = await generator.generate({ notePath: 'notes/Photosynthesis.md', reasons: [{ type: 'user-requested' }] });
+
+		expect(proposal?.originalContent).toBe(FRONTMATTER + BODY);
+		expect(proposal?.proposedAdditions).toBe('Rewritten body.');
+		expect(proposal?.insertionPoint).toBe('replace');
+	});
+
+	it('treats a frontmatter-only note with a generic title as empty (no AI call)', async () => {
+		const { generator, notifications } = makeGenerator('---\ncreated: 2026-01-01\n---\n');
+
+		const proposal = await generator.generate({ notePath: 'notes/Untitled.md', reasons: [{ type: 'short-note', wordCount: 0 }] });
+
+		expect(proposal).toBeNull();
+		expect(mockComplete).not.toHaveBeenCalled();
+		expect(notifications.info).toHaveBeenCalledOnce();
+	});
+
+	it('seeds a frontmatter-only note with a real title from the title alone', async () => {
+		const { generator } = makeGenerator('---\ncreated: 2026-01-01\n---\n');
+
+		await generator.generate({ notePath: 'notes/Quantum Tunneling.md', reasons: [{ type: 'short-note', wordCount: 0 }] });
+
+		const [prompt] = mockComplete.mock.calls[0];
+		expect(prompt).toContain('This note has no body yet');
+		expect(prompt).not.toContain('created: 2026-01-01');
+	});
+});

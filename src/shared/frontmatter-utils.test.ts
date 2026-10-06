@@ -4,6 +4,7 @@ import {
 	serializeFrontmatter,
 	mergeTags,
 	normalizeFrontmatterTags,
+	splitRawFrontmatter,
 } from './frontmatter-utils';
 
 describe('parseFrontmatter', () => {
@@ -120,5 +121,34 @@ describe('normalizeFrontmatterTags', () => {
 
 	it('returns empty array for an object', () => {
 		expect(normalizeFrontmatterTags({ nested: true })).toEqual([]);
+	});
+});
+
+describe('splitRawFrontmatter', () => {
+	it('returns the leading block byte-for-byte and the remaining body', () => {
+		const raw = '---\ntitle:   "Odd"\ntags: [b, a]\n---\n';
+		const result = splitRawFrontmatter(raw + '\nBody.');
+
+		expect(result.raw).toBe(raw);
+		expect(result.body).toBe('\nBody.');
+		expect(result.raw + result.body).toBe(raw + '\nBody.');
+	});
+
+	it('returns an empty raw block when the note has no frontmatter', () => {
+		expect(splitRawFrontmatter('Just body.')).toEqual({ raw: '', body: 'Just body.' });
+	});
+
+	it('does not treat a horizontal rule mid-document as frontmatter', () => {
+		const content = 'Intro\n---\nkey: value\n---\n';
+		expect(splitRawFrontmatter(content)).toEqual({ raw: '', body: content });
+	});
+
+	it('agrees with parseFrontmatter on the body boundary', () => {
+		const content = '---\na: 1\n---\r\nBody.';
+		expect(splitRawFrontmatter(content).body).toBe(parseFrontmatter(content).body);
+	});
+
+	it('keeps a block with no trailing newline intact', () => {
+		expect(splitRawFrontmatter('---\na: 1\n---')).toEqual({ raw: '---\na: 1\n---', body: '' });
 	});
 });
