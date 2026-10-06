@@ -40,8 +40,8 @@ export class ProposalDetailModal extends Modal {
 
 		contentEl.createEl('p', { text: `Detected: ${reasons}`, cls: 'synapse-detection-info' });
 
-		contentEl.createEl('h3', { text: 'Proposed additions' });
-		contentEl.createEl('p', { text: 'Edit the content below before accepting:' });
+		contentEl.createEl('h3', { text: 'Proposed rewrite' });
+		contentEl.createEl('p', { text: 'Accepting replaces the note\'s content with the text below (frontmatter is kept). Edit it before accepting:' });
 
 		const textarea = contentEl.createEl('textarea', {
 			cls: 'synapse-proposal-editor',
@@ -52,7 +52,7 @@ export class ProposalDetailModal extends Modal {
 		const actions = contentEl.createDiv({ cls: 'synapse-modal-actions' });
 
 		const acceptBtn = actions.createEl('button', {
-			text: 'Accept',
+			text: 'Accept and replace',
 			cls: 'mod-cta',
 		});
 		acceptBtn.addEventListener('click', () => {
