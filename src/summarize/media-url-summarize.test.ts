@@ -59,6 +59,7 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/cache-notice')>('../shared/cache-notice')),
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
+	...(await vi.importActual<typeof import('../shared/media-embed')>('../shared/media-embed')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
@@ -231,6 +232,59 @@ describe('SummarizeModule media URLs (#488)', () => {
 		expect(noteContent).toContain('Combined summary (2 items)');
 		expect(noteContent).not.toContain(TRANSCRIPT);
 		expect(notifications.error).not.toHaveBeenCalled();
+	});
+
+	describe('downloaded media embeds (#561)', () => {
+		const VAULT_PATH = 'Media/2026-07-14-video.mp4';
+		const EMBED = '![[2026-07-14-video.mp4]]';
+		const countEmbeds = (): number => noteContent.split(EMBED).length - 1;
+
+		it('embeds the downloaded video directly above the summary callout', async () => {
+			settings.video.embedInNote = true;
+			module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT, videoVaultPath: VAULT_PATH }));
+
+			await runSummarize();
+
+			expect(countEmbeds()).toBe(1);
+			expect(noteContent.indexOf(EMBED)).toBeGreaterThan(noteContent.indexOf(VIDEO_URL));
+			expect(noteContent.indexOf(EMBED)).toBeLessThan(noteContent.indexOf(`Summary of ${VIDEO_URL}`));
+		});
+
+		it('inserts only the callout when video.embedInNote is off', async () => {
+			settings.video.embedInNote = false;
+			module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT, videoVaultPath: VAULT_PATH }));
+
+			await runSummarize();
+
+			expect(noteContent).not.toContain('![[');
+			expect(noteContent).toContain(`Summary of ${VIDEO_URL}`);
+		});
+
+		it('never duplicates an embed the note already carries', async () => {
+			settings.video.embedInNote = true;
+			noteContent = `# Note\n\n${VIDEO_URL}\n\n${EMBED}\n\n> [!quote|synapse-transcription]- Transcription of ${VIDEO_URL}\n> ${TRANSCRIPT}\n`;
+			module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT, videoVaultPath: VAULT_PATH, cached: true }));
+
+			await runSummarize();
+
+			expect(countEmbeds()).toBe(1);
+			expect(noteContent).toContain(`Summary of ${VIDEO_URL}`);
+		});
+
+		it('embeds each downloaded source once above the combined callout', async () => {
+			settings.video.embedInNote = true;
+			settings.summarize.includeNoteContent = true;
+			settings.summarize.combineSummaries = true;
+			vi.mocked(extractNoteProse).mockReturnValue('My notes mention the video above.');
+			const file = new TFile('notes/video.md') as unknown as ObsidianTFile;
+			vi.mocked(getMarkdownFiles).mockReturnValue([file]);
+			module = build(vi.fn().mockResolvedValue({ text: TRANSCRIPT, videoVaultPath: VAULT_PATH }));
+
+			await module.scanVault(undefined, true, file);
+
+			expect(countEmbeds()).toBe(1);
+			expect(noteContent.indexOf(EMBED)).toBeLessThan(noteContent.indexOf('Combined summary (2 items)'));
+		});
 	});
 
 	describe('cache reporting (#527)', () => {

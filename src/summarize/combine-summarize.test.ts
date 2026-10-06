@@ -75,6 +75,7 @@ vi.mock('../shared', async () => ({
 	// Real queue primitive (#483): a mocked-away queue would never run the operation
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
+	...(await vi.importActual<typeof import('../shared/media-embed')>('../shared/media-embed')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
@@ -267,5 +268,40 @@ describe('SummarizeModule combined summarization (#367)', () => {
 		const messages = notifications.error.mock.calls.map((c) => c[0]);
 		expect(messages).toContain('Could not load content from https://example.com/a: Reddit returned HTTP 429');
 		expect(messages).toContain('Could not load content from https://example.com/b: page returned no readable text');
+	});
+	it('embeds each downloaded video once above the combined callout (#561)', async () => {
+		const { isSupportedUrl } = await import('../shared');
+		vi.mocked(isSupportedUrl).mockImplementation((url: string) => url.includes('youtube.com'));
+		settings.video.embedInNote = true;
+		const videoUrl = 'https://www.youtube.com/watch?v=abc123';
+		const transcribeUrl = vi.fn().mockResolvedValue({ text: 'video transcript', videoVaultPath: 'Media/clip.mp4' });
+		const withVideo = new SummarizeModule(
+			makeModuleDeps({
+				plugin: mockPlugin as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: notifications as unknown as NotificationManager,
+				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
+				registrar: new CommandRegistrar(
+					mockPlugin as unknown as ConstructorParameters<typeof CommandRegistrar>[0],
+				),
+				noteQueue: new NoteOperationQueue(),
+			}),
+			transcribeUrl,
+			transcribeAudio
+		);
+		const video: SummarizeTarget = { type: 'url', source: videoUrl, line: 2, endLine: 2 };
+		const seen = `# Lecture\n\n${videoUrl}\n\n![[part1.mp3]]\n`;
+		mockPlugin.app.vault.read.mockResolvedValue(seen);
+
+		try {
+			await internals(withVideo).processTargetsCombined(file(), [video, audio('part1.mp3', 4)], seen);
+		} finally {
+			vi.mocked(isSupportedUrl).mockReturnValue(false);
+		}
+
+		const out = await written();
+		expect(out.split('![[clip.mp4]]').length - 1).toBe(1);
+		expect(out.indexOf('![[clip.mp4]]')).toBeLessThan(out.indexOf('Combined summary (2 items)'));
+		expect(out.indexOf('![[clip.mp4]]')).toBeGreaterThan(out.indexOf('![[part1.mp3]]'));
 	});
 });
