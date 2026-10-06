@@ -2,8 +2,8 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
-	getMarkdownFiles, NotificationManager, buildCallout,
-	CALLOUT_TYPES, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
+	getMarkdownFiles, NotificationManager, buildMarkerSection,
+	MARKER_KINDS, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
 	mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport, findMarkdownLinks,
 } from '../shared';
@@ -12,7 +12,7 @@ import { OperationHandle } from '../shared';
 import { isSupportedUrl, detectPlatform, isEffectivelyEmptyProse } from '../shared';
 import { findAudioEmbeds } from '../audio';
 import { fetchPageContentWithImages, fetchTweetContent, isRedditUrl, fetchRedditContent, linkLoadError } from '../shared';
-import type { SourceContext, SourceImage } from '../shared';
+import type { SourceContext, SourceImage, MarkerAttrs } from '../shared';
 import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
@@ -56,17 +56,22 @@ interface ProcessResult {
 	/** Material fetched for the summaries, handed to post-op illustrate (#213). */
 	sourceUrls: string[];
 	sourceImages: SourceImage[];
-	/** Titles of the summary callouts written into the source note this run. */
-	calloutTitles: string[];
+	/** Marker attributes of each summary section written into the source note this run. */
+	sections: MarkerAttrs[];
 }
 
 /** Per-run accumulator of fetched material. */
 type SourceCollector = { urls: string[]; images: SourceImage[] };
 const newSourceCollector = (): SourceCollector => ({ urls: [], images: [] });
 
-/** Region hint for post-op follow-ups: the summary callout written this run (by title when exactly one). */
-function producedSummaryRegion(titles: string[]): SourceContext['producedRegion'] {
-	return { kind: 'callout', calloutType: CALLOUT_TYPES.summary, title: titles.length === 1 ? titles[0] : undefined };
+/** Region hint for post-op follow-ups: the summary section written this run (by attrs when exactly one). */
+function producedSummaryRegion(sections: MarkerAttrs[]): SourceContext['producedRegion'] {
+	return { kind: 'marker', marker: MARKER_KINDS.summary, attrs: sections.length === 1 ? sections[0] : undefined };
+}
+
+/** `## <title>` + body inside a summary marker pair; `##` so key-points `###` nest and comprehensive `##` stay siblings. */
+function summarySection(title: string, body: string, attrs: MarkerAttrs): string {
+	return buildMarkerSection(MARKER_KINDS.summary, `## ${title}\n\n${body}`, attrs);
 }
 
 /** Human-readable label for a target in combined-summary output (#367). */
@@ -353,7 +358,7 @@ export class SummarizeModule implements FeatureModule {
 			cacheUses: [],
 			sourceUrls: [],
 			sourceImages: [],
-			calloutTitles: [],
+			sections: [],
 		};
 
 		// Enrichment refs first (per-item): create notes + rewrite links.
@@ -377,7 +382,7 @@ export class SummarizeModule implements FeatureModule {
 				cacheUses: [...result.cacheUses, ...combined.cacheUses],
 				sourceUrls: [...result.sourceUrls, ...combined.sourceUrls],
 				sourceImages: [...result.sourceImages, ...combined.sourceImages],
-				calloutTitles: [...result.calloutTitles, ...combined.calloutTitles],
+				sections: [...result.sections, ...combined.sections],
 			};
 		}
 
@@ -408,7 +413,7 @@ export class SummarizeModule implements FeatureModule {
 			cacheUses: [],
 			sourceUrls: [],
 			sourceImages: [],
-			calloutTitles: [],
+			sections: [],
 		};
 		if (targets.length === 0) return empty;
 		if (targets.length === 1) {
@@ -484,20 +489,17 @@ export class SummarizeModule implements FeatureModule {
 		);
 
 		const combinedTitle = `Combined summary (${labels.length} items)`;
-		const callout = buildCallout(
-			CALLOUT_TYPES.summary,
-			combinedTitle,
-			`Sources: ${labels.join(', ')}\n\n${summary}`
-		);
+		const attrs: MarkerAttrs = { title: combinedTitle };
+		const section = summarySection(combinedTitle, `Sources: ${labels.join(', ')}\n\n${summary}`, attrs);
 
 		// Append at the end of the note's current content.
 		await this.plugin.app.vault.process(file, (current) => {
 			const lines = current.split('\n');
-			lines.push(...callout.split('\n'));
+			lines.push(...section.split('\n'));
 			return lines.join('\n');
 		});
 
-		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [], cacheUses: [combinedUse], sourceUrls: sources.urls, sourceImages: sources.images, calloutTitles: [combinedTitle] };
+		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [], cacheUses: [combinedUse], sourceUrls: sources.urls, sourceImages: sources.images, sections: [attrs] };
 	}
 
 	/**
@@ -605,7 +607,7 @@ export class SummarizeModule implements FeatureModule {
 		const fired = new Set<string>();
 		if (result.inlineCompleted > 0 && result.enrichmentCompleted === 0) {
 			fired.add(sourceFilePath);
-			this.onSummaryComplete?.(sourceFilePath, { ...base, producedRegion: producedSummaryRegion(result.calloutTitles) });
+			this.onSummaryComplete?.(sourceFilePath, { ...base, producedRegion: producedSummaryRegion(result.sections) });
 		}
 		for (const notePath of result.newNotePaths) {
 			if (fired.has(notePath)) continue;
@@ -644,7 +646,7 @@ export class SummarizeModule implements FeatureModule {
 		const pendingNotes: PendingNote[] = [];
 		const cacheUses: CacheUse[] = [];
 		const sources = newSourceCollector();
-		const calloutTitles: string[] = [];
+		const sections: MarkerAttrs[] = [];
 		let processed = 0;
 
 		for (const target of sorted) {
@@ -767,14 +769,11 @@ export class SummarizeModule implements FeatureModule {
 						trackAiCache(use)
 					);
 
-					const callout = buildCallout(
-						CALLOUT_TYPES.summary,
-						`Summary of ${target.source}`,
-						summary
-					);
-					calloutTitles.push(`Summary of ${target.source}`);
+					const attrs: MarkerAttrs = { source: target.source };
+					const section = summarySection(`Summary of ${target.source}`, summary, attrs);
+					sections.push(attrs);
 
-					lines.splice(target.endLine + 1, 0, ...callout.split('\n'));
+					lines.splice(target.endLine + 1, 0, ...section.split('\n'));
 
 					inlineCompleted++;
 					cacheUses.push(use);
@@ -807,7 +806,7 @@ export class SummarizeModule implements FeatureModule {
 			await this.plugin.app.vault.create(pending.path, pending.content);
 		}
 
-		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths, cacheUses, sourceUrls: sources.urls, sourceImages: sources.images, calloutTitles };
+		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths, cacheUses, sourceUrls: sources.urls, sourceImages: sources.images, sections };
 	}
 
 	/**

@@ -1,4 +1,7 @@
-import { CALLOUT_TYPES, ENRICHMENT_START, ENRICHMENT_END, parseFrontmatter, findUrls, findMarkdownLinks } from '../shared';
+import {
+	CALLOUT_TYPES, ENRICHMENT_START, ENRICHMENT_END, parseFrontmatter, findUrls, findMarkdownLinks,
+	MARKER_KINDS, parseMarkerOpener, markerCoveredLines,
+} from '../shared';
 import { SummarizeTarget } from './types';
 
 const TIKTOK_HOST_RE = /(?:vm\.|vt\.)?tiktok\.com/;
@@ -16,15 +19,18 @@ const CALLOUT_ENRICHMENT_PREFIX = `[!${CALLOUT_TYPES.enrichment}]`;
 /**
  * Scan note content for URLs and transcription blocks that need summaries.
  * Skips targets that already have a summary block below them.
- * Skips content inside enrichment marker sections (managed by the enrichment module).
+ * Skips content inside enrichment marker sections (managed by the enrichment module)
+ * and inside any `<!-- synapse:* -->` section (generated output, #550).
  */
 export function findSummarizeTargets(content: string): SummarizeTarget[] {
 	const lines = content.split('\n');
 	const targets: SummarizeTarget[] = [];
+	const generated = markerCoveredLines(lines);
 	let inEnrichmentSection = false;
 	let enrichmentIsCallout = false;
 
 	for (let i = 0; i < lines.length; i++) {
+		if (generated.has(i)) continue;
 		const line = lines[i];
 
 		// Track enrichment marker sections (legacy comment markers)
@@ -158,11 +164,16 @@ function normalizeSocialUrl(url: string): string {
 /**
  * Check if a summary block already exists below a given line for the specified source.
  * Looks within 3 lines below, allowing blank lines and blockquotes.
+ * Recognises the marker opener (`<!-- synapse:summary source="X" -->`, #550) and both legacy headers.
  */
 export function hasSummaryBelow(lines: string[], startLine: number, source: string): boolean {
 	const normalized = normalizeSocialUrl(source);
 	for (let j = startLine + 1; j < lines.length && j <= startLine + 3; j++) {
 		const line = lines[j];
+		const opener = parseMarkerOpener(line);
+		if (opener?.kind === MARKER_KINDS.summary && (opener.attrs.source === source || opener.attrs.source === normalized)) {
+			return true;
+		}
 		// Legacy format: > **Summary of <source>**
 		if (line.includes(`**Summary of ${source}**`) || line.includes(`**Summary of ${normalized}**`)) {
 			return true;
@@ -230,15 +241,17 @@ function isGeneratedBlockHeader(line: string): boolean {
 /**
  * Extract the note's own prose for summarization (#367): strip YAML
  * frontmatter and every Synapse-generated summary / transcription / lyrics
- * block (callout and legacy formats), leaving the user's own content. User
- * blockquotes and enrichment sections are preserved.
+ * block (marker, callout, and legacy formats), leaving the user's own content. User
+ * blockquotes, enrichment sections, and accepted elaborations are preserved.
  */
 export function extractNoteProse(content: string): string {
 	const body = parseFrontmatter(content).body;
 	const lines = body.split('\n');
+	const summaryLines = markerCoveredLines(lines, MARKER_KINDS.summary);
 	const kept: string[] = [];
 
 	for (let i = 0; i < lines.length; i++) {
+		if (summaryLines.has(i)) continue;
 		if (isGeneratedBlockHeader(lines[i])) {
 			// Skip the header and its contiguous blockquote body.
 			let j = i + 1;

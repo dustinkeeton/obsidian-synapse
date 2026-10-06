@@ -79,6 +79,7 @@ vi.mock('../shared', async () => ({
 	// Real queue primitive (#483): a mocked-away queue would never run the operation
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
+	...(await vi.importActual<typeof import('../shared/markers')>('../shared/markers')),
 	...(await vi.importActual<typeof import('../shared/url-classifier')>('../shared/url-classifier')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
@@ -283,6 +284,36 @@ describe('SummarizeModule audio target detection', () => {
 		// Should not transcribe because the audio embed already has a summary
 		expect(transcribeAudioFn).not.toHaveBeenCalled();
 		// Should show "no targets" message
+		expect(mockNotifications.info).toHaveBeenCalledWith(
+			'No note content, URLs, transcriptions, or audio to summarize in this note'
+		);
+	});
+
+	it('skips audio embeds that already have a marker-format summary below (#550)', async () => {
+		const noteContent = [
+			'# Note',
+			'',
+			'![[recording.mp3]]',
+			'',
+			'<!-- synapse:summary source="recording.mp3" -->',
+			'## Summary of recording.mp3',
+			'',
+			'Previous summary content',
+			'<!-- /synapse:summary -->',
+		].join('\n');
+
+		mockPlugin.app.vault.read.mockResolvedValue(noteContent);
+		mockFindAudioEmbeds.mockReturnValue([
+			{ fileName: 'recording.mp3', file: makeTFile('audio/recording.mp3'), line: 2 },
+		]);
+
+		await module.onload();
+		const summarizeCmd = mockPlugin.addCommand.mock.calls.find(
+			(c) => c[0].id === 'summarize-current-note',
+		)![0];
+		await summarizeCmd.editorCallback?.({}, { file: makeTFile('notes/test.md') });
+
+		expect(transcribeAudioFn).not.toHaveBeenCalled();
 		expect(mockNotifications.info).toHaveBeenCalledWith(
 			'No note content, URLs, transcriptions, or audio to summarize in this note'
 		);

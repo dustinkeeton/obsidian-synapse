@@ -59,6 +59,7 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/cache-notice')>('../shared/cache-notice')),
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
+	...(await vi.importActual<typeof import('../shared/markers')>('../shared/markers')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
@@ -173,7 +174,10 @@ describe('SummarizeModule media URLs (#488)', () => {
 
 		await runSummarize();
 
-		expect(noteContent).toContain(`Summary of ${VIDEO_URL}`);
+		expect(noteContent).toContain(`<!-- synapse:summary source="${VIDEO_URL}" -->`);
+		expect(noteContent).toContain(`## Summary of ${VIDEO_URL}`);
+		expect(noteContent).toContain('<!-- /synapse:summary -->');
+		expect(noteContent).not.toContain('[!synapse-summary]');
 		expect(noteContent).toContain('A genuine content summary.');
 		expect(noteContent).not.toContain(TRANSCRIPT);
 		expect(noteContent).not.toContain('Transcription of');

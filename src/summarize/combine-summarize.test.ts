@@ -75,6 +75,7 @@ vi.mock('../shared', async () => ({
 	// Real queue primitive (#483): a mocked-away queue would never run the operation
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
+	...(await vi.importActual<typeof import('../shared/markers')>('../shared/markers')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
@@ -205,8 +206,10 @@ describe('SummarizeModule combined summarization (#367)', () => {
 		expect(mockPlugin.app.vault.process).toHaveBeenCalledTimes(1);
 
 		const out = await written();
-		expect(out).toContain('Combined summary (2 items)');
-		expect((out.match(/Combined summary/g) || []).length).toBe(1);
+		expect(out).toContain('<!-- synapse:summary title="Combined summary (2 items)" -->');
+		expect((out.match(/## Combined summary/g) || []).length).toBe(1);
+		expect((out.match(/<!-- synapse:summary/g) || []).length).toBe(1);
+		expect(out).not.toContain('[!synapse-summary]');
 		expect(out).toContain('Sources: Audio: part1.mp3, Audio: part2.wav');
 		expect(out).toContain('This is a test summary.');
 	});
@@ -223,7 +226,8 @@ describe('SummarizeModule combined summarization (#367)', () => {
 
 		expect(transcribeAudio).toHaveBeenCalledTimes(1);
 		const out = await written();
-		expect(out).toContain('Summary of part1.mp3');
+		expect(out).toContain('<!-- synapse:summary source="part1.mp3" -->');
+		expect(out).toContain('## Summary of part1.mp3');
 		expect(out).not.toContain('Combined summary');
 	});
 

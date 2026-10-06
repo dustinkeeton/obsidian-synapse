@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCallout, CALLOUT_TYPES } from '../shared';
+import { buildCallout, CALLOUT_TYPES, buildMarkerSection, MARKER_KINDS } from '../shared';
 import { findSummarizeTargets, hasSummaryBelow, extractTranscriptionContent, extractNoteProse } from './note-scanner';
 import { isEffectivelyEmptyProse } from '../shared/prose-reduction';
 
@@ -510,6 +510,75 @@ describe('findSummarizeTargets', () => {
 	});
 });
 
+describe('findSummarizeTargets with marker sections (#550)', () => {
+	it('skips a URL that already has a marker-format summary below', () => {
+		const content = [
+			'https://example.com/article',
+			'',
+			'<!-- synapse:summary source="https://example.com/article" -->',
+			'## Summary of https://example.com/article',
+			'',
+			'Summary text',
+			'<!-- /synapse:summary -->',
+		].join('\n');
+		expect(findSummarizeTargets(content)).toHaveLength(0);
+	});
+
+	it('never scans the lines inside a generated section (the heading repeats the URL)', () => {
+		const content = [
+			'# Note',
+			'<!-- synapse:summary source="https://example.com/a" -->',
+			'## Summary of https://example.com/a',
+			'',
+			'See also https://example.com/inside-summary',
+			'<!-- /synapse:summary -->',
+			'',
+			'<!-- synapse:elaboration -->',
+			'*Elaboration by Synapse*',
+			'',
+			'Read https://example.com/inside-elaboration for more.',
+			'<!-- /synapse:elaboration -->',
+			'',
+			'https://example.com/outside',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets.map((t) => t.source)).toEqual(['https://example.com/outside']);
+	});
+
+	it('still skips a legacy callout summary next to a marker-format one', () => {
+		const content = [
+			'https://example.com/legacy',
+			'> [!synapse-summary] Summary of https://example.com/legacy',
+			'> legacy body',
+			'',
+			'https://example.com/new',
+			'<!-- synapse:summary source="https://example.com/new" -->',
+			'## Summary of https://example.com/new',
+			'<!-- /synapse:summary -->',
+			'',
+			'https://example.com/fresh',
+		].join('\n');
+		expect(findSummarizeTargets(content).map((t) => t.source)).toEqual(['https://example.com/fresh']);
+	});
+
+	it('skips a transcription block whose marker-format summary follows it', () => {
+		const content = [
+			'> [!synapse-transcription] Transcription of clip.mp4',
+			'> spoken words',
+			'',
+			'<!-- synapse:summary source="clip.mp4" -->',
+			'## Summary of clip.mp4',
+			'<!-- /synapse:summary -->',
+		].join('\n');
+		expect(findSummarizeTargets(content)).toHaveLength(0);
+	});
+
+	it('treats an unclosed opener as ordinary text', () => {
+		const content = ['<!-- synapse:summary source="x" -->', 'https://example.com/a'].join('\n');
+		expect(findSummarizeTargets(content).map((t) => t.source)).toEqual(['https://example.com/a']);
+	});
+});
+
 describe('hasSummaryBelow', () => {
 	it('returns true when summary block exists immediately below', () => {
 		const lines = [
@@ -567,6 +636,46 @@ describe('hasSummaryBelow', () => {
 			'> [!synapse-summary] Summary of https://example.com/other',
 		];
 		expect(hasSummaryBelow(lines, 0, 'https://example.com/article')).toBe(false);
+	});
+
+	it('returns true for a marker-format summary below (#550)', () => {
+		const lines = [
+			'https://example.com/article',
+			'',
+			'<!-- synapse:summary source="https://example.com/article" -->',
+			'## Summary of https://example.com/article',
+			'',
+			'Summary text',
+			'<!-- /synapse:summary -->',
+		];
+		expect(hasSummaryBelow(lines, 0, 'https://example.com/article')).toBe(true);
+	});
+
+	it('matches a marker-format summary by social-normalized source', () => {
+		const lines = [
+			'https://www.tiktok.com/@u/video/1?lang=en',
+			'<!-- synapse:summary source="https://www.tiktok.com/@u/video/1" -->',
+			'## Summary of https://www.tiktok.com/@u/video/1',
+			'<!-- /synapse:summary -->',
+		];
+		expect(hasSummaryBelow(lines, 0, 'https://www.tiktok.com/@u/video/1?lang=en')).toBe(true);
+	});
+
+	it('returns false for a marker-format summary of a different source or kind', () => {
+		expect(hasSummaryBelow([
+			'https://example.com/article',
+			'<!-- synapse:summary source="https://example.com/other" -->',
+		], 0, 'https://example.com/article')).toBe(false);
+		expect(hasSummaryBelow([
+			'https://example.com/article',
+			'<!-- synapse:elaboration -->',
+		], 0, 'https://example.com/article')).toBe(false);
+	});
+
+	it('round-trips a source whose URL carries quotes and double dashes', () => {
+		const source = 'https://example.com/a--b?q="x"';
+		const lines = ['', buildMarkerSection(MARKER_KINDS.summary, '## Summary', { source }).split('\n')[1]];
+		expect(hasSummaryBelow(lines, 0, source)).toBe(true);
 	});
 });
 
@@ -877,6 +986,59 @@ describe('extractNoteProse', () => {
 			'Para two.',
 		].join('\n');
 		expect(extractNoteProse(content)).toBe('Para one.\n\nPara two.');
+	});
+
+	it('strips a marker-format summary section, including its heading (#550)', () => {
+		const content = [
+			'Para one.',
+			'',
+			'<!-- synapse:summary source="https://example.com" -->',
+			'## Summary of https://example.com',
+			'',
+			'## Overview',
+			'summary body',
+			'<!-- /synapse:summary -->',
+			'',
+			'Para two.',
+		].join('\n');
+		expect(extractNoteProse(content)).toBe('Para one.\n\nPara two.');
+	});
+
+	it('strips the combined marker-format summary and a legacy callout from the same note', () => {
+		const content = [
+			'---',
+			'title: X',
+			'---',
+			'Own prose.',
+			'',
+			'> [!synapse-summary] Summary of legacy',
+			'> legacy body',
+			'',
+			'<!-- synapse:summary title="Combined summary (2 items)" -->',
+			'## Combined summary (2 items)',
+			'',
+			'Sources: a, b',
+			'',
+			'combined body',
+			'<!-- /synapse:summary -->',
+		].join('\n');
+		expect(extractNoteProse(content)).toBe('Own prose.');
+	});
+
+	it('keeps an accepted elaboration section as note prose', () => {
+		const content = [
+			'Stub.',
+			'',
+			'<!-- synapse:elaboration -->',
+			'*Elaboration by Synapse*',
+			'',
+			'## Background',
+			'Elaborated text.',
+			'<!-- /synapse:elaboration -->',
+		].join('\n');
+		const prose = extractNoteProse(content);
+		expect(prose).toContain('Elaborated text.');
+		expect(prose).toContain('## Background');
 	});
 });
 
