@@ -215,6 +215,86 @@ describe('IllustrateModule', () => {
 		});
 	});
 
+	describe('region-targeted insertion and duplicate guards (#213)', () => {
+		const SUMMARY_NOTE = [
+			'# Piracy', '', 'Intro.', '',
+			'> [!synapse-summary] Combined summary (2 items)', '> ## Overview', '> Piracy peaked in the 1700s.', '>', '> It declined later.', '',
+			'> [!synapse-enrichment] References', '> - [a](https://a)',
+		].join('\n');
+		const region = { kind: 'callout' as const, calloutType: 'synapse-summary', title: 'Combined summary (2 items)' };
+		const longSummary = SUMMARY_NOTE.replace('> It declined later.', '> ' + 'word '.repeat(100));
+
+		it('hands the analyzer only the region text and resolves placements inside the callout', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			app.vault.read.mockResolvedValue(longSummary);
+			app.vault.cachedRead.mockResolvedValue(longSummary);
+			const analyze = vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([
+				{ kind: 'diagram', anchor: 'Piracy peaked in the 1700s.', caption: 'Timeline', rationale: '', mermaid: 'flowchart TD\nA' },
+			]);
+			await module.illustrateNote('notes/a.md', { sourceUrls: [], producedRegion: region });
+			expect(analyze.mock.calls[0][1]).toBe('[!synapse-summary] Combined summary (2 items)\n## Overview\nPiracy peaked in the 1700s.\n\n' + 'word '.repeat(100));
+			const saved = vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0];
+			expect(saved.items[0]).toMatchObject({ region, placement: { line: 6, container: { prefix: '> ', label: 'summary' } } });
+		});
+
+		it('inserts accepted items inside the summary callout with every line prefixed', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			app.vault.read.mockResolvedValue(SUMMARY_NOTE);
+			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({
+				...proposal(),
+				items: [{ id: 'i-diagram', kind: 'diagram', anchor: 'Piracy peaked in the 1700s.', caption: 'Timeline', rationale: '', mermaid: 'flowchart TD\nA --> B', region }],
+			});
+			await module.acceptProposal('prop1', ['i-diagram']);
+			const written = (await app.vault.process.mock.results[0].value) as string;
+			expect(written.split('\n').slice(6, 14)).toEqual([
+				'> Piracy peaked in the 1700s.', '>', '> ```mermaid', '> flowchart TD', '> A --> B', '> ```', '>', '> > [!synapse-illustrate] Timeline',
+			]);
+			expect(written).toContain('> > Diagram generated from this note\n>\n> It declined later.');
+		});
+
+		it('keeps the ad hoc path outside containers', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			app.vault.read.mockResolvedValue(SUMMARY_NOTE);
+			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({
+				...proposal(),
+				items: [{ id: 'i-diagram', kind: 'diagram', anchor: 'Piracy peaked in the 1700s.', caption: 'Timeline', rationale: '', mermaid: 'flowchart TD\nA --> B' }],
+			});
+			await module.acceptProposal('prop1', ['i-diagram']);
+			const written = (await app.vault.process.mock.results[0].value) as string;
+			expect(written).toContain('> It declined later.\n\n```mermaid\nflowchart TD\nA --> B\n```\n\n> [!synapse-illustrate] Timeline');
+		});
+
+		it('skips a chained run while one is in flight or a proposal is pending, and a region already illustrated', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			app.vault.read.mockResolvedValue(longSummary);
+			app.vault.cachedRead.mockResolvedValue(longSummary);
+			const analyze = vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([]);
+			const ctx = { sourceUrls: [], producedRegion: region };
+			await Promise.all([module.illustrateNote('notes/a.md', ctx), module.illustrateNote('notes/a.md', ctx)]);
+			expect(analyze).toHaveBeenCalledTimes(1);
+
+			vi.spyOn(IllustrateStore.prototype, 'loadPending').mockResolvedValue([proposal()]);
+			await module.illustrateNote('notes/a.md', ctx);
+			expect(analyze).toHaveBeenCalledTimes(1);
+
+			vi.mocked(IllustrateStore.prototype.loadPending).mockResolvedValue([]);
+			const illustrated = longSummary.replace('> ## Overview', '> > [!synapse-illustrate] Already\n> ## Overview');
+			app.vault.read.mockResolvedValue(illustrated);
+			await module.illustrateNote('notes/a.md', ctx);
+			expect(analyze).toHaveBeenCalledTimes(1);
+		});
+
+		it('never inserts the same visual twice', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			const already = NOTE + '\n\n```mermaid\nflowchart TD\nA --> B\n```\n\n> [!synapse-illustrate] A red panda\n> Source: x';
+			app.vault.read.mockResolvedValue(already);
+			await module.acceptProposal('prop1', ['i-photo', 'i-diagram']);
+			expect(app.vault.process).not.toHaveBeenCalled();
+			expect(notifications.success).toHaveBeenCalledWith('Inserted 0 visuals (2 already present)');
+			expect(IllustrateStore.prototype.updateStatus).toHaveBeenCalledWith('prop1', 'accepted', ['i-photo', 'i-diagram']);
+		});
+	});
+
 	describe('scanVault', () => {
 		it('checkpoints eligible notes, builds proposals, and auto-accepts when enabled', async () => {
 			autoAccept = true;

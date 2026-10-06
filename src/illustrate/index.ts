@@ -4,11 +4,11 @@ import type { CommandRegistrar } from '../commands';
 import {
 	getMarkdownFiles, parseFrontmatter, generateId, fireAndForget, openScanFolderPicker,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, redactError,
-	resolveInsertionPoint, applyInsertion, wordCount,
+	resolveInsertionPoint, applyInsertion, locateRegion, wordCount,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
-	NotificationManager, CheckpointManager, NoteOperationQueue, InsertionAnchor, SourceContext, SourceImage,
+	NotificationManager, CheckpointManager, NoteOperationQueue, InsertionAnchor, SourceContext, SourceImage, RegionLocator, ResolveInsertionOptions,
 } from '../shared';
 import { NoteAnalyzer } from './note-analyzer';
 import { IllustrateStore } from './proposal-store';
@@ -21,7 +21,7 @@ import { isLicenseAllowed } from './license';
 import { buildXyChart } from './chart';
 import { validateMermaid } from './diagram';
 import { buildMermaidItemBlock, buildPhotoBlock } from './inserter';
-import { isEligibleNote, MIN_WORDS_TO_ILLUSTRATE } from './note-scanner';
+import { isEligibleNote, hasIllustrations, MIN_WORDS_TO_ILLUSTRATE } from './note-scanner';
 import type { IllustrateItem, IllustrateProposal, IllustrateSpot, MediaCandidate, MediaProvider } from './types';
 
 export type {
@@ -45,6 +45,17 @@ function anchorFor(text: string): InsertionAnchor {
 	return { kind: /^#{1,6}\s/.test(text) ? 'heading' : 'paragraph', text };
 }
 
+/** Callout regions resolve inside the container; the ad hoc/whole-note path never enters one. */
+function resolveOptions(region?: RegionLocator): ResolveInsertionOptions {
+	return region?.kind === 'callout' ? { within: region, insideContainers: true } : {};
+}
+
+/** Accept is idempotent: a visual whose caption callout or Mermaid body is already in the note is skipped. */
+function alreadyInserted(content: string, item: IllustrateItem): boolean {
+	if (content.includes(`[!synapse-illustrate] ${item.caption}`)) return true;
+	return item.kind !== 'photo' && content.includes(item.mermaid);
+}
+
 export class IllustrateModule implements FeatureModule {
 	private plugin: Plugin;
 	private getSettings: () => SynapseSettings;
@@ -57,6 +68,8 @@ export class IllustrateModule implements FeatureModule {
 	private assets: AssetWriter;
 	private wikimedia = new WikimediaProvider();
 	private openverse = new OpenverseProvider();
+	/** Note paths with a post-op run in progress; a second chained trigger for the same note is dropped. */
+	private inFlight = new Set<string>();
 
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
 	onOpenProposalView: (() => void) | null = null;
@@ -123,9 +136,9 @@ export class IllustrateModule implements FeatureModule {
 		return null;
 	}
 
-	private async resolveItem(spot: IllustrateSpot, content: string, sourceImages?: SourceImage[]): Promise<IllustrateItem | null> {
-		const placement = resolveInsertionPoint(content, anchorFor(spot.anchor));
-		const base = { id: generateId(), anchor: spot.anchor, caption: spot.caption, rationale: spot.rationale, placement };
+	private async resolveItem(spot: IllustrateSpot, content: string, sourceImages?: SourceImage[], region?: RegionLocator): Promise<IllustrateItem | null> {
+		const placement = resolveInsertionPoint(content, anchorFor(spot.anchor), resolveOptions(region));
+		const base = { id: generateId(), anchor: spot.anchor, caption: spot.caption, rationale: spot.rationale, placement, region };
 		if (spot.kind === 'photo') {
 			const candidate = await this.findPhoto(`${spot.query} ${spot.caption}`, sourceImages);
 			return candidate ? { ...base, kind: 'photo', candidate } : null;
@@ -135,14 +148,23 @@ export class IllustrateModule implements FeatureModule {
 		return mermaid ? { ...base, kind: 'chart', mermaid } : null;
 	}
 
-	/** Analyze one note and persist a proposal; returns its id or null when nothing is worth illustrating. */
-	private async buildProposal(file: TFile, cacheUse: CacheUse, sourceImages?: SourceImage[]): Promise<string | null> {
+	/** Analyze one note (or just the produced region) and persist a proposal; null when nothing is worth illustrating. */
+	private async buildProposal(file: TFile, cacheUse: CacheUse, sourceImages?: SourceImage[], producedRegion?: RegionLocator): Promise<string | null> {
 		const content = await this.plugin.app.vault.read(file);
-		const { body } = parseFrontmatter(content);
-		const spots = await this.analyzer.analyze(file.path, body, trackAiCache(cacheUse));
+		let text = parseFrontmatter(content).body;
+		let region: RegionLocator | undefined;
+		if (producedRegion?.kind === 'callout') {
+			const located = locateRegion(content, producedRegion);
+			if (located) {
+				if (hasIllustrations(located.text)) return null;
+				text = located.text;
+				region = producedRegion;
+			}
+		}
+		const spots = await this.analyzer.analyze(file.path, text, trackAiCache(cacheUse));
 		const items: IllustrateItem[] = [];
 		for (const spot of spots) {
-			const item = await this.resolveItem(spot, content, sourceImages);
+			const item = await this.resolveItem(spot, content, sourceImages, region);
 			if (item) items.push(item);
 		}
 		if (items.length === 0) return null;
@@ -194,7 +216,24 @@ export class IllustrateModule implements FeatureModule {
 
 	private async illustrateFromContext(file: TFile, ctx: SourceContext): Promise<void> {
 		const settings = this.getSettings().illustrate;
+		if (this.inFlight.has(file.path)) {
+			console.debug(`[Synapse] Illustrate: skipped ${file.path} (run already in flight)`);
+			return;
+		}
+		this.inFlight.add(file.path);
+		try {
+			await this.runFromContext(file, ctx, settings);
+		} finally {
+			this.inFlight.delete(file.path);
+		}
+	}
+
+	private async runFromContext(file: TFile, ctx: SourceContext, settings: SynapseSettings['illustrate']): Promise<void> {
 		if (wordCount(await this.plugin.app.vault.cachedRead(file)) < MIN_WORDS_TO_ILLUSTRATE) return;
+		if ((await this.store.loadPending()).some((p) => p.sourceNotePath === file.path)) {
+			console.debug(`[Synapse] Illustrate: skipped ${file.path} (a proposal is already pending)`);
+			return;
+		}
 		let images = ctx.sourceImages ?? [];
 		const urls = (ctx.sourceUrls ?? []).filter((url) => /^https?:\/\//i.test(url));
 		if (settings.fetchLinkedPages && urls.length > 0 && images.length < MIN_SOURCE_IMAGES) {
@@ -206,7 +245,7 @@ export class IllustrateModule implements FeatureModule {
 		}
 		this.openverse.resetRun();
 		try {
-			const id = await this.noteQueue.run(file.path, () => this.buildProposal(file, {}, images));
+			const id = await this.noteQueue.run(file.path, () => this.buildProposal(file, {}, images, ctx.producedRegion));
 			if (!id) return;
 			await this.maybeAutoAccept(id);
 			await this.refreshView();
@@ -327,20 +366,29 @@ export class IllustrateModule implements FeatureModule {
 			await this.rejectProposal(id);
 			return;
 		}
+		let inserted = 0;
 		await this.noteQueue.run(file.path, async () => {
-			const blocks: Array<{ anchor: string; block: string }> = [];
-			for (const item of accepted) {
-				blocks.push({ anchor: item.anchor, block: await this.buildBlock(item, file) });
+			const current = await this.plugin.app.vault.read(file);
+			const fresh = accepted.filter((item) => !alreadyInserted(current, item));
+			const blocks: Array<{ item: IllustrateItem; block: string }> = [];
+			for (const item of fresh) {
+				blocks.push({ item, block: await this.buildBlock(item, file) });
 			}
+			if (blocks.length === 0) return;
 			// Re-resolve against the live note: the stored placement is only the review preview.
 			await this.plugin.app.vault.process(file, (content) =>
-				blocks.reduce((acc, { anchor, block }) => applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor)), block), content)
+				blocks.reduce((acc, { item, block }) => {
+					if (alreadyInserted(acc, item)) return acc;
+					inserted++;
+					return applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(item.anchor), resolveOptions(item.region)), block);
+				}, content)
 			);
 		});
 		const status = accepted.length === proposal.items.length ? 'accepted' : 'partially-accepted';
 		await this.store.updateStatus(id, status, accepted.map((item) => item.id));
 		if (!options?.silent) {
-			this.notifications.success(`Inserted ${accepted.length} visual${accepted.length === 1 ? '' : 's'}`);
+			const skipped = accepted.length - inserted;
+			this.notifications.success(`Inserted ${inserted} visual${inserted === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} already present)` : ''}`);
 			await this.refreshView();
 		}
 	}
@@ -352,8 +400,10 @@ export class IllustrateModule implements FeatureModule {
 			const asset = await this.assets.download(item.candidate, note);
 			return buildPhotoBlock(item, asset.path);
 		} catch (error) {
-			this.notifications.info(`Could not download "${item.candidate.title}" — embedding the remote URL instead (${error instanceof Error ? error.message : String(error)})`);
-			return buildPhotoBlock(item, null);
+			const reason = error instanceof Error ? error.message : String(error);
+			console.debug(`[Synapse] Illustrate: download failed for ${item.candidate.fileUrl}: ${redactError(error)}`);
+			this.notifications.info(`Could not download "${item.candidate.title}" — embedding the remote URL instead (${reason})`);
+			return buildPhotoBlock(item, null, reason);
 		}
 	}
 

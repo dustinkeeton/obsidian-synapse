@@ -30,6 +30,11 @@ describe('block builders', () => {
 		expect(buildPhotoBlock(photoItem, null)).toContain('![A red panda](https://upload.wikimedia.org/red-panda.jpg)');
 	});
 
+	it('notes a failed download in the callout when falling back to the remote embed', () => {
+		const block = buildPhotoBlock(photoItem, null, 'HTTP 404\n  not found');
+		expect(block).toContain('· (download failed; remote embed: HTTP 404 not found)');
+	});
+
 	it('omits a link when the license URL is empty', () => {
 		expect(attributionLine({ ...candidate, licenseUrl: '' })).toContain('License: CC BY-SA ·');
 	});

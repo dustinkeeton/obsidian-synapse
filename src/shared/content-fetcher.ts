@@ -215,6 +215,21 @@ function pageText(html: string, maxLength: number): string {
 
 const MAX_SOURCE_IMAGES = 12;
 const NON_CONTENT_IMAGE_RE = /(?:^|[/._-])(?:logo|sprite|avatar|icon|favicon|pixel|tracking|badge|spacer|blank)(?:[/._-]|$)/i;
+const TRACKING_PARAM_RE = /^(?:utm_\w*|fbclid|gclid|dclid|gbraid|wbraid|yclid|msclkid|mc_\w+|igshid|ref|ref_\w*|_ga|_gl|spm)$/i;
+
+/** Drop analytics/campaign query params so the same image never yields two URLs. */
+export function stripTrackingParams(url: string): string {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		return url;
+	}
+	for (const key of [...parsed.searchParams.keys()]) {
+		if (TRACKING_PARAM_RE.test(key)) parsed.searchParams.delete(key);
+	}
+	return parsed.toString();
+}
 
 function resolveImageUrl(src: string, baseUrl: string): string | null {
 	const trimmed = src.trim();
@@ -228,7 +243,7 @@ function resolveImageUrl(src: string, baseUrl: string): string | null {
 	if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return null;
 	if (/\.svg(?:[?#]|$)/i.test(resolved.pathname)) return null;
 	if (NON_CONTENT_IMAGE_RE.test(resolved.pathname)) return null;
-	return resolved.toString();
+	return stripTrackingParams(resolved.toString());
 }
 
 function attr(tag: string, name: string): string {

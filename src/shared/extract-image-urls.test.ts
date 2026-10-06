@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { requestUrl } from 'obsidian';
-import { extractImageUrls, fetchPageContentWithImages, fetchHtmlDocument } from './content-fetcher';
+import { extractImageUrls, fetchPageContentWithImages, fetchHtmlDocument, stripTrackingParams } from './content-fetcher';
 
 const BASE = 'https://example.com/articles/pandas';
 
@@ -30,6 +30,16 @@ describe('extractImageUrls', () => {
 			'<img src="/real.jpg">',
 		].join('');
 		expect(extractImageUrls(html, BASE).map((i) => i.url)).toEqual(['https://example.com/real.jpg']);
+	});
+
+	it('strips tracking params and resolves protocol-relative Wikimedia srcs against the page origin', () => {
+		const html = '<meta property="og:image" content="https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Flag.svg/1280px-Flag.svg.png?utm_source=en.wikipedia.org&utm_campaign=index&utm_content=thumbnail&width=1280"><img src="//upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Ship.jpg/220px-Ship.jpg" srcset="//upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Ship.jpg/330px-Ship.jpg 1.5x" alt="Ship">';
+		expect(extractImageUrls(html, 'https://en.wikipedia.org/wiki/Piracy').map((i) => i.url)).toEqual([
+			'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Flag.svg/1280px-Flag.svg.png?width=1280',
+			'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Ship.jpg/220px-Ship.jpg',
+		]);
+		expect(stripTrackingParams('https://x.test/a.jpg?fbclid=1&ref=home&size=2')).toBe('https://x.test/a.jpg?size=2');
+		expect(stripTrackingParams('not a url')).toBe('not a url');
 	});
 
 	it('caps at 12 images', () => {

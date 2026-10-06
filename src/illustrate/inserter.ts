@@ -13,10 +13,11 @@ export function attributionLine(candidate: MediaCandidate): string {
 	return `Source: ${source} · License: ${license} · ${candidate.attribution}`;
 }
 
-/** Embed (`![[vault path]]` or remote URL) plus the caption/attribution callout. */
-export function buildPhotoBlock(item: Extract<IllustrateItem, { kind: 'photo' }>, vaultPath: string | null): string {
+/** Embed (`![[vault path]]` or remote URL) plus the caption/attribution callout; `fallbackReason` notes a failed download. */
+export function buildPhotoBlock(item: Extract<IllustrateItem, { kind: 'photo' }>, vaultPath: string | null, fallbackReason?: string): string {
 	const embed = vaultPath ? `![[${vaultPath}]]` : `![${item.caption.replace(/[[\]]/g, '')}](${item.candidate.fileUrl})`;
-	return `${embed}\n${buildCallout(CALLOUT_TYPES.illustrate, item.caption, attributionLine(item.candidate))}`;
+	const note = fallbackReason ? ` · (download failed; remote embed: ${fallbackReason.replace(/\s+/g, ' ').trim()})` : '';
+	return `${embed}\n${buildCallout(CALLOUT_TYPES.illustrate, item.caption, attributionLine(item.candidate) + note)}`;
 }
 
 /** Mermaid fence plus a caption callout noting the diagram was built from the note itself. */
