@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Shared Module
@@ -321,6 +321,14 @@ interface FeatureChipSelectOptions {
 }
 function renderFeatureChipSelect(container: HTMLElement, options: FeatureChipSelectOptions): void
 
+// build-info.ts (#542; `__SYNAPSE_BUILD__` is injected per build by the esbuild `synapse-build-info` onLoad plugin, vitest `define` supplies `{"dev":false}`)
+interface BuildInfo { dev: boolean; sha?: string; branch?: string; dirty?: boolean; builtAt?: string }
+const PRODUCTION_BUILD: Readonly<BuildInfo>                       // frozen { dev: false }
+const BUILD_INFO: Readonly<BuildInfo>                             // parsed from the injected constant at module load
+function parseBuildInfo(raw: unknown): BuildInfo                  // malformed / non-string / dev !== true -> production shape
+function formatBuiltAt(iso: string): string                       // local `YYYY-MM-DD HH:mm`; raw value if unparseable
+function describeDevBuild(info: BuildInfo, version: string): string   // "main @ 22933ef (dirty) · built 2026-10-06 14:02 · based on v1.2.0"; '' for production
+
 // fire-and-forget.ts
 interface FireAndForgetOptions {
   notifications?: NotificationManager
@@ -553,6 +561,8 @@ function scoreLyricsContent(content: string): number
 | `credential-field.test.ts` | Tests | `decorateCredentialField` Test button, deep link, status chip |
 | `feature-chip-select.ts` | `renderFeatureChipSelect`, `FeatureChipSelectOptions` | Renders a chip multi-select for exclusion rule feature scope. Self-redraws its container on every edit; caller's `onChange` only needs to persist |
 | `feature-chip-select.test.ts` | Tests | `renderFeatureChipSelect` chip rendering, dropdown options, add via dropdown, remove via chips |
+| `build-info.ts` | `BuildInfo`, `PRODUCTION_BUILD`, `BUILD_INFO`, `parseBuildInfo`, `formatBuiltAt`, `describeDevBuild` | Build identity stamped into `main.js` (#542). `esbuild.config.mjs` prepends `const __SYNAPSE_BUILD__ = "<json>"` to this one module on every (re)build: `{ dev: false }` for `production`, otherwise sha/branch/dirty/builtAt from git (`{ dev: true }` if git fails). Consumed by `settings-ui/settings-tab.ts` for the dev-build banner |
+| `build-info.test.ts` | Tests | `parseBuildInfo` shapes + fallbacks, `BUILD_INFO` under the vitest define, `formatBuiltAt`, `describeDevBuild` |
 | `fire-and-forget.ts` | `fireAndForget`, `FireAndForgetOptions` | Attaches rejection handling to an intentionally un-awaited promise. Routes errors through `NotificationManager.notifyError` when available; both the background-mode and no-manager-fallback `console.error` sinks route through `redactError` (single redaction source). Supports background mode (log only, no toast) |
 | `fire-and-forget.test.ts` | Tests | `fireAndForget` resolve path, rejection with and without a notification manager |
 | `review-action.ts` | `reviewAction`, `ReviewActionOptions` | Centralized "Review" completion-toast gate (#366): returns a `NoticeAction` opening the unified proposal view iff something was generated, auto-accept is off for the kind, and it is not an automatic post-op side effect. Shared by elaboration, enrichment, organize, deep-dive, title, rem |
