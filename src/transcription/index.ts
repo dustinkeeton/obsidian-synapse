@@ -10,24 +10,25 @@ export {
 	formatTimestamp,
 	MIN_SLIDER_DURATION,
 } from './duration-detector';
-export type { DurationResult } from './duration-detector';
 export {
 	UrlTranscriptionRouter,
 	NoTranscriptionPathError,
 	buildUrlTranscriptBlock,
 } from './url-transcription';
+export { CaptionStrategy } from './caption-strategy';
+export { LocalExtractionStrategy } from './local-extraction-strategy';
+export { fetchYouTubeTranscript } from './youtube-captions';
 export type {
+	DurationResult,
+	LocalExtractionDelegate,
+	ProcessedTranscript,
+	ProcessTranscript,
+	TranscriptStore,
 	UrlTranscript,
 	UrlTranscriptOptions,
 	UrlTranscriptionStrategy,
-	TranscriptStore,
-} from './url-transcription';
-export { CaptionStrategy } from './caption-strategy';
-export type { ProcessedTranscript, ProcessTranscript } from './caption-strategy';
-export { LocalExtractionStrategy } from './local-extraction-strategy';
-export type { LocalExtractionDelegate } from './local-extraction-strategy';
-export { fetchYouTubeTranscript } from './youtube-captions';
-export type { YouTubeTranscript } from './youtube-captions';
+	YouTubeTranscript,
+} from './types';
 export { insertUrlTranscript, appendUrlTranscript } from './insert-url-transcript';
 export type { InsertUrlTranscriptDeps } from './insert-url-transcript';
 export { transcribeNoteMedia } from './note-media-transcription';

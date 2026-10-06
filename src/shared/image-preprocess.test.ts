@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { arrayBufferToBase64, base64EncodedLength, preprocessImage } from './preprocess';
+import { preprocessImage } from './image-preprocess';
 
 /**
  * Vitest runs in a node env with no DOM/Canvas. We mock document.createElement('canvas'),
@@ -68,28 +68,6 @@ function installCanvasMocks(): void {
 		vi.stubGlobal('Blob', class {});
 	}
 }
-
-describe('arrayBufferToBase64', () => {
-	it('encodes bytes to base64', () => {
-		const bytes = new Uint8Array([72, 105]); // "Hi"
-		expect(arrayBufferToBase64(bytes.buffer)).toBe('SGk=');
-	});
-
-	it('handles large buffers without stack overflow', () => {
-		const big = new Uint8Array(100_000).fill(65); // 'A'
-		const encoded = arrayBufferToBase64(big.buffer);
-		expect(typeof encoded).toBe('string');
-		expect(encoded.length).toBeGreaterThan(0);
-	});
-});
-
-describe('base64EncodedLength', () => {
-	it('computes the inflated (~4/3, padded) length', () => {
-		expect(base64EncodedLength(3)).toBe(4);
-		expect(base64EncodedLength(1)).toBe(4);
-		expect(base64EncodedLength(6)).toBe(8);
-	});
-});
 
 describe('preprocessImage', () => {
 	beforeEach(() => {

@@ -72,7 +72,7 @@ function builtModule<K extends FeatureModuleKey>(
 	return module;
 }
 
-/** Construction/load order; unload walks it in reverse. Video depends on audio, so audio precedes it. */
+/** Construction/load order; unload walks it in reverse. Audio precedes video and organize precedes deep-dive: each later one borrows the earlier. */
 export const MODULE_FACTORIES: readonly ModuleEntry[] = [
 	{ key: 'elaboration', create: ({ deps }) => new ElaborationModule(deps, autoAccept(deps, 'elaboration')) },
 	{
@@ -107,7 +107,13 @@ export const MODULE_FACTORIES: readonly ModuleEntry[] = [
 	},
 	{ key: 'tidy', create: ({ deps }) => new TidyModule(deps) },
 	{ key: 'organize', create: ({ deps }) => new OrganizeModule(deps, autoAccept(deps, 'organize')) },
-	{ key: 'deepDive', create: ({ deps }) => new DeepDiveModule(deps, autoAccept(deps, 'deep-dive')) },
+	{
+		key: 'deepDive',
+		create: ({ deps, built }) => {
+			const organize = builtModule(built, 'organize');
+			return new DeepDiveModule(deps, autoAccept(deps, 'deep-dive'), (text, aiOpts) => organize.suggestDirectory(text, aiOpts));
+		},
+	},
 	{ key: 'title', create: ({ deps }) => new TitleModule(deps, autoAccept(deps, 'title')) },
 	{ key: 'rem', create: ({ deps }) => new RemModule(deps, autoAccept(deps, 'rem')) },
 	{ key: 'illustrate', create: ({ deps }) => new IllustrateModule(deps, autoAccept(deps, 'illustrate')) },

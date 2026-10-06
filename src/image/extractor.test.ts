@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ImageExtractor } from './extractor';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import type {
+	AIRequestOptions,
 	NotificationManager,
 	ChatMessage,
 	ContentBlock,
@@ -10,7 +11,7 @@ import type {
 } from '../shared';
 
 const mockChat = vi
-	.fn<(messages: ChatMessage[]) => Promise<string>>()
+	.fn<(messages: ChatMessage[], opts?: AIRequestOptions) => Promise<string>>()
 	.mockResolvedValue('Extracted text from image');
 
 vi.mock('../shared/ai-client', () => ({
@@ -91,8 +92,7 @@ describe('ImageExtractor', () => {
 		const buffer = makeImageBuffer();
 		await extractor.extract(buffer, 'screenshot.png');
 
-		// The model should have been temporarily set to the vision model
-		// and restored after the call
+		expect(mockChat.mock.calls[0][1]?.model).toBe('gpt-4o');
 		expect(settings.ai.model).toBe('gpt-4o-mini');
 	});
 
@@ -103,7 +103,7 @@ describe('ImageExtractor', () => {
 		const buffer = makeImageBuffer();
 		await extractor.extract(buffer, 'screenshot.png');
 
-		// Model should remain unchanged
+		expect(mockChat.mock.calls[0][1]?.model).toBe('gpt-4o');
 		expect(settings.ai.model).toBe('gpt-4o');
 		expect(mockChat).toHaveBeenCalledOnce();
 	});
@@ -140,7 +140,7 @@ describe('ImageExtractor', () => {
 		expect((content[0] as ImageContentBlock).mediaType).toBe('image/png');
 	});
 
-	it('restores model even if chat throws', async () => {
+	it('leaves the configured model untouched when chat throws', async () => {
 		settings.image.visionModel = 'gpt-4o';
 		settings.ai.model = 'gpt-4o-mini';
 		mockChat.mockRejectedValue(new Error('API error'));
@@ -148,7 +148,6 @@ describe('ImageExtractor', () => {
 		const buffer = makeImageBuffer();
 		await expect(extractor.extract(buffer, 'screenshot.png')).rejects.toThrow('API error');
 
-		// Model should be restored
 		expect(settings.ai.model).toBe('gpt-4o-mini');
 	});
 });

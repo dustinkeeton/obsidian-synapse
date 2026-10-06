@@ -4,6 +4,7 @@ import {
 	sanitizePath, sanitizeUrl, isRecord, parseJson,
 	loadNodeModules, shellEnv, type NodeModules,
 } from '../shared';
+import type { DurationResult } from './types';
 
 /**
  * The subset of yt-dlp `--dump-json` output this detector consumes. Both fields
@@ -24,15 +25,6 @@ function asYtDlpDurationJson(value: unknown): YtDlpDurationJson | null {
 		duration: typeof value.duration === 'number' ? value.duration : undefined,
 		title: typeof value.title === 'string' ? value.title : undefined,
 	};
-}
-
-/**
- * Result of a duration detection attempt.
- * `durationSeconds` is undefined when detection fails (e.g. missing ffprobe).
- */
-export interface DurationResult {
-	durationSeconds: number | undefined;
-	title: string;
 }
 
 /**

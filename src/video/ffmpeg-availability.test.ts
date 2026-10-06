@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createFfmpegAvailability } from './ffmpeg-availability';
-import type { AudioExtractor } from './audio-extractor';
+import type { AudioClipper } from '../audio';
 
 function extractorWith(checkDependencies: () => Promise<{ ytDlp: boolean; ffmpeg: boolean }>) {
-	return { checkDependencies: vi.fn(checkDependencies) } as unknown as AudioExtractor & { checkDependencies: ReturnType<typeof vi.fn> };
+	return { checkDependencies: vi.fn(checkDependencies) } as unknown as AudioClipper & { checkDependencies: ReturnType<typeof vi.fn> };
 }
 
 describe('createFfmpegAvailability', () => {

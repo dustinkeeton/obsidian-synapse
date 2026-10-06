@@ -29,6 +29,8 @@ export interface AIRequestOptions {
 	bypassCache?: boolean;
 	/** Called when the response is replayed from the response cache (#527); never for a dispatch or a coalesced join. */
 	onCacheHit?: () => void;
+	/** Model for this call only (e.g. a vision model); the configured `ai.model` is never touched. */
+	model?: string;
 }
 
 async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse> {
@@ -378,13 +380,14 @@ export class AIClient {
 	 */
 	async chat(messages: ChatMessage[], opts?: AIRequestOptions): Promise<string> {
 		const { ai } = this.getSettings();
+		const model = opts?.model || ai.model;
 
 		// Deterministic key over the fully-resolved request. `messages` already
 		// embeds the system prompt, so it is covered by the JSON serialization.
 		const key = contentKey([
 			JSON.stringify(messages),
 			ai.provider,
-			ai.model,
+			model,
 			String(ai.temperature),
 			String(ai.maxTokens),
 		]);
@@ -414,7 +417,7 @@ export class AIClient {
 
 		// Populate the cache only on success, INSIDE the `.then()`, so a rejected
 		// dispatch can never be cached. A bypass still refreshes the cache here.
-		const dispatchPromise = this.dispatch(messages).then((res) => {
+		const dispatchPromise = this.dispatch(messages, model).then((res) => {
 			if (cacheable) {
 				this.cacheSet(key, res);
 			}
@@ -441,18 +444,18 @@ export class AIClient {
 	 * Behavior is unchanged from the pre-cache `chat()`; the caching/coalescing
 	 * wrapper lives in {@link chat}.
 	 */
-	private async dispatch(messages: ChatMessage[]): Promise<string> {
+	private async dispatch(messages: ChatMessage[], requestedModel: string): Promise<string> {
 		const { ai } = this.getSettings();
 
 		switch (ai.provider) {
 			case 'openai':
-				return this.callOpenAI(messages);
+				return this.callOpenAI(messages, requestedModel);
 			case 'anthropic':
-				return this.callAnthropic(messages);
+				return this.callAnthropic(messages, requestedModel);
 			case 'gemini':
-				return this.callGemini(messages);
+				return this.callGemini(messages, requestedModel);
 			case 'ollama':
-				return this.callOllama(messages);
+				return this.callOllama(messages, requestedModel);
 			default:
 				throw new Error(`Unsupported AI provider: ${ai.provider}`);
 		}
@@ -490,9 +493,9 @@ export class AIClient {
 		}
 	}
 
-	private async callOpenAI(messages: ChatMessage[]): Promise<string> {
+	private async callOpenAI(messages: ChatMessage[], requestedModel: string): Promise<string> {
 		const { ai } = this.getSettings();
-		const model = resolveModelId(ai.provider, ai.model);
+		const model = resolveModelId(ai.provider, requestedModel);
 		// `max_tokens` is deprecated and is a 400 on reasoning models;
 		// `max_completion_tokens` replaces it and is accepted by every model.
 		const body: Record<string, unknown> = {
@@ -521,9 +524,9 @@ export class AIClient {
 		return extractOpenAIResponseText(response.json);
 	}
 
-	private async callAnthropic(messages: ChatMessage[]): Promise<string> {
+	private async callAnthropic(messages: ChatMessage[], requestedModel: string): Promise<string> {
 		const { ai } = this.getSettings();
-		const model = resolveModelId(ai.provider, ai.model);
+		const model = resolveModelId(ai.provider, requestedModel);
 		const systemMsg = messages.find(m => m.role === 'system');
 		const nonSystemMsgs = messages.filter(m => m.role !== 'system');
 
@@ -566,9 +569,9 @@ export class AIClient {
 		return extractAnthropicResponseText(response.json);
 	}
 
-	private async callGemini(messages: ChatMessage[]): Promise<string> {
+	private async callGemini(messages: ChatMessage[], requestedModel: string): Promise<string> {
 		const { ai } = this.getSettings();
-		const model = resolveModelId(ai.provider, ai.model);
+		const model = resolveModelId(ai.provider, requestedModel);
 		const systemMsg = messages.find(m => m.role === 'system');
 		const nonSystemMsgs = messages.filter(m => m.role !== 'system');
 
@@ -608,7 +611,7 @@ export class AIClient {
 		return extractGeminiResponseText(response.json);
 	}
 
-	private async callOllama(messages: ChatMessage[]): Promise<string> {
+	private async callOllama(messages: ChatMessage[], requestedModel: string): Promise<string> {
 		const { ai } = this.getSettings();
 
 		// Validate Ollama endpoint — allow http for localhost, require https otherwise
@@ -623,7 +626,7 @@ export class AIClient {
 			throw new Error('Ollama endpoint must use HTTPS (or HTTP for localhost only)');
 		}
 
-		const model = resolveModelId(ai.provider, ai.model);
+		const model = resolveModelId(ai.provider, requestedModel);
 		const response = await safeRequest({
 			url: `${ai.ollamaEndpoint}/api/chat`,
 			method: 'POST',

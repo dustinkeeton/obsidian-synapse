@@ -38,3 +38,10 @@ export interface AudioEmbed {
 	file: TFile;
 	line: number;
 }
+
+/** ffmpeg-backed clip/concat surface audio borrows from video's `AudioExtractor` (desktop only); structural so audio never imports video. */
+export interface AudioClipper {
+	clipAudio(inputPath: string, startSeconds: number, endSeconds: number): Promise<string>;
+	concatAudio(inputPaths: string[]): Promise<string>;
+	checkDependencies(): Promise<{ ytDlp: boolean; ffmpeg: boolean }>;
+}

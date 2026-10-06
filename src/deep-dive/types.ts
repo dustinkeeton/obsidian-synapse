@@ -1,3 +1,5 @@
+import type { AIRequestOptions } from '../shared';
+
 /** Topic extracted from a note's content via AI analysis. */
 export interface ExtractedTopic {
 	/** Note-title-worthy name */
@@ -78,3 +80,6 @@ export interface DeepDiveRun {
 	createdAt: string;
 	status: DeepDiveRunStatus;
 }
+
+/** Existing-folder suggestion for a topic title from the organize engine; wired by the module registry so deep-dive never imports organize. */
+export type SuggestDirectory = (text: string, aiOpts?: AIRequestOptions) => Promise<string | null>;

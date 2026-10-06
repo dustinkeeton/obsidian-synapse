@@ -342,11 +342,11 @@ describe('ImageAnalyzer.analyzeImagesInNote', () => {
 			'![[photo.png]]'
 		);
 
-		// Model should be restored after the call
+		expect(mockChat.mock.calls[0][1]).toMatchObject({ model: 'gpt-4o' });
 		expect(settings.ai.model).toBe('gpt-4o-mini');
 	});
 
-	it('restores model even if chat throws', async () => {
+	it('leaves the configured model untouched when chat throws', async () => {
 		settings.image.visionModel = 'gpt-4o';
 		settings.ai.model = 'gpt-4o-mini';
 		mockChat.mockRejectedValue(new Error('API error'));

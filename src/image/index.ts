@@ -11,7 +11,6 @@ import { ImageEmbed } from './types';
 import { ImageExtractor } from './extractor';
 
 export { findImageEmbeds, IMAGE_EXTENSIONS, IMAGE_EMBED_REGEX } from './note-scanner';
-export { arrayBufferToBase64, preprocessImage } from './preprocess';
 export type { ImageEmbed, OCRResult } from './types';
 
 export class ImageModule implements FeatureModule {

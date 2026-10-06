@@ -9,7 +9,6 @@ import {
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport,
 } from '../shared';
 import type { AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
-import { ContentAnalyzer, DirectoryMatcher } from '../organize';
 import { DeepDiveStore } from './deep-dive-store';
 import { NoteGenerator } from './note-generator';
 import { scoreQuality } from './quality-scorer';
@@ -23,10 +22,11 @@ import {
 } from './syllabus-navigator';
 import { selectDepth } from './depth-selector-modal';
 import { TopicAnalyzer } from './topic-analyzer';
-import {
+import type {
 	DeepDiveProposal,
 	DeepDiveRun,
 	ExtractedTopic,
+	SuggestDirectory,
 } from './types';
 
 export type {
@@ -67,8 +67,8 @@ export class DeepDiveModule implements FeatureModule {
 	private analyzer: TopicAnalyzer;
 	private generator: NoteGenerator;
 	private store: DeepDiveStore;
-	private contentAnalyzer: ContentAnalyzer;
-	private directoryMatcher: DirectoryMatcher;
+	/** Organize's folder suggestion, injected by the module registry; null means nested placement only. */
+	private suggestDirectory: SuggestDirectory | null;
 
 	/**
 	 * Live accessor for the deep-dive auto-accept flag (#228). Wired by main.ts
@@ -78,7 +78,7 @@ export class DeepDiveModule implements FeatureModule {
 	 */
 	private shouldAutoAccept: () => boolean = () => false;
 
-	constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean) {
+	constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean, suggestDirectory?: SuggestDirectory) {
 		const { plugin, getSettings } = deps;
 		this.plugin = plugin;
 		this.getSettings = getSettings;
@@ -90,8 +90,7 @@ export class DeepDiveModule implements FeatureModule {
 		this.analyzer = new TopicAnalyzer(plugin.app, getSettings);
 		this.generator = new NoteGenerator(getSettings);
 		this.store = new DeepDiveStore(plugin.app, getSettings);
-		this.contentAnalyzer = new ContentAnalyzer(plugin.app, getSettings);
-		this.directoryMatcher = new DirectoryMatcher(plugin.app);
+		this.suggestDirectory = suggestDirectory ?? null;
 	}
 
 	async onload(): Promise<void> {
@@ -626,11 +625,7 @@ export class DeepDiveModule implements FeatureModule {
 		return buildDeepDivePath(topicTitle, rootFile, settings, parentProposedPath);
 	}
 
-	/**
-	 * Use the organize module's ContentAnalyzer + DirectoryMatcher to
-	 * determine the best placement based on content semantics.
-	 * Falls back to nested placement if no good match is found.
-	 */
+	/** Place via organize's folder suggestion when wired; nested placement otherwise or on any failure. */
 	private async buildAutoOrganizedPath(
 		topicTitle: string,
 		rootFile: TFile,
@@ -638,34 +633,17 @@ export class DeepDiveModule implements FeatureModule {
 		aiOpts?: AIRequestOptions
 	): Promise<string> {
 		const settings = this.getSettings().deepDive;
-		try {
-			const topics = await this.contentAnalyzer.extractTopics(
-				topicTitle,
-				[],
-				aiOpts
-			);
-
-			if (topics.length > 0) {
-				// Build a synthetic ContentAnalysis to pass to the directory matcher
-				const analysis = {
-					notePath: '',
-					topics,
-					tags: [],
-					links: [],
-				};
-
-				const scores = this.directoryMatcher.scoreDirectories(analysis);
-				if (scores.length > 0 && scores[0].score >= 0.6) {
+		if (this.suggestDirectory) {
+			try {
+				const directory = await this.suggestDirectory(topicTitle, aiOpts);
+				if (directory) {
 					const safeName = topicTitle.replace(/[\\/:*?"<>|]/g, '-').trim();
-					const path = `${scores[0].directoryPath}/${safeName}.md`;
-					return normalizePath(path);
+					return normalizePath(`${directory}/${safeName}.md`);
 				}
+			} catch {
+				// Fall back to nested if the suggestion fails
 			}
-		} catch {
-			// Fall back to nested if AI analysis fails
 		}
-
-		// Default: fall back to nested placement
 		return buildDeepDivePath(topicTitle, rootFile, settings, parentProposedPath);
 	}
 

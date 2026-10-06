@@ -1,26 +1,7 @@
 import { detectPlatform, hasSpeechContent, redactError } from '../shared';
 import type { SynapseSettings } from '../settings';
 import { fetchYouTubeTranscript } from './youtube-captions';
-import type { UrlTranscript, UrlTranscriptOptions, UrlTranscriptionStrategy } from './url-transcription';
-
-/**
- * Result of running a transcript string through the audio module's
- * post-processing pipeline (cleanup + optional schema reformat, #234).
- * Matches the return shape of `AudioModule.processTranscriptText`.
- */
-export interface ProcessedTranscript {
-	text: string;
-	reformatted?: boolean;
-	schemaId?: string;
-	aiCached?: boolean;
-}
-
-export interface ProcessTranscriptOptions {
-	update?: (message: string) => void;
-	bypassCache?: boolean;
-}
-
-export type ProcessTranscript = (raw: string, opts?: ProcessTranscriptOptions) => Promise<ProcessedTranscript>;
+import type { ProcessedTranscript, ProcessTranscript, UrlTranscript, UrlTranscriptOptions, UrlTranscriptionStrategy } from './types';
 
 /**
  * Tier 1 of URL transcription (#184): YouTube captions over HTTP. Free, fast,

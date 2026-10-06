@@ -3,6 +3,7 @@ import {
 	buildCallout, calloutForTranscriptionResult, formatTimeRange, hasSpeechContent, NoSpeechDetectedError,
 } from '../shared';
 import type { CachedTranscript, TimeRange, TranscriptCacheEntry } from '../shared';
+import type { TranscriptStore, UrlTranscript, UrlTranscriptOptions, UrlTranscriptionStrategy } from './types';
 
 /**
  * URL transcription router (#184) — the platform seam between "transcribe this
@@ -23,61 +24,6 @@ import type { CachedTranscript, TimeRange, TranscriptCacheEntry } from '../share
  * the unit of exchange here is a *transcript*, not extracted audio, so a tier
  * like captions — which never produces audio — fits naturally.
  */
-
-export interface UrlTranscriptOptions {
-	/**
-	 * Clip to a time range. Captions cannot clip, so a set range forces the
-	 * extraction tiers (CaptionStrategy declines via canHandle).
-	 */
-	timeRange?: TimeRange;
-	/** Progress hook, same shape as NotificationManager operation updates. */
-	update?: (message: string) => void;
-	/** Skip the transcript store, re-run the tiers, and dispatch their AI post-processing fresh (#488, #527). */
-	forceRefresh?: boolean;
-}
-
-/** Read/write surface the router needs from `TranscriptCache` (#488). */
-export interface TranscriptStore {
-	get(url: string, timeRange?: TimeRange): Promise<TranscriptCacheEntry | null>;
-	put(url: string, transcript: CachedTranscript, timeRange?: TimeRange): Promise<void>;
-}
-
-export interface UrlTranscript {
-	/** Final transcript (post-processed when available, else raw). */
-	text: string;
-	/** Unprocessed transcript. */
-	raw: string;
-	/** Which tier produced the transcript. */
-	source: 'captions' | 'local-extraction';
-	/** Video title, when the tier could determine one. */
-	title?: string;
-	/** Poster frame URL for post-op illustrate (#213); never stored in the transcript cache. */
-	thumbnailUrl?: string;
-	/** Language code, when known. */
-	language?: string;
-	/** Vault path of a downloaded video file (local extraction only). */
-	videoVaultPath?: string;
-	/** True when a content schema (#234, e.g. lyrics) reformatted the text. */
-	reformatted?: boolean;
-	/** Id of the content schema that reformatted the text, if any. */
-	schemaId?: string;
-	/** True when served from the transcript store instead of a tier (#488). */
-	cached?: boolean;
-	/** True when a fresh transcript's AI post-processing replayed a cached response (#527); never stored. */
-	aiCached?: boolean;
-}
-
-export interface UrlTranscriptionStrategy {
-	/** Stable identifier used in diagnostics and error summaries. */
-	readonly id: string;
-	/** Cheap applicability gate — platform/url/settings only, no network. */
-	canHandle(url: string, opts: UrlTranscriptOptions): boolean;
-	/**
-	 * Produce a transcript, or `null` to fall through to the next tier (e.g.
-	 * the video has no captions). Throw only on a real failure.
-	 */
-	transcribe(url: string, opts: UrlTranscriptOptions): Promise<UrlTranscript | null>;
-}
 
 /**
  * Thrown when no strategy could transcribe a URL. The message is written for

@@ -24,7 +24,7 @@ import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/m
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
-import type { AudioExtractor } from '../video';
+import type { AudioClipper } from './types';
 import type { AudioEmbed } from './types';
 import type { SynapseSettings } from '../settings';
 
@@ -119,7 +119,7 @@ describe('AudioModule.transcribeAndInsertCombined', () => {
 				checkpointManager: createMockCheckpointManager() as unknown as CheckpointManager,
 				noteQueue: new NoteOperationQueue(),
 			}),
-			ex as unknown as AudioExtractor | undefined
+			ex as unknown as AudioClipper | undefined
 		);
 	}
 
