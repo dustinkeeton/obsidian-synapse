@@ -125,9 +125,13 @@ interface UrlDetectionResult { platform: Platform; videoId: string; url: string 
 
 // url-classifier.ts
 function classifyUrl(url: string): UrlClassification
-function extractUrls(text: string): string[]
-type UrlContentType = string
-interface UrlClassification { /* url, contentType, ... */ }
+function findUrls(text: string): UrlMatch[]                      // bare http(s) URLs with offsets, duplicates kept; trailing ')' kept while it balances a '(' (#543)
+function extractUrls(text: string): string[]                     // findUrls, de-duplicated (first occurrence wins)
+function findMarkdownLinks(text: string): MarkdownLinkMatch[]    // [text](http(s)-url) links; destination ends at the paren that balances the link's '('
+interface UrlMatch { url: string; index: number }
+interface MarkdownLinkMatch { text: string; url: string; index: number; length: number }
+type UrlContentType = 'video' | 'audio' | 'article' | 'unknown'
+interface UrlClassification { type: UrlContentType; platform: string; url: string }
 
 // content-fetcher.ts
 function fetchPageContent(url: string): Promise<string>
@@ -501,7 +505,7 @@ function scoreLyricsContent(content: string): number
 | `validation.test.ts` | Tests | Validation tests |
 | `url-detector.ts` | `detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult` | Regex platform detection (moved here from video/) |
 | `url-detector.test.ts` | Tests | URL detection tests (moved here from video/) |
-| `url-classifier.ts` | `classifyUrl`, `extractUrls`, `UrlContentType`, `UrlClassification` | Classify URL content type, extract URLs from text |
+| `url-classifier.ts` | `classifyUrl`, `findUrls`, `extractUrls`, `findMarkdownLinks`, `UrlMatch`, `MarkdownLinkMatch`, `UrlContentType`, `UrlClassification` | Classify URL content type; the single paren-aware URL / markdown-link extractor (#543) |
 | `url-classifier.test.ts` | Tests | URL classifier tests |
 | `content-fetcher.ts` | `fetchPageContent`, `fetchArticleContent`, `extractReadableText`, `extractTitle`, `extractMetaDescription`, `extractJsonLdRecipes`, `formatRecipeStructuredData`, `RecipeJsonLd` | Fetch + extract readable web/article/recipe content |
 | `content-fetcher.test.ts` | Tests | Content fetcher tests |
@@ -705,7 +709,8 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `ModuleDeps` / `FeatureModule` / `FeatureSettingsKey` | every feature module (`implements FeatureModule`, `constructor(deps: ModuleDeps, ...)`), modules/registry (`FeatureModules` mapped over `FeatureSettingsKey`; construct/load/unload loops), main (builds the ONE `ModuleDeps`, `main.ts:60-67`), `__test-utils__/mock-factories.makeModuleDeps` |
 | `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:56`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via `ModuleDeps`), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
-| `classifyUrl` / `extractUrls` | summarize, enrichment, intake (URL routing) |
+| `classifyUrl` / `extractUrls` | intake (URL routing), elaboration/index, enrichment/index, deep-dive/index, illustrate/index (source URLs) |
+| `findUrls` / `findMarkdownLinks` | summarize/note-scanner, summarize/index, video/note-scanner, elaboration/proposer, enrichment/index (the only URL matchers; no local `URL_REGEX`, #543) |
 | `detectPlatform` / `isSupportedUrl` | video/index, transcription/, summarize (platform gating) |
 | `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index, organize/index, deep-dive/index, checkpoint-manager |
 | `wordCount` | elaboration/detector, deep-dive/index |

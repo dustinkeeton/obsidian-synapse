@@ -129,20 +129,20 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
    |  skip 'cap' if pending proposals for note >= proposal.maxProposalsPerNote
    |  on skip: completeItem + continue (no generate, no AI call); else hand key to generate
    |
-5. ProposalGenerator.generate(detection, key?)  (proposer.ts:71)
-   |  Guard A: empty body + isGenericTitle(basename) -> notify + return null (proposer.ts:93)
+5. ProposalGenerator.generate(detection, key?)  (proposer.ts:73)
+   |  Guard A: empty body + isGenericTitle(basename) -> notify + return null (proposer.ts:95)
    |  Context (if proposal.includeSourceContext), one char budget (6000), whole entries taken in priority order:
    |    1. backlinks (<=5, 300-char excerpt around the linking line; `sparse-link.linkedFrom` first, then
    |       metadataCache.resolvedLinks sources sorted by path) -- only if proposal.includeBacklinkContext
    |    2. outbound links (<=5, first 500 chars each)
    |    3. note tags (frontmatter + inline, folded) + <=10 tag-sibling titles -- only if includeBacklinkContext
    |  the first entry that does not fit ends gathering; whole block wrapped via wrapUntrusted(_, 'related notes')
-   |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:425)
+   |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:424)
    |  Context: external URLs (<=3) -- tweet(500) / Reddit(2000) / article(2000); video hosts skipped
-   |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:249)
-   |  Guard B: attempted>0 && externalContext='' && isLinkDominated -> return null (proposer.ts:124)
-   |  buildPrompt() always prepends `Note title: "<basename>"` (proposer.ts:181)
-   |  AIClient.complete(prompt, systemPrompt, aiOpts)  (proposer.ts:133; aiOpts = trackAiCache(cacheUse), #527)
+   |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:251)
+   |  Guard B: attempted>0 && externalContext='' && isLinkDominated -> return null (proposer.ts:126)
+   |  buildPrompt() always prepends `Note title: "<basename>"` (proposer.ts:183)
+   |  AIClient.complete(prompt, systemPrompt, aiOpts)  (proposer.ts:135; aiOpts = trackAiCache(cacheUse), #527)
    |  proposedAdditions = stripCodeFences(sanitizeAIResponse(raw))
    |  Returns: Proposal (id===contentKey===key, status:'pending', insertionPoint:'append') | null
    |
@@ -179,9 +179,9 @@ Body is analyzed with frontmatter stripped (detector.ts:61). Inbound links resol
 
 ## Title Signal and Anti-Fabrication Guards (#380, #387)
 
-The note title is surfaced as context in every prompt (`Note title: "<basename>"`, proposer.ts:181); an empty body seeds the proposal from the title alone rather than an empty block (proposer.ts:184).
+The note title is surfaced as context in every prompt (`Note title: "<basename>"`, proposer.ts:183); an empty body seeds the proposal from the title alone rather than an empty block (proposer.ts:186).
 
-Guard A (empty-body + generic title), proposer.ts:93:
+Guard A (empty-body + generic title), proposer.ts:95:
 
 ```ts
 if (content.trim() === '' && isGenericTitle(noteFile.basename)) {
@@ -192,7 +192,7 @@ if (content.trim() === '' && isGenericTitle(noteFile.basename)) {
 
 `isGenericTitle` is imported from the `../shared` barrel (shared/index.ts:143), which re-exports it from `shared/title-detector.ts:69` -- not a local copy, and not from the `title/` feature module (dependency rules forbid feature-to-feature imports; `title/` re-exports `isUntitled` from the same shared source). `isGenericTitle(t) === isUntitled(t) || isDateStyleTitle(t) || isBareUrlTitle(t)` (shared/title-detector.ts:69-71). It returns true for Obsidian "Untitled" defaults, date-style daily-note names (e.g. `2026-06-25`, `YYYYMMDD`, `DD-MM-YYYY`), and bare URLs. A real title like "Photosynthesis" is not generic, so the title-led prompt still runs.
 
-Guard B (link-dominated note, all fetches failed), proposer.ts:124: when the note is essentially just link(s) and every external fetch returned nothing, `generate()` returns null rather than fabricating from a URL slug. `isLinkDominated` strips URLs/markdown/wikilinks to visible text and checks `length < 10` (proposer.ts:280). Both guards return `null`; callers skip the file without creating a proposal.
+Guard B (link-dominated note, all fetches failed), proposer.ts:126: when the note is essentially just link(s) and every external fetch returned nothing, `generate()` returns null rather than fabricating from a URL slug. `isLinkDominated` strips URLs/markdown/wikilinks to visible text and checks `length < 10` (proposer.ts:282). Both guards return `null`; callers skip the file without creating a proposal.
 
 ## Idempotency and Dedup (content key)
 
@@ -240,7 +240,7 @@ const MAX_IMAGES_PER_NOTE = 5
 - Caps at `MAX_IMAGES_PER_NOTE` (5).
 - Resolves via `metadataCache.getFirstLinkpathDest`; reads binary; downscales over `settings.image.maxImageSizeMb` (default 5) MB via `preprocessImage` from the `../image` barrel (downscale surfaced via `notifications.info`, 3s dedup #396).
 - Applies `settings.image.visionModel` override (falls back to `settings.ai.model`), restored in `finally`.
-- Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:427).
+- Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:426).
 
 ## Configuration
 
@@ -280,7 +280,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 |---------|------|---------|
 | `buildCallout`, `CALLOUT_TYPES`, `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `NoteOperationQueue`, `sanitizeAIResponse`, `stripCodeFences`, `CheckpointManager`, `generateId`, `fireAndForget`, `reviewAction`, `trackAiCache`, `withCacheReport` (+ types `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule`) | `../shared` | index.ts:3-10 |
 | `wordCount`, `isPathExcluded`, `matchesExcludeTag`, `getIncludedMarkdownFiles` | `../shared` | detector.ts |
-| `AIClient`, `sanitizeAIResponse`, `stripCodeFences`, `isTwitterUrl`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `fetchArticleContent`, `linkLoadError`, `NotificationManager`, `isGenericTitle`, `hashString`, `contentKey`, `wrapUntrusted`, `redactError`, `isPathExcluded` | `../shared` | proposer.ts |
+| `AIClient`, `sanitizeAIResponse`, `stripCodeFences`, `isTwitterUrl`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `fetchArticleContent`, `linkLoadError`, `NotificationManager`, `isGenericTitle`, `hashString`, `contentKey`, `wrapUntrusted`, `redactError`, `isPathExcluded`, `findUrls` | `../shared` | proposer.ts |
 | `AIClient`, `arrayBufferToBase64`, `NotificationManager`, `redactError` (+ type `ContentBlock`) | `../shared` | image-analyzer.ts |
 | `ensureFolder`, `isRecord`, `readJsonFile` | `../shared` | proposal-store.ts |
 | `fireAndForget` | `../shared` | proposal-view.ts |
@@ -288,7 +288,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 | `preprocessImage` | `../image` (barrel) | image-analyzer.ts |
 | `CommandRegistrar`, `isInFlow` | `../commands` | index.ts |
 
-No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:440).
+No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:439).
 
 ## Invariants / Gotchas
 

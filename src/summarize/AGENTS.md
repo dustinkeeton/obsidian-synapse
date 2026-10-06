@@ -71,7 +71,7 @@ awaited, so there is no cycle).
 | `index.ts` | `SummarizeModule`, type + fn re-exports | Orchestrator, commands, scan + summarize flows |
 | `types.ts` | `SummarizeTarget` | Target type model |
 | `summarizer.ts` | `Summarizer` | AI summarization with style (bullets/paragraph/key-points) |
-| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks; note-prose extraction. A URL target is dropped when a transcription block for the same (social-normalized) source exists ANYWHERE in the note (`dropUrlsTranscribedElsewhere`, #488), not only within 5 lines below it |
+| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks via shared `findUrls` / `findMarkdownLinks` (paren-aware, #543); note-prose extraction. A URL target is dropped when a transcription block for the same (social-normalized) source exists ANYWHERE in the note (`dropUrlsTranscribedElsewhere`, #488), not only within 5 lines below it |
 | `summarize-modal.ts` | `SummarizeSelectionModal`, `SummarizeModalDefaults` | Selection modal for 2+ targets; include-note + combine toggles (#367) |
 | `settings-section.ts` | `renderSummarizeSettings` | Summarize settings UI section (#243) |
 | `summarizer.test.ts` | Tests | Summarizer style/prompt tests |
@@ -208,7 +208,7 @@ When `combineSummaries` (or the modal's "Combine into one summary" toggle) is se
 
 ## Note Content (#367)
 
-`extractNoteProse(content)` (`note-scanner.ts:239`) strips YAML frontmatter and every Synapse-generated summary / transcription / lyrics block (callout and legacy formats) so the AI never re-summarizes its own output. `collectTargets` appends a `note-content` target (when `includeNoteContent`) at the note's last line so a per-item prose callout lands at the end.
+`extractNoteProse(content)` (`note-scanner.ts:236`) strips YAML frontmatter and every Synapse-generated summary / transcription / lyrics block (callout and legacy formats) so the AI never re-summarizes its own output. `collectTargets` appends a `note-content` target (when `includeNoteContent`) at the note's last line so a per-item prose callout lands at the end.
 
 ## Settings Keys
 
@@ -260,7 +260,8 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 
 | Import | From |
 |--------|------|
-| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport` | `../shared` |
+| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks` | `../shared` (index.ts) |
+| `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks` | `../shared` (note-scanner.ts) |
 | `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:10) |
 | `findAudioEmbeds` | `../audio` |
 | `CommandRegistrar` | `../commands` |
