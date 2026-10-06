@@ -149,6 +149,16 @@ describe('region-targeted, container-aware insertion (#213)', () => {
 		expect(locate(SUMMARY, { kind: 'callout', calloutType: 'synapse-ocr' })).toBeNull();
 	});
 
+	it('locates a base|metadata-form region by its Synapse identity and labels it the same way', () => {
+		const modern = SUMMARY.replace('> [!synapse-summary] Summary of other', '> [!summary|synapse-summary] Summary of other');
+		const byTitle = locate(modern, { kind: 'callout', calloutType: 'synapse-summary', title: 'Summary of other' })!;
+		expect([byTitle.start, byTitle.end, byTitle.label]).toEqual([12, 13, 'summary']);
+		expect(byTitle.text).toBe('[!summary|synapse-summary] Summary of other\nOther text.');
+		expect(locate(modern, { kind: 'callout', calloutType: 'summary' })).toBeNull();
+		const inner = resolveInsertionPoint(modern, paragraph('Other text'), { insideContainers: true });
+		expect(inner).toMatchObject({ line: 13, container: { prefix: '> ', label: 'summary' } });
+	});
+
 	it('resolves inside the region after the inner block and records the container prefix', () => {
 		const resolved = resolveInsertionPoint(SUMMARY, paragraph('Piracy peaked'), { within: summary, insideContainers: true });
 		expect(resolved).toMatchObject({ strategy: 'after-paragraph', line: 7, matchedText: 'Piracy peaked in the 1700s.', container: { prefix: '> ', label: 'summary' } });

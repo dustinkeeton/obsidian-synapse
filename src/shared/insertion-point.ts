@@ -1,4 +1,5 @@
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter-utils';
+import { calloutIdentity } from './callouts';
 
 /** Where a proposal wants to land: a heading, the paragraph that opens with `text`, or the end of the note. */
 export interface InsertionAnchor {
@@ -173,9 +174,9 @@ function findAnchorLine(lines: string[], anchor: InsertionAnchor): number {
 	return contains !== -1 ? contains : reverse;
 }
 
-/** Human label for a callout type: `synapse-summary` -> `summary`. */
-function calloutLabel(calloutType: string): string {
-	return calloutType.replace(/^synapse-/, '').replace(/-/g, ' ') || 'callout';
+/** Human label for a callout header's `[!…]` content: `summary|synapse-summary` -> `summary`. */
+function calloutLabel(headerContent: string): string {
+	return calloutIdentity(headerContent).replace(/^synapse-/, '').replace(/-/g, ' ') || 'callout';
 }
 
 function quoteLabel(firstLine: string): string {
@@ -235,7 +236,7 @@ export function locateRegion(content: string, within: RegionLocator): LocatedReg
 	for (const block of scanBlocks(lines)) {
 		if (block.type !== 'quote') continue;
 		const header = stripQuotePrefix(lines[block.start]).match(CALLOUT_HEADER_RE);
-		if (!header || header[1].toLowerCase() !== wantedType) continue;
+		if (!header || calloutIdentity(header[1]) !== wantedType) continue;
 		if (within.title && header[2].trim() !== within.title.trim()) continue;
 		const inner = lines.slice(block.start, block.end + 1).map(stripQuotePrefix);
 		return { start: block.start, end: block.end, prefix: QUOTE_PREFIX, label: calloutLabel(header[1]), text: inner.join('\n') };
