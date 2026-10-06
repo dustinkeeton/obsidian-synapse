@@ -188,7 +188,7 @@ export class ProposalGenerator {
 			// empty `---`/`---` block, which would give the model no signal at all.
 			prompt = `${titleContext}\n\nThis note has no body yet; it is currently just a title. Write the full body for a note on this topic, matching the intent the title implies. Write the note as its author plausibly would.`;
 		} else if (isUserRequested) {
-			prompt = `${titleContext}\n\nThe user has asked for this note to be elaborated:\n\n---\n${content}\n---\n\n${REWRITE_INSTRUCTIONS}`;
+			prompt = `${titleContext}\n\nThe user has requested elaboration of the following note:\n\n---\n${content}\n---\n\n${REWRITE_INSTRUCTIONS}`;
 		} else {
 			prompt = `${titleContext}\n\nThe following note appears to be a placeholder or stub:\n\n---\n${content}\n---\n\nReasons it was flagged:\n${reasonDescriptions.map(r => `- ${r}`).join('\n')}\n\n${REWRITE_INSTRUCTIONS}`;
 		}
