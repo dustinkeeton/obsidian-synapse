@@ -208,3 +208,67 @@ describe('region-targeted, container-aware insertion (#213)', () => {
 		expect(describeInsertion(lead)).toBe('Inside the summary, after the opening paragraph of "Overview"');
 	});
 });
+
+describe('marker-region insertion (#550)', () => {
+	const NOTE = [
+		'---', 'title: Piracy', '---',
+		'# Piracy', '', 'Intro paragraph.', '',
+		'<!-- synapse:summary source="https://a" -->',
+		'## Summary of https://a', '', 'Short one.',
+		'<!-- /synapse:summary -->', '',
+		'<!-- synapse:summary title="Combined summary (2 items)" -->',
+		'## Combined summary (2 items)', '', 'Sources: a, b', '',
+		'## Overview', 'Piracy peaked in the 1700s.', 'It declined later.', '', '- Edward England', '- Black Bart',
+		'<!-- /synapse:summary -->', '',
+		'> [!synapse-enrichment] References', '> - [a](https://a)',
+	].join('\n');
+	const combined: RegionLocator = { kind: 'marker', marker: 'summary', attrs: { title: 'Combined summary (2 items)' } };
+
+	it('locates a marker region by kind and by attrs, excluding the comment lines', () => {
+		const first = locateRegion(NOTE, { kind: 'marker', marker: 'summary' })!;
+		expect([first.start, first.end, first.prefix, first.label]).toEqual([5, 7, '', 'summary']);
+		expect(first.text).toBe('## Summary of https://a\n\nShort one.');
+		const byAttrs = locateRegion(NOTE, combined)!;
+		expect([byAttrs.start, byAttrs.end]).toEqual([11, 20]);
+		expect(byAttrs.text).not.toContain('<!--');
+		expect(locateRegion(NOTE, { kind: 'marker', marker: 'summary', attrs: { source: 'https://zzz' } })).toBeNull();
+		expect(locateRegion(NOTE, { kind: 'marker', marker: 'elaboration' })).toBeNull();
+		expect(locateRegion('<!-- synapse:summary -->\n<!-- /synapse:summary -->', { kind: 'marker', marker: 'summary' })).toBeNull();
+	});
+
+	it('resolves inside the region with an empty container prefix', () => {
+		const resolved = resolveInsertionPoint(NOTE, paragraph('Piracy peaked'), { within: combined, insideContainers: true });
+		expect(resolved).toMatchObject({ strategy: 'after-paragraph', line: 17, matchedText: 'Piracy peaked in the 1700s.', container: { prefix: '', label: 'summary' } });
+		const inList = resolveInsertionPoint(NOTE, paragraph('Edward England'), { within: combined });
+		expect(inList).toMatchObject({ line: 20, blockType: 'list', container: { prefix: '' } });
+		const lead = resolveInsertionPoint(NOTE, heading('Overview'), { within: combined });
+		expect(lead).toMatchObject({ strategy: 'after-section-lead', line: 17 });
+	});
+
+	it('resolves a miss or an explicit end to the last body line, before the closer', () => {
+		const miss = resolveInsertionPoint(NOTE, paragraph('nowhere'), { within: combined });
+		expect(miss).toMatchObject({ strategy: 'append', line: 20, container: { prefix: '', label: 'summary' } });
+		expect(describeInsertion(miss)).toBe('Inside the summary, at its end');
+		const end = resolveInsertionPoint(NOTE, { kind: 'end', text: '' }, { within: combined });
+		expect(end).toMatchObject({ strategy: 'append', line: 20, container: { prefix: '' } });
+	});
+
+	it('applies an unprefixed block inside the region, keeping the closer last', () => {
+		const resolved = resolveInsertionPoint(NOTE, paragraph('Piracy peaked'), { within: combined });
+		const block = '![[flag.png]]\n\n> [!synapse-illustrate] Flag\n> Source: x';
+		const out = applyInsertion(NOTE, resolved, block).split('\n');
+		expect(out.slice(20, 27)).toEqual([
+			'It declined later.', '', '![[flag.png]]', '', '> [!synapse-illustrate] Flag', '> Source: x', '',
+		]);
+		expect(out[27]).toBe('- Edward England');
+		const atEnd = applyInsertion(NOTE, resolveInsertionPoint(NOTE, paragraph('nowhere'), { within: combined }), 'BLOCK').split('\n');
+		expect(atEnd.slice(23, 28)).toEqual(['- Black Bart', '', 'BLOCK', '', '<!-- /synapse:summary -->']);
+		expect(atEnd.join('\n')).not.toMatch(/\n\n\n/);
+		expect(atEnd.slice(0, 3)).toEqual(['---', 'title: Piracy', '---']);
+	});
+
+	it('describes marker placements like callout ones', () => {
+		const resolved = resolveInsertionPoint(NOTE, paragraph('Piracy peaked'), { within: combined });
+		expect(describeInsertion(resolved)).toBe('Inside the summary, after paragraph "Piracy peaked in the 1700s."');
+	});
+});

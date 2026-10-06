@@ -274,6 +274,36 @@ describe('IllustrateModule', () => {
 			expect(written).toContain('> It declined later.\n\n```mermaid\nflowchart TD\nA --> B\n```\n\n> [!synapse-illustrate] Timeline');
 		});
 
+		it('targets a marker-wrapped summary section and inserts unprefixed inside it (#550)', async () => {
+			const markerNote = [
+				'# Piracy', '', 'Intro.', '',
+				'<!-- synapse:summary title="Combined summary (2 items)" -->',
+				'## Combined summary (2 items)', '', 'Sources: a, b', '',
+				'## Overview', 'Piracy peaked in the 1700s.', '', 'word '.repeat(100),
+				'<!-- /synapse:summary -->', '',
+				'> [!synapse-enrichment] References', '> - [a](https://a)',
+			].join('\n');
+			const markerRegion = { kind: 'marker' as const, marker: 'summary', attrs: { title: 'Combined summary (2 items)' } };
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			app.vault.read.mockResolvedValue(markerNote);
+			app.vault.cachedRead.mockResolvedValue(markerNote);
+			const analyze = vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([
+				{ kind: 'diagram', anchor: 'Piracy peaked in the 1700s.', caption: 'Timeline', rationale: '', mermaid: 'flowchart TD\nA --> B' },
+			]);
+			await module.illustrateNote('notes/a.md', { sourceUrls: [], producedRegion: markerRegion });
+			expect(analyze.mock.calls[0][1]).toBe('## Combined summary (2 items)\n\nSources: a, b\n\n## Overview\nPiracy peaked in the 1700s.\n\n' + 'word '.repeat(100));
+			const saved = vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0];
+			expect(saved.items[0]).toMatchObject({ region: markerRegion, placement: { line: 10, container: { prefix: '', label: 'summary' } } });
+
+			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({ ...proposal(), items: saved.items });
+			await module.acceptProposal('prop1', [saved.items[0].id]);
+			const written = (await app.vault.process.mock.results[0].value) as string;
+			expect(written.split('\n').slice(10, 19)).toEqual([
+				'Piracy peaked in the 1700s.', '', '```mermaid', 'flowchart TD', 'A --> B', '```', '', '> [!synapse-illustrate] Timeline', '> Diagram generated from this note',
+			]);
+			expect(written).toContain('> Diagram generated from this note\n\n' + 'word '.repeat(100) + '\n<!-- /synapse:summary -->');
+		});
+
 		it('skips a chained run while one is in flight or a proposal is pending, and a region already illustrated', async () => {
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
 			app.vault.read.mockResolvedValue(longSummary);

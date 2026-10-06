@@ -1,4 +1,6 @@
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter-utils';
+import { findMarkerRegions, markerAttrsMatch } from './markers';
+import type { MarkerAttrs } from './markers';
 
 /** Where a proposal wants to land: a heading, the paragraph that opens with `text`, or the end of the note. */
 export interface InsertionAnchor {
@@ -14,6 +16,7 @@ export type InsertionBlockType = 'paragraph' | 'heading' | 'code' | 'list' | 'ta
 /** The part of a note a previous action produced, so a follow-up can place content inside it. */
 export type RegionLocator =
 	| { kind: 'callout'; calloutType: string; title?: string }
+	| { kind: 'marker'; marker: string; attrs?: MarkerAttrs }
 	| { kind: 'whole-note' };
 
 export interface ResolveInsertionOptions {
@@ -225,11 +228,17 @@ export interface LocatedRegion {
 	text: string;
 }
 
-/** Find the region a previous action produced (body line indexes); null when the note has no such callout. */
+/** Find the region a previous action produced (body line indexes); null when the note has no such callout or marker pair. */
 export function locateRegion(content: string, within: RegionLocator): LocatedRegion | null {
 	const lines = parseFrontmatter(content).body.split('\n');
 	if (within.kind === 'whole-note') {
 		return { start: 0, end: lines.length - 1, prefix: '', label: 'note', text: lines.join('\n') };
+	}
+	if (within.kind === 'marker') {
+		// Region = the lines strictly between the marker pair; an empty pair has nowhere to place content.
+		const region = findMarkerRegions(lines, within.marker).find((r) => markerAttrsMatch(r, within.attrs));
+		if (!region || region.end - region.start < 2) return null;
+		return { start: region.start + 1, end: region.end - 1, prefix: '', label: calloutLabel(region.kind), text: region.body };
 	}
 	const wantedType = within.calloutType.toLowerCase();
 	for (const block of scanBlocks(lines)) {
@@ -250,14 +259,15 @@ function appendResolution(anchor: InsertionAnchor): ResolvedInsertion {
 /** Pure, frontmatter-aware: locate the block `anchor` lands in; the insertion line is always a block boundary. */
 export function resolveInsertionPoint(content: string, anchor: InsertionAnchor, opts: ResolveInsertionOptions = {}): ResolvedInsertion {
 	const lines = parseFrontmatter(content).body.split('\n');
-	const region = opts.within && opts.within.kind === 'callout' ? locateRegion(content, opts.within) : null;
+	const region = opts.within && opts.within.kind !== 'whole-note' ? locateRegion(content, opts.within) : null;
 	if (anchor.kind === 'end') {
 		return region
 			? { strategy: 'append', line: region.end, matchedText: null, anchor, container: { prefix: region.prefix, label: region.label } }
 			: appendResolution(anchor);
 	}
 	if (region) {
-		const inner = lines.slice(region.start, region.end + 1).map(stripQuotePrefix);
+		const regionLines = lines.slice(region.start, region.end + 1);
+		const inner = region.prefix ? regionLines.map(stripQuotePrefix) : regionLines;
 		const hit = resolveInLines(inner, anchor, true, region.prefix, region.label);
 		const container = { prefix: region.prefix, label: region.label };
 		if (!hit) return { strategy: 'append', line: region.end, matchedText: null, anchor, container };

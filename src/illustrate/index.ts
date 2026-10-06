@@ -45,9 +45,9 @@ function anchorFor(text: string): InsertionAnchor {
 	return { kind: /^#{1,6}\s/.test(text) ? 'heading' : 'paragraph', text };
 }
 
-/** Callout regions resolve inside the container; the ad hoc/whole-note path never enters one. */
+/** Callout and marker regions resolve inside the region; the ad hoc/whole-note path never enters one. */
 function resolveOptions(region?: RegionLocator): ResolveInsertionOptions {
-	return region?.kind === 'callout' ? { within: region, insideContainers: true } : {};
+	return region && region.kind !== 'whole-note' ? { within: region, insideContainers: true } : {};
 }
 
 /** Accept is idempotent: a visual whose caption callout or Mermaid body is already in the note is skipped. */
@@ -153,7 +153,7 @@ export class IllustrateModule implements FeatureModule {
 		const content = await this.plugin.app.vault.read(file);
 		let text = parseFrontmatter(content).body;
 		let region: RegionLocator | undefined;
-		if (producedRegion?.kind === 'callout') {
+		if (producedRegion && producedRegion.kind !== 'whole-note') {
 			const located = locateRegion(content, producedRegion);
 			if (located) {
 				if (hasIllustrations(located.text)) return null;
