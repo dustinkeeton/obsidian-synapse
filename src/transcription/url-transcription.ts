@@ -1,6 +1,6 @@
 import { Platform } from 'obsidian';
 import {
-	buildCallout, calloutForTranscriptionResult, formatTimeRange, hasSpeechContent, NoSpeechDetectedError,
+	buildCallout, buildMediaEmbedLines, calloutForTranscriptionResult, formatTimeRange, hasSpeechContent, NoSpeechDetectedError,
 } from '../shared';
 import type { CachedTranscript, TimeRange, TranscriptCacheEntry } from '../shared';
 import type { TranscriptStore, UrlTranscript, UrlTranscriptOptions, UrlTranscriptionStrategy } from './types';
@@ -118,13 +118,7 @@ export function buildUrlTranscriptBlock(
 	embedInNote: boolean,
 	timeRange?: TimeRange
 ): string {
-	const blockLines: string[] = [''];
-
-	if (embedInNote && result.videoVaultPath) {
-		const fileName = result.videoVaultPath.split('/').pop()!;
-		blockLines.push(`![[${fileName}]]`);
-		blockLines.push('');
-	}
+	const blockLines: string[] = ['', ...buildMediaEmbedLines(result.videoVaultPath, embedInNote)];
 
 	const { type, verb } = calloutForTranscriptionResult(result);
 	const title = timeRange

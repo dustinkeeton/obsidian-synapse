@@ -52,6 +52,7 @@ export {
 export type { TimeRange } from './validation';
 export { CALLOUT_TYPES, CALLOUT_BASES, buildCallout, calloutHeaderLine, calloutHeaderToken, calloutHeaderSource, calloutIdentity, parseCalloutHeader, isCalloutHeader, hasCallout, calloutForTranscriptionResult, ENRICHMENT_START, ENRICHMENT_END } from './callouts';
 export type { CalloutType, CalloutBase } from './callouts';
+export { buildMediaEmbedLines, mediaEmbedFor } from './media-embed';
 export {
 	parseFrontmatter,
 	serializeFrontmatter,
