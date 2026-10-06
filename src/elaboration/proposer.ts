@@ -1,6 +1,6 @@
 import { App, TFile, getAllTags, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, redactError, isPathExcluded, findUrls } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, redactError, isPathExcluded, findUrls, isEffectivelyEmptyProse } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import type { AIRequestOptions } from '../shared';
 import { DetectionResult, DetectionReason, Proposal } from './types';
@@ -41,15 +41,6 @@ const MAX_OUTBOUND_LINKS = 5;
 const MAX_TAG_SIBLINGS = 10;
 const BACKLINK_EXCERPT_CHARS = 300;
 const OUTBOUND_EXCERPT_CHARS = 500;
-
-/** Replace every bare URL with a space, splicing from the end so earlier offsets stay valid. */
-function stripUrls(text: string): string {
-	let out = text;
-	for (const { url, index } of findUrls(text).reverse()) {
-		out = out.slice(0, index) + ' ' + out.slice(index + url.length);
-	}
-	return out;
-}
 
 interface ContextGroup {
 	header: string;
@@ -272,24 +263,9 @@ export class ProposalGenerator {
 		return { context: parts.join('\n\n'), attempted: urls.length };
 	}
 
-	/**
-	 * True when a note's substance is essentially just the link(s) it contains:
-	 * after removing URLs and reducing markdown/wiki links to their visible text,
-	 * almost no prose remains. Combined with a fully-failed external fetch, this
-	 * is what lets generate() refuse to elaborate rather than invent content from
-	 * a URL slug. Notes with a real sentence of prose are NOT link-dominated.
-	 */
+	/** Link-only note (shared reduction, same rule as the summarize note-content gate); with a fully-failed fetch, generate() refuses rather than inventing from a URL slug. */
 	private isLinkDominated(content: string): boolean {
-		const meaningful = stripUrls(content)
-			// Reduce `[text](url)` / `![alt](url)` and `[[wikilink]]` to their text.
-			.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-			.replace(/!?\[\[([^\]]*)\]\]/g, '$1')
-			// Keep only letters/numbers so markdown/punctuation can't inflate length.
-			.replace(/[^\p{L}\p{N}]+/gu, '');
-		// Conservative threshold (~one word): a bare URL or a one-word title beside
-		// a link counts as link-dominated; a real phrase of prose does not. This
-		// deliberately errs toward still elaborating when there's any real content.
-		return meaningful.length < 10;
+		return isEffectivelyEmptyProse(content);
 	}
 
 	private async gatherContext(notePath: string, reasons: DetectionReason[]): Promise<string> {

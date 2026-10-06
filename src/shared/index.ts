@@ -85,6 +85,7 @@ export type { RecipeJsonLd } from './content-fetcher';
 export type { SourceImage, SourceContext } from './source-context';
 export { classifyUrl, extractUrls, findUrls, findMarkdownLinks } from './url-classifier';
 export type { UrlContentType, UrlClassification, UrlMatch, MarkdownLinkMatch } from './url-classifier';
+export { reduceToProse, proseCharCount, isEffectivelyEmptyProse, stripUrls, MIN_PROSE_CHARS } from './prose-reduction';
 export { detectPlatform, isSupportedUrl } from './url-detector';
 export type { Platform, UrlDetectionResult } from './url-detector';
 export { addEnhancedSlider } from './slider-helper';
