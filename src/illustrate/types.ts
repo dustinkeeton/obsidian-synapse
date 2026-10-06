@@ -87,6 +87,8 @@ export interface IllustrateProposal {
 export interface IllustrateSettings {
 	enabled: boolean;
 	providers: Record<RepositoryProviderId, boolean>;
+	/** Opt-in: AI-written Mermaid diagrams and note-data charts; off = photo spots only. */
+	mermaid: boolean;
 	/** Chain an illustrate pass after these actions complete (post-op hook). */
 	runAfter: Record<IllustrateRunAfterKey, boolean>;
 	/** Fetch pages linked from the acted-on note for source images: one request per page. */
