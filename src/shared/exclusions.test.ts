@@ -170,7 +170,7 @@ describe('findMatchingRule / isPathExcluded — feature scoping', () => {
 		const rules: ExclusionRule[] = [{ pattern: 'dir/**', features: 'all' }];
 		const everyFeature: FeatureId[] = [
 			'elaboration', 'enrichment', 'summarize', 'tidy', 'organize',
-			'deep-dive', 'audio', 'video', 'title', 'image', 'rem', 'intake',
+			'deep-dive', 'audio', 'video', 'title', 'image', 'rem', 'intake', 'illustrate',
 		];
 		for (const feature of everyFeature) {
 			expect(isPathExcluded('dir/a.md', feature, settingsWith(rules))).toBe(true);

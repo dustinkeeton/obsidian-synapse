@@ -32,6 +32,7 @@ export const FEATURE_ICONS: Record<FeatureKey, string> = {
 	summarize: 'synapse-summarize',
 	tidy: 'synapse-tidy',
 	rem: 'synapse-rem',
+	illustrate: 'synapse-illustrate',
 	video: 'synapse-video',
 };
 

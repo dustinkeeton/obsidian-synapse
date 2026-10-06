@@ -18,6 +18,7 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
 	summarize: 'Summarize',
 	tidy: 'Tidy',
 	rem: 'REM',
+	illustrate: 'Illustrate',
 	video: 'Video',
 };
 

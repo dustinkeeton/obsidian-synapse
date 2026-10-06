@@ -26,6 +26,7 @@ function createMockModules(): PipelineModuleMap {
 		summarize: vi.fn().mockResolvedValue(undefined),
 		enrichment: vi.fn().mockResolvedValue(0),
 		rem: vi.fn().mockResolvedValue(0),
+		illustrate: vi.fn().mockResolvedValue(0),
 		tidy: vi.fn().mockResolvedValue(0),
 		organize: vi.fn().mockResolvedValue(0),
 	};
@@ -39,7 +40,7 @@ describe('SynapseRunner — registry fire-synapse gate', () => {
 	beforeEach(() => {
 		isPipelineKeyInFlowMock.mockReset();
 		settings = structuredClone(DEFAULT_SETTINGS);
-		for (const key of ['elaboration', 'summarize', 'enrichment', 'rem', 'tidy', 'organize'] as const) {
+		for (const key of ['elaboration', 'summarize', 'enrichment', 'rem', 'illustrate', 'tidy', 'organize'] as const) {
 			(settings[key] as { enabled: boolean }).enabled = true;
 		}
 		mockModules = createMockModules();

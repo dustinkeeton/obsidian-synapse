@@ -13,6 +13,7 @@ import { OrganizeModule } from '../organize';
 import { DeepDiveModule } from '../deep-dive';
 import { TitleModule } from '../title';
 import { RemModule } from '../rem';
+import { IllustrateModule } from '../illustrate';
 import { IntakeModule } from '../intake';
 import type { IntakeDeps } from '../intake';
 
@@ -28,6 +29,7 @@ interface FeatureModuleClasses {
 	deepDive: DeepDiveModule;
 	title: TitleModule;
 	rem: RemModule;
+	illustrate: IllustrateModule;
 	intake: IntakeModule;
 }
 
@@ -108,6 +110,7 @@ export const MODULE_FACTORIES: readonly ModuleEntry[] = [
 	{ key: 'deepDive', create: ({ deps }) => new DeepDiveModule(deps, autoAccept(deps, 'deep-dive')) },
 	{ key: 'title', create: ({ deps }) => new TitleModule(deps, autoAccept(deps, 'title')) },
 	{ key: 'rem', create: ({ deps }) => new RemModule(deps, autoAccept(deps, 'rem')) },
+	{ key: 'illustrate', create: ({ deps }) => new IllustrateModule(deps, autoAccept(deps, 'illustrate')) },
 	{ key: 'intake', create: ({ deps, wiring }) => new IntakeModule(deps, wiring.intake) },
 ];
 

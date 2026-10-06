@@ -4,6 +4,7 @@ import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal, TitleDuplicateStrategy } from '../title';
 import type { RemProposal } from '../rem';
+import type { IllustrateProposal } from '../illustrate';
 
 /**
  * The single source of truth for the set of proposal kinds Synapse generates.
@@ -20,6 +21,7 @@ export const PROPOSAL_KINDS = [
 	'deep-dive',
 	'title',
 	'rem',
+	'illustrate',
 ] as const;
 
 /** Wrapper to unify elaboration, enrichment, organize, deep-dive, title, and REM proposals in one list. */
@@ -29,7 +31,8 @@ export type UnifiedItem =
 	| { kind: 'organize'; data: OrganizeProposal }
 	| { kind: 'deep-dive'; data: DeepDiveProposal }
 	| { kind: 'title'; data: TitleProposal }
-	| { kind: 'rem'; data: RemProposal };
+	| { kind: 'rem'; data: RemProposal }
+	| { kind: 'illustrate'; data: IllustrateProposal };
 
 /** A single proposal kind — derived from {@link PROPOSAL_KINDS}, equal to {@link UnifiedItem}['kind']. */
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
@@ -67,6 +70,9 @@ export interface UnifiedViewCallbacks {
 	// REM
 	onRemAcceptSelected: (id: string, acceptedMatchTexts: string[]) => Promise<void>;
 	onRemReject: (id: string) => Promise<void>;
+	// Illustrate: `acceptedItemIds` picks which proposed visuals to insert.
+	onIllustrateAcceptSelected: (id: string, acceptedItemIds: string[]) => Promise<void>;
+	onIllustrateReject: (id: string) => Promise<void>;
 	// Checkpoints
 	onCheckpointDiscard: (id: string) => Promise<void>;
 	onCheckpointResume: (id: string) => Promise<void>;

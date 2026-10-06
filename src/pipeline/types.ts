@@ -24,6 +24,7 @@ export type PipelineModuleKey =
 	| 'summarize'
 	| 'enrichment'
 	| 'rem'
+	| 'illustrate'
 	| 'tidy'
 	| 'organize';
 
@@ -36,13 +37,14 @@ export type PipelineModuleMap = Record<PipelineModuleKey, PipelineScanFn>;
 
 /**
  * Ordered pipeline phases for Fire Synapse.
- * Elaboration → Summarize → Enrichment → REM → Tidy → Organize
+ * Elaboration → Summarize → Enrichment → REM → Illustrate → Tidy → Organize
  */
 export const SYNAPSE_PIPELINE: PipelinePhase[] = [
 	{ key: 'elaboration', label: 'Elaboration' },
 	{ key: 'summarize', label: 'Summarize' },
 	{ key: 'enrichment', label: 'Enrichment' },
 	{ key: 'rem', label: 'REM' },
+	{ key: 'illustrate', label: 'Illustrate' },
 	{ key: 'tidy', label: 'Tidy' },
 	{ key: 'organize', label: 'Organize' },
 ];

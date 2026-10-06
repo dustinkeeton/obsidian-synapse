@@ -19,6 +19,7 @@ const LABELS: Record<FeatureId, string> = {
 	image: 'Image OCR',
 	rem: 'REM (link discovery)',
 	intake: 'Intake watcher',
+	illustrate: 'Illustrate',
 };
 const ORDER = Object.keys(ALL_FEATURE_IDS) as FeatureId[];
 

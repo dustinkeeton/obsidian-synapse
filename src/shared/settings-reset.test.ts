@@ -18,7 +18,7 @@ describe('sectionHasReset', () => {
 		const withReset = [
 			'ai', 'autoAccept', 'exclusions', 'general', 'elaboration', 'intake',
 			'image', 'audio', 'video', 'enrichment', 'summarize', 'tidy', 'organize',
-			'deepDive', 'title', 'rem',
+			'deepDive', 'title', 'rem', 'illustrate',
 		];
 		for (const key of withReset) {
 			expect(sectionHasReset(key)).toBe(true);
@@ -186,7 +186,7 @@ describe('sectionMatchesDefaults', () => {
 	const RESETTABLE_KEYS = [
 		'ai', 'autoAccept', 'exclusions', 'general', 'elaboration', 'intake',
 		'image', 'audio', 'video', 'enrichment', 'summarize', 'tidy', 'organize',
-		'deepDive', 'title', 'rem',
+		'deepDive', 'title', 'rem', 'illustrate',
 	];
 
 	it('is true for every resettable section at shipped defaults', () => {

@@ -7,6 +7,7 @@ import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
 import type { RemProposal } from '../rem';
+import type { IllustrateProposal } from '../illustrate';
 import { UNIFIED_VIEW_TYPE, UnifiedProposalView } from './unified-proposal-view';
 import { SYNAPSE_ACTIONS_VIEW_TYPE } from './synapse-actions-view';
 import type { UnifiedItem } from './types';
@@ -19,6 +20,7 @@ export interface UnifiedViewSources {
 	'deep-dive': () => Promise<DeepDiveProposal[]>;
 	title: () => Promise<TitleProposal[]>;
 	rem: () => Promise<RemProposal[]>;
+	illustrate: () => Promise<IllustrateProposal[]>;
 	checkpoints: () => Promise<Checkpoint[]>;
 }
 
@@ -57,6 +59,7 @@ export async function refreshUnifiedView(workspace: Workspace, sources: UnifiedV
 	for (const p of await sources['deep-dive']()) items.push({ kind: 'deep-dive', data: p });
 	for (const p of await sources.title()) items.push({ kind: 'title', data: p });
 	for (const p of await sources.rem()) items.push({ kind: 'rem', data: p });
+	for (const p of await sources.illustrate()) items.push({ kind: 'illustrate', data: p });
 
 	const checkpoints = await sources.checkpoints();
 

@@ -16,7 +16,8 @@ export type CheckpointModule =
 	| 'image'
 	| 'summarize'
 	| 'organize'
-	| 'rem';
+	| 'rem'
+	| 'illustrate';
 
 /** Status of a checkpoint lifecycle. */
 export type CheckpointStatus = 'active' | 'completed' | 'discarded';

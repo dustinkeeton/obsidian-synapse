@@ -7,7 +7,7 @@ import { normalizeFrontmatterTags } from './frontmatter-utils';
  * is the vocabulary an {@link ExclusionRule} uses to scope which features a path
  * is hidden from.
  *
- * Deliberately a FRESH 12-member union — NOT reused from `commands/types.ts`'s
+ * Deliberately a FRESH 13-member union — NOT reused from `commands/types.ts`'s
  * `FeatureKey` (which is the "modules that own palette commands" set and omits
  * audio/image/intake/title). Exclusion participation is a different axis: it
  * covers every flow that reads/writes a target note, including the post-op and
@@ -25,7 +25,8 @@ export type FeatureId =
 	| 'title'
 	| 'image'
 	| 'rem'
-	| 'intake';
+	| 'intake'
+	| 'illustrate';
 
 /**
  * Compile-time exhaustiveness guard. Every {@link FeatureId} must appear as a
@@ -47,6 +48,7 @@ export const ALL_FEATURE_IDS: Record<FeatureId, true> = {
 	image: true,
 	rem: true,
 	intake: true,
+	illustrate: true,
 };
 
 /**

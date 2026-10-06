@@ -13,6 +13,7 @@ function makeSources(): UnifiedViewSources {
 		'deep-dive': vi.fn().mockResolvedValue([{ id: 'd1' }]),
 		title: vi.fn().mockResolvedValue([]),
 		rem: vi.fn().mockResolvedValue([{ id: 'r1' }]),
+		illustrate: vi.fn().mockResolvedValue([]),
 		checkpoints: vi.fn().mockResolvedValue([{ id: 'cp1' }]),
 	};
 }

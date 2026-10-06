@@ -19,6 +19,7 @@ export const SYNAPSE_COLOR_TOKENS: Record<ProposalKind, string> = {
 	'deep-dive': '--synapse-color-deep-dive',
 	title: '--synapse-color-title',
 	rem: '--synapse-color-rem',
+	illustrate: '--synapse-color-illustrate',
 };
 
 /**
@@ -40,6 +41,7 @@ export const FEATURE_COLOR_TOKENS: Record<FeatureKey, string> = {
 	summarize: '--synapse-color-summarize',
 	tidy: '--synapse-color-tidy',
 	rem: '--synapse-color-rem',
+	illustrate: '--synapse-color-illustrate',
 	video: '--synapse-color-video',
 };
 
