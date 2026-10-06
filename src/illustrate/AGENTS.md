@@ -4,7 +4,7 @@ last-updated: 2026-10-05
 
 # Illustrate Module
 
-Proposes real visuals for notes (#213): the AI picks spots that warrant a photo, diagram, or chart; photos are sourced from licensed repositories (Wikimedia Commons, Openverse) with license + attribution captured, diagrams are AI-emitted Mermaid, charts are Mermaid `xychart-beta` built only from numbers already in the note. Proposals are stored and reviewed per item in the unified sidebar; accept inserts an embed + `synapse-illustrate` caption callout (or a Mermaid fence) under the spot's anchor. Participates in Fire Synapse (`pipelineKey: illustrate`, after REM, before Tidy).
+Proposes real visuals for notes (#213): the AI picks spots that warrant a photo, diagram, or chart; photos are sourced from licensed repositories (Wikimedia Commons, Openverse) with license + attribution captured, diagrams are AI-emitted Mermaid, charts are Mermaid `xychart-beta` built only from numbers already in the note. Proposals are stored and reviewed per item in the unified sidebar (each item carries a `placement` preview from `shared/insertion-point.ts`); accept re-resolves the anchor against the live note and inserts an embed + `synapse-illustrate` caption callout (or a Mermaid fence) there. Participates in Fire Synapse (`pipelineKey: illustrate`, after REM, before Tidy).
 
 ## Public API (`index.ts`)
 
@@ -37,11 +37,10 @@ normalizeLicense(raw: string): LicenseName | null                    // Commons 
 isLicenseAllowed(license: string, allowed: readonly string[]): boolean
 LICENSE_NAMES, DEFAULT_LICENSE_FILTER                                // ['CC0', 'Public domain', 'CC BY', 'CC BY-SA']
 
-// diagram.ts / chart.ts / inserter.ts
+// diagram.ts / chart.ts
 validateMermaid(raw: string): string | null                          // known first token, no fences/scripts, <= 4000 chars
 parseChartData(value: unknown): ChartData | null
 buildXyChart(data: ChartData): string
-insertAtAnchor(content: string, anchor: string, block: string): string  // after heading / paragraph end; appends on miss; frontmatter untouched
 
 renderIllustrateSettings(ctx: SettingsSectionContext): void
 ```
@@ -66,9 +65,9 @@ type IllustrateSpot =   // analyzer output, one per anchor
   | { kind: 'diagram'; mermaid: string; ... }
   | { kind: 'chart'; chart: ChartData; ... }
 
-type IllustrateItem =   // resolved, persisted
-  | { id; kind: 'photo'; anchor; caption; rationale; candidate: MediaCandidate }
-  | { id; kind: 'diagram' | 'chart'; anchor; caption; rationale; mermaid: string }
+type IllustrateItem =   // resolved, persisted; placement?: ResolvedInsertion (shared/insertion-point.ts) is the review preview, absent on pre-placement proposals
+  | { id; kind: 'photo'; anchor; caption; rationale; placement?; candidate: MediaCandidate }
+  | { id; kind: 'diagram' | 'chart'; anchor; caption; rationale; placement?; mermaid: string }
 
 interface IllustrateProposal { id; sourceNotePath; createdAt; items: IllustrateItem[]; status: IllustrateProposalStatus; acceptedItemIds?: string[] }
 
@@ -94,7 +93,7 @@ interface IllustrateSettings {
 | `license.ts` | `normalizeLicense`, `isLicenseAllowed`, `LICENSE_NAMES`, `DEFAULT_LICENSE_FILTER` | License normalization + allow-list |
 | `diagram.ts` | `validateMermaid`, `mermaidBlock` | Mermaid gate for AI diagrams and built charts |
 | `chart.ts` | `parseChartData`, `buildXyChart` | Note-data-only `xychart-beta` |
-| `inserter.ts` | `insertAtAnchor`, `findAnchorLine`, `buildPhotoBlock`, `buildMermaidItemBlock`, `attributionLine` | Block builders + anchor insertion |
+| `inserter.ts` | `buildPhotoBlock`, `buildMermaidItemBlock`, `attributionLine` | Block builders (placement lives in `shared/insertion-point.ts`) |
 | `asset-writer.ts` | `AssetWriter`, `attachmentFileName` | `requestUrl` -> `arrayBuffer` -> `vault.createBinary` at `fileManager.getAvailablePathForAttachment` (15 MB cap) |
 | `proposal-store.ts` | `IllustrateStore` | JSON files in `illustrate.proposalFolderPath` |
 | `note-scanner.ts` | `isEligibleNote`, `hasIllustrations`, `MIN_WORDS_TO_ILLUSTRATE` | Batch eligibility (>= 80 words, no existing illustrate callout) |
@@ -113,13 +112,14 @@ illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoi
         photo   -> first enabled provider whose candidate passes isLicenseAllowed(licenseFilter)
         diagram -> spot.mermaid (already validated)
         chart   -> validateMermaid(buildXyChart(spot.chart))
+        every item: placement = resolveInsertionPoint(content, anchorFor(spot.anchor))   // index.ts anchorFor: leading '#' -> 'heading', else 'paragraph'
         items.length > 0 -> IllustrateStore.save(pending)
   --> maybeAutoAccept (#228) -> acceptProposal(all item ids, silent in batch)
   --> checkpoint completeItem per note; complete -> deferred refresh-sidebar-view
 
 acceptProposal(id, itemIds)
   --> under noteQueue.run(path): photos downloaded first (AssetWriter) unless !preferDownload; failure -> remote URL embed + info notice
-  --> one vault.process: blocks.reduce(insertAtAnchor)
+  --> one vault.process: blocks.reduce(applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor)), block))   // re-resolved live; stored placement is preview only
   --> status accepted | partially-accepted, acceptedItemIds
 ```
 
@@ -127,7 +127,7 @@ acceptProposal(id, itemIds)
 
 | Import | From |
 |--------|------|
-| `AIClient`, `wrapUntrusted`, `parseJson`, `isRecord`, `stripCodeFences`, `sanitizeUrl`, `buildCallout`, `CALLOUT_TYPES.illustrate`, `parseFrontmatter`, `serializeFrontmatter`, `wordCount`, `readJsonFile`, `ensureFolder`, exclusions, cache-notice, `reviewAction`, `redactError`, `fireAndForget`, `openScanFolderPicker` | `../shared` |
+| `AIClient`, `wrapUntrusted`, `parseJson`, `isRecord`, `stripCodeFences`, `sanitizeUrl`, `buildCallout`, `CALLOUT_TYPES.illustrate`, `parseFrontmatter`, `resolveInsertionPoint`, `applyInsertion`, `wordCount`, `readJsonFile`, `ensureFolder`, exclusions, cache-notice, `reviewAction`, `redactError`, `fireAndForget`, `openScanFolderPicker` | `../shared` |
 | `CommandRegistrar` (type) | `../commands` |
 | `requestUrl`, `TFile`, `Plugin`, `normalizePath`, `Setting` | `obsidian` |
 
