@@ -86,7 +86,7 @@ describe('VideoModule.transcribeAndInsert tier routing (#184)', () => {
 		expect(mod.urlTranscriber).toHaveBeenCalledWith(URL, expect.anything());
 		expect(processUrl).not.toHaveBeenCalled();
 		const content = store.get(noteFile.path)!;
-		expect(content).toContain('> [!synapse-transcription]- Transcription of');
+		expect(content).toContain('> [!quote|synapse-transcription]- Transcription of');
 		expect(content).toContain('> caption transcript');
 	});
 

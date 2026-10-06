@@ -173,7 +173,7 @@ function extractCanonicalPostUrl(html: string): string          // derive /comme
 interface RedditContent { author: string; title: string; selftext: string; comments: string[]; url: string }
 
 // callouts.ts
-const CALLOUT_TYPES: {
+const CALLOUT_TYPES: {                  // Synapse identities (the metadata token); the value consumers pass around (#554)
   summary: 'synapse-summary'
   transcription: 'synapse-transcription'
   lyrics: 'synapse-lyrics'
@@ -184,10 +184,20 @@ const CALLOUT_TYPES: {
   deepDive: 'synapse-deep-dive'
   nav: 'synapse-nav'
   ocr: 'synapse-ocr'
+  illustrate: 'synapse-illustrate'
 }
 type CalloutType = (typeof CALLOUT_TYPES)[keyof typeof CALLOUT_TYPES]
+type CalloutBase = 'note' | 'summary' | 'info' | 'quote'
+const CALLOUT_BASES: Record<CalloutType, CalloutBase>   // summary→summary, enrichment→info, transcription/lyrics/ocr→quote, all others→note
 const ENRICHMENT_START: string   // '%% synapse-enrichment-start %%'
 const ENRICHMENT_END: string     // '%% synapse-enrichment-end %%'
+function calloutHeaderToken(type: CalloutType): string                                      // 'summary|synapse-summary'
+function calloutHeaderLine(type: CalloutType, title: string, collapsed?: boolean): string   // '> [!<base>|<identity>]<-> <title>'; the only header writer (buildCallout, deep-dive nav)
+function calloutIdentity(headerContent: string): string                                     // metadata after '|' else the bare type, lowercased; legacy `[!synapse-x]` reads as 'synapse-x'
+function calloutHeaderSource(type: CalloutType): string                                     // regex source for the `[!…]` token in either spelling; callers add anchors / fold marker
+function parseCalloutHeader(line: string): { identity: string; title: string } | null       // `> [!…]<-|+> title` at any quote depth; null when the line opens no callout
+function isCalloutHeader(line: string, type: CalloutType): boolean                          // both spellings; the shared matcher behind every note-scanner skip guard
+function hasCallout(content: string, type: CalloutType): boolean                            // any line of content is a `type` header
 function buildCallout(type: CalloutType, title: string, body: string, collapsed?: boolean): string
 function calloutForTranscriptionResult(result: { reformatted?: boolean; schemaId?: string }): { type: CalloutType; verb: string }
 
@@ -371,7 +381,7 @@ interface ResolveInsertionOptions { within?: RegionLocator; insideContainers?: b
 interface ResolvedInsertion { strategy; line: number | null; matchedText: string | null; anchor; blockType?; container?: { prefix: string; label: string } }   // line = body line index the block goes after (always a block END; null = append); container set when the insertion lands inside a quote/callout
 interface StructBlock { type; start; end; prefix?: string; children?: StructBlock[] }   // quote blocks carry `> ` and the scan of their de-prefixed lines (child indexes relative to start)
 function scanBlocks(lines: string[]): StructBlock[]   // fences (``` / ~~~ / $$) span blank lines, loose lists + indented continuations, table header+separator+rows, contiguous `>` quotes (with inner structure), html runs
-function locateRegion(content: string, within: RegionLocator): { start; end; prefix; label; text } | null   // first quote block whose header is `[!<calloutType>]` (title-matched when given); text = de-prefixed region
+function locateRegion(content: string, within: RegionLocator): { start; end; prefix; label; text } | null   // first quote block whose header identity (`calloutIdentity`: metadata token, or the bare type for legacy `[!synapse-x]`) equals `calloutType` (title-matched when given); text = de-prefixed region
 function resolveInsertionPoint(content: string, anchor: InsertionAnchor, opts?: ResolveInsertionOptions): ResolvedInsertion   // pure, frontmatter-aware; exact > starts-with > contains > (long) reverse-prefix; the containing block is the unit; heading -> after its opening paragraph ('after-section-lead') else directly after it; `within` restricts matching to the region and a miss resolves to the region END (container set, never the note end); `insideContainers` descends into quotes and lands after the inner block (container prefix accumulates per depth); neither -> a callout is one block
 function applyInsertion(content: string, resolved: ResolvedInsertion, block: string): string   // splice after `line` (stale/out-of-range -> append); exactly one blank line before and after (a bare `>` spacer inside a container); every inserted line carries container.prefix; frontmatter untouched
 function describeInsertion(resolved: ResolvedInsertion): string   // 'After heading "X"' | 'After the opening paragraph of "X"' | 'After <paragraph|list|table|code block|callout|…> "…"' | 'At end of note[ (anchor not found)]' | 'Inside the summary, after paragraph "…"' | 'Inside the summary, at its end'
@@ -532,8 +542,8 @@ function scoreLyricsContent(content: string): number
 | `collapsible-section.test.ts` | Tests | Collapsible section tests |
 | `frontmatter-utils.ts` | `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `normalizeFrontmatterTags`, `splitRawFrontmatter`, `ParsedNote`, `RawFrontmatterSplit` | YAML frontmatter parsing and serialization. `normalizeFrontmatterTags` coerces array/comma-string/other → `string[]`. `splitRawFrontmatter` (#552) returns the leading block byte-for-byte without parsing; module-private `FRONTMATTER_BLOCK_RE` (`:14`) is the one boundary regex shared with `parseFrontmatter` |
 | `frontmatter-utils.test.ts` | Tests | Frontmatter tests; `splitRawFrontmatter` describe (`:127`): byte-for-byte raw block, no-frontmatter case, mid-document `---` not matched, body boundary agrees with `parseFrontmatter`, block without trailing newline |
-| `callouts.ts` | `CALLOUT_TYPES`, `buildCallout`, `calloutForTranscriptionResult`, `ENRICHMENT_START`, `ENRICHMENT_END`, `CalloutType` | Unified callout registry and builder for AI content. `CALLOUT_TYPES` adds `lyrics`/`verse`/`chorus` entries. `calloutForTranscriptionResult` selects callout type and verb based on `schemaId` |
-| `callouts.test.ts` | Tests | Callout tests |
+| `callouts.ts` | `CALLOUT_TYPES`, `CALLOUT_BASES`, `buildCallout`, `calloutHeaderToken`, `calloutHeaderLine`, `calloutIdentity`, `calloutHeaderSource`, `parseCalloutHeader`, `isCalloutHeader`, `hasCallout`, `calloutForTranscriptionResult`, `ENRICHMENT_START`, `ENRICHMENT_END`, `CalloutType`, `CalloutBase` | Unified callout registry, builder and matcher for AI content (#554). Callouts are written `> [!<base>|<identity>]` (`CALLOUT_BASES` picks the base; `calloutHeaderLine` is the only header writer); readers accept that form and the legacy bare `> [!synapse-*]` through `calloutIdentity` / `isCalloutHeader` / `calloutHeaderSource`. `calloutForTranscriptionResult` selects callout type and verb based on `schemaId` |
+| `callouts.test.ts` | Tests | Every type has a base; header token/line; identity + matcher for both spellings (nested prefix, fold marker, base-only `[!summary]` rejected); `calloutHeaderSource` fragment; `buildCallout` round-trips through the matcher |
 | `diagram-generator.ts` | `generateTreeDiagram`, `generateMoveDiagram`, `generateOrganizeSummary`, `TreeNode`, `MoveRecord` | Mermaid diagram generation for organize summaries |
 | `diagram-generator.test.ts` | Tests | Diagram generator tests |
 | `slider-helper.ts` | `addEnhancedSlider` | Settings UI helper for range sliders with ticks |
@@ -587,7 +597,7 @@ function scoreLyricsContent(content: string): number
 | `untrusted-content.ts` | `wrapUntrusted`, `UNTRUSTED_OPEN_TAG`, `UNTRUSTED_CLOSE_FENCE` | Structural prompt-injection defense: fences fetched external text (article/tweet/Reddit bodies, image analysis) in labeled delimiters with a data-not-instructions frame + anti-breakout sentinel scrubbing. Used by elaboration/proposer |
 | `untrusted-content.test.ts` | Tests | Fence/sanitization tests |
 | `insertion-point.ts` | `resolveInsertionPoint`, `applyInsertion`, `describeInsertion`, `scanBlocks`, `locateRegion`, `InsertionAnchor`, `InsertionStrategy`, `InsertionBlockType`, `ResolvedInsertion`, `RegionLocator`, `ResolveInsertionOptions`, `LocatedRegion`, `StructBlock` | Structure-aware, region/container-aware insertion determination (#213): scan the body into blocks (quotes carry inner structure), resolve an anchor to the END of its containing block, prefer after a heading's opening paragraph, optionally restrict to a produced region and land inside callouts with a prefix, apply with exactly one blank line each side, describe for review UIs. Resolve at proposal time for the preview, re-resolve at accept against the live note. Used by illustrate; the seam for any proposal kind that places content mid-document |
-| `insertion-point.test.ts` | Tests | Block scanner (fences with blanks, loose lists, tables, callouts, math, quote children), section-lead vs heading-only, mid-paragraph fragment, never-inside-block, blank-line discipline, stale-line fallback, region by type/title, miss-in-region, prefixed embed/nested callout/mermaid application, depth-2 prefixes, descriptions |
+| `insertion-point.test.ts` | Tests | Block scanner (fences with blanks, loose lists, tables, callouts, math, quote children), section-lead vs heading-only, mid-paragraph fragment, never-inside-block, blank-line discipline, stale-line fallback, region by type/title in both header spellings (`[!synapse-summary]` and `[!summary|synapse-summary]` resolve to the same identity and label), miss-in-region, prefixed embed/nested callout/mermaid application, depth-2 prefixes, descriptions |
 | `source-context.ts` | `SourceImage`, `SourceContext` | Post-op source material types (#213): URLs and images an action acted on |
 | `extract-image-urls.test.ts` | Tests | `extractImageUrls` ordering/resolution/filters/cap; `fetchPageContentWithImages`; `fetchHtmlDocument` content type |
 | `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag |

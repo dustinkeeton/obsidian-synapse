@@ -242,7 +242,7 @@ describe('buildUrlTranscriptBlock', () => {
 
 		expect(block).toBe(
 			'\n![[2026-07-14-video.mp4]]\n\n\n' +
-				`> [!synapse-transcription]- Transcription of ${URL}\n` +
+				`> [!quote|synapse-transcription]- Transcription of ${URL}\n` +
 				'> processed text\n'
 		);
 	});
@@ -273,6 +273,6 @@ describe('buildUrlTranscriptBlock', () => {
 			URL,
 			false
 		);
-		expect(block).toContain(`> [!synapse-lyrics]- Lyrics of ${URL}`);
+		expect(block).toContain(`> [!quote|synapse-lyrics]- Lyrics of ${URL}`);
 	});
 });

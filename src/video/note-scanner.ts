@@ -1,7 +1,5 @@
-import { CALLOUT_TYPES, detectPlatform, findUrls } from '../shared';
+import { CALLOUT_TYPES, detectPlatform, findUrls, isCalloutHeader } from '../shared';
 import { VideoUrlEmbed } from './types';
-
-const CALLOUT_TRANSCRIPTION_PREFIX = `[!${CALLOUT_TYPES.transcription}]`;
 
 export function findVideoUrls(content: string): VideoUrlEmbed[] {
 	const embeds: VideoUrlEmbed[] = [];
@@ -37,7 +35,7 @@ export function hasTranscriptionBelow(lines: string[], embedLine: number, url: s
 			return true;
 		}
 		// Callout format
-		if (lines[j].includes(CALLOUT_TRANSCRIPTION_PREFIX) && lines[j].includes(`Transcription of ${url}`)) {
+		if (isCalloutHeader(lines[j], CALLOUT_TYPES.transcription) && lines[j].includes(`Transcription of ${url}`)) {
 			return true;
 		}
 		if (lines[j].trim().length > 0 && !lines[j].startsWith('>') && lines[j].trim() !== '') {

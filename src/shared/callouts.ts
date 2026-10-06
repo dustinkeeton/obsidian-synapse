@@ -1,9 +1,10 @@
 /**
  * Unified callout registry for all AI-generated content.
  *
- * Every AI content type uses an Obsidian callout (`> [!synapse-type]`)
- * with a distinct type identifier. This module provides the registry of
- * type names and a utility to build well-formed callout blocks.
+ * Every AI content type is written as a native Obsidian callout whose type
+ * slot carries a base (`summary`, `info`, `quote`, `note`) and whose metadata
+ * slot carries the Synapse identity: `> [!quote|synapse-transcription]`.
+ * Readers must also accept the legacy bare form `> [!synapse-transcription]`.
  */
 
 export const CALLOUT_TYPES = {
@@ -21,6 +22,24 @@ export const CALLOUT_TYPES = {
 } as const;
 
 export type CalloutType = (typeof CALLOUT_TYPES)[keyof typeof CALLOUT_TYPES];
+
+/** Native Obsidian callout types a Synapse callout may inherit theme styling from. */
+export type CalloutBase = 'note' | 'summary' | 'info' | 'quote';
+
+/** Base callout each Synapse identity is written as; `note` is Obsidian's own fallback for unknown types. */
+export const CALLOUT_BASES: Record<CalloutType, CalloutBase> = {
+	'synapse-summary': 'summary',
+	'synapse-transcription': 'quote',
+	'synapse-lyrics': 'quote',
+	'synapse-verse': 'note',
+	'synapse-chorus': 'note',
+	'synapse-enrichment': 'info',
+	'synapse-elaboration': 'note',
+	'synapse-deep-dive': 'note',
+	'synapse-nav': 'note',
+	'synapse-ocr': 'quote',
+	'synapse-illustrate': 'note',
+};
 
 /**
  * Choose the callout type and header verb for a finished transcription based on
@@ -47,6 +66,45 @@ export function calloutForTranscriptionResult(
 export const ENRICHMENT_START = '%% synapse-enrichment-start %%';
 export const ENRICHMENT_END = '%% synapse-enrichment-end %%';
 
+/** The `[!…]` token Obsidian reads for `type`: `summary|synapse-summary`. */
+export function calloutHeaderToken(type: CalloutType): string {
+	return `${CALLOUT_BASES[type]}|${type}`;
+}
+
+/** The header line of a `type` callout: `> [!<base>|<type>]<-> <title>`. */
+export function calloutHeaderLine(type: CalloutType, title: string, collapsed = false): string {
+	return `> [!${calloutHeaderToken(type)}]${collapsed ? '-' : ''} ${title}`;
+}
+
+/** Synapse identity of a header's `[!…]` content: the metadata after `|` when present, else the bare type (legacy form). */
+export function calloutIdentity(headerContent: string): string {
+	const pipe = headerContent.indexOf('|');
+	return (pipe === -1 ? headerContent : headerContent.slice(pipe + 1)).trim().toLowerCase();
+}
+
+/** Regex source matching the `[!…]` token of a `type` callout in either spelling; callers add anchors and the fold marker. */
+export function calloutHeaderSource(type: CalloutType): string {
+	return `\\[!(?:[^\\]|]*\\|)?${type}\\]`;
+}
+
+const HEADER_LINE_RE = /^[\s>]*\[!([^\]]+)\][-+]?\s*(.*)$/;
+
+/** Parse a `> [!…] title` line into its Synapse identity and title; null when the line opens no callout. */
+export function parseCalloutHeader(line: string): { identity: string; title: string } | null {
+	const match = line.match(HEADER_LINE_RE);
+	return match ? { identity: calloutIdentity(match[1]), title: match[2].trim() } : null;
+}
+
+/** True when `line` is the header of a `type` callout, in the `[!<base>|type]` or legacy `[!type]` spelling. */
+export function isCalloutHeader(line: string, type: CalloutType): boolean {
+	return parseCalloutHeader(line)?.identity === type;
+}
+
+/** True when any line of `content` opens a `type` callout. */
+export function hasCallout(content: string, type: CalloutType): boolean {
+	return content.split('\n').some((line) => isCalloutHeader(line, type));
+}
+
 /**
  * Build an Obsidian callout block.
  *
@@ -62,8 +120,7 @@ export function buildCallout(
 	body: string,
 	collapsed = false
 ): string {
-	const collapseMarker = collapsed ? '-' : '';
-	const header = `> [!${type}]${collapseMarker} ${title}`;
+	const header = calloutHeaderLine(type, title, collapsed);
 	const bodyLines = body.split('\n').map(line => `> ${line}`);
 	return ['', header, ...bodyLines, ''].join('\n');
 }

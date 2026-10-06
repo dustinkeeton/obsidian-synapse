@@ -341,7 +341,7 @@ describe('renderNavigationBlock', () => {
 		const ctx = buildNavigationContext('p2', nodes, run, 'Deep Dives/Machine Learning/Deep Dive -- Machine Learning.md')!;
 		const block = renderNavigationBlock(ctx);
 
-		expect(block).toContain('> [!synapse-nav] Deep Dive Navigation');
+		expect(block).toContain('> [!note|synapse-nav] Deep Dive Navigation');
 		expect(block).toContain('Machine Learning > Neural Networks > Backpropagation');
 		expect(block).toContain('**Root:** [[Machine Learning]]');
 		expect(block).toContain('**Up:** [[Neural Networks]]');
@@ -515,14 +515,14 @@ describe('buildTreeFromNodes', () => {
 });
 
 describe('injectNavigationBlock', () => {
-	const navBlock = '> [!synapse-nav] Deep Dive Navigation\n> **Root:** [[Root]]';
+	const navBlock = '> [!note|synapse-nav] Deep Dive Navigation\n> **Root:** [[Root]]';
 
 	it('prepends nav block to content without frontmatter', () => {
 		const content = '# Neural Networks\n\nContent here.';
 		const result = injectNavigationBlock(content, navBlock);
 
 		expect(result).toBe(
-			'> [!synapse-nav] Deep Dive Navigation\n> **Root:** [[Root]]\n\n# Neural Networks\n\nContent here.'
+			'> [!note|synapse-nav] Deep Dive Navigation\n> **Root:** [[Root]]\n\n# Neural Networks\n\nContent here.'
 		);
 	});
 
@@ -531,7 +531,7 @@ describe('injectNavigationBlock', () => {
 		const result = injectNavigationBlock(content, navBlock);
 
 		expect(result).toBe(
-			'---\ntags: [topic]\n---\n> [!synapse-nav] Deep Dive Navigation\n> **Root:** [[Root]]\n\n# Neural Networks\n\nContent here.'
+			'---\ntags: [topic]\n---\n> [!note|synapse-nav] Deep Dive Navigation\n> **Root:** [[Root]]\n\n# Neural Networks\n\nContent here.'
 		);
 	});
 
@@ -539,7 +539,7 @@ describe('injectNavigationBlock', () => {
 		const content = '> [!synapse-nav] Old Nav\n> Old content\n> More old content\n\n# Neural Networks\n\nContent here.';
 		const result = injectNavigationBlock(content, navBlock);
 
-		expect(result).toContain('> [!synapse-nav] Deep Dive Navigation');
+		expect(result).toContain('> [!note|synapse-nav] Deep Dive Navigation');
 		expect(result).toContain('> **Root:** [[Root]]');
 		expect(result).not.toContain('Old Nav');
 		expect(result).not.toContain('Old content');
@@ -551,7 +551,16 @@ describe('injectNavigationBlock', () => {
 		const result = injectNavigationBlock(content, navBlock);
 
 		expect(result).toContain('---\ntags: [topic]\n---\n');
-		expect(result).toContain('> [!synapse-nav] Deep Dive Navigation');
+		expect(result).toContain('> [!note|synapse-nav] Deep Dive Navigation');
 		expect(result).not.toContain('Old Nav');
+	});
+
+	it('replaces an existing nav block written in the base|metadata form', () => {
+		const content = '> [!note|synapse-nav] Old Nav\n> Old content\n\n# Neural Networks';
+		const result = injectNavigationBlock(content, navBlock);
+
+		expect(result).toContain('> [!note|synapse-nav] Deep Dive Navigation');
+		expect(result).not.toContain('Old Nav');
+		expect(result.split('synapse-nav')).toHaveLength(2);
 	});
 });

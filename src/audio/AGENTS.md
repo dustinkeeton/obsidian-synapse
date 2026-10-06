@@ -142,7 +142,7 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
    |    >0 raw sections -> single notifications.info("Post-processing kept k of n sections raw")
    |
 5. Result wrapped in callout block:
-   > [!synapse-transcription]- Transcription of filename.mp3
+   > [!quote|synapse-transcription]- Transcription of filename.mp3
    > ...transcribed text...
 ```
 
@@ -166,7 +166,7 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 `findAudioEmbeds(content, sourcePath, metadataCache)` in `note-scanner.ts:8`:
 - Regex `AUDIO_EMBED_REGEX`: `![[*.mp3|wav|m4a|ogg|flac|webm|aac]]`
 - Resolves files via `metadataCache.getFirstLinkpathDest()`; only `TFile` matches passing `AUDIO_EXTENSIONS` are kept
-- Skips embeds already transcribed via `hasTranscriptionBelow` (`note-scanner.ts:38`): scans lines `embedLine+1..+3` for the legacy `**Transcription of X**`, the `[!synapse-transcription]` callout, or the `[!...lyrics]` callout `Lyrics of X` (#234)
+- Skips embeds already transcribed via `hasTranscriptionBelow` (`note-scanner.ts:38`): scans lines `embedLine+1..+3` for the legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout `Lyrics of X` (#234); callout headers match either spelling via `isCalloutHeader` (#554)
 - Returns `AudioEmbed[]` with file references and line numbers
 
 ## Settings Keys

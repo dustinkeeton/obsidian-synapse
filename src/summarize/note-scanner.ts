@@ -1,4 +1,4 @@
-import { CALLOUT_TYPES, ENRICHMENT_START, ENRICHMENT_END, parseFrontmatter, findUrls, findMarkdownLinks } from '../shared';
+import { CALLOUT_TYPES, ENRICHMENT_START, ENRICHMENT_END, parseFrontmatter, findUrls, findMarkdownLinks, isCalloutHeader, calloutHeaderSource } from '../shared';
 import { SummarizeTarget } from './types';
 
 const TIKTOK_HOST_RE = /(?:vm\.|vt\.)?tiktok\.com/;
@@ -6,12 +6,8 @@ const INSTAGRAM_HOST_RE = /instagram\.com/;
 const TWITTER_HOST_RE = /(?:mobile\.)?(?:twitter\.com|x\.com)/;
 const TRANSCRIPTION_HEADER = /^>\s*\*\*Transcription of (.+?)\*\*$/;
 const CALLOUT_TRANSCRIPTION_HEADER = new RegExp(
-	`^>\\s*\\[!${CALLOUT_TYPES.transcription}\\][-+]?\\s+Transcription of (.+)$`
+	`^>\\s*${calloutHeaderSource(CALLOUT_TYPES.transcription)}[-+]?\\s+Transcription of (.+)$`
 );
-const CALLOUT_SUMMARY_PREFIX = `[!${CALLOUT_TYPES.summary}]`;
-const CALLOUT_TRANSCRIPTION_PREFIX = `[!${CALLOUT_TYPES.transcription}]`;
-const CALLOUT_LYRICS_PREFIX = `[!${CALLOUT_TYPES.lyrics}]`;
-const CALLOUT_ENRICHMENT_PREFIX = `[!${CALLOUT_TYPES.enrichment}]`;
 
 /**
  * Scan note content for URLs and transcription blocks that need summaries.
@@ -39,12 +35,12 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
 		}
 
 		// Track callout-format enrichment sections
-		if (!inEnrichmentSection && line.includes(CALLOUT_ENRICHMENT_PREFIX)) {
+		if (!inEnrichmentSection && isCalloutHeader(line, CALLOUT_TYPES.enrichment)) {
 			inEnrichmentSection = true;
 			enrichmentIsCallout = true;
 		}
 		// Exit callout-format enrichment when we hit a non-blockquote, non-empty line
-		if (inEnrichmentSection && enrichmentIsCallout && !line.startsWith('>') && line.trim() !== '' && !line.includes(CALLOUT_ENRICHMENT_PREFIX)) {
+		if (inEnrichmentSection && enrichmentIsCallout && !line.startsWith('>') && line.trim() !== '' && !isCalloutHeader(line, CALLOUT_TYPES.enrichment)) {
 			inEnrichmentSection = false;
 			enrichmentIsCallout = false;
 		}
@@ -167,8 +163,8 @@ export function hasSummaryBelow(lines: string[], startLine: number, source: stri
 		if (line.includes(`**Summary of ${source}**`) || line.includes(`**Summary of ${normalized}**`)) {
 			return true;
 		}
-		// Callout format: > [!synapse-summary] Summary of <source>
-		if (line.includes(CALLOUT_SUMMARY_PREFIX) && (line.includes(`Summary of ${source}`) || line.includes(`Summary of ${normalized}`))) {
+		// Callout format: > [!summary|synapse-summary] Summary of <source> (or legacy bare type)
+		if (isCalloutHeader(line, CALLOUT_TYPES.summary) && (line.includes(`Summary of ${source}`) || line.includes(`Summary of ${normalized}`))) {
 			return true;
 		}
 		// Stop at non-empty, non-blockquote content
@@ -190,13 +186,13 @@ function hasTranscriptionBelow(lines: string[], urlLine: number, url: string): b
 		if (line.includes(`**Transcription of ${url}**`) || line.includes(`**Transcription of ${normalized}**`)) {
 			return true;
 		}
-		// Callout format: > [!synapse-transcription] Transcription of <url>
-		if (line.includes(CALLOUT_TRANSCRIPTION_PREFIX) && (line.includes(`Transcription of ${url}`) || line.includes(`Transcription of ${normalized}`))) {
+		// Callout format: > [!quote|synapse-transcription] Transcription of <url> (or legacy bare type)
+		if (isCalloutHeader(line, CALLOUT_TYPES.transcription) && (line.includes(`Transcription of ${url}`) || line.includes(`Transcription of ${normalized}`))) {
 			return true;
 		}
 		// Lyrics callout (#234): a reformatted song transcript also counts, so a
 		// transcribed song URL isn't re-fetched and summarized.
-		if (line.includes(CALLOUT_LYRICS_PREFIX) && (line.includes(`Lyrics of ${url}`) || line.includes(`Lyrics of ${normalized}`))) {
+		if (isCalloutHeader(line, CALLOUT_TYPES.lyrics) && (line.includes(`Lyrics of ${url}`) || line.includes(`Lyrics of ${normalized}`))) {
 			return true;
 		}
 		// Stop at non-empty, non-blockquote content
@@ -217,9 +213,9 @@ function isGeneratedBlockHeader(line: string): boolean {
 	const t = line.trimStart();
 	if (!t.startsWith('>')) return false;
 	if (
-		t.includes(CALLOUT_SUMMARY_PREFIX) ||
-		t.includes(CALLOUT_TRANSCRIPTION_PREFIX) ||
-		t.includes(CALLOUT_LYRICS_PREFIX)
+		isCalloutHeader(t, CALLOUT_TYPES.summary) ||
+		isCalloutHeader(t, CALLOUT_TYPES.transcription) ||
+		isCalloutHeader(t, CALLOUT_TYPES.lyrics)
 	) {
 		return true;
 	}

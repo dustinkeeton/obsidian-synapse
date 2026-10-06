@@ -3,7 +3,7 @@ import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentProposal, AcceptedItems } from './types';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile } from '../__test-utils__/mock-factories';
-import { CALLOUT_TYPES } from '../shared';
+import { CALLOUT_TYPES, calloutHeaderToken } from '../shared';
 import type { App } from 'obsidian';
 
 function makeSettings(): SynapseSettings {
@@ -97,7 +97,7 @@ describe('EnrichmentApplier', () => {
 			const accepted: AcceptedItems = { ...emptyAccepted(), internalLinks: ['notes/Other.md'] };
 			const result = await runApply('Body text\n', proposal, accepted);
 
-			expect(result).toContain(`> [!${CALLOUT_TYPES.enrichment}] Related Notes`);
+			expect(result).toContain(`> [!${calloutHeaderToken(CALLOUT_TYPES.enrichment)}] Related Notes`);
 			expect(result).toContain('[[Other]] — shares 3 tags');
 		});
 
@@ -145,7 +145,7 @@ describe('EnrichmentApplier', () => {
 			const accepted: AcceptedItems = { ...emptyAccepted(), externalLinks: ['https://example.com'] };
 			const result = await runApply('Body\n', proposal, accepted);
 
-			expect(result).toContain(`> [!${CALLOUT_TYPES.enrichment}] References`);
+			expect(result).toContain(`> [!${calloutHeaderToken(CALLOUT_TYPES.enrichment)}] References`);
 			expect(result).toContain('[Example](https://example.com) — authoritative');
 		});
 
@@ -244,8 +244,27 @@ describe('EnrichmentApplier', () => {
 
 			const headerCount = second
 				.split('\n')
-				.filter((l) => l.includes(`[!${CALLOUT_TYPES.enrichment}] Related Notes`)).length;
+				.filter((l) => l.includes(`[!${calloutHeaderToken(CALLOUT_TYPES.enrichment)}] Related Notes`)).length;
 			expect(headerCount).toBe(1);
+		});
+
+		it('replaces a legacy bare-form enrichment callout instead of stacking a second one', async () => {
+			const proposal = makeProposal({
+				result: {
+					...emptyResult(),
+					internalLinks: [
+						{ targetPath: 'notes/Other.md', displayText: 'Other', relevanceScore: 0.9, reason: 'reason' },
+					],
+				},
+			});
+			const accepted: AcceptedItems = { ...emptyAccepted(), internalLinks: ['notes/Other.md'] };
+			const legacy = `Body\n\n> [!${CALLOUT_TYPES.enrichment}] Related Notes\n> - [[Stale]] — old\n`;
+			const result = await runApply(legacy, proposal, accepted);
+
+			expect(result).not.toContain(`[!${CALLOUT_TYPES.enrichment}]`);
+			expect(result).not.toContain('[[Stale]]');
+			const headers = result.split('\n').filter((l) => l.includes(`[!${calloutHeaderToken(CALLOUT_TYPES.enrichment)}] Related Notes`));
+			expect(headers).toHaveLength(1);
 		});
 	});
 
@@ -285,6 +304,20 @@ describe('EnrichmentApplier', () => {
 			expect(result).toContain('- keep');
 			expect(result).not.toContain('category: reference');
 			expect(result).not.toContain(`[!${CALLOUT_TYPES.enrichment}]`);
+		});
+
+		it('removes an enrichment callout written in the base|metadata form', async () => {
+			const proposal = makeProposal({ acceptedItems: { ...emptyAccepted(), internalLinks: ['notes/Other.md'] } });
+			const enriched = `Body\n\n> [!${calloutHeaderToken(CALLOUT_TYPES.enrichment)}] Related Notes\n> - [[Other]] — reason\n`;
+
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile(proposal.sourceNotePath));
+			app.vault.read.mockResolvedValue(enriched);
+			await applier.undo(proposal);
+			const result = (await app.vault.process.mock.results[0].value) as unknown as string;
+
+			expect(result).not.toContain('synapse-enrichment');
+			expect(result).not.toContain('[[Other]]');
+			expect(result).toContain('Body');
 		});
 	});
 });

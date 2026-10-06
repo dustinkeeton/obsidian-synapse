@@ -116,7 +116,7 @@ interface IllustrateSettings {
 illustrateNote(path, ctx)   // post-op (#213)
   --> exclusions; wordCount(cachedRead) >= 80
   --> images = ctx.sourceImages; if fetchLinkedPages && ctx.sourceUrls && images < 3: += fetchLinkedPageImages(urls, { maxPages: maxLinkedPagesPerNote, maxImages: 12 - images })
-  --> region = ctx.producedRegion kind 'callout' ? locateRegion(content, region) : none; region already has [!synapse-illustrate] -> null
+  --> region = ctx.producedRegion kind 'callout' ? locateRegion(content, region) : none; region already has a synapse-illustrate callout (hasCallout, either spelling) -> null
   --> buildProposal(file, {}, images, region): analyzer sees ONLY the region's de-prefixed text; placements resolved with { within: region, insideContainers: true }; photo spots try SourceProvider(images) first (license 'Source page' must pass licenseFilter), then enabled repositories
   --> maybeAutoAccept; refreshView; errors -> notifyError (no operation toast, no confirm)
 
@@ -135,7 +135,7 @@ illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoi
 
 acceptProposal(id, itemIds)
   --> under noteQueue.run(path): photos downloaded first (AssetWriter) unless !preferDownload; failure -> remote URL embed + info notice
-  --> items whose `[!synapse-illustrate] <caption>` or Mermaid body already exist in the note are skipped (alreadyInserted); success notice reports `(N already present)`
+  --> items whose synapse-illustrate callout titled `<caption>` (either spelling, `parseCalloutHeader`) or Mermaid body already exist in the note are skipped (alreadyInserted); success notice reports `(N already present)`
   --> one vault.process: blocks.reduce(applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor), resolveOptions(item.region)), block))   // re-resolved live; stored placement is preview only; item.region -> inside the callout with `> ` prefixes
   --> status accepted | partially-accepted, acceptedItemIds
 ```

@@ -21,7 +21,7 @@ describe('block builders', () => {
 	it('builds a vault embed plus an attribution callout', () => {
 		const block = buildPhotoBlock(photoItem, 'attachments/red-panda.jpg');
 		expect(block).toContain('![[attachments/red-panda.jpg]]');
-		expect(block).toContain('> [!synapse-illustrate] A red [panda]');
+		expect(block).toContain('> [!note|synapse-illustrate] A red [panda]');
 		expect(block).toContain('[CC BY-SA](https://creativecommons.org/licenses/by-sa/4.0)');
 		expect(block).toContain('Jane Doe');
 	});
@@ -42,6 +42,6 @@ describe('block builders', () => {
 	it('builds a mermaid fence with a caption callout', () => {
 		const block = buildMermaidItemBlock({ id: 'd', kind: 'chart', anchor: 'x', caption: 'Counts', rationale: '', mermaid: 'xychart-beta' });
 		expect(block.startsWith('```mermaid\nxychart-beta\n```')).toBe(true);
-		expect(block).toContain('> [!synapse-illustrate] Counts\n> Chart built from figures in this note');
+		expect(block).toContain('> [!note|synapse-illustrate] Counts\n> Chart built from figures in this note');
 	});
 });

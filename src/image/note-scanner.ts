@@ -1,5 +1,5 @@
 import { TFile, MetadataCache } from 'obsidian';
-import { CALLOUT_TYPES } from '../shared';
+import { CALLOUT_TYPES, isCalloutHeader } from '../shared';
 import { ImageEmbed } from './types';
 
 export const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i;
@@ -42,7 +42,7 @@ export function hasExtractionBelow(lines: string[], embedLine: number, fileName:
 			return true;
 		}
 		// Callout format
-		if (lines[j].includes(`[!${CALLOUT_TYPES.ocr}]`) && lines[j].includes(`OCR of ${fileName}`)) {
+		if (isCalloutHeader(lines[j], CALLOUT_TYPES.ocr) && lines[j].includes(`OCR of ${fileName}`)) {
 			return true;
 		}
 		// Stop looking if we hit another embed or non-empty non-blank line that isn't a blockquote
