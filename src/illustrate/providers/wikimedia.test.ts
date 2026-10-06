@@ -49,7 +49,21 @@ describe('parseCommonsPage', () => {
 });
 
 describe('WikimediaProvider.search', () => {
-	beforeEach(() => vi.mocked(requestUrl).mockReset());
+	beforeEach(() => { vi.mocked(requestUrl).mockReset(); });
+
+	it('rejects a search that never responds once the timeout elapses', async () => {
+		vi.useFakeTimers();
+		try {
+			vi.mocked(requestUrl).mockReturnValue(new Promise(() => {}) as never);
+			const pending = new WikimediaProvider().search('x', { limit: 1 }).catch((e: unknown) => e);
+			await vi.advanceTimersByTimeAsync(30_000);
+			const err = await pending;
+			expect(err).toBeInstanceOf(Error);
+			expect((err as Error).message).toContain('timed out');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 
 	it('queries the Commons API in the file namespace and returns parsed candidates', async () => {
 		vi.mocked(requestUrl).mockResolvedValue({ status: 200, json: { query: { pages: { '1': page } } } } as never);

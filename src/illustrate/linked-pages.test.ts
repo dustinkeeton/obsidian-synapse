@@ -8,7 +8,7 @@ function page(n: number, imgs = 1): { status: number; text: string; headers: Rec
 }
 
 describe('fetchLinkedPageImages', () => {
-	beforeEach(() => vi.mocked(requestUrl).mockReset());
+	beforeEach(() => { vi.mocked(requestUrl).mockReset(); });
 
 	it('fetches at most maxPages distinct http(s) pages and pools their images', async () => {
 		vi.mocked(requestUrl).mockResolvedValueOnce(page(1) as never).mockResolvedValueOnce(page(2) as never);

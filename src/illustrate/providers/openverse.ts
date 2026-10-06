@@ -5,6 +5,7 @@ import { normalizeLicense } from '../license';
 
 const API = 'https://api.openverse.org/v1/images/';
 const USER_AGENT = 'ObsidianSynapse/1.0 (https://github.com/dustinkeeton/obsidian-synapse)';
+const SEARCH_TIMEOUT_MS = 30_000;
 
 /** Anonymous Openverse access is rate-limited, so one scan run never issues more than this many queries. */
 export const OPENVERSE_MAX_QUERIES_PER_RUN = 10;
@@ -48,12 +49,18 @@ export class OpenverseProvider implements MediaProvider {
 			page_size: String(opts.limit),
 			license_type: 'all',
 		});
-		const response = await requestUrl({
-			url: `${API}?${params.toString()}`,
-			method: 'GET',
-			headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-			throw: false,
-		});
+		const timeout = new Promise<never>((_, reject) =>
+			window.setTimeout(() => reject(new Error('Openverse search timed out')), SEARCH_TIMEOUT_MS)
+		);
+		const response = await Promise.race([
+			requestUrl({
+				url: `${API}?${params.toString()}`,
+				method: 'GET',
+				headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+				throw: false,
+			}),
+			timeout,
+		]);
 		if (response.status === 429) throw new Error('Openverse rate limit reached; try again later');
 		if (response.status >= 400) throw new Error(`Openverse search failed (HTTP ${response.status})`);
 		const json: unknown = response.json;

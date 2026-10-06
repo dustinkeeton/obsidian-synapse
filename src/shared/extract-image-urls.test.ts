@@ -49,7 +49,7 @@ describe('extractImageUrls', () => {
 });
 
 describe('fetchPageContentWithImages', () => {
-	beforeEach(() => vi.mocked(requestUrl).mockReset());
+	beforeEach(() => { vi.mocked(requestUrl).mockReset(); });
 
 	it('returns readable text alongside the extracted images', async () => {
 		vi.mocked(requestUrl).mockResolvedValue({ status: 200, text: '<html><body><article><p>Hello</p><img src="/x.jpg"></article></body></html>', headers: { 'content-type': 'text/html' } } as never);
