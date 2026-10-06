@@ -54,7 +54,7 @@ class SynapseRunner {
 // types.ts:51 / :54 / :56 / :58 (#483 post-op wiring)
 type PostOpSource = 'elaboration' | 'audio' | 'video' | 'image' | 'summarize' | 'deep-dive' | 'enrichment';   // 'enrichment' (#213) chains illustrate only, never re-enrichment
 type PostOpTrigger = 'elaboration' | 'transcription' | 'summarization' | 'deep-dive';   // EnrichmentTrigger minus 'manual'
-type PostOpContext = SourceContext;   // shared/source-context.ts: { sourceUrls?, sourceImages? } — the material the action processed (#213)
+type PostOpContext = SourceContext;   // shared/source-context.ts: { sourceUrls?, sourceImages?, producedRegion? } — the material the action processed and the region it wrote (#213)
 type PostOpHook = (filePath: string, ctx?: PostOpContext) => void;   // callers with no material pass nothing
 type AutoOrganizeTrigger = 'deep-dive' | 'summarize';
 
@@ -134,7 +134,7 @@ Wired in `main.ts:180-194`: one `PostOpHookDeps` (`main.ts:180-186`) feeds `buil
 
 `TRIGGER_BY_SOURCE`: elaboration -> `'elaboration'`; audio/video/image -> `'transcription'`; summarize -> `'summarization'`; deep-dive -> `'deep-dive'`. `RUN_AFTER_BY_SOURCE`: elaboration -> `elaboration`; audio/video/image -> `transcription`; summarize -> `summarize`; deep-dive -> `deepDive`; enrichment -> `enrichment`.
 
-Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the note body; enrichment accept -> `sourceUrls` = links in the note body; deep-dive accept -> `sourceUrls` = `topic.relatedUrls` + links in the generated body; summarize -> `sourceUrls` = fetched URLs, `sourceImages` = page images (`fetchPageContentWithImages`) + media thumbnails; URL transcription (`insert-url-transcript.ts`) -> `sourceUrls` = [url], `sourceImages` = YouTube poster frame when the caption tier exposed one; local audio/video/image embeds pass nothing.
+Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the note body; enrichment accept -> `sourceUrls` = links in the note body; deep-dive accept -> `sourceUrls` = `topic.relatedUrls` + links in the generated body; summarize -> `sourceUrls` = fetched URLs, `sourceImages` = page images (`fetchPageContentWithImages`) + media thumbnails, `producedRegion` = its `synapse-summary` callout (title when exactly one was written), fired ONCE per distinct note path per run; URL transcription (`insert-url-transcript.ts`) -> `sourceUrls` = [url], `sourceImages` = YouTube poster frame when the caption tier exposed one, `producedRegion` = the transcript callout; elaboration / enrichment / deep-dive -> `producedRegion: { kind: 'whole-note' }`; local audio/video/image embeds pass nothing.
 
 `buildAutoOrganizeHook(deps, trigger)` (`post-op-hooks.ts:53`): `null` unless `organize.enabled` AND (`deepDive.autoOrganizeOnAccept` for `'deep-dive'` | `summarize.autoOrganizeOnSummarize` for `'summarize'`); otherwise `(file) => fireAndForget(organizeNote(file))`.
 

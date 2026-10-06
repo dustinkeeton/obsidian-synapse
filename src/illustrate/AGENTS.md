@@ -17,7 +17,7 @@ class IllustrateModule {
   onload(): Promise<void>                                            // registers illustrate-current-note, illustrate-folder
   onunload(): void
   getPendingProposals(): Promise<IllustrateProposal[]>
-  illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast; with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch
+  illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast; with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch, placed INSIDE ctx.producedRegion when it is a callout; skipped while a run for the path is in flight, when a proposal is already pending, or when the region already holds a synapse-illustrate callout
   scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:218; PipelineScanFn
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:264
   acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:317; queued write
@@ -70,8 +70,8 @@ type IllustrateSpot =   // analyzer output, one per anchor
   | { kind: 'chart'; chart: ChartData; ... }
 
 type IllustrateItem =   // resolved, persisted; placement?: ResolvedInsertion (shared/insertion-point.ts) is the review preview, absent on pre-placement proposals
-  | { id; kind: 'photo'; anchor; caption; rationale; placement?; candidate: MediaCandidate }
-  | { id; kind: 'diagram' | 'chart'; anchor; caption; rationale; placement?; mermaid: string }
+  | { id; kind: 'photo'; anchor; caption; rationale; placement?; region?; candidate: MediaCandidate }
+  | { id; kind: 'diagram' | 'chart'; anchor; caption; rationale; placement?; region?; mermaid: string }   // region?: RegionLocator — the callout the visual belongs inside; absent = whole note, never inside containers
 
 interface IllustrateProposal { id; sourceNotePath; createdAt; items: IllustrateItem[]; status: IllustrateProposalStatus; acceptedItemIds?: string[] }
 
@@ -102,7 +102,7 @@ interface IllustrateSettings {
 | `license.ts` | `normalizeLicense`, `isLicenseAllowed`, `LICENSE_NAMES`, `DEFAULT_LICENSE_FILTER` | License normalization + allow-list |
 | `diagram.ts` | `validateMermaid`, `mermaidBlock` | Mermaid gate for AI diagrams and built charts |
 | `chart.ts` | `parseChartData`, `buildXyChart` | Note-data-only `xychart-beta` |
-| `inserter.ts` | `buildPhotoBlock`, `buildMermaidItemBlock`, `attributionLine` | Block builders (placement lives in `shared/insertion-point.ts`) |
+| `inserter.ts` | `buildPhotoBlock(item, vaultPath, fallbackReason?)`, `buildMermaidItemBlock`, `attributionLine` | Block builders (placement lives in `shared/insertion-point.ts`); a failed download appends `(download failed; remote embed: <reason>)` to the callout |
 | `asset-writer.ts` | `AssetWriter`, `attachmentFileName` | `requestUrl` -> `arrayBuffer` -> `vault.createBinary` at `fileManager.getAvailablePathForAttachment` (15 MB cap) |
 | `proposal-store.ts` | `IllustrateStore` | JSON files in `illustrate.proposalFolderPath` |
 | `note-scanner.ts` | `isEligibleNote`, `hasIllustrations`, `MIN_WORDS_TO_ILLUSTRATE` | Batch eligibility (>= 80 words, no existing illustrate callout) |
@@ -116,7 +116,8 @@ interface IllustrateSettings {
 illustrateNote(path, ctx)   // post-op (#213)
   --> exclusions; wordCount(cachedRead) >= 80
   --> images = ctx.sourceImages; if fetchLinkedPages && ctx.sourceUrls && images < 3: += fetchLinkedPageImages(urls, { maxPages: maxLinkedPagesPerNote, maxImages: 12 - images })
-  --> buildProposal(file, {}, images): photo spots try SourceProvider(images) first (license 'Source page' must pass licenseFilter), then enabled repositories
+  --> region = ctx.producedRegion kind 'callout' ? locateRegion(content, region) : none; region already has [!synapse-illustrate] -> null
+  --> buildProposal(file, {}, images, region): analyzer sees ONLY the region's de-prefixed text; placements resolved with { within: region, insideContainers: true }; photo spots try SourceProvider(images) first (license 'Source page' must pass licenseFilter), then enabled repositories
   --> maybeAutoAccept; refreshView; errors -> notifyError (no operation toast, no confirm)
 
 illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoint(cp)
@@ -134,7 +135,8 @@ illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoi
 
 acceptProposal(id, itemIds)
   --> under noteQueue.run(path): photos downloaded first (AssetWriter) unless !preferDownload; failure -> remote URL embed + info notice
-  --> one vault.process: blocks.reduce(applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor)), block))   // re-resolved live; stored placement is preview only
+  --> items whose `[!synapse-illustrate] <caption>` or Mermaid body already exist in the note are skipped (alreadyInserted); success notice reports `(N already present)`
+  --> one vault.process: blocks.reduce(applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor), resolveOptions(item.region)), block))   // re-resolved live; stored placement is preview only; item.region -> inside the callout with `> ` prefixes
   --> status accepted | partially-accepted, acceptedItemIds
 ```
 
