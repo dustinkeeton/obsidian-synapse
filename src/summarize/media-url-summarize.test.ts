@@ -58,6 +58,7 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
 	...(await vi.importActual<typeof import('../shared/cache-notice')>('../shared/cache-notice')),
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
+	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),

@@ -9,7 +9,7 @@ import {
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { OperationHandle } from '../shared';
-import { isSupportedUrl, detectPlatform } from '../shared';
+import { isSupportedUrl, detectPlatform, isEffectivelyEmptyProse } from '../shared';
 import { findAudioEmbeds } from '../audio';
 import { fetchPageContentWithImages, fetchTweetContent, isRedditUrl, fetchRedditContent, linkLoadError } from '../shared';
 import type { SourceContext, SourceImage } from '../shared';
@@ -532,13 +532,12 @@ export class SummarizeModule implements FeatureModule {
 			targets.sort((a, b) => a.line - b.line);
 		}
 
-		// The note's own prose as an additional item (#367). Appended last so
-		// its summary callout lands at the end of the note. Stripped of
-		// frontmatter and prior summary/transcription/lyrics blocks so the AI
-		// never re-summarizes its own output or double-counts transcripts.
+		// The note's own prose as an additional item (#367), appended last so its
+		// callout lands at the end. A body that is only URLs/embeds is not content:
+		// the references above already cover it (#544).
 		if (this.getSettings().summarize.includeNoteContent) {
 			const prose = extractNoteProse(content);
-			if (prose.trim()) {
+			if (!isEffectivelyEmptyProse(prose)) {
 				const lastLine = Math.max(0, content.split('\n').length - 1);
 				const basename = sourcePath.split('/').pop()?.replace(/\.md$/, '') || sourcePath;
 				targets.push({

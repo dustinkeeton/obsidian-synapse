@@ -9,6 +9,11 @@ export interface SummarizeModalDefaults {
 	combineSummaries: boolean;
 }
 
+/** Items a combined summary can fold together; enrichment refs always go per-item. */
+export function countCombinable(targets: SummarizeTarget[]): number {
+	return targets.filter(t => !(t.inEnrichmentSection && t.linkTitle)).length;
+}
+
 export class SummarizeSelectionModal extends Modal {
 	private selected: Set<string>;
 	private onSummarize: (targets: SummarizeTarget[], combine: boolean) => Promise<void>;
@@ -16,6 +21,7 @@ export class SummarizeSelectionModal extends Modal {
 	private refTargets: SummarizeTarget[];
 	private includeNote: boolean;
 	private combine: boolean;
+	private combineSettingEl: HTMLElement | null = null;
 
 	constructor(
 		app: App,
@@ -55,39 +61,46 @@ export class SummarizeSelectionModal extends Modal {
 						.setValue(this.includeNote)
 						.onChange((val) => {
 							this.includeNote = val;
+							this.refreshCombineToggle();
 						});
 				});
 		}
 
-		// Combine vs. per-item summaries (#367). The modal only appears for 2+
-		// items, so combining is always applicable here.
-		new Setting(contentEl)
-			.setName('Combine into one summary')
-			.setDesc('Produce a single combined summary instead of one per item.')
-			.addToggle((toggle) => {
-				toggle
-					.setValue(this.combine)
-					.onChange((val) => {
-						this.combine = val;
-					});
-			});
+		// Combine vs. per-item summaries (#367); only offered while 2+ combinable items are in play (#544).
+		if (countCombinable(this.allTargets()) >= 2) {
+			const combineSetting = new Setting(contentEl)
+				.setName('Combine into one summary')
+				.setDesc('Produce a single combined summary instead of one per item.')
+				.addToggle((toggle) => {
+					toggle
+						.setValue(this.combine)
+						.onChange((val) => {
+							this.combine = val;
+						});
+				});
+			combineSetting.settingEl.addClass('synapse-summarize-combine');
+			this.combineSettingEl = combineSetting.settingEl;
+		}
 
 		new Setting(contentEl)
 			.addButton((btn) => {
 				btn.setButtonText('Select all').onClick(() => {
 					this.selected = new Set(this.refTargets.map(t => `${t.type}:${t.line}:${t.source}`));
 					this.renderCheckboxes(listEl);
+					this.refreshCombineToggle();
 				});
 			})
 			.addButton((btn) => {
 				btn.setButtonText('Select none').onClick(() => {
 					this.selected.clear();
 					this.renderCheckboxes(listEl);
+					this.refreshCombineToggle();
 				});
 			});
 
 		const listEl = contentEl.createDiv({ cls: 'synapse-summarize-list' });
 		this.renderCheckboxes(listEl);
+		this.refreshCombineToggle();
 
 		new Setting(contentEl).addButton((btn) => {
 			btn.setButtonText('Summarize selected')
@@ -99,9 +112,18 @@ export class SummarizeSelectionModal extends Modal {
 						return;
 					}
 					this.close();
-					await this.onSummarize(chosen, this.combine);
+					await this.onSummarize(chosen, this.combine && countCombinable(chosen) >= 2);
 				});
 		});
+	}
+
+	private allTargets(): SummarizeTarget[] {
+		return this.noteContentTarget ? [...this.refTargets, this.noteContentTarget] : this.refTargets;
+	}
+
+	/** Hide the combine toggle while the current selection could not produce a combined summary. */
+	private refreshCombineToggle(): void {
+		this.combineSettingEl?.toggleClass('is-hidden', countCombinable(this.collectChosen()) < 2);
 	}
 
 	/** Reference targets the user checked, plus note content if its toggle is on. */
@@ -144,6 +166,7 @@ export class SummarizeSelectionModal extends Modal {
 							} else {
 								this.selected.delete(key);
 							}
+							this.refreshCombineToggle();
 						});
 				});
 
