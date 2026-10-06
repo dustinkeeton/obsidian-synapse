@@ -22,7 +22,9 @@
   ],
   "include": [
     "agents/lead-engineer",
-    "agents/security-engineer"
+    "agents/security-engineer",
+    "files/.claude/workflows/audit-stage-1.js",
+    "files/.claude/workflows/audit-stage-2.js"
   ],
   "files": {
     ".agents/agents/docs-agent.md": "f7c489c4009c8ae1a59fc0e6f1f4dc414ba34549a6f912751c48999e13704cbc",
@@ -123,6 +125,8 @@
     ".claude/skills/waffle-toggle/SKILL.md": "bf30bb446280b351af8e71c4a8f687146461f9adcd48c0bec3d57bb3ad2e62f4",
     ".claude/skills/waffle-upgrade/SKILL.md": "155df306df65169af024ad4d8a15f0dfe83cd23fffda423e1defa591d40f59e4",
     ".claude/skills/waffle-validate/SKILL.md": "62934d737b9d27b2256c495f918ccf5482da1d9ccd40aa7cc709e44b1feb3256",
+    ".claude/workflows/audit-stage-1.js": "735583dafd682b7e6a6ed09b8091029cfc2a1eb184a4da87f7614ef8d8ebe99e",
+    ".claude/workflows/audit-stage-2.js": "72785d75c7dc8955aed083bb1dc519dd1c7d311e3efa7a9aabd5ffae20d84dc7",
     ".codex/agents/docs-agent.toml": "b689e74af93aa49bee73286ae6c21b8998539b14e32b46eea85a2586c2ec1ae4",
     ".codex/agents/docs-human.toml": "9a3ffe36c192f3291202aa23e99ddafd5ed42cdf81b39abf2d01d52ac0e674fd",
     ".codex/agents/lead-engineer.toml": "1a4ae3c4ed0d54e9e5eb3fb6dca5359c1f588468e2d06ace7de75f3ca8a3bbee",
