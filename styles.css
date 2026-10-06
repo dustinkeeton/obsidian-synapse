@@ -1025,6 +1025,12 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
   border-radius: 4px;
   background: var(--background-secondary);
 }
+.synapse-illustrate-placement {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
 .synapse-illustrate-meta {
   display: block;
   color: var(--text-muted);

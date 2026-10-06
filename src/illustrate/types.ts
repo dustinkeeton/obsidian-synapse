@@ -1,3 +1,5 @@
+import type { ResolvedInsertion } from '../shared/insertion-point';
+
 /** Visual kinds the analyzer can propose for one spot in a note. */
 export type IllustrateSpotKind = 'photo' | 'diagram' | 'chart';
 
@@ -55,6 +57,8 @@ interface ItemBase {
 	anchor: string;
 	caption: string;
 	rationale: string;
+	/** Preview resolved at proposal time; accept re-resolves against the live note. Absent on pre-placement proposals. */
+	placement?: ResolvedInsertion;
 }
 
 export type IllustrateItem =

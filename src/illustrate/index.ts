@@ -4,10 +4,11 @@ import type { CommandRegistrar } from '../commands';
 import {
 	getMarkdownFiles, parseFrontmatter, generateId, fireAndForget, openScanFolderPicker,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, redactError,
+	resolveInsertionPoint, applyInsertion,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
-	NotificationManager, CheckpointManager, NoteOperationQueue,
+	NotificationManager, CheckpointManager, NoteOperationQueue, InsertionAnchor,
 } from '../shared';
 import { NoteAnalyzer } from './note-analyzer';
 import { IllustrateStore } from './proposal-store';
@@ -17,7 +18,7 @@ import { OpenverseProvider } from './providers/openverse';
 import { isLicenseAllowed } from './license';
 import { buildXyChart } from './chart';
 import { validateMermaid } from './diagram';
-import { buildMermaidItemBlock, buildPhotoBlock, insertAtAnchor } from './inserter';
+import { buildMermaidItemBlock, buildPhotoBlock } from './inserter';
 import { isEligibleNote } from './note-scanner';
 import type { IllustrateItem, IllustrateProposal, IllustrateSpot, MediaCandidate, MediaProvider } from './types';
 
@@ -30,9 +31,13 @@ export { OpenverseProvider } from './providers/openverse';
 export { normalizeLicense, isLicenseAllowed, LICENSE_NAMES, DEFAULT_LICENSE_FILTER } from './license';
 export { validateMermaid } from './diagram';
 export { buildXyChart, parseChartData } from './chart';
-export { insertAtAnchor } from './inserter';
 
 const CANDIDATES_PER_QUERY = 5;
+
+/** The analyzer copies anchors verbatim, so a leading `#` is the only heading signal. */
+function anchorFor(text: string): InsertionAnchor {
+	return { kind: /^#{1,6}\s/.test(text) ? 'heading' : 'paragraph', text };
+}
 
 export class IllustrateModule implements FeatureModule {
 	private plugin: Plugin;
@@ -109,8 +114,9 @@ export class IllustrateModule implements FeatureModule {
 		return null;
 	}
 
-	private async resolveItem(spot: IllustrateSpot): Promise<IllustrateItem | null> {
-		const base = { id: generateId(), anchor: spot.anchor, caption: spot.caption, rationale: spot.rationale };
+	private async resolveItem(spot: IllustrateSpot, content: string): Promise<IllustrateItem | null> {
+		const placement = resolveInsertionPoint(content, anchorFor(spot.anchor));
+		const base = { id: generateId(), anchor: spot.anchor, caption: spot.caption, rationale: spot.rationale, placement };
 		if (spot.kind === 'photo') {
 			const candidate = await this.findPhoto(spot.query);
 			return candidate ? { ...base, kind: 'photo', candidate } : null;
@@ -127,7 +133,7 @@ export class IllustrateModule implements FeatureModule {
 		const spots = await this.analyzer.analyze(file.path, body, trackAiCache(cacheUse));
 		const items: IllustrateItem[] = [];
 		for (const spot of spots) {
-			const item = await this.resolveItem(spot);
+			const item = await this.resolveItem(spot, content);
 			if (item) items.push(item);
 		}
 		if (items.length === 0) return null;
@@ -289,8 +295,9 @@ export class IllustrateModule implements FeatureModule {
 			for (const item of accepted) {
 				blocks.push({ anchor: item.anchor, block: await this.buildBlock(item, file) });
 			}
+			// Re-resolve against the live note: the stored placement is only the review preview.
 			await this.plugin.app.vault.process(file, (content) =>
-				blocks.reduce((acc, { anchor, block }) => insertAtAnchor(acc, anchor, block), content)
+				blocks.reduce((acc, { anchor, block }) => applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor)), block), content)
 			);
 		});
 		const status = accepted.length === proposal.items.length ? 'accepted' : 'partially-accepted';

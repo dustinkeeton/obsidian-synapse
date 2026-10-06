@@ -138,7 +138,7 @@ describe('IllustrateModule', () => {
 			await module.illustrateNote('notes/a.md');
 			const saved = vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0];
 			expect(saved.items.map((i) => i.kind)).toEqual(['photo', 'chart']);
-			expect(saved.items[0]).toMatchObject({ candidate: { license: 'CC BY-SA' } });
+			expect(saved.items[0]).toMatchObject({ candidate: { license: 'CC BY-SA' }, placement: { strategy: 'after-heading', line: 2, matchedText: '## Habitat' } });
 			expect(op.finish).toHaveBeenCalledWith('Illustration proposal created', expect.objectContaining({ label: 'Review' }) as NoticeAction);
 		});
 

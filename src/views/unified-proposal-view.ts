@@ -7,7 +7,7 @@ import type { TitleProposal } from '../title';
 import type { RemProposal } from '../rem';
 import type { IllustrateProposal } from '../illustrate';
 import type { Checkpoint, NotificationManager } from '../shared';
-import { fireAndForget } from '../shared';
+import { fireAndForget, describeInsertion } from '../shared';
 import type { UnifiedItem, UnifiedViewCallbacks } from './types';
 import { badgeClass, cardClass, reviewPaneLabelClass } from './proposal-styles';
 
@@ -1406,7 +1406,11 @@ export class UnifiedProposalView extends ItemView {
 			const section = checklist.createDiv({ cls: 'synapse-checklist-section' });
 
 			const headingRow = section.createDiv({ cls: 'synapse-rem-candidate-header' });
-			headingRow.createEl('span', { text: item.anchor, cls: 'synapse-rem-target' });
+			headingRow.createEl('span', {
+				text: item.placement ? describeInsertion(item.placement) : 'Placement resolved on accept',
+				cls: 'synapse-illustrate-placement',
+				attr: { title: item.anchor },
+			});
 			headingRow.createEl('span', {
 				text: item.kind,
 				cls: `synapse-badge synapse-badge--illustrate-${item.kind}`,

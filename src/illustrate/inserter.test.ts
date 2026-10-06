@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findAnchorLine, insertAtAnchor, buildPhotoBlock, buildMermaidItemBlock, attributionLine } from './inserter';
+import { buildPhotoBlock, buildMermaidItemBlock, attributionLine } from './inserter';
 import type { IllustrateItem, MediaCandidate } from './types';
 
 const candidate: MediaCandidate = {
@@ -16,44 +16,6 @@ const candidate: MediaCandidate = {
 const photoItem: Extract<IllustrateItem, { kind: 'photo' }> = {
 	id: 'p1', kind: 'photo', anchor: '## Habitat', caption: 'A red [panda]', rationale: '', candidate,
 };
-
-const NOTE = ['---', 'tags: [a]', '---', '# Red panda', '', '## Habitat', 'They live in forests.', 'High in the trees.', '', '## Diet', 'Bamboo.'].join('\n');
-
-describe('findAnchorLine', () => {
-	const lines = NOTE.split('\n');
-
-	it('matches a heading regardless of hashes and case', () => {
-		expect(findAnchorLine(lines, 'habitat')).toBe(5);
-	});
-
-	it('matches a paragraph by its opening words and ignores wikilink syntax', () => {
-		expect(findAnchorLine(lines, 'They live in')).toBe(6);
-		expect(findAnchorLine(['Eats [[Bamboo|bamboo]] daily'], 'Eats bamboo daily')).toBe(0);
-	});
-
-	it('returns -1 for an unknown or empty anchor', () => {
-		expect(findAnchorLine(lines, 'Nowhere')).toBe(-1);
-		expect(findAnchorLine(lines, '   ')).toBe(-1);
-	});
-});
-
-describe('insertAtAnchor', () => {
-	it('inserts directly after a heading and keeps frontmatter intact', () => {
-		const out = insertAtAnchor(NOTE, '## Habitat', 'BLOCK');
-		expect(out.startsWith('---\ntags:')).toBe(true);
-		expect(out).toContain('## Habitat\n\nBLOCK\n\nThey live in forests.');
-	});
-
-	it('inserts after the end of an anchored paragraph', () => {
-		const out = insertAtAnchor(NOTE, 'They live in forests', 'BLOCK');
-		expect(out).toContain('High in the trees.\n\nBLOCK\n\n## Diet');
-	});
-
-	it('appends at the end when the anchor is not found', () => {
-		const out = insertAtAnchor(NOTE, 'missing', 'BLOCK');
-		expect(out.trimEnd().endsWith('Bamboo.\n\nBLOCK')).toBe(true);
-	});
-});
 
 describe('block builders', () => {
 	it('builds a vault embed plus an attribution callout', () => {
