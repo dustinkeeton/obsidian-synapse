@@ -160,7 +160,7 @@ function createModules(
 
 /** Occurrences of a callout header in the note. */
 function countCallouts(content: string, type: string): number {
-	return content.split(`> [!${type}]`).length - 1;
+	return (content.match(new RegExp(`^> \\[!(?:[^\\]|]*\\|)?${type}\\]`, 'gm')) ?? []).length;
 }
 
 /** The note body the proposer embedded in its prompt. */

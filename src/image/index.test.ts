@@ -99,7 +99,7 @@ describe('ImageModule', () => {
 			expect(extractSpy).toHaveBeenCalled();
 			const written = (await app.vault.process.mock.results[0].value) as unknown as string;
 			expect(written).toContain('existing body');
-			expect(written).toContain('[!synapse-ocr]');
+			expect(written).toContain('[!quote|synapse-ocr]');
 			expect(written).toContain('extracted text');
 			expect(onComplete).toHaveBeenCalledWith('notes/Active.md');
 			expect(op.finish).toHaveBeenCalled();
@@ -138,7 +138,7 @@ describe('ImageModule', () => {
 			expect(checkpointManager.addDeferredTask).toHaveBeenCalled();
 			expect(checkpointManager.completeItem).toHaveBeenCalled();
 			const written = (await app.vault.process.mock.results[0].value) as unknown as string;
-			expect(written).toContain('[!synapse-ocr]');
+			expect(written).toContain('[!quote|synapse-ocr]');
 			expect(written).toContain('extracted text');
 			expect(checkpointManager.complete).toHaveBeenCalledWith('mockcheckpoint');
 			expect(onComplete).toHaveBeenCalledWith('notes/Doc.md');

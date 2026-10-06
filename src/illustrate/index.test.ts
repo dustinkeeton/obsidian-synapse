@@ -94,7 +94,7 @@ describe('IllustrateModule', () => {
 			vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/red-panda.jpg'));
 			await module.acceptProposal('prop1', ['i-photo', 'i-diagram']);
 			const written = (await app.vault.process.mock.results[0].value) as string;
-			expect(written).toContain('## Habitat\nForests.\n\n![[attachments/red-panda.jpg]]\n\n> [!synapse-illustrate] A red panda\n> Source: [Red panda.jpg](https://commons.wikimedia.org/wiki/File:Red_panda.jpg) · License: [CC BY-SA](https://cc/by-sa) · Jane\n\n## Lifecycle');
+			expect(written).toContain('## Habitat\nForests.\n\n![[attachments/red-panda.jpg]]\n\n> [!note|synapse-illustrate] A red panda\n> Source: [Red panda.jpg](https://commons.wikimedia.org/wiki/File:Red_panda.jpg) · License: [CC BY-SA](https://cc/by-sa) · Jane\n\n## Lifecycle');
 			expect(written).toContain('## Lifecycle\nBirth to death.\n\n```mermaid\nflowchart TD\nA --> B\n```');
 			expect(IllustrateStore.prototype.updateStatus).toHaveBeenCalledWith('prop1', 'accepted', ['i-photo', 'i-diagram']);
 			expect(notifications.success).toHaveBeenCalledWith('Inserted 2 visuals');
@@ -247,6 +247,16 @@ describe('IllustrateModule', () => {
 			expect(saved.items[0]).toMatchObject({ region, placement: { line: 6, container: { prefix: '> ', label: 'summary' } } });
 		});
 
+		it('locates the region when the summary callout uses the base|metadata form', async () => {
+			const modern = longSummary.replace('> [!synapse-summary] Combined summary (2 items)', '> [!summary|synapse-summary] Combined summary (2 items)');
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			app.vault.read.mockResolvedValue(modern);
+			app.vault.cachedRead.mockResolvedValue(modern);
+			const analyze = vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([]);
+			await module.illustrateNote('notes/a.md', { sourceUrls: [], producedRegion: region });
+			expect(analyze.mock.calls[0][1]).toBe('[!summary|synapse-summary] Combined summary (2 items)\n## Overview\nPiracy peaked in the 1700s.\n\n' + 'word '.repeat(100));
+		});
+
 		it('inserts accepted items inside the summary callout with every line prefixed', async () => {
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
 			app.vault.read.mockResolvedValue(SUMMARY_NOTE);
@@ -257,7 +267,7 @@ describe('IllustrateModule', () => {
 			await module.acceptProposal('prop1', ['i-diagram']);
 			const written = (await app.vault.process.mock.results[0].value) as string;
 			expect(written.split('\n').slice(6, 14)).toEqual([
-				'> Piracy peaked in the 1700s.', '>', '> ```mermaid', '> flowchart TD', '> A --> B', '> ```', '>', '> > [!synapse-illustrate] Timeline',
+				'> Piracy peaked in the 1700s.', '>', '> ```mermaid', '> flowchart TD', '> A --> B', '> ```', '>', '> > [!note|synapse-illustrate] Timeline',
 			]);
 			expect(written).toContain('> > Diagram generated from this note\n>\n> It declined later.');
 		});
@@ -271,7 +281,7 @@ describe('IllustrateModule', () => {
 			});
 			await module.acceptProposal('prop1', ['i-diagram']);
 			const written = (await app.vault.process.mock.results[0].value) as string;
-			expect(written).toContain('> It declined later.\n\n```mermaid\nflowchart TD\nA --> B\n```\n\n> [!synapse-illustrate] Timeline');
+			expect(written).toContain('> It declined later.\n\n```mermaid\nflowchart TD\nA --> B\n```\n\n> [!note|synapse-illustrate] Timeline');
 		});
 
 		it('skips a chained run while one is in flight or a proposal is pending, and a region already illustrated', async () => {
@@ -302,6 +312,15 @@ describe('IllustrateModule', () => {
 			expect(app.vault.process).not.toHaveBeenCalled();
 			expect(notifications.success).toHaveBeenCalledWith('Inserted 0 visuals (2 already present)');
 			expect(IllustrateStore.prototype.updateStatus).toHaveBeenCalledWith('prop1', 'accepted', ['i-photo', 'i-diagram']);
+		});
+
+		it('recognises an existing caption callout in the base|metadata form', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			const already = NOTE + '\n\n```mermaid\nflowchart TD\nA --> B\n```\n\n> [!note|synapse-illustrate] A red panda\n> Source: x';
+			app.vault.read.mockResolvedValue(already);
+			await module.acceptProposal('prop1', ['i-photo', 'i-diagram']);
+			expect(app.vault.process).not.toHaveBeenCalled();
+			expect(notifications.success).toHaveBeenCalledWith('Inserted 0 visuals (2 already present)');
 		});
 	});
 

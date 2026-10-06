@@ -83,12 +83,7 @@ vi.mock('../shared', async () => ({
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
-	CALLOUT_TYPES: { transcription: 'synapse-transcription', summary: 'synapse-summary' },
-	buildCallout: vi.fn((_type: string, title: string, content: string) =>
-		`\n> [!synapse-summary] ${title}\n> ${content}\n`
-	),
-	ENRICHMENT_START: '%% synapse-enrichment-start %%',
-	ENRICHMENT_END: '%% synapse-enrichment-end %%',
+	...(await vi.importActual<typeof import('../shared/callouts')>('../shared/callouts')),
 	generateId: vi.fn().mockReturnValue('id-mock'),
 	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
 	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),

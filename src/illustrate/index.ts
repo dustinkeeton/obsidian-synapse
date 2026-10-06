@@ -4,7 +4,7 @@ import type { CommandRegistrar } from '../commands';
 import {
 	getMarkdownFiles, parseFrontmatter, generateId, fireAndForget, openScanFolderPicker,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, redactError,
-	resolveInsertionPoint, applyInsertion, locateRegion, wordCount,
+	resolveInsertionPoint, applyInsertion, locateRegion, wordCount, parseCalloutHeader, CALLOUT_TYPES,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
@@ -50,9 +50,17 @@ function resolveOptions(region?: RegionLocator): ResolveInsertionOptions {
 	return region?.kind === 'callout' ? { within: region, insideContainers: true } : {};
 }
 
+/** True when a `synapse-illustrate` callout (either spelling) titled `caption` is already in the note. */
+function hasCaptionCallout(content: string, caption: string): boolean {
+	return content.split('\n').some((line) => {
+		const header = parseCalloutHeader(line);
+		return header?.identity === CALLOUT_TYPES.illustrate && header.title === caption;
+	});
+}
+
 /** Accept is idempotent: a visual whose caption callout or Mermaid body is already in the note is skipped. */
 function alreadyInserted(content: string, item: IllustrateItem): boolean {
-	if (content.includes(`[!synapse-illustrate] ${item.caption}`)) return true;
+	if (hasCaptionCallout(content, item.caption)) return true;
 	return item.kind !== 'photo' && content.includes(item.mermaid);
 }
 

@@ -138,6 +138,63 @@ describe('findSummarizeTargets', () => {
 		expect(targets).toHaveLength(0);
 	});
 
+	describe('base|metadata callout form alongside the legacy bare form (#554)', () => {
+		const URL = 'https://youtube.com/watch?v=abc';
+		const NEW_TRANSCRIPTION = `> [!quote|synapse-transcription]- Transcription of ${URL}`;
+		const LEGACY_TRANSCRIPTION = `> [!synapse-transcription]- Transcription of ${URL}`;
+		const NEW_SUMMARY = `> [!summary|synapse-summary] Summary of ${URL}`;
+		const LEGACY_SUMMARY = `> [!synapse-summary] Summary of ${URL}`;
+
+		it('finds a transcription written in the new form', () => {
+			const targets = findSummarizeTargets([NEW_TRANSCRIPTION, '> Hello world'].join('\n'));
+			expect(targets).toHaveLength(1);
+			expect(targets[0]).toMatchObject({ type: 'transcription', source: URL, content: 'Hello world' });
+		});
+
+		it.each([
+			{ name: 'new transcription, new summary', transcription: NEW_TRANSCRIPTION, summary: NEW_SUMMARY },
+			{ name: 'new transcription, legacy summary', transcription: NEW_TRANSCRIPTION, summary: LEGACY_SUMMARY },
+			{ name: 'legacy transcription, new summary', transcription: LEGACY_TRANSCRIPTION, summary: NEW_SUMMARY },
+		])('never re-summarizes: $name', ({ transcription, summary }) => {
+			const content = [transcription, '> Transcribed text', '', summary, '> Summary text'].join('\n');
+			expect(findSummarizeTargets(content)).toHaveLength(0);
+		});
+
+		it.each([
+			{ form: 'new', header: NEW_TRANSCRIPTION },
+			{ form: 'legacy', header: LEGACY_TRANSCRIPTION },
+		])('a $form-form transcription below a URL supersedes the bare URL target', ({ header }) => {
+			const targets = findSummarizeTargets([URL, '', header, '> words'].join('\n'));
+			expect(targets).toHaveLength(1);
+			expect(targets[0].type).toBe('transcription');
+		});
+
+		it.each([
+			{ form: 'new', header: '> [!quote|synapse-lyrics]- Lyrics of https://youtube.com/watch?v=song' },
+			{ form: 'legacy', header: '> [!synapse-lyrics]- Lyrics of https://youtube.com/watch?v=song' },
+		])('a $form-form lyrics callout is never summarized and marks its URL as transcribed', ({ header }) => {
+			const content = ['https://youtube.com/watch?v=song', '', header, '> la la la'].join('\n');
+			expect(findSummarizeTargets(content)).toHaveLength(0);
+		});
+
+		it.each([
+			{ form: 'new', header: '> [!info|synapse-enrichment] References' },
+			{ form: 'legacy', header: '> [!synapse-enrichment] References' },
+		])('a $form-form enrichment callout is tracked as an enrichment section', ({ header }) => {
+			const content = [header, '> - [Ref](https://example.com/ref) — why', '', 'https://example.com/after'].join('\n');
+			const targets = findSummarizeTargets(content);
+			expect(targets).toHaveLength(2);
+			expect(targets[0]).toMatchObject({ source: 'https://example.com/ref', inEnrichmentSection: true, linkTitle: 'Ref' });
+			expect(targets[1]).toMatchObject({ source: 'https://example.com/after' });
+			expect(targets[1].inEnrichmentSection).toBeFalsy();
+		});
+
+		it('skips a bare URL whose new-form summary sits below it', () => {
+			const content = ['https://example.com/article', '', '> [!summary|synapse-summary] Summary of https://example.com/article', '> text'].join('\n');
+			expect(findSummarizeTargets(content)).toHaveLength(0);
+		});
+	});
+
 	it('finds enrichment URLs in callout-format enrichment sections', () => {
 		const content = [
 			'https://example.com/user-url',
@@ -511,6 +568,11 @@ describe('findSummarizeTargets', () => {
 });
 
 describe('hasSummaryBelow', () => {
+	it('matches a summary callout in the base|metadata form', () => {
+		const lines = ['https://example.com/a', '> [!summary|synapse-summary] Summary of https://example.com/a'];
+		expect(hasSummaryBelow(lines, 0, 'https://example.com/a')).toBe(true);
+	});
+
 	it('returns true when summary block exists immediately below', () => {
 		const lines = [
 			'https://example.com/article',
@@ -655,9 +717,9 @@ describe('multi-URL inline insertion (integration)', () => {
 
 		const result = simulateInsertion(content, summaries);
 
-		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=abc');
+		expect(result).toContain('> [!summary|synapse-summary] Summary of https://youtube.com/watch?v=abc');
 		expect(result).toContain('> Summary of first video.');
-		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=xyz');
+		expect(result).toContain('> [!summary|synapse-summary] Summary of https://youtube.com/watch?v=xyz');
 		expect(result).toContain('> Summary of second video.');
 	});
 
@@ -678,11 +740,11 @@ describe('multi-URL inline insertion (integration)', () => {
 
 		const result = simulateInsertion(content, summaries);
 
-		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=first');
+		expect(result).toContain('> [!summary|synapse-summary] Summary of https://youtube.com/watch?v=first');
 		expect(result).toContain('> First summary.');
-		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=second');
+		expect(result).toContain('> [!summary|synapse-summary] Summary of https://youtube.com/watch?v=second');
 		expect(result).toContain('> Second summary.');
-		expect(result).toContain('> [!synapse-summary] Summary of https://youtube.com/watch?v=third');
+		expect(result).toContain('> [!summary|synapse-summary] Summary of https://youtube.com/watch?v=third');
 		expect(result).toContain('> Third summary.');
 	});
 
@@ -774,8 +836,8 @@ describe('multi-URL inline insertion (integration)', () => {
 		const secondUrlIdx = lines.indexOf('https://example.com/second');
 
 		// Find the summary header lines
-		const firstSummaryIdx = lines.indexOf('> [!synapse-summary] Summary of https://example.com/first');
-		const secondSummaryIdx = lines.indexOf('> [!synapse-summary] Summary of https://example.com/second');
+		const firstSummaryIdx = lines.indexOf('> [!summary|synapse-summary] Summary of https://example.com/first');
+		const secondSummaryIdx = lines.indexOf('> [!summary|synapse-summary] Summary of https://example.com/second');
 
 		// Each summary should come after its URL and before the next URL
 		expect(firstSummaryIdx).toBeGreaterThan(firstUrlIdx);
@@ -797,9 +859,9 @@ describe('multi-URL inline insertion (integration)', () => {
 
 		const result = simulateInsertion(content, summaries);
 
-		expect(result).toContain('> [!synapse-summary] Summary of https://example.com/a');
+		expect(result).toContain('> [!summary|synapse-summary] Summary of https://example.com/a');
 		expect(result).toContain('> Summary A.');
-		expect(result).toContain('> [!synapse-summary] Summary of https://example.com/b');
+		expect(result).toContain('> [!summary|synapse-summary] Summary of https://example.com/b');
 		expect(result).toContain('> Summary B.');
 	});
 });
@@ -852,6 +914,23 @@ describe('extractNoteProse', () => {
 		expect(prose).toContain('End.');
 		expect(prose).not.toContain('spoken words');
 		expect(prose).not.toContain('la la la');
+	});
+
+	it('strips generated blocks written in the base|metadata form', () => {
+		const content = [
+			'Notes.',
+			'> [!summary|synapse-summary] Summary of X',
+			'> body',
+			'',
+			'> [!quote|synapse-transcription] Transcription of clip.mp4',
+			'> spoken words',
+			'',
+			'> [!quote|synapse-lyrics] Lyrics of song.mp3',
+			'> la la la',
+			'',
+			'End.',
+		].join('\n');
+		expect(extractNoteProse(content)).toBe('Notes.\n\nEnd.');
 	});
 
 	it('preserves user blockquotes that are not generated blocks', () => {

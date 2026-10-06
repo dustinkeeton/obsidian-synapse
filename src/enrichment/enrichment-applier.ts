@@ -1,7 +1,7 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
-	mergeTags, parseFrontmatter, serializeFrontmatter, buildCallout, CALLOUT_TYPES,
+	mergeTags, parseFrontmatter, serializeFrontmatter, buildCallout, CALLOUT_TYPES, calloutHeaderSource,
 	ENRICHMENT_START, ENRICHMENT_END, asStringArray,
 } from '../shared';
 import { EnrichmentProposal, AcceptedItems } from './types';
@@ -231,7 +231,7 @@ export class EnrichmentApplier {
 
 		// Remove callout-format enrichment sections
 		const calloutPattern = new RegExp(
-			`^> \\[!${CALLOUT_TYPES.enrichment}\\][^\\n]*(?:\\n>[^\\n]*)*\\n?`,
+			`^> ${calloutHeaderSource(CALLOUT_TYPES.enrichment)}[^\\n]*(?:\\n>[^\\n]*)*\\n?`,
 			'gm'
 		);
 		result = result.replace(calloutPattern, '').replace(/\n{3,}/g, '\n\n');

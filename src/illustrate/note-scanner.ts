@@ -1,9 +1,9 @@
-import { CALLOUT_TYPES, wordCount } from '../shared';
+import { CALLOUT_TYPES, hasCallout, wordCount } from '../shared';
 
 export const MIN_WORDS_TO_ILLUSTRATE = 80;
 
 export function hasIllustrations(content: string): boolean {
-	return content.includes(`[!${CALLOUT_TYPES.illustrate}]`);
+	return hasCallout(content, CALLOUT_TYPES.illustrate);
 }
 
 /** Batch eligibility: enough prose to illustrate and no Synapse illustrations yet. */
