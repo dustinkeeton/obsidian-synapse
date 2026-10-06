@@ -38,6 +38,8 @@ export interface YouTubeTranscript {
 	auto: boolean;
 	/** Video title from the player response, when present. */
 	title?: string;
+	/** Largest poster frame from `videoDetails.thumbnail.thumbnails`, when present (#213). */
+	thumbnailUrl?: string;
 	/**
 	 * True when STRONG deterministic structure was found (speaker turns or
 	 * chapters) — the text is finished markdown, and AI restructuring would
@@ -176,6 +178,7 @@ export async function fetchYouTubeTranscript(
 			language: track.languageCode,
 			auto: track.kind === 'asr',
 			title: extractVideoTitle(player),
+			thumbnailUrl: extractVideoThumbnail(player),
 			structured,
 		};
 	} catch (error) {
@@ -335,6 +338,20 @@ function extractVideoTitle(player: unknown): string | undefined {
 	if (typeof details.title !== 'string') return undefined;
 	const title = sanitizeInlineText(details.title);
 	return title.length > 0 ? title : undefined;
+}
+
+/** Largest `videoDetails.thumbnail.thumbnails[]` entry by width, as an https URL. */
+export function extractVideoThumbnail(player: unknown): string | undefined {
+	if (!isRecord(player) || !isRecord(player.videoDetails) || !isRecord(player.videoDetails.thumbnail)) return undefined;
+	const list = player.videoDetails.thumbnail.thumbnails;
+	if (!Array.isArray(list)) return undefined;
+	let best: { url: string; width: number } | null = null;
+	for (const entry of list as unknown[]) {
+		if (!isRecord(entry) || typeof entry.url !== 'string' || !/^https:\/\//.test(entry.url)) continue;
+		const width = typeof entry.width === 'number' ? entry.width : 0;
+		if (!best || width > best.width) best = { url: entry.url, width };
+	}
+	return best?.url;
 }
 
 /** Collapse control characters and whitespace runs to one line, bounded in length. */

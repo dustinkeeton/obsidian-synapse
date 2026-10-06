@@ -1,5 +1,8 @@
 /** Transcript handed to summarize by the injected transcribers; structurally matches the router result. */
 export interface TranscribedMedia {
+	/** Video title / poster frame when the tier exposes them (#213, source images). */
+	title?: string;
+	thumbnailUrl?: string;
 	text: string;
 	/** Served from the transcript store (#488). */
 	cached?: boolean;

@@ -1,4 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
+import { extractUrls } from '../shared';
+import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
@@ -49,6 +51,9 @@ export class EnrichmentModule implements FeatureModule {
 
 	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
 	onOpenProposalView: (() => void) | null = null;
+
+	/** Fired after a proposal's accepted items are written (never on scan); wired by main.ts (#213). */
+	onEnrichmentApplied: ((filePath: string, ctx?: SourceContext) => void) | null = null;
 
 	/**
 	 * Live accessor for the enrichment auto-accept flag (#228). Wired by
@@ -637,6 +642,11 @@ export class EnrichmentModule implements FeatureModule {
 		}
 
 		await this.applier.apply(proposal, accepted);
+		if (this.onEnrichmentApplied) {
+			const noteFile = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
+			const body = noteFile instanceof TFile ? await this.plugin.app.vault.cachedRead(noteFile) : '';
+			this.onEnrichmentApplied(proposal.sourceNotePath, { sourceUrls: extractUrls(body) });
+		}
 
 		const totalAvailable =
 			proposal.result.tags.length +

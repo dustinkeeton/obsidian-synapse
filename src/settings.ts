@@ -7,7 +7,8 @@ import type { ExclusionRule } from './shared/exclusions';
 // Type-only import. title/types.ts has no imports, so this never forms a cycle.
 import type { TitleDuplicateStrategy } from './title/types';
 // Type-only import. illustrate/types.ts has no imports, so this never forms a cycle.
-import type { IllustrateSettings } from './illustrate/types';
+import type { IllustrateSettings, IllustrateRunAfterKey } from './illustrate/types';
+export type { IllustrateRunAfterKey };
 // Runtime value import — the sanctioned `settings → shared` direction. Imported
 // DIRECTLY from the module (not via the `./shared` barrel) to stay clear of any
 // barrel import cycle; settings-migrations only depends on shared/exclusions, so
@@ -591,6 +592,9 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 	illustrate: {
 		enabled: false,
 		providers: { wikimedia: true, openverse: true },
+		runAfter: { elaboration: false, transcription: false, summarize: false, enrichment: false, deepDive: false },
+		fetchLinkedPages: false,
+		maxLinkedPagesPerNote: 3,
 		maxItemsPerNote: 3,
 		licenseFilter: ['CC0', 'Public domain', 'CC BY', 'CC BY-SA'],
 		preferDownload: true,

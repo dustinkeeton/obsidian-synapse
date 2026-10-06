@@ -188,12 +188,14 @@ export default class SynapsePlugin extends Plugin {
 			enrich: (filePath, trigger) => enrichment.enrich(filePath, trigger, { postOp: true }),
 			checkTitle: (filePath) => title.checkTitle(filePath, { postOp: true }),
 			organizeNote: (file) => organize.organizeNote(file),
+			illustrateNote: (filePath, ctx) => illustrate.illustrateNote(filePath, ctx),
 		};
 		elaboration.onProposalAccepted = buildPostOpHook(postOpDeps, 'elaboration');
 		audio.onTranscriptionComplete = buildPostOpHook(postOpDeps, 'audio');
 		if (video) video.onTranscriptionComplete = buildPostOpHook(postOpDeps, 'video');
 		image.onExtractionComplete = buildPostOpHook(postOpDeps, 'image');
 		summarize.onSummaryComplete = buildPostOpHook(postOpDeps, 'summarize');
+		enrichment.onEnrichmentApplied = buildPostOpHook(postOpDeps, 'enrichment');
 		deepDive.onNoteAccepted = buildPostOpHook(postOpDeps, 'deep-dive');
 		deepDive.onOrganizeRequested = buildAutoOrganizeHook(postOpDeps, 'deep-dive');
 		summarize.onOrganizeRequested = buildAutoOrganizeHook(postOpDeps, 'summarize');
@@ -205,7 +207,7 @@ export default class SynapsePlugin extends Plugin {
 			router: this.urlTranscription,
 			noteQueue: this.noteQueue,
 			onTranscribeFile: (file, timeRange) => audio.transcribeFileToActiveNote(file, timeRange),
-			onComplete: (filePath) => audio.onTranscriptionComplete?.(filePath),
+			onComplete: (filePath, ctx) => audio.onTranscriptionComplete?.(filePath, ctx),
 		});
 		const isFfmpegAvailable = createFfmpegAvailability(audio.extractor);
 

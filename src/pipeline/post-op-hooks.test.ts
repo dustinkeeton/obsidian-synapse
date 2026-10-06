@@ -16,6 +16,7 @@ function makeDeps(mutate: (s: SynapseSettings) => void = () => {}) {
 		enrich: vi.fn().mockResolvedValue(undefined),
 		checkTitle: vi.fn().mockResolvedValue(undefined),
 		organizeNote: vi.fn().mockResolvedValue(null),
+		illustrateNote: vi.fn().mockResolvedValue(undefined),
 	};
 	return { deps, settings };
 }
@@ -86,6 +87,74 @@ describe('buildPostOpHook', () => {
 			s.title.enabled = false;
 		});
 		expect(buildPostOpHook(deps, 'elaboration')).toBeNull();
+	});
+});
+
+describe('buildPostOpHook — illustrate leg (#213)', () => {
+	const ctx = { sourceUrls: ['https://example.com/a'], sourceImages: [{ url: 'https://example.com/a.jpg', pageUrl: 'https://example.com/a' }] };
+
+	it('is not wired while illustrate is disabled, even with runAfter on', () => {
+		const { deps } = makeDeps((s) => {
+			s.enrichment.autoEnrich = false;
+			s.title.checkAfterOperations = false;
+			s.illustrate.runAfter.summarize = true;
+		});
+		expect(buildPostOpHook(deps, 'summarize')).toBeNull();
+	});
+
+	it.each([
+		['elaboration', 'elaboration'],
+		['audio', 'transcription'],
+		['video', 'transcription'],
+		['image', 'transcription'],
+		['summarize', 'summarize'],
+		['deep-dive', 'deepDive'],
+		['enrichment', 'enrichment'],
+	] as const)('runs after %s only when runAfter.%s is on, passing the context through', (source, key) => {
+		const { deps, settings } = makeDeps((s) => { s.illustrate.enabled = true; });
+		const hook = buildPostOpHook(deps, source)!;
+		hook('n.md', ctx);
+		expect(deps.illustrateNote).not.toHaveBeenCalled();
+		settings.illustrate.runAfter[key] = true;
+		hook('n.md', ctx);
+		expect(deps.illustrateNote).toHaveBeenCalledWith('n.md', ctx);
+	});
+
+	it('reads the illustrate gate live after wiring', () => {
+		const { deps, settings } = makeDeps((s) => { s.illustrate.enabled = true; s.illustrate.runAfter.elaboration = true; });
+		const hook = buildPostOpHook(deps, 'elaboration')!;
+		settings.illustrate.enabled = false;
+		hook('n.md');
+		expect(deps.illustrateNote).not.toHaveBeenCalled();
+	});
+
+	it('never chains enrichment or a title check after an enrichment accept', () => {
+		const { deps } = makeDeps((s) => { s.illustrate.enabled = true; s.illustrate.runAfter.enrichment = true; });
+		buildPostOpHook(deps, 'enrichment')!('n.md');
+		expect(deps.enrich).not.toHaveBeenCalled();
+		expect(deps.checkTitle).not.toHaveBeenCalled();
+		expect(deps.illustrateNote).toHaveBeenCalledWith('n.md', undefined);
+		expect(buildPostOpHook(makeDeps().deps, 'enrichment')).toBeNull();
+	});
+
+	it('keeps the deep-dive illustrate leg reachable when autoEnrichOnAccept is off', () => {
+		const { deps } = makeDeps((s) => {
+			s.deepDive.autoEnrichOnAccept = false;
+			s.illustrate.enabled = true;
+			s.illustrate.runAfter.deepDive = true;
+		});
+		const hook = buildPostOpHook(deps, 'deep-dive')!;
+		hook('d.md', ctx);
+		expect(deps.enrich).not.toHaveBeenCalled();
+		expect(deps.checkTitle).not.toHaveBeenCalled();
+		expect(deps.illustrateNote).toHaveBeenCalledWith('d.md', ctx);
+	});
+
+	it('runs the enrich leg and the illustrate leg independently', () => {
+		const { deps } = makeDeps((s) => { s.illustrate.enabled = true; s.illustrate.runAfter.transcription = true; });
+		buildPostOpHook(deps, 'audio')!('a.md', ctx);
+		expect(deps.enrich).toHaveBeenCalledWith('a.md', 'transcription');
+		expect(deps.illustrateNote).toHaveBeenCalledWith('a.md', ctx);
 	});
 });
 

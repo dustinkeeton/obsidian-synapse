@@ -11,7 +11,8 @@ import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps
 import { OperationHandle } from '../shared';
 import { isSupportedUrl, detectPlatform } from '../shared';
 import { findAudioEmbeds } from '../audio';
-import { fetchPageContent, fetchTweetContent, isRedditUrl, fetchRedditContent, linkLoadError } from '../shared';
+import { fetchPageContentWithImages, fetchTweetContent, isRedditUrl, fetchRedditContent, linkLoadError } from '../shared';
+import type { SourceContext, SourceImage } from '../shared';
 import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
@@ -52,7 +53,14 @@ interface ProcessResult {
 	newNotePaths: string[];
 	/** One entry per summary produced (#527). */
 	cacheUses: CacheUse[];
+	/** Material fetched for the summaries, handed to post-op illustrate (#213). */
+	sourceUrls: string[];
+	sourceImages: SourceImage[];
 }
+
+/** Per-run accumulator of fetched material. */
+type SourceCollector = { urls: string[]; images: SourceImage[] };
+const newSourceCollector = (): SourceCollector => ({ urls: [], images: [] });
 
 /** Human-readable label for a target in combined-summary output (#367). */
 function labelForTarget(target: SummarizeTarget): string {
@@ -131,7 +139,7 @@ export class SummarizeModule implements FeatureModule {
 	private transcribeAudio: TranscribeAudioFn | null;
 
 	/** Optional callback invoked after summarization completes. Wired by main.ts for enrichment. */
-	onSummaryComplete: ((filePath: string) => void) | null = null;
+	onSummaryComplete: ((filePath: string, ctx?: SourceContext) => void) | null = null;
 
 	/** Optional callback invoked after single-note summarize to organize the note. Wired by main.ts. */
 	onOrganizeRequested: ((file: TFile) => void) | null = null;
@@ -336,6 +344,8 @@ export class SummarizeModule implements FeatureModule {
 			linksUpdated: 0,
 			newNotePaths: [],
 			cacheUses: [],
+			sourceUrls: [],
+			sourceImages: [],
 		};
 
 		// Enrichment refs first (per-item): create notes + rewrite links.
@@ -357,6 +367,8 @@ export class SummarizeModule implements FeatureModule {
 				linksUpdated: result.linksUpdated + combined.linksUpdated,
 				newNotePaths: [...result.newNotePaths, ...combined.newNotePaths],
 				cacheUses: [...result.cacheUses, ...combined.cacheUses],
+				sourceUrls: [...result.sourceUrls, ...combined.sourceUrls],
+				sourceImages: [...result.sourceImages, ...combined.sourceImages],
 			};
 		}
 
@@ -385,6 +397,8 @@ export class SummarizeModule implements FeatureModule {
 			linksUpdated: 0,
 			newNotePaths: [],
 			cacheUses: [],
+			sourceUrls: [],
+			sourceImages: [],
 		};
 		if (targets.length === 0) return empty;
 		if (targets.length === 1) {
@@ -397,6 +411,7 @@ export class SummarizeModule implements FeatureModule {
 		const sourceUses: CacheUse[] = [];
 		// #488: a combined summary missing its media transcript would misdescribe the video
 		let mediaFailed = false;
+		const sources = newSourceCollector();
 
 		for (const target of targets) {
 			if (op.cancelled) return empty;
@@ -411,7 +426,7 @@ export class SummarizeModule implements FeatureModule {
 					text = await this.fetchContentForAudio(target.source, file, settings.maxContentLength, use);
 				} else {
 					op.update(`Fetching ${target.source}`);
-					text = await this.fetchContentForUrl(target.source, settings.maxContentLength, op, use);
+					text = await this.fetchContentForUrl(target.source, settings.maxContentLength, op, use, sources);
 				}
 				if (text.trim()) {
 					const label = labelForTarget(target);
@@ -471,7 +486,7 @@ export class SummarizeModule implements FeatureModule {
 			return lines.join('\n');
 		});
 
-		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [], cacheUses: [combinedUse] };
+		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [], cacheUses: [combinedUse], sourceUrls: sources.urls, sourceImages: sources.images };
 	}
 
 	/**
@@ -575,11 +590,12 @@ export class SummarizeModule implements FeatureModule {
 	 * modified -- otherwise the applier would strip and rebuild them.
 	 */
 	private fireEnrichmentCallbacks(sourceFilePath: string, result: ProcessResult): void {
+		const ctx: SourceContext = { sourceUrls: result.sourceUrls, sourceImages: result.sourceImages };
 		if (result.inlineCompleted > 0 && result.enrichmentCompleted === 0) {
-			this.onSummaryComplete?.(sourceFilePath);
+			this.onSummaryComplete?.(sourceFilePath, ctx);
 		}
 		for (const notePath of result.newNotePaths) {
-			this.onSummaryComplete?.(notePath);
+			this.onSummaryComplete?.(notePath, ctx);
 		}
 	}
 
@@ -612,6 +628,7 @@ export class SummarizeModule implements FeatureModule {
 		const newNotePaths: string[] = [];
 		const pendingNotes: PendingNote[] = [];
 		const cacheUses: CacheUse[] = [];
+		const sources = newSourceCollector();
 		let processed = 0;
 
 		for (const target of sorted) {
@@ -637,7 +654,8 @@ export class SummarizeModule implements FeatureModule {
 							target.source,
 							settings.maxContentLength,
 							op,
-							use
+							use,
+							sources
 						);
 
 						if (pageContent === null) continue;
@@ -698,7 +716,8 @@ export class SummarizeModule implements FeatureModule {
 							target.source,
 							settings.maxContentLength,
 							op,
-							use
+							use,
+							sources
 						);
 						if (fetched === null) continue;
 						textToSummarize = fetched;
@@ -769,7 +788,7 @@ export class SummarizeModule implements FeatureModule {
 			await this.plugin.app.vault.create(pending.path, pending.content);
 		}
 
-		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths, cacheUses };
+		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths, cacheUses, sourceUrls: sources.urls, sourceImages: sources.images };
 	}
 
 	/**
@@ -782,8 +801,10 @@ export class SummarizeModule implements FeatureModule {
 		url: string,
 		maxLength: number,
 		op: OperationHandle,
-		use: CacheUse
+		use: CacheUse,
+		sources?: SourceCollector
 	): Promise<string> {
+		sources?.urls.push(url);
 		if (isSupportedUrl(url)) {
 			if (!this.transcribeUrl) {
 				throw new MediaTranscriptionError(url, new Error('no transcription path is configured'));
@@ -792,6 +813,7 @@ export class SummarizeModule implements FeatureModule {
 				op.update(`Transcribing video ${url}`);
 				const transcript = await this.transcribeUrl(url, op);
 				Object.assign(use, transcriptCacheUse(transcript));
+				if (transcript.thumbnailUrl) sources?.images.push({ url: transcript.thumbnailUrl, pageUrl: url, title: transcript.title });
 				return transcript.text.slice(0, maxLength);
 			} catch (error) {
 				// Preserve a typed video-dependency error (yt-dlp/ffmpeg) so the
@@ -815,7 +837,9 @@ export class SummarizeModule implements FeatureModule {
 			return fetchRedditContent(url, maxLength);
 		}
 
-		return fetchPageContent(url, maxLength);
+		const page = await fetchPageContentWithImages(url, maxLength);
+		sources?.images.push(...page.images);
+		return page.text;
 	}
 
 	/**
@@ -827,11 +851,12 @@ export class SummarizeModule implements FeatureModule {
 		source: string,
 		maxLength: number,
 		op: OperationHandle,
-		use: CacheUse
+		use: CacheUse,
+		sources?: SourceCollector
 	): Promise<string | null> {
 		let content: string;
 		try {
-			content = await this.fetchContentForUrl(source, maxLength, op, use);
+			content = await this.fetchContentForUrl(source, maxLength, op, use, sources);
 		} catch (error) {
 			// A missing video dependency routes to the actionable onboarding notice;
 			// every other failure keeps the standardized link-load error (#382).

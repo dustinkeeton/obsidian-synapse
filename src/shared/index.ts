@@ -70,6 +70,9 @@ export { fetchRedditContent, isRedditUrl, extractCanonicalPostUrl } from './redd
 export type { RedditContent } from './reddit-fetcher';
 export {
 	fetchPageContent,
+	fetchPageContentWithImages,
+	fetchHtmlDocument,
+	extractImageUrls,
 	fetchArticleContent,
 	extractReadableText,
 	extractTitle,
@@ -78,6 +81,7 @@ export {
 	formatRecipeStructuredData,
 } from './content-fetcher';
 export type { RecipeJsonLd } from './content-fetcher';
+export type { SourceImage, SourceContext } from './source-context';
 export { classifyUrl, extractUrls } from './url-classifier';
 export type { UrlContentType, UrlClassification } from './url-classifier';
 export { detectPlatform, isSupportedUrl } from './url-detector';

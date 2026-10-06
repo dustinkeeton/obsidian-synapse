@@ -1,4 +1,5 @@
 import { Plugin, TFile } from 'obsidian';
+import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
@@ -22,7 +23,7 @@ export class ImageModule implements FeatureModule {
 	private extractor: ImageExtractor;
 
 	/** Optional callback invoked after OCR extraction completes. Wired by main.ts for enrichment. */
-	onExtractionComplete: ((filePath: string) => void) | null = null;
+	onExtractionComplete: ((filePath: string, ctx?: SourceContext) => void) | null = null;
 
 	constructor(deps: ModuleDeps) {
 		this.plugin = deps.plugin;

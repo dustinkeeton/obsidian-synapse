@@ -1,6 +1,6 @@
 import type { App, TFile } from 'obsidian';
 import { findMatchingRule, isNoSpeechError, noSpeechNotice, transcriptCacheUse, withCacheReport } from '../shared';
-import type { NoteOperationQueue, NotificationManager, TimeRange } from '../shared';
+import type { NoteOperationQueue, NotificationManager, TimeRange, SourceContext } from '../shared';
 import type { SynapseSettings } from '../settings';
 import { buildUrlTranscriptBlock, UrlTranscriptionRouter } from './url-transcription';
 
@@ -13,7 +13,7 @@ export interface InsertUrlTranscriptDeps {
 	/** Per-note operation queue (#483): the insert is serialized against every other AI operation on the active note. */
 	noteQueue: NoteOperationQueue;
 	/** Post-transcription hook (enrichment/title check), same contract as the module `onTranscriptionComplete` callbacks. */
-	onComplete?: (filePath: string) => void;
+	onComplete?: (filePath: string, ctx?: SourceContext) => void;
 }
 
 /**
@@ -65,7 +65,10 @@ export async function insertUrlTranscript(
 				timeRange
 			);
 			await app.vault.process(activeFile, (data) => data + block);
-			deps.onComplete?.(activeFile.path);
+			deps.onComplete?.(activeFile.path, {
+				sourceUrls: [url],
+				sourceImages: result.thumbnailUrl ? [{ url: result.thumbnailUrl, pageUrl: url, title: result.title }] : undefined,
+			});
 			op.finish(withCacheReport('Transcription added to note', [transcriptCacheUse(result)]));
 		} catch (error) {
 			if (isNoSpeechError(error)) {

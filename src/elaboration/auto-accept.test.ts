@@ -182,6 +182,6 @@ describe('ElaborationModule auto-accept (#228)', () => {
 
 		await mod.scanNote(mockFile('notes/topic.md') as never);
 
-		expect(chained).toHaveBeenCalledWith('notes/topic.md');
+		expect(chained).toHaveBeenCalledWith('notes/topic.md', { sourceUrls: expect.any(Array) as string[] });
 	});
 });
