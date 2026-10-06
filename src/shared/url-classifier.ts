@@ -42,12 +42,27 @@ const ARTICLE_HOSTS: ReadonlyArray<{ suffix: string; platform: string }> = [
 	{ suffix: 'reddit.com', platform: 'reddit' },
 ];
 
-/**
- * Global matcher for http(s) URLs embedded in free text. Trailing punctuation
- * that commonly abuts a URL in prose (`.,;:!?` and closing brackets/quotes) is
- * trimmed by {@link trimTrailingPunctuation} after extraction.
- */
-const URL_IN_TEXT_REGEX = /https?:\/\/[^\s<>"'`]+/gi;
+/** Candidate run for a bare URL; trailing prose punctuation is trimmed afterwards. */
+const URL_IN_TEXT_REGEX = /https?:\/\/[^\s<>"`]+/gi;
+
+/** `[text](` immediately followed by an http(s) destination; the `)` is found by paren balancing. */
+const MARKDOWN_LINK_OPEN_REGEX = /\[([^\]]+)\]\((?=https?:\/\/)/gi;
+
+const TRAILING_PROSE_PUNCTUATION = new Set(['.', ',', ';', ':', '!', '?', ']', '}', '>', "'", '"']);
+
+/** A bare URL found in text; `index` is its offset in the scanned string. */
+export interface UrlMatch {
+	url: string;
+	index: number;
+}
+
+/** A `[text](url)` link; `index`/`length` span the whole link in the scanned string. */
+export interface MarkdownLinkMatch {
+	text: string;
+	url: string;
+	index: number;
+	length: number;
+}
 
 /**
  * Parse a URL into a {@link URL} after defensive sanitization, returning null
@@ -109,14 +124,44 @@ function isPodcastFeed(parsed: URL): boolean {
 		haystack.includes('/rss') || haystack.includes('rss');
 }
 
-/**
- * Trim a single run of trailing punctuation that prose commonly places right
- * after a URL (sentence enders, closing brackets, quotes). Conservative by
- * design: it only strips characters that are never meaningful as the final
- * character of a real link in note text.
- */
+/** Strip trailing prose punctuation; a `)` is kept while it balances an earlier `(` (CommonMark autolink rule). */
 function trimTrailingPunctuation(url: string): string {
-	return url.replace(/[.,;:!?)\]}>'"]+$/, '');
+	let open = 0;
+	let close = 0;
+	for (const ch of url) {
+		if (ch === '(') open++;
+		else if (ch === ')') close++;
+	}
+
+	let end = url.length;
+	while (end > 0) {
+		const ch = url[end - 1];
+		if (TRAILING_PROSE_PUNCTUATION.has(ch)) {
+			end--;
+		} else if (ch === ')' && close > open) {
+			close--;
+			end--;
+		} else {
+			break;
+		}
+	}
+	return url.slice(0, end);
+}
+
+/** Index of the `)` closing a link destination that starts at `start`, or -1 if whitespace/EOL comes first. */
+function findLinkDestinationEnd(text: string, start: number): number {
+	let depth = 0;
+	for (let i = start; i < text.length; i++) {
+		const ch = text[i];
+		if (/\s/.test(ch)) return -1;
+		if (ch === '(') {
+			depth++;
+		} else if (ch === ')') {
+			if (depth === 0) return i;
+			depth--;
+		}
+	}
+	return -1;
 }
 
 /**
@@ -162,32 +207,55 @@ export function classifyUrl(url: string): UrlClassification {
 	return { type: 'article', platform: 'generic', url };
 }
 
-/**
- * Extract every http(s) URL from free text, in document order, with trailing
- * prose punctuation trimmed. Lets the intake monitor pull links out of a note
- * body. Duplicates are removed while preserving first-seen order so callers
- * get a stable, de-duplicated list.
- */
-export function extractUrls(text: string): string[] {
+/** Every bare http(s) URL in document order with its offset; duplicates are kept. */
+export function findUrls(text: string): UrlMatch[] {
 	if (typeof text !== 'string' || text.length === 0) {
 		return [];
 	}
 
-	const matches = text.match(URL_IN_TEXT_REGEX);
-	if (!matches) {
+	const matches: UrlMatch[] = [];
+	for (const match of text.matchAll(URL_IN_TEXT_REGEX)) {
+		const url = trimTrailingPunctuation(match[0]);
+		if (url.length > 0) {
+			matches.push({ url, index: match.index });
+		}
+	}
+	return matches;
+}
+
+/** Bare http(s) URLs in document order, de-duplicated (first occurrence wins). */
+export function extractUrls(text: string): string[] {
+	const seen = new Set<string>();
+	const urls: string[] = [];
+	for (const { url } of findUrls(text)) {
+		if (seen.has(url)) {
+			continue;
+		}
+		seen.add(url);
+		urls.push(url);
+	}
+	return urls;
+}
+
+/** Every `[text](http(s)-url)` link in document order; parens inside the URL survive when balanced. */
+export function findMarkdownLinks(text: string): MarkdownLinkMatch[] {
+	if (typeof text !== 'string' || text.length === 0) {
 		return [];
 	}
 
-	const seen = new Set<string>();
-	const urls: string[] = [];
-	for (const raw of matches) {
-		const cleaned = trimTrailingPunctuation(raw);
-		if (cleaned.length === 0 || seen.has(cleaned)) {
+	const links: MarkdownLinkMatch[] = [];
+	for (const match of text.matchAll(MARKDOWN_LINK_OPEN_REGEX)) {
+		const urlStart = match.index + match[0].length;
+		const urlEnd = findLinkDestinationEnd(text, urlStart);
+		if (urlEnd < 0) {
 			continue;
 		}
-		seen.add(cleaned);
-		urls.push(cleaned);
+		links.push({
+			text: match[1],
+			url: text.slice(urlStart, urlEnd),
+			index: match.index,
+			length: urlEnd + 1 - match.index,
+		});
 	}
-
-	return urls;
+	return links;
 }
