@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Synapse — Agent Reference
@@ -34,7 +34,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | intake | `src/intake/` | Watches intake folder, auto-routes + pipeline-processes new notes (#111); opt-in adoption of root-level shared captures (#455) | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute`, `SYNAPSE_PROCESSED_FLAG`, `SYNAPSE_PROCESSED_AT_FLAG`, `renderIntakeSettings` |
 | rem | `src/rem/` | REM: discover linkable references, propose in-place `[[wikilink]]` insertions | `RemModule`, `renderRemSettings`, types |
 | illustrate | `src/illustrate/` | Insert Media (#213): AI-chosen spots get a licensed reference photo (Wikimedia Commons / Openverse), an AI Mermaid diagram, or a chart built from the note's own numbers; per-item sidebar review; accept downloads into the attachment folder + inserts embed/callout at the anchor | `IllustrateModule`, `WikimediaProvider`, `OpenverseProvider`, `MediaProvider`, `normalizeLicense`, `isLicenseAllowed`, `validateMermaid`, `buildXyChart`, `parseChartData`, `renderIllustrateSettings`, types (placement via `shared/insertion-point.ts`) |
-| elaboration | `src/elaboration/` | Stub note detection, AI proposal generation, image analysis for proposals | `ElaborationModule`, `ImageAnalyzer`, `renderElaborationSettings`, types |
+| elaboration | `src/elaboration/` | Stub note detection, AI full-body rewrite proposals (#552: accept replaces the note body under the byte-for-byte preserved frontmatter, `elaboration/index.ts:526`; stale-body `ConfirmModal` guard `:513-521`), image analysis for proposals | `ElaborationModule`, `renderElaborationSettings`, types (`ImageAnalyzer` is internal to `image-analyzer.ts`, not barrel-exported) |
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `renderAudioSettings`, `renderTranscriptionCredentials`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `AudioExtractor`, `createFfmpegAvailability`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, `renderVideoSettings`, types |
 | image | `src/image/` | Image OCR via multi-modal AI (vision models), batch extraction with checkpoints | `ImageModule`, `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `arrayBufferToBase64`, `preprocessImage`, `renderImageSettings`, types (`ImageExtractor` is internal, not barrel-exported) |
@@ -231,7 +231,7 @@ All AI-generated content uses Obsidian callouts. Registry in `src/shared/callout
 | verse | `synapse-verse` | Registered only (`shared/callouts.ts:13`); no write site in `src/` — the lyrics schema prompt emits `[!verse]` (`shared/content-schemas.ts:330-333`) |
 | chorus | `synapse-chorus` | Registered only (`shared/callouts.ts:14`); no write site in `src/` — the lyrics schema prompt emits `[!chorus]` (`shared/content-schemas.ts:330-336`) |
 | enrichment | `synapse-enrichment` | Enrichment sections |
-| elaboration | `synapse-elaboration` | Elaboration proposals |
+| elaboration | `synapse-elaboration` | Legacy: no write site in `src/` since #552 (accept rewrites the body, `elaboration/index.ts:526`); registered (`shared/callouts.ts:16`) + styled (`styles.css:149`) only to render pre-#552 notes |
 | deepDive | `synapse-deep-dive` | Deep dive content |
 | nav | `synapse-nav` | Deep dive navigation blocks |
 | ocr | `synapse-ocr` | Image OCR extraction results |
@@ -265,7 +265,7 @@ SynapseSettings {
     }
     proposal: ProposalSettings {
       maxProposalsPerNote: number                   // default: 3
-      preserveFrontmatter: boolean                  // default: true
+      preserveFrontmatter: boolean                  // default: true; declared only (settings.ts:131,470), no read site -- accept always keeps frontmatter (#552)
       includeSourceContext: boolean                  // default: true
       includeBacklinkContext: boolean                // default: true (#500; backlink excerpts + tag siblings in the elaboration prompt)
     }
@@ -459,6 +459,7 @@ matches the `UnifiedItem` union exactly.
 Post-op hooks are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook(postOpDeps, source)` / `buildAutoOrganizeHook(postOpDeps, trigger)`, `main.ts:180-194`); `PostOpHookDeps` injects `enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`.
 
 ```
+// #552: elaboration fires after the whole body is rewritten; ctx.producedRegion = { kind: 'whole-note' } (elaboration/index.ts:538)
 elaboration.onProposalAccepted(filePath) --> enrichment.enrich(filePath, 'elaboration')
 audio.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transcription')
 video.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transcription')
