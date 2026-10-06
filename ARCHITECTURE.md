@@ -1,8 +1,8 @@
 # Architecture Overview
 
-**Last updated**: 2026-09-17 · **Version**: 1.1.0
+**Last updated**: 2026-10-06 · **Version**: 1.1.0
 
-Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, and in-place wikilink discovery (REM). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
+Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, and in-place wikilink discovery (REM). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
 The codebase has **24 modules under `src/`** (audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496).
 
@@ -167,12 +167,12 @@ src/
 │   ├── rem-store.ts        #   Proposal persistence
 │   └── index.ts            #   RemModule orchestrator
 │
-├── elaboration/            # Stub note detection + AI content proposals (image-aware)
+├── elaboration/            # Stub note detection + AI full-body rewrite proposals (image-aware); accept replaces the body under preserved frontmatter (#552)
 │   ├── detector.ts         #   PlaceholderDetector (short notes, TODOs, empty sections)
-│   ├── proposer.ts         #   ProposalGenerator (context gathering — backlinks > outbound links > tag siblings under a 6000-char budget (#500) — + AI generation)
+│   ├── proposer.ts         #   ProposalGenerator (context gathering — backlinks > outbound links > tag siblings under a 6000-char budget (#500) — + asks the model for the complete rewritten body, frontmatter stripped (#552))
 │   ├── image-analyzer.ts   #   Multi-modal image analysis for proposal enrichment
 │   ├── proposal-store.ts   #   JSON file persistence
-│   └── index.ts            #   ElaborationModule orchestrator
+│   └── index.ts            #   ElaborationModule orchestrator; accept = in-place body rewrite + stale-body ConfirmModal (#552)
 │
 ├── audio/                  # Audio transcription
 │   ├── transcriber.ts      #   Whisper / Deepgram / Gemini / local routing; manual multipart w/ sanitized headers; no-speech detection (#524)
@@ -291,13 +291,13 @@ src/
 │   ├── title-detector.ts   #   isUntitled/isGenericTitle predicates — canonical home; title/ re-exports isUntitled
 │   ├── validation.ts       #   URL, path, AI response sanitization
 │   ├── file-utils.ts       #   Vault file operations
-│   ├── frontmatter-utils.ts#   YAML frontmatter parsing/serialization
+│   ├── frontmatter-utils.ts#   YAML frontmatter parsing/serialization + splitRawFrontmatter (leading block byte-for-byte, no YAML round-trip, #552)
 │   ├── callouts.ts         #   Callout type registry + builder
 │   ├── diagram-generator.ts#   Mermaid diagram generation
 │   ├── slider-helper.ts    #   Settings UI helper for range sliders
 │   ├── folder-picker-modal.ts # Modal for folder selection
 │   ├── open-scan-folder-picker.ts # Unified scan-folder picker; Enter-on-open = vault root (1.0.9)
-│   ├── confirm-modal.ts    #   ConfirmModal — settle-once yes/no; dismiss = false (#420)
+│   ├── confirm-modal.ts    #   ConfirmModal — settle-once yes/no; dismiss = false (#420); settings reset + elaboration stale-body guard (#552)
 │   ├── settings-reset.ts   #   Per-section + global reset-to-defaults helpers (1.0.10); the one runtime shared → settings import (DEFAULT_SETTINGS)
 │   ├── api-utils.ts        #   Retry logic + error handling helpers
 │   ├── json-utils.ts       #   Safe JSON parse + record/string-array guards + readJsonFile
@@ -764,7 +764,7 @@ URL detection (`shared/url-detector.ts`) recognizes:
 
 ## Cross-Module Communication
 
-All inter-module communication flows through nullable callback assignments made in `main.ts`. No event bus, no pub-sub. The hook functions themselves are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook`, `buildAutoOrganizeHook`, #496) from an injected `PostOpHookDeps` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`); the URL-transcription and intake callbacks are attached by `modules/registry.ts` at construction (#504).
+All inter-module communication flows through nullable callback assignments made in `main.ts`. No event bus, no pub-sub. The hook functions themselves are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook`, `buildAutoOrganizeHook`, #496) from an injected `PostOpHookDeps` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`); the URL-transcription and intake callbacks are attached by `modules/registry.ts` at construction (#504). Elaboration's hook fires after the whole body has been rewritten, so its `SourceContext.producedRegion` is `{ kind: 'whole-note' }` (#552).
 
 > This diagram is the wiring-level detail behind the per-note cascade — subgraph **a** of the master command-pipeline overview in [`README.md` → How it all fits together](README.md#how-it-all-fits-together), which is the canonical birds-eye view. The setting names and defaults on the edges below match that diagram.
 
@@ -824,7 +824,7 @@ Six modules generate proposals that appear in the unified sidebar. Each has a di
 
 | Module | Proposal Type | Review UX | Accept Behavior |
 |--------|--------------|-----------|-----------------|
-| Elaboration | Content additions (image-aware) | Editable textarea | Blockquote original, append additions in callout |
+| Elaboration | Full-body rewrite of the note (image-aware) | Editable textarea ("Proposed rewrite") | **Replaces the note body in place** (#552); frontmatter kept byte-for-byte; if the note changed since generation, a confirm modal ("Replace" / dismiss = cancel) gates the write |
 | Enrichment | Tags, links, refs, frontmatter | Per-item checkboxes | Cherry-pick items, apply with markers |
 | Organize | New directory suggestion | Directory path + AI reasoning | Create directory, move file |
 | Deep Dive | Generated child note | Read-only content preview | Create note at proposed path |
@@ -841,13 +841,14 @@ Generated --> Pending --+--> Accepted
 
 ### Auto-Accept (Issue #228)
 
-Each proposal kind has an `autoAccept.{kind}` setting (all default `false`). When on, a freshly generated proposal is accepted in full as generated, skipping the sidebar. **REM is the cautionary case**: its accept rewrites note prose (inserting wikilinks), whereas the others only add a separate section — so enabling REM auto-accept is a more consequential choice.
+Each proposal kind has an `autoAccept.{kind}` setting (all default `false`). When on, a freshly generated proposal is accepted in full as generated, skipping the sidebar. **Elaboration and REM are the cautionary cases**: elaboration's accept replaces the whole note body (#552) and REM's rewrites note prose (inserting wikilinks), whereas the others only add a separate section — so enabling either auto-accept is a more consequential choice. Batch elaboration auto-accept skips a note edited since its proposal was generated and leaves the proposal pending; single-note auto-accept asks first.
 
 Tidy, Summarize, and Image do NOT use proposals — they apply changes immediately (tidy has undo via snapshots; image OCR inserts callouts inline).
 
 ### Idempotency & the Review gate
 
 - **Dedup by content key (#395).** Stores record each proposal's `contentKey` (hashed from inputs: note path + content hash + detection/AI settings). Re-scanning an unchanged note skips re-proposing the same item, so "scan twice" no longer duplicates proposals; the per-note `maxProposalsPerNote` cap is now enforced. Editing the note changes the hash and allows a fresh proposal.
+- **No marker in the note (#552).** Elaboration writes nothing to say "already elaborated" — no callout, no HTML comment, no frontmatter field. The content key alone decides; a rewritten body has a new key, so the note can be elaborated again.
 - **Centralized Review toast (#366).** A completion toast shows its "Review" button only when something was generated, auto-accept is off for that kind, and the run is not an automatic post-op side effect — decided in one shared `reviewAction()` gate so all six flows behave consistently.
 
 ### Deep Dive: Cascade Rejection
@@ -1043,14 +1044,14 @@ Audio transcription uses provider-specific APIs over Obsidian `requestUrl` (not 
 
 ## Callout Types
 
-All AI-generated content uses Obsidian callouts from a shared registry:
+AI-generated content that lands beside the user's text uses Obsidian callouts from a shared registry. Elaboration is the exception since #552 — accepting one rewrites the note body, so nothing writes its callout any more:
 
 | Key | Type String | Usage |
 |-----|-------------|-------|
 | summary | `synapse-summary` | Inline URL/transcription summaries |
 | transcription | `synapse-transcription` | Audio/video transcriptions |
 | enrichment | `synapse-enrichment` | Enrichment sections |
-| elaboration | `synapse-elaboration` | Elaboration proposals |
+| elaboration | `synapse-elaboration` | Legacy — renders notes elaborated before #552; no write site since accept rewrites the body |
 | deepDive | `synapse-deep-dive` | Deep dive content |
 | nav | `synapse-nav` | Deep dive navigation blocks |
 | ocr | `synapse-ocr` | Image OCR extraction results |
@@ -1066,7 +1067,7 @@ SynapseSettings
 |                     cacheResponses (#397, opt-in; caching automatic at temperature 0)
 +-- elaboration     -> Detection thresholds, scan behavior, proposal storage
 |   +-- detection   -> Word threshold, TODO markers, empty sections, exclude tags
-|   +-- proposal    -> Max per note, preserve frontmatter, include context,
+|   +-- proposal    -> Max per note, preserve frontmatter (declared only — accept always keeps it, #552), include context,
 |                     includeBacklinkContext (#500, default on: backlink excerpts + tag siblings in the prompt)
 +-- audio           -> Transcription provider + transcriptionModel (#521, per-provider registry), API keys, language, post-processing, auto-format lyrics (#234)
 |   +-- postProcessing -> Filler removal (off by default since #468), structure, key points, custom prompt

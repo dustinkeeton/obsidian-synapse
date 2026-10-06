@@ -6,6 +6,24 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-10-06: Accepting an elaboration rewrites the note body in place (#552)
+
+**Context**: Accepting an elaboration appended a `[!synapse-elaboration]` callout below the original text, so the note grew a second body instead of becoming a better note. A first attempt to fix the shape (PR #551, closed unmerged) kept the append and wrapped it in `<!-- synapse:* -->` HTML comments as invisible idempotence markers — but Obsidian renders those comments, so the markers were not invisible.
+
+**Decision**: Elaboration is a destructive rewrite. The proposer asks the model for the complete rewritten body (`REWRITE_SYSTEM_PROMPT`, `elaboration/proposer.ts:37`) from the frontmatter-stripped note, and every new proposal carries `insertionPoint: 'replace'`. Accept (`elaboration/index.ts:526`) replaces everything below the frontmatter with that body inside one `vault.process`. The frontmatter block is sliced off byte-for-byte by the new `splitRawFrontmatter` (`shared/frontmatter-utils.ts:23`) and never parsed or re-serialised; a note without one gets no `---` block; a frontmatter block echoed by the model is dropped. Nothing is written into the note to mark it as elaborated — idempotency rests on the existing content-key dedup (#395), and a rewritten body has a new key, so it can be elaborated again. A stale-body guard (`elaboration/index.ts:513`) compares the note against the proposal's `originalContent`: an interactive accept raises a `ConfirmModal` ("Note changed since this proposal was generated", confirm label "Replace", dismiss = cancel); a silent or batch accept skips the note and leaves the proposal pending. Review copy says "Proposed rewrite" and "Accept and replace". Summaries and every other feature keep their callouts; the `synapse-elaboration` callout type and its CSS stay only to render notes elaborated before this change.
+
+**Alternatives considered**:
+- **Append in a callout with HTML-comment markers** (PR #551) — rejected; Obsidian renders the comments, and an elaboration is the note itself, not a block about something else.
+- **Keep the frontmatter through `parseFrontmatter` + `serializeFrontmatter`** — rejected; that round-trips the YAML, and the user's frontmatter must come back unchanged.
+- **Overwrite without checking for later edits** — rejected; accept now destroys the body, so edits made after generation need an explicit decision.
+- **Warn about a changed note with a toast** — rejected; a decision that blocks an action gets a first-class modal whose dismissal cancels (see the 2026-07-15 #464 entry).
+
+**Rationale**: A summary summarises something else, so it belongs in a callout beside the text; an elaboration expands the note itself, so it belongs *as* the note. Once accept replaces the body, the content key already answers "was this already done?" and no marker is needed.
+
+**Impact**: `elaboration/proposer.ts` (rewrite prompt, frontmatter-stripped body), `elaboration/index.ts` (in-place rewrite, stale-body guard, `producedRegion: { kind: 'whole-note' }` on the post-op hook), `elaboration/types.ts` (`proposedAdditions` now holds the full body; the name and the legacy `insertionPoint` values stay so proposal files written before #552 still load and accept rewrites them like any other), `shared/frontmatter-utils.ts` (`splitRawFrontmatter`), `views/unified-proposal-view.ts` plus the legacy modal/view copy. `proposal.preserveFrontmatter` is declared in settings but has no read site — accept always keeps the frontmatter. `blockquoteOriginal` has no consumers left in `src/`. Elaboration joins REM as a proposal kind whose auto-accept rewrites the note rather than adding a section (see the 2026-06-08 #228 entry). New tests: `elaboration/rewrite-accept.test.ts`, plus cases in `proposer.test.ts`, `shared/frontmatter-utils.test.ts`, and `views/unified-proposal-view.test.ts`. PR #553.
+
+---
+
 ## 2026-09-17: Cache use is reported in the finish message, and only a real replay counts (#527)
 
 **Context**: Two caches can now serve a result silently — the transcript store (#488) and the AI response cache (#397). A user re-running a command could not tell a fresh result from a replayed one, and "Fetch a fresh transcript" still let a re-fetched transcript be cleaned up by a replayed AI response.
