@@ -6,6 +6,7 @@ import { normalizeLicense } from '../license';
 const API = 'https://commons.wikimedia.org/w/api.php';
 const USER_AGENT = 'ObsidianSynapse/1.0 (https://github.com/dustinkeeton/obsidian-synapse)';
 const DOWNLOAD_WIDTH = 1024;
+const SEARCH_TIMEOUT_MS = 30_000;
 
 function stripHtml(html: string): string {
 	return html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
@@ -58,12 +59,18 @@ export class WikimediaProvider implements MediaProvider {
 			iiurlwidth: String(DOWNLOAD_WIDTH),
 			origin: '*',
 		});
-		const response = await requestUrl({
-			url: `${API}?${params.toString()}`,
-			method: 'GET',
-			headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-			throw: false,
-		});
+		const timeout = new Promise<never>((_, reject) =>
+			window.setTimeout(() => reject(new Error('Wikimedia Commons search timed out')), SEARCH_TIMEOUT_MS)
+		);
+		const response = await Promise.race([
+			requestUrl({
+				url: `${API}?${params.toString()}`,
+				method: 'GET',
+				headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+				throw: false,
+			}),
+			timeout,
+		]);
 		if (response.status >= 400) throw new Error(`Wikimedia Commons search failed (HTTP ${response.status})`);
 		const json: unknown = response.json;
 		if (!isRecord(json) || !isRecord(json.query) || !isRecord(json.query.pages)) return [];

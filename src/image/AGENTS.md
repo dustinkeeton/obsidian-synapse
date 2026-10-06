@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Image Module
@@ -20,14 +20,13 @@ class ImageModule {
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> // notify + discard (no mid-batch resume)
 }
 
-// re-exported from ./note-scanner (index.ts:12)
+// re-exported from ./note-scanner (index.ts:13)
 function findImageEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): ImageEmbed[]
 const IMAGE_EXTENSIONS: RegExp   // /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i
 const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi
 
-// re-exported from ./preprocess (index.ts:13)
-function arrayBufferToBase64(buffer: ArrayBuffer): string   // canonical home: shared/encoding.ts
-function preprocessImage(data: ArrayBuffer, mediaType: string, maxBytes: number): Promise<PreprocessResult>
+// NOT exported here any more: `preprocessImage` / `PreprocessResult` / `arrayBufferToBase64` live in `shared`
+// (`shared/image-preprocess.ts`, `shared/encoding.ts`; barrel `shared/index.ts:20-22`)
 
 // re-exported from ./settings-section (index.ts:243)
 function renderImageSettings(ctx: SettingsSectionContext): void
@@ -40,15 +39,11 @@ interface OCRResult  { text: string; sourceName?: string }
 ## File-level exports (NOT in the index.ts barrel)
 
 ```ts
-// extractor.ts:7 — internal class, constructed by ImageModule
+// extractor.ts:6 — internal class, constructed by ImageModule
 class ImageExtractor {
   constructor(getSettings: () => SynapseSettings, notifications: NotificationManager)
-  extract(imageData: ArrayBuffer, fileName: string, aiOpts?: AIRequestOptions): Promise<OCRResult>   // aiOpts reaches the vision chat() call (#527)
+  extract(imageData: ArrayBuffer, fileName: string, aiOpts?: AIRequestOptions): Promise<OCRResult>   // extractor.ts:16; chat() gets { ...aiOpts, model: image.visionModel || ai.model } (extractor.ts:46, #527)
 }
-
-// preprocess.ts:25 / :17 — exported from preprocess.ts only
-interface PreprocessResult { data: ArrayBuffer; mediaType: string; downscaled: boolean }
-function base64EncodedLength(byteLength: number): number   // re-exported from shared for back-compat
 
 // note-scanner.ts:38 — exported from note-scanner.ts only
 function hasExtractionBelow(lines: string[], embedLine: number, fileName: string): boolean
@@ -67,12 +62,11 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
 | File | Export | Purpose |
 |------|--------|---------|
 | `types.ts` | `ImageEmbed`, `OCRResult` | Type definitions |
-| `extractor.ts` | `ImageExtractor` | Multi-modal OCR via `AIClient.chat()` with `ContentBlock[]`; applies vision-model override |
-| `preprocess.ts` | `preprocessImage`, `PreprocessResult`; re-exports `arrayBufferToBase64`, `base64EncodedLength` | Auto-downscale/re-encode oversized payloads; base64 helpers re-exported from `shared/encoding.ts` |
+| `extractor.ts` | `ImageExtractor` | Multi-modal OCR via `AIClient.chat()` with `ContentBlock[]`; passes the vision model per call via `AIRequestOptions.model`; downscales via `shared` `preprocessImage` |
 | `note-scanner.ts` | `findImageEmbeds`, `hasExtractionBelow`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX` | Scan note text for image embeds; skip embeds already OCR'd |
 | `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `src/settings-ui/settings-tab.ts:41`) |
 | `index.ts` | `ImageModule` + barrel re-exports | Orchestrator, public extraction methods, checkpoint management, per-note queue serialization (private `queued`, `insertFileExtraction`, `insertExtractions`, #483) |
-| `extractor.test.ts`, `note-scanner.test.ts`, `preprocess.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests |
+| `extractor.test.ts`, `note-scanner.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests (`preprocess.test.ts` moved to `shared/image-preprocess.test.ts`) |
 | `cache-report.test.ts` | Tests | #527 finish wording: single-OCR hit/miss, batch aggregate hit/miss |
 
 ## Data Flow
@@ -97,14 +91,14 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
    cancelled -> checkpointManager.discard ; else complete + dispatchDeferredTasks
    op.finish(withCacheReport(`Done -- ${completed}/${total} OCR extractions added`, cacheUses, 'extraction'))   // one aggregated cache line (#527)
 
-3. ImageExtractor.extract(imageData, fileName)  -- extractor.ts:17
+3. ImageExtractor.extract(imageData, fileName, aiOpts?)  -- extractor.ts:16
    getMediaType(fileName) -> MIME from extension (default image/png)
    maxBytes = (image.maxImageSizeMb || 5) * 1024 * 1024
-   preprocessImage(data, mediaType, maxBytes); downscaled -> notifications.info (deduped, #396)
-   arrayBufferToBase64(processed.data)
+   preprocessImage(data, mediaType, maxBytes)  [shared]; downscaled -> notifications.info (deduped, #396)
+   arrayBufferToBase64(processed.data)  [shared]
    ContentBlock[] = [ { type:'image', data, mediaType }, { type:'text', text: OCR prompt } ]
-   visionModel = image.visionModel || ai.model; override ai.model if differs; restore in finally
-   AIClient.chat([{role:'system', content:'You are an OCR assistant...'}, {role:'user', content: blocks}])
+   AIClient.chat([{role:'system', content:'You are an OCR assistant...'}, {role:'user', content: blocks}],
+                 { ...aiOpts, model: image.visionModel || ai.model })   // extractor.ts:43-46; settings never mutated
    -> OCRResult { text, sourceName: fileName }
 
 Output callout (collapsed):
@@ -122,7 +116,7 @@ Output callout (collapsed):
 
 ## Vision Model Override
 
-`ImageExtractor.extract()` (extractor.ts:45) computes `visionModel = image.visionModel || ai.model`. It mutates `settings.ai.model` only when `visionModel !== ai.model`, and restores the original in a `finally` block. Empty `visionModel` means no override (uses `ai.model`).
+`ImageExtractor.extract()` (extractor.ts:46) passes `{ ...aiOpts, model: settings.image.visionModel || settings.ai.model }` to `AIClient.chat()`. `AIRequestOptions.model` (`shared/ai-client.ts:33`) is a per-call override: `chat()` resolves `opts.model || ai.model` (`ai-client.ts:383`), keys the response cache on it, and threads it through `dispatch` to every provider call. `settings.ai.model` is never mutated, so concurrent callers cannot observe a foreign model. Empty `visionModel` means no override.
 
 ## Exclusion Behavior
 
@@ -162,18 +156,17 @@ All cross-module imports resolve through the `../shared` barrel, never an intern
 
 | Import | From |
 |--------|------|
-| `AIClient`, `ContentBlock`, `NotificationManager`, `AIRequestOptions` | `shared` (extractor.ts) |
+| `AIClient`, `ContentBlock`, `NotificationManager`, `AIRequestOptions`, `arrayBufferToBase64`, `preprocessImage` | `shared` (extractor.ts:1-2) |
 | `trackAiCache`, `withCacheReport`, `CacheUse` | `shared` (index.ts, #527) |
 | `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `sanitizeAIResponse`, `generateId` | `shared` (index.ts); `isCalloutHeader` (note-scanner.ts) |
 | `CheckpointManager`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `shared` (index.ts) |
 | `NoteOperationQueue`, `OperationHandle` | `shared` (index.ts) |
 | `isPathExcluded`, `findMatchingRule` | `shared` (index.ts) |
-| `arrayBufferToBase64`, `base64EncodedLength` | `shared` (preprocess.ts) |
 | `SettingsSectionContext` | `shared` (settings-section.ts) |
 
 Consumed by:
-- `elaboration/image-analyzer.ts` imports `preprocessImage` from `../image` (barrel) and `arrayBufferToBase64` from `../shared`.
-- transcription module invokes `ImageModule.extractAndInsert()`.
+- `transcription/note-media-modal.ts` (`import type { ImageEmbed }`) and `transcription/note-media-transcription.ts` (`findImageEmbeds` runtime, `ImageEmbed` type); the modal path invokes `ImageModule.extractAndInsert()`.
+- No other feature imports this barrel; `elaboration/image-analyzer.ts` takes `preprocessImage` from `shared`.
 
 ## Supported Image Formats
 
@@ -191,12 +184,12 @@ Downscale path re-encodes to JPEG. Lossless sources (`image/png`, `image/bmp`, `
 | `extractAndInsert` | per-embed extract throws | `notifications.notifyError(...)`; continue to next embed |
 | `extractAndInsert` | user cancels | write partial inserts, discard checkpoint |
 | `extract` | payload downscaled | `notifications.info('Large image auto-downscaled to fit the API limit')` (3s dedup, #396) |
-| `preprocessImage` | canvas/DOM unavailable or downscale throws | console.warn; return original bytes, `downscaled: false` |
+| `preprocessImage` (`shared/image-preprocess.ts`) | canvas/DOM unavailable or downscale throws | console.warn via `redactError`; return original bytes, `downscaled: false` |
 
 ## Invariants / Gotchas
 
 - Per-note serialization (#483): both public entry points take the target note's `NoteOperationQueue` slot exactly once via `queued()` (index.ts:40) and delegate to a queue-free core; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (OCR is user-invoked). The cores must never re-enter the queue.
 - `extractAndInsert` sorts embeds by descending line and applies all inserts atomically in one `vault.process()` so earlier splices never shift later lines.
 - A 2000ms `window.setTimeout` delay separates successive API calls to respect rate limits.
-- `preprocessImage` needs Obsidian's Electron renderer (`createEl` + `createImageBitmap`/`Image`); in non-DOM test envs it passes original bytes through (`downscaled: false`).
-- `arrayBufferToBase64`/`base64EncodedLength` canonical home is `shared/encoding.ts`; `preprocess.ts` re-exports them for back-compat (only `arrayBufferToBase64` is also forwarded through the `index.ts` barrel).
+- `preprocessImage` (now `shared/image-preprocess.ts:47`) needs Obsidian's Electron renderer (`createEl` + `createImageBitmap`/`Image`); in non-DOM test envs it passes original bytes through (`downscaled: false`).
+- `arrayBufferToBase64`/`base64EncodedLength` canonical home is `shared/encoding.ts`; this module imports them from the `shared` barrel and re-exports neither.

@@ -35,13 +35,20 @@ jobs:
 
       - name: Determine tag version
         id: tag
+        env:
+          RAW_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           # inputs.tag and github.ref_name are bare versions like "1.0.0"
-          RAW_TAG="${{ inputs.tag || github.ref_name }}"
+          if ! printf '%s' "$RAW_TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: tag '$RAW_TAG' is not a bare X.Y.Z version"
+            exit 1
+          fi
           echo "version=$RAW_TAG" >> "$GITHUB_OUTPUT"
           echo "name=$RAW_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Verify versions
+        env:
+          TAG_VERSION: ${{ steps.tag.outputs.version }}
         run: |
           MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
           MANIFEST_MIN=$(node -p "require('./manifest.json').minAppVersion")
@@ -50,7 +57,6 @@ jobs:
             echo "ERROR: versions.json minAppVersion ($VERSIONS_MIN) does not match manifest.json minAppVersion ($MANIFEST_MIN) for version $MANIFEST_VERSION"
             exit 1
           fi
-          TAG_VERSION="${{ steps.tag.outputs.version }}"
           if [ "$MANIFEST_VERSION" != "$TAG_VERSION" ]; then
             echo "ERROR: manifest.json version ($MANIFEST_VERSION) does not match tag version ($TAG_VERSION)"
             exit 1

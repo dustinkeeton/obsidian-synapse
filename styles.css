@@ -266,6 +266,8 @@ body {
 /* Selected region: solid gold fill between the trim handles */
 .synapse-time-range-track-highlight {
   position: absolute;
+  left: var(--synapse-range-start, 0%);
+  width: var(--synapse-range-width, 0%);
   top: 50%;
   transform: translateY(-50%);
   height: 6px;
@@ -1232,6 +1234,7 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
 }
 .synapse-checkpoint-fill {
   height: 100%;
+  width: var(--synapse-fill, 0%);
   border-radius: 2px;
   background: var(--color-yellow);
   transition: width 0.2s ease;
@@ -1303,6 +1306,7 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
 }
 .synapse-accept-all-fill {
   height: 100%;
+  width: var(--synapse-fill, 0%);
   border-radius: 3px;
   background: var(--interactive-accent);
   transition: width 0.2s ease;

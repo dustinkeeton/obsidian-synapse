@@ -5,7 +5,7 @@ import {
 	NoTranscriptionPathError,
 	buildUrlTranscriptBlock,
 } from './url-transcription';
-import type { UrlTranscript, UrlTranscriptionStrategy, TranscriptStore } from './url-transcription';
+import type { UrlTranscript, UrlTranscriptionStrategy, TranscriptStore } from './types';
 import { NoSpeechDetectedError } from '../shared';
 import type { TranscriptCacheEntry } from '../shared';
 

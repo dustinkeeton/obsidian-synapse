@@ -38,7 +38,7 @@ describe('parseOpenverseResult', () => {
 });
 
 describe('OpenverseProvider.search', () => {
-	beforeEach(() => vi.mocked(requestUrl).mockReset());
+	beforeEach(() => { vi.mocked(requestUrl).mockReset(); });
 
 	it('queries the images endpoint and returns parsed candidates', async () => {
 		vi.mocked(requestUrl).mockResolvedValue({ status: 200, json: { results: [result] } } as never);
@@ -54,6 +54,20 @@ describe('OpenverseProvider.search', () => {
 	it('surfaces a rate-limit response as a clear error', async () => {
 		vi.mocked(requestUrl).mockResolvedValue({ status: 429, json: null } as never);
 		await expect(new OpenverseProvider().search('x', { limit: 1 })).rejects.toThrow('rate limit');
+	});
+
+	it('rejects a search that never responds once the timeout elapses', async () => {
+		vi.useFakeTimers();
+		try {
+			vi.mocked(requestUrl).mockReturnValue(new Promise(() => {}) as never);
+			const pending = new OpenverseProvider().search('x', { limit: 1 }).catch((e: unknown) => e);
+			await vi.advanceTimersByTimeAsync(30_000);
+			const err = await pending;
+			expect(err).toBeInstanceOf(Error);
+			expect((err as Error).message).toContain('timed out');
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('stops issuing requests after the per-run cap until reset', async () => {

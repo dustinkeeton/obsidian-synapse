@@ -1,8 +1,7 @@
 import { App, TFile } from 'obsidian';
-import { AIClient, arrayBufferToBase64, NotificationManager, redactError } from '../shared';
+import { AIClient, arrayBufferToBase64, NotificationManager, preprocessImage, redactError } from '../shared';
 import type { AIRequestOptions, ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
-import { preprocessImage } from '../image';
 
 export interface ImageAnalysis {
 	/** Original reference as it appears in the note */
@@ -111,7 +110,6 @@ export class ImageAnalyzer {
 		const data = await this.app.vault.readBinary(file);
 		const sourceMediaType = this.getMediaType(file.name);
 
-		// Apply vision model override if configured
 		const settings = this.getSettings();
 
 		// Downscale oversized images so they fit under the API's base64 size limit.
@@ -125,45 +123,33 @@ export class ImageAnalyzer {
 		const base64 = arrayBufferToBase64(processed.data);
 		const mediaType = processed.mediaType;
 
-		const visionModel = settings.image.visionModel || settings.ai.model;
-		const originalModel = settings.ai.model;
-		if (visionModel !== originalModel) {
-			settings.ai.model = visionModel;
-		}
-
-		try {
-			const contentBlocks: ContentBlock[] = [
-				{
-					type: 'image',
-					data: base64,
-					mediaType,
-				},
-				{
-					type: 'text',
-					text: `Analyze this image and provide a structured response with exactly these three sections:
+		const contentBlocks: ContentBlock[] = [
+			{
+				type: 'image',
+				data: base64,
+				mediaType,
+			},
+			{
+				type: 'text',
+				text: `Analyze this image and provide a structured response with exactly these three sections:
 
 DESCRIPTION: A concise description of what the image shows (objects, people, scenes, text, diagrams, etc.)
 
 LOCATION: Any location hints visible in the image (landmarks, signs, GPS overlays, language on signs, architectural style, vegetation). If no location clues are visible, write "No location clues detected."
 
 METADATA: Any observable metadata clues (timestamps visible in the image, camera UI elements, watermarks, image quality observations, apparent time of day from lighting). If nothing notable, write "No metadata observations."`,
-				},
-			];
+			},
+		];
 
-			const response = await this.aiClient.chat([
-				{
-					role: 'system',
-					content: 'You are an image analysis assistant. Analyze images and provide structured descriptions. Be concise but thorough. Focus on factual observations.',
-				},
-				{ role: 'user', content: contentBlocks },
-			], aiOpts);
+		const response = await this.aiClient.chat([
+			{
+				role: 'system',
+				content: 'You are an image analysis assistant. Analyze images and provide structured descriptions. Be concise but thorough. Focus on factual observations.',
+			},
+			{ role: 'user', content: contentBlocks },
+		], { ...aiOpts, model: settings.image.visionModel || settings.ai.model });
 
-			return this.parseAnalysisResponse(ref.reference, response);
-		} finally {
-			if (visionModel !== originalModel) {
-				settings.ai.model = originalModel;
-			}
-		}
+		return this.parseAnalysisResponse(ref.reference, response);
 	}
 
 	/**

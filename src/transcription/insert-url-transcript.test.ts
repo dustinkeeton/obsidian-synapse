@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { TFile } from '../__mocks__/obsidian';
 import { appendUrlTranscript, insertUrlTranscript } from './insert-url-transcript';
 import { UrlTranscriptionRouter } from './url-transcription';
-import type { UrlTranscript, UrlTranscriptionStrategy, TranscriptStore } from './url-transcription';
+import type { UrlTranscript, UrlTranscriptionStrategy, TranscriptStore } from './types';
 import { DEFAULT_SETTINGS } from '../settings';
 import { NoSpeechDetectedError, NoteOperationQueue } from '../shared';
 import type { NotificationManager, TranscriptCacheEntry } from '../shared';

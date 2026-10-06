@@ -7,7 +7,7 @@ import {
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 	trackAiCache, withCacheReport,
 } from '../shared';
-import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
+import type { AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import type { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
@@ -25,8 +25,8 @@ export type {
 	OrganizeAction,
 	OrganizeProposalStatus,
 } from './types';
-export { ContentAnalyzer } from './content-analyzer';
-export { DirectoryMatcher } from './directory-matcher';
+/** Score floor for `suggestDirectory`; below it the caller keeps its own default placement. */
+const SUGGEST_DIRECTORY_MIN_SCORE = 0.6;
 
 export class OrganizeModule implements FeatureModule {
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
@@ -62,6 +62,14 @@ export class OrganizeModule implements FeatureModule {
 		this.analyzer = new ContentAnalyzer(deps.plugin.app, deps.getSettings);
 		this.matcher = new DirectoryMatcher(deps.plugin.app);
 		this.store = new OrganizeStore(deps.plugin.app, deps.getSettings);
+	}
+
+	/** Best existing folder for free text by topic match, or null when nothing clears the score floor; wired into deep-dive by the module registry. */
+	async suggestDirectory(text: string, aiOpts?: AIRequestOptions): Promise<string | null> {
+		const topics = await this.analyzer.extractTopics(text, [], aiOpts);
+		if (topics.length === 0) return null;
+		const scores = this.matcher.scoreDirectories({ notePath: '', topics, tags: [], links: [] });
+		return scores.length > 0 && scores[0].score >= SUGGEST_DIRECTORY_MIN_SCORE ? scores[0].directoryPath : null;
 	}
 
 	async onload(): Promise<void> {

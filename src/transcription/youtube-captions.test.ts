@@ -9,7 +9,7 @@ import {
 	parseChaptersFromDescription,
 	formatCaptionTranscript,
 } from './youtube-captions';
-import type { CaptionCue } from './youtube-captions';
+import type { CaptionCue } from './types';
 import { requestUrl, type RequestUrlParam, type RequestUrlResponse } from '../__mocks__/obsidian';
 
 /**

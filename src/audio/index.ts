@@ -14,11 +14,10 @@ import type {
 import { AudioEmbed } from './types';
 import { PostProcessor, type PostProcessOptions } from './post-processor';
 import { Transcriber, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
-import { TranscribeOptions, TranscriptionResult } from './types';
-import type { AudioExtractor } from '../video';
+import type { AudioClipper, TranscribeOptions, TranscriptionResult } from './types';
 
 export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from './note-scanner';
-export type { AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
+export type { AudioClipper, AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
 
 export class AudioModule implements FeatureModule {
 	/** Approximate Whisper file-size limit (~25 MB) used to warn before a combined transcription. */
@@ -30,7 +29,7 @@ export class AudioModule implements FeatureModule {
 	private checkpointManager: CheckpointManager;
 	private noteQueue: NoteOperationQueue;
 	/** Desktop-only clip/concat helper; undefined on mobile (also drives ffmpeg availability, #214). */
-	readonly extractor?: AudioExtractor;
+	readonly extractor?: AudioClipper;
 	private transcriber: Transcriber;
 	private postProcessor: PostProcessor;
 	private aiClient: AIClient;
@@ -44,7 +43,7 @@ export class AudioModule implements FeatureModule {
 	/** Optional callback invoked after transcription completes. Wired by main.ts for enrichment. */
 	onTranscriptionComplete: ((filePath: string, ctx?: SourceContext) => void) | null = null;
 
-	constructor(deps: ModuleDeps, extractor?: AudioExtractor) {
+	constructor(deps: ModuleDeps, extractor?: AudioClipper) {
 		this.plugin = deps.plugin;
 		this.getSettings = deps.getSettings;
 		this.notifications = deps.notifications;
@@ -227,17 +226,20 @@ export class AudioModule implements FeatureModule {
 				const { os, path, fs } = loadNodeModules();
 
 				const tempPath = path.join(os.tmpdir(), `synapse-clip-src-${Date.now()}.mp3`);
-				await fs.promises.writeFile(tempPath, Buffer.from(data));
-
-				const clippedPath = await this.extractor.clipAudio(
-					tempPath, timeRange.startSeconds, timeRange.endSeconds
-				);
-
-				data = (await fs.promises.readFile(clippedPath)).buffer;
-
-				// Clean up temp files
-				try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
-				try { await fs.promises.unlink(clippedPath); } catch { /* ignore */ }
+				let clippedPath: string | null = null;
+				try {
+					await fs.promises.writeFile(tempPath, Buffer.from(data));
+					clippedPath = await this.extractor.clipAudio(
+						tempPath, timeRange.startSeconds, timeRange.endSeconds
+					);
+					data = (await fs.promises.readFile(clippedPath)).buffer;
+				} finally {
+					// Vault audio lands in os.tmpdir(); remove it on every exit path.
+					try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
+					if (clippedPath) {
+						try { await fs.promises.unlink(clippedPath); } catch { /* ignore */ }
+					}
+				}
 			} else if (timeRange && !this.extractor) {
 				this.notifications.info('Time-range clipping requires ffmpeg (desktop only). Transcribing full file.');
 			}

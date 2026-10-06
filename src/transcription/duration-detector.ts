@@ -4,6 +4,7 @@ import {
 	sanitizePath, sanitizeUrl, isRecord, parseJson,
 	loadNodeModules, shellEnv, type NodeModules,
 } from '../shared';
+import type { DurationResult } from './types';
 
 /**
  * The subset of yt-dlp `--dump-json` output this detector consumes. Both fields
@@ -24,15 +25,6 @@ function asYtDlpDurationJson(value: unknown): YtDlpDurationJson | null {
 		duration: typeof value.duration === 'number' ? value.duration : undefined,
 		title: typeof value.title === 'string' ? value.title : undefined,
 	};
-}
-
-/**
- * Result of a duration detection attempt.
- * `durationSeconds` is undefined when detection fails (e.g. missing ffprobe).
- */
-export interface DurationResult {
-	durationSeconds: number | undefined;
-	title: string;
 }
 
 /**
@@ -144,7 +136,7 @@ export async function detectUrlDuration(
 		const output = await new Promise<string>((resolve, reject) => {
 			execFile(
 				ytDlpPath,
-				['--dump-json', '--no-download', validatedUrl],
+				['--dump-json', '--no-download', '--', validatedUrl],
 				{ env: shellEnv(), maxBuffer: 10 * 1024 * 1024, timeout: 30_000 },
 				(error, stdout) => {
 					if (error) reject(error instanceof Error ? error : new Error(String(error)));

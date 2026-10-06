@@ -1,18 +1,6 @@
 import { Platform } from 'obsidian';
 import { hasSpeechContent, isSupportedUrl, NoSpeechDetectedError } from '../shared';
-import type { TranscriptionResult } from '../audio';
-import type { UrlTranscript, UrlTranscriptOptions, UrlTranscriptionStrategy } from './url-transcription';
-
-/**
- * The desktop extraction pipeline as a callback — wired by main.ts to
- * `VideoModule.processUrl` (yt-dlp download → ffmpeg extract → transcribe),
- * matching the DI style of the other cross-module callbacks so this module
- * never imports the video feature module.
- */
-export type LocalExtractionDelegate = (
-	url: string,
-	opts: UrlTranscriptOptions
-) => Promise<TranscriptionResult & { videoVaultPath?: string }>;
+import type { LocalExtractionDelegate, UrlTranscript, UrlTranscriptOptions, UrlTranscriptionStrategy } from './types';
 
 /**
  * Tier 2 of URL transcription (#184): the existing desktop yt-dlp/ffmpeg

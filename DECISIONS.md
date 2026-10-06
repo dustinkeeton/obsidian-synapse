@@ -6,6 +6,88 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-10-06: Audit pass — five defense-in-depth closures at input and workflow boundaries
+
+**Context**: Security pass 1 of the 2026-10-06 audit (`chore/audit-2026-10-06`). No finding was exploitable on its own; each one was a boundary that trusted a value it had not checked itself.
+
+**Decision**: Close every boundary where it sits, as a check rather than a redesign:
+- **Provider URLs are scheme-checked before they reach a note.** Illustrate writes only `http:`/`https:` URLs (`httpUrlOrEmpty`, `illustrate/inserter.ts:6`); any other scheme degrades the link or remote embed to plain caption text.
+- **A Reddit share page can only redirect to Reddit.** The resolved canonical URL must pass `isRedditUrl` and is re-run through `sanitizeUrl` before the follow-up fetch (`shared/reddit-fetcher.ts:203-206`).
+- **yt-dlp gets an explicit end-of-options separator.** The duration probe now runs `yt-dlp --dump-json --no-download -- <url>` (`transcription/duration-detector.ts:139`), so a URL starting with `-` cannot be parsed as a flag.
+- **The dependency probe sanitizes the tool name.** `checkDependencies` passes the configured path through `sanitizePath` before `which` (`video/audio-extractor.ts:585`).
+- **Clipped-audio temp files are removed on every exit path.** Both the source copy and the ffmpeg output are unlinked in a `finally` (`audio/index.ts:230-242`), so a failed write, clip, or read never leaves vault audio in the OS temp dir.
+- **Release workflows stop interpolating expressions into the shell.** `release.yml` and `tag-on-version-bump.yml` take tag and version strings through `env` with a strict `X.Y.Z` check.
+
+**Alternatives considered**: None recorded per item — each closure is the smallest check at an existing seam, and the surrounding design (execFile argument arrays, `sanitizeUrl`/`sanitizePath`, the untrusted-content fence) already stood.
+
+**Rationale**: Defense in depth is cheapest when the check lives where the value enters; none of these paths needed new abstractions.
+
+**Impact**: `illustrate/inserter.ts` (+ tests), `shared/reddit-fetcher.ts` (+ tests), `transcription/duration-detector.ts`, `video/audio-extractor.ts`, `audio/index.ts`, `.github/workflows/release.yml`, `.github/workflows/tag-on-version-bump.yml`. Commit `cabbc2a`.
+
+---
+
+## 2026-10-06: Audit pass — module boundaries enforced: per-call model override, image preprocessing in `shared`, organize reaches deep-dive by injection, `AudioClipper` replaces the audio → video type edge
+
+**Context**: The architecture pass found five places where a module reached past its boundary. The OCR extractor and elaboration's image analyzer **mutated `settings.ai.model`** around a vision request and restored it in `finally` — concurrent AI calls could observe the override, and it broke the read-only-settings rule. `elaboration` imported `preprocessImage` from the `image` barrel (a runtime edge between two features). `deep-dive` imported organize's `ContentAnalyzer` and `DirectoryMatcher` engines. `audio` carried a type-only back-edge to `video` (`import type { AudioExtractor }`) that the docs had flagged for cleanup. `video` re-exported `shared`'s URL helpers, and the transcription router's contracts were scattered across five files.
+
+**Decision**: Five pure moves, no behavior change:
+- **`AIRequestOptions.model`** (`shared/ai-client.ts:33`) is a per-call override. `chat()` resolves `opts.model || ai.model`, keys the response cache on the resolved model (so a vision-model call never replays a default-model response), and threads it through `dispatch` to every provider. `image/extractor.ts:46` and `elaboration/image-analyzer.ts:150` pass `settings.image.visionModel || settings.ai.model` on the call; nothing mutates settings.
+- **`image/preprocess.ts` becomes `shared/image-preprocess.ts`** (`preprocessImage`, `PreprocessResult`), so both consumers reach it through the `shared` barrel and the elaboration → image edge is gone. The `image` barrel no longer re-exports `preprocessImage` or `arrayBufferToBase64`.
+- **Deep-dive receives `OrganizeModule.suggestDirectory`** (`organize/index.ts:68`; returns the top directory when its score is at least `SUGGEST_DIRECTORY_MIN_SCORE = 0.6`, else `null`) as a registry-injected `SuggestDirectory` callback (`deep-dive/types.ts:85`, `modules/registry.ts:111-116`). Organize precedes deep-dive in `MODULE_FACTORIES` for this reason. `ContentAnalyzer` and `DirectoryMatcher` are now internal to organize.
+- **`audio` declares a structural `AudioClipper`** (`audio/types.ts:43`: `clipAudio`, `concatAudio`, `checkDependencies`) that `video/AudioExtractor` satisfies. The registry hands audio an `AudioExtractor` instance on desktop and `undefined` elsewhere (`modules/registry.ts:80`); `audio` imports nothing from `video`. `video/ffmpeg-availability.ts:1` does `import type { AudioClipper }` from audio instead.
+- **`transcription/types.ts` holds every router/tier/caption/duration contract**; the `video` barrel stops re-exporting `detectPlatform`/`isSupportedUrl` (import them from `shared`), and interface imports become `import type`.
+
+**Alternatives considered**:
+- **Move `AudioExtractor` into `shared/`** — the other option the docs had named; rejected in favor of the interface, which keeps video's ffmpeg-bound code out of the base layer and gives audio a three-method contract instead of a class.
+- **Keep deep-dive's direct organize import** — rejected; the registry already injects per-module extras, so a one-function seam costs nothing and removes a feature → feature edge.
+
+**Rationale**: Every remaining cross-feature edge is now either `video → audio` (the one sanctioned runtime edge) or a type that the compiler erases. Settings are read-only at request time, which is the rule `ModuleDeps.getSettings` was written to enforce.
+
+**Impact**: 33 files, `+271 / −322`. `shared/ai-client.ts`, new `shared/image-preprocess.ts` (+ test, moved from `image/`), `image/extractor.ts`, `elaboration/image-analyzer.ts`, `deep-dive/index.ts` + `types.ts`, `organize/index.ts`, `modules/registry.ts`, `audio/types.ts` + `index.ts`, `video/index.ts` + `ffmpeg-availability.ts`, new `transcription/types.ts` and the tier files it drains. The only type-only back-edge left in the graph is `shared/settings-section.ts:1 → main`. Commit `254ad5d`.
+
+---
+
+## 2026-10-06: Illustrate's Mermaid diagrams and charts are opt-in, default off (#549)
+
+**Context**: Illustrate (#213) always let the analyzer propose `diagram` and `chart` spots beside photos, and both land in the note as a Mermaid fence. Photos already had per-provider toggles; the Mermaid path was the one output kind a user could not switch off, so users who want sourced photos only — or whose theme renders Mermaid poorly — had to reject those items one by one.
+
+**Decision**: One flag, `illustrate.mermaid: boolean` (default `false`, `settings.ts`), gates the `diagram` and `chart` kinds end to end. With it off, `buildSystemPrompt(false)` asks the model for photos only; `parseSpots(…, { mermaid: false })` drops any diagram or chart the model emits anyway without letting it consume the per-note cap or its anchor; and `IllustrateModule.resolveItem` returns `null` for those kinds. Every entry point (manual, batch, Fire Synapse, post-op legs) routes through `buildProposal → analyze → resolveItem`, so one gate covers all of them. Existing pending proposals are untouched. The settings section shows a raw-DOM `.synapse-illustrate-empty-config` helper while no photo repository and no Mermaid output is enabled, and a manual single-note run or vault scan stops with an info notice in that configuration (chained runs still proceed because source images can supply photos). Settings files without the key merge to `false` through `deepMergeSettings`, so no migration was needed.
+
+**Alternatives considered**:
+- **Filter in `parseSpots` only** — rejected as the primary gate; it is kept as a defensive second line, with the prompt change doing the real work and `resolveItem` guaranteeing stored proposals never contain Mermaid items from a run made with the toggle off.
+- **Default on, matching the previous behavior** — rejected; the issue's point is that Illustrate's default output should be photos only.
+
+**Rationale**: Diagrams are AI-written Mermaid and charts are built from the note's own numbers — both are a different kind of artifact from a licensed photo, so they deserve a separate, explicit opt-in.
+
+**Impact**: `src/settings.ts`, `illustrate/types.ts`, `illustrate/note-analyzer.ts`, `illustrate/index.ts`, `illustrate/settings-section.ts` (+ tests in each, plus `settings.test.ts`); `Mermaid` added to the sentence-case brand allow-list in `eslint.config.mjs`. PR #556.
+
+---
+
+## 2026-10-06: Synapse callouts are written as native base types with the identity in the metadata slot (#554)
+
+**Context**: Every AI output was a callout with a private type — `> [!synapse-summary]`, `> [!synapse-transcription]`, and so on. Obsidian and every community theme style callouts by their `data-callout` type, so a private type never matched those rules. `styles.css` papered over that with hard-coded RGB channel triplets and a blanket `.callout[data-callout^="synapse-"]` override, and the blocks looked like a third-party widget beside the user's own callouts.
+
+**Decision**: Each identity is written as `> [!<base>|<identity>]` — a native base in the type slot and the `synapse-*` identity in the metadata slot (`data-callout-metadata`), so theme styling applies for free and Synapse only layers its icon on top:
+
+| Identity | Written as |
+|---|---|
+| `synapse-summary` | `[!summary\|synapse-summary]` |
+| `synapse-enrichment` | `[!info\|synapse-enrichment]` |
+| `synapse-transcription`, `synapse-lyrics`, `synapse-ocr` | `[!quote\|synapse-…]` |
+| `synapse-deep-dive`, `synapse-nav`, `synapse-illustrate`, `synapse-elaboration` (legacy), `synapse-verse`, `synapse-chorus` | `[!note\|synapse-…]` |
+
+`CALLOUT_TYPES` keeps the identity as the value consumers pass around (no call-site churn); the new `CALLOUT_BASES: Record<CalloutType, CalloutBase>` (`shared/callouts.ts:30`) makes "every type has a base" a compile-time fact. `calloutHeaderLine` is the single header writer. One dual-format reader (`calloutIdentity`, `parseCalloutHeader`, `isCalloutHeader`, `hasCallout`, `calloutHeaderSource`) accepts both spellings; the bare `[!synapse-x]` form is read-only legacy — nothing writes it, and there is **no vault migration** (rewrite on touch). Every matcher site switched to the shared helper: the summarize, video, audio, image, and illustrate note-scanners, illustrate's duplicate guard, the enrichment block-replacement regex, and the deep-dive nav writer/remover. A must-fix surfaced during the work: `locateRegion` (`shared/insertion-point.ts`) compared the whole `[!…]` content against `RegionLocator.calloutType`, so a `[!summary|synapse-summary]` header could never match `synapse-summary` and Illustrate's post-op leg would silently stop finding the summary callout — it now resolves through `calloutIdentity`. `styles.css:115-160` targets `.callout[data-callout="<base>"][data-callout-metadata~="synapse-*"]` and keeps bare selectors as the legacy fallback.
+
+**Alternatives considered**:
+- **Keep private types and extend the CSS overrides** — rejected; a private type never matches a theme's rules, so every theme would need Synapse-specific CSS.
+- **Migrate existing vaults to the new spelling** — rejected; the reader accepts both forms, so old notes render and are rewritten only when a feature touches them.
+
+**Rationale**: A transcription *is* a quote and a summary *is* a summary; writing them as those base types gives users their theme's styling and removes a stylesheet that fought it.
+
+**Impact**: `shared/callouts.ts`, `shared/insertion-point.ts`, `summarize/note-scanner.ts`, `video/note-scanner.ts`, `audio/note-scanner.ts`, `image/note-scanner.ts`, `illustrate/note-scanner.ts`, `illustrate/index.ts`, `enrichment/enrichment-applier.ts`, `deep-dive/syllabus-navigator.ts`, `styles.css` (+ tests, including every spelling combination of the summarize skip guard so a legacy transcription is never summarized twice). PR #555.
+
+---
+
 ## 2026-10-06: Accepting an elaboration rewrites the note body in place (#552)
 
 **Context**: Accepting an elaboration appended a `[!synapse-elaboration]` callout below the original text, so the note grew a second body instead of becoming a better note. A first attempt to fix the shape (PR #551, closed unmerged) kept the append and wrapped it in `<!-- synapse:* -->` HTML comments as invisible idempotence markers — but Obsidian renders those comments, so the markers were not invisible.
@@ -21,6 +103,71 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 **Rationale**: A summary summarises something else, so it belongs in a callout beside the text; an elaboration expands the note itself, so it belongs *as* the note. Once accept replaces the body, the content key already answers "was this already done?" and no marker is needed.
 
 **Impact**: `elaboration/proposer.ts` (rewrite prompt, frontmatter-stripped body), `elaboration/index.ts` (in-place rewrite, stale-body guard, `producedRegion: { kind: 'whole-note' }` on the post-op hook), `elaboration/types.ts` (`proposedAdditions` now holds the full body; the name and the legacy `insertionPoint` values stay so proposal files written before #552 still load and accept rewrites them like any other), `shared/frontmatter-utils.ts` (`splitRawFrontmatter`), `views/unified-proposal-view.ts` plus the legacy modal/view copy. `proposal.preserveFrontmatter` is declared in settings but has no read site — accept always keeps the frontmatter. `blockquoteOriginal` has no consumers left in `src/`. Elaboration joins REM as a proposal kind whose auto-accept rewrites the note rather than adding a section (see the 2026-06-08 #228 entry). New tests: `elaboration/rewrite-accept.test.ts`, plus cases in `proposer.test.ts`, `shared/frontmatter-utils.test.ts`, and `views/unified-proposal-view.test.ts`. PR #553.
+
+---
+
+## 2026-10-06: Effectively-empty note content is excluded from the summarize combine flow (#544)
+
+**Context**: A note whose body is only links, embeds, rules, or empty headings reads as "content" to a character count, so summarize's combined-summary mode and elaboration's link-only guard each needed their own notion of "is there any prose here?" — and elaboration carried a private `stripUrls` copy.
+
+**Decision**: One shared reduction, `shared/prose-reduction.ts`: `stripUrls` (via the #543 `findUrls`), `reduceToProse`, `proseCharCount`, `isEffectivelyEmptyProse`, and `MIN_PROSE_CHARS`. It strips bare URLs, removes `![[embeds]]`, reduces `[text](url)` / `![alt](url)` / `[[link|alias]]` to their label, drops horizontal rules and empty headings, then counts letters and digits against a 10-character floor. Summarize's note-content gate and elaboration's `isLinkDominated` both delegate to it; elaboration's local `stripUrls` is deleted.
+
+**Alternatives considered**: A second local heuristic inside summarize — rejected; two modules asking the same question should share one answer.
+
+**Rationale**: "Does real prose remain?" is a property of the text, not of the feature asking.
+
+**Impact**: New `shared/prose-reduction.ts` (exported from the barrel), `elaboration/proposer.ts`, `summarize/index.ts`. PR #548, stacked on #547.
+
+---
+
+## 2026-10-06: One URL extractor, and balanced parentheses survive (#543)
+
+**Context**: Seven matchers each excluded or unconditionally trimmed a trailing `)`, so links like `https://en.wikipedia.org/wiki/Doom_(1993_video_game)` were truncated before fetch and 404'd. Four modules carried their own `URL_REGEX`.
+
+**Decision**: `shared/url-classifier.ts` is the single extractor. A bare URL keeps a trailing `)` while it balances an earlier `(`; an unbalanced trailing `)` is prose and is trimmed (the CommonMark / GitHub autolink rule). Markdown links `[text](url)` take the destination up to the `)` that balances the link's opening paren, so nested parens survive. The duplicated `URL_REGEX` constants in `summarize/note-scanner`, `video/note-scanner`, `elaboration/proposer`, and `enrichment` are replaced by it.
+
+**Alternatives considered**: Patch each of the seven matchers — rejected; the bug was the duplication.
+
+**Rationale**: URL extraction is a vault-wide rule, and the only way to keep seven sites agreeing is to have one.
+
+**Impact**: `shared/url-classifier.ts` plus the four scanners/prompt builders that now call it. PR #547.
+
+---
+
+## 2026-10-06: A dev build announces itself in settings, stamped at bundle time (#542)
+
+**Context**: A `main.js` produced by `npm run dev` was indistinguishable from a release build inside Obsidian, so a stale or dirty development bundle could be mistaken for the shipped version.
+
+**Decision**: `esbuild.config.mjs` gains a `synapse-build-info` plugin whose `onLoad` hook, scoped to `src/shared/build-info.ts`, prepends `const __SYNAPSE_BUILD__ = "<json>"` to that one module on every (re)build — `{ dev: false }` for `production`, otherwise the short SHA, branch, dirty flag, and build time from git (`{ dev: true }` if git fails). `settings-ui/settings-tab.ts` renders a banner from `BUILD_INFO` / `describeDevBuild` with the manifest version it is based on. A release build is unchanged.
+
+**Alternatives considered**: An esbuild `define` — rejected; a define is fixed when the context is created and cannot be refreshed per watch rebuild, whereas `onLoad` re-runs on every rebuild (verified: a touch rebuilds with a fresh `builtAt`; a new commit rebuilds with the new short SHA and `dirty: false`).
+
+**Rationale**: The banner is only trustworthy if it tracks the working tree without restarting the watcher.
+
+**Impact**: `esbuild.config.mjs`, new `shared/build-info.ts`, `settings-ui/settings-tab.ts`, `styles.css`. PR #546.
+
+---
+
+## 2026-10-06: Illustrate — real, licensed visuals proposed per note; opt-in because search terms leave the vault (#213)
+
+**Context**: Elaboration, Summarize, and Enrichment all add *text*; nothing added visual media, and the `image/` module runs the other way (OCR). The issue's hard constraint: media must come from **real external resources** — licensed image repositories, real data, native diagram rendering — never generated imagery, so the note stays credible and verifiable. It should run ad hoc on a note or folder and as a Fire Synapse phase.
+
+**Decision**: A new `src/illustrate/` module. One AI call reads the note (fenced via `wrapUntrusted`) and proposes up to `maxItemsPerNote` (default 3) spots, each `photo` | `diagram` | `chart`:
+- **Photos** come from Wikimedia Commons and Openverse — both keyless, over `requestUrl` — with title, file URL, page URL, normalized license, license URL, and attribution captured at search time. Candidates outside the `licenseFilter` allow-list (default `CC0`, `Public domain`, `CC BY`, `CC BY-SA`) are dropped before they reach a proposal. Nothing is downloaded before accept; the sidebar shows a remote thumbnail with license and attribution.
+- **Diagrams** are AI-emitted Mermaid gated by `validateMermaid` (known first token, no nested fences or scripts, 4000-char cap). **Charts** are Mermaid `xychart-beta` built *only* from numbers the AI extracts from the note (`parseChartData` rejects anything non-numeric or mismatched) — no external data fetch.
+- **Accept** downloads each photo into the vault's attachment folder (`fileManager.getAvailablePathForAttachment` + `vault.createBinary`, 15 MB cap) and inserts `![[file]]` plus a `synapse-illustrate` callout carrying caption, source link, license, and attribution; diagrams and charts insert a Mermaid fence plus the caption callout. Download failure (or `preferDownload` off) falls back to a remote-URL embed. All writes go through the note-operation queue and one `vault.process`.
+- **Placement is a reusable layer**, `shared/insertion-point.ts`: it scans the body into blocks and never splits a paragraph, list, fence, or table, preferring the spot after a heading's opening paragraph; each item carries a `placement` preview, re-resolved against the live note on accept.
+- **Pipeline + post-op.** `illustrate` is a Fire Synapse phase after REM and before Tidy. Per `illustrate.runAfter` (all default off), it also runs as a post-op leg after elaboration, transcription (audio/video/image), summarize, enrichment, or deep-dive, sourcing photos from the acted-on material first (`providers/source.ts`) and placing the visual inside the callout that action produced.
+- **Opt-in** (`illustrate.enabled: false`), unlike sibling phases: it is a new network surface where note-derived search terms leave the vault for third-party image APIs, and it should not silently join every existing user's Fire Synapse run on upgrade.
+
+**Alternatives considered**:
+- **AI image generation** — rejected by the issue's constraint; generated imagery is neither verifiable nor attributable.
+- **`src/media/` as the module name** (the issue's suggestion) — shipped as `src/illustrate/`, matching the command names and callout identity.
+- **Default on, like every other phase** — rejected for the network-surface reason above; flipping it is a one-line change in `settings.ts`.
+
+**Rationale**: A licensed photo with its attribution, or a chart built from the note's own numbers, is something a reader can check; the proposal/review pattern keeps the user in charge of what lands in the note.
+
+**Impact**: New `src/illustrate/` (analyzer, providers, license, diagram, chart, inserter, asset-writer, store, scanner, settings), new `shared/insertion-point.ts` and `shared/source-context.ts`, `'illustrate'` added to `PROPOSAL_KINDS` / `UnifiedItem` / auto-accept / exclusion feature ids, `SYNAPSE_PIPELINE`, `pipeline/post-op-hooks.ts` (illustrate leg), `commands/registry.ts` (`illustrate-current-note`, `illustrate-folder`), `synapse-illustrate` callout + glyph + `--synapse-color-illustrate` token, proposals under `.synapse/illustrate/`. PR #539.
 
 ---
 

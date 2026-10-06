@@ -39,6 +39,20 @@ describe('block builders', () => {
 		expect(attributionLine({ ...candidate, licenseUrl: '' })).toContain('License: CC BY-SA ·');
 	});
 
+	it('drops attribution links whose URL is not http(s)', () => {
+		const line = attributionLine({ ...candidate, pageUrl: 'javascript:alert(1)', licenseUrl: 'data:text/html,x' });
+		expect(line).toContain('Source: Red panda.jpg · License: CC BY-SA ·');
+		expect(line).not.toContain('javascript:');
+		expect(line).not.toContain('data:');
+	});
+
+	it('refuses a non-http(s) remote embed and falls back to the caption text', () => {
+		const item = { ...photoItem, candidate: { ...candidate, fileUrl: 'javascript:alert(1)' } };
+		const block = buildPhotoBlock(item, null);
+		expect(block.startsWith('A red panda\n')).toBe(true);
+		expect(block).not.toContain('javascript:');
+	});
+
 	it('builds a mermaid fence with a caption callout', () => {
 		const block = buildMermaidItemBlock({ id: 'd', kind: 'chart', anchor: 'x', caption: 'Counts', rationale: '', mermaid: 'xychart-beta' });
 		expect(block.startsWith('```mermaid\nxychart-beta\n```')).toBe(true);

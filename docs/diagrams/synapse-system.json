@@ -1,0 +1,411 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Synapse — how the plugin is put together",
+    "output": "synapse-system.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "lifecycle",
+        "label": "Lifecycle and wiring",
+        "focus": [
+          "main",
+          "registry",
+          "notefeatures",
+          "mediafeatures",
+          "coord",
+          "views"
+        ],
+        "note": "main.ts builds one ModuleDeps bundle; the registry constructs every feature; coordination layers get features by injection."
+      },
+      {
+        "id": "base",
+        "label": "Base layer and storage",
+        "focus": [
+          "notefeatures",
+          "base",
+          "storage"
+        ],
+        "note": "Every feature depends on shared/ and commands/; nothing in the base layer imports a feature."
+      },
+      {
+        "id": "network",
+        "label": "What leaves the vault",
+        "focus": [
+          "base",
+          "mediafeatures",
+          "notefeatures",
+          "ai",
+          "stt",
+          "videosrc",
+          "imagelibs"
+        ],
+        "note": "The only outbound surfaces: AI providers, transcription APIs, video sources, and the two licensed photo libraries."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "main",
+      "type": "backend",
+      "label": "main.ts",
+      "sublabel": "SynapsePlugin · lifecycle glue",
+      "pos": [
+        420,
+        40
+      ],
+      "size": [
+        210,
+        64
+      ]
+    },
+    {
+      "id": "registry",
+      "type": "backend",
+      "label": "modules/registry.ts",
+      "sublabel": "constructs · loads · unloads",
+      "pos": [
+        420,
+        160
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "tag": "ModuleDeps first"
+    },
+    {
+      "id": "views",
+      "type": "frontend",
+      "label": "views/",
+      "sublabel": "proposal sidebar · actions sidebar",
+      "pos": [
+        800,
+        40
+      ],
+      "size": [
+        210,
+        64
+      ]
+    },
+    {
+      "id": "coord",
+      "type": "backend",
+      "label": "pipeline/ · intake/ · checkpoints/",
+      "sublabel": "Fire Synapse runner · inbox watcher",
+      "pos": [
+        40,
+        160
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "tag": "features injected, never imported"
+    },
+    {
+      "id": "notefeatures",
+      "type": "backend",
+      "label": "Note features",
+      "sublabel": "elaboration · enrichment · summarize · tidy · organize · …",
+      "pos": [
+        350,
+        300
+      ],
+      "size": [
+        350,
+        72
+      ]
+    },
+    {
+      "id": "mediafeatures",
+      "type": "backend",
+      "label": "Media features",
+      "sublabel": "audio · video · image OCR · URL router",
+      "pos": [
+        800,
+        160
+      ],
+      "size": [
+        260,
+        64
+      ]
+    },
+    {
+      "id": "base",
+      "type": "backend",
+      "label": "shared/ + commands/",
+      "sublabel": "AIClient · note queue · transcript cache · callouts",
+      "pos": [
+        365,
+        440
+      ],
+      "size": [
+        320,
+        72
+      ],
+      "tag": "base layer"
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": ".synapse/",
+      "sublabel": "proposal · checkpoint · transcript JSON",
+      "pos": [
+        40,
+        580
+      ],
+      "size": [
+        260,
+        64
+      ]
+    },
+    {
+      "id": "ai",
+      "type": "external",
+      "label": "AI providers",
+      "sublabel": "OpenAI · Anthropic · Gemini · Ollama",
+      "pos": [
+        415,
+        580
+      ],
+      "size": [
+        220,
+        64
+      ]
+    },
+    {
+      "id": "stt",
+      "type": "external",
+      "label": "Transcription APIs",
+      "sublabel": "Whisper · Deepgram · Gemini",
+      "pos": [
+        1000,
+        440
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "videosrc",
+      "type": "external",
+      "label": "Video sources",
+      "sublabel": "captions · yt-dlp + ffmpeg (desktop)",
+      "pos": [
+        1100,
+        160
+      ],
+      "size": [
+        230,
+        64
+      ]
+    },
+    {
+      "id": "imagelibs",
+      "type": "external",
+      "label": "Photo libraries",
+      "sublabel": "Wikimedia Commons · Openverse",
+      "pos": [
+        860,
+        300
+      ],
+      "size": [
+        200,
+        72
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "main-registry",
+      "from": "main",
+      "to": "registry",
+      "label": "ModuleDeps",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        570,
+        132
+      ]
+    },
+    {
+      "id": "main-coord",
+      "from": "main",
+      "to": "coord",
+      "label": "injects features",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [
+        [
+          155,
+          72
+        ]
+      ]
+    },
+    {
+      "id": "main-views",
+      "from": "main",
+      "to": "views",
+      "label": "registers · wires callbacks",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -12
+    },
+    {
+      "id": "registry-note",
+      "from": "registry",
+      "to": "notefeatures",
+      "label": "constructs",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        570,
+        262
+      ]
+    },
+    {
+      "id": "registry-media",
+      "from": "registry",
+      "to": "mediafeatures",
+      "label": "constructs",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        715,
+        178
+      ]
+    },
+    {
+      "id": "coord-note",
+      "from": "coord",
+      "to": "notefeatures",
+      "label": "scan fns · resume",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          155,
+          336
+        ]
+      ],
+      "labelSegment": 1
+    },
+    {
+      "id": "note-base",
+      "from": "notefeatures",
+      "to": "base",
+      "label": "AIClient · queue",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        600,
+        406
+      ]
+    },
+    {
+      "id": "base-storage",
+      "from": "base",
+      "to": "storage",
+      "label": "JSON files",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [
+        [
+          170,
+          476
+        ]
+      ]
+    },
+    {
+      "id": "base-ai",
+      "from": "base",
+      "to": "ai",
+      "label": "requestUrl",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        575,
+        546
+      ]
+    },
+    {
+      "id": "media-stt",
+      "from": "mediafeatures",
+      "to": "stt",
+      "label": "audio bytes",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          930,
+          262
+        ],
+        [
+          1100,
+          262
+        ]
+      ],
+      "labelSegment": 1
+    },
+    {
+      "id": "media-video",
+      "from": "mediafeatures",
+      "to": "videosrc",
+      "label": "captions, then download",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        1080,
+        242
+      ]
+    },
+    {
+      "id": "note-images",
+      "from": "notefeatures",
+      "to": "imagelibs",
+      "label": "Illustrate search query",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        780,
+        318
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Nine note features, one list",
+      "items": [
+        "elaboration · enrichment · summarize · tidy · organize · deep-dive · title · REM · illustrate",
+        "modules/registry.ts names every feature; each constructor takes ModuleDeps first"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Acyclic by injection",
+      "items": [
+        "pipeline/, intake/, checkpoints/ never import a feature; shared/ and commands/ import none",
+        "video → audio is the one cross-feature runtime edge"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "What leaves the vault",
+      "items": [
+        "AI calls go through one AIClient over requestUrl; yt-dlp/ffmpeg are desktop-only",
+        "Illustrate sends an AI-proposed search query, never note text"
+      ]
+    }
+  ]
+}

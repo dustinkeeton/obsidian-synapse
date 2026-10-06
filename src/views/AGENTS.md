@@ -153,7 +153,7 @@ No legacy views exist in this directory; only the two registered `ItemView`s abo
 
 `render()` (`unified-proposal-view.ts:L129`) dispatches on whichever `reviewing*` field is set, else list mode.
 
-1. Checkpoint banner: one card per incomplete checkpoint with operation label, done/total progress bar, Resume/Discard.
+1. Checkpoint banner: one card per incomplete checkpoint with operation label, done/total progress bar, Resume/Discard. Progress fills (`.synapse-checkpoint-fill`, `unified-proposal-view.ts:1506`; `.synapse-accept-all-fill`, `:395`) set the `--synapse-fill` custom property via `setCssProps`, and `styles.css` reads it as `width: var(--synapse-fill, 0%)` — no inline `style.width`.
 2. List mode: pending proposals grouped by `data.sourceNotePath`; Accept all / Reject all bar shown when 2+ pending; each card has a badge, summary, preview, and Review/Accept/Reject. Elaboration card (`renderElaborationCard` `unified-proposal-view.ts:485`, #552): preview text is prefixed `Replaces the note's content with: ` (`:500`); accept button reads `Accept and replace` (`:512`) and sends `proposal.proposedAdditions` to `onElaborationAccept` (`:515`).
 3. Elaboration review (`renderElaborationReview` `unified-proposal-view.ts:626`, #552): editable textarea labelled `Proposed rewrite (accepting replaces the note's content; frontmatter is kept)` (`:656`); `Accept and replace` (`:665`) sends the edited full body to `onElaborationAccept(id, textarea.value)` (`:669`).
 4. Enrichment review: per-item checkboxes (tags / internalLinks / externalLinks / frontmatter); Accept selected / All / None / Reject.

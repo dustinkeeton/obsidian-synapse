@@ -1,10 +1,8 @@
 import type { SynapseSettings } from '../settings';
 import { CaptionStrategy } from './caption-strategy';
-import type { ProcessTranscript } from './caption-strategy';
 import { LocalExtractionStrategy } from './local-extraction-strategy';
-import type { LocalExtractionDelegate } from './local-extraction-strategy';
 import { UrlTranscriptionRouter } from './url-transcription';
-import type { TranscriptStore, UrlTranscriptionStrategy } from './url-transcription';
+import type { LocalExtractionDelegate, ProcessTranscript, TranscriptStore, UrlTranscriptionStrategy } from './types';
 
 export interface UrlTranscriptionRouterDeps {
 	getSettings: () => SynapseSettings;

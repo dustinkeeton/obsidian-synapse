@@ -1,8 +1,7 @@
-import { AIClient, NotificationManager } from '../shared';
+import { AIClient, NotificationManager, arrayBufferToBase64, preprocessImage } from '../shared';
 import type { AIRequestOptions, ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
 import { OCRResult } from './types';
-import { arrayBufferToBase64, preprocessImage } from './preprocess';
 
 export class ImageExtractor {
 	private aiClient: AIClient;
@@ -41,26 +40,11 @@ export class ImageExtractor {
 			},
 		];
 
-		// Use the configured vision model or fall back to the default AI model
-		const visionModel = settings.image.visionModel || settings.ai.model;
-
-		// Temporarily override the model for this request if a vision model is set
-		const originalModel = settings.ai.model;
-		if (visionModel !== originalModel) {
-			settings.ai.model = visionModel;
-		}
-
-		try {
-			const text = await this.aiClient.chat([
-				{ role: 'system', content: 'You are an OCR assistant. Extract text from images accurately.' },
-				{ role: 'user', content: contentBlocks },
-			], aiOpts);
-			return { text, sourceName: fileName };
-		} finally {
-			if (visionModel !== originalModel) {
-				settings.ai.model = originalModel;
-			}
-		}
+		const text = await this.aiClient.chat([
+			{ role: 'system', content: 'You are an OCR assistant. Extract text from images accurately.' },
+			{ role: 'user', content: contentBlocks },
+		], { ...aiOpts, model: settings.image.visionModel || settings.ai.model });
+		return { text, sourceName: fileName };
 	}
 
 	private getMediaType(fileName: string): string {

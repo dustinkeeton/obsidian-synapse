@@ -8,7 +8,7 @@ import type { NotificationManager, TranscriptCacheEntry } from '../shared';
 import { createUrlTranscriptionRouter } from './create-url-router';
 import { insertUrlTranscript } from './insert-url-transcript';
 import type { InsertUrlTranscriptDeps } from './insert-url-transcript';
-import type { TranscriptStore } from './url-transcription';
+import type { TranscriptStore } from './types';
 import * as youtubeCaptions from './youtube-captions';
 
 type Dispatcher = { dispatch: (messages: unknown) => Promise<string> };

@@ -1,6 +1,7 @@
 import { requestUrl } from 'obsidian';
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { detectPlatform, isRecord, parseJson, redactError, sanitizeUrl } from '../shared';
+import type { CaptionCue, VideoChapter, YouTubeTranscript } from './types';
 
 /**
  * YouTube caption extraction (#184) — fetch a video's caption/subtitle track
@@ -23,44 +24,6 @@ import { detectPlatform, isRecord, parseJson, redactError, sanitizeUrl } from '.
  * callers fall through to the next transcription tier — on desktop the yt-dlp
  * pipeline takes over invisibly.
  */
-
-export interface YouTubeTranscript {
-	/**
-	 * Cleaned transcript, deterministically structured from the caption
-	 * stream's own signals (see {@link formatCaptionTranscript}): speaker-turn
-	 * paragraphs from `>>` markers, chapter headings from the video
-	 * description, and pause-based paragraph breaks from cue timing.
-	 */
-	text: string;
-	/** BCP-47 language code of the selected track (e.g. `en`, `en-US`). */
-	language: string;
-	/** True when the track is YouTube's auto-generated (ASR) captions. */
-	auto: boolean;
-	/** Video title from the player response, when present. */
-	title?: string;
-	/** Largest poster frame from `videoDetails.thumbnail.thumbnails`, when present (#213). */
-	thumbnailUrl?: string;
-	/**
-	 * True when STRONG deterministic structure was found (speaker turns or
-	 * chapters) — the text is finished markdown, and AI restructuring would
-	 * only degrade it. Weakly-structured transcripts (pause-paragraphed ASR)
-	 * still benefit from the AI post-processing pass.
-	 */
-	structured: boolean;
-}
-
-/** One caption cue: a timed slice of transcript text. */
-export interface CaptionCue {
-	startMs: number;
-	endMs: number;
-	text: string;
-}
-
-/** A chapter declared in the video description (`MM:SS Title` lines). */
-export interface VideoChapter {
-	title: string;
-	startMs: number;
-}
 
 /** A caption track as advertised by the player response. */
 interface CaptionTrack {

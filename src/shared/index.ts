@@ -18,6 +18,8 @@ export {
 	findAvailableVaultPath,
 } from './file-utils';
 export { arrayBufferToBase64, base64EncodedLength } from './encoding';
+export { preprocessImage } from './image-preprocess';
+export type { PreprocessResult } from './image-preprocess';
 export { redactSecrets, redactError } from './redact';
 export { PROVIDER_METADATA, aiProviderToCredential } from './provider-metadata';
 export type { CredentialProvider, ProviderMetadata, ProbeSpec } from './provider-metadata';
