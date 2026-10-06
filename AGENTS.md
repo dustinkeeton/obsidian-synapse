@@ -33,6 +33,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | pipeline | `src/pipeline/` | Fire Synapse orchestration: ordered multi-phase run over a folder or single note; table-driven post-op hook builders (enrich -> title check, auto-organize; #496) | `SynapseRunner`, `SYNAPSE_PIPELINE`, `buildPostOpHook`, `buildAutoOrganizeHook`, `PipelineModuleKey`, `PipelineModuleMap`, `PipelinePhase`, `PipelineScanFn`, `PostOpHookDeps`, `PostOpSource`, `PostOpTrigger`, `PostOpHook`, `AutoOrganizeTrigger` |
 | intake | `src/intake/` | Watches intake folder, auto-routes + pipeline-processes new notes (#111); opt-in adoption of root-level shared captures (#455) | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute`, `SYNAPSE_PROCESSED_FLAG`, `SYNAPSE_PROCESSED_AT_FLAG`, `renderIntakeSettings` |
 | rem | `src/rem/` | REM: discover linkable references, propose in-place `[[wikilink]]` insertions | `RemModule`, `renderRemSettings`, types |
+| illustrate | `src/illustrate/` | Insert Media (#213): AI-chosen spots get a licensed reference photo (Wikimedia Commons / Openverse), an AI Mermaid diagram, or a chart built from the note's own numbers; per-item sidebar review; accept downloads into the attachment folder + inserts embed/callout at the anchor | `IllustrateModule`, `WikimediaProvider`, `OpenverseProvider`, `MediaProvider`, `normalizeLicense`, `isLicenseAllowed`, `validateMermaid`, `buildXyChart`, `parseChartData`, `insertAtAnchor`, `renderIllustrateSettings`, types |
 | elaboration | `src/elaboration/` | Stub note detection, AI proposal generation, image analysis for proposals | `ElaborationModule`, `ImageAnalyzer`, `renderElaborationSettings`, types |
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `renderAudioSettings`, `renderTranscriptionCredentials`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `AudioExtractor`, `createFfmpegAvailability`, `findVideoUrls`, `detectPlatform`, `isSupportedUrl`, `renderVideoSettings`, types |
@@ -80,6 +81,7 @@ main.ts
   |-- deep-dive/ --> shared/, commands/, organize/ (ContentAnalyzer, DirectoryMatcher)
   |-- title/ --> shared/
   |-- rem/ --> shared/, commands/
+  |-- illustrate/ --> shared/, commands/ (type-only CommandRegistrar); providers/ via requestUrl only
   +-- intake/ --> shared/ ONLY (cross-module work via injected IntakeDeps.fireOnFile / transcribeUrlToNote)
 ```
 
@@ -191,10 +193,12 @@ Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries
 | `synapse:undo-tidy` | Undo last tidy on current note | editorCallback | tidy | p | disabled | |
 | `synapse:rem-current-note` | REM: discover links in current note | editorCallback | rem | p | active | |
 | `synapse:rem-directory` | Scan folder for links | callback | rem | p, f | active | rem |
+| `synapse:illustrate-current-note` | Illustrate current note | editorCallback | illustrate | p | active | |
+| `synapse:illustrate-folder` | Scan folder for notes to illustrate | callback | illustrate | p, f | active | illustrate |
 | `synapse:check-dependencies` | Check external tool availability | callback | video | p | active | |
 | `synapse:tidy-vault` | Scan folder for notes to tidy | (synthetic) | tidy | f | active | tidy |
 
-`synapse:tidy-vault` is synthetic and pipeline-only: it gates the tidy Fire Synapse phase independently of any palette command and is never passed to `registrar.register()`. Fire Synapse phase order: elaboration → summarize → enrichment → rem → tidy → organize.
+`synapse:tidy-vault` is synthetic and pipeline-only: it gates the tidy Fire Synapse phase independently of any palette command and is never passed to `registrar.register()`. Fire Synapse phase order: elaboration → summarize → enrichment → rem → illustrate → tidy → organize.
 
 ## Ribbon Icons
 
@@ -231,6 +235,7 @@ All AI-generated content uses Obsidian callouts. Registry in `src/shared/callout
 | deepDive | `synapse-deep-dive` | Deep dive content |
 | nav | `synapse-nav` | Deep dive navigation blocks |
 | ocr | `synapse-ocr` | Image OCR extraction results |
+| illustrate | `synapse-illustrate` | Caption + source/license/attribution under an inserted photo embed or Mermaid block (#213) |
 
 ## Settings Schema
 
@@ -424,7 +429,7 @@ gemini-2.5-pro, gemini-2.5-flash. ollama: llama3.2, llama3, gemma4, gemma3, gemm
 mistral, codellama.
 
 `ProposalKind` (`src/views/types.ts`) is the single source of truth for `PROPOSAL_KINDS` and keys of `autoAccept`:
-`'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem'`. A compile-time guard asserts it
+`'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem' | 'illustrate'`. A compile-time guard asserts it
 matches the `UnifiedItem` union exactly.
 
 ## Data Storage
@@ -441,6 +446,8 @@ matches the `UnifiedItem` union exactly.
 | Deep dive runs | `.synapse/deep-dive/runs/*.json` | `DeepDiveRun` JSON |
 | Title proposals | `.synapse/title-proposals/*.json` | `TitleProposal` JSON |
 | REM proposals | `.synapse/rem/*.json` | `RemProposal` JSON |
+| Illustrate proposals | `.synapse/illustrate/*.json` | `IllustrateProposal` JSON |
+| Downloaded illustrations | Obsidian attachment folder (via `fileManager.getAvailablePathForAttachment`) | Image files |
 | Intake breadcrumbs | `‹intakeFolder›/_captured/*.md` (configurable) | Dated wiki-link breadcrumb notes |
 | Checkpoints | `.synapse/checkpoints/*.json` | `Checkpoint` JSON |
 | Transcript cache | `.synapse/transcript-cache.json` | `{ version: 1, entries: Record<key, TranscriptCacheEntry> }` (#488); key = canonical media URL (+ `#t=start-end`); LRU-capped at 200 entries / 4M chars; cleared from Video settings |

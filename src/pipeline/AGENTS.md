@@ -4,7 +4,7 @@ last-updated: 2026-09-14
 
 # Pipeline Module
 
-Fire Synapse orchestration: runs the ordered multi-phase pipeline (elaboration -> summarize -> enrichment -> rem -> tidy -> organize) over a folder or a single note, where each phase is one feature module's scan function gated by settings and the command registry. Also builds the post-op chaining hooks (enrich -> title check, auto-organize) that `main.ts` assigns to each feature module's completion slot (#483).
+Fire Synapse orchestration: runs the ordered multi-phase pipeline (elaboration -> summarize -> enrichment -> rem -> illustrate -> tidy -> organize) over a folder or a single note, where each phase is one feature module's scan function gated by settings and the command registry. Also builds the post-op chaining hooks (enrich -> title check, auto-organize) that `main.ts` assigns to each feature module's completion slot (#483).
 
 ## Public API
 
@@ -17,6 +17,7 @@ type PipelineModuleKey =
   | 'summarize'
   | 'enrichment'
   | 'rem'
+  | 'illustrate'
   | 'tidy'
   | 'organize';
 
@@ -92,8 +93,9 @@ Source: types.ts:L41-L48. Order is load-bearing — the runner executes phases i
 | 2 | `summarize` | Summarize |
 | 3 | `enrichment` | Enrichment |
 | 4 | `rem` | REM |
-| 5 | `tidy` | Tidy |
-| 6 | `organize` | Organize |
+| 5 | `illustrate` | Illustrate |
+| 6 | `tidy` | Tidy |
+| 7 | `organize` | Organize |
 
 Organize is intentionally last: it is the content-aware mover that relocates notes to their proper folder.
 
