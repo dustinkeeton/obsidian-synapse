@@ -51,6 +51,20 @@ export type { TimeRange } from './validation';
 export { CALLOUT_TYPES, buildCallout, calloutForTranscriptionResult, ENRICHMENT_START, ENRICHMENT_END } from './callouts';
 export type { CalloutType } from './callouts';
 export {
+	MARKER_KINDS,
+	buildMarkerSection,
+	markerOpener,
+	markerCloser,
+	parseMarkerOpener,
+	parseMarkerCloser,
+	findMarkerRegions,
+	markerCoveredLines,
+	markerAttrsMatch,
+	encodeMarkerAttr,
+	decodeMarkerAttr,
+} from './markers';
+export type { MarkerKind, MarkerAttrs, MarkerOpener, MarkerRegion } from './markers';
+export {
 	parseFrontmatter,
 	serializeFrontmatter,
 	mergeTags,
