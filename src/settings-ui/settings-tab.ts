@@ -1,8 +1,8 @@
 import { App, Platform, PluginSettingTab, Setting } from 'obsidian';
 import type { ButtonComponent } from 'obsidian';
 import type SynapsePlugin from '../main';
-import { createSettingsSectionContext, sectionMatchesDefaults } from '../shared';
-import type { SettingsSectionContext } from '../shared';
+import { BUILD_INFO, createSettingsSectionContext, describeDevBuild, sectionMatchesDefaults } from '../shared';
+import type { BuildInfo, SettingsSectionContext } from '../shared';
 import { renderElaborationSettings } from '../elaboration';
 import { renderIntakeSettings } from '../intake';
 import { renderImageSettings } from '../image';
@@ -62,13 +62,24 @@ export function isSectionVisible(
 	return entry.platform === 'desktop' ? platform.isDesktop : platform.isMobile;
 }
 
+/** Loud dev-build callout (#542); a callout, not a heading, so the no-plugin-name-heading guideline holds. */
+export function renderDevBuildBanner(containerEl: HTMLElement, info: BuildInfo, version: string): void {
+	const banner = containerEl.createDiv({ cls: 'synapse-dev-build-banner', attr: { role: 'status' } });
+	banner.createEl('strong', { cls: 'synapse-dev-build-banner-lead', text: '\u26A0 Development build' });
+	banner.createSpan({ cls: 'synapse-dev-build-banner-detail', text: ` \u00B7 ${describeDevBuild(info, version)}` });
+}
+
 /**
  * Thin orchestrator: builds the section context, renders {@link SETTINGS_SECTIONS}
  * in order, then appends the per-section reset footers (#442) and version line.
  * Sections never import this file; they receive a `SettingsSectionContext`.
  */
 export class SynapseSettingTab extends PluginSettingTab {
-	constructor(app: App, private plugin: SynapsePlugin) {
+	constructor(
+		app: App,
+		private plugin: SynapsePlugin,
+		private buildInfo: Readonly<BuildInfo> = BUILD_INFO,
+	) {
 		super(app, plugin);
 	}
 
@@ -127,6 +138,9 @@ export class SynapseSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		this.resetControls = {};
 
+		const version = this.plugin.manifest.version;
+		if (this.buildInfo.dev) renderDevBuildBanner(containerEl, this.buildInfo, version);
+
 		const ctx = createSettingsSectionContext({
 			containerEl,
 			plugin: this.plugin,
@@ -141,9 +155,13 @@ export class SynapseSettingTab extends PluginSettingTab {
 		this.renderResetFooters(ctx);
 
 		// No top-level plugin-name heading (community guidelines); version goes in a footer.
+		if (this.buildInfo.dev) {
+			renderDevBuildBanner(containerEl, this.buildInfo, version);
+			return;
+		}
 		containerEl.createDiv({
 			cls: 'setting-item-description synapse-settings-footer',
-			text: `Synapse v${this.plugin.manifest.version}`,
+			text: `Synapse v${version}`,
 		});
 	}
 }

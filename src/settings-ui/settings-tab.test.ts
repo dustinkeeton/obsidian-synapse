@@ -30,6 +30,7 @@ import { SynapseSettingTab, SETTINGS_SECTIONS, isSectionVisible } from './settin
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
 import { createSettingsSectionContext } from '../shared';
+import type { BuildInfo } from '../shared';
 
 /** Tooltip of the REM accordion-header enable toggle (`src/rem/settings-section.ts`). */
 const REM_FEATURE_TOOLTIP =
@@ -41,7 +42,7 @@ interface MockPlugin {
 	manifest: { version: string };
 }
 
-function makeTab(mutate?: (s: SynapseSettings) => void) {
+function makeTab(mutate?: (s: SynapseSettings) => void, buildInfo?: BuildInfo) {
 	const settings = structuredClone(DEFAULT_SETTINGS);
 	mutate?.(settings);
 	const plugin: MockPlugin = {
@@ -49,7 +50,7 @@ function makeTab(mutate?: (s: SynapseSettings) => void) {
 		saveSettings: vi.fn().mockResolvedValue(undefined),
 		manifest: { version: '0.0.0-test' },
 	};
-	const tab = new SynapseSettingTab({} as never, plugin as never);
+	const tab = new SynapseSettingTab({} as never, plugin as never, buildInfo);
 	// The mock PluginSettingTab gives a bare containerEl; swap in a full stub el
 	// that supports createDiv/createSpan/etc. so display() can render.
 	(tab as unknown as { containerEl: HTMLElement }).containerEl = createEl();
@@ -682,5 +683,91 @@ describe('SynapseSettingTab — global reset all (#420)', () => {
 
 		expect(plugin.settings.ai.apiKey).toBe('sk');
 		expect(plugin.saveSettings).not.toHaveBeenCalled();
+	});
+});
+
+describe('SynapseSettingTab — version footer and dev-build banner (#542)', () => {
+	const builtAt = new Date(2026, 9, 6, 14, 2).toISOString();
+	const devBuild: BuildInfo = { dev: true, sha: '22933ef', branch: 'main', dirty: true, builtAt };
+
+	function topLevel(tab: SynapseSettingTab): StubEl[] {
+		return (tab as unknown as { containerEl: StubEl }).containerEl.children as unknown as StubEl[];
+	}
+	function classes(el: StubEl): string[] {
+		return el.className.split(/\s+/).filter(Boolean);
+	}
+	function bannerText(el: StubEl): string {
+		return (el.children as unknown as StubEl[]).map((c) => c.textContent).join('');
+	}
+
+	it('renders the muted version footer as the last element by default (production build)', () => {
+		const { tab } = makeTab();
+
+		tab.display();
+
+		const footer = topLevel(tab).at(-1)!;
+		expect(footer.tagName).toBe('DIV');
+		expect(classes(footer)).toEqual(['setting-item-description', 'synapse-settings-footer']);
+		expect(footer.textContent).toBe('Synapse v0.0.0-test');
+		expect(topLevel(tab).filter((e) => e.classList.contains('synapse-dev-build-banner'))).toEqual([]);
+	});
+
+	it('renders the same footer for an explicit production build', () => {
+		const { tab } = makeTab(undefined, { dev: false });
+
+		tab.display();
+
+		expect(topLevel(tab).at(-1)!.textContent).toBe('Synapse v0.0.0-test');
+		expect(topLevel(tab)[0].classList.contains('synapse-dev-build-banner')).toBe(false);
+	});
+
+	it('renders the dev banner first and last, replacing the muted footer', () => {
+		const { tab } = makeTab(undefined, devBuild);
+
+		tab.display();
+
+		const els = topLevel(tab);
+		expect(els[0].classList.contains('synapse-dev-build-banner')).toBe(true);
+		expect(els.at(-1)!.classList.contains('synapse-dev-build-banner')).toBe(true);
+		expect(els.filter((e) => e.classList.contains('synapse-dev-build-banner'))).toHaveLength(2);
+		expect(els.filter((e) => e.classList.contains('synapse-settings-footer'))).toEqual([]);
+		expect(els[0].getAttribute('role')).toBe('status');
+	});
+
+	it('states branch, sha, dirty flag, build time, and base version in a bold lead + detail', () => {
+		const { tab } = makeTab(undefined, devBuild);
+
+		tab.display();
+
+		const banner = topLevel(tab)[0];
+		const [lead, detail] = banner.children as unknown as StubEl[];
+		expect(lead.tagName).toBe('STRONG');
+		expect(lead.textContent).toBe('\u26A0 Development build');
+		expect(detail.tagName).toBe('SPAN');
+		expect(bannerText(banner)).toBe(
+			'\u26A0 Development build \u00B7 main @ 22933ef (dirty) \u00B7 built 2026-10-06 14:02 \u00B7 based on v0.0.0-test',
+		);
+		expect(bannerText(topLevel(tab).at(-1)!)).toBe(bannerText(banner));
+	});
+
+	it('still flags a dev build with no git detail', () => {
+		const { tab } = makeTab(undefined, { dev: true });
+
+		tab.display();
+
+		expect(bannerText(topLevel(tab)[0])).toBe(
+			'\u26A0 Development build \u00B7 based on v0.0.0-test',
+		);
+	});
+
+	it('keeps the dev banner on re-render', () => {
+		const { tab } = makeTab(undefined, devBuild);
+
+		tab.display();
+		tab.display();
+
+		const els = topLevel(tab);
+		expect(els.filter((e) => e.classList.contains('synapse-dev-build-banner'))).toHaveLength(2);
+		expect(els[0].classList.contains('synapse-dev-build-banner')).toBe(true);
 	});
 });

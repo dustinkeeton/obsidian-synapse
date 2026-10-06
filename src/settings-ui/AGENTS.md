@@ -1,30 +1,31 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-10-06
 ---
 
 # Settings UI Module
 
-The Obsidian settings tab. `settings-tab.ts` is a thin orchestrator: it builds a `SettingsSectionContext` (`shared/settings-section.ts`), renders the declarative `SETTINGS_SECTIONS` list in order, then appends the per-section reset footers and the version line. The cross-feature sections (AI configuration, auto-accept, exclusions, general, about) live in `global-sections.ts` as renderers with the same `(ctx) => void` signature as every feature's `render<Feature>Settings`. `src/settings.ts` (types + defaults) deliberately stays at the `src/` root.
+The Obsidian settings tab. `settings-tab.ts` is a thin orchestrator: it builds a `SettingsSectionContext` (`shared/settings-section.ts`), renders the declarative `SETTINGS_SECTIONS` list in order, then appends the per-section reset footers and the version line. On a development build (`BUILD_INFO.dev`, see `shared/build-info.ts`, #542) a warning callout replaces the muted footer and is also rendered first, above every section; the production footer is unchanged. The cross-feature sections (AI configuration, auto-accept, exclusions, general, about) live in `global-sections.ts` as renderers with the same `(ctx) => void` signature as every feature's `render<Feature>Settings`. `src/settings.ts` (types + defaults) deliberately stays at the `src/` root.
 
 ## Public API
 
 Exported from `index.ts`:
 
 ```ts
-// settings-tab.ts:68
+// settings-tab.ts:77
 class SynapseSettingTab extends PluginSettingTab {
-  constructor(app: App, plugin: SynapsePlugin)
-  display(): void    // settings-tab.ts:118 — rebuilds the whole tab
+  constructor(app: App, plugin: SynapsePlugin, buildInfo?: Readonly<BuildInfo>)   // buildInfo defaults to BUILD_INFO; injected by tests
+  display(): void    // settings-tab.ts:136 — rebuilds the whole tab
 }
 ```
 
 Module-level exports (not re-exported by the barrel):
 
 ```ts
-// settings-tab.ts:27
+// settings-tab.ts:28
 interface SettingsSectionEntry { key: string; render: (ctx: SettingsSectionContext) => void; platform?: 'desktop' | 'mobile' }
-const SETTINGS_SECTIONS: readonly SettingsSectionEntry[]   // settings-tab.ts:34 — render order: ai, autoAccept, exclusions, general, elaboration, intake, image, audio, video, enrichment, summarize, tidy, organize, deepDive, title, rem, about
-function isSectionVisible(entry: SettingsSectionEntry, platform?: { isDesktop: boolean; isMobile: boolean }): boolean   // settings-tab.ts:55
+const SETTINGS_SECTIONS: readonly SettingsSectionEntry[]   // settings-tab.ts:35 — render order: ai, autoAccept, exclusions, general, elaboration, intake, image, audio, video, enrichment, summarize, tidy, organize, deepDive, title, rem, about
+function isSectionVisible(entry: SettingsSectionEntry, platform?: { isDesktop: boolean; isMobile: boolean }): boolean   // settings-tab.ts:57
+function renderDevBuildBanner(containerEl: HTMLElement, info: BuildInfo, version: string): void   // settings-tab.ts:66 — `.synapse-dev-build-banner` callout: bold "Development build" lead + `describeDevBuild` detail
 
 // global-sections.ts
 function renderAiConfiguration(ctx: SettingsSectionContext): void   // :75  configSection('ai'); hosts renderTranscriptionCredentials
@@ -39,9 +40,9 @@ function renderAbout(ctx: SettingsSectionContext): void             // :468 conf
 | File | Exports | Purpose |
 |------|---------|---------|
 | `index.ts` | `SynapseSettingTab` | Barrel |
-| `settings-tab.ts` | `SynapseSettingTab`, `SETTINGS_SECTIONS`, `SettingsSectionEntry`, `isSectionVisible` | Orchestrator: section registry, platform gating, per-section reset footers (#442), version footer |
+| `settings-tab.ts` | `SynapseSettingTab`, `SETTINGS_SECTIONS`, `SettingsSectionEntry`, `isSectionVisible`, `renderDevBuildBanner` | Orchestrator: section registry, platform gating, per-section reset footers (#442), version footer, dev-build banner top + bottom (#542) |
 | `global-sections.ts` | `renderAiConfiguration`, `renderAutoAccept`, `renderExclusions`, `renderGeneral`, `renderAbout` | Cross-feature section renderers |
-| `settings-tab.test.ts` | Tests | Registry order/visibility, auto-accept live state, exclusions chips, reset rows; mocks `../changelog` and `../shared/confirm-modal` |
+| `settings-tab.test.ts` | Tests | Registry order/visibility, auto-accept live state, exclusions chips, reset rows, production footer vs dev banner (build info injected via the constructor); mocks `../changelog` and `../shared/confirm-modal` |
 | `global-sections.test.ts` | Tests | General section toggles, auto-accept `onFeatureToggle` refresh; mocks `../changelog` |
 
 ## Dependencies
@@ -50,7 +51,7 @@ function renderAbout(ctx: SettingsSectionContext): void             // :468 conf
 |--------|------|------|
 | `App`, `Platform`, `PluginSettingTab`, `Setting`, `ButtonComponent` (type) | `obsidian` | `settings-tab.ts:1-2` |
 | `SynapsePlugin` (type) | `../main` | `settings-tab.ts:3` |
-| `createSettingsSectionContext`, `sectionMatchesDefaults`, `SettingsSectionContext` (type) | `../shared` | `settings-tab.ts:4-5` |
+| `BUILD_INFO`, `createSettingsSectionContext`, `describeDevBuild`, `sectionMatchesDefaults`, `BuildInfo` + `SettingsSectionContext` (types) | `../shared` | `settings-tab.ts:4-5` |
 | `render<Feature>Settings` (elaboration, intake, image, audio, video, enrichment, summarize, tidy, organize, deep-dive, title, rem) | each feature barrel | `settings-tab.ts:6-17` |
 | `Setting` | `obsidian` | `global-sections.ts:1` |
 | `MODEL_OPTIONS`, `AIProvider` (type) | `../settings` | `global-sections.ts:2-3` |
