@@ -200,6 +200,33 @@ body {
   opacity: 0.7;
 }
 
+/* ── Settings tab development-build banner (#542) ── */
+
+.synapse-dev-build-banner {
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--text-warning);
+  border-radius: var(--radius-m, 6px);
+  background-color: rgba(var(--color-yellow-rgb, 224, 222, 113), 0.15);
+  color: var(--text-warning);
+  font-size: var(--font-ui-small);
+  text-align: center;
+}
+
+.synapse-dev-build-banner:last-child {
+  margin: 24px 0 0;
+}
+
+.synapse-dev-build-banner-lead {
+  font-weight: var(--font-bold, 700);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.synapse-dev-build-banner-detail {
+  font-family: var(--font-monospace, monospace);
+}
+
 /* ── Dual-handle time-range slider (video trim bar) ──
  *
  * Styled as an editor's trim bar: a quiet rail, a solid gold selection

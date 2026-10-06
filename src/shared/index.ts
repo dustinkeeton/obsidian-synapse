@@ -179,3 +179,5 @@ export type {
 	CheckpointWorkItem,
 	DeferredTask,
 } from './checkpoint-types';
+export { BUILD_INFO, PRODUCTION_BUILD, parseBuildInfo, formatBuiltAt, describeDevBuild } from './build-info';
+export type { BuildInfo } from './build-info';
