@@ -1,4 +1,4 @@
-import type { ResolvedInsertion } from '../shared/insertion-point';
+import type { RegionLocator, ResolvedInsertion } from '../shared/insertion-point';
 
 /** Visual kinds the analyzer can propose for one spot in a note. */
 export type IllustrateSpotKind = 'photo' | 'diagram' | 'chart';
@@ -65,6 +65,8 @@ interface ItemBase {
 	rationale: string;
 	/** Preview resolved at proposal time; accept re-resolves against the live note. Absent on pre-placement proposals. */
 	placement?: ResolvedInsertion;
+	/** Callout the visual belongs inside (post-op runs); absent = whole note, never inside containers. */
+	region?: RegionLocator;
 }
 
 export type IllustrateItem =

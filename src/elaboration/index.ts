@@ -522,7 +522,7 @@ export class ElaborationModule implements FeatureModule {
 			this.notifications.success('Proposal accepted');
 			await this.refreshView();
 		}
-		this.onProposalAccepted?.(proposal.sourceNotePath, { sourceUrls: extractUrls(body) });
+		this.onProposalAccepted?.(proposal.sourceNotePath, { sourceUrls: extractUrls(body), producedRegion: { kind: 'whole-note' } });
 	}
 
 	/**

@@ -645,7 +645,7 @@ export class EnrichmentModule implements FeatureModule {
 		if (this.onEnrichmentApplied) {
 			const noteFile = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 			const body = noteFile instanceof TFile ? await this.plugin.app.vault.cachedRead(noteFile) : '';
-			this.onEnrichmentApplied(proposal.sourceNotePath, { sourceUrls: extractUrls(body) });
+			this.onEnrichmentApplied(proposal.sourceNotePath, { sourceUrls: extractUrls(body), producedRegion: { kind: 'whole-note' } });
 		}
 
 		const totalAvailable =

@@ -1,5 +1,5 @@
 import type { App, TFile } from 'obsidian';
-import { findMatchingRule, isNoSpeechError, noSpeechNotice, transcriptCacheUse, withCacheReport } from '../shared';
+import { findMatchingRule, isNoSpeechError, noSpeechNotice, transcriptCacheUse, withCacheReport, calloutForTranscriptionResult, formatTimeRange } from '../shared';
 import type { NoteOperationQueue, NotificationManager, TimeRange, SourceContext } from '../shared';
 import type { SynapseSettings } from '../settings';
 import { buildUrlTranscriptBlock, UrlTranscriptionRouter } from './url-transcription';
@@ -65,9 +65,11 @@ export async function insertUrlTranscript(
 				timeRange
 			);
 			await app.vault.process(activeFile, (data) => data + block);
+			const { type, verb } = calloutForTranscriptionResult(result);
 			deps.onComplete?.(activeFile.path, {
 				sourceUrls: [url],
 				sourceImages: result.thumbnailUrl ? [{ url: result.thumbnailUrl, pageUrl: url, title: result.title }] : undefined,
+				producedRegion: { kind: 'callout', calloutType: type, title: timeRange ? `${verb} ${url} ${formatTimeRange(timeRange)}` : `${verb} ${url}` },
 			});
 			op.finish(withCacheReport('Transcription added to note', [transcriptCacheUse(result)]));
 		} catch (error) {

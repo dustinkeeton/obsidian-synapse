@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveInsertionPoint, applyInsertion, describeInsertion, scanBlocks } from './insertion-point';
-import type { InsertionAnchor, ResolvedInsertion } from './insertion-point';
+import { resolveInsertionPoint, applyInsertion, describeInsertion, scanBlocks, locateRegion } from './insertion-point';
+import type { InsertionAnchor, ResolvedInsertion, RegionLocator } from './insertion-point';
 
 const NOTE = ['---', 'tags: [a]', '---', '# Red panda', '', '## Habitat', 'They live in forests.', 'High in the trees.', '', '## Diet', 'Bamboo.'].join('\n');
 
@@ -24,6 +24,7 @@ describe('scanBlocks', () => {
 	it('keeps a callout with blank quote lines together and closes math fences', () => {
 		const lines = ['> [!note] T', '> a', '>', '> b', '', '$$', 'x = 1', '$$', 'p'];
 		expect(scanBlocks(lines).map((b) => [b.type, b.start, b.end])).toEqual([['quote', 0, 3], ['math', 5, 7], ['paragraph', 8, 8]]);
+		expect(scanBlocks(lines)[0].children?.map((b) => [b.type, b.start, b.end])).toEqual([['paragraph', 0, 1], ['paragraph', 3, 3]]);
 	});
 });
 
@@ -126,5 +127,84 @@ describe('describeInsertion', () => {
 	it('distinguishes a requested end from a miss', () => {
 		expect(describeInsertion(resolveInsertionPoint(NOTE, { kind: 'end', text: '' }))).toBe('At end of note');
 		expect(describeInsertion(resolveInsertionPoint(NOTE, paragraph('nope')))).toBe('At end of note (anchor not found)');
+	});
+});
+
+describe('region-targeted, container-aware insertion (#213)', () => {
+	const SUMMARY = [
+		'# Piracy', '', 'Intro paragraph.', '',
+		'> [!synapse-summary] Combined summary (2 items)', '> ## Overview', '> Piracy peaked in the 1700s.', '> It declined later.', '>', '> - Edward England', '> - Black Bart', '',
+		'> [!synapse-summary] Summary of other', '> Other text.', '',
+		'> [!synapse-enrichment] References', '> - [a](https://a)',
+	].join('\n');
+	const summary: RegionLocator = { kind: 'callout', calloutType: 'synapse-summary', title: 'Combined summary (2 items)' };
+	const locate = locateRegion;
+
+	it('locates a region by callout type and by title, returning de-prefixed text', () => {
+		const byType = locate(SUMMARY, { kind: 'callout', calloutType: 'synapse-summary' })!;
+		expect([byType.start, byType.end]).toEqual([4, 10]);
+		const byTitle = locate(SUMMARY, { kind: 'callout', calloutType: 'synapse-summary', title: 'Summary of other' })!;
+		expect([byTitle.start, byTitle.end, byTitle.label]).toEqual([12, 13, 'summary']);
+		expect(byTitle.text).toBe('[!synapse-summary] Summary of other\nOther text.');
+		expect(locate(SUMMARY, { kind: 'callout', calloutType: 'synapse-ocr' })).toBeNull();
+	});
+
+	it('resolves inside the region after the inner block and records the container prefix', () => {
+		const resolved = resolveInsertionPoint(SUMMARY, paragraph('Piracy peaked'), { within: summary, insideContainers: true });
+		expect(resolved).toMatchObject({ strategy: 'after-paragraph', line: 7, matchedText: 'Piracy peaked in the 1700s.', container: { prefix: '> ', label: 'summary' } });
+		const inList = resolveInsertionPoint(SUMMARY, paragraph('Edward England'), { within: summary, insideContainers: true });
+		expect(inList).toMatchObject({ line: 10, blockType: 'list', container: { prefix: '> ' } });
+		const lead = resolveInsertionPoint(SUMMARY, heading('Overview'), { within: summary, insideContainers: true });
+		expect(lead).toMatchObject({ strategy: 'after-section-lead', line: 7 });
+	});
+
+	it('resolves a miss inside the region to the end of the region, never the note', () => {
+		const resolved = resolveInsertionPoint(SUMMARY, paragraph('nowhere'), { within: summary, insideContainers: true });
+		expect(resolved).toMatchObject({ strategy: 'append', line: 10, container: { prefix: '> ', label: 'summary' } });
+		expect(describeInsertion(resolved)).toBe('Inside the summary, at its end');
+	});
+
+	it('still treats a callout as one block when neither option is given (ad hoc path)', () => {
+		const resolved = resolveInsertionPoint(SUMMARY, paragraph('Piracy peaked'));
+		expect(resolved).toMatchObject({ strategy: 'after-paragraph', line: 10, blockType: 'quote' });
+		expect(resolved.container).toBeUndefined();
+	});
+
+	it('descends into containers without a region when insideContainers is set', () => {
+		const resolved = resolveInsertionPoint(SUMMARY, paragraph('Other text'), { insideContainers: true });
+		expect(resolved).toMatchObject({ line: 13, container: { prefix: '> ', label: 'summary' } });
+	});
+
+	it('applies prefixed embeds, nested callouts, and mermaid fences inside the container with quote spacers', () => {
+		const resolved = resolveInsertionPoint(SUMMARY, paragraph('Piracy peaked'), { within: summary, insideContainers: true });
+		const block = '![[flag.png]]\n\n> [!synapse-illustrate] Flag\n> Source: x\n\n```mermaid\nflowchart TD\nA --> B\n```';
+		const out = applyInsertion(SUMMARY, resolved, block).split('\n');
+		expect(out.slice(7, 19)).toEqual([
+			'> It declined later.', '>', '> ![[flag.png]]', '>', '> > [!synapse-illustrate] Flag', '> > Source: x', '>', '> ```mermaid', '> flowchart TD', '> A --> B', '> ```', '>',
+		]);
+		expect(out[19]).toBe('> - Edward England');
+		expect(out.join('\n')).not.toMatch(/\n\n\n/);
+	});
+
+	it('appends at the region end with a quote spacer and leaves the following blank line alone', () => {
+		const resolved = resolveInsertionPoint(SUMMARY, paragraph('nowhere'), { within: summary, insideContainers: true });
+		const out = applyInsertion(SUMMARY, resolved, 'BLOCK').split('\n');
+		expect(out.slice(10, 14)).toEqual(['> - Black Bart', '>', '> BLOCK', '']);
+	});
+
+	it('handles depth-2 prefixes', () => {
+		const nested = '> [!synapse-summary] S\n> > [!note] Inner\n> > Deep text here.\n>\n> After.';
+		const resolved = resolveInsertionPoint(nested, paragraph('Deep text'), { within: { kind: 'callout', calloutType: 'synapse-summary' }, insideContainers: true });
+		expect(resolved).toMatchObject({ line: 2, container: { prefix: '> > ' } });
+		const out = applyInsertion(nested, resolved, 'X\n\nY').split('\n');
+		expect(out.slice(2, 8)).toEqual(['> > Deep text here.', '> >', '> > X', '> >', '> > Y', '>']);
+		expect(out[8]).toBe('> After.');
+	});
+
+	it('describes container placements', () => {
+		const resolved = resolveInsertionPoint(SUMMARY, paragraph('Piracy peaked'), { within: summary, insideContainers: true });
+		expect(describeInsertion(resolved)).toBe('Inside the summary, after paragraph "Piracy peaked in the 1700s."');
+		const lead = resolveInsertionPoint(SUMMARY, heading('Overview'), { within: summary, insideContainers: true });
+		expect(describeInsertion(lead)).toBe('Inside the summary, after the opening paragraph of "Overview"');
 	});
 });

@@ -56,11 +56,18 @@ interface ProcessResult {
 	/** Material fetched for the summaries, handed to post-op illustrate (#213). */
 	sourceUrls: string[];
 	sourceImages: SourceImage[];
+	/** Titles of the summary callouts written into the source note this run. */
+	calloutTitles: string[];
 }
 
 /** Per-run accumulator of fetched material. */
 type SourceCollector = { urls: string[]; images: SourceImage[] };
 const newSourceCollector = (): SourceCollector => ({ urls: [], images: [] });
+
+/** Region hint for post-op follow-ups: the summary callout written this run (by title when exactly one). */
+function producedSummaryRegion(titles: string[]): SourceContext['producedRegion'] {
+	return { kind: 'callout', calloutType: CALLOUT_TYPES.summary, title: titles.length === 1 ? titles[0] : undefined };
+}
 
 /** Human-readable label for a target in combined-summary output (#367). */
 function labelForTarget(target: SummarizeTarget): string {
@@ -346,6 +353,7 @@ export class SummarizeModule implements FeatureModule {
 			cacheUses: [],
 			sourceUrls: [],
 			sourceImages: [],
+			calloutTitles: [],
 		};
 
 		// Enrichment refs first (per-item): create notes + rewrite links.
@@ -369,6 +377,7 @@ export class SummarizeModule implements FeatureModule {
 				cacheUses: [...result.cacheUses, ...combined.cacheUses],
 				sourceUrls: [...result.sourceUrls, ...combined.sourceUrls],
 				sourceImages: [...result.sourceImages, ...combined.sourceImages],
+				calloutTitles: [...result.calloutTitles, ...combined.calloutTitles],
 			};
 		}
 
@@ -399,6 +408,7 @@ export class SummarizeModule implements FeatureModule {
 			cacheUses: [],
 			sourceUrls: [],
 			sourceImages: [],
+			calloutTitles: [],
 		};
 		if (targets.length === 0) return empty;
 		if (targets.length === 1) {
@@ -473,9 +483,10 @@ export class SummarizeModule implements FeatureModule {
 			trackAiCache(combinedUse)
 		);
 
+		const combinedTitle = `Combined summary (${labels.length} items)`;
 		const callout = buildCallout(
 			CALLOUT_TYPES.summary,
-			`Combined summary (${labels.length} items)`,
+			combinedTitle,
 			`Sources: ${labels.join(', ')}\n\n${summary}`
 		);
 
@@ -486,7 +497,7 @@ export class SummarizeModule implements FeatureModule {
 			return lines.join('\n');
 		});
 
-		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [], cacheUses: [combinedUse], sourceUrls: sources.urls, sourceImages: sources.images };
+		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [], cacheUses: [combinedUse], sourceUrls: sources.urls, sourceImages: sources.images, calloutTitles: [combinedTitle] };
 	}
 
 	/**
@@ -590,12 +601,17 @@ export class SummarizeModule implements FeatureModule {
 	 * modified -- otherwise the applier would strip and rebuild them.
 	 */
 	private fireEnrichmentCallbacks(sourceFilePath: string, result: ProcessResult): void {
-		const ctx: SourceContext = { sourceUrls: result.sourceUrls, sourceImages: result.sourceImages };
+		const base = { sourceUrls: result.sourceUrls, sourceImages: result.sourceImages };
+		// One fire per distinct note path per run.
+		const fired = new Set<string>();
 		if (result.inlineCompleted > 0 && result.enrichmentCompleted === 0) {
-			this.onSummaryComplete?.(sourceFilePath, ctx);
+			fired.add(sourceFilePath);
+			this.onSummaryComplete?.(sourceFilePath, { ...base, producedRegion: producedSummaryRegion(result.calloutTitles) });
 		}
 		for (const notePath of result.newNotePaths) {
-			this.onSummaryComplete?.(notePath, ctx);
+			if (fired.has(notePath)) continue;
+			fired.add(notePath);
+			this.onSummaryComplete?.(notePath, { ...base, producedRegion: { kind: 'whole-note' } });
 		}
 	}
 
@@ -629,6 +645,7 @@ export class SummarizeModule implements FeatureModule {
 		const pendingNotes: PendingNote[] = [];
 		const cacheUses: CacheUse[] = [];
 		const sources = newSourceCollector();
+		const calloutTitles: string[] = [];
 		let processed = 0;
 
 		for (const target of sorted) {
@@ -754,6 +771,7 @@ export class SummarizeModule implements FeatureModule {
 						`Summary of ${target.source}`,
 						summary
 					);
+					calloutTitles.push(`Summary of ${target.source}`);
 
 					lines.splice(target.endLine + 1, 0, ...callout.split('\n'));
 
@@ -788,7 +806,7 @@ export class SummarizeModule implements FeatureModule {
 			await this.plugin.app.vault.create(pending.path, pending.content);
 		}
 
-		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths, cacheUses, sourceUrls: sources.urls, sourceImages: sources.images };
+		return { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths, cacheUses, sourceUrls: sources.urls, sourceImages: sources.images, calloutTitles };
 	}
 
 	/**

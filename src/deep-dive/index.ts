@@ -172,6 +172,7 @@ export class DeepDiveModule implements FeatureModule {
 			// Trigger enrichment on the new note
 			this.onNoteAccepted?.(proposal.proposedPath, {
 				sourceUrls: [...new Set([...(Array.isArray(proposal.topic.relatedUrls) ? proposal.topic.relatedUrls : []), ...extractUrls(proposal.proposedContent)])],
+				producedRegion: { kind: 'whole-note' },
 			});
 
 			// Trigger organize on the new note if enabled

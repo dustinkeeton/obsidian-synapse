@@ -196,6 +196,6 @@ describe('EnrichmentModule auto-accept (#228)', () => {
 		const [pending] = await mod.getPendingProposals();
 		await mod.acceptSelectedFromView(pending.id, { tags: ['reference'], internalLinks: [], externalLinks: [], frontmatter: [] });
 		expect(applied).toHaveBeenCalledTimes(1);
-		expect(applied).toHaveBeenCalledWith('notes/ml.md', { sourceUrls: ['https://example.com/ml', 'https://example.com/dl'] });
+		expect(applied).toHaveBeenCalledWith('notes/ml.md', { sourceUrls: ['https://example.com/ml', 'https://example.com/dl'], producedRegion: { kind: 'whole-note' } });
 	});
 });
