@@ -7,10 +7,24 @@ import type { IllustrateSpot } from './types';
 
 const MAX_NOTE_CHARS = 12_000;
 
-const SYSTEM_PROMPT = `You decide where a note would benefit from a visual and what kind. Respond with JSON only.
+const SPOT_FIELDS = '"anchor":"<exact heading text, or the first 6-10 words of the paragraph>","caption":"<one sentence>","rationale":"<why a visual helps here>"';
+
+const PHOTO_PROMPT = `You decide where a note would benefit from a reference photo. Respond with JSON only.
 
 Schema:
-{"spots":[{"kind":"photo"|"diagram"|"chart","anchor":"<exact heading text, or the first 6-10 words of the paragraph>","caption":"<one sentence>","rationale":"<why a visual helps here>",
+{"spots":[{"kind":"photo",${SPOT_FIELDS},
+  "query":"<2-5 word image search terms>"}]}
+
+Rules:
+- Only propose a photo where it materially aids understanding; an empty list is a valid answer.
+- A photo is a real reference photograph of a concrete subject (place, organism, object, person, artifact). Never for abstract ideas.
+- "anchor" must be copied verbatim from the note so it can be located.
+- Skip spots that already have an image, embed, or Mermaid block beneath them.`;
+
+const FULL_PROMPT = `You decide where a note would benefit from a visual and what kind. Respond with JSON only.
+
+Schema:
+{"spots":[{"kind":"photo"|"diagram"|"chart",${SPOT_FIELDS},
   "query":"<2-5 word image search terms, photo only>",
   "mermaid":"<complete Mermaid source (flowchart, mindmap, timeline, sequenceDiagram), diagram only>",
   "chart":{"title":"","xLabels":[],"series":[{"label":"","values":[]}],"yLabel":""} (chart only)}]}
@@ -22,6 +36,16 @@ Rules:
 - "chart": ONLY when the note itself contains the numbers; copy them exactly, never invent or estimate data.
 - "anchor" must be copied verbatim from the note so it can be located.
 - Skip spots that already have an image, embed, or Mermaid block beneath them.`;
+
+export interface ParseSpotsOptions {
+	/** False drops `diagram`/`chart` spots the model emits anyway (illustrate.mermaid off). */
+	mermaid?: boolean;
+}
+
+/** System prompt for the run: Mermaid off asks for photos only. */
+export function buildSystemPrompt(mermaid: boolean): string {
+	return mermaid ? FULL_PROMPT : PHOTO_PROMPT;
+}
 
 function pickSpot(value: unknown): IllustrateSpot | null {
 	if (!isRecord(value)) return null;
@@ -49,7 +73,8 @@ function pickSpot(value: unknown): IllustrateSpot | null {
 }
 
 /** Narrow an AI response into validated spots; malformed entries are dropped, not thrown. */
-export function parseSpots(response: string, maxSpots: number): IllustrateSpot[] {
+export function parseSpots(response: string, maxSpots: number, options: ParseSpotsOptions = {}): IllustrateSpot[] {
+	const allowMermaid = options.mermaid ?? true;
 	const text = stripCodeFences(response);
 	const start = text.indexOf('{');
 	const end = text.lastIndexOf('}');
@@ -66,6 +91,7 @@ export function parseSpots(response: string, maxSpots: number): IllustrateSpot[]
 	for (const entry of parsed.spots as unknown[]) {
 		const spot = pickSpot(entry);
 		if (!spot || seenAnchors.has(spot.anchor)) continue;
+		if (!allowMermaid && spot.kind !== 'photo') continue;
 		seenAnchors.add(spot.anchor);
 		spots.push(spot);
 		if (spots.length >= maxSpots) break;
@@ -81,13 +107,13 @@ export class NoteAnalyzer {
 	}
 
 	async analyze(notePath: string, body: string, opts?: AIRequestOptions): Promise<IllustrateSpot[]> {
-		const max = this.getSettings().illustrate.maxItemsPerNote;
+		const { maxItemsPerNote: max, mermaid } = this.getSettings().illustrate;
 		const prompt = [
-			`Propose at most ${max} visuals for the note "${notePath}".`,
+			`Propose at most ${max} ${mermaid ? 'visuals' : 'photos'} for the note "${notePath}".`,
 			'',
 			wrapUntrusted(body.slice(0, MAX_NOTE_CHARS), 'note'),
 		].join('\n');
-		const response = await this.ai.complete(prompt, SYSTEM_PROMPT, opts);
-		return parseSpots(response, max);
+		const response = await this.ai.complete(prompt, buildSystemPrompt(mermaid), opts);
+		return parseSpots(response, max, { mermaid });
 	}
 }
