@@ -497,7 +497,7 @@ export class UnifiedProposalView extends ItemView {
 
 		const preview = proposal.proposedAdditions.slice(0, 200);
 		card.createEl('p', {
-			text: preview + (proposal.proposedAdditions.length > 200 ? '...' : ''),
+			text: 'Replaces the note\'s content with: ' + preview + (proposal.proposedAdditions.length > 200 ? '...' : ''),
 			cls: 'synapse-preview',
 		});
 
@@ -509,7 +509,7 @@ export class UnifiedProposalView extends ItemView {
 			this.render();
 		});
 
-		const acceptBtn = actions.createEl('button', { text: 'Accept' });
+		const acceptBtn = actions.createEl('button', { text: 'Accept and replace' });
 		this.onClick(
 			acceptBtn,
 			() => this.callbacks.onElaborationAccept(proposal.id, proposal.proposedAdditions),
@@ -653,7 +653,7 @@ export class UnifiedProposalView extends ItemView {
 
 		const editorPane = contentEl.createDiv({ cls: 'synapse-review-pane' });
 		editorPane.createEl('div', {
-			text: 'Proposed additions',
+			text: 'Proposed rewrite (accepting replaces the note\'s content; frontmatter is kept)',
 			cls: `synapse-review-pane-label ${reviewPaneLabelClass('elaboration')}`,
 		});
 		const textarea = editorPane.createEl('textarea', {
@@ -662,7 +662,7 @@ export class UnifiedProposalView extends ItemView {
 		textarea.value = proposal.proposedAdditions;
 
 		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
-		const acceptBtn = actionBar.createEl('button', { text: 'Accept', cls: 'mod-cta' });
+		const acceptBtn = actionBar.createEl('button', { text: 'Accept and replace', cls: 'mod-cta' });
 		acceptBtn.addEventListener('click', () => {
 			this.reviewingElaboration = null;
 			fireAndForget(
