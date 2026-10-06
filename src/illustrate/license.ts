@@ -1,4 +1,7 @@
 /** Normalized license names the filter settings speak in. */
+/** Images taken from the page an action processed carry no repository license; the page itself is the attribution target. */
+export const SOURCE_PAGE_LICENSE = 'Source page';
+
 export const LICENSE_NAMES = [
 	'CC0',
 	'Public domain',
@@ -8,6 +11,7 @@ export const LICENSE_NAMES = [
 	'CC BY-NC',
 	'CC BY-NC-SA',
 	'CC BY-NC-ND',
+	SOURCE_PAGE_LICENSE,
 ] as const;
 
 export type LicenseName = (typeof LICENSE_NAMES)[number];
@@ -18,6 +22,7 @@ export const DEFAULT_LICENSE_FILTER: LicenseName[] = ['CC0', 'Public domain', 'C
 export function normalizeLicense(raw: string): LicenseName | null {
 	const value = raw.trim().toLowerCase();
 	if (value === '') return null;
+	if (value === SOURCE_PAGE_LICENSE.toLowerCase()) return SOURCE_PAGE_LICENSE;
 	if (value === 'cc0' || value.startsWith('cc0 ') || value.startsWith('cc0-')) return 'CC0';
 	if (value === 'pdm' || value.includes('public domain') || value === 'pd') return 'Public domain';
 

@@ -3,7 +3,13 @@ import type { ResolvedInsertion } from '../shared/insertion-point';
 /** Visual kinds the analyzer can propose for one spot in a note. */
 export type IllustrateSpotKind = 'photo' | 'diagram' | 'chart';
 
-export type MediaProviderId = 'wikimedia' | 'openverse';
+/** Keyless repositories the user can toggle in settings. */
+export type RepositoryProviderId = 'wikimedia' | 'openverse';
+/** `'source'` serves images from the material an action acted on (#213); never user-toggled. */
+export type MediaProviderId = RepositoryProviderId | 'source';
+
+/** Actions whose completion can chain an illustrate pass. */
+export type IllustrateRunAfterKey = 'elaboration' | 'transcription' | 'summarize' | 'enrichment' | 'deepDive';
 
 /** A real, licensed image found by a provider; every field is captured at search time. */
 export interface MediaCandidate {
@@ -78,7 +84,12 @@ export interface IllustrateProposal {
 
 export interface IllustrateSettings {
 	enabled: boolean;
-	providers: Record<MediaProviderId, boolean>;
+	providers: Record<RepositoryProviderId, boolean>;
+	/** Chain an illustrate pass after these actions complete (post-op hook). */
+	runAfter: Record<IllustrateRunAfterKey, boolean>;
+	/** Fetch pages linked from the acted-on note for source images: one request per page. */
+	fetchLinkedPages: boolean;
+	maxLinkedPagesPerNote: number;
 	maxItemsPerNote: number;
 	/** Allow-list of normalized license names; candidates outside it are dropped. */
 	licenseFilter: string[];

@@ -6,6 +6,7 @@ import { NoteAnalyzer } from './note-analyzer';
 import { AssetWriter } from './asset-writer';
 import { WikimediaProvider } from './providers/wikimedia';
 import { OpenverseProvider } from './providers/openverse';
+import * as linkedPages from './linked-pages';
 import { DEFAULT_SETTINGS, type SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { CheckpointManager, NotificationManager, NoticeAction } from '../shared';
@@ -93,8 +94,8 @@ describe('IllustrateModule', () => {
 			vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/red-panda.jpg'));
 			await module.acceptProposal('prop1', ['i-photo', 'i-diagram']);
 			const written = (await app.vault.process.mock.results[0].value) as string;
-			expect(written).toContain('## Habitat\n\n![[attachments/red-panda.jpg]]\n\n> [!synapse-illustrate] A red panda\n> Source: [Red panda.jpg](https://commons.wikimedia.org/wiki/File:Red_panda.jpg) · License: [CC BY-SA](https://cc/by-sa) · Jane\n\nForests.');
-			expect(written).toContain('## Lifecycle\n\n```mermaid\nflowchart TD\nA --> B\n```');
+			expect(written).toContain('## Habitat\nForests.\n\n![[attachments/red-panda.jpg]]\n\n> [!synapse-illustrate] A red panda\n> Source: [Red panda.jpg](https://commons.wikimedia.org/wiki/File:Red_panda.jpg) · License: [CC BY-SA](https://cc/by-sa) · Jane\n\n## Lifecycle');
+			expect(written).toContain('## Lifecycle\nBirth to death.\n\n```mermaid\nflowchart TD\nA --> B\n```');
 			expect(IllustrateStore.prototype.updateStatus).toHaveBeenCalledWith('prop1', 'accepted', ['i-photo', 'i-diagram']);
 			expect(notifications.success).toHaveBeenCalledWith('Inserted 2 visuals');
 		});
@@ -138,7 +139,7 @@ describe('IllustrateModule', () => {
 			await module.illustrateNote('notes/a.md');
 			const saved = vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0];
 			expect(saved.items.map((i) => i.kind)).toEqual(['photo', 'chart']);
-			expect(saved.items[0]).toMatchObject({ candidate: { license: 'CC BY-SA' }, placement: { strategy: 'after-heading', line: 2, matchedText: '## Habitat' } });
+			expect(saved.items[0]).toMatchObject({ candidate: { license: 'CC BY-SA' }, placement: { strategy: 'after-section-lead', line: 3, matchedText: '## Habitat' } });
 			expect(op.finish).toHaveBeenCalledWith('Illustration proposal created', expect.objectContaining({ label: 'Review' }) as NoticeAction);
 		});
 
@@ -160,6 +161,57 @@ describe('IllustrateModule', () => {
 			await module.illustrateNote('notes/a.md');
 			expect(analyze).not.toHaveBeenCalled();
 			expect(notifications.info.mock.calls[0][0]).toContain('notes/**');
+		});
+	});
+
+	describe('illustrateNote with a post-op context (#213)', () => {
+		const ctx = {
+			sourceUrls: ['https://example.com/pandas'],
+			sourceImages: [{ url: 'https://example.com/panda.jpg', alt: 'A red panda in a tree', pageUrl: 'https://example.com/pandas', title: 'Pandas' }],
+		};
+
+		beforeEach(() => {
+			settings.illustrate.licenseFilter.push('Source page');
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([
+				{ kind: 'photo', anchor: '## Habitat', caption: 'c', rationale: '', query: 'red panda' },
+			]);
+		});
+
+		it('prefers the source image over repositories and runs without an operation toast', async () => {
+			const wikimedia = vi.spyOn(WikimediaProvider.prototype, 'search').mockResolvedValue([candidate]);
+			await module.illustrateNote('notes/a.md', ctx);
+			expect(wikimedia).not.toHaveBeenCalled();
+			expect(notifications.startOperation).not.toHaveBeenCalled();
+			const saved = vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0];
+			expect(saved.items[0]).toMatchObject({ candidate: { provider: 'source', fileUrl: 'https://example.com/panda.jpg', license: 'Source page', pageUrl: 'https://example.com/pandas' } });
+		});
+
+		it('falls back to repositories when the source images are blocked by the license filter', async () => {
+			settings.illustrate.licenseFilter = ['CC BY-SA'];
+			vi.spyOn(WikimediaProvider.prototype, 'search').mockResolvedValue([candidate]);
+			await module.illustrateNote('notes/a.md', ctx);
+			const saved = vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0];
+			expect(saved.items[0]).toMatchObject({ candidate: { provider: 'wikimedia' } });
+		});
+
+		it('fetches linked pages only when enabled and source images are scarce, within the page cap', async () => {
+			const fetchSpy = vi.spyOn(linkedPages, 'fetchLinkedPageImages').mockResolvedValue([]);
+			vi.spyOn(WikimediaProvider.prototype, 'search').mockResolvedValue([]);
+			await module.illustrateNote('notes/a.md', { sourceUrls: ctx.sourceUrls });
+			expect(fetchSpy).not.toHaveBeenCalled();
+			settings.illustrate.fetchLinkedPages = true;
+			settings.illustrate.maxLinkedPagesPerNote = 2;
+			await module.illustrateNote('notes/a.md', { sourceUrls: ctx.sourceUrls });
+			expect(fetchSpy).toHaveBeenCalledWith(ctx.sourceUrls, { maxPages: 2, maxImages: 12 });
+		});
+
+		it('respects the word gate and exclusions silently', async () => {
+			app.vault.cachedRead.mockResolvedValue('tiny');
+			const analyze = vi.mocked(NoteAnalyzer.prototype.analyze);
+			await module.illustrateNote('notes/a.md', ctx);
+			expect(analyze).not.toHaveBeenCalled();
+			expect(notifications.info).not.toHaveBeenCalled();
 		});
 	});
 

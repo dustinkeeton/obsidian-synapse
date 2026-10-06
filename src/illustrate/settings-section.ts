@@ -1,17 +1,25 @@
 import { Setting } from 'obsidian';
 import type { SettingsSectionContext } from '../shared';
-import { LICENSE_NAMES } from './license';
-import type { MediaProviderId } from './types';
+import { LICENSE_NAMES, SOURCE_PAGE_LICENSE } from './license';
+import type { RepositoryProviderId, IllustrateRunAfterKey } from './types';
 
 export const ILLUSTRATE_FEATURE_TOOLTIP =
 	'Propose real photos, diagrams, and charts for notes, sourced from licensed image repositories and built from the note itself';
 
-const PROVIDER_ROWS: Array<{ id: MediaProviderId; name: string; desc: string }> = [
+const PROVIDER_ROWS: Array<{ id: RepositoryProviderId; name: string; desc: string }> = [
 	{ id: 'wikimedia', name: 'Wikimedia Commons', desc: 'Search Wikimedia Commons for licensed reference photos (no API key).' },
 	{ id: 'openverse', name: 'Openverse', desc: 'Search Openverse (CC-licensed aggregator, no API key; capped per run to respect its rate limits).' },
 ];
 
-/** Render the Illustrate settings accordion; license chips use raw DOM so the obsidian mock can exercise them. */
+const RUN_AFTER_ROWS: Array<{ key: IllustrateRunAfterKey; name: string }> = [
+	{ key: 'elaboration', name: 'Elaboration accepted' },
+	{ key: 'transcription', name: 'Transcription or OCR added' },
+	{ key: 'summarize', name: 'Summary added' },
+	{ key: 'enrichment', name: 'Enrichment accepted' },
+	{ key: 'deepDive', name: 'Deep dive note accepted' },
+];
+
+/** Render the Illustrate settings accordion; license and run-after chips use raw DOM so the obsidian mock can exercise them. */
 export function renderIllustrateSettings(ctx: SettingsSectionContext): void {
 	const { plugin } = ctx;
 	const body = ctx.featureSection(
@@ -79,6 +87,51 @@ export function renderIllustrateSettings(ctx: SettingsSectionContext): void {
 		});
 		label.createEl('span', { text: name });
 	}
+
+	const runAfterSetting = new Setting(body)
+		.setName('Run after other actions')
+		.setDesc(`Also propose visuals when these actions finish, sourcing images from the material they acted on (fetched pages, video thumbnails) before the repositories. Turning any of these on adds "${SOURCE_PAGE_LICENSE}" to the allowed licenses so those images can be proposed; it is never removed automatically.`);
+	const runAfterChips = runAfterSetting.settingEl.createDiv({ cls: 'synapse-illustrate-run-after' });
+	for (const row of RUN_AFTER_ROWS) {
+		const label = runAfterChips.createEl('label', { cls: ['synapse-checklist-row', 'synapse-illustrate-run-after-row'] });
+		const checkbox = label.createEl('input', { type: 'checkbox', attr: { 'data-run-after': row.key } });
+		checkbox.checked = plugin.settings.illustrate.runAfter[row.key];
+		checkbox.addEventListener('change', () => {
+			plugin.settings.illustrate.runAfter[row.key] = checkbox.checked;
+			if (checkbox.checked && !plugin.settings.illustrate.licenseFilter.includes(SOURCE_PAGE_LICENSE)) {
+				plugin.settings.illustrate.licenseFilter = [...plugin.settings.illustrate.licenseFilter, SOURCE_PAGE_LICENSE];
+			}
+			void plugin.saveSettings();
+		});
+		label.createEl('span', { text: row.name });
+	}
+
+	new Setting(body)
+		.setName('Fetch linked pages for images')
+		.setDesc('When a chained run has few source images, fetch pages linked from the note and use their images. Makes one network request per linked page.')
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.illustrate.fetchLinkedPages)
+				.onChange(async (value) => {
+					plugin.settings.illustrate.fetchLinkedPages = value;
+					await plugin.saveSettings();
+				})
+		);
+
+	new Setting(body)
+		.setName('Max linked pages per note')
+		.setDesc('Upper bound on linked pages fetched for one chained run')
+		.addText((text) =>
+			text
+				.setValue(String(plugin.settings.illustrate.maxLinkedPagesPerNote))
+				.onChange(async (value) => {
+					const num = parseInt(value);
+					if (!isNaN(num) && num > 0) {
+						plugin.settings.illustrate.maxLinkedPagesPerNote = num;
+						await plugin.saveSettings();
+					}
+				})
+		);
 
 	new Setting(body)
 		.setName('Excluded tags')

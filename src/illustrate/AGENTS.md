@@ -4,7 +4,7 @@ last-updated: 2026-10-05
 
 # Illustrate Module
 
-Proposes real visuals for notes (#213): the AI picks spots that warrant a photo, diagram, or chart; photos are sourced from licensed repositories (Wikimedia Commons, Openverse) with license + attribution captured, diagrams are AI-emitted Mermaid, charts are Mermaid `xychart-beta` built only from numbers already in the note. Proposals are stored and reviewed per item in the unified sidebar (each item carries a `placement` preview from `shared/insertion-point.ts`); accept re-resolves the anchor against the live note and inserts an embed + `synapse-illustrate` caption callout (or a Mermaid fence) there. Participates in Fire Synapse (`pipelineKey: illustrate`, after REM, before Tidy).
+Proposes real visuals for notes (#213): the AI picks spots that warrant a photo, diagram, or chart; photos are sourced from licensed repositories (Wikimedia Commons, Openverse) with license + attribution captured, diagrams are AI-emitted Mermaid, charts are Mermaid `xychart-beta` built only from numbers already in the note. Proposals are stored and reviewed per item in the unified sidebar (each item carries a `placement` preview from `shared/insertion-point.ts`, which never splits a paragraph/list/fence/table and prefers the spot after a heading's opening paragraph); accept re-resolves the anchor against the live note and inserts an embed + `synapse-illustrate` caption callout (or a Mermaid fence) there. Participates in Fire Synapse (`pipelineKey: illustrate`, after REM, before Tidy) and, per `illustrate.runAfter`, as a post-op leg after elaboration / transcription (audio, video, image) / summarize / enrichment / deep-dive, sourcing photos from the acted-on material first (`providers/source.ts`).
 
 ## Public API (`index.ts`)
 
@@ -13,14 +13,14 @@ class IllustrateModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null
 
-  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:52; #228 getter default () => false
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:65; #228 getter default () => false
   onload(): Promise<void>                                            // registers illustrate-current-note, illustrate-folder
   onunload(): void
   getPendingProposals(): Promise<IllustrateProposal[]>
-  illustrateNote(filePath: string): Promise<void>                    // index.ts:132; single note, Review toast
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:160; PipelineScanFn
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:206
-  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:258; queued write
+  illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast; with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch
+  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:218; PipelineScanFn
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:264
+  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:317; queued write
   rejectProposal(id: string): Promise<void>
 }
 
@@ -31,11 +31,13 @@ interface MediaProvider {
 }
 class WikimediaProvider implements MediaProvider                     // keyless Commons API, file namespace, 1024px scaled URL
 class OpenverseProvider implements MediaProvider                     // keyless /v1/images/; resetRun() + OPENVERSE_MAX_QUERIES_PER_RUN = 10
+class SourceProvider implements MediaProvider                        // id 'source'; built per call from ctx.sourceImages; ranked by alt/title token overlap (imageRelevance); license 'Source page', licenseUrl = pageUrl
+fetchLinkedPageImages(urls: string[], { maxPages, maxImages? }): Promise<SourceImage[]>   // linked-pages.ts: fetchHtmlDocument + extractImageUrls per page; skips non-HTML / non-http(s); per-URL failures debug-logged; cap 12
 
 // license.ts
 normalizeLicense(raw: string): LicenseName | null                    // Commons short names + Openverse codes -> 'CC BY-SA' etc.
 isLicenseAllowed(license: string, allowed: readonly string[]): boolean
-LICENSE_NAMES, DEFAULT_LICENSE_FILTER                                // ['CC0', 'Public domain', 'CC BY', 'CC BY-SA']
+LICENSE_NAMES, DEFAULT_LICENSE_FILTER, SOURCE_PAGE_LICENSE            // default filter ['CC0', 'Public domain', 'CC BY', 'CC BY-SA']; 'Source page' is added when any runAfter toggle turns on, never removed automatically
 
 // diagram.ts / chart.ts
 validateMermaid(raw: string): string | null                          // known first token, no fences/scripts, <= 4000 chars
@@ -49,7 +51,9 @@ renderIllustrateSettings(ctx: SettingsSectionContext): void
 
 ```ts
 type IllustrateSpotKind = 'photo' | 'diagram' | 'chart'
-type MediaProviderId = 'wikimedia' | 'openverse'
+type RepositoryProviderId = 'wikimedia' | 'openverse'   // user-toggled
+type MediaProviderId = RepositoryProviderId | 'source'
+type IllustrateRunAfterKey = 'elaboration' | 'transcription' | 'summarize' | 'enrichment' | 'deepDive'
 
 interface MediaCandidate {
   provider: MediaProviderId; title: string
@@ -73,7 +77,10 @@ interface IllustrateProposal { id; sourceNotePath; createdAt; items: IllustrateI
 
 interface IllustrateSettings {
   enabled: boolean                          // default false (opt-in: note-derived queries leave the vault)
-  providers: Record<MediaProviderId, boolean>
+  providers: Record<RepositoryProviderId, boolean>
+  runAfter: Record<IllustrateRunAfterKey, boolean>   // all default false; post-op chaining (pipeline/post-op-hooks.ts illustrate leg)
+  fetchLinkedPages: boolean                 // default false; one request per linked page when a chained run has < 3 source images
+  maxLinkedPagesPerNote: number             // default 3
   maxItemsPerNote: number                   // default 3
   licenseFilter: string[]                   // default DEFAULT_LICENSE_FILTER
   preferDownload: boolean                   // default true; false embeds the remote URL
@@ -90,6 +97,8 @@ interface IllustrateSettings {
 | `note-analyzer.ts` | `NoteAnalyzer`, `parseSpots` | One AI call -> validated spots (JSON, fenced note via `wrapUntrusted`) |
 | `providers/wikimedia.ts` | `WikimediaProvider`, `parseCommonsPage` | Commons search via `requestUrl` |
 | `providers/openverse.ts` | `OpenverseProvider`, `parseOpenverseResult`, `OPENVERSE_MAX_QUERIES_PER_RUN` | Openverse search, per-run cap |
+| `providers/source.ts` | `SourceProvider`, `imageRelevance`, `toSourceCandidate` | Acted-on material's own images as candidates (#213) |
+| `linked-pages.ts` | `fetchLinkedPageImages`, `MAX_LINKED_PAGE_IMAGES` | Opt-in linked-page image pooling for chained runs |
 | `license.ts` | `normalizeLicense`, `isLicenseAllowed`, `LICENSE_NAMES`, `DEFAULT_LICENSE_FILTER` | License normalization + allow-list |
 | `diagram.ts` | `validateMermaid`, `mermaidBlock` | Mermaid gate for AI diagrams and built charts |
 | `chart.ts` | `parseChartData`, `buildXyChart` | Note-data-only `xychart-beta` |
@@ -104,6 +113,12 @@ interface IllustrateSettings {
 ## Data Flow
 
 ```
+illustrateNote(path, ctx)   // post-op (#213)
+  --> exclusions; wordCount(cachedRead) >= 80
+  --> images = ctx.sourceImages; if fetchLinkedPages && ctx.sourceUrls && images < 3: += fetchLinkedPageImages(urls, { maxPages: maxLinkedPagesPerNote, maxImages: 12 - images })
+  --> buildProposal(file, {}, images): photo spots try SourceProvider(images) first (license 'Source page' must pass licenseFilter), then enabled repositories
+  --> maybeAutoAccept; refreshView; errors -> notifyError (no operation toast, no confirm)
+
 illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoint(cp)
   --> exclusions: isPathExcluded(path, 'illustrate') || matchesExcludeTag(illustrate.excludeTags)
   --> batch only: isEligibleNote(cachedRead)
@@ -127,7 +142,7 @@ acceptProposal(id, itemIds)
 
 | Import | From |
 |--------|------|
-| `AIClient`, `wrapUntrusted`, `parseJson`, `isRecord`, `stripCodeFences`, `sanitizeUrl`, `buildCallout`, `CALLOUT_TYPES.illustrate`, `parseFrontmatter`, `resolveInsertionPoint`, `applyInsertion`, `wordCount`, `readJsonFile`, `ensureFolder`, exclusions, cache-notice, `reviewAction`, `redactError`, `fireAndForget`, `openScanFolderPicker` | `../shared` |
+| `AIClient`, `wrapUntrusted`, `parseJson`, `isRecord`, `stripCodeFences`, `sanitizeUrl`, `buildCallout`, `CALLOUT_TYPES.illustrate`, `parseFrontmatter`, `resolveInsertionPoint`, `applyInsertion`, `fetchHtmlDocument`, `extractImageUrls`, `SourceContext`/`SourceImage`, `wordCount`, `readJsonFile`, `ensureFolder`, exclusions, cache-notice, `reviewAction`, `redactError`, `fireAndForget`, `openScanFolderPicker` | `../shared` |
 | `CommandRegistrar` (type) | `../commands` |
 | `requestUrl`, `TFile`, `Plugin`, `normalizePath`, `Setting` | `obsidian` |
 

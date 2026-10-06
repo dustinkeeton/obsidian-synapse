@@ -4,35 +4,41 @@ import type { CommandRegistrar } from '../commands';
 import {
 	getMarkdownFiles, parseFrontmatter, generateId, fireAndForget, openScanFolderPicker,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, redactError,
-	resolveInsertionPoint, applyInsertion,
+	resolveInsertionPoint, applyInsertion, wordCount,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
-	NotificationManager, CheckpointManager, NoteOperationQueue, InsertionAnchor,
+	NotificationManager, CheckpointManager, NoteOperationQueue, InsertionAnchor, SourceContext, SourceImage,
 } from '../shared';
 import { NoteAnalyzer } from './note-analyzer';
 import { IllustrateStore } from './proposal-store';
 import { AssetWriter } from './asset-writer';
 import { WikimediaProvider } from './providers/wikimedia';
 import { OpenverseProvider } from './providers/openverse';
+import { SourceProvider } from './providers/source';
+import { fetchLinkedPageImages, MAX_LINKED_PAGE_IMAGES } from './linked-pages';
 import { isLicenseAllowed } from './license';
 import { buildXyChart } from './chart';
 import { validateMermaid } from './diagram';
 import { buildMermaidItemBlock, buildPhotoBlock } from './inserter';
-import { isEligibleNote } from './note-scanner';
+import { isEligibleNote, MIN_WORDS_TO_ILLUSTRATE } from './note-scanner';
 import type { IllustrateItem, IllustrateProposal, IllustrateSpot, MediaCandidate, MediaProvider } from './types';
 
 export type {
 	IllustrateItem, IllustrateProposal, IllustrateProposalStatus, IllustrateSettings, IllustrateSpot,
-	IllustrateSpotKind, MediaCandidate, MediaProvider, MediaProviderId, MediaSearchOptions, ChartData,
+	IllustrateSpotKind, MediaCandidate, MediaProvider, MediaProviderId, RepositoryProviderId, IllustrateRunAfterKey, MediaSearchOptions, ChartData,
 } from './types';
 export { WikimediaProvider } from './providers/wikimedia';
 export { OpenverseProvider } from './providers/openverse';
+export { SourceProvider } from './providers/source';
+export { fetchLinkedPageImages } from './linked-pages';
 export { normalizeLicense, isLicenseAllowed, LICENSE_NAMES, DEFAULT_LICENSE_FILTER } from './license';
 export { validateMermaid } from './diagram';
 export { buildXyChart, parseChartData } from './chart';
 
 const CANDIDATES_PER_QUERY = 5;
+/** Below this many source images a post-op run may fetch linked pages for more. */
+const MIN_SOURCE_IMAGES = 3;
 
 /** The analyzer copies anchors verbatim, so a leading `#` is the only heading signal. */
 function anchorFor(text: string): InsertionAnchor {
@@ -100,9 +106,12 @@ export class IllustrateModule implements FeatureModule {
 		return providers;
 	}
 
-	private async findPhoto(query: string): Promise<MediaCandidate | null> {
+	private async findPhoto(query: string, sourceImages?: SourceImage[]): Promise<MediaCandidate | null> {
 		const allowed = this.getSettings().illustrate.licenseFilter;
-		for (const provider of this.activeProviders()) {
+		const providers: MediaProvider[] = sourceImages && sourceImages.length > 0
+			? [new SourceProvider(sourceImages), ...this.activeProviders()]
+			: this.activeProviders();
+		for (const provider of providers) {
 			try {
 				const candidates = await provider.search(query, { limit: CANDIDATES_PER_QUERY });
 				const match = candidates.find((c) => isLicenseAllowed(c.license, allowed));
@@ -114,11 +123,11 @@ export class IllustrateModule implements FeatureModule {
 		return null;
 	}
 
-	private async resolveItem(spot: IllustrateSpot, content: string): Promise<IllustrateItem | null> {
+	private async resolveItem(spot: IllustrateSpot, content: string, sourceImages?: SourceImage[]): Promise<IllustrateItem | null> {
 		const placement = resolveInsertionPoint(content, anchorFor(spot.anchor));
 		const base = { id: generateId(), anchor: spot.anchor, caption: spot.caption, rationale: spot.rationale, placement };
 		if (spot.kind === 'photo') {
-			const candidate = await this.findPhoto(spot.query);
+			const candidate = await this.findPhoto(`${spot.query} ${spot.caption}`, sourceImages);
 			return candidate ? { ...base, kind: 'photo', candidate } : null;
 		}
 		if (spot.kind === 'diagram') return { ...base, kind: 'diagram', mermaid: spot.mermaid };
@@ -127,13 +136,13 @@ export class IllustrateModule implements FeatureModule {
 	}
 
 	/** Analyze one note and persist a proposal; returns its id or null when nothing is worth illustrating. */
-	private async buildProposal(file: TFile, cacheUse: CacheUse): Promise<string | null> {
+	private async buildProposal(file: TFile, cacheUse: CacheUse, sourceImages?: SourceImage[]): Promise<string | null> {
 		const content = await this.plugin.app.vault.read(file);
 		const { body } = parseFrontmatter(content);
 		const spots = await this.analyzer.analyze(file.path, body, trackAiCache(cacheUse));
 		const items: IllustrateItem[] = [];
 		for (const spot of spots) {
-			const item = await this.resolveItem(spot, content);
+			const item = await this.resolveItem(spot, content, sourceImages);
 			if (item) items.push(item);
 		}
 		if (items.length === 0) return null;
@@ -148,9 +157,14 @@ export class IllustrateModule implements FeatureModule {
 		return proposal.id;
 	}
 
-	async illustrateNote(filePath: string): Promise<void> {
+	/** Single-note flow; with `ctx` (post-op chaining, #213) it runs silently and sources from the acted-on material first. */
+	async illustrateNote(filePath: string, ctx?: SourceContext): Promise<void> {
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) return;
+		if (ctx) {
+			if (!this.isExcluded(file)) await this.illustrateFromContext(file, ctx);
+			return;
+		}
 		if (this.isExcluded(file)) {
 			const rule = findMatchingRule(file.path, 'illustrate', this.getSettings());
 			this.notifications.info(rule
@@ -175,6 +189,29 @@ export class IllustrateModule implements FeatureModule {
 			await this.refreshView();
 		} catch (error) {
 			op.error(`Illustration failed -- ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	private async illustrateFromContext(file: TFile, ctx: SourceContext): Promise<void> {
+		const settings = this.getSettings().illustrate;
+		if (wordCount(await this.plugin.app.vault.cachedRead(file)) < MIN_WORDS_TO_ILLUSTRATE) return;
+		let images = ctx.sourceImages ?? [];
+		const urls = (ctx.sourceUrls ?? []).filter((url) => /^https?:\/\//i.test(url));
+		if (settings.fetchLinkedPages && urls.length > 0 && images.length < MIN_SOURCE_IMAGES) {
+			const fetched = await fetchLinkedPageImages(urls, {
+				maxPages: settings.maxLinkedPagesPerNote,
+				maxImages: Math.max(0, MAX_LINKED_PAGE_IMAGES - images.length),
+			});
+			images = [...images, ...fetched];
+		}
+		this.openverse.resetRun();
+		try {
+			const id = await this.noteQueue.run(file.path, () => this.buildProposal(file, {}, images));
+			if (!id) return;
+			await this.maybeAutoAccept(id);
+			await this.refreshView();
+		} catch (error) {
+			this.notifications.notifyError(`Illustration failed for ${file.basename}`, error);
 		}
 	}
 

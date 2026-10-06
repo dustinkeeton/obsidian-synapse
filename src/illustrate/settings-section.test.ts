@@ -15,6 +15,10 @@ function makeCtx(mutate?: (s: SynapseSettings) => void) {
 	return { ctx, plugin, containerEl, saveSettings };
 }
 
+function runAfterBoxes(root: StubEl): HTMLInputElement[] {
+	return root.findAll('.synapse-illustrate-run-after-row').map((label) => (label.children as unknown as HTMLInputElement[])[0]);
+}
+
 function licenseBoxes(root: StubEl): HTMLInputElement[] {
 	return root.findAll('.synapse-illustrate-license').map((label) => (label.children as unknown as HTMLInputElement[])[0]);
 }
@@ -42,7 +46,7 @@ describe('renderIllustrateSettings', () => {
 		const { ctx, containerEl } = makeCtx();
 		renderIllustrateSettings(ctx);
 		const boxes = licenseBoxes(containerEl);
-		expect(boxes).toHaveLength(8);
+		expect(boxes).toHaveLength(9);
 		const checked = boxes.filter((box) => box.checked).map((box) => box.getAttribute('data-license'));
 		expect(checked).toEqual(['CC0', 'Public domain', 'CC BY', 'CC BY-SA']);
 	});
@@ -59,5 +63,32 @@ describe('renderIllustrateSettings', () => {
 		(cc0 as unknown as StubEl).dispatchEvent({ type: 'change' });
 		expect(plugin.settings.illustrate.licenseFilter).toEqual(['Public domain', 'CC BY', 'CC BY-SA', 'CC BY-NC']);
 		expect(saveSettings).toHaveBeenCalledTimes(2);
+	});
+
+	it('renders one run-after checkbox per chained action, all off by default', () => {
+		const { ctx, containerEl } = makeCtx();
+		renderIllustrateSettings(ctx);
+		const boxes = runAfterBoxes(containerEl);
+		expect(boxes.map((box) => box.getAttribute('data-run-after'))).toEqual(['elaboration', 'transcription', 'summarize', 'enrichment', 'deepDive']);
+		expect(boxes.every((box) => !box.checked)).toBe(true);
+	});
+
+	it('turning a run-after checkbox on sets the flag and adds Source page to the license filter once', () => {
+		const { ctx, containerEl, plugin, saveSettings } = makeCtx();
+		renderIllustrateSettings(ctx);
+		const summarize = runAfterBoxes(containerEl).find((box) => box.getAttribute('data-run-after') === 'summarize')!;
+		summarize.checked = true;
+		(summarize as unknown as StubEl).dispatchEvent({ type: 'change' });
+		expect(plugin.settings.illustrate.runAfter.summarize).toBe(true);
+		expect(plugin.settings.illustrate.licenseFilter).toEqual(['CC0', 'Public domain', 'CC BY', 'CC BY-SA', 'Source page']);
+		summarize.checked = false;
+		(summarize as unknown as StubEl).dispatchEvent({ type: 'change' });
+		expect(plugin.settings.illustrate.runAfter.summarize).toBe(false);
+		expect(plugin.settings.illustrate.licenseFilter).toContain('Source page');
+		const deepDive = runAfterBoxes(containerEl).find((box) => box.getAttribute('data-run-after') === 'deepDive')!;
+		deepDive.checked = true;
+		(deepDive as unknown as StubEl).dispatchEvent({ type: 'change' });
+		expect(plugin.settings.illustrate.licenseFilter.filter((l) => l === 'Source page')).toHaveLength(1);
+		expect(saveSettings).toHaveBeenCalledTimes(3);
 	});
 });
