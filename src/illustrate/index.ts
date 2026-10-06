@@ -37,6 +37,7 @@ export { validateMermaid } from './diagram';
 export { buildXyChart, parseChartData } from './chart';
 
 const CANDIDATES_PER_QUERY = 5;
+const NOTHING_ENABLED_MESSAGE = 'Illustrate has nothing to propose: enable a photo provider or Mermaid diagrams and charts in settings';
 /** Below this many source images a post-op run may fetch linked pages for more. */
 const MIN_SOURCE_IMAGES = 3;
 
@@ -144,7 +145,14 @@ export class IllustrateModule implements FeatureModule {
 		return null;
 	}
 
+	/** False when a run has no output kind it can produce (no photo provider, Mermaid off). */
+	private hasOutputKind(): boolean {
+		const { mermaid } = this.getSettings().illustrate;
+		return mermaid || this.activeProviders().length > 0;
+	}
+
 	private async resolveItem(spot: IllustrateSpot, content: string, sourceImages?: SourceImage[], region?: RegionLocator): Promise<IllustrateItem | null> {
+		if (spot.kind !== 'photo' && !this.getSettings().illustrate.mermaid) return null;
 		const placement = resolveInsertionPoint(content, anchorFor(spot.anchor), resolveOptions(region));
 		const base = { id: generateId(), anchor: spot.anchor, caption: spot.caption, rationale: spot.rationale, placement, region };
 		if (spot.kind === 'photo') {
@@ -200,6 +208,10 @@ export class IllustrateModule implements FeatureModule {
 			this.notifications.info(rule
 				? `Skipped — "${file.path}" is excluded by rule "${rule.pattern}"`
 				: 'Note is excluded from illustration (excluded tag)');
+			return;
+		}
+		if (!this.hasOutputKind()) {
+			this.notifications.info(NOTHING_ENABLED_MESSAGE);
 			return;
 		}
 		const op = this.notifications.startOperation(`Illustrating ${file.basename}`, `illustrate-${filePath}`);
@@ -263,6 +275,10 @@ export class IllustrateModule implements FeatureModule {
 	}
 
 	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+		if (!this.hasOutputKind()) {
+			this.notifications.info(NOTHING_ENABLED_MESSAGE);
+			return 0;
+		}
 		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(`${scopeLabel} for notes to illustrate`, 'illustrate-vault-scan');
 		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
