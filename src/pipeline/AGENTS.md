@@ -52,9 +52,10 @@ class SynapseRunner {
 }
 
 // types.ts:51 / :54 / :56 / :58 (#483 post-op wiring)
-type PostOpSource = 'elaboration' | 'audio' | 'video' | 'image' | 'summarize' | 'deep-dive';
+type PostOpSource = 'elaboration' | 'audio' | 'video' | 'image' | 'summarize' | 'deep-dive' | 'enrichment';   // 'enrichment' (#213) chains illustrate only, never re-enrichment
 type PostOpTrigger = 'elaboration' | 'transcription' | 'summarization' | 'deep-dive';   // EnrichmentTrigger minus 'manual'
-type PostOpHook = (filePath: string) => void;
+type PostOpContext = SourceContext;   // shared/source-context.ts: { sourceUrls?, sourceImages? } — the material the action processed (#213)
+type PostOpHook = (filePath: string, ctx?: PostOpContext) => void;   // callers with no material pass nothing
 type AutoOrganizeTrigger = 'deep-dive' | 'summarize';
 
 // post-op-hooks.ts:7
@@ -64,8 +65,9 @@ interface PostOpHookDeps {
   enrich: (filePath: string, trigger: PostOpTrigger) => Promise<void>;
   checkTitle: (filePath: string) => Promise<void>;
   organizeNote: (file: TFile) => Promise<unknown>;
+  illustrateNote: (filePath: string, ctx?: PostOpContext) => Promise<void>;   // #213 illustrate leg
 }
-// post-op-hooks.ts:31 — null when nothing is wired (module hook slot left untouched)
+// post-op-hooks.ts — null when no leg is wired (module hook slot left untouched)
 function buildPostOpHook(deps: PostOpHookDeps, source: PostOpSource): PostOpHook | null;
 // post-op-hooks.ts:53 — null unless organize.enabled AND the trigger's opt-in flag
 function buildAutoOrganizeHook(deps: PostOpHookDeps, trigger: AutoOrganizeTrigger): ((file: TFile) => void) | null;
@@ -122,16 +124,17 @@ fire(folderPath?)  /  fireOnFile(file)
 
 Wired in `main.ts:180-194`: one `PostOpHookDeps` (`main.ts:180-186`) feeds `buildPostOpHook` for each source (`elaboration.onProposalAccepted`, `audio.onTranscriptionComplete`, `video.onTranscriptionComplete`, `image.onExtractionComplete`, `summarize.onSummaryComplete`, `deepDive.onNoteAccepted`) and `buildAutoOrganizeHook` for `deepDive.onOrganizeRequested` / `summarize.onOrganizeRequested`.
 
-`buildPostOpHook(deps, source)` (`post-op-hooks.ts:31`), evaluated once at wire time:
+`buildPostOpHook(deps, source)` builds independent legs at wire time and runs every wired leg per call with `(filePath, ctx)`; `null` when no leg is wired. `enrichment.onEnrichmentApplied` is also wired (source `'enrichment'`, illustrate leg only).
 
-| Wire-time condition | Returned hook |
-|---------------------|---------------|
-| `enrichment.enabled && enrichment.autoEnrich`, source `'deep-dive'` and `!deepDive.autoEnrichOnAccept` | `null` (`:40`) |
-| `enrichment.enabled && enrichment.autoEnrich` (otherwise) | `fireAndForget(enrich(filePath, TRIGGER_BY_SOURCE[source]))`, then a title check gated LIVE per call on `title.enabled && title.checkAfterOperations` (`:42-46`) |
-| else `title.enabled && title.checkAfterOperations` | standalone `fireAndForget(checkTitle(filePath))` (`:48`) |
-| else | `null` |
+| Leg | Wire-time gate | Per-call behavior |
+|-----|----------------|-------------------|
+| enrich + title | source != `'enrichment'`; `enrichment.enabled && enrichment.autoEnrich`; NOT (deep-dive with `!deepDive.autoEnrichOnAccept` — that opts the source out of the whole enrich/title chain) | `fireAndForget(enrich(filePath, TRIGGER_BY_SOURCE[source]))`, then a title check gated LIVE on `title.enabled && title.checkAfterOperations` |
+| standalone title | source != `'enrichment'`, auto-enrich off, `title.enabled && title.checkAfterOperations` | `fireAndForget(checkTitle(filePath))` |
+| illustrate (#213) | `illustrate.enabled` | LIVE: `illustrate.enabled && illustrate.runAfter[RUN_AFTER_BY_SOURCE[source]]` -> `fireAndForget(illustrateNote(filePath, ctx))` |
 
-`TRIGGER_BY_SOURCE` (`post-op-hooks.ts:16`): elaboration -> `'elaboration'`; audio/video/image -> `'transcription'`; summarize -> `'summarization'`; deep-dive -> `'deep-dive'`.
+`TRIGGER_BY_SOURCE`: elaboration -> `'elaboration'`; audio/video/image -> `'transcription'`; summarize -> `'summarization'`; deep-dive -> `'deep-dive'`. `RUN_AFTER_BY_SOURCE`: elaboration -> `elaboration`; audio/video/image -> `transcription`; summarize -> `summarize`; deep-dive -> `deepDive`; enrichment -> `enrichment`.
+
+Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the note body; enrichment accept -> `sourceUrls` = links in the note body; deep-dive accept -> `sourceUrls` = `topic.relatedUrls` + links in the generated body; summarize -> `sourceUrls` = fetched URLs, `sourceImages` = page images (`fetchPageContentWithImages`) + media thumbnails; URL transcription (`insert-url-transcript.ts`) -> `sourceUrls` = [url], `sourceImages` = YouTube poster frame when the caption tier exposed one; local audio/video/image embeds pass nothing.
 
 `buildAutoOrganizeHook(deps, trigger)` (`post-op-hooks.ts:53`): `null` unless `organize.enabled` AND (`deepDive.autoOrganizeOnAccept` for `'deep-dive'` | `summarize.autoOrganizeOnSummarize` for `'summarize'`); otherwise `(file) => fireAndForget(organizeNote(file))`.
 

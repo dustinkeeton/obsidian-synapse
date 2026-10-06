@@ -341,13 +341,24 @@ const UNTRUSTED_OPEN_TAG: string                       // 'UNTRUSTED_EXTERNAL_CO
 const UNTRUSTED_CLOSE_FENCE: string                    // '<<<END_UNTRUSTED_EXTERNAL_CONTENT>>>'
 function wrapUntrusted(content: string, source?: string): string   // fence content in labeled delimiters + anti-breakout sanitization
 
-// insertion-point.ts (#213: mid-document placement seam shared by proposal kinds)
-interface InsertionAnchor { kind: 'heading' | 'paragraph' | 'end'; text: string }   // 'heading' matches heading lines only; 'paragraph' matches any line (a heading hit promotes); 'end' = explicit append
-type InsertionStrategy = 'after-heading' | 'after-paragraph' | 'append'
-interface ResolvedInsertion { strategy: InsertionStrategy; line: number | null; matchedText: string | null; anchor: InsertionAnchor }   // line = body line index the block goes after (null = append)
-function resolveInsertionPoint(content: string, anchor: InsertionAnchor): ResolvedInsertion   // pure, frontmatter-aware; exact normalized match beats prefix; miss -> append
-function applyInsertion(content: string, resolved: ResolvedInsertion, block: string): string   // splice after `line` (stale/out-of-range -> append); frontmatter untouched; blank line always follows the block
-function describeInsertion(resolved: ResolvedInsertion): string   // 'After heading "X"' | 'After paragraph "…"' | 'At end of note[ (anchor not found)]'
+// insertion-point.ts (#213: structure-aware mid-document placement seam shared by proposal kinds)
+interface InsertionAnchor { kind: 'heading' | 'paragraph' | 'end'; text: string }   // 'heading' matches heading lines only; 'paragraph' matches any line incl. inside blocks (a heading hit promotes); 'end' = explicit append
+type InsertionStrategy = 'after-heading' | 'after-section-lead' | 'after-paragraph' | 'append'
+type InsertionBlockType = 'paragraph' | 'heading' | 'code' | 'list' | 'table' | 'quote' | 'html' | 'math'
+interface ResolvedInsertion { strategy; line: number | null; matchedText: string | null; anchor; blockType?: InsertionBlockType }   // line = body line index the block goes after (always a block END; null = append)
+function scanBlocks(lines: string[]): { type: InsertionBlockType; start: number; end: number }[]   // internal block scanner: fences (``` / ~~~ / $$) span blank lines, loose lists + indented continuations, table header+separator+rows, contiguous `>` quotes, html runs
+function resolveInsertionPoint(content: string, anchor: InsertionAnchor): ResolvedInsertion   // pure, frontmatter-aware; exact > prefix > substring match; the containing block is the unit (never mid-paragraph/list/fence); heading -> after its first following paragraph ('after-section-lead') else directly after it; miss -> append
+function applyInsertion(content: string, resolved: ResolvedInsertion, block: string): string   // splice after `line` (stale/out-of-range -> append); exactly one blank line before and after; frontmatter untouched
+function describeInsertion(resolved: ResolvedInsertion): string   // 'After heading "X"' | 'After the opening paragraph of "X"' | 'After <paragraph|list|table|code block|callout|…> "…"' | 'At end of note[ (anchor not found)]'
+
+// source-context.ts (#213: what a completed action hands to post-op follow-ups)
+interface SourceImage { url: string; alt?: string; pageUrl: string; title?: string }
+interface SourceContext { sourceUrls?: string[]; sourceImages?: SourceImage[] }
+
+// content-fetcher.ts additions (#213)
+function fetchHtmlDocument(url: string): Promise<{ html: string; contentType: string }>   // raw fetch + content type (same UA/timeout as fetchHtml)
+function fetchPageContentWithImages(url: string, maxLength: number): Promise<{ text: string; images: SourceImage[] }>   // fetchPageContent + extractImageUrls on the same fetch
+function extractImageUrls(html: string, baseUrl: string): SourceImage[]   // pure: og:image/twitter:image first, then <img src|srcset alt>; absolute, deduped, cap 12; skips data:, 1px pixels, .svg, logo/sprite/avatar/icon paths, non-http(s)
 
 // settings-migrations.ts (#93: version-stamped settings migration runner)
 interface SettingsMigration { to: number; migrate: (raw: Record<string, unknown>) => Record<string, unknown> }
@@ -545,8 +556,10 @@ function scoreLyricsContent(content: string): number
 | `hash-utils.test.ts` | Tests | Hash + content-key tests |
 | `untrusted-content.ts` | `wrapUntrusted`, `UNTRUSTED_OPEN_TAG`, `UNTRUSTED_CLOSE_FENCE` | Structural prompt-injection defense: fences fetched external text (article/tweet/Reddit bodies, image analysis) in labeled delimiters with a data-not-instructions frame + anti-breakout sentinel scrubbing. Used by elaboration/proposer |
 | `untrusted-content.test.ts` | Tests | Fence/sanitization tests |
-| `insertion-point.ts` | `resolveInsertionPoint`, `applyInsertion`, `describeInsertion`, `InsertionAnchor`, `InsertionStrategy`, `ResolvedInsertion` | Insertion determination (#213): resolve a heading/paragraph/end anchor to a body line + strategy, apply a block there, describe it for review UIs. Resolve at proposal time for the preview, re-resolve at accept against the live note. Used by illustrate; the seam for any proposal kind that places content mid-document |
-| `insertion-point.test.ts` | Tests | Heading/paragraph/end resolution, wikilink-tolerant matching, apply splice + blank-line guard, stale-line fallback, descriptions |
+| `insertion-point.ts` | `resolveInsertionPoint`, `applyInsertion`, `describeInsertion`, `scanBlocks`, `InsertionAnchor`, `InsertionStrategy`, `InsertionBlockType`, `ResolvedInsertion` | Structure-aware insertion determination (#213): scan the body into blocks (paragraph/heading/code/list/table/quote/html/math), resolve an anchor to the END of its containing block, prefer after a heading's opening paragraph, apply with exactly one blank line each side, describe for review UIs. Resolve at proposal time for the preview, re-resolve at accept against the live note. Used by illustrate; the seam for any proposal kind that places content mid-document |
+| `insertion-point.test.ts` | Tests | Block scanner (fences with blanks, loose lists, tables, callouts, math), section-lead vs heading-only, mid-paragraph fragment, never-inside-block, blank-line discipline, stale-line fallback, descriptions |
+| `source-context.ts` | `SourceImage`, `SourceContext` | Post-op source material types (#213): URLs and images an action acted on |
+| `extract-image-urls.test.ts` | Tests | `extractImageUrls` ordering/resolution/filters/cap; `fetchPageContentWithImages`; `fetchHtmlDocument` content type |
 | `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag |
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
 | `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:285`) |
