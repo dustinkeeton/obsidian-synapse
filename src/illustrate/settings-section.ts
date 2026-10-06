@@ -74,6 +74,7 @@ export function renderIllustrateSettings(ctx: SettingsSectionContext): void {
 	const licenseSetting = new Setting(body)
 		.setName('Allowed licenses')
 		.setDesc('Only photos under a checked license are proposed. Non-commercial and no-derivatives licenses are off by default.');
+	licenseSetting.settingEl.addClass('synapse-setting--has-helper');
 	const chips = licenseSetting.settingEl.createDiv({ cls: 'synapse-illustrate-licenses' });
 	for (const name of LICENSE_NAMES) {
 		const label = chips.createEl('label', { cls: ['synapse-checklist-row', 'synapse-illustrate-license'] });
@@ -91,6 +92,7 @@ export function renderIllustrateSettings(ctx: SettingsSectionContext): void {
 	const runAfterSetting = new Setting(body)
 		.setName('Run after other actions')
 		.setDesc(`Also propose visuals when these actions finish, sourcing images from the material they acted on (fetched pages, video thumbnails) before the repositories. Turning any of these on adds "${SOURCE_PAGE_LICENSE}" to the allowed licenses so those images can be proposed; it is never removed automatically.`);
+	runAfterSetting.settingEl.addClass('synapse-setting--has-helper');
 	const runAfterChips = runAfterSetting.settingEl.createDiv({ cls: 'synapse-illustrate-run-after' });
 	for (const row of RUN_AFTER_ROWS) {
 		const label = runAfterChips.createEl('label', { cls: ['synapse-checklist-row', 'synapse-illustrate-run-after-row'] });

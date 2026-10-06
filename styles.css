@@ -1025,6 +1025,24 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
   border-radius: 4px;
   background: var(--background-secondary);
 }
+/* Checkbox lists render on their own full-width line beneath the row (host `.synapse-setting--has-helper` wraps) as a wrapping grid. */
+.synapse-illustrate-licenses,
+.synapse-illustrate-run-after {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  flex-basis: 100%;
+  padding: 4px 0 8px;
+}
+.synapse-illustrate-license,
+.synapse-illustrate-run-after-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 11em;
+  white-space: nowrap;
+  font-size: var(--font-ui-small);
+}
 .synapse-illustrate-placement {
   flex: 1;
   font-size: 12px;

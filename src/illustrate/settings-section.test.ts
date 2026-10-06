@@ -91,4 +91,20 @@ describe('renderIllustrateSettings', () => {
 		expect(plugin.settings.illustrate.licenseFilter.filter((l) => l === 'Source page')).toHaveLength(1);
 		expect(saveSettings).toHaveBeenCalledTimes(3);
 	});
+
+	it('puts both checkbox lists on a wrapping helper row and seeds checked state from settings', () => {
+		const { ctx, containerEl } = makeCtx((s) => {
+			s.illustrate.licenseFilter = ['CC BY-NC'];
+			s.illustrate.runAfter.deepDive = true;
+		});
+		renderIllustrateSettings(ctx);
+		for (const cls of ['synapse-illustrate-licenses', 'synapse-illustrate-run-after']) {
+			const list = containerEl.findAll(`.${cls}`)[0];
+			expect(list).toBeDefined();
+		}
+		const hosts = containerEl.findAll('.synapse-setting--has-helper');
+		expect(hosts.length).toBeGreaterThanOrEqual(2);
+		expect(licenseBoxes(containerEl).filter((box) => box.checked).map((box) => box.getAttribute('data-license'))).toEqual(['CC BY-NC']);
+		expect(runAfterBoxes(containerEl).filter((box) => box.checked).map((box) => box.getAttribute('data-run-after'))).toEqual(['deepDive']);
+	});
 });
