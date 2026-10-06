@@ -207,6 +207,10 @@ function hasCallout(content: string, type: CalloutType): boolean                
 function buildCallout(type: CalloutType, title: string, body: string, collapsed?: boolean): string
 function calloutForTranscriptionResult(result: { reformatted?: boolean; schemaId?: string }): { type: CalloutType; verb: string }
 
+// media-embed.ts (#561) — the only `![[file]]` writer for media downloaded into the vault
+function mediaEmbedFor(videoVaultPath: string): string | undefined                                                  // file name only; undefined for a folder-only path
+function buildMediaEmbedLines(videoVaultPath: string | undefined, embedInNote: boolean, noteContent?: string): string[]   // [embed, ''] or [] when off / nothing downloaded / noteContent already carries the embed
+
 // diagram-generator.ts
 function generateTreeDiagram(root: TreeNode): string
 function generateMoveDiagram(moves: MoveRecord[]): string
@@ -552,6 +556,8 @@ function scoreLyricsContent(content: string): number
 | `frontmatter-utils.test.ts` | Tests | Frontmatter tests; `splitRawFrontmatter` describe (`:127`): byte-for-byte raw block, no-frontmatter case, mid-document `---` not matched, body boundary agrees with `parseFrontmatter`, block without trailing newline |
 | `callouts.ts` | `CALLOUT_TYPES`, `CALLOUT_BASES`, `buildCallout`, `calloutHeaderToken`, `calloutHeaderLine`, `calloutIdentity`, `calloutHeaderSource`, `parseCalloutHeader`, `isCalloutHeader`, `hasCallout`, `calloutForTranscriptionResult`, `ENRICHMENT_START`, `ENRICHMENT_END`, `CalloutType`, `CalloutBase` | Unified callout registry, builder and matcher for AI content (#554). Callouts are written `> [!<base>|<identity>]` (`CALLOUT_BASES` picks the base; `calloutHeaderLine` is the only header writer); readers accept that form and the legacy bare `> [!synapse-*]` through `calloutIdentity` / `isCalloutHeader` / `calloutHeaderSource`. `calloutForTranscriptionResult` selects callout type and verb based on `schemaId` |
 | `callouts.test.ts` | Tests | Every type has a base; header token/line; identity + matcher for both spellings (nested prefix, fold marker, base-only `[!summary]` rejected); `calloutHeaderSource` fragment; `buildCallout` round-trips through the matcher |
+| `media-embed.ts` | `mediaEmbedFor`, `buildMediaEmbedLines` | Downloaded-media embed lines (#561): one builder for the `![[file]]` + blank line every write site puts above a transcription/summary callout; gated on `video.embedInNote`, dedupes against the note content when given. No imports. Used by `transcription/url-transcription.ts`, `video/index.ts`, `summarize/index.ts` |
+| `media-embed.test.ts` | Tests | File-name-only link, folder-only path, on/off, no download, already-embedded, different file embedded |
 | `diagram-generator.ts` | `generateTreeDiagram`, `generateMoveDiagram`, `generateOrganizeSummary`, `TreeNode`, `MoveRecord` | Mermaid diagram generation for organize summaries |
 | `diagram-generator.test.ts` | Tests | Diagram generator tests |
 | `slider-helper.ts` | `addEnhancedSlider` | Settings UI helper for range sliders with ticks |

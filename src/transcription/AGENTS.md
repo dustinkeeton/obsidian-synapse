@@ -120,7 +120,7 @@ class UrlTranscriptionRouter {                                    // url-transcr
   constructor(strategies: UrlTranscriptionStrategy[], cache?: TranscriptStore)   // array order IS the tier order; cache = shared TranscriptCache (#488)
   transcribe(url: string, opts?: UrlTranscriptOptions): Promise<UrlTranscript>   // store hit (unless forceRefresh) -> `cached: true`; tier result -> cache.put, never on failure
 }
-function buildUrlTranscriptBlock(result: UrlTranscript, url: string, embedInNote: boolean, timeRange?: TimeRange): string   // url-transcription.ts:115
+function buildUrlTranscriptBlock(result: UrlTranscript, url: string, embedInNote: boolean, timeRange?: TimeRange): string   // url-transcription.ts:115; embed lines come from shared `buildMediaEmbedLines` (#561)
 
 // caption-strategy.ts — tier 1: YouTube captions over HTTP (free, mobile-capable)
 interface ProcessedTranscript { text: string; reformatted?: boolean; schemaId?: string; aiCached?: boolean }   // types.ts:64
@@ -339,7 +339,7 @@ In (type-only where noted):
 | `findImageEmbeds` | `../image` | `note-media-transcription.ts:6` | no |
 | `ImageEmbed` | `../image` | `note-media-modal.ts:4`, `note-media-transcription.ts:7` | yes |
 | `detectPlatform`, `isSupportedUrl`, `redactError`, `sanitizeUrl`, `isRecord`, `parseJson` | `../shared` | `unified-modal.ts:4`, `caption-strategy.ts:1`, `local-extraction-strategy.ts:2`, `youtube-captions.ts:3` | no |
-| `buildCallout`, `calloutForTranscriptionResult`, `formatTimeRange` | `../shared` | `url-transcription.ts:2` | no |
+| `buildCallout`, `buildMediaEmbedLines`, `calloutForTranscriptionResult`, `formatTimeRange` | `../shared` | `url-transcription.ts:2` | no |
 | `NoSpeechDetectedError`, `hasSpeechContent`, `isNoSpeechError`, `noSpeechNotice` | `../shared` | `url-transcription.ts`, `caption-strategy.ts`, `local-extraction-strategy.ts`, `insert-url-transcript.ts` | no |
 | `findMatchingRule`, `isPathExcluded`, `validateTimeRange`, `loadNodeModules`, `shellEnv` | `../shared` | `insert-url-transcript.ts`, `unified-modal.ts`, `time-range-modal.ts`, `duration-detector.ts` | no |
 | `TimeRange`, `NotificationManager`, `NoteOperationQueue`, `CachedTranscript`, `TranscriptCacheEntry` | `../shared` | various | yes |
@@ -373,3 +373,4 @@ Out: consumed by `main.ts` only (`createUrlTranscriptionRouter`, `openUnifiedTra
 - Duration detection is desktop-only; mobile always receives `durationSeconds: undefined` and the modal skips the time-range step entirely
 - `TimeRangeModal` dismissal is `cancelled` (do nothing), never a default action; the "Transcribe selection" button with an untouched full-range slider settles `full` (`undefined` range downstream)
 - `TimeRangeSlider` has no Obsidian Modal/View coupling
+- Downloaded → embedded (#561): a `UrlTranscript` with `videoVaultPath` set means the extraction tier wrote a file into the vault, and every consumer of the router (`buildUrlTranscriptBlock`, `video/index.ts` batch path, summarize `fetchContentForUrl`, any future `transcribeUrl` caller) must embed it in the note it worked on through shared `buildMediaEmbedLines(videoVaultPath, video.embedInNote, noteContent?)` — never an inline `![[...]]`; the store persists `videoVaultPath`, so a cached transcript carries it too
