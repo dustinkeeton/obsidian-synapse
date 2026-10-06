@@ -1,8 +1,8 @@
 # Project Status
 
-**Last updated**: 2026-09-17
+**Last updated**: 2026-10-06
 **Version**: 1.1.0 (released 2026-09-15)
-**Health**: Green — `tsc` clean, **2417/2417 tests passing (177 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
+**Health**: Green — `tsc` clean, **2668/2668 tests passing (196 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
@@ -12,7 +12,7 @@
 
 - **24 modules** under `src/` (including the thin `settings-ui/`, `onboarding/`, `brand-icons/`, `changelog/`, and `properties-fold/` folders) plus top-level `main.ts` and `settings.ts`. New since 1.0.13: `modules/` (feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). **`main.ts` is lifecycle glue** (295 lines, down from 1018): the registry constructs, loads, and unloads every feature module, and every module constructor takes one `ModuleDeps` bundle first.
 - **1.1.0 (2026-09-15)**: long transcripts are post-processed in sections instead of skipped (#467); intake catches up on un-stamped notes at startup (#462); elaboration prompts include backlinks and tags (#500); transcripts persist in a vault-file cache and media URLs are never page-summarized (#488); a per-provider "Transcription model" dropdown (#521); refreshed OpenAI/Anthropic model lists and a fix for OpenAI reasoning models (#308/#519); hardened YouTube caption path (#501).
-- **Post-release fixes (2026-09-17)**: media with no speech writes nothing and says so (#524); every finish message reports when a cached transcript or AI response was used (#527); per-note buttons in the actions sidebar run on the first click (#352).
+- **Post-release changes (2026-09-17 → 2026-10-06)**: media with no speech writes nothing and says so (#524); every finish message reports when a cached transcript or AI response was used (#527); per-note buttons in the actions sidebar run on the first click (#352); **accepting an elaboration now replaces the note body in place** instead of appending a callout — frontmatter kept byte-for-byte, confirm modal if the note changed since the proposal (#552).
 - **Fire Synapse pipeline** runs elaboration → summarize → enrichment → REM → tidy → organize; the **intake folder** auto-feeds it. All AI output lands in one **unified proposal sidebar**; a **Synapse actions sidebar** (#289) gives touch-friendly buttons.
 
 ---
@@ -23,7 +23,7 @@
 |--------|------|------|--------|
 | modules | `src/modules/` | Ordered feature-module factory list; construct / settings-gated load / reverse unload (#504) | Working |
 | checkpoints | `src/checkpoints/` | Startup interrupted-operation prompt, `manage-checkpoints`, sidebar resume/discard (#496) | Working |
-| elaboration | `src/elaboration/` | Detect stubs, propose content (image-aware); backlink + tag context under a 6000-char budget (#500); anti-fabrication guards (#387) | Working |
+| elaboration | `src/elaboration/` | Detect stubs, propose a full-body rewrite (image-aware); accept replaces the body under preserved frontmatter, stale-body confirm (#552); backlink + tag context under a 6000-char budget (#500); anti-fabrication guards (#387) | Working |
 | audio | `src/audio/` | Transcribe audio (Whisper / Deepgram / Gemini); per-provider model registry (#521); sectioned post-processing (#467); no-speech outcome (#524) | Working (local-whisper not impl.) |
 | video | `src/video/` | Download + transcribe YouTube/TikTok/Instagram via yt-dlp/ffmpeg; `captionsFirst` toggle (#184) | Working (download tier desktop only; local file + frames not impl.) |
 | image | `src/image/` | OCR via vision models, auto-downscale, batch + checkpoints | Working |
@@ -45,7 +45,7 @@
 
 ## Current Focus
 
-- **Docs refresh (2026-09-17)** — machine docs (`AGENTS.md`, `docs/agent/*`) and these human docs regrounded against 1.1.0, the `main.ts` refactor family (#496/#497/#504/#506), and the three post-release fixes. No shipped code changed in this pass.
+- **Elaboration rewrite (2026-10-06, #552 / PR #553)** — accept is a full-body rewrite under preserved frontmatter with a stale-body confirm; batch auto-accept skips a changed note and leaves the proposal pending. The `synapse-elaboration` callout survives only to render notes written before the change. Machine and human docs regrounded in the same pass.
 - **Open follow-ups**: self-hosted extraction tier for non-YouTube URLs on mobile (#181, ADR 001 accepted; #182 override + connectivity status); holistic UX review (#465); operation-toast cancel progress (#269).
 
 ---
@@ -95,5 +95,5 @@
 |---------|---------|
 | `npm run dev` | esbuild watch (development) |
 | `npm run build` | `tsc -noEmit -skipLibCheck` + esbuild production bundle |
-| `npm test` | Vitest — **2417/2417 passing** (177 files) |
+| `npm test` | Vitest — **2668/2668 passing** (196 files) |
 | `npm run lint` | ESLint — `obsidianmd/*` store-review mirror + `synapse/no-unredacted-console` (#418) |

@@ -55,8 +55,9 @@ export {
 	serializeFrontmatter,
 	mergeTags,
 	normalizeFrontmatterTags,
+	splitRawFrontmatter,
 } from './frontmatter-utils';
-export type { ParsedNote } from './frontmatter-utils';
+export type { ParsedNote, RawFrontmatterSplit } from './frontmatter-utils';
 export { parseJson, isRecord, asStringArray, readJsonFile } from './json-utils';
 export {
 	generateTreeDiagram,

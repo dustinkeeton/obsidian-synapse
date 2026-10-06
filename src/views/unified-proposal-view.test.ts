@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UnifiedProposalView, UnifiedItem, UnifiedViewCallbacks } from './unified-proposal-view';
 import { NotificationManager } from '../shared/notifications';
 import type { TitleProposal } from '../title';
+import type { Proposal } from '../elaboration';
 import { createEl, type StubEl } from '../__mocks__/obsidian';
 import type { WorkspaceLeaf } from 'obsidian';
 
@@ -19,6 +20,8 @@ interface ViewInternals {
 	acceptAll(): Promise<void>;
 	renderTitleCard(container: StubEl, proposal: TitleProposal): void;
 	renderTitleReview(proposal: TitleProposal): void;
+	renderElaborationCard(container: StubEl, proposal: Proposal): void;
+	renderElaborationReview(proposal: Proposal): void;
 }
 
 // --- Helpers ----------------------------------------------------------------
@@ -407,5 +410,37 @@ describe('UnifiedProposalView title collision UI (#414)', () => {
 			const buttons = elsWithTag(contentEl, 'BUTTON').map((b) => b.textContent);
 			expect(buttons).toContain('Accept');
 		});
+	});
+});
+
+describe('UnifiedProposalView elaboration rewrite copy (#552)', () => {
+	function makeView(): ViewInternals {
+		return new UnifiedProposalView(
+			mockLeaf(),
+			mockCallbacks(),
+			new NotificationManager()
+		) as unknown as ViewInternals;
+	}
+	const proposal = (): Proposal => makeElaborationItem('elab-copy').data as Proposal;
+
+	it('card says the proposal replaces the note and offers Accept and replace', () => {
+		const container = createEl();
+		makeView().renderElaborationCard(container, proposal());
+
+		expect(textOf(elsWithClass(container, 'synapse-preview')[0])).toContain("Replaces the note's content with: additions");
+		const buttons = elsWithTag(container, 'BUTTON').map((b) => b.textContent);
+		expect(buttons).toContain('Accept and replace');
+		expect(buttons).not.toContain('Accept');
+	});
+
+	it('review pane labels the editor as a rewrite and offers Accept and replace', () => {
+		const view = makeView();
+		view.contentEl = createEl();
+		view.renderElaborationReview(proposal());
+
+		expect(textOf(elsWithClass(view.contentEl, 'synapse-review-pane-label')[0])).toContain('Proposed rewrite');
+		expect(textOf(view.contentEl)).not.toContain('Proposed additions');
+		const buttons = elsWithTag(view.contentEl, 'BUTTON').map((b) => b.textContent);
+		expect(buttons).toContain('Accept and replace');
 	});
 });

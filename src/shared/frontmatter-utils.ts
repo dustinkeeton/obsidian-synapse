@@ -10,9 +10,24 @@ export interface ParsedNote {
  * Parse a markdown note into frontmatter object and body text.
  * Returns empty frontmatter if none exists.
  */
+/** Leading YAML block incl. its closing delimiter line; shared by parse + raw split so both agree on the boundary. */
+const FRONTMATTER_BLOCK_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+
+export interface RawFrontmatterSplit {
+	/** The frontmatter block exactly as it appears in the file (`''` when absent). */
+	raw: string;
+	body: string;
+}
+
+/** Split off the leading frontmatter block byte-for-byte, without parsing or re-serialising it. */
+export function splitRawFrontmatter(content: string): RawFrontmatterSplit {
+	const match = content.match(FRONTMATTER_BLOCK_RE);
+	if (!match) return { raw: '', body: content };
+	return { raw: match[0], body: content.slice(match[0].length) };
+}
+
 export function parseFrontmatter(content: string): ParsedNote {
-	const fmRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
-	const match = content.match(fmRegex);
+	const match = content.match(FRONTMATTER_BLOCK_RE);
 
 	if (!match) {
 		return { frontmatter: {}, body: content, hasFrontmatter: false };

@@ -11,10 +11,18 @@ import { mockFile, createMockCheckpointManager, makeModuleDeps } from '../__test
 const AUDIO_EMBED = '![[lecture.m4a]]';
 const TRANSCRIPT = 'Kant argues that the categorical imperative is unconditional.';
 
+const ELABORATION = 'Elaborated body';
+
+/** Echoes the note body from the prompt plus an elaboration, as the rewrite prompt asks the model to. */
+function rewriteFromPrompt(prompt: string): string {
+	const match = prompt.match(/\n---\n([\s\S]*?)\n---\n/);
+	return `${match?.[1] ?? ''}\n\n${ELABORATION}`;
+}
+
 /** Captures the prompts the elaboration proposer sends. */
 const completeMock = vi
 	.fn<(...args: unknown[]) => Promise<string>>()
-	.mockResolvedValue('Elaborated body');
+	.mockImplementation((prompt) => Promise.resolve(rewriteFromPrompt(String(prompt))));
 
 vi.mock('../shared/ai-client', () => ({
 	AIClient: class MockAIClient {
@@ -120,8 +128,7 @@ function createModules(
 	queues: { audio: NoteOperationQueue; elaboration: NoteOperationQueue }
 ): Modules {
 	const settings = structuredClone(DEFAULT_SETTINGS);
-	// Auto-accept so the elaboration is actually appended to the note and the
-	// resulting callouts can be counted.
+	// Auto-accept so the elaboration actually rewrites the note.
 	settings.autoAccept.elaboration = true;
 	const notifications = new NotificationManager();
 	const plugin = harness.plugin as unknown as Plugin;
@@ -167,7 +174,6 @@ describe('transcription -> elaboration interleaving (#483)', () => {
 
 	beforeEach(() => {
 		completeMock.mockClear();
-		completeMock.mockResolvedValue('Elaborated body');
 		harness = createHarness();
 	});
 
@@ -209,12 +215,12 @@ describe('transcription -> elaboration interleaving (#483)', () => {
 		await runInterleaved(modules);
 
 		const content = harness.getNoteContent();
+		// The transcript landed first and survived the rewrite; the elaboration
+		// was written exactly once, as a body rewrite rather than a callout.
 		expect(countCallouts(content, 'synapse-transcription')).toBe(1);
-		// The corruption in #483 was TWO elaboration callouts, one hallucinated.
-		expect(countCallouts(content, 'synapse-elaboration')).toBe(1);
-		// The transcript landed first; the elaboration was appended after it.
-		expect(content.indexOf('synapse-transcription'))
-			.toBeLessThan(content.indexOf('synapse-elaboration'));
+		expect(content.split(ELABORATION).length - 1).toBe(1);
+		expect(countCallouts(content, 'synapse-elaboration')).toBe(0);
+		expect(content.indexOf('synapse-transcription')).toBeLessThan(content.indexOf(ELABORATION));
 	});
 
 	it('elaborates the transcript-inclusive content, not the bare audio embed', async () => {
@@ -249,7 +255,7 @@ describe('transcription -> elaboration interleaving (#483)', () => {
 		expect(seenByPostOp).toHaveLength(1);
 		expect(seenByPostOp[0]).toContain(TRANSCRIPT);
 		// It ran after the elaboration too, so it saw the final note state.
-		expect(seenByPostOp[0]).toContain('synapse-elaboration');
+		expect(seenByPostOp[0]).toContain(ELABORATION);
 	});
 
 	it('CONTROL: without a shared queue the elaboration reads the stale, pre-transcript note', async () => {

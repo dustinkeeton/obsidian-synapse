@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Views Module
@@ -119,7 +119,7 @@ function runRegisteredCommand(app: App, pluginId: string, id: string, notificati
 | `view-activation.ts` | `activateUnifiedView`, `activateSynapseActionsView`, `refreshUnifiedView`, `UnifiedViewSources` | Sidebar reveal/create (private `revealSidebarView`, `:26`) + unified-view data push |
 | `command-runner.ts` | `activeMarkdownFile`, `runRegisteredCommand` | Actions-sidebar dispatch: direct `editorCallback` invocation for `context: 'note'` commands, Obsidian `executeCommandById` otherwise |
 | `index.ts` | barrel re-export of all the above | Public surface |
-| `*.test.ts` (5 files) | tests | `unified-proposal-view`, `synapse-actions-view`, `proposal-styles`, `view-activation`, `command-runner` |
+| `*.test.ts` (5 files) | tests | `unified-proposal-view` (incl. describe `UnifiedProposalView elaboration rewrite copy (#552)`, `unified-proposal-view.test.ts:416`), `synapse-actions-view`, `proposal-styles`, `view-activation`, `command-runner` |
 
 No legacy views exist in this directory; only the two registered `ItemView`s above. A legacy `ProposalReviewView` still lives in `src/elaboration/proposal-view.ts` (outside this module) and is not registered.
 
@@ -154,8 +154,8 @@ No legacy views exist in this directory; only the two registered `ItemView`s abo
 `render()` (`unified-proposal-view.ts:L129`) dispatches on whichever `reviewing*` field is set, else list mode.
 
 1. Checkpoint banner: one card per incomplete checkpoint with operation label, done/total progress bar, Resume/Discard.
-2. List mode: pending proposals grouped by `data.sourceNotePath`; Accept all / Reject all bar shown when 2+ pending; each card has a badge, summary, preview, and Review/Accept/Reject.
-3. Elaboration review: editable textarea; Accept sends edited content.
+2. List mode: pending proposals grouped by `data.sourceNotePath`; Accept all / Reject all bar shown when 2+ pending; each card has a badge, summary, preview, and Review/Accept/Reject. Elaboration card (`renderElaborationCard` `unified-proposal-view.ts:485`, #552): preview text is prefixed `Replaces the note's content with: ` (`:500`); accept button reads `Accept and replace` (`:512`) and sends `proposal.proposedAdditions` to `onElaborationAccept` (`:515`).
+3. Elaboration review (`renderElaborationReview` `unified-proposal-view.ts:626`, #552): editable textarea labelled `Proposed rewrite (accepting replaces the note's content; frontmatter is kept)` (`:656`); `Accept and replace` (`:665`) sends the edited full body to `onElaborationAccept(id, textarea.value)` (`:669`).
 4. Enrichment review: per-item checkboxes (tags / internalLinks / externalLinks / frontmatter); Accept selected / All / None / Reject.
 5. Organize review: proposed directory + reasoning; Accept/Reject.
 6. Deep-dive review: title, depth + quality badges, proposed path, read-only content preview, cascade warning when `childProposalIds.length > 0`; Accept/Reject.

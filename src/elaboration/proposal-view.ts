@@ -101,7 +101,7 @@ export class ProposalReviewView extends ItemView {
 
 				const preview = proposal.proposedAdditions.slice(0, 200);
 				card.createEl('p', {
-					text: preview + (proposal.proposedAdditions.length > 200 ? '...' : ''),
+					text: 'Replaces the note\'s content with: ' + preview + (proposal.proposedAdditions.length > 200 ? '...' : ''),
 					cls: 'synapse-preview',
 				});
 
@@ -110,7 +110,7 @@ export class ProposalReviewView extends ItemView {
 				const viewBtn = actions.createEl('button', { text: 'View' });
 				viewBtn.addEventListener('click', () => this.onDetail(proposal.id));
 
-				const acceptBtn = actions.createEl('button', { text: 'Accept' });
+				const acceptBtn = actions.createEl('button', { text: 'Accept and replace' });
 				this.onClick(acceptBtn, () => this.onAccept(proposal.id), 'Accept proposal');
 
 				const rejectBtn = actions.createEl('button', { text: 'Reject' });

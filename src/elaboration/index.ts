@@ -4,9 +4,9 @@ import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar, isInFlow } from '../commands';
 import {
-	buildCallout, CALLOUT_TYPES, getMarkdownFiles,
+	getMarkdownFiles,
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager,
-	NoteOperationQueue, generateId,
+	NoteOperationQueue, generateId, ConfirmModal, splitRawFrontmatter,
 	fireAndForget, reviewAction, openScanFolderPicker, trackAiCache, withCacheReport,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
@@ -469,12 +469,13 @@ export class ElaborationModule implements FeatureModule {
 	}
 
 	/**
-	 * Accept a proposal, optionally with edited content from the review panel.
-	 * If editedContent is provided, it's used instead of the stored proposedAdditions.
+	 * Accept a proposal, replacing the note body with the rewritten body
+	 * (edited content from the review panel wins over the stored one).
 	 *
 	 * `options.silent` suppresses the per-proposal success Notice and the view
 	 * refresh; used by batch auto-accept so callers can emit a single summary
-	 * Notice and refresh once.
+	 * Notice and refresh once. It also turns the stale-body guard into a skip
+	 * instead of a confirm modal.
 	 */
 	async acceptProposal(
 		id: string,
@@ -489,32 +490,44 @@ export class ElaborationModule implements FeatureModule {
 		);
 	}
 
-	/** Queue-free core of acceptProposal; runs holding the note's queue slot (#483). */
+	/**
+	 * Queue-free core of acceptProposal; runs holding the note's queue slot (#483).
+	 * Returns `true` only when the note was rewritten; a stale-body skip or a
+	 * declined confirm leaves the proposal pending and returns `false`.
+	 */
 	private async applyProposal(
 		id: string,
 		editedContent?: string,
 		options?: { silent?: boolean }
-	): Promise<void> {
+	): Promise<boolean> {
 		const proposal = await this.store.load(id);
-		if (!proposal) return;
+		if (!proposal) return false;
 		// Guard against double-acceptance (cascade safety): a proposal that is
 		// no longer pending has already been applied — never apply it twice.
-		if (proposal.status !== 'pending') return;
+		if (proposal.status !== 'pending') return false;
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
-		if (!(file instanceof TFile)) return;
+		if (!(file instanceof TFile)) return false;
 
-		const additions = editedContent ?? proposal.proposedAdditions;
-		const sanitizedAdditions = stripCodeFences(sanitizeAIResponse(additions));
-		const callout = buildCallout(
-			CALLOUT_TYPES.elaboration,
-			'Elaboration',
-			sanitizedAdditions
-		);
+		// Stale-body guard: accept overwrites, so never clobber edits made after generation.
+		const current = await this.plugin.app.vault.read(file);
+		if (current !== proposal.originalContent) {
+			if (options?.silent) return false;
+			const confirmed = await new ConfirmModal(this.plugin.app, {
+				title: 'Note changed since this proposal was generated',
+				message: `"${file.basename}" was edited after this elaboration was proposed. Accepting replaces the note's current content with the proposed rewrite.`,
+				confirmLabel: 'Replace',
+			}).openAndConfirm();
+			if (!confirmed) return false;
+		}
+
+		const rewritten = sanitizeRewrittenBody(editedContent ?? proposal.proposedAdditions);
 		let body = '';
 		await this.plugin.app.vault.process(file, (data) => {
 			body = data;
-			return data.trimEnd() + '\n' + callout;
+			const { raw } = splitRawFrontmatter(data);
+			const frontmatter = raw && !raw.endsWith('\n') ? raw + '\n' : raw;
+			return frontmatter + rewritten;
 		});
 
 		await this.store.updateStatus(id, 'accepted');
@@ -523,11 +536,13 @@ export class ElaborationModule implements FeatureModule {
 			await this.refreshView();
 		}
 		this.onProposalAccepted?.(proposal.sourceNotePath, { sourceUrls: extractUrls(body), producedRegion: { kind: 'whole-note' } });
+		return true;
 	}
 
 	/**
 	 * Auto-accept a freshly generated proposal as the unedited draft (#228),
-	 * if the elaboration auto-accept flag is on. Returns `true` when accepted.
+	 * if the elaboration auto-accept flag is on. Returns `true` only when the
+	 * note was actually rewritten (a stale-body skip returns `false`).
 	 *
 	 * `batch` suppresses the per-proposal Notice (the caller emits one summary
 	 * Notice). Single-note callers get one Notice per auto-accept.
@@ -535,11 +550,11 @@ export class ElaborationModule implements FeatureModule {
 	private async maybeAutoAccept(proposal: Proposal, batch = false): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
 		// Callers already hold the note's queue slot (#483), so apply directly.
-		await this.applyProposal(proposal.id, proposal.proposedAdditions, { silent: batch });
-		if (!batch) {
+		const applied = await this.applyProposal(proposal.id, proposal.proposedAdditions, { silent: batch });
+		if (applied && !batch) {
 			this.notifications.info(`Auto-accepted elaboration for ${proposal.sourceNotePath}`);
 		}
-		return true;
+		return applied;
 	}
 
 	async rejectProposal(id: string): Promise<void> {
@@ -587,6 +602,12 @@ export class ElaborationModule implements FeatureModule {
 			}
 		}
 	}
+}
+
+/** Sanitized body ending in exactly one newline; a model-echoed frontmatter block is dropped since the note's own is authoritative. */
+function sanitizeRewrittenBody(text: string): string {
+	const sanitized = stripCodeFences(sanitizeAIResponse(text));
+	return splitRawFrontmatter(sanitized).body.trimEnd() + '\n';
 }
 
 // Settings section renderer (#243)

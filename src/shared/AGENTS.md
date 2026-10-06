@@ -158,6 +158,8 @@ function parseFrontmatter(content: string): ParsedNote
 function serializeFrontmatter(frontmatter: Record<string, unknown>, body: string): string
 function mergeTags(frontmatter: Record<string, unknown>, newTags: string[]): void
 function normalizeFrontmatterTags(value: unknown): string[]   // array|comma-string|other → string[]
+interface RawFrontmatterSplit { raw: string; body: string }   // frontmatter-utils.ts:16; raw = leading `---` block byte-for-byte, '' when absent
+function splitRawFrontmatter(content: string): RawFrontmatterSplit   // frontmatter-utils.ts:23 (#552); same boundary regex as parseFrontmatter (module-private FRONTMATTER_BLOCK_RE, :14); no YAML parse/re-serialise
 
 // tweet-fetcher.ts
 function fetchTweetContent(url: string, maxLength: number): Promise<string>
@@ -178,7 +180,7 @@ const CALLOUT_TYPES: {
   verse: 'synapse-verse'
   chorus: 'synapse-chorus'
   enrichment: 'synapse-enrichment'
-  elaboration: 'synapse-elaboration'
+  elaboration: 'synapse-elaboration'   // render-only since #552: no write site in src/
   deepDive: 'synapse-deep-dive'
   nav: 'synapse-nav'
   ocr: 'synapse-ocr'
@@ -528,8 +530,8 @@ function scoreLyricsContent(content: string): number
 | `content-fetcher.test.ts` | Tests | Content fetcher tests |
 | `collapsible-section.ts` | `addCollapsibleSection`, `CollapsibleSection`, `CollapsibleSectionOptions` | Reusable collapsible UI section (settings accordions) |
 | `collapsible-section.test.ts` | Tests | Collapsible section tests |
-| `frontmatter-utils.ts` | `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `normalizeFrontmatterTags`, `ParsedNote` | YAML frontmatter parsing and serialization. `normalizeFrontmatterTags` coerces array/comma-string/other → `string[]` |
-| `frontmatter-utils.test.ts` | Tests | Frontmatter tests |
+| `frontmatter-utils.ts` | `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `normalizeFrontmatterTags`, `splitRawFrontmatter`, `ParsedNote`, `RawFrontmatterSplit` | YAML frontmatter parsing and serialization. `normalizeFrontmatterTags` coerces array/comma-string/other → `string[]`. `splitRawFrontmatter` (#552) returns the leading block byte-for-byte without parsing; module-private `FRONTMATTER_BLOCK_RE` (`:14`) is the one boundary regex shared with `parseFrontmatter` |
+| `frontmatter-utils.test.ts` | Tests | Frontmatter tests; `splitRawFrontmatter` describe (`:127`): byte-for-byte raw block, no-frontmatter case, mid-document `---` not matched, body boundary agrees with `parseFrontmatter`, block without trailing newline |
 | `callouts.ts` | `CALLOUT_TYPES`, `buildCallout`, `calloutForTranscriptionResult`, `ENRICHMENT_START`, `ENRICHMENT_END`, `CalloutType` | Unified callout registry and builder for AI content. `CALLOUT_TYPES` adds `lyrics`/`verse`/`chorus` entries. `calloutForTranscriptionResult` selects callout type and verb based on `schemaId` |
 | `callouts.test.ts` | Tests | Callout tests |
 | `diagram-generator.ts` | `generateTreeDiagram`, `generateMoveDiagram`, `generateOrganizeSummary`, `TreeNode`, `MoveRecord` | Mermaid diagram generation for organize summaries |
@@ -539,7 +541,7 @@ function scoreLyricsContent(content: string): number
 | `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests |
 | `open-scan-folder-picker.ts` | `openScanFolderPicker` | Unified scan-folder picker wrapper over `FolderPickerModal`; root-first sort so Enter-on-open scans the whole vault; `onChoose(undefined)` = root. Used by main (`fire`) and the elaboration, enrichment, summarize, organize, rem folder-scan commands |
 | `open-scan-folder-picker.test.ts` | Tests | Scan folder picker tests |
-| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Used by `settings-section.ts` reset controls |
+| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:158` (direct import; section reset), `settings-ui/global-sections.ts:515` (via barrel; reset all), `elaboration/index.ts:516` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:35` cites the settle-once pattern in a comment only, no import |
 | `confirm-modal.test.ts` | Tests | ConfirmModal tests |
 | `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |
 | `settings-reset.test.ts` | Tests | Reset helper tests |
@@ -746,7 +748,9 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `serializeFrontmatter` | enrichment/enrichment-applier, tidy/index |
 | `mergeTags` | enrichment/enrichment-applier |
 | `normalizeFrontmatterTags` | exclusions/matchesExcludeTag, json-utils docs |
-| `blockquoteOriginal` | elaboration/index |
+| `splitRawFrontmatter` | elaboration/index (accept: keep the note's raw block, drop a model-echoed one), elaboration/proposer (frontmatter-stripped prompt body) |
+| `ConfirmModal` | elaboration/index (stale-body accept guard, #552), settings-ui/global-sections (reset all) |
+| `blockquoteOriginal` | no consumers in `src/` (barrel-exported only) |
 | `withRetry` | tidy/index |
 | `generateId` | elaboration, enrichment, summarize, organize, deep-dive (proposal/run IDs) |
 | `UpdateChecker` / `isNewerVersion` | main (instantiated with `UpdateCheckerDeps`; `maybeCheck()` fired from a delayed startup timer) |
