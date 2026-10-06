@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createEl, ToggleComponent, type StubEl } from '../__mocks__/obsidian';
+import { createEl, Setting, ToggleComponent, type StubEl } from '../__mocks__/obsidian';
 import { createSettingsSectionContext } from '../shared';
 import { renderIllustrateSettings, ILLUSTRATE_FEATURE_TOOLTIP } from './settings-section';
 import { DEFAULT_SETTINGS } from '../settings';
@@ -23,8 +23,16 @@ function licenseBoxes(root: StubEl): HTMLInputElement[] {
 	return root.findAll('.synapse-illustrate-license').map((label) => (label.children as unknown as HTMLInputElement[])[0]);
 }
 
+function toggleNamed(name: string): ToggleComponent {
+	return Setting.instances.find((s) => s.name === name)!.components[0];
+}
+
+function emptyConfigHelper(root: StubEl): StubEl {
+	return root.findAll('.synapse-illustrate-empty-config')[0];
+}
+
 describe('renderIllustrateSettings', () => {
-	beforeEach(() => { ToggleComponent.instances.length = 0; });
+	beforeEach(() => { ToggleComponent.instances.length = 0; Setting.instances.length = 0; });
 
 	it('renders the accordion with the header toggle reflecting enabled state', () => {
 		const { ctx, containerEl } = makeCtx((s) => { s.illustrate.enabled = true; });
@@ -90,6 +98,46 @@ describe('renderIllustrateSettings', () => {
 		(deepDive as unknown as StubEl).dispatchEvent({ type: 'change' });
 		expect(plugin.settings.illustrate.licenseFilter.filter((l) => l === 'Source page')).toHaveLength(1);
 		expect(saveSettings).toHaveBeenCalledTimes(3);
+	});
+
+	it('renders the Mermaid toggle off by default and saves the flag when it changes (#549)', async () => {
+		const { ctx, plugin, saveSettings } = makeCtx();
+		renderIllustrateSettings(ctx);
+		const toggle = toggleNamed('Propose Mermaid diagrams and charts');
+		expect(toggle.getValue()).toBe(false);
+		await toggle._trigger(true);
+		expect(plugin.settings.illustrate.mermaid).toBe(true);
+		expect(saveSettings).toHaveBeenCalledTimes(1);
+	});
+
+	it('hides the empty-config helper while a photo provider is enabled', () => {
+		const { ctx, containerEl } = makeCtx();
+		renderIllustrateSettings(ctx);
+		expect(emptyConfigHelper(containerEl).classList.contains('is-hidden')).toBe(true);
+	});
+
+	it('shows the empty-config helper when no provider and no Mermaid output is enabled', () => {
+		const { ctx, containerEl } = makeCtx((s) => { s.illustrate.providers = { wikimedia: false, openverse: false }; });
+		renderIllustrateSettings(ctx);
+		const helper = emptyConfigHelper(containerEl);
+		expect(helper.classList.contains('is-hidden')).toBe(false);
+		expect(helper.textContent).toContain('Mermaid');
+	});
+
+	it('re-evaluates the empty-config helper as the provider and Mermaid toggles change', async () => {
+		const { ctx, containerEl } = makeCtx();
+		renderIllustrateSettings(ctx);
+		const helper = emptyConfigHelper(containerEl);
+		await toggleNamed('Wikimedia Commons')._trigger(false);
+		expect(helper.classList.contains('is-hidden')).toBe(true);
+		await toggleNamed('Openverse')._trigger(false);
+		expect(helper.classList.contains('is-hidden')).toBe(false);
+		await toggleNamed('Propose Mermaid diagrams and charts')._trigger(true);
+		expect(helper.classList.contains('is-hidden')).toBe(true);
+		await toggleNamed('Propose Mermaid diagrams and charts')._trigger(false);
+		expect(helper.classList.contains('is-hidden')).toBe(false);
+		await toggleNamed('Openverse')._trigger(true);
+		expect(helper.classList.contains('is-hidden')).toBe(true);
 	});
 
 	it('puts both checkbox lists on a wrapping helper row and seeds checked state from settings', () => {

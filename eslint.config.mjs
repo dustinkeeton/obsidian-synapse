@@ -47,7 +47,7 @@ const obsidianmdRules = Object.fromEntries(
 const UI_BRANDS = [
 	'Synapse', 'Obsidian', 'Ollama', 'OpenAI', 'Anthropic', 'Claude', 'Gemini',
 	'Google', 'Deepgram', 'Whisper', 'YouTube', 'TikTok', 'GitHub', 'BRAT',
-	'Vertex', 'Twitter', 'Reddit',
+	'Vertex', 'Twitter', 'Reddit', 'Mermaid',
 ];
 const UI_ACRONYMS = [
 	'AI', 'API', 'URL', 'URLs', 'OCR', 'MB', 'GB', 'KB', 'HTTP', 'HTTPS', 'TODO',
