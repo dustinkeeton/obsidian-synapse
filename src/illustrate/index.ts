@@ -433,8 +433,14 @@ export class IllustrateModule implements FeatureModule {
 		);
 	}
 
+	/** A sidebar refresh failure is logged, never reported as an illustration failure. */
 	private async refreshView(): Promise<void> {
-		await this.onViewRefreshNeeded?.();
+		if (!this.onViewRefreshNeeded) return;
+		try {
+			await this.onViewRefreshNeeded();
+		} catch (error) {
+			console.warn(`[Synapse] Illustrate: proposal view refresh failed: ${redactError(error)}`);
+		}
 	}
 
 	private dispatchDeferredTasks(tasks: DeferredTask[]): void {

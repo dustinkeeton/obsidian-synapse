@@ -206,6 +206,16 @@ describe('IllustrateModule', () => {
 			expect(fetchSpy).toHaveBeenCalledWith(ctx.sourceUrls, { maxPages: 2, maxImages: 12 });
 		});
 
+		it('never reports a sidebar refresh failure as an illustration failure', async () => {
+			vi.spyOn(WikimediaProvider.prototype, 'search').mockResolvedValue([candidate]);
+			module.onViewRefreshNeeded = vi.fn().mockRejectedValue(new Error('view.setItems is not a function'));
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			await module.illustrateNote('notes/a.md', ctx);
+			expect(IllustrateStore.prototype.save).toHaveBeenCalledTimes(1);
+			expect(notifications.notifyError).not.toHaveBeenCalled();
+			expect(warn.mock.calls[0][0]).toContain('proposal view refresh failed');
+		});
+
 		it('respects the word gate and exclusions silently', async () => {
 			app.vault.cachedRead.mockResolvedValue('tiny');
 			const analyze = vi.mocked(NoteAnalyzer.prototype.analyze);
