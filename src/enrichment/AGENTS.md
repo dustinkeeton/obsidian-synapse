@@ -34,7 +34,7 @@ class EnrichmentModule {
   rejectFromView(id: string): Promise<void>   // index.ts:612; no note write; unqueued
 }
 
-function renderEnrichmentSettings(ctx: SettingsSectionContext): void  // re-exported (index.ts:740)
+function renderEnrichmentSettings(ctx: SettingsSectionContext): void  // re-exported (index.ts:749)
 ```
 
 Types re-exported from the `index.ts` barrel (`index.ts:20-29`):

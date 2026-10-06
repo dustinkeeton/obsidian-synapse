@@ -71,8 +71,8 @@ awaited, so there is no cycle).
 | `index.ts` | `SummarizeModule`, type + fn re-exports | Orchestrator, commands, scan + summarize flows |
 | `types.ts` | `SummarizeTarget` | Target type model |
 | `summarizer.ts` | `Summarizer` | AI summarization with style (bullets/paragraph/key-points) |
-| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks; note-prose extraction. A URL target is dropped when a transcription block for the same (social-normalized) source exists ANYWHERE in the note (`dropUrlsTranscribedElsewhere`, #488), not only within 5 lines below it |
-| `summarize-modal.ts` | `SummarizeSelectionModal`, `SummarizeModalDefaults` | Selection modal for 2+ targets; include-note + combine toggles (#367) |
+| `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks via shared `findUrls` / `findMarkdownLinks` (paren-aware, #543); note-prose extraction. A URL target is dropped when a transcription block for the same (social-normalized) source exists ANYWHERE in the note (`dropUrlsTranscribedElsewhere`, #488), not only within 5 lines below it |
+| `summarize-modal.ts` | `SummarizeSelectionModal`, `SummarizeModalDefaults`, `countCombinable` | Selection modal for 2+ targets; include-note + combine toggles (#367). The combine toggle renders only for 2+ combinable (non-enrichment) items, hides (`.is-hidden`) while the live selection drops below 2, and `combine` is forced false for a single chosen item (#544) |
 | `settings-section.ts` | `renderSummarizeSettings` | Summarize settings UI section (#243) |
 | `summarizer.test.ts` | Tests | Summarizer style/prompt tests |
 | `note-scanner.test.ts` | Tests | Scanner + prose-extraction tests |
@@ -105,11 +105,11 @@ summarizeNote(file)                                   index.ts:242
   --> collectTargets(content, sourcePath)             index.ts:482
         findSummarizeTargets(content)    [URLs, transcription blocks]
         findAudioEmbeds(...)             [audio embeds w/o summary below]
-        extractNoteProse(content)        [appends 'note-content' if includeNoteContent]
+        extractNoteProse(content)        [appends 'note-content' if includeNoteContent && !isEffectivelyEmptyProse(prose)]
   --> 1 target:  processTargets(file, targets, content)            [per-item, no modal]
   --> 2+ targets: SummarizeSelectionModal(defaults={includeNoteContent, combineSummaries})
         callback(selected, combine):
-          combine  -> processTargetsCombined(file, selected, content)   index.ts:264
+          combine  -> processTargetsCombined(file, selected, content)   index.ts:264   [modal forces combine=false when countCombinable(selected) < 2]
           !combine -> processTargets(file, selected, content)           index.ts:266
 
 processTargetsCombined / processTargets
@@ -210,6 +210,8 @@ When `combineSummaries` (or the modal's "Combine into one summary" toggle) is se
 
 `extractNoteProse(content)` (`note-scanner.ts:239`) strips YAML frontmatter and every Synapse-generated summary / transcription / lyrics block (callout and legacy formats) so the AI never re-summarizes its own output. `collectTargets` appends a `note-content` target (when `includeNoteContent`) at the note's last line so a per-item prose callout lands at the end.
 
+Effectively-empty gate (#544): the target is appended only when `!isEffectivelyEmptyProse(prose)` (shared `prose-reduction.ts`). Prose that is just URLs, `![[embeds]]`, link labels, rules, or empty headings (fewer than `MIN_PROSE_CHARS` letters/digits after reduction) is not content; the references are already their own targets. So a URL-only or embed-only note yields no `note-content` target, no "Include note content" toggle, and a single-URL note takes the direct per-item path with no modal. Any future include-note / combine choice must reuse this gate rather than re-derive it. `NoteMediaModal` combine-audio (`transcription/note-media-modal.ts`) already gates on 2+ audio embeds to render and 2+ selected to apply; no change.
+
 ## Settings Keys
 
 All under `settings.summarize` (`SummarizeSettings`, `settings.ts:230`):
@@ -260,11 +262,13 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 
 | Import | From |
 |--------|------|
-| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport` | `../shared` |
+| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks` | `../shared` (index.ts) |
+| `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks` | `../shared` (note-scanner.ts) |
 | `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:10) |
 | `findAudioEmbeds` | `../audio` |
 | `CommandRegistrar` | `../commands` |
 | `SynapseSettings` | `../settings` |
+| `isEffectivelyEmptyProse` | `../shared` (index.ts `collectTargets`, #544) |
 | `findSummarizeTargets`, `extractNoteProse`, `hasSummaryBelow`, `SummarizeTarget`, `SummarizeSelectionModal`, `Summarizer` | local (`./note-scanner`, `./types`, `./summarize-modal`, `./summarizer`) |
 
 NO static import of `../video`. Video transcription is callback-only (`TranscribeUrlFn`).

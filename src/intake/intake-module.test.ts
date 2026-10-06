@@ -633,7 +633,7 @@ describe('IntakeModule', () => {
 		});
 
 		it('bare unknown URL → general pipeline', async () => {
-			emit('create', 'Inbox/u.md', 'https://example.com/wiki/Obsidian_(software)');
+			emit('create', 'Inbox/u.md', 'https://example.com/$(whoami)');
 			await flushDebounce();
 			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
 			expect(deps.transcribeUrlToNote).not.toHaveBeenCalled();

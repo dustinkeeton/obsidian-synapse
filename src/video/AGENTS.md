@@ -109,7 +109,7 @@ class DependencyMissingError extends Error {   // audio-extractor.ts:77
   readonly tool: 'yt-dlp' | 'ffmpeg'
 }
 class AudioCodecReadError extends Error {}     // audio-extractor.ts:57; ffprobe could not read the audio codec
-function hasTranscriptionBelow(lines: string[], embedLine: number, url: string): boolean  // note-scanner.ts:36
+function hasTranscriptionBelow(lines: string[], embedLine: number, url: string): boolean  // note-scanner.ts:33
 class FrameExtractor {                          // frame-extractor.ts:6 — placeholder, throws on use
   constructor(getSettings: () => SynapseSettings)
   extractFrames(videoPath: string): Promise<string[]>
@@ -191,14 +191,14 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 
 ## Note Scanning
 
-`findVideoUrls(content)` in `note-scanner.ts:7`:
-- Regex: `/https?:\/\/[^\s)\]>]+/g`
+`findVideoUrls(content)` in `note-scanner.ts:6`:
+- URLs per line via shared `findUrls` (paren-aware, #543); no local regex
 - Skips blockquote lines (`>` prefix — transcription output, not user content)
 - Skips undetected URLs and `detected.platform === 'twitter'`
 - Skips URLs with an existing transcription callout within 3 lines below
 - Returns `VideoUrlEmbed[]` with line numbers
 
-`hasTranscriptionBelow(lines, embedLine, url)` (`note-scanner.ts:36`) matches the legacy `**Transcription of ...**` and the `[!<CALLOUT_TYPES.transcription>]` callout formats.
+`hasTranscriptionBelow(lines, embedLine, url)` (`note-scanner.ts:33`) matches the legacy `**Transcription of ...**` and the `[!<CALLOUT_TYPES.transcription>]` callout formats.
 
 ## Commands Registered
 
@@ -240,7 +240,7 @@ Settings UI: `renderVideoSettings` (`settings-section.ts:152`) renders the accor
 In:
 - `../audio` — `AudioModule` (runtime value edge: reuses the transcription pipeline), `TranscriptionResult` (type)
 - `../commands` — `CommandRegistrar`
-- `../shared` — `NoteOperationQueue` (#483), `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findAvailableVaultPath`, `isNoSpeechError`, `noSpeechNotice`, `transcriptCacheUse`, `withCacheReport` (index.ts:5-10); type-only `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule` (index.ts:11); `TimeRange` (types.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
+- `../shared` — `NoteOperationQueue` (#483), `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findAvailableVaultPath`, `isNoSpeechError`, `noSpeechNotice`, `transcriptCacheUse`, `withCacheReport` (index.ts:5-10); type-only `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule` (index.ts:11); `TimeRange` (types.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES`, `findUrls` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
 - `../settings` — `SynapseSettings`, `VideoSettings`, `FrameExtractionSettings` (types)
 
 Out (consumed by):

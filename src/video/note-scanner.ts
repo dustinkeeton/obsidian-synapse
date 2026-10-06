@@ -1,7 +1,6 @@
-import { CALLOUT_TYPES, detectPlatform } from '../shared';
+import { CALLOUT_TYPES, detectPlatform, findUrls } from '../shared';
 import { VideoUrlEmbed } from './types';
 
-const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
 const CALLOUT_TRANSCRIPTION_PREFIX = `[!${CALLOUT_TYPES.transcription}]`;
 
 export function findVideoUrls(content: string): VideoUrlEmbed[] {
@@ -12,9 +11,7 @@ export function findVideoUrls(content: string): VideoUrlEmbed[] {
 		// Skip blockquote lines — these are transcription output, not user content
 		if (lines[i].trimStart().startsWith('>')) continue;
 
-		const matches = [...lines[i].matchAll(URL_REGEX)];
-		for (const match of matches) {
-			const url = match[0];
+		for (const { url } of findUrls(lines[i])) {
 			const detected = detectPlatform(url);
 			if (!detected || detected.platform === 'twitter') continue;
 

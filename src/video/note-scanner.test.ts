@@ -34,6 +34,14 @@ describe('findVideoUrls', () => {
 		expect(result[0].url).toBe('https://youtube.com/watch?v=abc123');
 	});
 
+	it('trims a prose paren wrapping the URL but keeps a balanced one (#543)', () => {
+		const result = findVideoUrls('(watch https://youtube.com/watch?v=abc123)\nhttps://youtube.com/watch?v=abc123&t=(1)');
+		expect(result.map((r) => r.url)).toEqual([
+			'https://youtube.com/watch?v=abc123',
+			'https://youtube.com/watch?v=abc123&t=(1)',
+		]);
+	});
+
 	it('finds multiple URLs across lines', () => {
 		const content = [
 			'# Videos',

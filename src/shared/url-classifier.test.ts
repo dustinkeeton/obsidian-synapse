@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyUrl, extractUrls } from './url-classifier';
+import { classifyUrl, extractUrls, findUrls, findMarkdownLinks } from './url-classifier';
 import { detectPlatform } from './url-detector';
 
 describe('classifyUrl', () => {
@@ -334,6 +334,44 @@ describe('extractUrls', () => {
 		]);
 	});
 
+	it('keeps balanced parentheses in a bare Wikipedia disambiguation URL', () => {
+		expect(extractUrls('Read https://en.wikipedia.org/wiki/Doom_(1993_video_game) tonight')).toEqual([
+			'https://en.wikipedia.org/wiki/Doom_(1993_video_game)',
+		]);
+	});
+
+	it('keeps balanced parentheses when the URL is a markdown link destination', () => {
+		expect(extractUrls('[Doom](https://en.wikipedia.org/wiki/Doom_(1993_video_game))')).toEqual([
+			'https://en.wikipedia.org/wiki/Doom_(1993_video_game)',
+		]);
+	});
+
+	it('trims the prose paren wrapping a URL', () => {
+		expect(extractUrls('(see https://example.com/a)')).toEqual(['https://example.com/a']);
+	});
+
+	it('trims a sentence-final period after a balanced paren', () => {
+		expect(extractUrls('It was https://en.wikipedia.org/wiki/Doom_(1993_video_game).')).toEqual([
+			'https://en.wikipedia.org/wiki/Doom_(1993_video_game)',
+		]);
+	});
+
+	it('trims only the unbalanced paren when a paren URL is itself parenthesised', () => {
+		expect(extractUrls('(https://en.wikipedia.org/wiki/Doom_(1993_video_game)).')).toEqual([
+			'https://en.wikipedia.org/wiki/Doom_(1993_video_game)',
+		]);
+	});
+
+	it('keeps nested balanced parentheses', () => {
+		expect(extractUrls('https://example.com/a_((b)_c)')).toEqual(['https://example.com/a_((b)_c)']);
+	});
+
+	it('keeps an apostrophe inside a URL path but trims a trailing quote', () => {
+		expect(extractUrls("'https://en.wikipedia.org/wiki/O'Reilly_Media'")).toEqual([
+			"https://en.wikipedia.org/wiki/O'Reilly_Media",
+		]);
+	});
+
 	it('keeps both http and https URLs', () => {
 		const text = 'insecure http://example.com and secure https://example.com/x';
 		expect(extractUrls(text)).toEqual([
@@ -359,5 +397,67 @@ describe('extractUrls', () => {
 		const [videoUrl, articleUrl] = extractUrls(text);
 		expect(classifyUrl(videoUrl).type).toBe('video');
 		expect(classifyUrl(articleUrl).type).toBe('article');
+	});
+});
+
+describe('findUrls', () => {
+	it('returns each occurrence with its offset, keeping duplicates', () => {
+		expect(findUrls('a https://x.com b https://x.com')).toEqual([
+			{ url: 'https://x.com', index: 2 },
+			{ url: 'https://x.com', index: 18 },
+		]);
+	});
+
+	it('reports the offset of the untrimmed start', () => {
+		expect(findUrls('(https://x.com/a_(b)).')).toEqual([{ url: 'https://x.com/a_(b)', index: 1 }]);
+	});
+
+	it('returns an empty array for empty text', () => {
+		expect(findUrls('')).toEqual([]);
+	});
+});
+
+describe('findMarkdownLinks', () => {
+	it('matches a plain markdown link', () => {
+		expect(findMarkdownLinks('see [Example](https://example.com/a) now')).toEqual([
+			{ text: 'Example', url: 'https://example.com/a', index: 4, length: 32 },
+		]);
+	});
+
+	it('keeps balanced parentheses inside the destination', () => {
+		const line = '- [Doom](https://en.wikipedia.org/wiki/Doom_(1993_video_game)) — reason';
+		expect(findMarkdownLinks(line)).toEqual([
+			{
+				text: 'Doom',
+				url: 'https://en.wikipedia.org/wiki/Doom_(1993_video_game)',
+				index: 2,
+				length: 60,
+			},
+		]);
+	});
+
+	it('keeps nested parentheses inside the destination', () => {
+		expect(findMarkdownLinks('[x](https://e.com/a_((b)_c))')[0].url).toBe('https://e.com/a_((b)_c)');
+	});
+
+	it('returns every link in document order', () => {
+		const links = findMarkdownLinks('[a](https://a.com) and [b](https://b.com/x_(y))');
+		expect(links.map((l) => l.url)).toEqual(['https://a.com', 'https://b.com/x_(y)']);
+	});
+
+	it('ignores wikilinks, non-http destinations, and unterminated links', () => {
+		expect(findMarkdownLinks('[[wiki]] [rel](./a.md) [mail](mailto:a@b.c) [open](https://a.com')).toEqual([]);
+	});
+
+	it('does not match when the destination contains whitespace', () => {
+		expect(findMarkdownLinks('[a](https://a.com b)')).toEqual([]);
+	});
+
+	it('slices the whole link out of the line via index and length', () => {
+		const line = 'x [Doom](https://en.wikipedia.org/wiki/Doom_(1993_video_game)) y';
+		const [link] = findMarkdownLinks(line);
+		expect(line.slice(link.index, link.index + link.length)).toBe(
+			'[Doom](https://en.wikipedia.org/wiki/Doom_(1993_video_game))'
+		);
 	});
 });
