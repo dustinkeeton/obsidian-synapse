@@ -6,6 +6,9 @@ import type { ProposalKind } from './views/types';
 import type { ExclusionRule } from './shared/exclusions';
 // Type-only import. title/types.ts has no imports, so this never forms a cycle.
 import type { TitleDuplicateStrategy } from './title/types';
+// Type-only import. illustrate/types.ts has no imports, so this never forms a cycle.
+import type { IllustrateSettings, IllustrateRunAfterKey } from './illustrate/types';
+export type { IllustrateRunAfterKey };
 // Runtime value import — the sanctioned `settings → shared` direction. Imported
 // DIRECTLY from the module (not via the `./shared` barrel) to stay clear of any
 // barrel import cycle; settings-migrations only depends on shared/exclusions, so
@@ -423,6 +426,7 @@ export interface SynapseSettings {
 	deepDive: DeepDiveSettings;
 	title: TitleSettings;
 	rem: RemSettings;
+	illustrate: IllustrateSettings;
 	intake: IntakeSettings;
 	ui: UISettings;
 	autoAccept: AutoAcceptSettings;
@@ -584,6 +588,19 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		maxLinksPerNote: 20,
 		remFolderPath: '.synapse/rem',
 	},
+	// Opt-in: note-derived search terms leave the vault for third-party image APIs.
+	illustrate: {
+		enabled: false,
+		providers: { wikimedia: true, openverse: true },
+		runAfter: { elaboration: false, transcription: false, summarize: false, enrichment: false, deepDive: false },
+		fetchLinkedPages: false,
+		maxLinkedPagesPerNote: 3,
+		maxItemsPerNote: 3,
+		licenseFilter: ['CC0', 'Public domain', 'CC BY', 'CC BY-SA'],
+		preferDownload: true,
+		proposalFolderPath: '.synapse/illustrate',
+		excludeTags: ['no-illustrate'],
+	},
 	intake: {
 		enabled: true,
 		intakeFolder: 'Inbox',
@@ -605,6 +622,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		'deep-dive': false,
 		title: false,
 		rem: false,
+		illustrate: false,
 	},
 	onboarding: {
 		hasSeenWelcome: false,

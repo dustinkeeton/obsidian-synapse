@@ -1,4 +1,5 @@
 import { Plugin, TFile } from 'obsidian';
+import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, calloutForTranscriptionResult,
@@ -41,7 +42,7 @@ export class AudioModule implements FeatureModule {
 	private interFileDelayMs = 2000;
 
 	/** Optional callback invoked after transcription completes. Wired by main.ts for enrichment. */
-	onTranscriptionComplete: ((filePath: string) => void) | null = null;
+	onTranscriptionComplete: ((filePath: string, ctx?: SourceContext) => void) | null = null;
 
 	constructor(deps: ModuleDeps, extractor?: AudioExtractor) {
 		this.plugin = deps.plugin;

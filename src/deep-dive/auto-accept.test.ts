@@ -162,6 +162,6 @@ describe('DeepDiveModule auto-accept guard (#228)', () => {
 
 		await mod.acceptProposal('p2');
 
-		expect(onNoteAccepted).toHaveBeenCalledWith('Deep Dives/Root/Backpropagation.md');
+		expect(onNoteAccepted).toHaveBeenCalledWith('Deep Dives/Root/Backpropagation.md', { sourceUrls: expect.any(Array) as string[], producedRegion: { kind: 'whole-note' } });
 	});
 });

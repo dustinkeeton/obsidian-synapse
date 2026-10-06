@@ -1,8 +1,8 @@
 import type { TFile } from 'obsidian';
 import { fireAndForget } from '../shared';
 import type { NotificationManager } from '../shared';
-import type { SynapseSettings } from '../settings';
-import type { PostOpHook, PostOpSource, PostOpTrigger, AutoOrganizeTrigger } from './types';
+import type { SynapseSettings, IllustrateRunAfterKey } from '../settings';
+import type { PostOpContext, PostOpHook, PostOpSource, PostOpTrigger, AutoOrganizeTrigger } from './types';
 
 export interface PostOpHookDeps {
 	getSettings: () => SynapseSettings;
@@ -10,10 +10,12 @@ export interface PostOpHookDeps {
 	enrich: (filePath: string, trigger: PostOpTrigger) => Promise<void>;
 	checkTitle: (filePath: string) => Promise<void>;
 	organizeNote: (file: TFile) => Promise<unknown>;
+	/** Illustrate the note from the material the action processed (#213); gated live by `illustrate.runAfter`. */
+	illustrateNote: (filePath: string, ctx?: PostOpContext) => Promise<void>;
 }
 
-/** Enrichment trigger recorded on the proposal for each post-op source. */
-const TRIGGER_BY_SOURCE: Record<PostOpSource, PostOpTrigger> = {
+/** Enrichment trigger recorded on the proposal for each post-op source; enrichment never re-enriches itself. */
+const TRIGGER_BY_SOURCE: Record<Exclude<PostOpSource, 'enrichment'>, PostOpTrigger> = {
 	elaboration: 'elaboration',
 	audio: 'transcription',
 	video: 'transcription',
@@ -22,31 +24,58 @@ const TRIGGER_BY_SOURCE: Record<PostOpSource, PostOpTrigger> = {
 	'deep-dive': 'deep-dive',
 };
 
+/** `illustrate.runAfter` toggle each source answers to; audio/video/image share `transcription`. */
+const RUN_AFTER_BY_SOURCE: Record<PostOpSource, IllustrateRunAfterKey> = {
+	elaboration: 'elaboration',
+	audio: 'transcription',
+	video: 'transcription',
+	image: 'transcription',
+	summarize: 'summarize',
+	'deep-dive': 'deepDive',
+	enrichment: 'enrichment',
+};
+
 /**
- * Post-op chain for one source: auto-enrich (when enabled at wire time) plus a
- * title check. Under auto-enrich the title gate is read live per call; the
- * standalone title hook is gated once at wire time. Returns null when nothing
- * is wired so the module's hook slot stays untouched.
+ * Post-op chain for one source, each leg gated independently: auto-enrich
+ * (wire time) + title check (live under auto-enrich, wire time standalone),
+ * then illustrate (wire-gated on `illustrate.enabled`, `runAfter` read live).
+ * Returns null when no leg is wired so the module's hook slot stays untouched.
  */
 export function buildPostOpHook(deps: PostOpHookDeps, source: PostOpSource): PostOpHook | null {
 	const { getSettings, notifications } = deps;
 	const settings = getSettings();
-	const autoEnrich = settings.enrichment.enabled && settings.enrichment.autoEnrich;
-	const titleCheck = settings.title.enabled && settings.title.checkAfterOperations;
 	const checkTitle = (filePath: string) =>
 		fireAndForget(deps.checkTitle(filePath), 'Check note title', { notifications });
+	const legs: PostOpHook[] = [];
 
-	if (autoEnrich) {
-		if (source === 'deep-dive' && !settings.deepDive.autoEnrichOnAccept) return null;
+	// Deep dive opts out of the whole enrich/title chain when autoEnrichOnAccept is off (pre-#213 behavior kept).
+	const autoEnrich = settings.enrichment.enabled && settings.enrichment.autoEnrich;
+	const deepDiveOptedOut = source === 'deep-dive' && autoEnrich && !settings.deepDive.autoEnrichOnAccept;
+	if (source !== 'enrichment' && !deepDiveOptedOut) {
 		const trigger = TRIGGER_BY_SOURCE[source];
-		return (filePath) => {
-			fireAndForget(deps.enrich(filePath, trigger), 'Enrich note', { notifications });
-			const live = getSettings();
-			if (live.title.enabled && live.title.checkAfterOperations) checkTitle(filePath);
-		};
+		const titleCheck = settings.title.enabled && settings.title.checkAfterOperations;
+		if (autoEnrich) {
+			legs.push((filePath) => {
+				fireAndForget(deps.enrich(filePath, trigger), 'Enrich note', { notifications });
+				const live = getSettings();
+				if (live.title.enabled && live.title.checkAfterOperations) checkTitle(filePath);
+			});
+		} else if (titleCheck) {
+			legs.push((filePath) => checkTitle(filePath));
+		}
 	}
-	if (titleCheck) return (filePath) => checkTitle(filePath);
-	return null;
+
+	if (settings.illustrate.enabled) {
+		const key = RUN_AFTER_BY_SOURCE[source];
+		legs.push((filePath, ctx) => {
+			const live = getSettings().illustrate;
+			if (!live.enabled || !live.runAfter[key]) return;
+			fireAndForget(deps.illustrateNote(filePath, ctx), 'Illustrate note', { notifications });
+		});
+	}
+
+	if (legs.length === 0) return null;
+	return (filePath, ctx) => { for (const leg of legs) leg(filePath, ctx); };
 }
 
 /** Single-note auto-organize hook, wired only when the trigger opts in and organize is enabled. */

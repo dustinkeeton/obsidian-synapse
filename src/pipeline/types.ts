@@ -1,4 +1,5 @@
 import type { TFile } from 'obsidian';
+import type { SourceContext } from '../shared';
 
 /**
  * Scan function contract that each pipeline module must satisfy.
@@ -24,6 +25,7 @@ export type PipelineModuleKey =
 	| 'summarize'
 	| 'enrichment'
 	| 'rem'
+	| 'illustrate'
 	| 'tidy'
 	| 'organize';
 
@@ -36,23 +38,27 @@ export type PipelineModuleMap = Record<PipelineModuleKey, PipelineScanFn>;
 
 /**
  * Ordered pipeline phases for Fire Synapse.
- * Elaboration → Summarize → Enrichment → REM → Tidy → Organize
+ * Elaboration → Summarize → Enrichment → REM → Illustrate → Tidy → Organize
  */
 export const SYNAPSE_PIPELINE: PipelinePhase[] = [
 	{ key: 'elaboration', label: 'Elaboration' },
 	{ key: 'summarize', label: 'Summarize' },
 	{ key: 'enrichment', label: 'Enrichment' },
 	{ key: 'rem', label: 'REM' },
+	{ key: 'illustrate', label: 'Illustrate' },
 	{ key: 'tidy', label: 'Tidy' },
 	{ key: 'organize', label: 'Organize' },
 ];
 
 /** Feature whose completed operation chains enrichment/title checks (#483 post-op wiring). */
-export type PostOpSource = 'elaboration' | 'audio' | 'video' | 'image' | 'summarize' | 'deep-dive';
+export type PostOpSource = 'elaboration' | 'audio' | 'video' | 'image' | 'summarize' | 'deep-dive' | 'enrichment';
 
 /** Enrichment trigger label; mirrors `EnrichmentTrigger` minus `'manual'` (pipeline never imports feature modules). */
 export type PostOpTrigger = 'elaboration' | 'transcription' | 'summarization' | 'deep-dive';
 
-export type PostOpHook = (filePath: string) => void;
+/** Material the completed action processed (#213); callers that have none pass nothing. */
+export type PostOpContext = SourceContext;
+
+export type PostOpHook = (filePath: string, ctx?: PostOpContext) => void;
 
 export type AutoOrganizeTrigger = 'deep-dive' | 'summarize';

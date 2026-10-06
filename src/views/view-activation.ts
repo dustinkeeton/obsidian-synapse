@@ -1,4 +1,4 @@
-import type { Workspace } from 'obsidian';
+import type { Workspace, WorkspaceLeaf } from 'obsidian';
 import { fireAndForget } from '../shared';
 import type { Checkpoint } from '../shared';
 import type { Proposal } from '../elaboration';
@@ -7,6 +7,7 @@ import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
 import type { RemProposal } from '../rem';
+import type { IllustrateProposal } from '../illustrate';
 import { UNIFIED_VIEW_TYPE, UnifiedProposalView } from './unified-proposal-view';
 import { SYNAPSE_ACTIONS_VIEW_TYPE } from './synapse-actions-view';
 import type { UnifiedItem } from './types';
@@ -19,6 +20,7 @@ export interface UnifiedViewSources {
 	'deep-dive': () => Promise<DeepDiveProposal[]>;
 	title: () => Promise<TitleProposal[]>;
 	rem: () => Promise<RemProposal[]>;
+	illustrate: () => Promise<IllustrateProposal[]>;
 	checkpoints: () => Promise<Checkpoint[]>;
 }
 
@@ -45,6 +47,18 @@ export async function activateSynapseActionsView(workspace: Workspace): Promise<
 	await revealSidebarView(workspace, SYNAPSE_ACTIONS_VIEW_TYPE, 'Reveal Synapse actions');
 }
 
+/** Obsidian >= 1.7.2 parks background leaves behind a DeferredView without the view's methods; duck-type rather than trust the leaf type. */
+function isUnifiedProposalView(view: unknown): view is UnifiedProposalView {
+	const candidate = view as Partial<UnifiedProposalView> | null;
+	return typeof candidate?.setItems === 'function' && typeof candidate.setCheckpoints === 'function';
+}
+
+/** Load a deferred leaf so its real view exists; the test mock lacks the API, so both members are optional reads. */
+async function ensureLoaded(leaf: WorkspaceLeaf): Promise<void> {
+	const deferrable = leaf as Partial<Pick<WorkspaceLeaf, 'isDeferred' | 'loadIfDeferred'>>;
+	if (deferrable.isDeferred && typeof deferrable.loadIfDeferred === 'function') await deferrable.loadIfDeferred();
+}
+
 /** Push every pending proposal and incomplete checkpoint into each open unified view; no-op when none is open. */
 export async function refreshUnifiedView(workspace: Workspace, sources: UnifiedViewSources): Promise<void> {
 	const leaves = workspace.getLeavesOfType(UNIFIED_VIEW_TYPE);
@@ -57,11 +71,14 @@ export async function refreshUnifiedView(workspace: Workspace, sources: UnifiedV
 	for (const p of await sources['deep-dive']()) items.push({ kind: 'deep-dive', data: p });
 	for (const p of await sources.title()) items.push({ kind: 'title', data: p });
 	for (const p of await sources.rem()) items.push({ kind: 'rem', data: p });
+	for (const p of await sources.illustrate()) items.push({ kind: 'illustrate', data: p });
 
 	const checkpoints = await sources.checkpoints();
 
 	for (const leaf of leaves) {
-		const view = leaf.view as UnifiedProposalView;
+		await ensureLoaded(leaf);
+		const view: unknown = leaf.view;
+		if (!isUnifiedProposalView(view)) continue;
 		view.setItems(items);
 		view.setCheckpoints(checkpoints);
 	}

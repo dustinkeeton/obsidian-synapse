@@ -4,7 +4,7 @@ import { CommandRegistrar } from '../commands';
 import { DEFAULT_SETTINGS } from '../settings';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
-import { fetchPageContent, fetchRedditContent, NoteOperationQueue } from '../shared';
+import { fetchPageContentWithImages, fetchRedditContent, NoteOperationQueue } from '../shared';
 import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import type { Mock } from 'vitest';
 import type { Plugin } from 'obsidian';
@@ -87,6 +87,7 @@ vi.mock('../shared', async () => ({
 	ENRICHMENT_END: '%% synapse-enrichment-end %%',
 	generateId: vi.fn().mockReturnValue('id-mock'),
 	fetchPageContent: vi.fn().mockResolvedValue('Some fetched content for testing.'),
+	fetchPageContentWithImages: vi.fn().mockResolvedValue({ text: 'Some fetched content for testing.', images: [] }),
 	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
 	isRedditUrl: (url: string) => {
 		try {
@@ -325,7 +326,7 @@ describe('SummarizeModule content-aware templates', () => {
 		settings.summarize.customPrompt = '';
 
 		// Return recipe content from the content fetcher
-		vi.mocked(fetchPageContent).mockResolvedValueOnce(RECIPE_CONTENT);
+		vi.mocked(fetchPageContentWithImages).mockResolvedValueOnce({ text: RECIPE_CONTENT, images: [] });
 
 		const file = new TFile('notes/recipe.md');
 		await invokeCommand(file);
@@ -341,7 +342,7 @@ describe('SummarizeModule content-aware templates', () => {
 		settings.summarize.autoDetectTemplates = false;
 		settings.summarize.customPrompt = '';
 
-		vi.mocked(fetchPageContent).mockResolvedValueOnce(RECIPE_CONTENT);
+		vi.mocked(fetchPageContentWithImages).mockResolvedValueOnce({ text: RECIPE_CONTENT, images: [] });
 
 		const file = new TFile('notes/recipe.md');
 		await invokeCommand(file);
@@ -355,7 +356,7 @@ describe('SummarizeModule content-aware templates', () => {
 		settings.summarize.autoDetectTemplates = true;
 		settings.summarize.customPrompt = 'My custom override prompt';
 
-		vi.mocked(fetchPageContent).mockResolvedValueOnce(RECIPE_CONTENT);
+		vi.mocked(fetchPageContentWithImages).mockResolvedValueOnce({ text: RECIPE_CONTENT, images: [] });
 
 		const file = new TFile('notes/recipe.md');
 		await invokeCommand(file);
@@ -369,7 +370,7 @@ describe('SummarizeModule content-aware templates', () => {
 		settings.summarize.autoDetectTemplates = true;
 		settings.summarize.customPrompt = '';
 
-		vi.mocked(fetchPageContent).mockResolvedValueOnce(NON_RECIPE_CONTENT);
+		vi.mocked(fetchPageContentWithImages).mockResolvedValueOnce({ text: NON_RECIPE_CONTENT, images: [] });
 
 		const file = new TFile('notes/article.md');
 		await invokeCommand(file);
@@ -385,14 +386,14 @@ describe('SummarizeModule content-aware templates', () => {
 			{ type: 'url', source: redditUrl, line: 2, endLine: 2 },
 		]);
 		// Clear cross-test accumulation so the assertions reflect only this run.
-		vi.mocked(fetchPageContent).mockClear();
+		vi.mocked(fetchPageContentWithImages).mockClear();
 		vi.mocked(fetchRedditContent).mockClear();
 
 		const file = new TFile('notes/reddit.md');
 		await invokeCommand(file);
 
 		expect(fetchRedditContent).toHaveBeenCalledWith(redditUrl, expect.any(Number));
-		expect(fetchPageContent).not.toHaveBeenCalled();
+		expect(fetchPageContentWithImages).not.toHaveBeenCalled();
 	});
 });
 

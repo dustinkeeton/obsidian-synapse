@@ -34,6 +34,7 @@ export type FeatureKey =
 	| 'summarize'
 	| 'tidy'
 	| 'rem'
+	| 'illustrate'
 	| 'video';
 
 /** A single declarative command entry. */

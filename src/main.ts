@@ -79,7 +79,7 @@ export default class SynapsePlugin extends Plugin {
 			},
 		});
 		this.modules = modules;
-		const { elaboration, audio, video, image, enrichment, summarize, tidy, organize, deepDive, title, rem } = modules;
+		const { elaboration, audio, video, image, enrichment, summarize, tidy, organize, deepDive, title, rem, illustrate } = modules;
 
 		this.urlTranscription = createUrlTranscriptionRouter({
 			getSettings,
@@ -94,6 +94,7 @@ export default class SynapsePlugin extends Plugin {
 			summarize: (fp, sc, of) => summarize.scanVault(fp, sc, of),
 			enrichment: (fp, sc, of) => enrichment.scanVault(fp, sc, of),
 			rem: (fp, sc, of) => rem.remScanDirectory(fp, sc, of),
+			illustrate: (fp, sc, of) => illustrate.scanVault(fp, sc, of),
 			tidy: (fp, sc, of) => tidy.scanVault(fp, sc, of),
 			organize: (fp, sc, of) => organize.scanDirectory(fp, sc, of),
 		};
@@ -113,6 +114,7 @@ export default class SynapsePlugin extends Plugin {
 			'deep-dive': () => deepDive.getPendingProposals(),
 			title: () => title.getPendingProposals(),
 			rem: () => rem.getPendingProposals(),
+			illustrate: () => illustrate.getPendingProposals(),
 			checkpoints: () => this.checkpointManager.listIncomplete(),
 		};
 		const refreshView = () => refreshUnifiedView(this.app.workspace, viewSources);
@@ -131,6 +133,7 @@ export default class SynapsePlugin extends Plugin {
 			organize: (cp) => organize.resumeFromCheckpoint(cp),
 			'deep-dive': (cp) => deepDive.resumeFromCheckpoint(cp),
 			rem: (cp) => rem.resumeFromCheckpoint(cp),
+			illustrate: (cp) => illustrate.resumeFromCheckpoint(cp),
 		};
 		this.checkpoints = new CheckpointRecoveryModule({
 			checkpointManager: this.checkpointManager,
@@ -154,6 +157,8 @@ export default class SynapsePlugin extends Plugin {
 			onTitleReject: (id) => title.rejectProposal(id),
 			onRemAcceptSelected: (id, texts) => rem.acceptProposal(id, texts),
 			onRemReject: (id) => rem.rejectProposal(id),
+			onIllustrateAcceptSelected: (id, itemIds) => illustrate.acceptProposal(id, itemIds),
+			onIllustrateReject: (id) => illustrate.rejectProposal(id),
 			onCheckpointDiscard: (id) => this.checkpoints.discard(id),
 			onCheckpointResume: (id) => this.checkpoints.resume(id),
 		}, this.notifications));
@@ -183,12 +188,14 @@ export default class SynapsePlugin extends Plugin {
 			enrich: (filePath, trigger) => enrichment.enrich(filePath, trigger, { postOp: true }),
 			checkTitle: (filePath) => title.checkTitle(filePath, { postOp: true }),
 			organizeNote: (file) => organize.organizeNote(file),
+			illustrateNote: (filePath, ctx) => illustrate.illustrateNote(filePath, ctx),
 		};
 		elaboration.onProposalAccepted = buildPostOpHook(postOpDeps, 'elaboration');
 		audio.onTranscriptionComplete = buildPostOpHook(postOpDeps, 'audio');
 		if (video) video.onTranscriptionComplete = buildPostOpHook(postOpDeps, 'video');
 		image.onExtractionComplete = buildPostOpHook(postOpDeps, 'image');
 		summarize.onSummaryComplete = buildPostOpHook(postOpDeps, 'summarize');
+		enrichment.onEnrichmentApplied = buildPostOpHook(postOpDeps, 'enrichment');
 		deepDive.onNoteAccepted = buildPostOpHook(postOpDeps, 'deep-dive');
 		deepDive.onOrganizeRequested = buildAutoOrganizeHook(postOpDeps, 'deep-dive');
 		summarize.onOrganizeRequested = buildAutoOrganizeHook(postOpDeps, 'summarize');
@@ -200,7 +207,7 @@ export default class SynapsePlugin extends Plugin {
 			router: this.urlTranscription,
 			noteQueue: this.noteQueue,
 			onTranscribeFile: (file, timeRange) => audio.transcribeFileToActiveNote(file, timeRange),
-			onComplete: (filePath) => audio.onTranscriptionComplete?.(filePath),
+			onComplete: (filePath, ctx) => audio.onTranscriptionComplete?.(filePath, ctx),
 		});
 		const isFfmpegAvailable = createFfmpegAvailability(audio.extractor);
 

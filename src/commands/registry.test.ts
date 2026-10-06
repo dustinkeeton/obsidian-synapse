@@ -10,7 +10,7 @@ import {
 import { SYNAPSE_PIPELINE } from '../pipeline';
 import type { CommandDefinition } from './types';
 
-/** The 23 real, user-invocable command ids (excludes the synthetic pipeline entry). */
+/** The 25 real, user-invocable command ids (excludes the synthetic pipeline entry). */
 const EXPECTED_COMMAND_IDS = [
 	'review-proposals', 'manage-checkpoints', 'transcribe-media',
 	'transcribe-note-media', 'fire',
@@ -21,11 +21,12 @@ const EXPECTED_COMMAND_IDS = [
 	'summarize-current-note', 'scan-vault-summarize',
 	'tidy-current-note', 'undo-tidy',
 	'rem-current-note', 'rem-directory',
+	'illustrate-current-note', 'illustrate-folder',
 	'check-dependencies',
 ];
 
 describe('COMMAND_REGISTRY', () => {
-	it('contains all 23 real commands plus the synthetic tidy-vault entry', () => {
+	it('contains all 25 real commands plus the synthetic tidy-vault entry', () => {
 		expect(COMMAND_REGISTRY).toHaveLength(EXPECTED_COMMAND_IDS.length + 1);
 		for (const id of EXPECTED_COMMAND_IDS) {
 			expect(REGISTRY_BY_ID.has(id)).toBe(true);
@@ -96,6 +97,7 @@ describe('COMMAND_REGISTRY', () => {
 		expect(noteContext).toEqual([
 			'deep-dive',
 			'enrich-current-note',
+			'illustrate-current-note',
 			'organize-current-note',
 			'rem-current-note',
 			'scan-current-note',

@@ -28,6 +28,7 @@
   --synapse-color-deep-dive: var(--color-purple);
   --synapse-color-title: var(--color-cyan);
   --synapse-color-rem: var(--color-pink);
+  --synapse-color-illustrate: var(--color-yellow);
   --synapse-color-summarize: var(--color-red);
   --synapse-color-tidy: var(--color-orange);
   --synapse-color-video: var(--color-yellow);
@@ -45,6 +46,7 @@
   --synapse-color-deep-dive-rgb: 160, 120, 220;
   --synapse-color-summarize-rgb: 230, 110, 110;
   --synapse-color-video-rgb: 220, 180, 70;
+  --synapse-color-illustrate-rgb: 220, 180, 70;
 }
 
 /*
@@ -152,6 +154,12 @@ body {
 .callout[data-callout="synapse-deep-dive"] {
   --callout-color: var(--synapse-color-deep-dive-rgb);
   --callout-icon: lucide-layers;
+}
+
+/* synapse-illustrate ↔ illustrate feature (caption + attribution under an embed) */
+.callout[data-callout="synapse-illustrate"] {
+  --callout-color: var(--synapse-color-illustrate-rgb);
+  --callout-icon: lucide-image;
 }
 
 /* ── Modal action buttons ── */
@@ -822,6 +830,10 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
   background: var(--synapse-color-rem);
   color: var(--text-on-accent);
 }
+.synapse-review-pane-label--illustrate {
+  background: var(--synapse-color-illustrate);
+  color: var(--text-on-accent);
+}
 /*
  * Shared editor base — neutral structural border. The action-type hue is
  * applied per editor via a `.synapse-review-editor--<type>` modifier so the
@@ -976,6 +988,73 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
   padding: 0 4px;
   border-radius: 2px;
 }
+/* ── Illustrate ── */
+.synapse-card--illustrate {
+  border-left-color: var(--synapse-color-illustrate);
+}
+.synapse-badge--illustrate {
+  background: var(--synapse-color-illustrate);
+  color: var(--text-on-accent);
+}
+.synapse-badge--illustrate-photo,
+.synapse-badge--illustrate-diagram,
+.synapse-badge--illustrate-chart {
+  background: var(--synapse-color-illustrate);
+  color: var(--text-on-accent);
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 2px;
+}
+.synapse-illustrate-thumb {
+  display: block;
+  max-width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: 4px;
+  margin: 4px 0;
+  background: var(--background-secondary);
+}
+.synapse-illustrate-mermaid {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow: auto;
+  margin: 4px 0;
+  padding: 6px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+}
+/* Checkbox lists render on their own full-width line beneath the row (host `.synapse-setting--has-helper` wraps) as a wrapping grid. */
+.synapse-illustrate-licenses,
+.synapse-illustrate-run-after {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  flex-basis: 100%;
+  padding: 4px 0 8px;
+}
+.synapse-illustrate-license,
+.synapse-illustrate-run-after-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 11em;
+  white-space: nowrap;
+  font-size: var(--font-ui-small);
+}
+.synapse-illustrate-placement {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+.synapse-illustrate-meta {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .synapse-rem-candidate-header {
   display: flex;
   align-items: center;
@@ -1369,6 +1448,9 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
 .synapse-actions-group--rem .synapse-actions-group-heading {
   border-left-color: var(--synapse-color-rem);
 }
+.synapse-actions-group--illustrate .synapse-actions-group-heading {
+  border-left-color: var(--synapse-color-illustrate);
+}
 .synapse-actions-group--video .synapse-actions-group-heading {
   border-left-color: var(--synapse-color-video);
 }
@@ -1429,6 +1511,9 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
 }
 .synapse-actions-group--rem .synapse-actions-group-icon {
   color: var(--synapse-color-rem);
+}
+.synapse-actions-group--illustrate .synapse-actions-group-icon {
+  color: var(--synapse-color-illustrate);
 }
 .synapse-actions-group--video .synapse-actions-group-icon {
   color: var(--synapse-color-video);

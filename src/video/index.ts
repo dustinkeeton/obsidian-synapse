@@ -1,4 +1,5 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
+import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import { AudioModule, TranscriptionResult } from '../audio';
@@ -39,7 +40,7 @@ export class VideoModule implements FeatureModule {
 	private extractor: AudioExtractor;
 
 	/** Optional callback invoked after video transcription completes. Wired by main.ts for enrichment. */
-	onTranscriptionComplete: ((filePath: string) => void) | null = null;
+	onTranscriptionComplete: ((filePath: string, ctx?: SourceContext) => void) | null = null;
 
 	/**
 	 * Tier-routed URL transcriber (captions first, then extraction). Wired by

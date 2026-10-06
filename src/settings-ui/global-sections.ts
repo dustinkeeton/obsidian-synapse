@@ -51,6 +51,10 @@ const AUTO_ACCEPT_LABELS: Record<ProposalKind, { name: string; desc: string }> =
 		name: 'REM (link discovery)',
 		desc: 'Caution: rewrites note body text. Automatically insert all discovered [[wikilinks]] without review.',
 	},
+	illustrate: {
+		name: 'Illustrate',
+		desc: 'Automatically accept every proposed visual, downloading photos into the vault and inserting them without review.',
+	},
 };
 
 /** Exclusion checkbox labels, keyed by the canonical feature set (#307). */
@@ -67,6 +71,7 @@ const FEATURE_LABELS: Record<FeatureId, string> = {
 	image: 'Image OCR',
 	rem: 'REM (link discovery)',
 	intake: 'Intake watcher',
+	illustrate: 'Illustrate',
 };
 
 const FEATURE_ORDER = Object.keys(ALL_FEATURE_IDS) as FeatureId[];
@@ -250,6 +255,8 @@ function isFeatureEnabled(ctx: SettingsSectionContext, kind: ProposalKind): bool
 			return s.title.enabled;
 		case 'rem':
 			return s.rem.enabled;
+		case 'illustrate':
+			return s.illustrate.enabled;
 	}
 }
 

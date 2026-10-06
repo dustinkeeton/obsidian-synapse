@@ -181,4 +181,21 @@ describe('EnrichmentModule auto-accept (#228)', () => {
 		expect(pending).toHaveLength(1);
 		expect(pending[0].status).toBe('pending');
 	});
+
+	it('fires onEnrichmentApplied with the note links on accept, never on generation (#213)', async () => {
+		settings.autoAccept.enrichment = false;
+		(mockPlugin.app.vault as Record<string, unknown>).cachedRead = vi.fn().mockResolvedValue('See https://example.com/ml and https://example.com/dl');
+		const mod = build(() => settings.autoAccept.enrichment);
+		const applied = vi.fn();
+		mod.onEnrichmentApplied = applied;
+		await mod.onload();
+
+		await mod.enrich('notes/ml.md', 'manual');
+		expect(applied).not.toHaveBeenCalled();
+
+		const [pending] = await mod.getPendingProposals();
+		await mod.acceptSelectedFromView(pending.id, { tags: ['reference'], internalLinks: [], externalLinks: [], frontmatter: [] });
+		expect(applied).toHaveBeenCalledTimes(1);
+		expect(applied).toHaveBeenCalledWith('notes/ml.md', { sourceUrls: ['https://example.com/ml', 'https://example.com/dl'], producedRegion: { kind: 'whole-note' } });
+	});
 });

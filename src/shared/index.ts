@@ -70,6 +70,10 @@ export { fetchRedditContent, isRedditUrl, extractCanonicalPostUrl } from './redd
 export type { RedditContent } from './reddit-fetcher';
 export {
 	fetchPageContent,
+	fetchPageContentWithImages,
+	fetchHtmlDocument,
+	extractImageUrls,
+	stripTrackingParams,
 	fetchArticleContent,
 	extractReadableText,
 	extractTitle,
@@ -78,6 +82,7 @@ export {
 	formatRecipeStructuredData,
 } from './content-fetcher';
 export type { RecipeJsonLd } from './content-fetcher';
+export type { SourceImage, SourceContext } from './source-context';
 export { classifyUrl, extractUrls } from './url-classifier';
 export type { UrlContentType, UrlClassification } from './url-classifier';
 export { detectPlatform, isSupportedUrl } from './url-detector';
@@ -140,6 +145,8 @@ export type { ContentSchema, PipelineStage, SchemaMode } from './content-schemas
 export { generateId, isValidCheckpointId } from './id-utils';
 export { hashString, contentKey } from './hash-utils';
 export { wrapUntrusted, UNTRUSTED_OPEN_TAG, UNTRUSTED_CLOSE_FENCE } from './untrusted-content';
+export { resolveInsertionPoint, applyInsertion, describeInsertion, locateRegion, scanBlocks } from './insertion-point';
+export type { InsertionAnchor, InsertionStrategy, InsertionBlockType, ResolvedInsertion, RegionLocator, ResolveInsertionOptions, LocatedRegion } from './insertion-point';
 export { isUntitled, isGenericTitle } from './title-detector';
 export {
 	loadNodeModules,

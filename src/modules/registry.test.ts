@@ -88,6 +88,7 @@ describe('module registry', () => {
 		const { modules, settings } = build({
 			audio: { ...DEFAULT_SETTINGS.audio, enabled: false },
 			tidy: { ...DEFAULT_SETTINGS.tidy, enabled: false },
+			illustrate: { ...DEFAULT_SETTINGS.illustrate, enabled: true },
 		});
 		const loaded: FeatureModuleKey[] = [];
 		for (const entry of MODULE_FACTORIES) {
@@ -116,7 +117,7 @@ describe('module registry', () => {
 			.map((m) => m.constructor.name)
 			.sort();
 		expect(withSlots).toEqual(
-			['DeepDiveModule', 'ElaborationModule', 'EnrichmentModule', 'OrganizeModule', 'RemModule', 'TitleModule']
+			['DeepDiveModule', 'ElaborationModule', 'EnrichmentModule', 'IllustrateModule', 'OrganizeModule', 'RemModule', 'TitleModule']
 		);
 	});
 });

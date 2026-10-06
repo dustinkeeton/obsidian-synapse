@@ -51,6 +51,8 @@ export interface UrlTranscript {
 	source: 'captions' | 'local-extraction';
 	/** Video title, when the tier could determine one. */
 	title?: string;
+	/** Poster frame URL for post-op illustrate (#213); never stored in the transcript cache. */
+	thumbnailUrl?: string;
 	/** Language code, when known. */
 	language?: string;
 	/** Vault path of a downloaded video file (local extraction only). */

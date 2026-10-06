@@ -1,4 +1,6 @@
 import { Plugin, TFile, normalizePath } from 'obsidian';
+import { extractUrls } from '../shared';
+import type { SourceContext } from '../shared';
 import { SynapseSettings, DeepDiveNestingMode } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
@@ -50,7 +52,7 @@ export {
 
 export class DeepDiveModule implements FeatureModule {
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
-	onNoteAccepted: ((filePath: string) => void) | null = null;
+	onNoteAccepted: ((filePath: string, ctx?: SourceContext) => void) | null = null;
 	onOrganizeRequested: ((file: TFile) => void) | null = null;
 
 	/** Optional callback to open the unified proposal view. Wired by main.ts (#340). */
@@ -168,7 +170,10 @@ export class DeepDiveModule implements FeatureModule {
 			}
 
 			// Trigger enrichment on the new note
-			this.onNoteAccepted?.(proposal.proposedPath);
+			this.onNoteAccepted?.(proposal.proposedPath, {
+				sourceUrls: [...new Set([...(Array.isArray(proposal.topic.relatedUrls) ? proposal.topic.relatedUrls : []), ...extractUrls(proposal.proposedContent)])],
+				producedRegion: { kind: 'whole-note' },
+			});
 
 			// Trigger organize on the new note if enabled
 			if (this.getSettings().deepDive.autoOrganizeOnAccept) {

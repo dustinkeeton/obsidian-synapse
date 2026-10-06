@@ -149,8 +149,8 @@ processFileTargets(file, targets, op, content)                        index.ts:5
 
 fireEnrichmentCallbacks(path, result)                                 index.ts:577
   (called only AFTER the note's queue slot is released, #483)
-  --> onSummaryComplete?.(path)  [only if inlineCompleted>0 and enrichmentCompleted==0]
-  --> onSummaryComplete?.(newNotePath)  per created note
+  --> onSummaryComplete?.(path, ctx)  [only if inlineCompleted>0 and enrichmentCompleted==0; ctx = { sourceUrls, sourceImages, producedRegion: synapse-summary callout }] (#213)
+  --> onSummaryComplete?.(newNotePath, ctx)  per created note (producedRegion whole-note); each distinct path fires at most once per run
   caller separately: onOrganizeRequested?.(file) if autoOrganizeOnSummarize
 ```
 

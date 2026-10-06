@@ -20,7 +20,7 @@ describe('autoAccept settings (#228)', () => {
 		expect(Object.keys(DEFAULT_SETTINGS.autoAccept)).toHaveLength(PROPOSAL_KINDS.length);
 	});
 
-	it('exposes exactly the six expected proposal kinds', () => {
+	it('exposes exactly the seven expected proposal kinds', () => {
 		expect([...PROPOSAL_KINDS]).toEqual([
 			'elaboration',
 			'enrichment',
@@ -28,6 +28,7 @@ describe('autoAccept settings (#228)', () => {
 			'deep-dive',
 			'title',
 			'rem',
+			'illustrate',
 		]);
 	});
 });

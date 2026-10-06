@@ -29,6 +29,7 @@ function createMockModules(): PipelineModuleMap {
 		summarize: vi.fn().mockResolvedValue(undefined),
 		enrichment: vi.fn().mockResolvedValue(5),
 		rem: vi.fn().mockResolvedValue(2),
+		illustrate: vi.fn().mockResolvedValue(1),
 		tidy: vi.fn().mockResolvedValue(4),
 		organize: vi.fn().mockResolvedValue(1),
 	};
@@ -46,6 +47,7 @@ describe('SynapseRunner', () => {
 		settings.summarize.enabled = true;
 		settings.enrichment.enabled = true;
 		settings.rem.enabled = true;
+		settings.illustrate.enabled = true;
 		settings.tidy.enabled = true;
 		settings.organize.enabled = true;
 
@@ -77,6 +79,10 @@ describe('SynapseRunner', () => {
 			callOrder.push('rem');
 			return Promise.resolve(0);
 		});
+		(mockModules.illustrate as Mock<PipelineScanFn>).mockImplementation(() => {
+			callOrder.push('illustrate');
+			return Promise.resolve(0);
+		});
 		(mockModules.tidy as Mock<PipelineScanFn>).mockImplementation(() => {
 			callOrder.push('tidy');
 			return Promise.resolve(0);
@@ -93,6 +99,7 @@ describe('SynapseRunner', () => {
 			'summarize',
 			'enrichment',
 			'rem',
+			'illustrate',
 			'tidy',
 			'organize',
 		]);
@@ -118,6 +125,7 @@ describe('SynapseRunner', () => {
 		settings.summarize.enabled = false;
 		settings.enrichment.enabled = false;
 		settings.rem.enabled = false;
+		settings.illustrate.enabled = false;
 		settings.tidy.enabled = false;
 		settings.organize.enabled = false;
 
@@ -182,13 +190,14 @@ describe('SynapseRunner', () => {
 		expect(mockModules.tidy).toHaveBeenCalled();
 		expect(mockModules.organize).toHaveBeenCalled();
 		expect(mockNotifications._handle.finish).toHaveBeenCalledWith(
-			expect.stringContaining('6 phases run'),
+			expect.stringContaining('7 phases run'),
 		);
 	});
 
 	it('progress reporting shows correct phase counts', async () => {
 		settings.summarize.enabled = false;
 		settings.rem.enabled = false;
+		settings.illustrate.enabled = false;
 
 		await runner.fire();
 
@@ -269,6 +278,7 @@ describe('SynapseRunner', () => {
 			settings.summarize.enabled = false;
 			settings.enrichment.enabled = false;
 			settings.rem.enabled = false;
+			settings.illustrate.enabled = false;
 			settings.tidy.enabled = false;
 			settings.organize.enabled = false;
 			const file = fileIn('Inbox', 'note.md');

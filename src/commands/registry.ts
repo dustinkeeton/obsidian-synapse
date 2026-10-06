@@ -54,6 +54,10 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 	{ id: 'rem-current-note', name: 'REM: discover links in current note', feature: 'rem', status: 'active', flows: ['palette'], context: 'note' },
 	{ id: 'rem-directory', name: 'Scan folder for links', feature: 'rem', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'rem' },
 
+	// --- illustrate (src/illustrate/index.ts) ---
+	{ id: 'illustrate-current-note', name: 'Illustrate current note', feature: 'illustrate', status: 'active', flows: ['palette'], context: 'note' },
+	{ id: 'illustrate-folder', name: 'Scan folder for notes to illustrate', feature: 'illustrate', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'illustrate' },
+
 	// --- video (src/video/index.ts) ---
 	{ id: 'check-dependencies', name: 'Check external tool availability', feature: 'video', status: 'active', flows: ['palette'], context: 'global' },
 

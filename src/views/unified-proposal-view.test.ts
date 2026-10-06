@@ -43,6 +43,8 @@ function mockCallbacks(): UnifiedViewCallbacks {
 		onTitleReject: vi.fn().mockResolvedValue(undefined),
 		onRemAcceptSelected: vi.fn().mockResolvedValue(undefined),
 		onRemReject: vi.fn().mockResolvedValue(undefined),
+		onIllustrateAcceptSelected: vi.fn().mockResolvedValue(undefined),
+		onIllustrateReject: vi.fn().mockResolvedValue(undefined),
 		onCheckpointDiscard: vi.fn().mockResolvedValue(undefined),
 		onCheckpointResume: vi.fn().mockResolvedValue(undefined),
 	};

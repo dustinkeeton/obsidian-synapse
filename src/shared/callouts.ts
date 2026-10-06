@@ -17,6 +17,7 @@ export const CALLOUT_TYPES = {
 	deepDive: 'synapse-deep-dive',
 	nav: 'synapse-nav',
 	ocr: 'synapse-ocr',
+	illustrate: 'synapse-illustrate',
 } as const;
 
 export type CalloutType = (typeof CALLOUT_TYPES)[keyof typeof CALLOUT_TYPES];

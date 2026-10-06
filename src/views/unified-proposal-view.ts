@@ -5,8 +5,9 @@ import type { OrganizeProposal } from '../organize';
 import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
 import type { RemProposal } from '../rem';
+import type { IllustrateProposal } from '../illustrate';
 import type { Checkpoint, NotificationManager } from '../shared';
-import { fireAndForget } from '../shared';
+import { fireAndForget, describeInsertion } from '../shared';
 import type { UnifiedItem, UnifiedViewCallbacks } from './types';
 import { badgeClass, cardClass, reviewPaneLabelClass } from './proposal-styles';
 
@@ -33,6 +34,8 @@ export class UnifiedProposalView extends ItemView {
 	private reviewingDeepDive: DeepDiveProposal | null = null;
 	private reviewingTitle: TitleProposal | null = null;
 	private reviewingRem: RemProposal | null = null;
+	private reviewingIllustrate: IllustrateProposal | null = null;
+	private selectedIllustrateItems = new Set<string>();
 
 	// REM review selection state
 	private selectedRemLinks = new Set<string>();
@@ -123,6 +126,12 @@ export class UnifiedProposalView extends ItemView {
 			);
 			if (!exists) this.reviewingRem = null;
 		}
+		if (this.reviewingIllustrate) {
+			const exists = items.some(
+				i => i.kind === 'illustrate' && i.data.id === this.reviewingIllustrate!.id
+			);
+			if (!exists) this.reviewingIllustrate = null;
+		}
 		this.render();
 	}
 
@@ -139,6 +148,8 @@ export class UnifiedProposalView extends ItemView {
 			this.renderTitleReview(this.reviewingTitle);
 		} else if (this.reviewingRem) {
 			this.renderRemReview(this.reviewingRem);
+		} else if (this.reviewingIllustrate) {
+			this.renderIllustrateReview(this.reviewingIllustrate);
 		} else {
 			this.renderList();
 		}
@@ -177,6 +188,7 @@ export class UnifiedProposalView extends ItemView {
 		this.reviewingDeepDive = null;
 		this.reviewingTitle = null;
 		this.reviewingRem = null;
+		this.reviewingIllustrate = null;
 		this.render();
 	}
 
@@ -260,6 +272,9 @@ export class UnifiedProposalView extends ItemView {
 				await this.callbacks.onRemAcceptSelected(item.data.id, allTexts);
 				break;
 			}
+			case 'illustrate':
+				await this.callbacks.onIllustrateAcceptSelected(item.data.id, item.data.items.map(i => i.id));
+				break;
 		}
 	}
 
@@ -278,6 +293,8 @@ export class UnifiedProposalView extends ItemView {
 				return `Title: ${item.data.sourceNotePath}`;
 			case 'rem':
 				return `REM: ${item.data.sourceNotePath}`;
+			case 'illustrate':
+				return `Illustrate: ${item.data.sourceNotePath}`;
 		}
 	}
 
@@ -348,6 +365,9 @@ export class UnifiedProposalView extends ItemView {
 				break;
 			case 'rem':
 				await this.callbacks.onRemReject(item.data.id);
+				break;
+			case 'illustrate':
+				await this.callbacks.onIllustrateReject(item.data.id);
 				break;
 		}
 	}
@@ -455,6 +475,8 @@ export class UnifiedProposalView extends ItemView {
 					this.renderTitleCard(section, item.data);
 				} else if (item.kind === 'rem') {
 					this.renderRemCard(section, item.data);
+				} else if (item.kind === 'illustrate') {
+					this.renderIllustrateCard(section, item.data);
 				}
 			}
 		}
@@ -1299,6 +1321,160 @@ export class UnifiedProposalView extends ItemView {
 		rejectBtn.addEventListener('click', () => {
 			this.reviewingRem = null;
 			fireAndForget(this.callbacks.onRemReject(proposal.id), 'Reject REM links');
+		});
+	}
+
+	// ── Illustrate Card ──────────────────────────────────────
+
+	private illustrateSummary(proposal: IllustrateProposal): string {
+		const counts = { photo: 0, diagram: 0, chart: 0 };
+		for (const item of proposal.items) counts[item.kind]++;
+		const parts = (Object.keys(counts) as Array<keyof typeof counts>)
+			.filter(kind => counts[kind] > 0)
+			.map(kind => `${counts[kind]} ${kind}${counts[kind] === 1 ? '' : 's'}`);
+		return `${proposal.items.length} visual${proposal.items.length === 1 ? '' : 's'} | ${parts.join(', ')}`;
+	}
+
+	private renderIllustrateCard(container: HTMLElement, proposal: IllustrateProposal): void {
+		const card = container.createDiv({
+			cls: `synapse-proposal-card ${cardClass('illustrate')}`,
+		});
+
+		card.createEl('span', {
+			text: 'Illustrate',
+			cls: `synapse-badge ${badgeClass('illustrate')}`,
+		});
+
+		card.createEl('small', { text: this.illustrateSummary(proposal), cls: 'synapse-reasons' });
+
+		const preview = proposal.items.slice(0, 3).map(item => item.caption).join('; ');
+		card.createEl('p', {
+			text: preview + (proposal.items.length > 3 ? '...' : ''),
+			cls: 'synapse-preview',
+		});
+
+		const actions = card.createDiv({ cls: 'synapse-actions' });
+
+		const viewBtn = actions.createEl('button', { text: 'Review' });
+		viewBtn.addEventListener('click', () => {
+			this.enterIllustrateReview(proposal);
+		});
+
+		const acceptBtn = actions.createEl('button', { text: 'Accept all' });
+		acceptBtn.addEventListener('click', () => {
+			fireAndForget(
+				this.callbacks.onIllustrateAcceptSelected(proposal.id, proposal.items.map(item => item.id)),
+				'Accept illustrations'
+			);
+		});
+
+		const rejectBtn = actions.createEl('button', { text: 'Reject' });
+		this.onClick(rejectBtn, () => this.callbacks.onIllustrateReject(proposal.id), 'Reject illustrations');
+	}
+
+	// ── Illustrate Review ────────────────────────────────────
+
+	private enterIllustrateReview(proposal: IllustrateProposal): void {
+		this.reviewingIllustrate = proposal;
+		this.selectedIllustrateItems = new Set(proposal.items.map(item => item.id));
+		this.render();
+	}
+
+	private renderIllustrateReview(proposal: IllustrateProposal): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('synapse-view-root');
+
+		const header = contentEl.createDiv({ cls: 'synapse-review-header' });
+		const backBtn = header.createEl('button', { text: 'Back', cls: 'synapse-review-back' });
+		backBtn.addEventListener('click', () => this.exitReview());
+
+		const titleLink = header.createEl('span', {
+			text: proposal.sourceNotePath,
+			cls: 'synapse-review-title synapse-note-link',
+		});
+		titleLink.addEventListener('click', () => this.openNote(proposal.sourceNotePath));
+
+		contentEl.createEl('small', {
+			text: `${this.illustrateSummary(proposal)} | ${proposal.createdAt.split('T')[0]}`,
+			cls: 'synapse-review-reasons',
+		});
+
+		const checklist = contentEl.createDiv({ cls: 'synapse-enrichment-checklist' });
+
+		for (const item of proposal.items) {
+			const section = checklist.createDiv({ cls: 'synapse-checklist-section' });
+
+			const headingRow = section.createDiv({ cls: 'synapse-rem-candidate-header' });
+			headingRow.createEl('span', {
+				text: item.placement ? describeInsertion(item.placement) : 'Placement resolved on accept',
+				cls: 'synapse-illustrate-placement',
+				attr: { title: item.anchor },
+			});
+			headingRow.createEl('span', {
+				text: item.kind,
+				cls: `synapse-badge synapse-badge--illustrate-${item.kind}`,
+			});
+
+			const row = section.createEl('label', { cls: 'synapse-checklist-row' });
+			const checkbox = row.createEl('input', { type: 'checkbox' });
+			checkbox.checked = this.selectedIllustrateItems.has(item.id);
+			checkbox.addEventListener('change', () => {
+				if (checkbox.checked) {
+					this.selectedIllustrateItems.add(item.id);
+				} else {
+					this.selectedIllustrateItems.delete(item.id);
+				}
+			});
+			row.createEl('span', { text: item.caption });
+
+			// Thumbnails stay remote until accept; nothing is downloaded during review.
+			if (item.kind === 'photo') {
+				section.createEl('img', {
+					cls: 'synapse-illustrate-thumb',
+					attr: { src: item.candidate.thumbnailUrl, alt: item.candidate.title, loading: 'lazy' },
+				});
+				section.createEl('small', {
+					text: `${item.candidate.title} — ${item.candidate.license} — ${item.candidate.attribution} (${item.candidate.provider})`,
+					cls: 'synapse-illustrate-meta',
+				});
+			} else {
+				section.createEl('pre', { text: item.mermaid, cls: 'synapse-illustrate-mermaid' });
+			}
+
+			if (item.rationale) {
+				section.createEl('small', { text: item.rationale, cls: 'synapse-illustrate-meta' });
+			}
+		}
+
+		const actionBar = contentEl.createDiv({ cls: 'synapse-review-actions' });
+
+		const acceptBtn = actionBar.createEl('button', { text: 'Accept selected', cls: 'mod-cta' });
+		acceptBtn.addEventListener('click', () => {
+			const accepted = [...this.selectedIllustrateItems];
+			this.reviewingIllustrate = null;
+			fireAndForget(
+				this.callbacks.onIllustrateAcceptSelected(proposal.id, accepted),
+				'Accept illustrations'
+			);
+		});
+
+		const selectAllBtn = actionBar.createEl('button', { text: 'All' });
+		selectAllBtn.addEventListener('click', () => {
+			this.selectedIllustrateItems = new Set(proposal.items.map(item => item.id));
+			this.render();
+		});
+
+		const noneBtn = actionBar.createEl('button', { text: 'None' });
+		noneBtn.addEventListener('click', () => {
+			this.selectedIllustrateItems.clear();
+			this.render();
+		});
+
+		const rejectBtn = actionBar.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () => {
+			this.reviewingIllustrate = null;
+			fireAndForget(this.callbacks.onIllustrateReject(proposal.id), 'Reject illustrations');
 		});
 	}
 

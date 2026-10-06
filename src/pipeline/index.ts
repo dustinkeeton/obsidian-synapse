@@ -10,5 +10,6 @@ export type {
 	PostOpSource,
 	PostOpTrigger,
 	PostOpHook,
+	PostOpContext,
 	AutoOrganizeTrigger,
 } from './types';

@@ -13,7 +13,7 @@ Exported from `index.ts`:
 ```ts
 // registry.ts:35
 type FeatureModules = { [K in FeatureSettingsKey]: FeatureModuleClasses[K] }   // one slot per enabled-flagged settings section; video: VideoModule | null
-type FeatureModuleKey = keyof FeatureModules                                     // 'elaboration' | 'audio' | 'video' | 'image' | 'enrichment' | 'summarize' | 'tidy' | 'organize' | 'deepDive' | 'title' | 'rem' | 'intake'
+type FeatureModuleKey = keyof FeatureModules                                     // 'elaboration' | 'audio' | 'video' | 'image' | 'enrichment' | 'summarize' | 'tidy' | 'organize' | 'deepDive' | 'title' | 'rem' | 'illustrate' | 'intake'
 
 // registry.ts:39
 interface ModuleWiring {
@@ -36,7 +36,7 @@ type ModuleEntry = {
 }
 
 // registry.ts:74
-const MODULE_FACTORIES: readonly ModuleEntry[]   // elaboration, audio, video (desktop), image, enrichment, summarize, tidy, organize, deepDive, title, rem, intake
+const MODULE_FACTORIES: readonly ModuleEntry[]   // elaboration, audio, video (desktop), image, enrichment, summarize, tidy, organize, deepDive, title, rem, illustrate, intake
 
 // registry.ts:119
 function constructFeatureModules(deps: ModuleDeps, wiring: ModuleWiring): FeatureModules   // constructs all (disabled included); throws if a dependency entry is missing
@@ -63,6 +63,7 @@ function unloadFeatureModules(modules: FeatureModules): void                    
 | `deepDive` | `DeepDiveModule` | all | `() => settings.autoAccept['deep-dive']` |
 | `title` | `TitleModule` | all | `() => settings.autoAccept.title` |
 | `rem` | `RemModule` | all | `() => settings.autoAccept.rem` |
+| `illustrate` | `IllustrateModule` | all | `() => settings.autoAccept.illustrate` |
 | `intake` | `IntakeModule` | all | `wiring.intake` |
 
 ## File Inventory

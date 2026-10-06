@@ -15,6 +15,7 @@ import { renderOrganizeSettings } from '../organize';
 import { renderDeepDiveSettings } from '../deep-dive';
 import { renderTitleSettings } from '../title';
 import { renderRemSettings } from '../rem';
+import { renderIllustrateSettings } from '../illustrate';
 import {
 	renderAiConfiguration,
 	renderAutoAccept,
@@ -48,6 +49,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionEntry[] = [
 	{ key: 'deepDive', render: renderDeepDiveSettings },
 	{ key: 'title', render: renderTitleSettings },
 	{ key: 'rem', render: renderRemSettings },
+	{ key: 'illustrate', render: renderIllustrateSettings },
 	{ key: 'about', render: renderAbout },
 ];
 

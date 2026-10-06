@@ -18,6 +18,9 @@ class EnrichmentModule {
   // Wired by main.ts to open the unified proposal view (#340)
   onOpenProposalView: (() => void) | null
 
+  // Fired after a proposal's accepted items are written (acceptSelected, never on scan) with the note's external links as ctx.sourceUrls; main.ts wires buildPostOpHook(deps, 'enrichment') -> illustrate leg only (#213)
+  onEnrichmentApplied: ((filePath: string, ctx?: SourceContext) => void) | null
+
   constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:60; ModuleDeps = { plugin, getSettings, notifications, checkpointManager, registrar, noteQueue } (#504); shouldAutoAccept defaults to () => false (#228)
 
   onload(): Promise<void>

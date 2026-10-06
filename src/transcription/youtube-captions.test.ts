@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import {
+	extractVideoThumbnail,
 	fetchYouTubeTranscript,
 	extractJsonAfterMarker,
 	extractCaptionTracks,
@@ -547,3 +548,28 @@ describe('formatCaptionTranscript', () => {
 		expect(structured).toBe(false);
 	});
 });
+
+describe('extractVideoThumbnail (#213)', () => {
+	it('picks the widest https thumbnail', () => {
+		const player = {
+			videoDetails: {
+				thumbnail: {
+					thumbnails: [
+						{ url: 'https://i.ytimg.com/vi/x/default.jpg', width: 120, height: 90 },
+						{ url: 'https://i.ytimg.com/vi/x/maxresdefault.jpg', width: 1280, height: 720 },
+						{ url: 'http://i.ytimg.com/vi/x/huge.jpg', width: 4000 },
+						{ url: 'https://i.ytimg.com/vi/x/hq.jpg', width: 480, height: 360 },
+					],
+				},
+			},
+		};
+		expect(extractVideoThumbnail(player)).toBe('https://i.ytimg.com/vi/x/maxresdefault.jpg');
+	});
+
+	it('returns undefined when the player carries no thumbnails', () => {
+		expect(extractVideoThumbnail({ videoDetails: { title: 'x' } })).toBeUndefined();
+		expect(extractVideoThumbnail(null)).toBeUndefined();
+		expect(extractVideoThumbnail({ videoDetails: { thumbnail: { thumbnails: 'nope' } } })).toBeUndefined();
+	});
+});
+

@@ -13,6 +13,7 @@ function makeSources(): UnifiedViewSources {
 		'deep-dive': vi.fn().mockResolvedValue([{ id: 'd1' }]),
 		title: vi.fn().mockResolvedValue([]),
 		rem: vi.fn().mockResolvedValue([{ id: 'r1' }]),
+		illustrate: vi.fn().mockResolvedValue([]),
 		checkpoints: vi.fn().mockResolvedValue([{ id: 'cp1' }]),
 	};
 }
@@ -50,6 +51,31 @@ describe('refreshUnifiedView', () => {
 		]);
 		expect(a.view.setCheckpoints).toHaveBeenCalledWith([{ id: 'cp1' }]);
 		expect(b.view.setItems).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('refreshUnifiedView — deferred leaves (Obsidian >= 1.7.2)', () => {
+	it('loads a deferred leaf before populating it', async () => {
+		const real = { setItems: vi.fn(), setCheckpoints: vi.fn() };
+		const leaf = {
+			view: {} as unknown,
+			isDeferred: true,
+			loadIfDeferred: vi.fn(async () => { leaf.view = real; leaf.isDeferred = false; }),
+			setViewState: vi.fn(),
+		};
+		const workspace = makeWorkspace({ [UNIFIED_VIEW_TYPE]: [leaf as unknown as ReturnType<typeof makeLeaf>] });
+		await refreshUnifiedView(workspace as unknown as Workspace, makeSources());
+		expect(leaf.loadIfDeferred).toHaveBeenCalledTimes(1);
+		expect(real.setItems).toHaveBeenCalledTimes(1);
+		expect(real.setCheckpoints).toHaveBeenCalledWith([{ id: 'cp1' }]);
+	});
+
+	it('skips a leaf whose view still lacks the view methods and keeps populating the others', async () => {
+		const placeholder = { view: { setItems: 'nope' }, isDeferred: false, setViewState: vi.fn() };
+		const ok = makeLeaf();
+		const workspace = makeWorkspace({ [UNIFIED_VIEW_TYPE]: [placeholder as unknown as ReturnType<typeof makeLeaf>, ok] });
+		await expect(refreshUnifiedView(workspace as unknown as Workspace, makeSources())).resolves.toBeUndefined();
+		expect(ok.view.setItems).toHaveBeenCalledTimes(1);
 	});
 });
 

@@ -1,6 +1,7 @@
 import { requestUrl } from 'obsidian';
 import { sanitizeUrl } from './validation';
 import { isRecord, parseJson } from './json-utils';
+import type { SourceImage } from './source-context';
 
 /**
  * Fetch a webpage and extract readable text content.
@@ -36,7 +37,8 @@ export interface RecipeJsonLd {
  * and a hard timeout. Shared by every fetcher in this module so a given
  * page is only requested once per call site.
  */
-async function fetchHtml(url: string): Promise<string> {
+/** Raw page fetch with the response content type, for callers that must skip non-HTML documents. */
+export async function fetchHtmlDocument(url: string): Promise<{ html: string; contentType: string }> {
 	const validatedUrl = sanitizeUrl(url);
 
 	const timeout = new Promise<never>((_, reject) =>
@@ -61,7 +63,13 @@ async function fetchHtml(url: string): Promise<string> {
 		timeout,
 	]);
 
-	return response.text;
+	const headers: Record<string, string> = response.headers ?? {};
+	const contentType = headers['content-type'] ?? headers['Content-Type'] ?? '';
+	return { html: response.text, contentType };
+}
+
+async function fetchHtml(url: string): Promise<string> {
+	return (await fetchHtmlDocument(url)).html;
 }
 
 /**
@@ -185,8 +193,17 @@ export function formatRecipeStructuredData(recipes: RecipeJsonLd[]): string {
 	return sections.join('\n');
 }
 
-export async function fetchPageContent(url: string, maxLength: number): Promise<string> {
+/** {@link fetchPageContent} plus the page's images, for callers that illustrate from the source (#213). */
+export async function fetchPageContentWithImages(url: string, maxLength: number): Promise<{ text: string; images: SourceImage[] }> {
 	const html = await fetchHtml(url);
+	return { text: pageText(html, maxLength), images: extractImageUrls(html, url) };
+}
+
+export async function fetchPageContent(url: string, maxLength: number): Promise<string> {
+	return pageText(await fetchHtml(url), maxLength);
+}
+
+function pageText(html: string, maxLength: number): string {
 	const recipes = extractJsonLdRecipes(html);
 	const structuredPreamble = formatRecipeStructuredData(recipes);
 	const readableText = extractReadableText(html);
@@ -194,6 +211,75 @@ export async function fetchPageContent(url: string, maxLength: number): Promise<
 		? structuredPreamble + '\n\n' + readableText
 		: readableText;
 	return combined.slice(0, maxLength);
+}
+
+const MAX_SOURCE_IMAGES = 12;
+const NON_CONTENT_IMAGE_RE = /(?:^|[/._-])(?:logo|sprite|avatar|icon|favicon|pixel|tracking|badge|spacer|blank)(?:[/._-]|$)/i;
+const TRACKING_PARAM_RE = /^(?:utm_\w*|fbclid|gclid|dclid|gbraid|wbraid|yclid|msclkid|mc_\w+|igshid|ref|ref_\w*|_ga|_gl|spm)$/i;
+
+/** Drop analytics/campaign query params so the same image never yields two URLs. */
+export function stripTrackingParams(url: string): string {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		return url;
+	}
+	for (const key of [...parsed.searchParams.keys()]) {
+		if (TRACKING_PARAM_RE.test(key)) parsed.searchParams.delete(key);
+	}
+	return parsed.toString();
+}
+
+function resolveImageUrl(src: string, baseUrl: string): string | null {
+	const trimmed = src.trim();
+	if (trimmed === '' || /^data:/i.test(trimmed)) return null;
+	let resolved: URL;
+	try {
+		resolved = new URL(trimmed, baseUrl);
+	} catch {
+		return null;
+	}
+	if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return null;
+	if (/\.svg(?:[?#]|$)/i.test(resolved.pathname)) return null;
+	if (NON_CONTENT_IMAGE_RE.test(resolved.pathname)) return null;
+	return stripTrackingParams(resolved.toString());
+}
+
+function attr(tag: string, name: string): string {
+	const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i'));
+	return decodeHtmlEntities(match?.[1] ?? match?.[2] ?? match?.[3] ?? '');
+}
+
+function isTrackingPixel(tag: string): boolean {
+	const size = (name: string) => parseInt(attr(tag, name), 10);
+	const width = size('width');
+	const height = size('height');
+	return (!isNaN(width) && width <= 1) || (!isNaN(height) && height <= 1);
+}
+
+/** Pure: social-card images first, then content `<img>` tags, resolved and deduped; pixels, data URIs, SVGs, and chrome assets skipped. */
+export function extractImageUrls(html: string, baseUrl: string): SourceImage[] {
+	const images: SourceImage[] = [];
+	const seen = new Set<string>();
+	const title = extractTitle(html) || undefined;
+	const push = (src: string, alt?: string): void => {
+		const url = resolveImageUrl(src, baseUrl);
+		if (!url || seen.has(url) || images.length >= MAX_SOURCE_IMAGES) return;
+		seen.add(url);
+		images.push({ url, alt: alt?.trim() || undefined, pageUrl: baseUrl, title });
+	};
+	for (const key of ['og:image', 'twitter:image', 'og:image:url']) {
+		const content = extractMetaContent(html, key);
+		if (content) push(decodeHtmlEntities(content), title);
+	}
+	for (const match of html.matchAll(/<img\b[^>]*>/gi)) {
+		const tag = match[0];
+		if (isTrackingPixel(tag)) continue;
+		const src = attr(tag, 'src') || attr(tag, 'srcset').split(',')[0]?.trim().split(/\s+/)[0] || '';
+		if (src) push(src, attr(tag, 'alt'));
+	}
+	return images;
 }
 
 /**

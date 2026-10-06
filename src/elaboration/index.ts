@@ -1,4 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
+import { extractUrls } from '../shared';
+import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar, isInFlow } from '../commands';
 import {
@@ -29,7 +31,7 @@ export class ElaborationModule implements FeatureModule {
 	private startupTimeout: number | null = null;
 
 	/** Optional callback invoked after a proposal is accepted. Wired by main.ts for enrichment. */
-	onProposalAccepted: ((filePath: string) => void) | null = null;
+	onProposalAccepted: ((filePath: string, ctx?: SourceContext) => void) | null = null;
 
 	/** Optional callback to refresh the unified proposal view. Wired by main.ts. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
@@ -509,14 +511,18 @@ export class ElaborationModule implements FeatureModule {
 			'Elaboration',
 			sanitizedAdditions
 		);
-		await this.plugin.app.vault.process(file, (data) => data.trimEnd() + '\n' + callout);
+		let body = '';
+		await this.plugin.app.vault.process(file, (data) => {
+			body = data;
+			return data.trimEnd() + '\n' + callout;
+		});
 
 		await this.store.updateStatus(id, 'accepted');
 		if (!options?.silent) {
 			this.notifications.success('Proposal accepted');
 			await this.refreshView();
 		}
-		this.onProposalAccepted?.(proposal.sourceNotePath);
+		this.onProposalAccepted?.(proposal.sourceNotePath, { sourceUrls: extractUrls(body), producedRegion: { kind: 'whole-note' } });
 	}
 
 	/**

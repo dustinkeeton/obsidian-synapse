@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect x="12" y="26" width="50" height="44" rx="6" fill="none" stroke="currentColor" stroke-width="7"></rect>
+  <circle cx="27" cy="40" r="5" fill="currentColor"></circle>
+  <polyline points="20,62 31,50 39,57 48,45 55,56" fill="none" style="stroke:var(--synapse-gold, #FFD23F)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></polyline>
+  <path d="M62 48 H70" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="80" cy="48" r="8.5" fill="none" stroke="currentColor" stroke-width="6.5"></circle>
+</svg>

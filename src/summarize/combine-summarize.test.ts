@@ -87,6 +87,7 @@ vi.mock('../shared', async () => ({
 	isSupportedUrl: vi.fn().mockReturnValue(false),
 	detectPlatform: vi.fn().mockReturnValue(null),
 	fetchPageContent: vi.fn().mockResolvedValue('Fetched URL content for testing.'),
+	fetchPageContentWithImages: vi.fn().mockResolvedValue({ text: 'Fetched URL content for testing.', images: [] }),
 	fetchTweetContent: vi.fn().mockResolvedValue('Tweet content for testing.'),
 	isRedditUrl: (url: string) => {
 		try {
@@ -255,10 +256,10 @@ describe('SummarizeModule combined summarization (#367)', () => {
 	});
 
 	it('reports combined-path link failures with the standardized linkLoadError notice', async () => {
-		const { fetchPageContent } = await import('../shared');
-		vi.mocked(fetchPageContent)
+		const { fetchPageContentWithImages } = await import('../shared');
+		vi.mocked(fetchPageContentWithImages)
 			.mockRejectedValueOnce(new Error('Reddit returned HTTP 429'))
-			.mockResolvedValueOnce('   ');
+			.mockResolvedValueOnce({ text: '   ', images: [] });
 
 		const url1: SummarizeTarget = { type: 'url', source: 'https://example.com/a', line: 2, endLine: 2 };
 		const url2: SummarizeTarget = { type: 'url', source: 'https://example.com/b', line: 3, endLine: 3 };

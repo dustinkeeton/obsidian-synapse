@@ -68,6 +68,7 @@ export class CaptionStrategy implements UrlTranscriptionStrategy {
 				raw: captions.text,
 				source: 'captions',
 				title: captions.title,
+				thumbnailUrl: captions.thumbnailUrl,
 				language: captions.language,
 			};
 		}
@@ -88,6 +89,7 @@ export class CaptionStrategy implements UrlTranscriptionStrategy {
 			raw: captions.text,
 			source: 'captions',
 			title: captions.title,
+			thumbnailUrl: captions.thumbnailUrl,
 			language: captions.language,
 			reformatted: processed.reformatted,
 			schemaId: processed.schemaId,
