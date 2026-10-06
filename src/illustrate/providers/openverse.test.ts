@@ -44,7 +44,8 @@ describe('OpenverseProvider.search', () => {
 		vi.mocked(requestUrl).mockResolvedValue({ status: 200, json: { results: [result] } } as never);
 		const results = await new OpenverseProvider().search('golden gate', { limit: 2 });
 		expect(results).toHaveLength(1);
-		const url = vi.mocked(requestUrl).mock.calls[0][0].url;
+		const param = vi.mocked(requestUrl).mock.calls[0][0];
+		const url = typeof param === 'string' ? param : param.url;
 		expect(url).toContain('api.openverse.org/v1/images/?');
 		expect(url).toContain('q=golden+gate');
 		expect(url).toContain('page_size=2');

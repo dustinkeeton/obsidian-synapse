@@ -15,8 +15,8 @@ function makeCtx(mutate?: (s: SynapseSettings) => void) {
 	return { ctx, plugin, containerEl, saveSettings };
 }
 
-function licenseBoxes(root: StubEl): StubEl[] {
-	return root.findAll('.synapse-illustrate-license').map((label) => (label.children as unknown as StubEl[])[0]);
+function licenseBoxes(root: StubEl): HTMLInputElement[] {
+	return root.findAll('.synapse-illustrate-license').map((label) => (label.children as unknown as HTMLInputElement[])[0]);
 }
 
 describe('renderIllustrateSettings', () => {
@@ -52,11 +52,11 @@ describe('renderIllustrateSettings', () => {
 		renderIllustrateSettings(ctx);
 		const nc = licenseBoxes(containerEl).find((box) => box.getAttribute('data-license') === 'CC BY-NC')!;
 		nc.checked = true;
-		nc.dispatchEvent({ type: 'change' });
+		(nc as unknown as StubEl).dispatchEvent({ type: 'change' });
 		expect(plugin.settings.illustrate.licenseFilter).toEqual(['CC0', 'Public domain', 'CC BY', 'CC BY-SA', 'CC BY-NC']);
 		const cc0 = licenseBoxes(containerEl).find((box) => box.getAttribute('data-license') === 'CC0')!;
 		cc0.checked = false;
-		cc0.dispatchEvent({ type: 'change' });
+		(cc0 as unknown as StubEl).dispatchEvent({ type: 'change' });
 		expect(plugin.settings.illustrate.licenseFilter).toEqual(['Public domain', 'CC BY', 'CC BY-SA', 'CC BY-NC']);
 		expect(saveSettings).toHaveBeenCalledTimes(2);
 	});

@@ -48,6 +48,7 @@ describe('IllustrateModule', () => {
 	let registrar: { register: Mock };
 	let module: IllustrateModule;
 	let autoAccept: boolean;
+	let op: ReturnType<typeof makeOp>;
 
 	beforeEach(() => {
 		app = createMockApp();
@@ -55,9 +56,10 @@ describe('IllustrateModule', () => {
 		app.vault.cachedRead.mockResolvedValue('word '.repeat(100));
 		settings = structuredClone(DEFAULT_SETTINGS);
 		settings.illustrate.enabled = true;
+		op = makeOp();
 		notifications = {
 			info: vi.fn(), success: vi.fn(), notifyError: vi.fn(), confirm: vi.fn().mockResolvedValue(true),
-			startOperation: vi.fn().mockReturnValue(makeOp()),
+			startOperation: vi.fn().mockReturnValue(op),
 		};
 		checkpointManager = createMockCheckpointManager();
 		registrar = { register: vi.fn() };
@@ -137,7 +139,7 @@ describe('IllustrateModule', () => {
 			const saved = vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0];
 			expect(saved.items.map((i) => i.kind)).toEqual(['photo', 'chart']);
 			expect(saved.items[0]).toMatchObject({ candidate: { license: 'CC BY-SA' } });
-			expect(notifications.startOperation.mock.results[0].value.finish).toHaveBeenCalledWith('Illustration proposal created', expect.objectContaining({ label: 'Review' }) as NoticeAction);
+			expect(op.finish).toHaveBeenCalledWith('Illustration proposal created', expect.objectContaining({ label: 'Review' }) as NoticeAction);
 		});
 
 		it('drops a photo spot when no provider returns an allowed license', async () => {
@@ -148,7 +150,7 @@ describe('IllustrateModule', () => {
 			vi.spyOn(WikimediaProvider.prototype, 'search').mockRejectedValue(new Error('down'));
 			await module.illustrateNote('notes/a.md');
 			expect(IllustrateStore.prototype.save).not.toHaveBeenCalled();
-			expect(notifications.startOperation.mock.results[0].value.finish).toHaveBeenCalledWith('No visuals proposed for this note');
+			expect(op.finish).toHaveBeenCalledWith('No visuals proposed for this note');
 		});
 
 		it('skips excluded paths with a notice naming the rule', async () => {
@@ -166,7 +168,7 @@ describe('IllustrateModule', () => {
 			autoAccept = true;
 			const files = [mockFile('notes/a.md'), mockFile('notes/short.md')];
 			app.vault.getMarkdownFiles.mockReturnValue(files);
-			app.vault.cachedRead.mockImplementation((file: TFile) => Promise.resolve(file.path === 'notes/short.md' ? 'tiny' : 'word '.repeat(100)));
+			app.vault.cachedRead.mockImplementation((file: { path: string }) => Promise.resolve(file.path === 'notes/short.md' ? 'tiny' : 'word '.repeat(100)));
 			app.vault.getAbstractFileByPath.mockImplementation((path: string) => files.find((f) => f.path === path) ?? null);
 			vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([
 				{ kind: 'diagram', anchor: '## Lifecycle', caption: 'L', rationale: '', mermaid: 'flowchart TD\nA' },

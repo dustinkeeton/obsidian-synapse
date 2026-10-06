@@ -55,7 +55,8 @@ describe('WikimediaProvider.search', () => {
 		vi.mocked(requestUrl).mockResolvedValue({ status: 200, json: { query: { pages: { '1': page } } } } as never);
 		const results = await new WikimediaProvider().search('red panda', { limit: 3 });
 		expect(results).toHaveLength(1);
-		const url = vi.mocked(requestUrl).mock.calls[0][0].url;
+		const param = vi.mocked(requestUrl).mock.calls[0][0];
+		const url = typeof param === 'string' ? param : param.url;
 		expect(url).toContain('commons.wikimedia.org/w/api.php');
 		expect(url).toContain('gsrsearch=red+panda');
 		expect(url).toContain('gsrnamespace=6');
