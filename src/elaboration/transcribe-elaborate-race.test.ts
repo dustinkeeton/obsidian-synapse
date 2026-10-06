@@ -156,6 +156,10 @@ function countCallouts(content: string, type: string): number {
 	return content.split(`> [!${type}]`).length - 1;
 }
 
+function countMarkerSections(content: string, kind: string): number {
+	return content.split(`<!-- synapse:${kind}`).length - 1;
+}
+
 /** The note body the proposer embedded in its prompt. */
 function lastPrompt(): string {
 	const calls = completeMock.mock.calls;
@@ -210,11 +214,12 @@ describe('transcription -> elaboration interleaving (#483)', () => {
 
 		const content = harness.getNoteContent();
 		expect(countCallouts(content, 'synapse-transcription')).toBe(1);
-		// The corruption in #483 was TWO elaboration callouts, one hallucinated.
-		expect(countCallouts(content, 'synapse-elaboration')).toBe(1);
+		// The corruption in #483 was TWO elaboration sections, one hallucinated.
+		expect(countMarkerSections(content, 'elaboration')).toBe(1);
+		expect(countCallouts(content, 'synapse-elaboration')).toBe(0);
 		// The transcript landed first; the elaboration was appended after it.
 		expect(content.indexOf('synapse-transcription'))
-			.toBeLessThan(content.indexOf('synapse-elaboration'));
+			.toBeLessThan(content.indexOf('<!-- synapse:elaboration -->'));
 	});
 
 	it('elaborates the transcript-inclusive content, not the bare audio embed', async () => {
@@ -249,7 +254,7 @@ describe('transcription -> elaboration interleaving (#483)', () => {
 		expect(seenByPostOp).toHaveLength(1);
 		expect(seenByPostOp[0]).toContain(TRANSCRIPT);
 		// It ran after the elaboration too, so it saw the final note state.
-		expect(seenByPostOp[0]).toContain('synapse-elaboration');
+		expect(seenByPostOp[0]).toContain('<!-- synapse:elaboration -->');
 	});
 
 	it('CONTROL: without a shared queue the elaboration reads the stale, pre-transcript note', async () => {

@@ -4,7 +4,7 @@ import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar, isInFlow } from '../commands';
 import {
-	buildCallout, CALLOUT_TYPES, getMarkdownFiles,
+	buildMarkerSection, MARKER_KINDS, getMarkdownFiles,
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager,
 	NoteOperationQueue, generateId,
 	fireAndForget, reviewAction, openScanFolderPicker, trackAiCache, withCacheReport,
@@ -16,6 +16,9 @@ import { ProposalGenerator, proposalContentKey } from './proposer';
 import { DetectionResult, Proposal } from './types';
 
 export type { DetectionReason, DetectionResult, Proposal } from './types';
+
+/** First line of every accepted elaboration section (#550). */
+export const ELABORATION_PROVENANCE = '*Elaboration by Synapse*';
 
 export class ElaborationModule implements FeatureModule {
 	private plugin: Plugin;
@@ -506,15 +509,14 @@ export class ElaborationModule implements FeatureModule {
 
 		const additions = editedContent ?? proposal.proposedAdditions;
 		const sanitizedAdditions = stripCodeFences(sanitizeAIResponse(additions));
-		const callout = buildCallout(
-			CALLOUT_TYPES.elaboration,
-			'Elaboration',
-			sanitizedAdditions
+		const section = buildMarkerSection(
+			MARKER_KINDS.elaboration,
+			`${ELABORATION_PROVENANCE}\n\n${sanitizedAdditions}`
 		);
 		let body = '';
 		await this.plugin.app.vault.process(file, (data) => {
 			body = data;
-			return data.trimEnd() + '\n' + callout;
+			return data.trimEnd() + '\n' + section;
 		});
 
 		await this.store.updateStatus(id, 'accepted');
