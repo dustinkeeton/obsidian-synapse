@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # organize module
@@ -15,20 +15,21 @@ class OrganizeModule {
 
   constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:54; ModuleDeps = { plugin, getSettings, notifications, checkpointManager, registrar, noteQueue } (#504)
 
+  suggestDirectory(text: string, aiOpts?: AIRequestOptions): Promise<string | null>   // index.ts:68; ContentAnalyzer.extractTopics(text, [], aiOpts) -> DirectoryMatcher.scoreDirectories; top directoryPath when score >= SUGGEST_DIRECTORY_MIN_SCORE (0.6, index.ts:29), else null; unqueued, no vault write; the registry injects it into deep-dive
   onload(): Promise<void>
   onunload(): void
   getPendingProposals(): Promise<OrganizeProposal[]>
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>      // index.ts:106
-  organizeNote(file: TFile): Promise<OrganizeResult | null>        // index.ts:213
-  scanDirectory(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:275
-  acceptProposal(id: string, options?: { silent?: boolean }): Promise<void>   // index.ts:449
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>      // index.ts:114
+  organizeNote(file: TFile): Promise<OrganizeResult | null>        // index.ts:221
+  scanDirectory(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:283
+  acceptProposal(id: string, options?: { silent?: boolean }): Promise<void>   // index.ts:457
   rejectProposal(id: string): Promise<void>
 }
 
 function buildSummaryPath(timestamp: string): string
 ```
 
-Re-exported classes: `ContentAnalyzer`, `DirectoryMatcher`
+`ContentAnalyzer` and `DirectoryMatcher` are internal (constructed by `OrganizeModule`, not barrel-exported since the module-boundary refactor); the only outward seam is `suggestDirectory`.
 
 Exported types: `OrganizeProposal`, `OrganizeSnapshot`, `OrganizeResult`, `ContentAnalysis`, `DirectoryScore`, `NoteTopic`, `OrganizeAction`, `OrganizeProposalStatus`
 
@@ -40,22 +41,22 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 
 | Site | Key | Wrapped core | onWait |
 |------|-----|--------------|--------|
-| `organizeNote` (index.ts:231) | `file.path` | `organizeFile(file, false, undefined, cacheUse)` | `op.update("Waiting for another Synapse operation on <basename>")` |
-| `acceptProposal` (index.ts:456) | `queued.sourceNotePath` (PRE-move) | `applyAccept(id, options)` | none |
-| `undoOrganize` (index.ts:565) | `file.path` (current path) | inline `ensureFolder` + `vault.rename` back + snapshot removal | none (local move, no AI call) |
-| `resumeFromCheckpoint` loop (index.ts:137) | `file.path` | `organizeFile(file, true, batchProposedDirs, cacheUse)` | none |
-| `scanDirectory` loop (index.ts:363) | `eligible[i].path` | `organizeFile(eligible[i], true, batchProposedDirs, cacheUse)` | none |
+| `organizeNote` (index.ts:239) | `file.path` | `organizeFile(file, false, undefined, cacheUse)` | `op.update("Waiting for another Synapse operation on <basename>")` |
+| `acceptProposal` (index.ts:464) | `queued.sourceNotePath` (PRE-move) | `applyAccept(id, options)` | none |
+| `undoOrganize` (index.ts:573) | `file.path` (current path) | inline `ensureFolder` + `vault.rename` back + snapshot removal | none (local move, no AI call) |
+| `resumeFromCheckpoint` loop (index.ts:145) | `file.path` | `organizeFile(file, true, batchProposedDirs, cacheUse)` | none |
+| `scanDirectory` loop (index.ts:371) | `eligible[i].path` | `organizeFile(eligible[i], true, batchProposedDirs, cacheUse)` | none |
 
 Key-lifetime note: `acceptProposal` keys on the PRE-move `sourceNotePath`. A move changes the key,
 exactly like a title rename — work already queued under the old path runs afterwards, finds no file
 there and exits early.
 
-`maybeAutoAccept` (index.ts:534) calls `applyAccept` DIRECTLY, never the public `acceptProposal`.
-It runs inside `organizeFile` (called at index.ts:671), which every caller has already queued on that note's
+`maybeAutoAccept` (index.ts:542) calls `applyAccept` DIRECTLY, never the public `acceptProposal`.
+It runs inside `organizeFile` (called at index.ts:679), which every caller has already queued on that note's
 key; routing it through `acceptProposal` would re-enter the same key and self-deadlock. This is the
 "acquire at most once per operation" rule in its sharpest form.
 
-`writeOrganizeSummary` (index.ts:738) writes a DIFFERENT note (`.synapse/organize/summaries/...`)
+`writeOrganizeSummary` (index.ts:746) writes a DIFFERENT note (`.synapse/organize/summaries/...`)
 and stays unqueued — incidental writes to other notes are never queued, including from inside
 `applyAccept` while it holds the source note's key.
 
@@ -111,7 +112,7 @@ class DirectoryMatcher {
 ```
 organizeNote(file) / scanDirectory() / resumeFromCheckpoint()
   --> noteQueue.run(file.path, () => organizeFile(...))   [#483: slot held for the whole cycle]
-        organizeFile(file, batch?, batchProposedDirs?, cacheUse?)    [queue-free core, index.ts:596]
+        organizeFile(file, batch?, batchProposedDirs?, cacheUse?)    [queue-free core, index.ts:604]
           --> ContentAnalyzer.analyze(file, trackAiCache(cacheUse))  [AI: extract topics; #527]
           --> DirectoryMatcher.determineAction(analysis, confidenceThreshold)
             if existing dir matches:
@@ -122,10 +123,10 @@ organizeNote(file) / scanDirectory() / resumeFromCheckpoint()
               --> maybeAutoAccept()  [if shouldAutoAccept() -> applyAccept() DIRECTLY,
                                       never acceptProposal — same key, would deadlock]
 
-acceptProposal(id, options?)                              [public, index.ts:449]
+acceptProposal(id, options?)                              [public, index.ts:457]
   --> OrganizeStore.loadProposal(id)  [null -> "Proposal not found"]
   --> noteQueue.run(proposal.sourceNotePath, () => applyAccept(id, options))
-        applyAccept(id, options?)                         [queue-free core, index.ts:460]
+        applyAccept(id, options?)                         [queue-free core, index.ts:468]
           --> re-load proposal (double-accept guard evaluated UNDER the slot)
           --> ensureFolder(proposedDirectory)
           --> OrganizeStore.saveSnapshot()
@@ -138,7 +139,7 @@ acceptProposal(id, options?)                              [public, index.ts:449]
 rejectProposal(id)                                        [no note write -> unqueued]
   --> OrganizeStore.updateProposalStatus('rejected')
 
-undoOrganize(file)  [command: 'undo-organize', private, index.ts:556]
+undoOrganize(file)  [command: 'undo-organize', private, index.ts:564]
   --> OrganizeStore.loadSnapshot(filePath)
   --> noteQueue.run(file.path, ...)  [silent, no onWait]
         --> ensureFolder(original parent)
@@ -227,11 +228,11 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 In: `shared/` (getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, CacheUse, AIRequestOptions, openScanFolderPicker, Checkpoint, CheckpointWorkItem, DeferredTask, MoveRecord — see `index.ts:4-11`), `settings.ts` (SynapseSettings), `commands/` (CommandRegistrar, `index.ts:3`)
 
-Out: `ContentAnalyzer` and `DirectoryMatcher` are re-exported for use by `deep-dive` (auto-organize nesting mode).
+Out: nothing is imported by another feature. `modules/registry.ts:111-116` wraps `OrganizeModule.suggestDirectory` in a lambda and passes it to `DeepDiveModule` (its `SuggestDirectory` type, `deep-dive/types.ts:85`) for auto-organize nesting mode; `deep-dive` has no `../organize` import.
 
 ## Invariants / Gotchas
 
-- Double-acceptance guard lives in `applyAccept`, not `acceptProposal`: the proposal is re-loaded inside the queue slot and the call no-ops if `proposal.status !== 'pending'`, so a pre-wait snapshot can never authorize a second move (index.ts:465).
+- Double-acceptance guard lives in `applyAccept`, not `acceptProposal`: the proposal is re-loaded inside the queue slot and the call no-ops if `proposal.status !== 'pending'`, so a pre-wait snapshot can never authorize a second move (index.ts:473).
 - `maybeAutoAccept` must call `applyAccept`, never `acceptProposal` — it already runs under the note's queue key (#483).
 - Move skips if a file already exists at the destination (returns null, does not overwrite).
 - Batch scan coalesces near-identical proposed directories via `batchProposedDirs` map — variants like "model"/"models" resolve to a single folder (#172).

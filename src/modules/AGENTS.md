@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Modules Registry
@@ -53,14 +53,14 @@ function unloadFeatureModules(modules: FeatureModules): void                    
 | Key | Class | Platform | Constructor extras (after `ModuleDeps`) |
 |-----|-------|----------|------------------------------------------|
 | `elaboration` | `ElaborationModule` | all | `() => settings.autoAccept.elaboration` |
-| `audio` | `AudioModule` | all | `AudioExtractor` on desktop, else `undefined` |
+| `audio` | `AudioModule` | all | `AudioClipper`: a `video/AudioExtractor` instance on desktop, else `undefined` (`registry.ts:80`; audio types the param structurally so it never imports video) |
 | `video` | `VideoModule` | desktop | `built.audio`; `urlTranscriber = wiring.transcribeUrl` |
 | `image` | `ImageModule` | all | none |
 | `enrichment` | `EnrichmentModule` | all | `() => settings.autoAccept.enrichment` |
 | `summarize` | `SummarizeModule` | all | `transcribeUrl` (`wiring.transcribeUrl` result passed through whole, keeping `cached`/`aiCached`, #527), `transcribeAudio` (`vault.readBinary` -> `built.audio.transcribe` -> `{ text, aiCached }`) |
 | `tidy` | `TidyModule` | all | none |
 | `organize` | `OrganizeModule` | all | `() => settings.autoAccept.organize` |
-| `deepDive` | `DeepDiveModule` | all | `() => settings.autoAccept['deep-dive']` |
+| `deepDive` | `DeepDiveModule` | all | `() => settings.autoAccept['deep-dive']`; `(text, aiOpts) => built.organize.suggestDirectory(text, aiOpts)` (`registry.ts:111-116`; organize precedes deep-dive in the list for this reason) |
 | `title` | `TitleModule` | all | `() => settings.autoAccept.title` |
 | `rem` | `RemModule` | all | `() => settings.autoAccept.rem` |
 | `illustrate` | `IllustrateModule` | all | `() => settings.autoAccept.illustrate` |
@@ -85,5 +85,5 @@ function unloadFeatureModules(modules: FeatureModules): void                    
 | `Platform` | `obsidian` | `registry.ts:1` |
 | `SynapseSettings`, `AutoAcceptSettings` (types) | `../settings` | `registry.ts:2` |
 | `ModuleDeps`, `FeatureModule`, `FeatureSettingsKey` (types) | `../shared` | `registry.ts:3` |
-| `ElaborationModule`, `AudioModule`, `VideoModule`, `AudioExtractor`, `ImageModule`, `EnrichmentModule`, `SummarizeModule`, `TidyModule`, `OrganizeModule`, `DeepDiveModule`, `TitleModule`, `RemModule`, `IntakeModule` | feature barrels | `registry.ts:4-16` |
-| `RoutedUrlTranscriber`, `IntakeDeps` (types) | `../video`, `../intake` | `registry.ts:7,17` |
+| `ElaborationModule`, `AudioModule`, `VideoModule`, `AudioExtractor`, `ImageModule`, `EnrichmentModule`, `SummarizeModule`, `TidyModule`, `OrganizeModule`, `DeepDiveModule`, `TitleModule`, `RemModule`, `IllustrateModule`, `IntakeModule` | feature barrels | `registry.ts:4-17` |
+| `RoutedUrlTranscriber`, `IntakeDeps` (types) | `../video`, `../intake` | `registry.ts:7,18` |

@@ -1,12 +1,12 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Video Module
 
 Downloads videos from YouTube/TikTok/Instagram via yt-dlp, extracts audio with ffmpeg, delegates transcription to AudioModule, and optionally saves the video file into the vault. Desktop-only: VideoModule is constructed only when `Platform.isDesktop` (it may be null off-desktop).
 
-URL platform detection lives in `src/shared/url-detector.ts` (moved out of this module to break the shared/video cycle). Video re-exports `detectPlatform`, `isSupportedUrl`, `Platform`, and `UrlDetectionResult` for back-compat; new code should import them directly from `shared`.
+URL platform detection lives in `src/shared/url-detector.ts` (moved out of this module to break the shared/video cycle). The barrel no longer re-exports `detectPlatform`, `isSupportedUrl`, or `UrlDetectionResult` — import them from `shared`. `types.ts:3` still re-exports the `Platform` union (used by `VideoUrlEmbed`/`VideoMetadata`).
 
 ## Public API
 
@@ -14,14 +14,14 @@ Re-exported from `index.ts` (the module barrel):
 
 ```ts
 class VideoModule {
-  onTranscriptionComplete: ((filePath: string) => void) | null  // index.ts:42
-  urlTranscriber: RoutedUrlTranscriber | null                   // index.ts:50; set by modules/registry.ts so the batch insert uses the tier router (#184)
-  constructor(deps: ModuleDeps, audioModule: AudioModule)        // index.ts:52; deps = plugin, getSettings, notifications, checkpointManager, registrar, noteQueue (#483)
-  onload(): Promise<void>                                        // index.ts:63
-  onunload(): void                                               // index.ts:74
-  processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>  // index.ts:76
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>    // index.ts:156
-  transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>  // index.ts:164; acquires noteFile's queue slot (#483), then delegates
+  onTranscriptionComplete: ((filePath: string) => void) | null  // index.ts:41
+  urlTranscriber: RoutedUrlTranscriber | null                   // index.ts:49; set by modules/registry.ts so the batch insert uses the tier router (#184)
+  constructor(deps: ModuleDeps, audioModule: AudioModule)        // index.ts:51; deps = plugin, getSettings, notifications, checkpointManager, registrar, noteQueue (#483)
+  onload(): Promise<void>                                        // index.ts:62
+  onunload(): void                                               // index.ts:73
+  processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>  // index.ts:75
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>    // index.ts:155
+  transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>  // index.ts:163; acquires noteFile's queue slot (#483), then delegates
 }
 ```
 
@@ -44,26 +44,24 @@ class AudioExtractor {                                           // audio-extrac
 }
 
 // ffmpeg-availability.ts:4 — memoized `extractor.checkDependencies().ffmpeg` probe (#214); always false without an extractor (mobile); probe failure caches false
-function createFfmpegAvailability(extractor: AudioExtractor | undefined): () => Promise<boolean>
+// `AudioClipper` is `import type`-d from ../audio (ffmpeg-availability.ts:1); AudioExtractor satisfies it structurally
+function createFfmpegAvailability(extractor: AudioClipper | undefined): () => Promise<boolean>
 
-// Re-exported from ../shared (canonical home: shared/url-detector.ts)
-function detectPlatform(url: string): UrlDetectionResult | null
-function isSupportedUrl(url: string): boolean   // true for detected platforms EXCEPT twitter
+// Re-exported from ../shared via types.ts:3 (canonical home: shared/url-detector.ts)
 type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown'
-interface UrlDetectionResult { platform: Platform; videoId: string; url: string }
 
 // Owned by this module
-function findVideoUrls(content: string): VideoUrlEmbed[]   // re-exported via index.ts:29
-function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:383
+function findVideoUrls(content: string): VideoUrlEmbed[]   // re-exported via index.ts:28
+function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:382
 
-// Types (re-exported index.ts:16-24)
+// Types (re-exported index.ts:17-25)
 interface VideoProcessOptions {
   postProcess?: boolean
   extractFrames?: boolean
   outputPath?: string
   insertMode?: boolean
   timeRange?: TimeRange
-  bypassCache?: boolean          // types.ts:24; forwarded to AudioModule.transcribe as TranscribeOptions.bypassCache (index.ts:139, #527)
+  bypassCache?: boolean          // types.ts:24; forwarded to AudioModule.transcribe as TranscribeOptions.bypassCache (index.ts:138, #527)
 }
 interface RoutedUrlTranscript {  // types.ts:54; structurally compatible with transcription's UrlTranscript, declared here to avoid a video -> transcription import
   text: string
@@ -99,7 +97,7 @@ interface VideoSource {
 Private (index.ts), documented because it is the queue-free core of `transcribeAndInsert`:
 
 ```ts
-private insertTranscriptions(noteFile: TFile, embeds: VideoUrlEmbed[], op: OperationHandle): Promise<void>  // index.ts:183
+private insertTranscriptions(noteFile: TFile, embeds: VideoUrlEmbed[], op: OperationHandle): Promise<void>  // index.ts:182
 ```
 
 Exported by source files but NOT re-exported through `index.ts`:
@@ -120,7 +118,7 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 
 | File | Class/Export | Purpose |
 |------|-------------|---------|
-| `types.ts` | `VideoProcessOptions`, `ExtractionResult`, `VideoMetadata`, `VideoUrlEmbed`, `VideoSource`, `RoutedUrlTranscript`, `RoutedUrlTranscriber`, re-export `Platform` | Type definitions |
+| `types.ts` | `VideoProcessOptions`, `ExtractionResult`, `VideoMetadata`, `VideoUrlEmbed`, `VideoSource`, `RoutedUrlTranscript`, `RoutedUrlTranscriber`, re-export `Platform` (types.ts:3) | Type definitions |
 | `note-scanner.ts` | `findVideoUrls`, `hasTranscriptionBelow` | Scan note content for video URLs |
 | `note-scanner.test.ts` | Tests | Note scanner unit tests |
 | `audio-extractor.ts` | `AudioExtractor`, `DependencyMissingError`, `AudioCodecReadError` | yt-dlp/ffmpeg via `execFile` (no shell); URL download, file extract, clip, concat, dependency check, no-audio detection |
@@ -143,8 +141,8 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 2a. transcribeAndInsert(noteFile, embeds) -- batch from note scan; the ONLY
    |  note-writing entry point left on this module
    |  isPathExcluded silent skip (#307); acquires noteFile's NoteOperationQueue
-   |  slot (#483, index.ts:175) then delegates to private insertTranscriptions
-   |  (index.ts:183); creates checkpoint; routes each embed through
+   |  slot (#483, index.ts:174) then delegates to private insertTranscriptions
+   |  (index.ts:182); creates checkpoint; routes each embed through
    |  urlTranscriber (the #184 tier router) with a processUrl fallback;
    |  processes in reverse line order; 2s delay between API calls; atomic splice
    |  via vault.process; cancellable via NotificationManager operation
@@ -206,7 +204,7 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 |-----------|------------------|---------------|
 | `synapse:check-dependencies` | `video.enabled` | Check external tool availability |
 
-Registered via `registrar.register('check-dependencies', ...)` (index.ts:69); Obsidian prefixes the manifest id with `synapse:`. The handler reports yt-dlp/ffmpeg presence and brew install hints. Transcription palette commands (`transcribe-media`, `transcribe-note-media`) are wired in `main.ts`, not here.
+Registered via `registrar.register('check-dependencies', ...)` (index.ts:68); Obsidian prefixes the manifest id with `synapse:`. The handler reports yt-dlp/ffmpeg presence and brew install hints. Transcription palette commands (`transcribe-media`, `transcribe-note-media`) are wired in `main.ts`, not here.
 
 ## Settings Keys (VideoSettings, settings.ts:173)
 
@@ -240,15 +238,18 @@ Settings UI: `renderVideoSettings` (`settings-section.ts:152`) renders the accor
 In:
 - `../audio` — `AudioModule` (runtime value edge: reuses the transcription pipeline), `TranscriptionResult` (type)
 - `../commands` — `CommandRegistrar`
-- `../shared` — `NoteOperationQueue` (#483), `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findAvailableVaultPath`, `isNoSpeechError`, `noSpeechNotice`, `transcriptCacheUse`, `withCacheReport` (index.ts:5-10); type-only `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule` (index.ts:11); `TimeRange` (types.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES`, `isCalloutHeader`, `findUrls` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
+- `../shared` — `NoteOperationQueue` (#483), `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findAvailableVaultPath`, `isNoSpeechError`, `noSpeechNotice`, `transcriptCacheUse`, `withCacheReport` (index.ts:6-11); type-only `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule` (index.ts:12); `TimeRange` (types.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES`, `isCalloutHeader`, `findUrls` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
 - `../settings` — `SynapseSettings`, `VideoSettings`, `FrameExtractionSettings` (types)
 
-Out (consumed by):
-- `src/transcription/note-media-modal.ts` — imports `VideoUrlEmbed`
-- `src/transcription/unified-modal.ts` — imports `detectPlatform`
-- `src/audio/index.ts` — imports `type AudioExtractor` (type-only; no runtime cycle)
+- `../audio` (ffmpeg-availability.ts:1) — `AudioClipper` (type-only)
 
-VideoModule → AudioModule is the one documented cross-feature runtime dependency; the reverse edge is type-only.
+Out (consumed by):
+- `src/transcription/note-media-modal.ts` — `import type { VideoUrlEmbed }`
+- `src/transcription/note-media-transcription.ts` — `findVideoUrls` (runtime), `VideoUrlEmbed` (type)
+- `src/modules/registry.ts:6` — `VideoModule`, `AudioExtractor` (constructs the extractor handed to `AudioModule` as its `AudioClipper`)
+- `src/main.ts` — `createFfmpegAvailability(audio.extractor)`
+
+VideoModule → AudioModule is the one documented cross-feature runtime dependency; `audio` has no edge back to `video` (it declares the structural `AudioClipper` interface instead, `audio/types.ts:43`). `transcription/unified-modal.ts` now takes `detectPlatform` from `shared`, not from this barrel.
 
 ## Error States
 
@@ -271,11 +272,10 @@ VideoModule → AudioModule is the one documented cross-feature runtime dependen
 - `AudioExtractor.concatAudio` re-encodes via the ffmpeg concat filter (handles mixed mp3/wav/m4a/ogg/flac/webm/aac).
 - `--ffmpeg-location` is emitted only when `ffmpegPath` is a concrete path (contains `/` or `\`); a bare name relies on PATH discovery.
 - `downloadVideoToVault` uses `vault.createBinary()` (not the adapter API); collision-safe naming is delegated to `findAvailableVaultPath` (shared) on a `normalizePath`-ed target, appending `-1`, `-2`, ... before the extension.
-- Back-compat re-exports (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) come from `../shared`; prefer direct `shared` imports in new code.
-- Per-note serialization (#483): `transcribeAndInsert` acquires `noteFile.path` on the shared `NoteOperationQueue` (index.ts:175) with an `onWait` that updates the operation toast (`Waiting for another Synapse operation on <basename>`), then runs private `insertTranscriptions` (index.ts:183). The core must never re-enter the queue — acquire at most once per operation. `processUrl`/`transcribe` paths that only produce text (no note write) stay unqueued; the caller that writes owns the slot.
+- Per-note serialization (#483): `transcribeAndInsert` acquires `noteFile.path` on the shared `NoteOperationQueue` (index.ts:174) with an `onWait` that updates the operation toast (`Waiting for another Synapse operation on <basename>`), then runs private `insertTranscriptions` (index.ts:182). The core must never re-enter the queue — acquire at most once per operation. `processUrl`/`transcribe` paths that only produce text (no note write) stay unqueued; the caller that writes owns the slot.
 
 ## Security
 
 - URLs validated via `sanitizeUrl()` in both `VideoModule.processUrl` and `AudioExtractor` entry points.
-- Tool and file paths validated via `sanitizePath()`.
+- Tool and file paths validated via `sanitizePath()`; the `checkDependencies` probe also passes the configured tool name through `sanitizePath` before `which` (audio-extractor.ts:585).
 - All subprocess calls use `execFile` with explicit argument arrays — no shell interpolation.

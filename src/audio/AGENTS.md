@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Audio Module
@@ -8,11 +8,19 @@ Transcribes audio files from the vault using configurable providers (Whisper API
 
 ## Public API
 
-Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTranscriptionCredentials`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry`. `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
+Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTranscriptionCredentials`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioClipper`, `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry` (`index.ts:19-20`). `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
 
 ```ts
+// types.ts:43 — structural ffmpeg surface; video's AudioExtractor satisfies it, so audio never imports video
+interface AudioClipper {
+  clipAudio(inputPath: string, startSeconds: number, endSeconds: number): Promise<string>
+  concatAudio(inputPaths: string[]): Promise<string>
+  checkDependencies(): Promise<{ ytDlp: boolean; ffmpeg: boolean }>
+}
+
 class AudioModule {
-  constructor(deps: ModuleDeps, extractor?: AudioExtractor)   // index.ts:46; ModuleDeps bundle first (#504: plugin, getSettings, notifications, checkpointManager, registrar, noteQueue); extractor = desktop-only clipping/concat
+  readonly extractor?: AudioClipper                            // index.ts:32; undefined on mobile; also drives video/createFfmpegAvailability (#214)
+  constructor(deps: ModuleDeps, extractor?: AudioClipper)     // index.ts:46; ModuleDeps bundle first (#504: plugin, getSettings, notifications, checkpointManager, registrar, noteQueue); extractor = desktop-only clipping/concat (registry passes a video/AudioExtractor on desktop, modules/registry.ts:80)
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
@@ -103,7 +111,7 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 1. User triggers via UnifiedTranscriptionModal or NoteMediaModal (in transcription/)
    |
 2a. transcribeFileToActiveNote(file, timeRange?) -- single file to active note
-   |  Reads binary, clips audio via AudioExtractor if timeRange provided (desktop only)
+   |  Reads binary, clips audio via this.extractor (AudioClipper) if timeRange provided (desktop only); temp files unlinked in finally (index.ts:230-242)
    |  Calls transcribe(), builds callout with time-range label, appends to active note
    |
 2b. transcribeAndInsert(noteFile, embeds) -- batch from note scan
@@ -153,12 +161,12 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 | Public entry point | Queue key | Private core |
 |---|---|---|
 | `transcribeFileToActiveNote(file, timeRange?)` | active note path | `insertFileTranscription(activeFile, file, op, timeRange?)` (index.ts:213) |
-| `transcribeAndInsert(noteFile, embeds)` | `noteFile.path` | `insertTranscriptions(noteFile, embeds, op)` (index.ts:300) |
-| `transcribeAndInsertCombined(noteFile, embeds)` | `noteFile.path` (2+ embeds only) | `insertCombinedTranscription(noteFile, embeds, op)` (index.ts:435) |
+| `transcribeAndInsert(noteFile, embeds)` | `noteFile.path` | `insertTranscriptions(noteFile, embeds, op)` (index.ts:303) |
+| `transcribeAndInsertCombined(noteFile, embeds)` | `noteFile.path` (2+ embeds only) | `insertCombinedTranscription(noteFile, embeds, op)` (index.ts:438) |
 
 - `private queued<T>(file, op, run)` (index.ts:87) wraps `noteQueue.run(file.path, run, { onWait })`; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (audio commands are user-invoked, so a wait is surfaced).
-- `transcribeAndInsertCombined` with `<2` embeds short-circuits to the PUBLIC `transcribeAndInsert` BEFORE acquiring (index.ts:420), so the slot is still taken exactly once.
-- The combined-transcription fallbacks call `insertTranscriptions` DIRECTLY (index.ts:467) — they already hold the note's slot, and re-entering would self-deadlock.
+- `transcribeAndInsertCombined` with `<2` embeds short-circuits to the PUBLIC `transcribeAndInsert` BEFORE acquiring (index.ts:423), so the slot is still taken exactly once.
+- The combined-transcription fallbacks call `insertTranscriptions` DIRECTLY (index.ts:470) — they already hold the note's slot, and re-entering would self-deadlock.
 - `transcribe(audioData, fileName, options?)` is queue-free: it takes bytes, not a note, and is also called by `VideoModule.processUrl()`.
 
 ## Note Scanning
@@ -201,11 +209,12 @@ Path exclusion: write paths gate on the centralized `settings.exclusions` (#307)
 ## Time-Range Clipping
 
 When `timeRange` is provided to `transcribeFileToActiveNote()`:
-1. Audio file written to temp directory
-2. `AudioExtractor.clipAudio(tempPath, start, end)` clips via ffmpeg (desktop only)
+1. Audio file written to `os.tmpdir()` (`synapse-clip-src-<ts>.mp3`)
+2. `this.extractor.clipAudio(tempPath, start, end)` (`AudioClipper`; ffmpeg, desktop only) clips it
 3. Clipped audio data passed to `transcribe()`
-4. Callout title includes time range: "Transcription of file.mp3 [01:30 - 05:00]"
-5. Falls back to full-file transcription on mobile (no AudioExtractor)
+4. Both temp files are unlinked in a `finally` (index.ts:236-242), so a failed write/clip/read never leaks vault audio into the OS temp dir
+5. Callout title includes time range: "Transcription of file.mp3 [01:30 - 05:00]"
+6. Falls back to full-file transcription on mobile (no `extractor`), with an info notice
 
 ## Multipart Construction & Hardening
 
@@ -223,7 +232,7 @@ never interpreted as text.
 
 `AudioModule.transcribe()` is called by `VideoModule.processUrl()` (video passes extracted audio as `ArrayBuffer` with `sourceName` set to the video title) — a runtime `video → audio` edge.
 
-`audio/index.ts` has only a type-only back-edge to video: `import type { AudioExtractor } from '../video'` (constructor `extractor?` param, desktop-only clipping/concat). Type-only = erased at compile time, so there is no runtime `audio ⇄ video` cycle.
+`audio` imports nothing from `video`. The clip/concat/dependency-check surface the constructor's `extractor?` param needs is the structural `AudioClipper` interface (`types.ts:43`); `video/AudioExtractor` satisfies it and the registry passes one on desktop. The reverse direction exists: `video/ffmpeg-availability.ts:1` does `import type { AudioClipper } from '../audio'`.
 
 ## Commands
 

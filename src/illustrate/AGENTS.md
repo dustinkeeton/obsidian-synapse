@@ -100,14 +100,14 @@ interface IllustrateSettings {
 |------|---------|---------|
 | `index.ts` | `IllustrateModule`, barrel | Lifecycle, commands, scan/resume batch core, accept/reject |
 | `note-analyzer.ts` | `NoteAnalyzer`, `parseSpots`, `buildSystemPrompt` | One AI call -> validated spots (JSON, fenced note via `wrapUntrusted`); photo-only prompt + filter when `mermaid` is off |
-| `providers/wikimedia.ts` | `WikimediaProvider`, `parseCommonsPage` | Commons search via `requestUrl` |
-| `providers/openverse.ts` | `OpenverseProvider`, `parseOpenverseResult`, `OPENVERSE_MAX_QUERIES_PER_RUN` | Openverse search, per-run cap |
+| `providers/wikimedia.ts` | `WikimediaProvider`, `parseCommonsPage` | Commons search via `requestUrl` (30 s timeout) |
+| `providers/openverse.ts` | `OpenverseProvider`, `parseOpenverseResult`, `OPENVERSE_MAX_QUERIES_PER_RUN` | Openverse search, per-run cap, 30 s timeout |
 | `providers/source.ts` | `SourceProvider`, `imageRelevance`, `toSourceCandidate` | Acted-on material's own images as candidates (#213) |
 | `linked-pages.ts` | `fetchLinkedPageImages`, `MAX_LINKED_PAGE_IMAGES` | Opt-in linked-page image pooling for chained runs |
 | `license.ts` | `normalizeLicense`, `isLicenseAllowed`, `LICENSE_NAMES`, `DEFAULT_LICENSE_FILTER` | License normalization + allow-list |
 | `diagram.ts` | `validateMermaid`, `mermaidBlock` | Mermaid gate for AI diagrams and built charts |
 | `chart.ts` | `parseChartData`, `buildXyChart` | Note-data-only `xychart-beta` |
-| `inserter.ts` | `buildPhotoBlock(item, vaultPath, fallbackReason?)`, `buildMermaidItemBlock`, `attributionLine` | Block builders (placement lives in `shared/insertion-point.ts`); a failed download appends `(download failed; remote embed: <reason>)` to the callout |
+| `inserter.ts` | `httpUrlOrEmpty(url)` (inserter.ts:6), `buildPhotoBlock(item, vaultPath, fallbackReason?)`, `buildMermaidItemBlock`, `attributionLine` | Block builders (placement lives in `shared/insertion-point.ts`); only `http:`/`https:` provider URLs are written — `mdLink` and the remote `![caption](url)` embed degrade to plain caption text for any other scheme; a failed download appends `(download failed; remote embed: <reason>)` to the callout |
 | `asset-writer.ts` | `AssetWriter`, `attachmentFileName` | `requestUrl` -> `arrayBuffer` -> `vault.createBinary` at `fileManager.getAvailablePathForAttachment` (15 MB cap) |
 | `proposal-store.ts` | `IllustrateStore` | JSON files in `illustrate.proposalFolderPath` |
 | `note-scanner.ts` | `isEligibleNote`, `hasIllustrations`, `MIN_WORDS_TO_ILLUSTRATE` | Batch eligibility (>= 80 words, no existing illustrate callout) |

@@ -253,8 +253,8 @@ const MAX_IMAGES_PER_NOTE = 5
 
 - Finds wiki-link (`![[image.png]]`) and markdown (`![alt](path)`) refs; skips external `http(s)` markdown URLs (vault images only).
 - Caps at `MAX_IMAGES_PER_NOTE` (5).
-- Resolves via `metadataCache.getFirstLinkpathDest`; reads binary; downscales over `settings.image.maxImageSizeMb` (default 5) MB via `preprocessImage` from the `../image` barrel (downscale surfaced via `notifications.info`, 3s dedup #396).
-- Applies `settings.image.visionModel` override (falls back to `settings.ai.model`), restored in `finally`.
+- Resolves via `metadataCache.getFirstLinkpathDest`; reads binary; downscales over `settings.image.maxImageSizeMb` (default 5) MB via `preprocessImage` from the `../shared` barrel (image-analyzer.ts:117; downscale surfaced via `notifications.info`, 3s dedup #396).
+- Passes the vision model per call: `aiClient.chat(..., { ...aiOpts, model: settings.image.visionModel || settings.ai.model })` (image-analyzer.ts:150); `settings.ai.model` is never mutated.
 - Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:411).
 
 ## Configuration
@@ -296,11 +296,10 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 | `extractUrls`, `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `NoteOperationQueue`, `sanitizeAIResponse`, `stripCodeFences`, `CheckpointManager`, `generateId`, `ConfirmModal`, `splitRawFrontmatter`, `fireAndForget`, `reviewAction`, `trackAiCache`, `withCacheReport` (+ types `SourceContext`, `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule`) | `../shared` | index.ts:2-11 |
 | `wordCount`, `isPathExcluded`, `matchesExcludeTag`, `getIncludedMarkdownFiles` | `../shared` | detector.ts |
 | `AIClient`, `sanitizeAIResponse`, `stripCodeFences`, `isTwitterUrl`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `fetchArticleContent`, `linkLoadError`, `NotificationManager`, `isGenericTitle`, `hashString`, `contentKey`, `wrapUntrusted`, `redactError`, `isPathExcluded`, `findUrls`, `isEffectivelyEmptyProse`, `splitRawFrontmatter` | `../shared` | proposer.ts |
-| `AIClient`, `arrayBufferToBase64`, `NotificationManager`, `redactError` (+ type `ContentBlock`) | `../shared` | image-analyzer.ts |
+| `AIClient`, `arrayBufferToBase64`, `NotificationManager`, `preprocessImage`, `redactError` (+ types `AIRequestOptions`, `ContentBlock`) | `../shared` | image-analyzer.ts:2-3 |
 | `ensureFolder`, `isRecord`, `readJsonFile` | `../shared` | proposal-store.ts |
 | `fireAndForget` | `../shared` | proposal-view.ts |
 | type `SettingsSectionContext` | `../shared` | settings-section.ts |
-| `preprocessImage` | `../image` (barrel) | image-analyzer.ts |
 | `CommandRegistrar`, `isInFlow` | `../commands` | index.ts |
 
 No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:424). `index.ts` no longer imports `buildCallout` / `CALLOUT_TYPES`; `CALLOUT_TYPES.elaboration` and its CSS remain in `shared/callouts.ts` + `styles.css` only to render notes elaborated before #552.
@@ -316,7 +315,8 @@ No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny lo
 - `maybeAutoAccept` must return `applyProposal`'s boolean, never an unconditional `true`: the batch "Auto-accepted N" count derives from it.
 - Per-note serialization (#483): public `scanNote` / `scanVault` / `resumeFromCheckpoint` / `acceptProposal` acquire the note's `NoteOperationQueue` slot exactly ONCE; the private cores (`generateForNote`, `generateForBatch`, `applyProposal`) must never re-enter it (self-deadlock). `maybeAutoAccept` is called from inside a core and therefore calls `applyProposal` directly, never `acceptProposal`. Only `scanNote` passes `onWait` (user-invoked); batch and accept paths queue silently.
 - `scanNote(userInvoked=true)` bypasses the stub gate: a synthetic `user-requested` reason is created so the proposer always runs, except where the dedup guard (`duplicate`/`cap`) or the anti-fabrication guards apply.
-- `ProposalGenerator` imports `preprocessImage` from the `../image` barrel, never `image/preprocess.ts` directly (import-from-index rule).
+- `ImageAnalyzer` imports `preprocessImage` from the `../shared` barrel (image-analyzer.ts:2); this module has no `../image` import.
 - `onOpenProposalView` is the third wired callback (#340) alongside `onProposalAccepted` and `onViewRefreshNeeded`; the operation toast's "Review" action is centralized in `reviewAction(...)` (#366) and only appears when a proposal stays pending after any auto-accept.
 - The unified sidebar view (`src/views/unified-proposal-view.ts`) is the registered review surface; only the legacy `proposal-view.ts` / `proposal-modal.ts` copy was changed for #552.
-- `ImageAnalyzer.analyzeImage` temporarily reassigns `settings.ai.model` to the vision model and restores it in `finally`; concurrent callers could observe the override.
+- `ImageAnalyzer.analyzeImage` selects the vision model via `AIRequestOptions.model` on the single `chat()` call (image-analyzer.ts:150); no settings mutation, so concurrent callers cannot observe it.
+- `onunload` (index.ts:111-114) clears `scanInterval` and nulls the field, so a later `onload` cannot double-clear a stale handle.
