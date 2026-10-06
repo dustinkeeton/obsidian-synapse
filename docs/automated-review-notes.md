@@ -83,6 +83,13 @@ use" section; this list is the reviewer-facing counterpart.
   document match, so the invalidation cost is negligible. Removing them regresses
   toast styling. Rationale in full at `styles.css:490`–`501`.
 
+- **`app.setting.open()` / `app.setting.openTabById()`
+  (`src/shared/update-checker.ts`, `src/summarize/index.ts`).** The settings
+  navigation API is undocumented, so both call sites feature-detect every member
+  and degrade — to a plain "open Settings → Community plugins" notice for the
+  update checker, to a no-op for the video-settings reveal — when it is absent.
+  These are the only non-public API touches in `src`.
+
 ---
 
 ## 3. Rebuttals (false positives)

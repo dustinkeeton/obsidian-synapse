@@ -171,6 +171,7 @@ const textOf = (el: StubEl): string =>
 function stubEl(): StubEl {
 	const el = {
 		style: {},
+		setCssProps: vi.fn(),
 		disabled: false,
 		value: '',
 		readOnly: false,

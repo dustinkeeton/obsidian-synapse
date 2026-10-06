@@ -142,7 +142,9 @@ export class TimeRangeSlider {
 		// Update track highlight position (percentage-based)
 		const startPct = (this._start / this.duration) * 100;
 		const endPct = (this._end / this.duration) * 100;
-		this.trackHighlight.style.left = `${startPct}%`;
-		this.trackHighlight.style.width = `${endPct - startPct}%`;
+		this.trackHighlight.setCssProps({
+			'--synapse-range-start': `${startPct}%`,
+			'--synapse-range-width': `${endPct - startPct}%`,
+		});
 	}
 }

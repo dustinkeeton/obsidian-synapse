@@ -122,9 +122,9 @@ flowchart TD
 
 ## Privacy and network use
 
-Synapse runs inside your vault. It contacts a remote service only when you configure one and then trigger a feature that needs it. Every request goes through Obsidian's `requestUrl` API, and every request is one you set up (your provider and API key) or started yourself (running a command).
+Synapse runs inside your vault. With one exception -- the optional update check described below -- it contacts a remote service only when you configure one and then trigger a feature that needs it. Every request goes through Obsidian's `requestUrl` API.
 
-Synapse ships with **no telemetry, no analytics, and no auto-update or update-check traffic of its own** -- it never contacts a server on its own, and nothing about how you use it is collected or sent anywhere. If you never set an API key and never enable a cloud provider, Synapse sends nothing out.
+Synapse ships with **no telemetry and no analytics** -- nothing about how you use it is collected or sent anywhere, and it never updates itself. The only request it makes on its own is an **update check**: at most once a day, a few seconds after the plugin loads, it asks this repository's public GitHub Releases API for the latest version number so it can show a "newer version available" notice that links to Community plugins. That request carries no vault content. Turn it off with **Settings > Synapse > Notify me about Synapse updates**. With that toggle off, no API key set, and no cloud provider enabled, Synapse sends nothing out.
 
 ### Remote services
 
@@ -136,8 +136,12 @@ These are the only services Synapse contacts, what each one is used for, and wha
 | Anthropic -- `api.anthropic.com` | AI provider | The note content you act on | API key required |
 | Google Gemini -- `generativelanguage.googleapis.com` | AI provider; audio transcription | The note content you act on, or the audio you transcribe | API key required |
 | Deepgram -- `api.deepgram.com` | Audio transcription | The audio you transcribe | API key required |
+| GitHub -- `api.github.com` | Update-available notice (on by default; toggle in settings) | A request for this repository's latest release tag; no vault content | None |
 | Twitter / X -- `publish.twitter.com` (fxtwitter, vxtwitter as fallbacks) | Tweet context during enrichment and summarize | The tweet URL found in your note | None |
+| Reddit -- `www.reddit.com` | Post context during elaboration and summarize | The Reddit post URL found in your note, to read its public Atom feed (post body and top comments) | None |
 | Web pages -- any `http(s)` URL in your notes | Article context during elaboration, enrichment, and summarize | A request to that URL, to read the page | None |
+| Wikimedia Commons -- `commons.wikimedia.org` | Illustrate: openly licensed photo search | A short search query the AI proposes for the note's topic (never the note text); the image you accept is then downloaded from the URL the provider returned | None |
+| Openverse -- `api.openverse.org` | Illustrate: openly licensed photo search | Same as Wikimedia Commons | None |
 | YouTube -- `www.youtube.com` | Caption-first video transcription | The video ID of the YouTube URL you transcribe, to fetch its caption track | None |
 | YouTube / TikTok and others -- via `yt-dlp` (desktop) | Video transcription (extraction fallback) | The video URL you transcribe | None |
 
@@ -145,7 +149,8 @@ These are the only services Synapse contacts, what each one is used for, and wha
 
 - **Cloud AI and transcription require an account.** OpenAI, Anthropic, Google Gemini, and Deepgram each need an API key you supply in **Settings > Synapse**. The note content or audio you act on is sent to the one provider you selected so it can do the work, and to no one else.
 - **Two paths stay offline.** Selected as your AI provider, **Ollama** sends note content only to the local endpoint you set (default `http://localhost:11434`) -- no account, no key, nothing leaving your machine. For transcription, the **local Whisper** option is designed to run entirely on-device for the same reason. Use these if you want Synapse to work without sending anything out.
-- **Content you link is fetched from third-party sites.** When a note references a tweet or a web page and you run elaboration, enrichment, or summarize, Synapse requests that URL to read its content -- from Twitter/X (falling back to the fxtwitter and vxtwitter mirrors) or from the site itself. To avoid this, don't run those features on notes whose links you would rather not request, or turn the feature off in settings.
+- **Content you link is fetched from third-party sites.** When a note references a tweet or a web page and you run elaboration, enrichment, or summarize, Synapse requests that URL to read its content -- from Twitter/X (falling back to the fxtwitter and vxtwitter mirrors), from Reddit (the post's public Atom feed), or from the site itself. To avoid this, don't run those features on notes whose links you would rather not request, or turn the feature off in settings.
+- **Illustrate searches open-license image libraries.** When you run Illustrate, Synapse sends a short search query -- proposed by the AI for the note's topic, never the note text -- to Wikimedia Commons and Openverse (both on by default), and downloads only the image you accept into your vault. Disable either provider under **Settings > Synapse > Illustrate** to stop contacting it.
 - **YouTube captions are fetched over plain HTTP.** Caption-first transcription requests the video's public watch page and caption track from `www.youtube.com` (no account, no download). Only when captions are unavailable — or for other platforms — does the flow fall to the desktop extraction pipeline below.
 - **Video transcription downloads the video (extraction fallback).** On desktop, the fallback invokes `yt-dlp` to download the source from YouTube, TikTok, or another platform, then extracts and transcribes the audio locally.
 - **Audio and video transcription use privileged desktop access.** To work with `yt-dlp`, `ffmpeg`, and `ffprobe`, the desktop build reaches outside the vault in two ways, both gated to desktop only (mobile never runs this code):
@@ -153,7 +158,7 @@ These are the only services Synapse contacts, what each one is used for, and wha
   - **Local shell execution.** Synapse runs the external tools as child processes with `execFile` and an explicit argument array -- never a shell command string -- so there is no shell interpolation of URLs, paths, or titles. URLs and file paths are sanitized first (`sanitizeUrl` / `sanitizePath`), the subprocess inherits a narrowed environment (essentially just an augmented `PATH` plus `HOME`), and the binaries that run are exactly the `yt-dlp path` and `ffmpeg path` you set in settings.
 - **The clipboard is written, never read.** Synapse copies text to the clipboard in exactly two places -- a redacted error string when you dismiss an error toast, and an install command in the video settings -- and never reads clipboard contents.
 
-Synapse proposes, you decide -- and that holds for the network too: nothing is requested until you ask for it.
+Synapse proposes, you decide -- and that holds for the network too: apart from the once-a-day update check you can switch off, nothing is requested until you ask for it.
 
 For the reviewer-facing counterpart to this section -- the desktop-only Node usage declaration, the wontfix rationale for the `node-loader` require pattern and the `:has()` toast selectors, and the rebuttals for the automated review's false positives -- see [`docs/automated-review-notes.md`](docs/automated-review-notes.md).
 

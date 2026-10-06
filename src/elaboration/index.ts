@@ -110,6 +110,7 @@ export class ElaborationModule implements FeatureModule {
 		}
 		if (this.scanInterval !== null) {
 			window.clearInterval(this.scanInterval);
+			this.scanInterval = null;
 		}
 	}
 

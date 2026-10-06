@@ -392,7 +392,7 @@ export class UnifiedProposalView extends ItemView {
 
 		const track = progressBar.createDiv({ cls: 'synapse-accept-all-track' });
 		const fill = track.createDiv({ cls: 'synapse-accept-all-fill' });
-		fill.style.width = `${Math.round((current / total) * 100)}%`;
+		fill.setCssProps({ '--synapse-fill': `${Math.round((current / total) * 100)}%` });
 	}
 
 	// ── List Mode ──────────────────────────────────────────────
@@ -1503,7 +1503,7 @@ export class UnifiedProposalView extends ItemView {
 			// Progress bar
 			const track = card.createDiv({ cls: 'synapse-checkpoint-track' });
 			const fill = track.createDiv({ cls: 'synapse-checkpoint-fill' });
-			fill.style.width = `${total > 0 ? Math.round((done / total) * 100) : 0}%`;
+			fill.setCssProps({ '--synapse-fill': `${total > 0 ? Math.round((done / total) * 100) : 0}%` });
 
 			const actions = card.createDiv({ cls: 'synapse-actions' });
 

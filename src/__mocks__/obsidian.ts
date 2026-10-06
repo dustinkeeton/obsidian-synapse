@@ -123,6 +123,7 @@ export interface StubEl extends HTMLElement {
 function createStubEl(tag = 'div'): StubEl {
 	const classes = new Set<string>();
 	const attributes: Record<string, string> = {};
+	const cssProps: Record<string, string> = {};
 	const listeners: Record<string, Array<(evt: StubEvent) => void>> = {};
 	const children: StubEl[] = [];
 
@@ -226,6 +227,9 @@ function createStubEl(tag = 'div'): StubEl {
 			return walk(children);
 		},
 		style: {},
+		setCssProps: vi.fn((props: Record<string, string>) => {
+			Object.assign(cssProps, props);
+		}),
 	} as unknown as StubEl;
 	return el;
 }
