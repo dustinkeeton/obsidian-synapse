@@ -54,6 +54,14 @@ describe('IntakeDispatcher.route', () => {
 			});
 		});
 
+		it('routes a bare disambiguation URL with balanced parens to article (#543)', () => {
+			const route = routeFor('https://en.wikipedia.org/wiki/Doom_(1993_video_game)');
+			expect(route).toEqual({
+				kind: 'article',
+				url: 'https://en.wikipedia.org/wiki/Doom_(1993_video_game)',
+			});
+		});
+
 		it('routes a known article host (medium) to article', () => {
 			const route = routeFor('https://medium.com/@author/a-story-123');
 			expect(route).toEqual({
@@ -65,9 +73,8 @@ describe('IntakeDispatcher.route', () => {
 
 	describe('bare unknown URL → general', () => {
 		it('routes a lone unclassifiable URL to general', () => {
-			// A URL with shell metacharacters is rejected by sanitizeUrl, so
-			// classifyUrl returns `unknown` → general (not fetchable as article).
-			const route = routeFor('https://example.com/wiki/Obsidian_(software)');
+			// `$` is rejected by sanitizeUrl, so classifyUrl returns `unknown`.
+			const route = routeFor('https://example.com/$(whoami)');
 			expect(route.kind).toBe('general');
 		});
 	});

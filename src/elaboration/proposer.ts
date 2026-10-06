@@ -1,6 +1,6 @@
 import { App, TFile, getAllTags, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, redactError, isPathExcluded } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, redactError, isPathExcluded, findUrls } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import type { AIRequestOptions } from '../shared';
 import { DetectionResult, DetectionReason, Proposal } from './types';
@@ -34,13 +34,6 @@ export function proposalContentKey(
 	]);
 }
 
-/**
- * Matches bare http(s) URLs in note text. Reserved for the `matchAll` in
- * gatherExternalContext — kept global (matchAll requires it) and never used
- * with test/exec/replace directly so its lastIndex stays at 0 across calls.
- */
-const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
-
 /** Related-notes context caps; entries are taken whole, in priority order, until the budget is spent. */
 export const DEFAULT_CONTEXT_BUDGET_CHARS = 6000;
 const MAX_BACKLINKS = 5;
@@ -48,6 +41,15 @@ const MAX_OUTBOUND_LINKS = 5;
 const MAX_TAG_SIBLINGS = 10;
 const BACKLINK_EXCERPT_CHARS = 300;
 const OUTBOUND_EXCERPT_CHARS = 500;
+
+/** Replace every bare URL with a space, splicing from the end so earlier offsets stay valid. */
+function stripUrls(text: string): string {
+	let out = text;
+	for (const { url, index } of findUrls(text).reverse()) {
+		out = out.slice(0, index) + ' ' + out.slice(index + url.length);
+	}
+	return out;
+}
 
 interface ContextGroup {
 	header: string;
@@ -212,8 +214,8 @@ export class ProposalGenerator {
 	}
 
 	private async gatherExternalContext(content: string): Promise<{ context: string; attempted: number }> {
-		const urls = [...content.matchAll(URL_REGEX)]
-			.map(m => m[0])
+		const urls = findUrls(content)
+			.map(m => m.url)
 			// Twitter URLs are fetched as tweets, Reddit URLs via Reddit's RSS
 			// feed, and everything else that isn't a known video host is
 			// treated as an article. Video hosts are skipped because their pages
@@ -278,10 +280,7 @@ export class ProposalGenerator {
 	 * a URL slug. Notes with a real sentence of prose are NOT link-dominated.
 	 */
 	private isLinkDominated(content: string): boolean {
-		const meaningful = content
-			// Drop bare URLs. A fresh instance (not URL_REGEX) so the shared
-			// regex's lastIndex is never perturbed for the next matchAll.
-			.replace(new RegExp(URL_REGEX.source, 'g'), ' ')
+		const meaningful = stripUrls(content)
 			// Reduce `[text](url)` / `![alt](url)` and `[[wikilink]]` to their text.
 			.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
 			.replace(/!?\[\[([^\]]*)\]\]/g, '$1')

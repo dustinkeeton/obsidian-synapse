@@ -1,5 +1,5 @@
 import { Plugin, TFile } from 'obsidian';
-import { extractUrls } from '../shared';
+import { extractUrls, findUrls } from '../shared';
 import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
@@ -724,8 +724,7 @@ export class EnrichmentModule implements FeatureModule {
 	}
 
 	private extractExternalUrls(content: string): string[] {
-		const urlRegex = /https?:\/\/[^\s)\]>]+/g;
-		return [...content.matchAll(urlRegex)].map(m => m[0]);
+		return findUrls(content).map(m => m.url);
 	}
 
 	/** Dispatch deferred tasks (I1). */

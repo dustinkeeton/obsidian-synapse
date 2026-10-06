@@ -1,7 +1,6 @@
-import { CALLOUT_TYPES, ENRICHMENT_START, ENRICHMENT_END, parseFrontmatter } from '../shared';
+import { CALLOUT_TYPES, ENRICHMENT_START, ENRICHMENT_END, parseFrontmatter, findUrls, findMarkdownLinks } from '../shared';
 import { SummarizeTarget } from './types';
 
-const URL_REGEX = /https?:\/\/[^\s)\]>]+/g;
 const TIKTOK_HOST_RE = /(?:vm\.|vt\.)?tiktok\.com/;
 const INSTAGRAM_HOST_RE = /instagram\.com/;
 const TWITTER_HOST_RE = /(?:mobile\.)?(?:twitter\.com|x\.com)/;
@@ -55,15 +54,15 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
 			// Legacy: "- [AI Overview](https://example.com) — reason"
 			// Callout: "> - [AI Overview](https://example.com) — reason"
 			const strippedLine = enrichmentIsCallout ? line.replace(/^>\s?/, '') : line;
-			const mdLinkMatch = strippedLine.match(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/);
-			if (mdLinkMatch) {
+			const [mdLink] = findMarkdownLinks(strippedLine);
+			if (mdLink) {
 				targets.push({
 					type: 'url',
-					source: mdLinkMatch[2],
+					source: mdLink.url,
 					line: i,
 					endLine: i,
 					inEnrichmentSection: true,
-					linkTitle: mdLinkMatch[1],
+					linkTitle: mdLink.text,
 				});
 			}
 			continue;
@@ -111,9 +110,7 @@ export function findSummarizeTargets(content: string): SummarizeTarget[] {
 		if (line.trimStart().startsWith('>')) continue;
 
 		// Scan for URLs
-		const matches = [...line.matchAll(URL_REGEX)];
-		for (const match of matches) {
-			const url = match[0];
+		for (const { url } of findUrls(line)) {
 
 			// Check if this URL has a transcription block below — if so,
 			// the transcription handler above will cover it

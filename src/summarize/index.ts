@@ -5,7 +5,7 @@ import {
 	getMarkdownFiles, NotificationManager, buildCallout,
 	CALLOUT_TYPES, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
-	mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport,
+	mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport, findMarkdownLinks,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { OperationHandle } from '../shared';
@@ -700,10 +700,12 @@ export class SummarizeModule implements FeatureModule {
 					}
 
 					// Replace external link with internal link in source note
-					lines[target.line] = lines[target.line].replace(
-						/\[([^\]]+)\]\(https?:\/\/[^\s)]+\)/,
-						() => `[[${title}]]`
-					);
+					const [mdLink] = findMarkdownLinks(lines[target.line]);
+					if (mdLink) {
+						const line = lines[target.line];
+						lines[target.line] =
+							line.slice(0, mdLink.index) + `[[${title}]]` + line.slice(mdLink.index + mdLink.length);
+					}
 
 					if (noteAlreadyExists) {
 						linksUpdated++;

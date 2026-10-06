@@ -27,6 +27,34 @@ describe('findSummarizeTargets', () => {
 		expect(targets[1].line).toBe(3);
 	});
 
+	it('keeps balanced parentheses in a bare URL and trims the prose paren (#543)', () => {
+		const content = [
+			'https://en.wikipedia.org/wiki/Doom_(1993_video_game)',
+			'(see https://example.com/a)',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets.map((t) => t.source)).toEqual([
+			'https://en.wikipedia.org/wiki/Doom_(1993_video_game)',
+			'https://example.com/a',
+		]);
+	});
+
+	it('keeps balanced parentheses in an enrichment markdown link (#543)', () => {
+		const content = [
+			'%% synapse-enrichment-start %%',
+			'- [Doom](https://en.wikipedia.org/wiki/Doom_(1993_video_game)) — reason',
+			'%% synapse-enrichment-end %%',
+		].join('\n');
+		const targets = findSummarizeTargets(content);
+		expect(targets).toHaveLength(1);
+		expect(targets[0]).toMatchObject({
+			type: 'url',
+			source: 'https://en.wikipedia.org/wiki/Doom_(1993_video_game)',
+			inEnrichmentSection: true,
+			linkTitle: 'Doom',
+		});
+	});
+
 	it('finds a transcription block', () => {
 		const content = [
 			'> **Transcription of https://youtube.com/watch?v=abc**',
