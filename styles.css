@@ -34,18 +34,9 @@
   --synapse-color-video: var(--color-yellow);
   --synapse-color-main: var(--text-muted);
 
-  /*
-   * Callout tints take comma-separated RGB CHANNELS (not a color value), so
-   * these companion tokens carry literal channels aligned to each hue above.
-   * Only the types that render as callouts need an `-rgb` companion. Channels
-   * are fixed (theme vars are not channel-decomposable), matching how the
-   * callouts already worked; the low-opacity tint reads fine in light + dark.
-   */
+  /* Callout tints are RGB channel triplets; only note-based callouts (no theme base to inherit) carry one. */
   --synapse-color-elaboration-rgb: 100, 160, 255;
-  --synapse-color-enrichment-rgb: 80, 180, 120;
   --synapse-color-deep-dive-rgb: 160, 120, 220;
-  --synapse-color-summarize-rgb: 230, 110, 110;
-  --synapse-color-video-rgb: 220, 180, 70;
   --synapse-color-illustrate-rgb: 220, 180, 70;
 }
 
@@ -121,47 +112,52 @@ body {
   flex-shrink: 0;
 }
 
-/* ── AI content callout styles ── */
-
-.callout[data-callout^="synapse-"] {
-  --callout-blend-mode: normal;
-  border-left-width: 3px;
-  opacity: 0.95;
-}
+/* ── AI content callout styles ──
+ * Each Synapse type is a native base callout (summary / info / quote / note) carrying
+ * its identity in data-callout-metadata, so the theme's base styling applies and the
+ * compound selector only layers the icon (plus an accent for note-based types) on top.
+ * Bare `synapse-*` selectors are the legacy spelling for notes not yet regenerated (#554). */
 
 /* synapse-summary ↔ summarize feature */
+.callout[data-callout="summary"][data-callout-metadata~="synapse-summary"],
 .callout[data-callout="synapse-summary"] {
-  --callout-color: var(--synapse-color-summarize-rgb);
   --callout-icon: lucide-file-text;
 }
 
 /* synapse-transcription ↔ video feature */
+.callout[data-callout="quote"][data-callout-metadata~="synapse-transcription"],
 .callout[data-callout="synapse-transcription"] {
-  --callout-color: var(--synapse-color-video-rgb);
   --callout-icon: lucide-mic;
 }
 
+.callout[data-callout="info"][data-callout-metadata~="synapse-enrichment"],
 .callout[data-callout="synapse-enrichment"] {
-  --callout-color: var(--synapse-color-enrichment-rgb);
   --callout-icon: lucide-link;
 }
 
-.callout[data-callout="synapse-elaboration"] {
-  --callout-color: var(--synapse-color-elaboration-rgb);
-  --callout-icon: lucide-pen-tool;
-}
-
+.callout[data-callout="note"][data-callout-metadata~="synapse-deep-dive"],
 .callout[data-callout="synapse-deep-dive"] {
   --callout-color: var(--synapse-color-deep-dive-rgb);
   --callout-icon: lucide-layers;
 }
 
 /* synapse-illustrate ↔ illustrate feature (caption + attribution under an embed) */
+.callout[data-callout="note"][data-callout-metadata~="synapse-illustrate"],
 .callout[data-callout="synapse-illustrate"] {
   --callout-color: var(--synapse-color-illustrate-rgb);
   --callout-icon: lucide-image;
 }
 
+/* @deprecated: elaboration rewrites the note since #553; legacy render only */
+.callout[data-callout="synapse-elaboration"] {
+  --callout-color: var(--synapse-color-elaboration-rgb);
+  --callout-icon: lucide-pen-tool;
+}
+
+/* Legacy bare types have no base to inherit; borrow the base tint. */
+.callout[data-callout="synapse-summary"] { --callout-color: var(--callout-summary); }
+.callout[data-callout="synapse-transcription"] { --callout-color: var(--callout-quote); }
+.callout[data-callout="synapse-enrichment"] { --callout-color: var(--callout-info); }
 /* ── Modal action buttons ── */
 
 .synapse-modal-actions {
