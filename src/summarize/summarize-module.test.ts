@@ -9,6 +9,7 @@ import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import type { Mock } from 'vitest';
 import type { Plugin } from 'obsidian';
 import type { NotificationManager, CheckpointManager } from '../shared';
+import type { SummarizeTarget } from './types';
 
 /** The slice of an Obsidian Command the tests read back off addCommand. */
 interface MockCommand {
@@ -74,6 +75,7 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/cache-notice')>('../shared/cache-notice')),
 	// Real queue primitive (#483): a mocked-away queue would never run the operation
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
+	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
@@ -470,5 +472,63 @@ describe('SummarizeModule note content (#367)', () => {
 			'No note content, URLs, transcriptions, or audio to summarize in this note'
 		);
 		expect(lastSummarizerInstance.summarize).not.toHaveBeenCalled();
+	});
+
+	describe('effectively-empty note content (#544)', () => {
+		const VIDEO_URL = 'https://www.youtube.com/watch?v=abc';
+		const urlTarget = (): SummarizeTarget => ({ type: 'url', source: VIDEO_URL, line: 0, endLine: 0 });
+
+		function collectTargets(content: string): SummarizeTarget[] {
+			return (module as unknown as {
+				collectTargets: (content: string, sourcePath: string) => SummarizeTarget[];
+			}).collectTargets(content, 'notes/My Note.md');
+		}
+
+		it('drops the note-content target when the prose is only a URL and an embed', () => {
+			vi.mocked(findSummarizeTargets).mockReturnValueOnce([urlTarget()]);
+			vi.mocked(extractNoteProse).mockReturnValueOnce(`${VIDEO_URL}\n\n![[clip.mp3]]`);
+
+			expect(collectTargets('').map((t) => t.type)).toEqual(['url']);
+		});
+
+		it('drops the note-content target when the prose is only an embed', () => {
+			vi.mocked(findSummarizeTargets).mockReturnValueOnce([]);
+			vi.mocked(extractNoteProse).mockReturnValueOnce('![[clip.mp3]]');
+
+			expect(collectTargets('')).toEqual([]);
+		});
+
+		it('keeps the note-content target when a real sentence sits beside the references', () => {
+			const prose = `The lecture covered A and B.\n\n${VIDEO_URL}\n\n![[clip.mp3]]`;
+			vi.mocked(findSummarizeTargets).mockReturnValueOnce([urlTarget()]);
+			vi.mocked(extractNoteProse).mockReturnValueOnce(prose);
+
+			const targets = collectTargets('');
+			expect(targets.map((t) => t.type)).toEqual(['url', 'note-content']);
+			expect(targets[1].content).toBe(prose);
+		});
+
+		it('summarizes a single-URL note directly instead of opening the selection modal', async () => {
+			vi.mocked(findSummarizeTargets).mockReturnValueOnce([{ type: 'url', source: 'https://example.com', line: 0, endLine: 0 }]);
+			vi.mocked(extractNoteProse).mockReturnValueOnce('https://example.com');
+
+			await runSummarize();
+
+			expect(lastSummarizerInstance.summarize).toHaveBeenCalledTimes(1);
+			expect(lastSummarizerInstance.summarize.mock.calls[0][0]).toContain('Some fetched content for testing.');
+			expect(mockNotifications.info).not.toHaveBeenCalled();
+		});
+
+		it('reports nothing to summarize for an embed-only note with no other targets', async () => {
+			vi.mocked(findSummarizeTargets).mockReturnValueOnce([]);
+			vi.mocked(extractNoteProse).mockReturnValueOnce('![[clip.mp3]]\n\n---\n');
+
+			await runSummarize();
+
+			expect(mockNotifications.info).toHaveBeenCalledWith(
+				'No note content, URLs, transcriptions, or audio to summarize in this note'
+			);
+			expect(lastSummarizerInstance.summarize).not.toHaveBeenCalled();
+		});
 	});
 });

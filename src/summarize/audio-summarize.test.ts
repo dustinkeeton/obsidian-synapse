@@ -78,6 +78,7 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/cache-notice')>('../shared/cache-notice')),
 	// Real queue primitive (#483): a mocked-away queue would never run the operation
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
+	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
 	...(await vi.importActual<typeof import('../shared/url-classifier')>('../shared/url-classifier')),
 	FolderPickerModal: vi.fn(),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),

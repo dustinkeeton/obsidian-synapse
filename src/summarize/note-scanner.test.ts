@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildCallout, CALLOUT_TYPES } from '../shared';
 import { findSummarizeTargets, hasSummaryBelow, extractTranscriptionContent, extractNoteProse } from './note-scanner';
+import { isEffectivelyEmptyProse } from '../shared/prose-reduction';
 
 describe('findSummarizeTargets', () => {
 	it('finds a bare URL', () => {
@@ -876,5 +877,34 @@ describe('extractNoteProse', () => {
 			'Para two.',
 		].join('\n');
 		expect(extractNoteProse(content)).toBe('Para one.\n\nPara two.');
+	});
+});
+
+describe('extractNoteProse + isEffectivelyEmptyProse (#544)', () => {
+	const gate = (content: string) => isEffectivelyEmptyProse(extractNoteProse(content));
+
+	it('treats a URL-only note as empty', () => {
+		expect(gate('---\ntitle: X\n---\n\nhttps://www.youtube.com/watch?v=abc\n')).toBe(true);
+	});
+
+	it('treats an embed-only note as empty', () => {
+		expect(gate('![[clip.mp3]]\n')).toBe(true);
+	});
+
+	it('treats a URL, an embed, and a generated summary as empty', () => {
+		const content = [
+			'https://www.youtube.com/watch?v=abc',
+			'',
+			'![[clip.mp3]]',
+			'',
+			'> [!synapse-summary] Summary of https://www.youtube.com/watch?v=abc',
+			'> - a point',
+		].join('\n');
+		expect(gate(content)).toBe(true);
+	});
+
+	it('keeps a note with one real sentence beside its references', () => {
+		const content = 'Watched this for the project.\n\nhttps://www.youtube.com/watch?v=abc\n\n![[clip.mp3]]';
+		expect(gate(content)).toBe(false);
 	});
 });

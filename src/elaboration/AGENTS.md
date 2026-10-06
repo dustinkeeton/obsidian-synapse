@@ -140,7 +140,7 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
    |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:424)
    |  Context: external URLs (<=3) -- tweet(500) / Reddit(2000) / article(2000); video hosts skipped
    |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:251)
-   |  Guard B: attempted>0 && externalContext='' && isLinkDominated -> return null (proposer.ts:126)
+   |  Guard B: attempted>0 && externalContext='' && isLinkDominated -> return null (proposer.ts:117)
    |  buildPrompt() always prepends `Note title: "<basename>"` (proposer.ts:183)
    |  AIClient.complete(prompt, systemPrompt, aiOpts)  (proposer.ts:135; aiOpts = trackAiCache(cacheUse), #527)
    |  proposedAdditions = stripCodeFences(sanitizeAIResponse(raw))
@@ -192,7 +192,7 @@ if (content.trim() === '' && isGenericTitle(noteFile.basename)) {
 
 `isGenericTitle` is imported from the `../shared` barrel (shared/index.ts:143), which re-exports it from `shared/title-detector.ts:69` -- not a local copy, and not from the `title/` feature module (dependency rules forbid feature-to-feature imports; `title/` re-exports `isUntitled` from the same shared source). `isGenericTitle(t) === isUntitled(t) || isDateStyleTitle(t) || isBareUrlTitle(t)` (shared/title-detector.ts:69-71). It returns true for Obsidian "Untitled" defaults, date-style daily-note names (e.g. `2026-06-25`, `YYYYMMDD`, `DD-MM-YYYY`), and bare URLs. A real title like "Photosynthesis" is not generic, so the title-led prompt still runs.
 
-Guard B (link-dominated note, all fetches failed), proposer.ts:126: when the note is essentially just link(s) and every external fetch returned nothing, `generate()` returns null rather than fabricating from a URL slug. `isLinkDominated` strips URLs/markdown/wikilinks to visible text and checks `length < 10` (proposer.ts:282). Both guards return `null`; callers skip the file without creating a proposal.
+Guard B (link-dominated note, all fetches failed), proposer.ts:117: when the note is essentially just link(s) and every external fetch returned nothing, `generate()` returns null rather than fabricating from a URL slug. `isLinkDominated` delegates to the shared `isEffectivelyEmptyProse` (`shared/prose-reduction.ts`: URLs and `![[embeds]]` removed, links reduced to their label, fewer than `MIN_PROSE_CHARS` = 10 letters/digits left), the same rule summarize uses to drop empty note content (#544). Both guards return `null`; callers skip the file without creating a proposal.
 
 ## Idempotency and Dedup (content key)
 
@@ -280,7 +280,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 |---------|------|---------|
 | `buildCallout`, `CALLOUT_TYPES`, `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `NoteOperationQueue`, `sanitizeAIResponse`, `stripCodeFences`, `CheckpointManager`, `generateId`, `fireAndForget`, `reviewAction`, `trackAiCache`, `withCacheReport` (+ types `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule`) | `../shared` | index.ts:3-10 |
 | `wordCount`, `isPathExcluded`, `matchesExcludeTag`, `getIncludedMarkdownFiles` | `../shared` | detector.ts |
-| `AIClient`, `sanitizeAIResponse`, `stripCodeFences`, `isTwitterUrl`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `fetchArticleContent`, `linkLoadError`, `NotificationManager`, `isGenericTitle`, `hashString`, `contentKey`, `wrapUntrusted`, `redactError`, `isPathExcluded`, `findUrls` | `../shared` | proposer.ts |
+| `AIClient`, `sanitizeAIResponse`, `stripCodeFences`, `isTwitterUrl`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `fetchArticleContent`, `linkLoadError`, `NotificationManager`, `isGenericTitle`, `hashString`, `contentKey`, `wrapUntrusted`, `redactError`, `isPathExcluded`, `findUrls`, `isEffectivelyEmptyProse` | `../shared` | proposer.ts |
 | `AIClient`, `arrayBufferToBase64`, `NotificationManager`, `redactError` (+ type `ContentBlock`) | `../shared` | image-analyzer.ts |
 | `ensureFolder`, `isRecord`, `readJsonFile` | `../shared` | proposal-store.ts |
 | `fireAndForget` | `../shared` | proposal-view.ts |

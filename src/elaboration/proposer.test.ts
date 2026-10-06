@@ -672,6 +672,19 @@ describe('ProposalGenerator -- link-dominated notes (anti-fabrication)', () => {
 		expect(notifications.error).toHaveBeenCalledTimes(1);
 	});
 
+	it('returns null when an embed-only note\'s single link fails to load', async () => {
+		mockRequestUrl.mockRejectedValue(new Error('Too Many Requests'));
+
+		const { generator } = makeGenerator('![[clip.mp3]]\n\n' + REDDIT_URL + '\n\n---\n');
+		const proposal = await generator.generate({
+			notePath: 'notes/embed-and-link.md',
+			reasons: [{ type: 'user-requested' }],
+		});
+
+		expect(proposal).toBeNull();
+		expect(mockComplete).not.toHaveBeenCalled();
+	});
+
 	it('still elaborates when a note has real prose alongside a failed link', async () => {
 		mockRequestUrl.mockRejectedValue(new Error('Too Many Requests'));
 

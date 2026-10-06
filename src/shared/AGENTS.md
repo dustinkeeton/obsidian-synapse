@@ -130,6 +130,13 @@ function extractUrls(text: string): string[]                     // findUrls, de
 function findMarkdownLinks(text: string): MarkdownLinkMatch[]    // [text](http(s)-url) links; destination ends at the paren that balances the link's '('
 interface UrlMatch { url: string; index: number }
 interface MarkdownLinkMatch { text: string; url: string; index: number; length: number }
+
+// prose-reduction.ts
+const MIN_PROSE_CHARS = 10
+function stripUrls(text: string): string                         // every bare URL replaced by a space (offsets from findUrls)
+function reduceToProse(text: string): string                     // minus references: URLs + ![[embeds]] removed, [text](url) / [[link|alias]] -> label, rules + empty headings dropped
+function proseCharCount(text: string): number                    // letters/digits left after reduceToProse
+function isEffectivelyEmptyProse(text: string): boolean          // proseCharCount < MIN_PROSE_CHARS; the ONE link-only / note-content-empty rule (#544)
 type UrlContentType = 'video' | 'audio' | 'article' | 'unknown'
 interface UrlClassification { type: UrlContentType; platform: string; url: string }
 
@@ -507,6 +514,8 @@ function scoreLyricsContent(content: string): number
 | `url-detector.test.ts` | Tests | URL detection tests (moved here from video/) |
 | `url-classifier.ts` | `classifyUrl`, `findUrls`, `extractUrls`, `findMarkdownLinks`, `UrlMatch`, `MarkdownLinkMatch`, `UrlContentType`, `UrlClassification` | Classify URL content type; the single paren-aware URL / markdown-link extractor (#543) |
 | `url-classifier.test.ts` | Tests | URL classifier tests |
+| `prose-reduction.ts` | `reduceToProse`, `proseCharCount`, `isEffectivelyEmptyProse`, `stripUrls`, `MIN_PROSE_CHARS` | Strip references from note text and decide whether real prose remains; shared by elaboration's link-only guard and summarize's note-content gate (#544) |
+| `prose-reduction.test.ts` | Tests | Reduction rules and the empty-prose threshold |
 | `content-fetcher.ts` | `fetchPageContent`, `fetchArticleContent`, `extractReadableText`, `extractTitle`, `extractMetaDescription`, `extractJsonLdRecipes`, `formatRecipeStructuredData`, `RecipeJsonLd` | Fetch + extract readable web/article/recipe content |
 | `content-fetcher.test.ts` | Tests | Content fetcher tests |
 | `collapsible-section.ts` | `addCollapsibleSection`, `CollapsibleSection`, `CollapsibleSectionOptions` | Reusable collapsible UI section (settings accordions) |
@@ -711,6 +720,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
 | `classifyUrl` / `extractUrls` | intake (URL routing), elaboration/index, enrichment/index, deep-dive/index, illustrate/index (source URLs) |
 | `findUrls` / `findMarkdownLinks` | summarize/note-scanner, summarize/index, video/note-scanner, elaboration/proposer, enrichment/index (the only URL matchers; no local `URL_REGEX`, #543) |
+| `isEffectivelyEmptyProse` | summarize/index (`collectTargets` note-content gate), elaboration/proposer (`isLinkDominated`) (#544) |
 | `detectPlatform` / `isSupportedUrl` | video/index, transcription/, summarize (platform gating) |
 | `ensureFolder` | elaboration/proposal-store, enrichment/enrichment-store, tidy/tidy-store, video/index, organize/index, deep-dive/index, checkpoint-manager |
 | `wordCount` | elaboration/detector, deep-dive/index |

@@ -1636,3 +1636,8 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
 .synapse-changelog-link {
   cursor: pointer;
 }
+
+/* Summarize modal: the combine toggle hides while fewer than two combinable items are selected. */
+.synapse-summarize-combine.is-hidden {
+  display: none;
+}
