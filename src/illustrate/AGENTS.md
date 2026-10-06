@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-10-05
+last-updated: 2026-10-06
 ---
 
 # Illustrate Module
 
-Proposes real visuals for notes (#213): the AI picks spots that warrant a photo, diagram, or chart; photos are sourced from licensed repositories (Wikimedia Commons, Openverse) with license + attribution captured, diagrams are AI-emitted Mermaid, charts are Mermaid `xychart-beta` built only from numbers already in the note. Proposals are stored and reviewed per item in the unified sidebar (each item carries a `placement` preview from `shared/insertion-point.ts`, which never splits a paragraph/list/fence/table and prefers the spot after a heading's opening paragraph); accept re-resolves the anchor against the live note and inserts an embed + `synapse-illustrate` caption callout (or a Mermaid fence) there. Participates in Fire Synapse (`pipelineKey: illustrate`, after REM, before Tidy) and, per `illustrate.runAfter`, as a post-op leg after elaboration / transcription (audio, video, image) / summarize / enrichment / deep-dive, sourcing photos from the acted-on material first (`providers/source.ts`).
+Proposes real visuals for notes (#213): the AI picks spots that warrant a photo and, only when `illustrate.mermaid` is on (#549, default off), a diagram or chart; photos are sourced from licensed repositories (Wikimedia Commons, Openverse) with license + attribution captured, diagrams are AI-emitted Mermaid, charts are Mermaid `xychart-beta` built only from numbers already in the note. With Mermaid off the analyzer prompt asks for photos only, `parseSpots` drops any `diagram`/`chart` the model still emits, and `resolveItem` refuses them, so every entry point (manual, batch, Fire Synapse, post-op legs) is covered by the one flag. Proposals are stored and reviewed per item in the unified sidebar (each item carries a `placement` preview from `shared/insertion-point.ts`, which never splits a paragraph/list/fence/table and prefers the spot after a heading's opening paragraph); accept re-resolves the anchor against the live note and inserts an embed + `synapse-illustrate` caption callout (or a Mermaid fence) there. Participates in Fire Synapse (`pipelineKey: illustrate`, after REM, before Tidy) and, per `illustrate.runAfter`, as a post-op leg after elaboration / transcription (audio, video, image) / summarize / enrichment / deep-dive, sourcing photos from the acted-on material first (`providers/source.ts`).
 
 ## Public API (`index.ts`)
 
@@ -17,8 +17,8 @@ class IllustrateModule {
   onload(): Promise<void>                                            // registers illustrate-current-note, illustrate-folder
   onunload(): void
   getPendingProposals(): Promise<IllustrateProposal[]>
-  illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast; with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch, placed INSIDE ctx.producedRegion when it is a callout; skipped while a run for the path is in flight, when a proposal is already pending, or when the region already holds a synapse-illustrate callout
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:218; PipelineScanFn
+  illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast (info notice + no-op when no provider and Mermaid are enabled); with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch, placed INSIDE ctx.producedRegion when it is a callout; skipped while a run for the path is in flight, when a proposal is already pending, or when the region already holds a synapse-illustrate callout
+  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:218; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:264
   acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:317; queued write
   rejectProposal(id: string): Promise<void>
@@ -38,6 +38,10 @@ fetchLinkedPageImages(urls: string[], { maxPages, maxImages? }): Promise<SourceI
 normalizeLicense(raw: string): LicenseName | null                    // Commons short names + Openverse codes -> 'CC BY-SA' etc.
 isLicenseAllowed(license: string, allowed: readonly string[]): boolean
 LICENSE_NAMES, DEFAULT_LICENSE_FILTER, SOURCE_PAGE_LICENSE            // default filter ['CC0', 'Public domain', 'CC BY', 'CC BY-SA']; 'Source page' is added when any runAfter toggle turns on, never removed automatically
+
+// note-analyzer.ts
+parseSpots(response: string, maxSpots: number, options?: { mermaid?: boolean }): IllustrateSpot[]   // pure; mermaid false (default true) drops diagram/chart entries
+buildSystemPrompt(mermaid: boolean): string                          // false = photo-only schema + rules
 
 // diagram.ts / chart.ts
 validateMermaid(raw: string): string | null                          // known first token, no fences/scripts, <= 4000 chars
@@ -78,6 +82,7 @@ interface IllustrateProposal { id; sourceNotePath; createdAt; items: IllustrateI
 interface IllustrateSettings {
   enabled: boolean                          // default false (opt-in: note-derived queries leave the vault)
   providers: Record<RepositoryProviderId, boolean>
+  mermaid: boolean                          // default false (#549); gates diagram + chart kinds in the prompt, parseSpots and resolveItem
   runAfter: Record<IllustrateRunAfterKey, boolean>   // all default false; post-op chaining (pipeline/post-op-hooks.ts illustrate leg)
   fetchLinkedPages: boolean                 // default false; one request per linked page when a chained run has < 3 source images
   maxLinkedPagesPerNote: number             // default 3
@@ -94,7 +99,7 @@ interface IllustrateSettings {
 | File | Exports | Purpose |
 |------|---------|---------|
 | `index.ts` | `IllustrateModule`, barrel | Lifecycle, commands, scan/resume batch core, accept/reject |
-| `note-analyzer.ts` | `NoteAnalyzer`, `parseSpots` | One AI call -> validated spots (JSON, fenced note via `wrapUntrusted`) |
+| `note-analyzer.ts` | `NoteAnalyzer`, `parseSpots`, `buildSystemPrompt` | One AI call -> validated spots (JSON, fenced note via `wrapUntrusted`); photo-only prompt + filter when `mermaid` is off |
 | `providers/wikimedia.ts` | `WikimediaProvider`, `parseCommonsPage` | Commons search via `requestUrl` |
 | `providers/openverse.ts` | `OpenverseProvider`, `parseOpenverseResult`, `OPENVERSE_MAX_QUERIES_PER_RUN` | Openverse search, per-run cap |
 | `providers/source.ts` | `SourceProvider`, `imageRelevance`, `toSourceCandidate` | Acted-on material's own images as candidates (#213) |
@@ -106,7 +111,7 @@ interface IllustrateSettings {
 | `asset-writer.ts` | `AssetWriter`, `attachmentFileName` | `requestUrl` -> `arrayBuffer` -> `vault.createBinary` at `fileManager.getAvailablePathForAttachment` (15 MB cap) |
 | `proposal-store.ts` | `IllustrateStore` | JSON files in `illustrate.proposalFolderPath` |
 | `note-scanner.ts` | `isEligibleNote`, `hasIllustrations`, `MIN_WORDS_TO_ILLUSTRATE` | Batch eligibility (>= 80 words, no existing illustrate callout) |
-| `settings-section.ts` | `renderIllustrateSettings`, `ILLUSTRATE_FEATURE_TOOLTIP` | Accordion; license chips are raw DOM checkboxes |
+| `settings-section.ts` | `renderIllustrateSettings`, `ILLUSTRATE_FEATURE_TOOLTIP` | Accordion; license chips are raw DOM checkboxes; `.synapse-illustrate-empty-config` helper shows while no provider and Mermaid are on |
 | `types.ts` | types above | |
 | `*.test.ts` | tests | Every file above except `types.ts` |
 
@@ -124,10 +129,10 @@ illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoi
   --> exclusions: isPathExcluded(path, 'illustrate') || matchesExcludeTag(illustrate.excludeTags)
   --> batch only: isEligibleNote(cachedRead)
   --> per note, under noteQueue.run(path): buildProposal
-        vault.read -> parseFrontmatter.body -> NoteAnalyzer.analyze (AI, cache-tracked)
+        vault.read -> parseFrontmatter.body -> NoteAnalyzer.analyze (AI, cache-tracked; buildSystemPrompt(illustrate.mermaid), parseSpots(.., { mermaid }))
         photo   -> first enabled provider whose candidate passes isLicenseAllowed(licenseFilter)
-        diagram -> spot.mermaid (already validated)
-        chart   -> validateMermaid(buildXyChart(spot.chart))
+        diagram -> spot.mermaid (already validated); null when illustrate.mermaid is off
+        chart   -> validateMermaid(buildXyChart(spot.chart)); null when illustrate.mermaid is off
         every item: placement = resolveInsertionPoint(content, anchorFor(spot.anchor))   // index.ts anchorFor: leading '#' -> 'heading', else 'paragraph'
         items.length > 0 -> IllustrateStore.save(pending)
   --> maybeAutoAccept (#228) -> acceptProposal(all item ids, silent in batch)

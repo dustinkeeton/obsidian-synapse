@@ -36,6 +36,17 @@ describe('parseSpots', () => {
 		expect(parseSpots('{"spots": "nope"}', 3)).toEqual([]);
 		expect(parseSpots('{"spots": [', 3)).toEqual([]);
 	});
+
+	it('drops diagram and chart spots when Mermaid is not allowed (#549)', () => {
+		const spots = parseSpots(JSON.stringify({ spots: [diagram, chart, photo] }), 5, { mermaid: false });
+		expect(spots.map(s => s.kind)).toEqual(['photo']);
+	});
+
+	it('does not let a dropped Mermaid spot consume the cap or its anchor', () => {
+		const spots = parseSpots(JSON.stringify({ spots: [diagram, { ...photo, anchor: diagram.anchor }] }), 1, { mermaid: false });
+		expect(spots).toHaveLength(1);
+		expect(spots[0]).toMatchObject({ kind: 'photo', anchor: diagram.anchor });
+	});
 });
 
 describe('NoteAnalyzer', () => {
@@ -52,5 +63,35 @@ describe('NoteAnalyzer', () => {
 		expect(complete.mock.calls[0][0]).toContain('Body text');
 		expect(complete.mock.calls[0][0]).toContain('at most 1');
 		expect(complete.mock.calls[0][1]).toContain('Respond with JSON only');
+	});
+
+	it('asks only for photos and drops model-emitted Mermaid spots when the toggle is off (#549)', async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		settings.illustrate.mermaid = false;
+		const complete = vi.spyOn(AIClient.prototype, 'complete')
+			.mockResolvedValue(JSON.stringify({ spots: [diagram, chart, photo] }));
+		const analyzer = new NoteAnalyzer(() => settings);
+		const spots = await analyzer.analyze('notes/a.md', 'Body text');
+		expect(spots.map(s => s.kind)).toEqual(['photo']);
+		const system = complete.mock.calls[0][1] as string;
+		expect(system).toContain('"kind":"photo"');
+		expect(system).not.toContain('"diagram"');
+		expect(system).not.toContain('"chart"');
+		expect(system).not.toContain('mermaid');
+		expect(system).toContain('Respond with JSON only');
+	});
+
+	it('asks for all three kinds when the toggle is on', async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		settings.illustrate.mermaid = true;
+		const complete = vi.spyOn(AIClient.prototype, 'complete')
+			.mockResolvedValue(JSON.stringify({ spots: [diagram, chart, photo] }));
+		const analyzer = new NoteAnalyzer(() => settings);
+		const spots = await analyzer.analyze('notes/a.md', 'Body text');
+		expect(spots.map(s => s.kind)).toEqual(['diagram', 'chart', 'photo']);
+		const system = complete.mock.calls[0][1] as string;
+		expect(system).toContain('"kind":"photo"|"diagram"|"chart"');
+		expect(system).toContain('"mermaid":');
+		expect(system).toContain('"chart": ONLY when the note itself contains the numbers');
 	});
 });

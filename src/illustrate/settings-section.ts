@@ -4,7 +4,10 @@ import { LICENSE_NAMES, SOURCE_PAGE_LICENSE } from './license';
 import type { RepositoryProviderId, IllustrateRunAfterKey } from './types';
 
 export const ILLUSTRATE_FEATURE_TOOLTIP =
-	'Propose real photos, diagrams, and charts for notes, sourced from licensed image repositories and built from the note itself';
+	'Propose real photos for notes, sourced from licensed image repositories; optionally Mermaid diagrams and charts built from the note itself';
+
+const EMPTY_CONFIG_HELP =
+	'Nothing to propose: turn on at least one photo repository or Mermaid diagrams and charts, or runs will produce no visuals.';
 
 const PROVIDER_ROWS: Array<{ id: RepositoryProviderId; name: string; desc: string }> = [
 	{ id: 'wikimedia', name: 'Wikimedia Commons', desc: 'Search Wikimedia Commons for licensed reference photos (no API key).' },
@@ -39,10 +42,30 @@ export function renderIllustrateSettings(ctx: SettingsSectionContext): void {
 					.setValue(plugin.settings.illustrate.providers[row.id])
 					.onChange(async (value) => {
 						plugin.settings.illustrate.providers[row.id] = value;
+						refreshEmptyConfig();
 						await plugin.saveSettings();
 					})
 			);
 	}
+
+	new Setting(body)
+		.setName('Propose Mermaid diagrams and charts')
+		.setDesc('Also propose Mermaid blocks: diagrams are AI-written Mermaid source; charts use only numbers already in the note. Off proposes photos only.')
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.illustrate.mermaid)
+				.onChange(async (value) => {
+					plugin.settings.illustrate.mermaid = value;
+					refreshEmptyConfig();
+					await plugin.saveSettings();
+				})
+		);
+	const emptyConfig = body.createDiv({ cls: 'synapse-illustrate-empty-config', text: EMPTY_CONFIG_HELP });
+	function refreshEmptyConfig(): void {
+		const { mermaid, providers } = plugin.settings.illustrate;
+		emptyConfig.toggleClass('is-hidden', mermaid || providers.wikimedia || providers.openverse);
+	}
+	refreshEmptyConfig();
 
 	new Setting(body)
 		.setName('Max visuals per note')

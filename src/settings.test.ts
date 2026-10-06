@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS, MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
 import { PROPOSAL_KINDS } from './views/types';
 import { CURRENT_SETTINGS_VERSION } from './shared/settings-migrations';
+import { deepMergeSettings } from './shared/settings-merge';
 
 describe('autoAccept settings (#228)', () => {
 	it('defines an autoAccept flag for every proposal kind', () => {
@@ -158,5 +159,18 @@ describe('exclusions settings (#307)', () => {
 describe('settings version stamp (#93)', () => {
 	it('stamps DEFAULT_SETTINGS with the current schema version', () => {
 		expect(DEFAULT_SETTINGS.settingsVersion).toBe(CURRENT_SETTINGS_VERSION);
+	});
+});
+
+describe('illustrate Mermaid toggle (#549)', () => {
+	it('defaults Mermaid diagrams and charts to off', () => {
+		expect(DEFAULT_SETTINGS.illustrate.mermaid).toBe(false);
+	});
+
+	it('merges a saved illustrate block without the key to mermaid: false', () => {
+		const saved = { illustrate: { enabled: true, providers: { wikimedia: false, openverse: true } } };
+		const merged = deepMergeSettings(DEFAULT_SETTINGS, saved);
+		expect(merged.illustrate.mermaid).toBe(false);
+		expect(merged.illustrate.providers).toEqual({ wikimedia: false, openverse: true });
 	});
 });

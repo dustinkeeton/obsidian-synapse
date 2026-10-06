@@ -1072,6 +1072,15 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
   font-weight: 600;
   color: var(--text-normal);
 }
+/* Illustrate settings: shown only while no photo repository and no Mermaid output is enabled. */
+.synapse-illustrate-empty-config {
+  padding: 6px 0 10px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-warning);
+}
+.synapse-illustrate-empty-config.is-hidden {
+  display: none;
+}
 .synapse-illustrate-meta {
   display: block;
   color: var(--text-muted);

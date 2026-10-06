@@ -130,6 +130,7 @@ describe('IllustrateModule', () => {
 
 	describe('illustrateNote', () => {
 		it('analyzes the note, sources a licensed photo, and stores a proposal', async () => {
+			settings.illustrate.mermaid = true;
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
 			vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([
 				{ kind: 'photo', anchor: '## Habitat', caption: 'c', rationale: '', query: 'red panda' },
@@ -141,6 +142,31 @@ describe('IllustrateModule', () => {
 			expect(saved.items.map((i) => i.kind)).toEqual(['photo', 'chart']);
 			expect(saved.items[0]).toMatchObject({ candidate: { license: 'CC BY-SA' }, placement: { strategy: 'after-section-lead', line: 3, matchedText: '## Habitat' } });
 			expect(op.finish).toHaveBeenCalledWith('Illustration proposal created', expect.objectContaining({ label: 'Review' }) as NoticeAction);
+		});
+
+		it('keeps only photo items when the Mermaid toggle is off (#549)', async () => {
+			settings.illustrate.mermaid = false;
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([
+				{ kind: 'diagram', anchor: '## Lifecycle', caption: 'd', rationale: '', mermaid: 'flowchart TD\nA --> B' },
+				{ kind: 'photo', anchor: '## Habitat', caption: 'c', rationale: '', query: 'red panda' },
+				{ kind: 'chart', anchor: '## Lifecycle', caption: 'n', rationale: '', chart: { title: 'T', xLabels: ['a'], series: [{ values: [1] }] } },
+			]);
+			vi.spyOn(WikimediaProvider.prototype, 'search').mockResolvedValue([candidate]);
+			await module.illustrateNote('notes/a.md');
+			const saved = vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0];
+			expect(saved.items.map((i) => i.kind)).toEqual(['photo']);
+		});
+
+		it('stops with a notice when no photo provider and no Mermaid output is enabled', async () => {
+			settings.illustrate.mermaid = false;
+			settings.illustrate.providers = { wikimedia: false, openverse: false };
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			const analyze = vi.spyOn(NoteAnalyzer.prototype, 'analyze');
+			await module.illustrateNote('notes/a.md');
+			expect(analyze).not.toHaveBeenCalled();
+			expect(notifications.startOperation).not.toHaveBeenCalled();
+			expect(notifications.info.mock.calls[0][0]).toContain('Mermaid');
 		});
 
 		it('drops a photo spot when no provider returns an allowed license', async () => {
@@ -216,6 +242,18 @@ describe('IllustrateModule', () => {
 			expect(warn.mock.calls[0][0]).toContain('proposal view refresh failed');
 		});
 
+		it('drops Mermaid spots on the chained path when the toggle is off (#549)', async () => {
+			settings.illustrate.mermaid = false;
+			vi.mocked(NoteAnalyzer.prototype.analyze).mockResolvedValue([
+				{ kind: 'chart', anchor: '## Lifecycle', caption: 'n', rationale: '', chart: { title: 'T', xLabels: ['a'], series: [{ values: [1] }] } },
+				{ kind: 'photo', anchor: '## Habitat', caption: 'c', rationale: '', query: 'red panda' },
+			]);
+			await module.illustrateNote('notes/a.md', ctx);
+			const saved = vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0];
+			expect(saved.items.map((i) => i.kind)).toEqual(['photo']);
+			expect(saved.items[0]).toMatchObject({ candidate: { provider: 'source' } });
+		});
+
 		it('respects the word gate and exclusions silently', async () => {
 			app.vault.cachedRead.mockResolvedValue('tiny');
 			const analyze = vi.mocked(NoteAnalyzer.prototype.analyze);
@@ -235,6 +273,7 @@ describe('IllustrateModule', () => {
 		const longSummary = SUMMARY_NOTE.replace('> It declined later.', '> ' + 'word '.repeat(100));
 
 		it('hands the analyzer only the region text and resolves placements inside the callout', async () => {
+			settings.illustrate.mermaid = true;
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
 			app.vault.read.mockResolvedValue(longSummary);
 			app.vault.cachedRead.mockResolvedValue(longSummary);
@@ -327,6 +366,7 @@ describe('IllustrateModule', () => {
 	describe('scanVault', () => {
 		it('checkpoints eligible notes, builds proposals, and auto-accepts when enabled', async () => {
 			autoAccept = true;
+			settings.illustrate.mermaid = true;
 			const files = [mockFile('notes/a.md'), mockFile('notes/short.md')];
 			app.vault.getMarkdownFiles.mockReturnValue(files);
 			app.vault.cachedRead.mockImplementation((file: { path: string }) => Promise.resolve(file.path === 'notes/short.md' ? 'tiny' : 'word '.repeat(100)));

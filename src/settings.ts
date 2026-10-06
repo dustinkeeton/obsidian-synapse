@@ -592,6 +592,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 	illustrate: {
 		enabled: false,
 		providers: { wikimedia: true, openverse: true },
+		mermaid: false,
 		runAfter: { elaboration: false, transcription: false, summarize: false, enrichment: false, deepDive: false },
 		fetchLinkedPages: false,
 		maxLinkedPagesPerNote: 3,
