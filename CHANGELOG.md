@@ -5,6 +5,34 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-10-06
+
+### Added
+
+- Synapse can now illustrate your notes. The new **Illustrate current note** and **Scan folder for notes to illustrate** commands read a note and propose up to a few spots that would benefit from a visual, then find openly licensed photos for them on Wikimedia Commons and Openverse — no API key needed. Each proposal shows the image, its license, and attribution before you accept; accepting downloads the photo into your attachment folder and inserts it with a caption (or embeds the remote image instead, if you turn off **Download photos into the vault**). An allowed-licenses list (CC0, public domain, CC BY, and CC BY-SA by default) keeps anything else out, and Illustrate can also run automatically after other actions
+- Illustrate can draw Mermaid diagrams and charts for a note as well. Charts are built only from numbers already in the note. Turn on **Propose Mermaid diagrams and charts** in the Illustrate settings to enable it; by default Illustrate proposes photos only
+- A development build of the plugin now announces itself at the top of the settings tab, with the branch, commit, and build time it came from, so a dev build is never mistaken for a release
+
+### Changed
+
+- Accepting an elaboration now rewrites the note body in place instead of appending a callout below it. The rewrite keeps your frontmatter byte for byte and preserves every sentence, embed, wikilink, and URL you wrote, expanding around them. If the note changed after the proposal was made, you are asked before anything is replaced
+- Synapse callouts are now written as native Obsidian callout types (summary, info, quote) carrying a `synapse-*` identity, so your theme's own styling for those base types applies to them and Synapse only adds its icon. Existing callouts keep working
+- The privacy section of the README now describes the once-a-day update check (on by default, off under **Notify me about Synapse updates**) and lists every host Synapse contacts, including GitHub, Reddit, Wikimedia Commons, and Openverse
+
+### Fixed
+
+- URLs with parentheses, such as Wikipedia pages like `Doom_(1993_video_game)`, are no longer cut off at the closing parenthesis when Synapse fetches them during elaboration, enrichment, summarize, or intake
+- Image analysis no longer swaps your configured AI model for the vision model while it runs, so another AI call made at the same time can no longer pick up the wrong model or a wrong cached response
+- The per-section **Reset** buttons and **Reset all settings** now use Obsidian's own destructive-button styling, matching the app's built-in Uninstall and Disable controls
+
+### Security
+
+- Links and image URLs returned by the Illustrate photo providers are written into your note only when they are plain `http(s)` addresses; anything else is dropped
+- When a Reddit share link resolves to its canonical post, the follow-up fetch is only made if that address is still on Reddit
+- Illustrate photo searches now time out after 30 seconds instead of hanging a scan if a provider stalls
+- Temporary audio created for a time-range clip is removed even when the clip or transcription fails
+- The release workflows validate the version string before using it, instead of interpolating it into the shell
+
 ## [1.2.0] - 2026-09-17
 
 ### Added
