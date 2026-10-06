@@ -24,6 +24,8 @@ stacks:
 include:
   - agents/lead-engineer
   - agents/security-engineer
+  - files/.claude/workflows/audit-stage-1.js
+  - files/.claude/workflows/audit-stage-2.js
 # The toolkit's release skill tags `vX.Y.Z` and defers the tag push to
 # waffle-release-hook. Obsidian requires the release tag to match manifest.json
 # exactly, with no `v` prefix, and this repo tags from tag-on-version-bump.yml
