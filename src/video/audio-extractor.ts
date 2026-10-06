@@ -582,7 +582,7 @@ export class AudioExtractor {
 
 	private async commandExists(cmd: string): Promise<boolean> {
 		try {
-			await this.runCommand('which', [cmd]);
+			await this.runCommand('which', [sanitizePath(cmd)]);
 			return true;
 		} catch {
 			return false;

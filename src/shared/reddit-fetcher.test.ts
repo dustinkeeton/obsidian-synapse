@@ -204,6 +204,19 @@ describe('fetchRedditContent', () => {
 		expect(result).toContain('Resolved body.');
 	});
 
+	it('refuses a share page whose canonical URL points off Reddit', async () => {
+		const shareUrl = 'https://www.reddit.com/r/immich/s/DaHMD1DJhv';
+		const requestedUrls: string[] = [];
+		mockRequestUrl.mockImplementation(async (params) => {
+			const reqUrl = typeof params === 'string' ? params : params.url;
+			requestedUrls.push(reqUrl);
+			return { status: 200, text: '<link rel="canonical" href="https://evil.example/r/x/comments/abc/post/"/>' };
+		});
+
+		await expect(fetchRedditContent(shareUrl, 10000)).rejects.toThrow('non-Reddit URL');
+		expect(requestedUrls).toEqual([shareUrl]);
+	});
+
 	it('throws when a share link cannot be resolved to a post', async () => {
 		mockRequestUrl.mockResolvedValue({
 			status: 200,

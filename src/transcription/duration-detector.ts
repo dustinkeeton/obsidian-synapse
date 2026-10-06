@@ -136,7 +136,7 @@ export async function detectUrlDuration(
 		const output = await new Promise<string>((resolve, reject) => {
 			execFile(
 				ytDlpPath,
-				['--dump-json', '--no-download', validatedUrl],
+				['--dump-json', '--no-download', '--', validatedUrl],
 				{ env: shellEnv(), maxBuffer: 10 * 1024 * 1024, timeout: 30_000 },
 				(error, stdout) => {
 					if (error) reject(error instanceof Error ? error : new Error(String(error)));

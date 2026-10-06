@@ -2,9 +2,20 @@ import { buildCallout, CALLOUT_TYPES } from '../shared';
 import { mermaidBlock } from './diagram';
 import type { IllustrateItem, MediaCandidate } from './types';
 
+/** Provider-supplied URL, or '' unless it parses as http(s) — nothing else is written into a note. */
+export function httpUrlOrEmpty(url: string): string {
+	try {
+		const parsed = new URL(url);
+		return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : '';
+	} catch {
+		return '';
+	}
+}
+
 function mdLink(text: string, url: string): string {
 	const safeText = text.replace(/[[\]]/g, '');
-	return url ? `[${safeText}](${url})` : safeText;
+	const safeUrl = httpUrlOrEmpty(url);
+	return safeUrl ? `[${safeText}](${safeUrl})` : safeText;
 }
 
 export function attributionLine(candidate: MediaCandidate): string {
@@ -15,7 +26,9 @@ export function attributionLine(candidate: MediaCandidate): string {
 
 /** Embed (`![[vault path]]` or remote URL) plus the caption/attribution callout; `fallbackReason` notes a failed download. */
 export function buildPhotoBlock(item: Extract<IllustrateItem, { kind: 'photo' }>, vaultPath: string | null, fallbackReason?: string): string {
-	const embed = vaultPath ? `![[${vaultPath}]]` : `![${item.caption.replace(/[[\]]/g, '')}](${item.candidate.fileUrl})`;
+	const safeCaption = item.caption.replace(/[[\]]/g, '');
+	const remoteUrl = httpUrlOrEmpty(item.candidate.fileUrl);
+	const embed = vaultPath ? `![[${vaultPath}]]` : remoteUrl ? `![${safeCaption}](${remoteUrl})` : safeCaption;
 	const note = fallbackReason ? ` · (download failed; remote embed: ${fallbackReason.replace(/\s+/g, ' ').trim()})` : '';
 	return `${embed}\n${buildCallout(CALLOUT_TYPES.illustrate, item.caption, attributionLine(item.candidate) + note)}`;
 }

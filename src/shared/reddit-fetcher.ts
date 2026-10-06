@@ -199,7 +199,11 @@ async function resolveCanonicalUrl(url: string): Promise<string> {
 	if (!canonical) {
 		throw new Error('Could not resolve share link to a Reddit post');
 	}
-	return canonical;
+	// The page body is untrusted; it may only send the follow-up fetch to Reddit.
+	if (!isRedditUrl(canonical)) {
+		throw new Error('Share link resolved to a non-Reddit URL');
+	}
+	return sanitizeUrl(canonical);
 }
 
 /**
