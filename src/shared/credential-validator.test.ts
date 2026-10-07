@@ -147,3 +147,37 @@ describe('validateCredentials', () => {
 		});
 	});
 });
+
+describe('validateCredentials — typesafe (#558)', () => {
+	beforeEach(() => {
+		mockRequestUrl.mockReset();
+	});
+
+	it('posts the probe body with throw:false and maps 200 to valid', async () => {
+		mockRequestUrl.mockResolvedValue(ok({ answers: { ok: { type: 'noul', noul: 1 } } }));
+		const result = await validateCredentials('typesafe', 'tsk-test');
+		expect(result.status).toBe('valid');
+		expect(result.message).toContain('TypeSafe');
+		const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+		expect(call.method).toBe('POST');
+		expect(call.url).toBe('https://api.typesafe.ai/v1/systemone');
+		expect(call.headers?.Authorization).toBe('Bearer tsk-test');
+		expect(typeof call.body).toBe('string');
+		expect(call.throw).toBe(false);
+	});
+
+	it('maps 401 to invalid with a redacted detail', async () => {
+		mockRequestUrl.mockResolvedValue(resp(401, { error: { message: 'Missing or invalid API key Bearer tsk-secret-1234567890' } }));
+		const result = await validateCredentials('typesafe', 'tsk-secret-1234567890');
+		expect(result.status).toBe('invalid');
+		expect(result.message).not.toContain('tsk-secret-1234567890');
+	});
+
+	it('maps 429 to error and skips an empty key', async () => {
+		mockRequestUrl.mockResolvedValue(resp(429, {}));
+		expect((await validateCredentials('typesafe', 'tsk-x')).status).toBe('error');
+		mockRequestUrl.mockReset();
+		expect((await validateCredentials('typesafe', '')).status).toBe('skipped');
+		expect(mockRequestUrl).not.toHaveBeenCalled();
+	});
+});

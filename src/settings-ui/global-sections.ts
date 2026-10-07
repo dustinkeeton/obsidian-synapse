@@ -21,6 +21,7 @@ import type {
 import { PROPOSAL_KINDS } from '../views';
 import type { ProposalKind } from '../views';
 import { renderTranscriptionCredentials } from '../audio';
+import { renderSystemOneCredentials } from './system-one-credentials';
 import { applyApiKeyEmphasis, API_KEY_NO_SUBSCRIPTION_NOTE } from '../onboarding';
 import { foldActiveNoteProperties } from '../properties-fold';
 import { ChangelogModal } from '../changelog';
@@ -237,6 +238,9 @@ export function renderAiConfiguration(ctx: SettingsSectionContext): void {
 					await plugin.saveSettings();
 				})
 		);
+
+	// System 1 decision lane (#558): a second key block, not a provider dropdown entry.
+	renderSystemOneCredentials(aiBody, ctx);
 }
 
 /** Whether the feature producing `kind` is enabled; `deep-dive` maps to `deepDive`. */

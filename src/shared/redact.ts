@@ -16,6 +16,8 @@
  *  - `Bearer …` and `Token …` Authorization header values
  *  - `anthropic-…` prefixed identifiers
  *  - Google `AIza…` API keys (x-goog-api-key)
+ *  - TypeSafe keys (#558) document no prefix; they are sent as `Bearer …` and
+ *    are caught by that arm, so an echoed key elsewhere in a body is NOT covered
  */
 const SECRET_PATTERN =
 	/(?:sk-|key-|dg-|Bearer\s+|Token\s+|anthropic-|AIza)[A-Za-z0-9_-]{8,}/g;

@@ -24,6 +24,12 @@ describe('redactSecrets', () => {
 		expect(redactSecrets(input)).toContain('[REDACTED]');
 	});
 
+	it('redacts a TypeSafe key carried in the Authorization header (#558; no documented prefix)', () => {
+		const out = redactSecrets('System 1 lane unavailable: Bearer tsk_live_abcdef1234567890 rejected');
+		expect(out).not.toContain('tsk_live_abcdef1234567890');
+		expect(out).toContain('[REDACTED]');
+	});
+
 	it('leaves non-secret error text intact', () => {
 		const text = 'Unexpected token at position 12';
 		expect(redactSecrets(text)).toBe(text);

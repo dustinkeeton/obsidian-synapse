@@ -47,7 +47,7 @@ const obsidianmdRules = Object.fromEntries(
 const UI_BRANDS = [
 	'Synapse', 'Obsidian', 'Ollama', 'OpenAI', 'Anthropic', 'Claude', 'Gemini',
 	'Google', 'Deepgram', 'Whisper', 'YouTube', 'TikTok', 'GitHub', 'BRAT',
-	'Vertex', 'Twitter', 'Reddit', 'Mermaid',
+	'Vertex', 'Twitter', 'Reddit', 'Mermaid', 'TypeSafe', 'Jev',
 ];
 const UI_ACRONYMS = [
 	'AI', 'API', 'URL', 'URLs', 'OCR', 'MB', 'GB', 'KB', 'HTTP', 'HTTPS', 'TODO',
@@ -140,6 +140,7 @@ export default tseslint.config(
 						'^https?://',
 						'e\\.g\\.',
 						'Scan folder for stub notes',
+						'System 1',
 					],
 				},
 			],

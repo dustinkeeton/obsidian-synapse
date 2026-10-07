@@ -17,14 +17,17 @@ import type { AIProvider } from '../settings';
  *  - `audio.transcriptionProvider` ('whisper-api' | 'deepgram' | 'gemini' |
  *    'local-whisper') — `whisper-api` authenticates with an OpenAI key, so it
  *    maps onto `openai` here; `local-whisper` needs no credential.
+ *  - `typesafe` (#558) keys the System 1 decision lane (`ai.systemOne`), which
+ *    is not an `AIProvider`.
  */
-export type CredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'deepgram' | 'ollama';
+export type CredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'deepgram' | 'ollama' | 'typesafe';
 
-/** A minimal, read-only authenticated probe used to verify a credential. */
+/** A minimal authenticated probe used to verify a credential; POST only where the API has no GET surface. */
 export interface ProbeSpec {
-	method: 'GET';
+	method: 'GET' | 'POST';
 	url: string;
 	headers: Record<string, string>;
+	body?: string;
 }
 
 export interface ProviderMetadata {
@@ -136,6 +139,30 @@ export const PROVIDER_METADATA: Record<CredentialProvider, ProviderMetadata> = {
 						headers: { Authorization: `Token ${key.trim()}` },
 					},
 	},
+	// Jev documents no GET endpoint; the probe is the smallest billable request (one noul over a one-word state).
+	typesafe: {
+		label: 'TypeSafe',
+		getKeyUrl: 'https://console.typesafe.ai/keys',
+		placeholder: 'TypeSafe API key',
+		formatHint: 'Paste the API key from your TypeSafe console.',
+		requiresKey: true,
+		buildProbe: ({ key }) =>
+			key.trim() === ''
+				? null
+				: {
+						method: 'POST',
+						url: 'https://api.typesafe.ai/v1/systemone',
+						headers: {
+							Authorization: `Bearer ${key.trim()}`,
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							state: 'ping',
+							model: 'jev-latest',
+							questions: { ok: { type: 'noul', instructions: 'Is the state non-empty?' } },
+						}),
+					},
+	},
 	ollama: {
 		label: 'Ollama',
 		getKeyUrl: '',
@@ -157,7 +184,7 @@ export const PROVIDER_METADATA: Record<CredentialProvider, ProviderMetadata> = {
 
 /**
  * Map the AI-provider dropdown value to its credential provider. AIProvider is a
- * subset of {@link CredentialProvider} (it has no Deepgram), so this is an
+ * subset of {@link CredentialProvider} (it has no Deepgram or TypeSafe), so this is an
  * identity narrowing — provided as a function so call sites read intentionally
  * and stay correct if the unions diverge further.
  */
