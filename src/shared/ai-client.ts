@@ -1,17 +1,15 @@
-import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
+import type { RequestUrlResponse } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { ChatMessage, ContentBlock, TextContentBlock } from './types';
 import { redactSecrets } from './redact';
 import { isRecord } from './json-utils';
 import { contentKey } from './hash-utils';
+import { safeRequest } from './safe-request';
 
 // Re-exported for back-compat: existing callers and tests import `redactSecrets`
 // from this module. The implementation now lives in ./redact (single source of
 // truth) so the AI client and `notifyError` can't drift apart.
 export { redactSecrets };
-
-/** Default timeout for AI API requests (2 minutes). */
-const AI_REQUEST_TIMEOUT_MS = 120_000;
 
 /**
  * Upper bound on the per-instance response cache (#397). Keeps memory bounded
@@ -31,50 +29,6 @@ export interface AIRequestOptions {
 	onCacheHit?: () => void;
 	/** Model for this call only (e.g. a vision model); the configured `ai.model` is never touched. */
 	model?: string;
-}
-
-async function safeRequest(options: RequestUrlParam): Promise<RequestUrlResponse> {
-	// Race the request against a timeout to prevent indefinite hangs
-	const timeout = new Promise<never>((_, reject) =>
-		window.setTimeout(() => reject(new Error('AI request timed out')), AI_REQUEST_TIMEOUT_MS)
-	);
-
-	// Don't use throw mode — Obsidian strips the response body on error
-	const response = await Promise.race([
-		requestUrl({ ...options, throw: false }),
-		timeout,
-	]);
-	if (response.status >= 400) {
-		let detail: string;
-		try {
-			// response.json is `any` (Obsidian) and the error envelope shape
-			// varies by provider; narrow before reaching for `.error.message`
-			// so a non-standard body falls back to a stringified dump instead
-			// of throwing while we build the error message.
-			const body: unknown = response.json;
-			detail = extractErrorMessage(body) ?? JSON.stringify(body);
-		} catch {
-			detail = response.text || `status ${response.status}`;
-		}
-		// Redact any API keys that the upstream API may echo back in error responses
-		throw new Error(`API error (${response.status}): ${redactSecrets(detail)}`);
-	}
-	return response;
-}
-
-/**
- * Pull a human-readable message out of an error envelope of unknown shape.
- *
- * OpenAI/Anthropic/Gemini all wrap errors as `{ error: { message: string } }`.
- * Returns the message when present, otherwise `null` so the caller can fall
- * back to a stringified body. Tolerant by design — error responses are exactly
- * where shapes are least predictable.
- */
-function extractErrorMessage(body: unknown): string | null {
-	if (isRecord(body) && isRecord(body.error) && typeof body.error.message === 'string') {
-		return body.error.message;
-	}
-	return null;
 }
 
 /**
