@@ -42,24 +42,44 @@ function buildTree(directories: string[]): TFolder {
 	return root;
 }
 
-/** Answer every choice question with `pick`; `confidence` defaults to 0.95. */
-function stubLane(pick: string, confidence = 0.95): void {
+/** Answer every choice question with `pick` at `probability` (default 0.95); the rest of the mass is spread evenly over the other options. */
+function stubLane(pick: string, probability = 0.95): void {
 	mockRequestUrl.mockImplementation((param) => {
 		const body = JSON.parse(param.body as string) as { questions: Record<string, { criteria: Record<string, unknown> }> };
 		const answers: Record<string, unknown> = {};
 		for (const [id, q] of Object.entries(body.questions)) {
 			const options = Object.keys(q.criteria);
-			answers[id] = { type: 'choice', choice: pick, confidence, probabilities: Object.fromEntries(options.map((o) => [o, o === pick ? confidence : 0])) };
+			const rest = (1 - probability) / Math.max(1, options.length - 1);
+			const probabilities = Object.fromEntries(options.map((o) => [o, o === pick ? probability : rest]));
+			const [choice, confidence] = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0];
+			answers[id] = { type: 'choice', choice, confidence, probabilities };
 		}
 		return Promise.resolve({ status: 200, json: { answers, usage: { input_tokens: 1, output_tokens: 1 } }, text: '', headers: {} });
 	});
 }
 
 describe('DirectoryMatcher.determineAction with a placement (#558)', () => {
-	it('moves to the placed directory without scoring', () => {
-		const matcher = new DirectoryMatcher({ vault: { getRoot: () => buildTree(['a', 'b']) } } as unknown as App);
-		const action = matcher.determineAction({ notePath: 'inbox/n.md', topics: [], tags: [], links: [], placement: { directoryPath: 'b', confidence: 0.9 } });
+	const matcher = () => new DirectoryMatcher({ vault: { getRoot: () => buildTree(['a', 'b']) } } as unknown as App);
+
+	it('moves to an existing placement without scoring', () => {
+		const action = matcher().determineAction({ notePath: 'inbox/n.md', topics: [], tags: [], links: [], placement: { kind: 'existing', directoryPath: 'b', confidence: 0.9 } });
 		expect(action).toEqual({ type: 'move', targetDirectory: 'b' });
+	});
+
+	it('a new-directory placement names the lane in the proposal reasoning', () => {
+		const action = matcher().determineAction({ notePath: 'inbox/n.md', topics: [{ label: 'cooking', confidence: 0.95 }], tags: [], links: [], placement: { kind: 'new-directory', confidence: 0.9 } });
+		expect(action).toMatchObject({ type: 'propose-new-directory', targetDirectory: 'cooking' });
+		expect((action as { reasoning: string }).reasoning).toContain('System 1 lane found no existing folder fits (90%)');
+	});
+
+	it('an undecided placement never yields a new-directory proposal when the caller forbids one', () => {
+		const action = matcher().determineAction(
+			{ notePath: 'inbox/n.md', topics: [{ label: 'cooking', confidence: 0.95 }], tags: [], links: [], placement: { kind: 'undecided', leading: 'a', confidence: 0.4 } },
+			undefined,
+			undefined,
+			{ allowNewDirectory: false },
+		);
+		expect(action).toEqual({ type: 'move', targetDirectory: 'inbox' });
 	});
 });
 
@@ -90,7 +110,7 @@ describe('ContentAnalyzer.resolvePlacement two-lane behaviour (#558)', () => {
 		expect(result).toEqual({ topics: [{ label: 'machine learning', confidence: 0.95 }], lane: 'system-two' });
 	});
 
-	it('toggle on, confident existing folder: placement with no complete() call and the lane reported', async () => {
+	it('toggle on, majority on an existing folder: placement with no complete() call and the lane reported', async () => {
 		laneOn(settings);
 		stubLane('projects/ml');
 		const onSystemOne = vi.fn();
@@ -98,32 +118,49 @@ describe('ContentAnalyzer.resolvePlacement two-lane behaviour (#558)', () => {
 		const result = await makeAnalyzer(['projects', 'projects/ml']).resolvePlacement('body', ['#ml'], { onSystemOne });
 
 		expect(complete).not.toHaveBeenCalled();
-		expect(result).toEqual({ topics: [], placement: { directoryPath: 'projects/ml', confidence: 0.95 }, lane: 'system-one' });
+		expect(result).toEqual({ topics: [], placement: { kind: 'existing', directoryPath: 'projects/ml', confidence: 0.95 }, lane: 'system-one' });
 		expect(onSystemOne).toHaveBeenCalledTimes(1);
 	});
 
-	it('gates on organize.organizeConfidenceThreshold and falls back below it', async () => {
+	it('a leading folder without a majority is undecided: topics extracted, the lane answer carried, no lane credit', async () => {
 		laneOn(settings);
-		settings.organize.organizeConfidenceThreshold = 0.9;
-		stubLane('projects', 0.89);
+		stubLane('projects', 0.49);
 		const onSystemOne = vi.fn();
 
-		const result = await makeAnalyzer(['projects']).resolvePlacement('body', [], { onSystemOne });
+		const result = await makeAnalyzer(['projects', 'inbox']).resolvePlacement('body', [], { onSystemOne });
 
 		expect(complete).toHaveBeenCalledTimes(1);
-		expect(result.lane).toBe('system-two');
-		expect(result.placement).toBeUndefined();
+		expect(result).toEqual({
+			topics: [{ label: 'machine learning', confidence: 0.95 }],
+			placement: { kind: 'undecided', leading: 'projects', confidence: 0.49 },
+			lane: 'system-two',
+		});
 		expect(onSystemOne).not.toHaveBeenCalled();
 	});
 
-	it('<new-directory> escalates to the existing topic extraction', async () => {
+	it('<new-directory> at the organize threshold escalates to topic extraction with the request recorded', async () => {
 		laneOn(settings);
-		stubLane(NEW_DIRECTORY_OPTION);
+		settings.organize.organizeConfidenceThreshold = 0.9;
+		stubLane(NEW_DIRECTORY_OPTION, 0.9);
 
 		const result = await makeAnalyzer(['projects']).resolvePlacement('body', []);
 
 		expect(complete).toHaveBeenCalledTimes(1);
-		expect(result.topics).toEqual([{ label: 'machine learning', confidence: 0.95 }]);
+		expect(result).toEqual({
+			topics: [{ label: 'machine learning', confidence: 0.95 }],
+			placement: { kind: 'new-directory', confidence: 0.9 },
+			lane: 'system-two',
+		});
+	});
+
+	it('<new-directory> below the organize threshold is not a new-folder request; the leading folder is undecided', async () => {
+		laneOn(settings);
+		settings.organize.organizeConfidenceThreshold = 0.9;
+		stubLane(NEW_DIRECTORY_OPTION, 0.6);
+
+		const result = await makeAnalyzer(['projects']).resolvePlacement('body', []);
+
+		expect(result.placement).toEqual({ kind: 'undecided', leading: 'projects', confidence: 0.4 });
 		expect(result.lane).toBe('system-two');
 	});
 
@@ -195,6 +232,7 @@ describe('OrganizeModule with the System 1 lane (#558)', () => {
 
 		expect(complete).not.toHaveBeenCalled();
 		expect(result?.movedDirectly).toBe(true);
+		expect(result?.placement).toBe('existing');
 		expect(rename).toHaveBeenCalledWith(note, 'projects/ml/a.md');
 		expect(finish.mock.calls.at(-1)?.[0]).toBe('Moved to projects/ml — decided by the System 1 lane');
 	});
@@ -209,14 +247,39 @@ describe('OrganizeModule with the System 1 lane (#558)', () => {
 		expect(finish.mock.calls.at(-1)?.[0]).toBe('No organization needed — decided by the System 1 lane');
 	});
 
-	it('<new-directory> keeps today\'s propose-new-folder path and does not claim the lane', async () => {
+	it('<new-directory> at the threshold keeps the propose-new-folder path and does not claim the lane', async () => {
 		stubLane(NEW_DIRECTORY_OPTION);
 
 		const result = await mod.organizeNote(note);
 
 		expect(complete).toHaveBeenCalledTimes(1);
 		expect(result?.proposalCreated).toBe(true);
+		expect(result?.placement).toBe('new-directory');
 		expect(finish.mock.calls.at(-1)?.[0]).toBe('Proposal created for new directory');
+	});
+
+	it('an existing folder leading without a majority never produces a new-folder proposal', async () => {
+		stubLane('projects', 0.4);
+
+		const result = await mod.organizeNote(note);
+
+		expect(complete).toHaveBeenCalledTimes(1);
+		expect(result).toBeNull();
+		expect(rename).not.toHaveBeenCalled();
+		expect(OrganizeStore.prototype.saveProposal).not.toHaveBeenCalled();
+		expect(finish.mock.calls.at(-1)?.[0]).toBe('No organization needed');
+	});
+
+	it('an undecided lane still lets System 2 move into a folder that scores above the move threshold', async () => {
+		stubLane('projects', 0.4);
+		complete.mockResolvedValue(JSON.stringify([{ label: 'projects', confidence: 0.8 }]));
+
+		const result = await mod.organizeNote(note);
+
+		expect(result?.movedDirectly).toBe(true);
+		expect(result?.placement).toBe('undecided');
+		expect(rename).toHaveBeenCalledWith(note, 'projects/a.md');
+		expect(finish.mock.calls.at(-1)?.[0]).toBe('Moved to projects');
 	});
 
 	it('suggestDirectory returns the placed folder for deep-dive auto-organize', async () => {

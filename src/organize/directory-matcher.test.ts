@@ -146,7 +146,7 @@ describe('DirectoryMatcher', () => {
 		it('returns move action when existing directory scores above threshold (0.6)', () => {
 			const app = makeMockApp(['machine learning', 'other']);
 			const matcher = new DirectoryMatcher(app);
-			// confidence=1.0 produces exact match score of 0.6 * 1.0 = 0.6 (meets threshold)
+			// confidence=1.0 produces exact match score of 0.4 + 0.4 * 1.0 = 0.8 (meets threshold)
 			const analysis = makeAnalysis({
 				notePath: 'inbox/test.md',
 				topics: [{ label: 'machine learning', confidence: 1.0 }],
@@ -162,14 +162,14 @@ describe('DirectoryMatcher', () => {
 		it('does not move when directory score is below threshold (0.6)', () => {
 			const app = makeMockApp(['machine learning', 'other']);
 			const matcher = new DirectoryMatcher(app);
-			// confidence=0.5 produces exact match score of 0.6 * 0.5 = 0.3 (below 0.6)
+			// confidence=0.4 produces exact match score of 0.4 + 0.4 * 0.4 = 0.56 (below 0.6)
 			const analysis = makeAnalysis({
 				notePath: 'inbox/test.md',
-				topics: [{ label: 'machine learning', confidence: 0.5 }],
+				topics: [{ label: 'machine learning', confidence: 0.4 }],
 			});
 
 			const action = matcher.determineAction(analysis);
-			// Score 0.3 < 0.6 threshold, so no move; but confidence 0.5 < 0.9, so no proposal either
+			// Score 0.56 < 0.6 threshold, so no move; but confidence 0.4 < 0.9, so no proposal either
 			expect(action.type).toBe('move');
 			if (action.type === 'move') {
 				expect(action.targetDirectory).toBe('inbox');
@@ -237,7 +237,7 @@ describe('DirectoryMatcher', () => {
 			expect(action.type).toBe('propose-new-directory');
 		});
 
-		it('filters out the current directory from candidates', () => {
+		it('keeps a note whose top topic names its own folder in place instead of proposing it as new (#565)', () => {
 			const app = makeMockApp(['notes', 'machine learning']);
 			const matcher = new DirectoryMatcher(app);
 			const analysis = makeAnalysis({
@@ -245,11 +245,8 @@ describe('DirectoryMatcher', () => {
 				topics: [{ label: 'notes', confidence: 0.9 }],
 			});
 
-			const action = matcher.determineAction(analysis, 0.01, 0.01);
-			// Should not suggest moving to the same directory
-			if (action.type === 'move') {
-				expect(action.targetDirectory).not.toBe('notes');
-			}
+			// The own folder is not a move candidate; the canonical "note" path already exists as that folder.
+			expect(matcher.determineAction(analysis, 0.01, 0.01)).toEqual({ type: 'move', targetDirectory: 'notes' });
 		});
 
 		it('returns current directory move when no topics exist', () => {
@@ -265,6 +262,81 @@ describe('DirectoryMatcher', () => {
 			if (action.type === 'move') {
 				expect(action.targetDirectory).toBe('inbox');
 			}
+		});
+	});
+
+	describe('existing folders are never proposed as new (#565)', () => {
+		it('moves into an exact canonical match at 0.95 topic confidence', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['artificial-intelligence', 'AI', 'cooking']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/agents.md',
+				topics: [{ label: 'artificial intelligence', confidence: 0.95 }],
+			});
+
+			expect(matcher.determineAction(analysis)).toEqual({ type: 'move', targetDirectory: 'artificial-intelligence' });
+		});
+
+		it('an exact match clears the move threshold from topic confidence 0.5 up', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['artificial-intelligence']));
+			const at = (confidence: number) => matcher.scoreDirectory('artificial-intelligence', makeAnalysis({
+				notePath: 'inbox/a.md',
+				topics: [{ label: 'artificial intelligence', confidence }],
+			}), 'inbox');
+
+			expect(at(0.5)).toBeCloseTo(0.6, 5);
+			expect(at(0.49)).toBeLessThan(0.6);
+		});
+
+		it('a note already in the folder its top topic names yields no proposal', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['artificial-intelligence', 'job-search']));
+
+			expect(matcher.determineAction(makeAnalysis({
+				notePath: 'artificial-intelligence/AI Agents.md',
+				topics: [{ label: 'artificial intelligence', confidence: 0.95 }],
+			}))).toEqual({ type: 'move', targetDirectory: 'artificial-intelligence' });
+			expect(matcher.determineAction(makeAnalysis({
+				notePath: 'job-search/index.md',
+				topics: [{ label: 'job search', confidence: 0.95 }],
+			}))).toEqual({ type: 'move', targetDirectory: 'job-search' });
+		});
+
+		it('a canonical path that exists as a nested folder is a move to it, not a new root folder', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['research/ai-safety', 'cooking']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/a.md',
+				topics: [{ label: 'research AI safety', confidence: 0.95 }],
+			});
+
+			expect(matcher.determineAction(analysis)).toEqual({ type: 'move', targetDirectory: 'research/ai-safety' });
+		});
+
+		it('"Projects" as a topic moves into an existing "Project" folder', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['Project', 'cooking']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/a.md',
+				topics: [{ label: 'Projects', confidence: 0.95 }],
+			});
+
+			expect(matcher.determineAction(analysis)).toEqual({ type: 'move', targetDirectory: 'Project' });
+		});
+
+		it('findExistingDirectory prefers the full-path match over a basename match', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['archive/project', 'work/archive-project']));
+			expect(matcher.findExistingDirectory('archive-project')).toBe('archive/project');
+			expect(matcher.findExistingDirectory('project')).toBe('archive/project');
+			expect(matcher.findExistingDirectory('nothing-here')).toBeNull();
+			expect(matcher.findExistingDirectory('')).toBeNull();
+		});
+
+		it('allowNewDirectory: false keeps the note in place when no existing folder clears the threshold', () => {
+			const matcher = new DirectoryMatcher(makeMockApp(['cooking', 'travel']));
+			const analysis = makeAnalysis({
+				notePath: 'inbox/a.md',
+				topics: [{ label: 'machine learning', confidence: 0.95 }],
+			});
+
+			expect(matcher.determineAction(analysis, undefined, undefined, { allowNewDirectory: false })).toEqual({ type: 'move', targetDirectory: 'inbox' });
+			expect(matcher.determineAction(analysis).type).toBe('propose-new-directory');
 		});
 	});
 
@@ -345,7 +417,7 @@ describe('DirectoryMatcher', () => {
 				topics: [{ label: 'model', confidence: 1.0 }],
 			});
 
-			expect(matcher.scoreDirectory('models', analysis, 'inbox')).toBeCloseTo(0.6, 5);
+			expect(matcher.scoreDirectory('models', analysis, 'inbox')).toBeCloseTo(0.8, 5);
 			expect(matcher.scoreDirectory('other', analysis, 'inbox')).toBe(0);
 		});
 

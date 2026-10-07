@@ -1,11 +1,11 @@
 import { App, TFile, getAllTags } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, isRecord, parseFrontmatter, parseJson, routeByConfidence, sanitizeAIResponse, withRetry } from '../shared';
+import { AIClient, isRecord, parseFrontmatter, parseJson, redactError, sanitizeAIResponse, withRetry } from '../shared';
 import type { AIRequestOptions, DecisionLane, DecisionRequestOptions } from '../shared';
 import { PlacementDecider } from './placement-decider';
 import { ContentAnalysis, NoteTopic, Placement } from './types';
 
-/** Either a confident existing-folder placement from the System 1 lane or the generative topics. */
+/** The System 1 lane's answer (when it ran) plus the generative topics (empty when the lane placed the note). */
 export interface ResolvedPlacement {
 	topics: NoteTopic[];
 	placement?: Placement;
@@ -71,22 +71,29 @@ export class ContentAnalyzer {
 	}
 
 	/**
-	 * System 1 placement over existing folders at or above
-	 * `organize.organizeConfidenceThreshold`; otherwise (lane off, "new
-	 * directory", low confidence, or any lane error) the existing
-	 * {@link extractTopics} path, unchanged (#558).
+	 * System 1 placement first (#558): an `existing` answer is the result with
+	 * no generative call; `new-directory` and `undecided` run
+	 * {@link extractTopics} and carry the lane's answer so `determineAction`
+	 * can allow or forbid a new folder. Lane off or any lane error: topics only.
 	 */
 	async resolvePlacement(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement> {
-		const routed = await routeByConfidence<Placement, ResolvedPlacement>({
-			systemOne: this.placement.isAvailable() ? () => this.placement.decide(body, tags, aiOpts) : null,
-			floor: this.getSettings().organize.organizeConfidenceThreshold,
-			confidenceOf: (p) => p.confidence,
-			accept: (p) => ({ topics: [], placement: p, lane: 'system-one' }),
-			fallback: async () => ({ topics: await this.extractTopics(body, tags, aiOpts), lane: 'system-two' }),
-			label: 'organize placement',
-		});
-		if (routed.lane === 'system-one') aiOpts?.onSystemOne?.();
-		return routed.value;
+		const placement = await this.decidePlacement(body, tags, aiOpts);
+		if (placement?.kind === 'existing') {
+			aiOpts?.onSystemOne?.();
+			return { topics: [], placement, lane: 'system-one' };
+		}
+		const topics = await this.extractTopics(body, tags, aiOpts);
+		return { topics, lane: 'system-two', ...(placement ? { placement } : {}) };
+	}
+
+	private async decidePlacement(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<Placement | null> {
+		if (!this.placement.isAvailable()) return null;
+		try {
+			return await this.placement.decide(body, tags, aiOpts);
+		} catch (error) {
+			console.warn('[Synapse] System 1 lane failed (organize placement); using the generative path:', redactError(error));
+			return null;
+		}
 	}
 
 	/**

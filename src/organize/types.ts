@@ -6,24 +6,45 @@ export interface NoteTopic {
 	confidence: number;
 }
 
-/** An existing directory chosen by the System 1 lane (#558). */
-export interface Placement {
+/** How the System 1 placement lane answered (#558). */
+export type PlacementKind = 'existing' | 'new-directory' | 'undecided';
+
+/** A strict majority of the runoff mass landed on one existing folder. */
+export interface ExistingPlacement {
+	kind: 'existing';
 	directoryPath: string;
-	/** Calibrated confidence (0-1) from the lane */
+	/** Runoff probability (0-1) of the chosen folder */
 	confidence: number;
 }
+
+/** `<new-directory>` cleared `organize.organizeConfidenceThreshold`. */
+export interface NewDirectoryPlacement {
+	kind: 'new-directory';
+	/** Runoff probability (0-1) of `<new-directory>` */
+	confidence: number;
+}
+
+/** An existing folder leads the runoff without a majority; System 2 may score folders but not propose a new one. */
+export interface UndecidedPlacement {
+	kind: 'undecided';
+	leading: string;
+	/** Runoff probability (0-1) of the leading folder */
+	confidence: number;
+}
+
+export type Placement = ExistingPlacement | NewDirectoryPlacement | UndecidedPlacement;
 
 /** Result of analyzing a note's content to determine its topical fit. */
 export interface ContentAnalysis {
 	/** Path of the analyzed note */
 	notePath: string;
-	/** Extracted topics sorted by confidence; empty when `placement` is set */
+	/** Extracted topics sorted by confidence; empty when the lane placed the note */
 	topics: NoteTopic[];
 	/** Existing tags on the note */
 	tags: string[];
 	/** Existing outgoing link paths */
 	links: string[];
-	/** Confident System 1 placement; `determineAction` moves there directly */
+	/** System 1 lane answer when the lane ran; `kind: 'existing'` is a direct move in `determineAction` */
 	placement?: Placement;
 }
 
@@ -81,6 +102,8 @@ export interface OrganizeResult {
 	proposalCreated: boolean;
 	/** Whether the note was moved directly (for existing directories) */
 	movedDirectly: boolean;
+	/** How the System 1 lane answered, when it ran (#558) */
+	placement?: PlacementKind;
 	/**
 	 * Whether a created proposal was auto-accepted as generated (#228), moving
 	 * the note. Only meaningful when `proposalCreated` is `true`.

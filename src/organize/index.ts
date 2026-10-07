@@ -26,6 +26,10 @@ export type {
 	OrganizeAction,
 	OrganizeProposalStatus,
 	Placement,
+	PlacementKind,
+	ExistingPlacement,
+	NewDirectoryPlacement,
+	UndecidedPlacement,
 } from './types';
 /** Score floor for `suggestDirectory`; below it the caller keeps its own default placement. */
 const SUGGEST_DIRECTORY_MIN_SCORE = 0.6;
@@ -66,10 +70,10 @@ export class OrganizeModule implements FeatureModule {
 		this.store = new OrganizeStore(deps.plugin.app, deps.getSettings);
 	}
 
-	/** Best existing folder for free text — a confident System 1 placement, else topic match — or null when nothing clears the score floor; wired into deep-dive by the module registry. */
+	/** Best existing folder for free text — a System 1 majority placement, else topic match — or null when nothing clears the score floor; wired into deep-dive by the module registry. */
 	async suggestDirectory(text: string, aiOpts?: DecisionRequestOptions): Promise<string | null> {
 		const { topics, placement } = await this.analyzer.resolvePlacement(text, [], aiOpts);
-		if (placement) return placement.directoryPath;
+		if (placement?.kind === 'existing') return placement.directoryPath;
 		if (topics.length === 0) return null;
 		const scores = this.matcher.scoreDirectories({ notePath: '', topics, tags: [], links: [] });
 		return scores.length > 0 && scores[0].score >= SUGGEST_DIRECTORY_MIN_SCORE ? scores[0].directoryPath : null;
@@ -612,13 +616,17 @@ export class OrganizeModule implements FeatureModule {
 	): Promise<OrganizeResult | null> {
 		const analysis = await this.analyzer.analyze(file, trackAiCache(cacheUse));
 
-		if (analysis.topics.length === 0 && !analysis.placement) {
+		if (analysis.topics.length === 0 && analysis.placement?.kind !== 'existing') {
 			return null;
 		}
 
 		const confidenceThreshold = this.getSettings().organize.organizeConfidenceThreshold;
-		const action = this.matcher.determineAction(analysis, undefined, confidenceThreshold);
+		// An existing folder leading the System 1 runoff is evidence against a new folder (#558).
+		const action = this.matcher.determineAction(analysis, undefined, confidenceThreshold, {
+			allowNewDirectory: analysis.placement?.kind !== 'undecided',
+		});
 		const currentDir = this.getParentPath(file.path);
+		const placement = analysis.placement ? { placement: analysis.placement.kind } : {};
 
 		if (action.type === 'move') {
 			// Check if moving to a different directory
@@ -654,6 +662,7 @@ export class OrganizeModule implements FeatureModule {
 				action,
 				proposalCreated: false,
 				movedDirectly: true,
+				...placement,
 			};
 		}
 
@@ -687,6 +696,7 @@ export class OrganizeModule implements FeatureModule {
 			proposalCreated: true,
 			movedDirectly: false,
 			autoAccepted,
+			...placement,
 		};
 	}
 
