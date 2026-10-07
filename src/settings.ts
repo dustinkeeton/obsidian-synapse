@@ -271,7 +271,7 @@ export interface OrganizeSettings {
 	proposalFolderPath: string;
 	snapshotFolderPath: string;
 	excludeTags: string[];
-	/** Minimum topic confidence required to propose a new directory (0-1). */
+	/** Confidence required before a new directory is proposed, in both lanes (0-1); never the floor for picking an existing one. */
 	organizeConfidenceThreshold: number;
 }
 

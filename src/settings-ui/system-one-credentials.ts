@@ -68,8 +68,8 @@ export function renderSystemOneCredentials(body: HTMLElement, ctx: SettingsSecti
 		new Setting(body)
 			.setName('Confidence floor')
 			.setDesc(
-				'Act on a System 1 answer at or above this confidence; below it the AI provider decides. ' +
-				'Organize and REM use their own thresholds.'
+				'Applies to decisions without a feature-level threshold (currently tag vocabulary): act on a System 1 answer ' +
+				'at or above this confidence; below it the AI provider decides. Organize and REM use their own thresholds.'
 			),
 		{
 			min: 0.5,
