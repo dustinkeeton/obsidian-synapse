@@ -9,7 +9,7 @@ export interface NoteTopic {
 }
 
 /** How the System 1 placement lane answered (#558). */
-export type PlacementKind = 'existing' | 'new-directory' | 'undecided';
+export type PlacementKind = 'existing' | 'new-directory' | 'keep' | 'undecided';
 
 /** A strict majority of the runoff mass landed on one existing folder. */
 export interface ExistingPlacement {
@@ -26,6 +26,13 @@ export interface NewDirectoryPlacement {
 	confidence: number;
 }
 
+/** `<keep-current>` or `<none>` beat every folder in the runoff: the note stays where it is, with no generative fallback. */
+export interface KeepPlacement {
+	kind: 'keep';
+	/** Runoff probability (0-1) of the winning escape option */
+	confidence: number;
+}
+
 /** An existing folder leads the runoff without a majority; System 2 may score folders but not propose a new one. */
 export interface UndecidedPlacement {
 	kind: 'undecided';
@@ -34,7 +41,7 @@ export interface UndecidedPlacement {
 	confidence: number;
 }
 
-export type Placement = ExistingPlacement | NewDirectoryPlacement | UndecidedPlacement;
+export type Placement = ExistingPlacement | NewDirectoryPlacement | KeepPlacement | UndecidedPlacement;
 
 /** Result of analyzing a note's content to determine its topical fit. */
 export interface ContentAnalysis {
@@ -46,7 +53,7 @@ export interface ContentAnalysis {
 	tags: string[];
 	/** Existing outgoing link paths */
 	links: string[];
-	/** System 1 lane answer when the lane ran; `kind: 'existing'` is a `move` action in `determineAction` */
+	/** System 1 lane answer when the lane ran; `kind: 'existing'` is a `move` action in `determineAction`, `kind: 'keep'` ends the analysis */
 	placement?: Placement;
 	/** Which lane settled the placement, when the analyzer ran one */
 	lane?: DecisionLane;

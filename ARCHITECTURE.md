@@ -248,10 +248,13 @@ src/
 │   ├── tidy-store.ts       #   Snapshot storage for undo
 │   └── index.ts            #   TidyModule orchestrator
 │
-├── organize/               # AI-powered directory structuring
-│   ├── content-analyzer.ts #   AI topic extraction for organization
+├── organize/               # AI-powered directory structuring; every relocation is a proposal, moved only on accept / auto-accept
+│   ├── content-analyzer.ts #   System 1 placement first, AI topic extraction as the fallback
+│   ├── placement-decider.ts#   Jev choice over rubric-described folders + escape options; runoff; two-condition rule (#558)
 │   ├── directory-matcher.ts#   Match topics to directories
 │   ├── organize-store.ts   #   Proposal + snapshot persistence
+│   ├── undo-run.ts         #   "Undo last organize run": run selection (runId / checkpoint window) + undo summary
+│   ├── run-summary.ts      #   Scan counters: "N proposals (M to existing folders, K new folders)"
 │   └── index.ts            #   OrganizeModule orchestrator; suggestDirectory(text, aiOpts) is the one seam the registry hands to deep-dive (null under the 0.6 score floor)
 │
 ├── deep-dive/              # Recursive topic exploration

@@ -59,7 +59,8 @@ export class ContentAnalyzer {
 		const existingTags = cache ? (getAllTags(cache) || []) : [];
 		const existingLinks = this.getOutgoingLinks(file);
 
-		const { topics, placement, lane } = await this.resolvePlacement(parsed.body, existingTags, aiOpts);
+		const currentDir = file.parent?.path && !file.parent.isRoot() ? file.parent.path : parentPath(file.path);
+		const { topics, placement, lane } = await this.resolvePlacement(parsed.body, existingTags, currentDir, aiOpts);
 
 		return {
 			notePath: file.path,
@@ -72,14 +73,15 @@ export class ContentAnalyzer {
 	}
 
 	/**
-	 * System 1 placement first (#558): an `existing` answer is the result with
-	 * no generative call; `new-directory` and `undecided` run
+	 * System 1 placement first (#558): an `existing` or `keep` answer is the
+	 * result with no generative call; `new-directory` and `undecided` run
 	 * {@link extractTopics} and carry the lane's answer so `determineAction`
 	 * can allow or forbid a new folder. Lane off or any lane error: topics only.
+	 * `currentDir` is the note's folder (`''` for the vault root or free text).
 	 */
-	async resolvePlacement(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement> {
-		const placement = await this.decidePlacement(body, tags, aiOpts);
-		if (placement?.kind === 'existing') {
+	async resolvePlacement(body: string, tags: string[], currentDir: string, aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement> {
+		const placement = await this.decidePlacement(body, tags, currentDir, aiOpts);
+		if (placement?.kind === 'existing' || placement?.kind === 'keep') {
 			aiOpts?.onSystemOne?.();
 			return { topics: [], placement, lane: 'system-one' };
 		}
@@ -87,10 +89,10 @@ export class ContentAnalyzer {
 		return { topics, lane: 'system-two', ...(placement ? { placement } : {}) };
 	}
 
-	private async decidePlacement(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<Placement | null> {
+	private async decidePlacement(body: string, tags: string[], currentDir: string, aiOpts?: DecisionRequestOptions): Promise<Placement | null> {
 		if (!this.placement.isAvailable()) return null;
 		try {
-			return await this.placement.decide(body, tags, aiOpts);
+			return await this.placement.decide(body, tags, currentDir, aiOpts);
 		} catch (error) {
 			console.warn('[Synapse] System 1 lane failed (organize placement); using the generative path:', redactError(error));
 			return null;
@@ -211,4 +213,9 @@ export class ContentAnalyzer {
 		}
 		return paths;
 	}
+}
+
+function parentPath(filePath: string): string {
+	const lastSlash = filePath.lastIndexOf('/');
+	return lastSlash === -1 ? '' : filePath.slice(0, lastSlash);
 }

@@ -34,6 +34,7 @@ export type {
 	PlacementKind,
 	ExistingPlacement,
 	NewDirectoryPlacement,
+	KeepPlacement,
 	UndecidedPlacement,
 } from './types';
 /** Score floor for `suggestDirectory`; below it the caller keeps its own default placement. */
@@ -77,7 +78,7 @@ export class OrganizeModule implements FeatureModule {
 
 	/** Best existing folder for free text — a System 1 majority placement, else topic match — or null when nothing clears the score floor; wired into deep-dive by the module registry. */
 	async suggestDirectory(text: string, aiOpts?: DecisionRequestOptions): Promise<string | null> {
-		const { topics, placement } = await this.analyzer.resolvePlacement(text, [], aiOpts);
+		const { topics, placement } = await this.analyzer.resolvePlacement(text, [], '', aiOpts);
 		if (placement?.kind === 'existing') return placement.directoryPath;
 		if (topics.length === 0) return null;
 		const scores = this.matcher.scoreDirectories({ notePath: '', topics, tags: [], links: [] });
@@ -218,8 +219,8 @@ export class OrganizeModule implements FeatureModule {
 	}
 
 	/**
-	 * Organize a single note. Analyzes content, determines best directory,
-	 * and either moves directly or creates a proposal for new directories.
+	 * Organize a single note. Analyzes content, determines the best directory,
+	 * and proposes the relocation (moved at once only under organize auto-accept).
 	 */
 	async organizeNote(file: TFile): Promise<OrganizeResult | null> {
 		if (this.isExcluded(file)) {
@@ -646,6 +647,10 @@ export class OrganizeModule implements FeatureModule {
 	): Promise<OrganizeResult | null> {
 		const analysis = await this.analyzer.analyze(file, trackAiCache(cacheUse));
 
+		// The lane chose to leave the note where it is: no fallback, no proposal (#558).
+		if (analysis.placement?.kind === 'keep') {
+			return null;
+		}
 		if (analysis.topics.length === 0 && analysis.placement?.kind !== 'existing') {
 			return null;
 		}

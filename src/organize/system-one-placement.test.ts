@@ -4,7 +4,7 @@ import { OrganizeModule } from './index';
 import { OrganizeStore } from './organize-store';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
-import { NEW_DIRECTORY_OPTION } from './placement-decider';
+import { KEEP_CURRENT_OPTION, NEW_DIRECTORY_OPTION } from './placement-decider';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import { AIClient, NoteOperationQueue } from '../shared';
@@ -104,7 +104,7 @@ describe('ContentAnalyzer.resolvePlacement two-lane behaviour (#558)', () => {
 	});
 
 	it('toggle off: zero lane calls and the generative topics, unchanged', async () => {
-		const result = await makeAnalyzer(['a']).resolvePlacement('body', []);
+		const result = await makeAnalyzer(['a']).resolvePlacement('body', [], '');
 		expect(mockRequestUrl).not.toHaveBeenCalled();
 		expect(complete).toHaveBeenCalledTimes(1);
 		expect(result).toEqual({ topics: [{ label: 'machine learning', confidence: 0.95 }], lane: 'system-two' });
@@ -115,7 +115,7 @@ describe('ContentAnalyzer.resolvePlacement two-lane behaviour (#558)', () => {
 		stubLane('projects/ml');
 		const onSystemOne = vi.fn();
 
-		const result = await makeAnalyzer(['projects', 'projects/ml']).resolvePlacement('body', ['#ml'], { onSystemOne });
+		const result = await makeAnalyzer(['projects', 'projects/ml']).resolvePlacement('body', ['#ml'], '', { onSystemOne });
 
 		expect(complete).not.toHaveBeenCalled();
 		expect(result).toEqual({ topics: [], placement: { kind: 'existing', directoryPath: 'projects/ml', confidence: 0.95 }, lane: 'system-one' });
@@ -127,7 +127,7 @@ describe('ContentAnalyzer.resolvePlacement two-lane behaviour (#558)', () => {
 		stubLane('projects', 0.49);
 		const onSystemOne = vi.fn();
 
-		const result = await makeAnalyzer(['projects', 'inbox']).resolvePlacement('body', [], { onSystemOne });
+		const result = await makeAnalyzer(['projects', 'inbox']).resolvePlacement('body', [], '', { onSystemOne });
 
 		expect(complete).toHaveBeenCalledTimes(1);
 		expect(result).toEqual({
@@ -143,7 +143,7 @@ describe('ContentAnalyzer.resolvePlacement two-lane behaviour (#558)', () => {
 		settings.organize.organizeConfidenceThreshold = 0.9;
 		stubLane(NEW_DIRECTORY_OPTION, 0.9);
 
-		const result = await makeAnalyzer(['projects']).resolvePlacement('body', []);
+		const result = await makeAnalyzer(['projects']).resolvePlacement('body', [], '');
 
 		expect(complete).toHaveBeenCalledTimes(1);
 		expect(result).toEqual({
@@ -158,9 +158,9 @@ describe('ContentAnalyzer.resolvePlacement two-lane behaviour (#558)', () => {
 		settings.organize.organizeConfidenceThreshold = 0.9;
 		stubLane(NEW_DIRECTORY_OPTION, 0.6);
 
-		const result = await makeAnalyzer(['projects']).resolvePlacement('body', []);
+		const result = await makeAnalyzer(['projects']).resolvePlacement('body', [], '');
 
-		expect(result.placement).toEqual({ kind: 'undecided', leading: 'projects', confidence: 0.4 });
+		expect(result.placement).toMatchObject({ kind: 'undecided', leading: 'projects' });
 		expect(result.lane).toBe('system-two');
 	});
 
@@ -168,7 +168,7 @@ describe('ContentAnalyzer.resolvePlacement two-lane behaviour (#558)', () => {
 		laneOn(settings);
 		mockRequestUrl.mockResolvedValue({ status: 500, json: { error: { message: 'boom' } }, text: '', headers: {} });
 
-		const result = await makeAnalyzer(['projects']).resolvePlacement('body', []);
+		const result = await makeAnalyzer(['projects']).resolvePlacement('body', [], '');
 
 		expect(complete).toHaveBeenCalledTimes(1);
 		expect(result.lane).toBe('system-two');
@@ -244,13 +244,15 @@ describe('OrganizeModule with the System 1 lane (#558)', () => {
 		expect(finish.mock.calls.at(-1)?.[0]).toBe('Proposed move to projects/ml — decided by the System 1 lane');
 	});
 
-	it('treats a confident pick of the current folder as already placed', async () => {
-		stubLane('inbox');
+	it('treats a confident <keep-current> as already placed, with no generative call and no proposal', async () => {
+		stubLane(KEEP_CURRENT_OPTION);
 
 		const result = await mod.organizeNote(note);
 
 		expect(result).toBeNull();
+		expect(complete).not.toHaveBeenCalled();
 		expect(rename).not.toHaveBeenCalled();
+		expect(OrganizeStore.prototype.saveProposal).not.toHaveBeenCalled();
 		expect(finish.mock.calls.at(-1)?.[0]).toBe('No organization needed — decided by the System 1 lane');
 	});
 

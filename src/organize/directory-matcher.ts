@@ -57,7 +57,7 @@ export class DirectoryMatcher {
 		confidenceThreshold = 0.9,
 		opts: { allowNewDirectory?: boolean } = {}
 	): OrganizeAction {
-		// An existing-folder System 1 placement is a direct move (#558); the caller treats the note's own folder as "already placed".
+		// An existing-folder System 1 placement is a move action (#558); the caller treats the note's own folder as "already placed".
 		if (analysis.placement?.kind === 'existing') {
 			return { type: 'move', targetDirectory: analysis.placement.directoryPath };
 		}
