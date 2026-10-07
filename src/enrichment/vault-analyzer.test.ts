@@ -9,7 +9,7 @@ const settingsWith = (exclusions: unknown[]) => () =>
 	({ exclusions }) as unknown as SynapseSettings;
 
 /** The slice of Obsidian's `CachedMetadata` these tests stub for tag extraction. */
-type TestFileCache = { tags?: Array<{ tag: string }> };
+type TestFileCache = { tags?: Array<{ tag: string }>; frontmatter?: Record<string, unknown> };
 
 function createMockApp(files: TFile[], caches: Map<string, TestFileCache>, resolvedLinks: Record<string, Record<string, number>> = {}) {
 	return {
@@ -100,6 +100,53 @@ describe('VaultAnalyzer', () => {
 			analyzer.invalidate();
 			const index3 = analyzer.buildTagIndex();
 			expect(index3).not.toBe(index1); // New instance after invalidation
+		});
+	});
+
+	describe('buildFrontmatterValueIndex (#563)', () => {
+		it('normalizes scalar and array values into a de-duplicated set, most frequent first', () => {
+			const caches = new Map<string, TestFileCache>([
+				['a.md', { frontmatter: { type: 'project', topics: ['ml', 'web', 'ml'] } }],
+				['b.md', { frontmatter: { type: ['reference', 'project'], topics: 'ml' } }],
+				['c.md', { frontmatter: { type: 'reference ', status: 3 } }],
+				['d.md', { frontmatter: { type: 'reference', topics: [{ nested: true }, null, ''] } }],
+			]);
+			const files = [...caches.keys()].map((path) => new TFile(path));
+			const analyzer = new VaultAnalyzer(createMockApp(files, caches), noExclusions);
+
+			const index = analyzer.buildFrontmatterValueIndex(['type', 'topics', 'status', 'category']);
+
+			expect(index.get('type')).toEqual(['reference', 'project']);
+			expect(index.get('topics')).toEqual(['ml', 'web']);
+			expect(index.get('status')).toEqual(['3']);
+			expect(index.get('category')).toEqual([]);
+		});
+
+		it('ignores files excluded for enrichment', () => {
+			const caches = new Map<string, TestFileCache>([
+				['notes/a.md', { frontmatter: { type: 'project' } }],
+				['Templates/t.md', { frontmatter: { type: 'template' } }],
+			]);
+			const files = [...caches.keys()].map((path) => new TFile(path));
+			const analyzer = new VaultAnalyzer(
+				createMockApp(files, caches),
+				settingsWith([{ pattern: 'Templates/**', features: ['enrichment'] }])
+			);
+
+			expect(analyzer.buildFrontmatterValueIndex(['type']).get('type')).toEqual(['project']);
+		});
+
+		it('caches per-key sets until invalidated', () => {
+			const caches = new Map<string, TestFileCache>([['a.md', { frontmatter: { type: 'project' } }]]);
+			const app = createMockApp([new TFile('a.md')], caches);
+			const analyzer = new VaultAnalyzer(app, noExclusions);
+
+			analyzer.buildFrontmatterValueIndex(['type']);
+			caches.set('a.md', { frontmatter: { type: 'changed' } });
+			expect(analyzer.buildFrontmatterValueIndex(['type']).get('type')).toEqual(['project']);
+
+			analyzer.invalidate();
+			expect(analyzer.buildFrontmatterValueIndex(['type']).get('type')).toEqual(['changed']);
 		});
 	});
 

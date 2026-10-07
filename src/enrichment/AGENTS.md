@@ -95,19 +95,19 @@ Note: `TagVocabularyEntry`, `EnrichmentSettings`, and `EnrichmentWeightSettings`
 
 | File | Class/Export | Purpose |
 |------|-------------|---------|
-| `types.ts` | All interfaces and types | `TagCandidate`, `InternalLinkCandidate`, `ExternalLinkCandidate`, `FrontmatterEnrichment`, `EnrichmentResult`, `EnrichmentProposal`, `EnrichmentTrigger`, `EnrichmentStatus`, `AcceptedItems`, `TagIndex`, `LinkGraph`, `WeightConfig` |
+| `types.ts` | All interfaces and types | `TagCandidate`, `InternalLinkCandidate`, `ExternalLinkCandidate`, `FrontmatterEnrichment`, `EnrichmentResult`, `EnrichmentProposal`, `EnrichmentTrigger`, `EnrichmentStatus`, `AcceptedItems`, `TagIndex`, `LinkGraph`, `FrontmatterValueIndex` (#563), `WeightConfig` |
 | `index.ts` | `EnrichmentModule`, type re-exports, `renderEnrichmentSettings` re-export | Orchestrator; registers commands; exclusion checks; vault scan; checkpoint resume; auto-accept; per-note queue serialization (private `runEnrichment`, `enrichFile`, `acceptSelected`, #483) |
-| `vault-analyzer.ts` | `VaultAnalyzer` | Cached vault-wide `TagIndex` and `LinkGraph` from `MetadataCache`; invalidated on `'resolved'` event |
+| `vault-analyzer.ts` | `VaultAnalyzer` | Cached vault-wide `TagIndex`, `LinkGraph`, and per-key frontmatter value sets (#563) from `MetadataCache`; invalidated on `'resolved'` event |
 | `weight-calculator.ts` | `computeProximityWeight` | Pure function: folder-proximity scoring |
 | `metadata-classifier.ts` | `MetadataClassifier` | Tag classification against the user-defined vocabulary: System 1 `choice` per category when `ai.systemOne` is on, generative prompt for the rest (#558); rejects hallucinated tags |
 | `topic-extractor.ts` | `TopicExtractor` | AI topic extraction; matched topics → `InternalLinkCandidate`; unmatched topics accumulated for multi-note resolution |
 | `link-resolver.ts` | `LinkResolver` | Graph-based internal link candidates (link hops, shared tags, folder proximity); merges with topic candidates |
-| `prompt-builder.ts` | `PromptBuilder` | AI prompts for external link and frontmatter suggestions |
+| `prompt-builder.ts` | `PromptBuilder` | AI prompts for external link suggestions; frontmatter suggestions with a System 1 `choice` per lane key first when `ai.systemOne` is on (#563) |
 | `enrichment-store.ts` | `EnrichmentStore` | CRUD for enrichment proposal JSON files in the enrichment folder |
 | `enrichment-applier.ts` | `EnrichmentApplier` | Applies/undoes accepted enrichments to note content non-destructively via `vault.process` |
 | `enrichment-modal.ts` | `EnrichmentDetailModal` | Per-item toggle modal for reviewing a single proposal |
 | `settings-section.ts` | `renderEnrichmentSettings` | Settings UI accordion for the enrichment feature (#243) |
-| `*.test.ts` | Co-located Vitest suites | `vault-analyzer`, `weight-calculator`, `metadata-classifier`, `topic-extractor`, `link-resolver`, `prompt-builder`, `enrichment-store`, `enrichment-applier`, `settings-section`, `auto-accept` (#228), `review-toast` (#366), `cache-report` (#527: single-enrich hit/miss, no-enrichment hit, vault-scan aggregate hit/miss), `metadata-classifier.system-one` (#558: toggle off = zero lane calls + identical output, per-category choice shape, uncertain-only fallback, vocabulary guard, probabilities floor, transport/401 fallback) |
+| `*.test.ts` | Co-located Vitest suites | `vault-analyzer`, `weight-calculator`, `metadata-classifier`, `topic-extractor`, `link-resolver`, `prompt-builder`, `enrichment-store`, `enrichment-applier`, `settings-section`, `auto-accept` (#228), `review-toast` (#366), `cache-report` (#527: single-enrich hit/miss, no-enrichment hit, vault-scan aggregate hit/miss), `metadata-classifier.system-one` (#558: toggle off = zero lane calls + identical output, per-category choice shape, uncertain-only fallback, vocabulary guard, probabilities floor, transport/401 fallback), `prompt-builder.system-one` (#563: toggle off = zero lane calls + identical prompt/output, per-key choice shape + 254 cap, confident = no `complete()`, `<new-value>`/no-values keys restricted prompt, sub-floor, list-key merge, vault-value guard, transport fallback) |
 
 ## Internal Class Signatures
 
@@ -117,6 +117,7 @@ class VaultAnalyzer {
   constructor(app: App, getSettings: () => SynapseSettings)
   invalidate(): void
   buildTagIndex(): TagIndex
+  buildFrontmatterValueIndex(keys: readonly string[]): FrontmatterValueIndex   // :29; per-key values over getIncludedMarkdownFiles(app, 'enrichment'), scalar|array -> trimmed string set, most frequent first; cached per key until invalidate() (#563)
   buildLinkGraph(): LinkGraph
   getFileTags(file: TFile): string[]
   getOutgoingLinks(filePath: string): string[]
@@ -146,7 +147,7 @@ class LinkResolver {
 class PromptBuilder {
   constructor(getSettings: () => SynapseSettings)
   suggestExternalLinks(noteContent: string, existingLinks: string[], aiOpts?: AIRequestOptions): Promise<ExternalLinkCandidate[]>   // aiOpts reaches complete() (#527)
-  suggestFrontmatter(noteContent: string, existingFrontmatter: Record<string, unknown>, aiOpts?: AIRequestOptions): Promise<FrontmatterEnrichment[]>   // aiOpts reaches complete() (#527)
+  suggestFrontmatter(noteContent: string, existingFrontmatter: Record<string, unknown>, aiOpts?: DecisionRequestOptions, vaultValues?: (keys: readonly string[]) => FrontmatterValueIndex): Promise<FrontmatterEnrichment[]>   // :131; lane off or no vaultValues -> unchanged prompt (#527). Lane on -> one choice per LANE_FM_KEYS (:30: category/type/status scalar 'add', topics/related-projects list 'merge') key the note lacks, over its vault values (<= 254, most frequent first) + '<new-value>'; state = body[0:3000] + current frontmatter JSON; partitionByConfidence at ai.systemOne.confidenceFloor; confident existing value -> suggestion (list keys also take other options with probability >= floor); '<new-value>', sub-floor, and no-values keys -> generative prompt restricted to those keys; lane error or no question asked -> full prompt; aiOpts.onSystemOne() when any key was lane-decided; SAFE_FM_KEY + FORBIDDEN_FM_KEYS + existing-key skip apply to both lanes (#563)
 }
 // enrichment-store.ts
 class EnrichmentStore {
@@ -192,7 +193,7 @@ Registered in `EnrichmentModule.onload` via `registrar.register(id, condition, c
 ## Dependencies
 
 In (consumed by this module):
-- `src/shared`: `NoteOperationQueue` (#483), `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction`, `getIncludedMarkdownFiles`, `getMarkdownFiles`, `NotificationManager`, `CheckpointManager`, `FolderPickerModal`, `AIClient`, `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `asStringArray`, `buildCallout`, `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `sanitizeAIResponse`, `parseJson`, `isRecord`, `generateId`, `isTwitterUrl`, `fetchTweetContent`, `fireAndForget`, `ensureFolder`, `readJsonFile`, `addEnhancedSlider`, `trackAiCache`, `withCacheReport`, `DecisionClient`, `choice`, `partitionByConfidence`, `MAX_CHOICE_OPTIONS`, `redactError` (#558); types `AIRequestOptions`, `DecisionRequestOptions`, `ChoiceQuestion`, `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `SettingsSectionContext`
+- `src/shared`: `NoteOperationQueue` (#483), `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction`, `getIncludedMarkdownFiles`, `getMarkdownFiles`, `NotificationManager`, `CheckpointManager`, `FolderPickerModal`, `AIClient`, `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `asStringArray`, `buildCallout`, `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `sanitizeAIResponse`, `parseJson`, `isRecord`, `generateId`, `isTwitterUrl`, `fetchTweetContent`, `fireAndForget`, `ensureFolder`, `readJsonFile`, `addEnhancedSlider`, `trackAiCache`, `withCacheReport`, `DecisionClient`, `choice`, `partitionByConfidence`, `MAX_CHOICE_OPTIONS`, `redactError` (#558); types `AIRequestOptions`, `DecisionRequestOptions`, `ChoiceQuestion`, `ChoiceAnswer` (#563), `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `SettingsSectionContext`
 - `src/commands`: `CommandRegistrar`
 - `src/settings`: `SynapseSettings`, `TagVocabularyEntry`, `EnrichmentWeightSettings`
 - `src/shared` types `ModuleDeps`, `FeatureModule`, `OperationHandle` (constructor bundle + lifecycle contract, #504)
@@ -218,7 +219,7 @@ enrich(filePath, trigger, options?)
        ├─ LinkResolver.findInternalLinks()          → InternalLinkCandidate[] (graph)
        ├─ TopicExtractor.extractTopics(.., aiOpts)  → InternalLinkCandidate[] (topics)
        ├─ PromptBuilder.suggestExternalLinks(.., aiOpts)  → ExternalLinkCandidate[]
-       ├─ PromptBuilder.suggestFrontmatter(.., aiOpts)    → FrontmatterEnrichment[]
+       ├─ PromptBuilder.suggestFrontmatter(.., aiOpts, keys => analyzer.buildFrontmatterValueIndex(keys))    → FrontmatterEnrichment[]   (System 1 choice per key over existing vault values first when ai.systemOne is on, #563)
        ├─ LinkResolver.mergeTopicCandidates(topicLinks, graphLinks)
        └─ EnrichmentStore.save(proposal)  [skipped when totalItems === 0 → returns null]
   └─ topicExtractor.clearPending(); op.finish(withCacheReport('Enrichment proposal created' | 'No enrichments needed', [cacheUse]), reviewAction(...)) [#527; Review toast unless postOp/auto-accept #366]; maybeAutoAccept(id) [if shouldAutoAccept()]
