@@ -48,6 +48,9 @@ export interface FrontmatterEnrichment {
 	action: 'add' | 'merge';
 }
 
+/** Existing vault values per frontmatter key, most frequent first. */
+export type FrontmatterValueIndex = Map<string, string[]>;
+
 export interface EnrichmentResult {
 	tags: TagCandidate[];
 	internalLinks: InternalLinkCandidate[];

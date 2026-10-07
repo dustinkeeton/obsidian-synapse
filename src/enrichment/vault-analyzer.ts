@@ -1,7 +1,7 @@
 import { App, getAllTags, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import { getIncludedMarkdownFiles } from '../shared';
-import { TagIndex, LinkGraph } from './types';
+import { FrontmatterValueIndex, TagIndex, LinkGraph } from './types';
 
 /**
  * Builds in-memory snapshots of the vault's tag and link topology
@@ -11,6 +11,7 @@ import { TagIndex, LinkGraph } from './types';
 export class VaultAnalyzer {
 	private tagIndexCache: TagIndex | null = null;
 	private linkGraphCache: LinkGraph | null = null;
+	private frontmatterValueCache: FrontmatterValueIndex = new Map();
 
 	constructor(
 		private app: App,
@@ -21,6 +22,32 @@ export class VaultAnalyzer {
 	invalidate(): void {
 		this.tagIndexCache = null;
 		this.linkGraphCache = null;
+		this.frontmatterValueCache = new Map();
+	}
+
+	/** De-duplicated values per key across included notes, most frequent first; scalars and arrays both count. */
+	buildFrontmatterValueIndex(keys: readonly string[]): FrontmatterValueIndex {
+		const missing = keys.filter(key => !this.frontmatterValueCache.has(key));
+		if (missing.length > 0) {
+			const counts = new Map<string, Map<string, number>>(missing.map(key => [key, new Map()]));
+			for (const file of getIncludedMarkdownFiles(this.app, 'enrichment', this.getSettings())) {
+				const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+				if (!frontmatter) continue;
+				for (const key of missing) {
+					const perKey = counts.get(key)!;
+					for (const value of new Set(normalizeFrontmatterValues(frontmatter[key]))) {
+						perKey.set(value, (perKey.get(value) ?? 0) + 1);
+					}
+				}
+			}
+			for (const [key, perKey] of counts) {
+				this.frontmatterValueCache.set(
+					key,
+					[...perKey.entries()].sort((a, b) => b[1] - a[1]).map(([value]) => value)
+				);
+			}
+		}
+		return new Map(keys.map(key => [key, this.frontmatterValueCache.get(key) ?? []]));
 	}
 
 	/**
@@ -107,4 +134,15 @@ export class VaultAnalyzer {
 		const links = graph.incoming.get(filePath);
 		return links ? [...links] : [];
 	}
+}
+
+function normalizeFrontmatterValues(raw: unknown): string[] {
+	const items: unknown[] = Array.isArray(raw) ? raw : [raw];
+	const values: string[] = [];
+	for (const item of items) {
+		if (typeof item !== 'string' && typeof item !== 'number' && typeof item !== 'boolean') continue;
+		const value = String(item).trim();
+		if (value !== '') values.push(value);
+	}
+	return values;
 }
