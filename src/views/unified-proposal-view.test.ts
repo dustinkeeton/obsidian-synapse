@@ -98,6 +98,7 @@ function makeOrganizeItem(id = 'org-1'): UnifiedItem {
 			id,
 			sourceNotePath: 'notes/test.md',
 			proposedDirectory: 'organized/',
+			proposalKind: 'new-directory',
 			reasoning: 'fits better here',
 			createdAt: '2024-01-01T00:00:00Z',
 			status: 'pending',

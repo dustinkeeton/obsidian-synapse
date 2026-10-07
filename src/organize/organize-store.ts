@@ -3,14 +3,22 @@ import { SynapseSettings } from '../settings';
 import { ensureFolder, isRecord, readJsonFile } from '../shared';
 import { OrganizeProposal, OrganizeProposalStatus, OrganizeSnapshot } from './types';
 
+/** On-disk shape: `proposalKind` is absent on files written before relocations became proposals. */
+type StoredProposal = Omit<OrganizeProposal, 'proposalKind'> & Partial<Pick<OrganizeProposal, 'proposalKind'>>;
+
 /** Structural guard for a persisted {@link OrganizeProposal}. */
-function isOrganizeProposal(v: unknown): v is OrganizeProposal {
+function isStoredProposal(v: unknown): v is StoredProposal {
 	return (
 		isRecord(v) &&
 		typeof v.id === 'string' &&
 		typeof v.sourceNotePath === 'string' &&
 		typeof v.status === 'string'
 	);
+}
+
+/** Every proposal written before `proposalKind` existed proposed a new folder. */
+function withProposalKind(stored: StoredProposal): OrganizeProposal {
+	return { ...stored, proposalKind: stored.proposalKind ?? 'new-directory' };
 }
 
 /**
@@ -64,11 +72,7 @@ export class OrganizeStore {
 	async loadProposal(id: string): Promise<OrganizeProposal | null> {
 		const files = await this.listFiles(this.proposalFolder);
 		for (const filePath of files) {
-			const proposal = await readJsonFile(
-				this.app.vault.adapter,
-				filePath,
-				isOrganizeProposal
-			);
+			const proposal = await this.readProposal(filePath);
 			if (proposal && proposal.id === id) return proposal;
 		}
 		return null;
@@ -78,11 +82,7 @@ export class OrganizeStore {
 		const files = await this.listFiles(this.proposalFolder);
 		const proposals: OrganizeProposal[] = [];
 		for (const filePath of files) {
-			const proposal = await readJsonFile(
-				this.app.vault.adapter,
-				filePath,
-				isOrganizeProposal
-			);
+			const proposal = await this.readProposal(filePath);
 			// Skip missing/invalid files
 			if (proposal) proposals.push(proposal);
 		}
@@ -104,11 +104,7 @@ export class OrganizeStore {
 	async deleteProposal(id: string): Promise<void> {
 		const files = await this.listFiles(this.proposalFolder);
 		for (const filePath of files) {
-			const proposal = await readJsonFile(
-				this.app.vault.adapter,
-				filePath,
-				isOrganizeProposal
-			);
+			const proposal = await this.readProposal(filePath);
 			if (proposal && proposal.id === id) {
 				await this.app.vault.adapter.remove(filePath);
 				return;
@@ -153,6 +149,11 @@ export class OrganizeStore {
 	}
 
 	// ── Helpers ──
+
+	private async readProposal(filePath: string): Promise<OrganizeProposal | null> {
+		const stored = await readJsonFile(this.app.vault.adapter, filePath, isStoredProposal);
+		return stored ? withProposalKind(stored) : null;
+	}
 
 	private proposalFileName(proposal: OrganizeProposal): string {
 		const baseName = proposal.sourceNotePath

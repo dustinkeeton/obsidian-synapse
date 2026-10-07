@@ -104,12 +104,12 @@ describe('OrganizeModule cache reporting (#527)', () => {
 
 		await mod.scanDirectory('inbox', true);
 
-		expect(lastFinish()).toBe('3 proposals — 1 of 3 notes served from cache');
+		expect(lastFinish()).toBe('3 proposals (3 new folders) — 1 of 3 notes served from cache');
 	});
 
 	it('keeps the directory scan message unchanged when nothing was replayed', async () => {
 		await mod.scanDirectory('inbox', true);
 
-		expect(lastFinish()).toBe('3 proposals');
+		expect(lastFinish()).toBe('3 proposals (3 new folders)');
 	});
 });

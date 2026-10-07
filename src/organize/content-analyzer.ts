@@ -59,13 +59,14 @@ export class ContentAnalyzer {
 		const existingTags = cache ? (getAllTags(cache) || []) : [];
 		const existingLinks = this.getOutgoingLinks(file);
 
-		const { topics, placement } = await this.resolvePlacement(parsed.body, existingTags, aiOpts);
+		const { topics, placement, lane } = await this.resolvePlacement(parsed.body, existingTags, aiOpts);
 
 		return {
 			notePath: file.path,
 			topics,
 			tags: existingTags,
 			links: existingLinks,
+			lane,
 			...(placement ? { placement } : {}),
 		};
 	}

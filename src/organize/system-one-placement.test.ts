@@ -225,16 +225,23 @@ describe('OrganizeModule with the System 1 lane (#558)', () => {
 	});
 	afterEach(() => vi.restoreAllMocks());
 
-	it('moves directly into a confident existing folder and names the lane in the finish notice', async () => {
+	it('proposes a move into a confident existing folder, never renaming, and names the lane in the finish notice', async () => {
 		stubLane('projects/ml');
 
 		const result = await mod.organizeNote(note);
 
 		expect(complete).not.toHaveBeenCalled();
-		expect(result?.movedDirectly).toBe(true);
+		expect(result?.proposalCreated).toBe(true);
+		expect(result?.movedDirectly).toBe(false);
 		expect(result?.placement).toBe('existing');
-		expect(rename).toHaveBeenCalledWith(note, 'projects/ml/a.md');
-		expect(finish.mock.calls.at(-1)?.[0]).toBe('Moved to projects/ml — decided by the System 1 lane');
+		expect(rename).not.toHaveBeenCalled();
+		expect(OrganizeStore.prototype.saveProposal).toHaveBeenCalledWith(expect.objectContaining({
+			proposedDirectory: 'projects/ml',
+			proposalKind: 'move',
+			lane: 'system-one',
+			reasoning: 'The System 1 lane placed this note in "projects/ml" with 95% of the runoff.',
+		}));
+		expect(finish.mock.calls.at(-1)?.[0]).toBe('Proposed move to projects/ml — decided by the System 1 lane');
 	});
 
 	it('treats a confident pick of the current folder as already placed', async () => {
@@ -270,16 +277,22 @@ describe('OrganizeModule with the System 1 lane (#558)', () => {
 		expect(finish.mock.calls.at(-1)?.[0]).toBe('No organization needed');
 	});
 
-	it('an undecided lane still lets System 2 move into a folder that scores above the move threshold', async () => {
+	it('an undecided lane still lets System 2 propose a move into a folder that scores above the move threshold', async () => {
 		stubLane('projects', 0.4);
 		complete.mockResolvedValue(JSON.stringify([{ label: 'projects', confidence: 0.8 }]));
 
 		const result = await mod.organizeNote(note);
 
-		expect(result?.movedDirectly).toBe(true);
+		expect(result?.proposalCreated).toBe(true);
+		expect(result?.movedDirectly).toBe(false);
 		expect(result?.placement).toBe('undecided');
-		expect(rename).toHaveBeenCalledWith(note, 'projects/a.md');
-		expect(finish.mock.calls.at(-1)?.[0]).toBe('Moved to projects');
+		expect(rename).not.toHaveBeenCalled();
+		expect(OrganizeStore.prototype.saveProposal).toHaveBeenCalledWith(expect.objectContaining({
+			proposedDirectory: 'projects',
+			proposalKind: 'move',
+			lane: 'system-two',
+		}));
+		expect(finish.mock.calls.at(-1)?.[0]).toBe('Proposed move to projects');
 	});
 
 	it('suggestDirectory returns the placed folder for deep-dive auto-organize', async () => {

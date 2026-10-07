@@ -495,9 +495,9 @@ export class IntakeModule implements FeatureModule {
 
 	/**
 	 * Stamp the processed flag (when enabled), then apply `moveWhenDone` as a
-	 * FALLBACK mover only. Organize (run inside `fireOnFile`) is now the primary,
-	 * content-aware mover; it may instead keep a note in place or create a
-	 * proposal when confidence is low (< 0.9). So `moveWhenDone` runs only when
+	 * FALLBACK mover only. Organize (run inside `fireOnFile`) is the primary,
+	 * content-aware mover, but it relocates a note only under organize
+	 * auto-accept; otherwise it leaves a pending proposal. So `moveWhenDone` runs only when
 	 * organize did NOT move the note out of the intake folder, guaranteeing a
 	 * note never gets stuck in the intake folder while avoiding a double move
 	 * for notes organize already relocated (#223).
@@ -526,7 +526,7 @@ export class IntakeModule implements FeatureModule {
 		let movedOut = this.movedOutOfIntake(originalPath, file.path);
 
 		// Fallback mover: only when organize left the note inside the intake
-		// folder (low-confidence proposal / no-op). Skipped entirely when organize
+		// folder (pending proposal / no-op). Skipped entirely when organize
 		// already relocated the note, which also fixes the prior general-branch
 		// double move.
 		if (!movedOut) {

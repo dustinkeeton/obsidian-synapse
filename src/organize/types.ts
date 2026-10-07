@@ -1,3 +1,5 @@
+import type { DecisionLane } from '../shared';
+
 /** Topic extracted from a note's content, tags, and links. */
 export interface NoteTopic {
 	/** Primary topic label (e.g., "machine learning", "meeting notes") */
@@ -44,8 +46,10 @@ export interface ContentAnalysis {
 	tags: string[];
 	/** Existing outgoing link paths */
 	links: string[];
-	/** System 1 lane answer when the lane ran; `kind: 'existing'` is a direct move in `determineAction` */
+	/** System 1 lane answer when the lane ran; `kind: 'existing'` is a `move` action in `determineAction` */
 	placement?: Placement;
+	/** Which lane settled the placement, when the analyzer ran one */
+	lane?: DecisionLane;
 }
 
 /** Score representing how well a note fits a given directory. */
@@ -66,13 +70,20 @@ export type OrganizeAction =
 /** Status of an organize proposal. */
 export type OrganizeProposalStatus = 'pending' | 'accepted' | 'rejected';
 
-/** Proposal for creating a new directory and moving a note into it. */
+/** `'move'` targets a folder that exists; `'new-directory'` creates `proposedDirectory` on accept. */
+export type OrganizeProposalKind = 'move' | 'new-directory';
+
+/** Proposal to relocate a note — into an existing folder or a new one. Accepting is the only path that moves the note. */
 export interface OrganizeProposal {
 	id: string;
 	/** Path of the note to be moved */
 	sourceNotePath: string;
-	/** Proposed new directory path */
+	/** Target directory path (existing for `'move'`, to be created for `'new-directory'`) */
 	proposedDirectory: string;
+	/** Absent on proposal files written before relocations became proposals; read as `'new-directory'` */
+	proposalKind: OrganizeProposalKind;
+	/** Lane that produced the placement, when known */
+	lane?: DecisionLane;
 	/** AI reasoning for the proposed directory */
 	reasoning: string;
 	/** When the proposal was created */
@@ -100,9 +111,9 @@ export interface OrganizeResult {
 	notePath: string;
 	/** Action taken or proposed */
 	action: OrganizeAction;
-	/** Whether a proposal was created (for new directories) */
+	/** Whether a proposal was created (a move to an existing folder or a new folder) */
 	proposalCreated: boolean;
-	/** Whether the note was moved directly (for existing directories) */
+	/** Whether this call moved the note; only organize auto-accept can make this true */
 	movedDirectly: boolean;
 	/** How the System 1 lane answered, when it ran (#558) */
 	placement?: PlacementKind;
