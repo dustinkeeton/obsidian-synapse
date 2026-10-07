@@ -299,7 +299,7 @@ export interface RemSettings {
 	 * cannot automatically outrank a genuinely content-relevant semantic link.
 	 */
 	titleMatchWeight: number;
-	/** Minimum confidence for semantic matches (0-1). */
+	/** Minimum relevance (0-1) a semantic link needs to be proposed, in either lane. */
 	confidenceThreshold: number;
 	/** Maximum link candidates per scanned note. */
 	maxLinksPerNote: number;

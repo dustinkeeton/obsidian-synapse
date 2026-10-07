@@ -1,3 +1,5 @@
+import type { DecisionLane } from '../shared';
+
 /** A single occurrence of a matched term in the source note. */
 export interface RemOccurrence {
 	/** Zero-based line number in the source note */
@@ -31,6 +33,8 @@ export interface RemLinkCandidate {
 	 * AI-assigned.
 	 */
 	confidence: number;
+	/** Which lane produced a semantic match; absent on literal matches. */
+	lane?: DecisionLane;
 }
 
 export type RemProposalStatus = 'pending' | 'accepted' | 'partially-accepted' | 'rejected';
@@ -42,6 +46,8 @@ export interface RemProposal {
 	createdAt: string;
 	candidates: RemLinkCandidate[];
 	status: RemProposalStatus;
+	/** Which lane produced the semantic candidates, when any. */
+	lane?: DecisionLane;
 	/** Which candidate matchedTexts were accepted (set on accept). */
 	acceptedLinks?: string[];
 	/** Snapshot of the note content before links were applied (set on accept for undo). */
@@ -55,7 +61,7 @@ export interface RemSettings {
 	 * cannot automatically outrank a genuinely content-relevant semantic link.
 	 */
 	titleMatchWeight: number;
-	/** Minimum confidence for semantic matches (0-1). */
+	/** Minimum relevance (0-1) a semantic link needs to be proposed, in either lane. */
 	confidenceThreshold: number;
 	/** Maximum link candidates per scanned note. */
 	maxLinksPerNote: number;
