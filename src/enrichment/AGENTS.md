@@ -99,7 +99,7 @@ Note: `TagVocabularyEntry`, `EnrichmentSettings`, and `EnrichmentWeightSettings`
 | `index.ts` | `EnrichmentModule`, type re-exports, `renderEnrichmentSettings` re-export | Orchestrator; registers commands; exclusion checks; vault scan; checkpoint resume; auto-accept; per-note queue serialization (private `runEnrichment`, `enrichFile`, `acceptSelected`, #483) |
 | `vault-analyzer.ts` | `VaultAnalyzer` | Cached vault-wide `TagIndex` and `LinkGraph` from `MetadataCache`; invalidated on `'resolved'` event |
 | `weight-calculator.ts` | `computeProximityWeight` | Pure function: folder-proximity scoring |
-| `metadata-classifier.ts` | `MetadataClassifier` | AI tag classification against user-defined vocabulary; rejects hallucinated tags |
+| `metadata-classifier.ts` | `MetadataClassifier` | Tag classification against the user-defined vocabulary: System 1 `choice` per category when `ai.systemOne` is on, generative prompt for the rest (#558); rejects hallucinated tags |
 | `topic-extractor.ts` | `TopicExtractor` | AI topic extraction; matched topics → `InternalLinkCandidate`; unmatched topics accumulated for multi-note resolution |
 | `link-resolver.ts` | `LinkResolver` | Graph-based internal link candidates (link hops, shared tags, folder proximity); merges with topic candidates |
 | `prompt-builder.ts` | `PromptBuilder` | AI prompts for external link and frontmatter suggestions |
@@ -107,7 +107,7 @@ Note: `TagVocabularyEntry`, `EnrichmentSettings`, and `EnrichmentWeightSettings`
 | `enrichment-applier.ts` | `EnrichmentApplier` | Applies/undoes accepted enrichments to note content non-destructively via `vault.process` |
 | `enrichment-modal.ts` | `EnrichmentDetailModal` | Per-item toggle modal for reviewing a single proposal |
 | `settings-section.ts` | `renderEnrichmentSettings` | Settings UI accordion for the enrichment feature (#243) |
-| `*.test.ts` | Co-located Vitest suites | `vault-analyzer`, `weight-calculator`, `metadata-classifier`, `topic-extractor`, `link-resolver`, `prompt-builder`, `enrichment-store`, `enrichment-applier`, `settings-section`, `auto-accept` (#228), `review-toast` (#366), `cache-report` (#527: single-enrich hit/miss, no-enrichment hit, vault-scan aggregate hit/miss) |
+| `*.test.ts` | Co-located Vitest suites | `vault-analyzer`, `weight-calculator`, `metadata-classifier`, `topic-extractor`, `link-resolver`, `prompt-builder`, `enrichment-store`, `enrichment-applier`, `settings-section`, `auto-accept` (#228), `review-toast` (#366), `cache-report` (#527: single-enrich hit/miss, no-enrichment hit, vault-scan aggregate hit/miss), `metadata-classifier.system-one` (#558: toggle off = zero lane calls + identical output, per-category choice shape, uncertain-only fallback, vocabulary guard, probabilities floor, transport/401 fallback) |
 
 ## Internal Class Signatures
 
@@ -126,8 +126,8 @@ class VaultAnalyzer {
 function computeProximityWeight(sourcePath: string, targetPath: string, config: WeightConfig): number
 // metadata-classifier.ts
 class MetadataClassifier {
-  constructor(getSettings: () => SynapseSettings)
-  classify(noteContent: string, existingTags: string[], aiOpts?: AIRequestOptions): Promise<TagCandidate[]>   // aiOpts reaches complete() (#527)
+  constructor(getSettings: () => SynapseSettings)                 // owns an AIClient and a DecisionClient (#558)
+  classify(noteContent: string, existingTags: string[], aiOpts?: DecisionRequestOptions): Promise<TagCandidate[]>   // :47; lane on (:59) -> classifyWithSystemOne (:115): one choice per TagVocabularyEntry over its tags + '<none>' (:18), state = body[0:3000] + existing tags; partitionByConfidence at ai.systemOne.confidenceFloor; confident non-none choice -> candidate, other options with probability >= floor also surface; uncertain categories (and any lane error) -> getClassificationsFromAI restricted to those categories; aiOpts.onSystemOne() when any category was decided by the lane; vocabulary guard + TAG_PATTERN + maxTags unchanged
 }
 // topic-extractor.ts
 class TopicExtractor {
@@ -192,7 +192,7 @@ Registered in `EnrichmentModule.onload` via `registrar.register(id, condition, c
 ## Dependencies
 
 In (consumed by this module):
-- `src/shared`: `NoteOperationQueue` (#483), `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction`, `getIncludedMarkdownFiles`, `getMarkdownFiles`, `NotificationManager`, `CheckpointManager`, `FolderPickerModal`, `AIClient`, `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `asStringArray`, `buildCallout`, `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `sanitizeAIResponse`, `parseJson`, `isRecord`, `generateId`, `isTwitterUrl`, `fetchTweetContent`, `fireAndForget`, `ensureFolder`, `readJsonFile`, `addEnhancedSlider`, `trackAiCache`, `withCacheReport`; types `AIRequestOptions`, `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `SettingsSectionContext`
+- `src/shared`: `NoteOperationQueue` (#483), `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `reviewAction`, `getIncludedMarkdownFiles`, `getMarkdownFiles`, `NotificationManager`, `CheckpointManager`, `FolderPickerModal`, `AIClient`, `parseFrontmatter`, `serializeFrontmatter`, `mergeTags`, `asStringArray`, `buildCallout`, `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `sanitizeAIResponse`, `parseJson`, `isRecord`, `generateId`, `isTwitterUrl`, `fetchTweetContent`, `fireAndForget`, `ensureFolder`, `readJsonFile`, `addEnhancedSlider`, `trackAiCache`, `withCacheReport`, `DecisionClient`, `choice`, `partitionByConfidence`, `MAX_CHOICE_OPTIONS`, `redactError` (#558); types `AIRequestOptions`, `DecisionRequestOptions`, `ChoiceQuestion`, `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `SettingsSectionContext`
 - `src/commands`: `CommandRegistrar`
 - `src/settings`: `SynapseSettings`, `TagVocabularyEntry`, `EnrichmentWeightSettings`
 - `src/shared` types `ModuleDeps`, `FeatureModule`, `OperationHandle` (constructor bundle + lifecycle contract, #504)
@@ -214,7 +214,7 @@ enrich(filePath, trigger, options?)
   │    post-op side effect, so it queues behind the primary operation and reads what it wrote]
   └─ enrichFile(file, trigger, cacheUse?) [private]  (fetchTwitterContext prepends tweet text to classifier body)
        ├─ aiOpts = trackAiCache(cacheUse)           [one CacheUse per enriched note, #527]
-       ├─ MetadataClassifier.classify(.., aiOpts)   → TagCandidate[]
+       ├─ MetadataClassifier.classify(.., aiOpts)   → TagCandidate[]   (System 1 choice per category first when ai.systemOne is on, #558)
        ├─ LinkResolver.findInternalLinks()          → InternalLinkCandidate[] (graph)
        ├─ TopicExtractor.extractTopics(.., aiOpts)  → InternalLinkCandidate[] (topics)
        ├─ PromptBuilder.suggestExternalLinks(.., aiOpts)  → ExternalLinkCandidate[]
@@ -280,7 +280,7 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:21
 | `maxExternalLinks` | `number` | `3` | Max external references (`0` = disable; `suggestExternalLinks` early-returns) |
 | `maxTopicLinks` | `number` | `10` | Max topic-extracted link candidates per note |
 | `suggestNewNotes` | `boolean` | `true` | Accumulate unmatched topics as new-note suggestions |
-| `tagVocabulary` | `TagVocabularyEntry[]` | 3 entries: Status, Type, Source | Classification categories + valid tags for `MetadataClassifier` |
+| `tagVocabulary` | `TagVocabularyEntry[]` | 3 entries: Status, Type, Source | Classification categories + valid tags for `MetadataClassifier`; each entry becomes one System 1 `choice` when `settings.ai.systemOne.enabled` (#558; floor `ai.systemOne.confidenceFloor`, default 0.6; a category with >= 255 tags stays on the generative path) |
 | `internalLinkThreshold` | `number` | `0.3` | Min relevance score to include a link candidate |
 | `weights` | `EnrichmentWeightSettings` | see below | Proximity weight tiers for `computeProximityWeight` |
 | `enrichmentFolderPath` | `string` | `'.synapse/enrichments'` | Path to proposal JSON storage |

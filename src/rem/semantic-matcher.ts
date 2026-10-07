@@ -1,14 +1,34 @@
 import type { App, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { RemLinkCandidate, RemOccurrence } from './types';
-import { AIClient, isRecord, parseJson, getIncludedMarkdownFiles, redactError } from '../shared';
-import type { AIRequestOptions } from '../shared';
+import { AIClient, DecisionClient, isRecord, parseJson, getIncludedMarkdownFiles, redactError, score } from '../shared';
+import type { DecisionRequestOptions, ScoreAnswer, ScoreQuestion } from '../shared';
 
 /** One conceptual match the AI is expected to return, after validation. */
 interface SemanticMatch {
 	title: string;
 	matchedConcept: string;
 	confidence: number;
+}
+
+interface NoteTitle {
+	path: string;
+	title: string;
+}
+
+/** Ordered rubric for the System 1 relevance score; indexes 2-3 count as "related". */
+export const RELEVANCE_LEVELS = [
+	'Unrelated: the note shares no topic with the text',
+	'Tangential: the text only mentions the note\'s topic in passing',
+	'Related: the text discusses the topic the note covers',
+	'Strongly related: the note\'s topic is central to the text',
+];
+const RELATED_LEVEL_INDEXES = ['2', '3'];
+const CONTENT_MAX_CHARS = 4000;
+
+/** 0-1 relevance from a score distribution: the probability the title is at least "related". */
+export function relevanceFromScore(answer: ScoreAnswer): number {
+	return RELATED_LEVEL_INDEXES.reduce((sum, level) => sum + (answer.probabilities[level] ?? 0), 0);
 }
 
 /** Type guard: narrows an unknown array element to a {@link SemanticMatch}. */
@@ -31,12 +51,14 @@ function isSemanticMatch(v: unknown): v is SemanticMatch {
  */
 export class SemanticMatcher {
 	private aiClient: AIClient;
+	private decisionClient: DecisionClient;
 
 	constructor(
 		private app: App,
 		private getSettings: () => SynapseSettings
 	) {
 		this.aiClient = new AIClient(getSettings);
+		this.decisionClient = new DecisionClient(getSettings);
 	}
 
 	/**
@@ -53,22 +75,37 @@ export class SemanticMatcher {
 		content: string,
 		existingMatches: Set<string>,
 		maxLinks: number,
-		aiOpts?: AIRequestOptions
+		aiOpts?: DecisionRequestOptions
 	): Promise<RemLinkCandidate[]> {
 		const settings = this.getSettings().rem;
 
 		// Gather vault note titles (excluding self and already-matched)
-		const noteTitles: { path: string; title: string }[] = [];
+		const allTitles: NoteTitle[] = [];
 		for (const file of getIncludedMarkdownFiles(this.app, 'rem', this.getSettings())) {
 			if (file.path === sourceFile.path) continue;
 			if (existingMatches.has(file.path)) continue;
-			noteTitles.push({ path: file.path, title: file.basename });
+			allTitles.push({ path: file.path, title: file.basename });
 		}
 
-		if (noteTitles.length === 0) return [];
+		if (allTitles.length === 0) return [];
 
 		// Truncate content to avoid token limits
-		const truncatedContent = content.slice(0, 4000);
+		const truncatedContent = content.slice(0, CONTENT_MAX_CHARS);
+
+		// System 1 lane (#558): score every title first; only titles that clear the
+		// threshold reach the generative prompt, which then just locates the concept.
+		let noteTitles = allTitles;
+		let laneRelevance: Map<string, number> | null = null;
+		if (this.decisionClient.isEnabled()) {
+			laneRelevance = await this.scoreTitles(truncatedContent, allTitles, aiOpts);
+			if (laneRelevance) {
+				aiOpts?.onSystemOne?.();
+				const relevance = laneRelevance;
+				noteTitles = allTitles.filter(n => (relevance.get(n.path) ?? 0) >= settings.confidenceThreshold);
+				if (noteTitles.length === 0) return [];
+			}
+		}
+
 		const titleList = noteTitles.map(n => n.title).join('\n');
 
 		const systemPrompt =
@@ -115,11 +152,13 @@ export class SemanticMatcher {
 		const lines = content.split('\n');
 
 		for (const item of parsed) {
-			if (item.confidence < settings.confidenceThreshold) continue;
-
 			// Find the target note
 			const target = noteTitles.find(n => n.title === item.title);
 			if (!target) continue;
+
+			// Lane relevance is calibrated; the model's self-reported confidence is used only without the lane.
+			const confidence = laneRelevance?.get(target.path) ?? item.confidence;
+			if (confidence < settings.confidenceThreshold) continue;
 
 			// Locate the matched concept in the text
 			const occurrences = this.findConcept(item.matchedConcept, lines);
@@ -130,7 +169,7 @@ export class SemanticMatcher {
 				matchedText: item.matchedConcept,
 				matchType: 'semantic',
 				occurrences,
-				confidence: item.confidence,
+				confidence,
 			});
 		}
 
@@ -138,6 +177,32 @@ export class SemanticMatcher {
 		candidates.sort((a, b) => b.confidence - a.confidence);
 
 		return candidates.slice(0, maxLinks);
+	}
+
+	/** One `score` per title over {@link RELEVANCE_LEVELS}; `null` on any lane error so the caller runs the generative path. */
+	private async scoreTitles(
+		content: string,
+		noteTitles: NoteTitle[],
+		aiOpts?: DecisionRequestOptions
+	): Promise<Map<string, number> | null> {
+		const questions: Record<string, ScoreQuestion> = {};
+		noteTitles.forEach((note, index) => {
+			questions[`t${index}`] = score(
+				`How related is the note titled "${note.title}" to the topics discussed in the text?`,
+				RELEVANCE_LEVELS
+			);
+		});
+		try {
+			const { answers } = await this.decisionClient.decide(content, questions, aiOpts);
+			const relevance = new Map<string, number>();
+			noteTitles.forEach((note, index) => {
+				relevance.set(note.path, relevanceFromScore(answers[`t${index}`]));
+			});
+			return relevance;
+		} catch (error) {
+			console.warn('[Synapse REM] System 1 title scoring failed; using the generative path:', redactError(error));
+			return null;
+		}
 	}
 
 	/**

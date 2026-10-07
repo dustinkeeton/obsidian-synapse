@@ -42,10 +42,12 @@ interface MockFileManager {
  * source. The real DirectoryMatcher, OrganizeStore, and `vault.rename` mover all
  * run, so this confirms the production organize → intake contract end-to-end:
  *
- *   1. High-confidence note with a matching directory → organize's `vault.rename`
- *      moves it out of Inbox (mutating `TFile.path` IN PLACE) → intake detects
- *      the move (originalPath !== file.path) → breadcrumb written → the
- *      `moveWhenDone` fallback is NOT applied (no double move).
+ *   1. High-confidence note with a matching directory and organize auto-accept
+ *      ON → organize's `vault.rename` moves it out of Inbox (mutating
+ *      `TFile.path` IN PLACE) → intake detects the move (originalPath !==
+ *      file.path) → breadcrumb written → the `moveWhenDone` fallback is NOT
+ *      applied (no double move). With auto-accept OFF the same note yields a
+ *      pending move proposal and the fallback relocates it.
  *   2. Low-confidence note → organize keeps it in Inbox (no-op / would-be
  *      proposal) → with no `moveWhenDone`, the note stays put and NO breadcrumb
  *      is written; with `moveWhenDone` set, intake's fallback relocates it.
@@ -262,7 +264,7 @@ describe('intake → real organize handshake (#227)', () => {
 				registrar: new CommandRegistrar(plugin),
 				noteQueue: new NoteOperationQueue(),
 			}),
-			() => false // auto-accept off (default): a proposal never moves the note
+			() => settings.autoAccept.organize // off by default: a proposal never moves the note
 		);
 		await organize.onload();
 
@@ -304,9 +306,25 @@ describe('intake → real organize handshake (#227)', () => {
 		beforeEach(async () => {
 			await setup(['Inbox', 'Machine Learning']);
 			// Confidence 0.95 (≥ 0.9) + an exact existing-directory match → the
-			// real DirectoryMatcher scores a direct move out of Inbox.
+			// real DirectoryMatcher scores a move out of Inbox, which organize
+			// proposes and (auto-accept on) applies immediately.
+			settings.autoAccept.organize = true;
 			ai.topics = [{ label: 'machine learning', confidence: 0.95 }];
 			ai.tags = ['#machine-learning'];
+		});
+
+		it('with auto-accept off, organize proposes the move and the moveWhenDone fallback relocates the note', async () => {
+			settings.autoAccept.organize = false;
+			settings.intake.moveWhenDone = 'Processed';
+
+			emit('create', 'Inbox/note.md', 'A deep dive into neural networks and gradient descent.');
+			await flushDebounce();
+
+			expect(vault.rename).not.toHaveBeenCalled();
+			const pending = await organize.getPendingProposals();
+			expect(pending).toEqual([expect.objectContaining({ sourceNotePath: 'Inbox/note.md', proposedDirectory: 'Machine Learning', proposalKind: 'move' })]);
+			expect(fileManager.renameFile).toHaveBeenCalledWith(expect.anything(), 'Processed/note.md');
+			expect(store.has('Processed/note.md')).toBe(true);
 		});
 
 		it('moves the note out of Inbox via organize, writes a breadcrumb, applies NO fallback', async () => {
@@ -393,6 +411,7 @@ describe('intake → real organize handshake (#227)', () => {
 	describe('TFile.path in-place mutation against the real organize module', () => {
 		it('mutates the SAME TFile object in place when organize moves it', async () => {
 			await setup(['Inbox', 'Machine Learning']);
+			settings.autoAccept.organize = true;
 			ai.topics = [{ label: 'machine learning', confidence: 0.95 }];
 			ai.tags = ['#machine-learning'];
 

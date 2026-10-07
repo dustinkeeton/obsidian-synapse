@@ -102,6 +102,22 @@ export const TRANSCRIPTION_MODEL_OPTIONS: Record<TranscriptionProvider, Record<s
 	'local-whisper': {},
 };
 
+/** Jev model ids verified against docs.typesafe.ai/models (2026-10-06). */
+export const SYSTEM_ONE_MODEL_OPTIONS: Record<string, string> = {
+	'jev-latest': 'Jev (latest)',
+	'jev-1.13.0': 'Jev 1.13.0',
+	'jev-preview': 'Jev (preview)',
+};
+
+/** System 1 decision lane (#558): TypeSafe Jev for classification seats; off by default because note text leaves the vault. */
+export interface SystemOneSettings {
+	enabled: boolean;
+	apiKey: string;
+	model: string;
+	/** Default routing floor (0-1) for seats without their own threshold. */
+	confidenceFloor: number;
+}
+
 export interface AISettings {
 	provider: AIProvider;
 	apiKey: string;
@@ -116,6 +132,7 @@ export interface AISettings {
 	 * caching to any temperature. "Regenerate" actions always bypass the cache.
 	 */
 	cacheResponses: boolean;
+	systemOne: SystemOneSettings;
 }
 
 export interface DetectionSettings {
@@ -254,7 +271,7 @@ export interface OrganizeSettings {
 	proposalFolderPath: string;
 	snapshotFolderPath: string;
 	excludeTags: string[];
-	/** Minimum topic confidence required to propose a new directory (0-1). */
+	/** Confidence required before a new directory is proposed, in both lanes (0-1); never the floor for picking an existing one. */
 	organizeConfidenceThreshold: number;
 }
 
@@ -452,6 +469,12 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		maxTokens: 2048,
 		temperature: 0.7,
 		cacheResponses: false,
+		systemOne: {
+			enabled: false,
+			apiKey: '',
+			model: 'jev-latest',
+			confidenceFloor: 0.6,
+		},
 	},
 	elaboration: {
 		enabled: true,

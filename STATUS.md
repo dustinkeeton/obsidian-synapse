@@ -2,7 +2,7 @@
 
 **Last updated**: 2026-10-06
 **Version**: 1.2.0 (released 2026-09-17)
-**Health**: Green — `tsc` clean, **2716/2716 tests passing (196 files)**, lint clean, dependency graph acyclic, no critical/high security findings. The 2026-10-06 audit closed six defense-in-depth gaps, none exploitable on its own.
+**Health**: Green — `tsc` clean, **2808/2808 tests passing (204 files)**, lint clean, dependency graph acyclic, no critical/high security findings. The 2026-10-06 audit closed six defense-in-depth gaps, none exploitable on its own.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
@@ -10,6 +10,7 @@
 
 - **25 modules** under `src/` (including the thin `settings-ui/`, `onboarding/`, `brand-icons/`, `changelog/`, and `properties-fold/` folders) plus top-level `main.ts` (302 lines — lifecycle glue only; `modules/registry.ts` constructs, loads, and unloads every feature with one `ModuleDeps` bundle first) and `settings.ts`. **New since 1.2.0: `illustrate/`** (#213).
 - **1.2.0 (2026-09-17)**: media with no speech writes nothing and says so (#524); every finish message reports when a cached transcript or AI response was used, and "Fetch a fresh transcript" bypasses the AI cache too (#527); per-note buttons in the actions sidebar run on the first click (#352).
+- **Unreleased — System 1 decision lane (#558)**: tag vocabulary, directory placement, and REM title scoring can ask TypeSafe's Jev model first (typed `choice`/`score` questions over options Synapse already holds, calibrated confidence) and fall back to the generative prompt below the floor; opt-in via `ai.systemOne` because note text leaves the vault; finish notices say when the lane decided. The frontmatter-attribute seat is a follow-up. **Organize never moves a note without a proposal** (moves into existing folders are now `move` proposals; only `autoAccept.organize` applies them), the placement lane describes folders by their notes and can answer "keep" / "none", and a new **Undo last organize run** command reverts a whole run through `vault.rename`.
 - **Unreleased — merged 2026-10-06**: **Illustrate** proposes licensed photos from Wikimedia Commons / Openverse, opt-in because search terms leave the vault (#213), with Mermaid diagrams and charts behind a second opt-in (#549); **accepting an elaboration replaces the note body in place** under byte-for-byte frontmatter (#552); **callouts are written as native base types** — `[!quote|synapse-transcription]` — so theme styling applies (#554); a dev build shows a banner in settings (#542); URL extraction keeps balanced parentheses (#543); link-only notes stay out of combined summaries (#544); the audit pass enforced module boundaries (per-call `model` override, `AudioClipper`, deep-dive ← organize by injection) and hardened input/workflow seams.
 - **Fire Synapse pipeline** runs elaboration → summarize → enrichment → REM → illustrate → tidy → organize; the **intake folder** auto-feeds it. All proposals land in one **unified proposal sidebar**; a **Synapse actions sidebar** (#289) gives touch-friendly buttons.
 
@@ -41,7 +42,7 @@
 ## Current Focus
 
 - **Audit pass (2026-10-06, branch `chore/audit-2026-10-06`)** — architecture refactor (`254ad5d`) and security hardenings (`cabbc2a`) landed; machine docs and these human docs regrounded in the same pass. The interactive system diagram now lives at `docs/diagrams/synapse-system.html`.
-- **Open follow-ups**: self-hosted extraction tier for non-YouTube URLs on mobile (#181, ADR 001 accepted; #182 override + connectivity status); holistic UX review (#465); operation-toast cancel progress (#269).
+- **Open follow-ups**: frontmatter attribute suggestions through the System 1 lane (follow-up to #558); live before/after cost measurement of the lane on a real vault; self-hosted extraction tier for non-YouTube URLs on mobile (#181, ADR 001 accepted; #182 override + connectivity status); holistic UX review (#465); operation-toast cancel progress (#269).
 
 ## Security Posture
 
@@ -51,7 +52,8 @@
 - **Subprocesses** use `execFile` with argument arrays, an allowlisted env, and `--` before every URL positional (download and duration probe); the dependency probe runs the configured tool path through `sanitizePath`; clipped-audio temp files are removed on every exit path. **Node access** is behind `assertDesktop()`/`loadNodeModules()` so `isDesktopOnly: false` stays mobile-safe.
 - **Outbound URLs are scheme-checked**: Illustrate writes only `http:`/`https:` provider URLs into a note; a Reddit share page can only redirect the follow-up fetch to Reddit. Illustrate sends an AI-proposed search query, never note text, and is off by default.
 - **Release workflows** take tag/version strings through `env` with a strict `X.Y.Z` check instead of interpolating expressions into the shell.
-- **Every outbound request has a timeout** (AI 2 min; captions, fetchers, Illustrate search and download 30 s; credential probes and update check 10 s), so a stalled host can never hang a scan.
+- **Every outbound request has a timeout** (AI and System 1 decisions 2 min; captions, fetchers, Illustrate search and download 30 s; credential probes and update check 10 s), so a stalled host can never hang a scan.
+- **System 1 lane is opt-in** (#558): off by default because note text is sent to TypeSafe; it runs inside the same seat code paths, so every exclusion rule applies, and it can only choose among options the vault already has.
 - **Fetched content is fenced** against prompt injection (`wrapUntrusted`, #398), including elaboration's related-notes block (#500) and the note Illustrate analyzes.
 - **Accepted risk**: `sanitizeUrl` permits arbitrary hosts (author-supplied URLs in the user's own vault).
 - **Not yet wired**: `ensureWithinVault` exists but is not enforced on write paths.
@@ -87,5 +89,5 @@
 |---------|---------|
 | `npm run dev` | esbuild watch (development; stamps the dev-build banner, #542) |
 | `npm run build` | `tsc -noEmit -skipLibCheck` + esbuild production bundle |
-| `npm test` | Vitest — **2716/2716 passing** (196 files) |
+| `npm test` | Vitest — **2808/2808 passing** (204 files) |
 | `npm run lint` | ESLint — `obsidianmd/*` store-review mirror + `synapse/no-unredacted-console` (#418) |

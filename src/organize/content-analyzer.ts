@@ -1,8 +1,16 @@
 import { App, TFile, getAllTags } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, isRecord, parseFrontmatter, parseJson, sanitizeAIResponse, withRetry } from '../shared';
-import type { AIRequestOptions } from '../shared';
-import { ContentAnalysis, NoteTopic } from './types';
+import { AIClient, isRecord, parseFrontmatter, parseJson, redactError, sanitizeAIResponse, withRetry } from '../shared';
+import type { AIRequestOptions, DecisionLane, DecisionRequestOptions } from '../shared';
+import { PlacementDecider } from './placement-decider';
+import { ContentAnalysis, NoteTopic, Placement } from './types';
+
+/** The System 1 lane's answer (when it ran) plus the generative topics (empty when the lane placed the note). */
+export interface ResolvedPlacement {
+	topics: NoteTopic[];
+	placement?: Placement;
+	lane: DecisionLane;
+}
 
 const SYSTEM_PROMPT = `You are a note organization assistant. Given the content of a note, determine its primary topics/categories.
 
@@ -27,19 +35,22 @@ Example output:
  */
 export class ContentAnalyzer {
 	private aiClient: AIClient;
+	private placement: PlacementDecider;
 
 	constructor(
 		private app: App,
-		private getSettings: () => SynapseSettings
+		private getSettings: () => SynapseSettings,
+		placement?: PlacementDecider
 	) {
 		this.aiClient = new AIClient(getSettings);
+		this.placement = placement ?? new PlacementDecider(app, getSettings);
 	}
 
 	/**
 	 * Analyze a note's content to determine its topical categories.
 	 * Combines AI topic extraction with existing metadata signals.
 	 */
-	async analyze(file: TFile, aiOpts?: AIRequestOptions): Promise<ContentAnalysis> {
+	async analyze(file: TFile, aiOpts?: DecisionRequestOptions): Promise<ContentAnalysis> {
 		const content = await this.app.vault.read(file);
 		const parsed = parseFrontmatter(content);
 
@@ -48,15 +59,44 @@ export class ContentAnalyzer {
 		const existingTags = cache ? (getAllTags(cache) || []) : [];
 		const existingLinks = this.getOutgoingLinks(file);
 
-		// Extract topics from content via AI
-		const topics = await this.extractTopics(parsed.body, existingTags, aiOpts);
+		const currentDir = file.parent?.path && !file.parent.isRoot() ? file.parent.path : parentPath(file.path);
+		const { topics, placement, lane } = await this.resolvePlacement(parsed.body, existingTags, currentDir, aiOpts);
 
 		return {
 			notePath: file.path,
 			topics,
 			tags: existingTags,
 			links: existingLinks,
+			lane,
+			...(placement ? { placement } : {}),
 		};
+	}
+
+	/**
+	 * System 1 placement first (#558): an `existing` or `keep` answer is the
+	 * result with no generative call; `new-directory` and `undecided` run
+	 * {@link extractTopics} and carry the lane's answer so `determineAction`
+	 * can allow or forbid a new folder. Lane off or any lane error: topics only.
+	 * `currentDir` is the note's folder (`''` for the vault root or free text).
+	 */
+	async resolvePlacement(body: string, tags: string[], currentDir: string, aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement> {
+		const placement = await this.decidePlacement(body, tags, currentDir, aiOpts);
+		if (placement?.kind === 'existing' || placement?.kind === 'keep') {
+			aiOpts?.onSystemOne?.();
+			return { topics: [], placement, lane: 'system-one' };
+		}
+		const topics = await this.extractTopics(body, tags, aiOpts);
+		return { topics, lane: 'system-two', ...(placement ? { placement } : {}) };
+	}
+
+	private async decidePlacement(body: string, tags: string[], currentDir: string, aiOpts?: DecisionRequestOptions): Promise<Placement | null> {
+		if (!this.placement.isAvailable()) return null;
+		try {
+			return await this.placement.decide(body, tags, currentDir, aiOpts);
+		} catch (error) {
+			console.warn('[Synapse] System 1 lane failed (organize placement); using the generative path:', redactError(error));
+			return null;
+		}
 	}
 
 	/**
@@ -173,4 +213,9 @@ export class ContentAnalyzer {
 		}
 		return paths;
 	}
+}
+
+function parentPath(filePath: string): string {
+	const lastSlash = filePath.lastIndexOf('/');
+	return lastSlash === -1 ? '' : filePath.slice(0, lastSlash);
 }

@@ -1,5 +1,34 @@
 export { AIClient, extractGeminiResponseText } from './ai-client';
 export type { AIRequestOptions } from './ai-client';
+export { safeRequest, ApiRequestError, DEFAULT_REQUEST_TIMEOUT_MS } from './safe-request';
+export {
+	DecisionClient,
+	DecisionLaneError,
+	choice,
+	score,
+	noul,
+	answerConfidence,
+	chunkQuestions,
+	estimateTokens,
+	SYSTEM_ONE_ENDPOINT,
+	MAX_CHOICE_OPTIONS,
+} from './decision-client';
+export type {
+	DecisionQuestion,
+	ChoiceQuestion,
+	ScoreQuestion,
+	NoulQuestion,
+	DecisionAnswer,
+	ChoiceAnswer,
+	ScoreAnswer,
+	NoulAnswer,
+	DecisionResult,
+	DecisionUsage,
+	DecisionRequestOptions,
+	DecisionLaneFailure,
+} from './decision-client';
+export { routeByConfidence, partitionByConfidence } from './confidence-router';
+export type { DecisionLane, RoutedDecision, ConfidenceRoute, ConfidencePartition } from './confidence-router';
 export type { ChatMessage, ContentBlock, TextContentBlock, ImageContentBlock } from './types';
 export {
 	withRetry,

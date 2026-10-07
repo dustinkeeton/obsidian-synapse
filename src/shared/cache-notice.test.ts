@@ -46,8 +46,8 @@ describe('cache use helpers', () => {
 	});
 
 	it('mergeCacheUse ORs each cache across uses', () => {
-		expect(mergeCacheUse([{ ai: true }, { transcript: true }, {}])).toEqual({ transcript: true, ai: true });
-		expect(mergeCacheUse([{}, {}])).toEqual({ transcript: false, ai: false });
+		expect(mergeCacheUse([{ ai: true }, { transcript: true }, {}])).toEqual({ transcript: true, ai: true, systemOne: false });
+		expect(mergeCacheUse([{}, {}])).toEqual({ transcript: false, ai: false, systemOne: false });
 	});
 
 	it('transcriptCacheUse maps the routed transcript flags', () => {
@@ -62,5 +62,41 @@ describe('cache use helpers', () => {
 		expect(use.ai).toBeUndefined();
 		opts.onCacheHit?.();
 		expect(use.ai).toBe(true);
+	});
+});
+
+describe('System 1 lane attribution (#558)', () => {
+	it('trackAiCache flips systemOne when the lane reports a decision', () => {
+		const use: CacheUse = {};
+		const opts = trackAiCache(use);
+		opts.onSystemOne?.();
+		expect(use).toEqual({ systemOne: true });
+		expect(usedCache(use)).toBe(false);
+	});
+
+	it('names the lane for a single result', () => {
+		expect(withCacheReport('Enrichment proposal created', [{ systemOne: true }])).toBe(
+			'Enrichment proposal created — decided by the System 1 lane'
+		);
+	});
+
+	it('names both a cache hit and the lane for a single result', () => {
+		expect(withCacheReport('Done', [{ ai: true, systemOne: true }])).toBe(
+			'Done — used a cached AI response; decided by the System 1 lane'
+		);
+	});
+
+	it('aggregates cache hits and lane decisions separately', () => {
+		const items: CacheUse[] = [{ systemOne: true }, { ai: true, systemOne: true }, {}, { ai: true }];
+		expect(withCacheReport('Generated 4 proposals', items, 'note')).toBe(
+			'Generated 4 proposals — 2 of 4 notes served from cache; 2 of 4 notes decided by the System 1 lane'
+		);
+		expect(withCacheReport('Scan complete', [{ systemOne: true }, {}], 'note')).toBe(
+			'Scan complete — 1 of 2 notes decided by the System 1 lane'
+		);
+	});
+
+	it('mergeCacheUse folds the lane flag', () => {
+		expect(mergeCacheUse([{}, { systemOne: true }])).toEqual({ transcript: false, ai: false, systemOne: true });
 	});
 });

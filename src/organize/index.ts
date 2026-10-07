@@ -5,18 +5,24 @@ import {
 	getMarkdownFiles, NotificationManager, ensureFolder,
 	writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
-	trackAiCache, withCacheReport,
+	trackAiCache, withCacheReport, ConfirmModal, sleep,
 } from '../shared';
-import type { AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DecisionRequestOptions, DeferredTask, ModuleDeps, FeatureModule, OperationHandle } from '../shared';
 import type { MoveRecord } from '../shared';
+import { describeRun, emptyTally, tallyResult } from './run-summary';
+import type { RunTally } from './run-summary';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
+import { PlacementDecider } from './placement-decider';
 import { canonicalKey, isFuzzyMatch } from './folder-normalize';
 import { OrganizeStore } from './organize-store';
-import { OrganizeAction, OrganizeProposal, OrganizeResult, OrganizeSnapshot } from './types';
+import { buildUndoSummaryPath, generateUndoSummary, selectLastRun } from './undo-run';
+import type { SkippedRevert } from './undo-run';
+import { ContentAnalysis, OrganizeAction, OrganizeProposal, OrganizeResult, OrganizeSnapshot } from './types';
 
 export type {
 	OrganizeProposal,
+	OrganizeProposalKind,
 	OrganizeSnapshot,
 	OrganizeResult,
 	ContentAnalysis,
@@ -24,6 +30,12 @@ export type {
 	NoteTopic,
 	OrganizeAction,
 	OrganizeProposalStatus,
+	Placement,
+	PlacementKind,
+	ExistingPlacement,
+	NewDirectoryPlacement,
+	KeepPlacement,
+	UndecidedPlacement,
 } from './types';
 /** Score floor for `suggestDirectory`; below it the caller keeps its own default placement. */
 const SUGGEST_DIRECTORY_MIN_SCORE = 0.6;
@@ -59,14 +71,15 @@ export class OrganizeModule implements FeatureModule {
 		this.registrar = deps.registrar;
 		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
-		this.analyzer = new ContentAnalyzer(deps.plugin.app, deps.getSettings);
+		this.analyzer = new ContentAnalyzer(deps.plugin.app, deps.getSettings, new PlacementDecider(deps.plugin.app, deps.getSettings));
 		this.matcher = new DirectoryMatcher(deps.plugin.app);
 		this.store = new OrganizeStore(deps.plugin.app, deps.getSettings);
 	}
 
-	/** Best existing folder for free text by topic match, or null when nothing clears the score floor; wired into deep-dive by the module registry. */
-	async suggestDirectory(text: string, aiOpts?: AIRequestOptions): Promise<string | null> {
-		const topics = await this.analyzer.extractTopics(text, [], aiOpts);
+	/** Best existing folder for free text — a System 1 majority placement, else topic match — or null when nothing clears the score floor; wired into deep-dive by the module registry. */
+	async suggestDirectory(text: string, aiOpts?: DecisionRequestOptions): Promise<string | null> {
+		const { topics, placement } = await this.analyzer.resolvePlacement(text, [], '', aiOpts);
+		if (placement?.kind === 'existing') return placement.directoryPath;
 		if (topics.length === 0) return null;
 		const scores = this.matcher.scoreDirectories({ notePath: '', topics, tags: [], links: [] });
 		return scores.length > 0 && scores[0].score >= SUGGEST_DIRECTORY_MIN_SCORE ? scores[0].directoryPath : null;
@@ -98,6 +111,12 @@ export class OrganizeModule implements FeatureModule {
 				}
 			},
 		});
+
+		this.registrar.register('undo-organize-run', this.getSettings().organize.enabled, {
+			callback: () => {
+				fireAndForget(this.undoOrganizeRun(), 'Undo last organize run', { notifications: this.notifications });
+			},
+		});
 	}
 
 	onunload(): void {}
@@ -117,11 +136,7 @@ export class OrganizeModule implements FeatureModule {
 			'organize-resume'
 		);
 
-		let movedCount = 0;
-		let proposalCount = 0;
-		let autoAcceptedCount = 0;
-		let errorCount = 0;
-		const moveRecords: MoveRecord[] = [];
+		const tally = emptyTally();
 		const cacheUses: CacheUse[] = [];
 		// Coalesce new-directory proposals within this resumed run (#172).
 		const batchProposedDirs = new Map<string, string>();
@@ -144,23 +159,12 @@ export class OrganizeModule implements FeatureModule {
 					const cacheUse: CacheUse = {};
 					const result = await this.noteQueue.run(
 						file.path,
-						() => this.organizeFile(file, true, batchProposedDirs, cacheUse)
+						() => this.organizeFile(file, checkpoint.id, true, batchProposedDirs, cacheUse)
 					);
 					cacheUses.push(cacheUse);
-
-					if (result) {
-						if (result.movedDirectly && result.action.type === 'move') {
-							movedCount++;
-							const newPath = normalizePath(
-								`${result.action.targetDirectory}/${file.name}`
-							);
-							moveRecords.push({ originalPath, newPath });
-						}
-						if (result.proposalCreated) proposalCount++;
-						if (result.autoAccepted) autoAcceptedCount++;
-					}
+					tallyResult(tally, result, originalPath);
 				} catch (error) {
-					errorCount++;
+					tally.errors++;
 					const msg = error instanceof Error ? error.message : String(error);
 					console.warn(`[Synapse] Failed to organize ${file.path}: ${msg}`);
 				}
@@ -181,42 +185,42 @@ export class OrganizeModule implements FeatureModule {
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
 
-		const parts: string[] = [];
-		if (movedCount > 0) parts.push(`${movedCount} moved`);
-		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
-		if (errorCount > 0) parts.push(`${errorCount} failed`);
-		// Review action only when a new-directory proposal was generated AND
-		// organize auto-accept is off (#366) — the deep-dive rule, centralized.
+		await this.reportRun(genOp, tally, cacheUses, 'Resumed -- ');
+	}
+
+	/** Finish notice, auto-accept summary note, and view refresh shared by scan and resume. */
+	private async reportRun(genOp: OperationHandle, tally: RunTally, cacheUses: CacheUse[], prefix = ''): Promise<void> {
+		// Review action only when a proposal stays pending, i.e. organize auto-accept is off (#366).
 		genOp.finish(
-			withCacheReport(`Resumed -- ${parts.length > 0 ? parts.join(', ') : 'no changes needed'}`, cacheUses, 'note'),
+			withCacheReport(`${prefix}${describeRun(tally)}`, cacheUses, 'note'),
 			reviewAction({
-				generated: proposalCount > 0,
+				generated: tally.proposals > 0,
 				shouldAutoAccept: this.shouldAutoAccept,
 				openProposalView: this.onOpenProposalView,
 			})
 		);
 
-		if (moveRecords.length > 0) {
-			const summaryPath = await this.writeOrganizeSummary(moveRecords);
+		if (tally.moveRecords.length > 0) {
+			const summaryPath = await this.writeOrganizeSummary(tally.moveRecords);
 			if (summaryPath) {
 				this.notifications.info(`Organize summary saved to ${summaryPath}`);
 			}
 		}
 
-		if (autoAcceptedCount > 0) {
+		if (tally.autoAccepted > 0) {
 			this.notifications.info(
-				`Auto-accepted ${autoAcceptedCount} organize proposal${autoAcceptedCount === 1 ? '' : 's'} (notes moved)`
+				`Auto-accepted ${tally.autoAccepted} organize proposal${tally.autoAccepted === 1 ? '' : 's'} (notes moved)`
 			);
 		}
 
-		if (proposalCount > 0) {
+		if (tally.proposals > 0) {
 			await this.onViewRefreshNeeded?.();
 		}
 	}
 
 	/**
-	 * Organize a single note. Analyzes content, determines best directory,
-	 * and either moves directly or creates a proposal for new directories.
+	 * Organize a single note. Analyzes content, determines the best directory,
+	 * and proposes the relocation (moved at once only under organize auto-accept).
 	 */
 	async organizeNote(file: TFile): Promise<OrganizeResult | null> {
 		if (this.isExcluded(file)) {
@@ -238,7 +242,7 @@ export class OrganizeModule implements FeatureModule {
 		try {
 			const result = await this.noteQueue.run(
 				file.path,
-				() => this.organizeFile(file, false, undefined, cacheUse),
+				() => this.organizeFile(file, generateId(), false, undefined, cacheUse),
 				{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
 			);
 
@@ -247,13 +251,16 @@ export class OrganizeModule implements FeatureModule {
 				return null;
 			}
 
-			if (result.movedDirectly) {
-				op.finish(withCacheReport(`Moved to ${result.action.type === 'move' ? result.action.targetDirectory : ''}`, [cacheUse]));
+			if (result.autoAccepted) {
+				op.finish(withCacheReport(`Moved to ${result.action.targetDirectory}`, [cacheUse]));
 			} else if (result.proposalCreated) {
 				// Review action only when the proposal stays pending — organize
 				// auto-accept moves the note, leaving nothing to review (#366).
 				op.finish(
-					withCacheReport('Proposal created for new directory', [cacheUse]),
+					withCacheReport(
+						result.action.type === 'move' ? `Proposed move to ${result.action.targetDirectory}` : 'Proposal created for new directory',
+						[cacheUse]
+					),
 					reviewAction({
 						generated: true,
 						shouldAutoAccept: this.shouldAutoAccept,
@@ -331,11 +338,7 @@ export class OrganizeModule implements FeatureModule {
 			'organize-generate'
 		);
 
-		let movedCount = 0;
-		let proposalCount = 0;
-		let autoAcceptedCount = 0;
-		let errorCount = 0;
-		const moveRecords: MoveRecord[] = [];
+		const tally = emptyTally();
 		const cacheUses: CacheUse[] = [];
 		// Coalesce new-directory proposals within this scan so variants like
 		// "model"/"models" resolve to a single folder (#172). Maps a canonical
@@ -370,23 +373,12 @@ export class OrganizeModule implements FeatureModule {
 				const cacheUse: CacheUse = {};
 				const result = await this.noteQueue.run(
 					eligible[i].path,
-					() => this.organizeFile(eligible[i], true, batchProposedDirs, cacheUse)
+					() => this.organizeFile(eligible[i], checkpoint.id, true, batchProposedDirs, cacheUse)
 				);
 				cacheUses.push(cacheUse);
-
-				if (result) {
-					if (result.movedDirectly && result.action.type === 'move') {
-						movedCount++;
-						const newPath = normalizePath(
-							`${result.action.targetDirectory}/${eligible[i].name}`
-						);
-						moveRecords.push({ originalPath, newPath });
-					}
-					if (result.proposalCreated) proposalCount++;
-					if (result.autoAccepted) autoAcceptedCount++;
-				}
+				tallyResult(tally, result, originalPath);
 			} catch (error) {
-				errorCount++;
+				tally.errors++;
 				const msg = error instanceof Error ? error.message : String(error);
 				console.warn(`[Synapse] Failed to organize ${eligible[i].path}: ${msg}`);
 			}
@@ -402,59 +394,27 @@ export class OrganizeModule implements FeatureModule {
 			// Discard checkpoint on user cancellation (C3)
 			await this.checkpointManager.discard(checkpoint.id);
 			this.notifications.info('Organization cancelled');
-			return movedCount + proposalCount;
+			return tally.proposals;
 		}
 
 		// Mark checkpoint completed and dispatch deferred tasks (I1)
 		const tasks = await this.checkpointManager.complete(checkpoint.id);
 		this.dispatchDeferredTasks(tasks);
 
-		const parts: string[] = [];
-		if (movedCount > 0) parts.push(`${movedCount} moved`);
-		if (proposalCount > 0) parts.push(`${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`);
-		if (errorCount > 0) parts.push(`${errorCount} failed`);
-		// Review action only when a new-directory proposal was generated AND
-		// organize auto-accept is off (#366) — the deep-dive rule, centralized.
-		genOp.finish(
-			withCacheReport(parts.length > 0 ? parts.join(', ') : 'No changes needed', cacheUses, 'note'),
-			reviewAction({
-				generated: proposalCount > 0,
-				shouldAutoAccept: this.shouldAutoAccept,
-				openProposalView: this.onOpenProposalView,
-			})
-		);
+		await this.reportRun(genOp, tally, cacheUses);
 
-		// Generate organize summary with move diagram
-		if (moveRecords.length > 0) {
-			const summaryPath = await this.writeOrganizeSummary(moveRecords);
-			if (summaryPath) {
-				this.notifications.info(
-					`Organize summary saved to ${summaryPath}`
-				);
-			}
-		}
-
-		if (autoAcceptedCount > 0) {
-			this.notifications.info(
-				`Auto-accepted ${autoAcceptedCount} organize proposal${autoAcceptedCount === 1 ? '' : 's'} (notes moved)`
-			);
-		}
-
-		if (proposalCount > 0) {
-			await this.onViewRefreshNeeded?.();
-		}
-
-		return movedCount + proposalCount;
+		return tally.proposals;
 	}
 
 	/**
-	 * Accept a proposal: create the new directory and move the note.
+	 * Accept a proposal: ensure the target directory exists (created for
+	 * `'new-directory'`, already present for `'move'`) and move the note.
 	 *
 	 * `options.silent` suppresses the success / summary-path Notices and the
 	 * view refresh; used by batch auto-accept so callers emit one summary
 	 * Notice and refresh once. (Error and "cannot move" Notices still fire.)
 	 */
-	async acceptProposal(id: string, options?: { silent?: boolean }): Promise<void> {
+	async acceptProposal(id: string, options?: { silent?: boolean; runId?: string }): Promise<void> {
 		const queued = await this.store.loadProposal(id);
 		if (!queued) {
 			this.notifications.info('Proposal not found');
@@ -465,7 +425,7 @@ export class OrganizeModule implements FeatureModule {
 	}
 
 	/** Queue-free core of acceptProposal; runs holding the note's queue slot (#483). */
-	private async applyAccept(id: string, options?: { silent?: boolean }): Promise<void> {
+	private async applyAccept(id: string, options?: { silent?: boolean; runId?: string; file?: TFile }): Promise<void> {
 		const proposal = await this.store.loadProposal(id);
 		if (!proposal) return;
 		// Guard against double-acceptance (cascade safety): only act on a
@@ -476,8 +436,10 @@ export class OrganizeModule implements FeatureModule {
 			// Create the new directory
 			await ensureFolder(this.plugin.app, proposal.proposedDirectory);
 
-			// Move the note
-			const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
+			// Callers that already hold the live TFile pass it so the rename mutates their instance.
+			const file = options?.file?.path === proposal.sourceNotePath
+				? options.file
+				: this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 			if (!(file instanceof TFile)) {
 				this.notifications.info('Source note no longer exists');
 				await this.store.updateProposalStatus(id, 'rejected');
@@ -503,6 +465,7 @@ export class OrganizeModule implements FeatureModule {
 				currentPath: newPath,
 				originalPath: file.path,
 				movedAt: new Date().toISOString(),
+				runId: options?.runId ?? generateId(),
 			};
 			await this.store.saveSnapshot(snapshot);
 
@@ -511,13 +474,12 @@ export class OrganizeModule implements FeatureModule {
 
 			await this.store.updateProposalStatus(id, 'accepted');
 
-			// Generate organize summary with move diagram
-			const moveRecords: MoveRecord[] = [
-				{ originalPath: file.path, newPath },
-			];
-			const summaryPath = await this.writeOrganizeSummary(moveRecords);
-
+			// Batch callers write one summary for the whole run.
 			if (!options?.silent) {
+				const moveRecords: MoveRecord[] = [
+					{ originalPath: file.path, newPath },
+				];
+				const summaryPath = await this.writeOrganizeSummary(moveRecords);
 				this.notifications.success(`Moved to ${proposal.proposedDirectory}`);
 				if (summaryPath) {
 					this.notifications.info(
@@ -539,10 +501,10 @@ export class OrganizeModule implements FeatureModule {
 	 *
 	 * `batch` suppresses the per-proposal Notice (caller emits a summary).
 	 */
-	private async maybeAutoAccept(proposalId: string, batch = false): Promise<boolean> {
+	private async maybeAutoAccept(proposalId: string, file: TFile, runId: string, batch = false): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
 		// Callers already hold the note's queue slot (#483), so apply directly.
-		await this.applyAccept(proposalId, { silent: batch });
+		await this.applyAccept(proposalId, { silent: batch, runId, file });
 		if (!batch) {
 			this.notifications.info('Auto-accepted organize proposal');
 		}
@@ -590,12 +552,87 @@ export class OrganizeModule implements FeatureModule {
 	}
 
 	/**
+	 * Move every note of the most recent organize run back to where it was
+	 * (see {@link selectLastRun} for how the run is chosen), newest move first,
+	 * after an explicit confirmation. Notes missing from their post-move path or
+	 * whose original path is now occupied are reported, not forced.
+	 */
+	async undoOrganizeRun(): Promise<void> {
+		const snapshots = await this.store.loadAllSnapshots();
+		const checkpoints = await this.checkpointManager.listAll();
+		const run = selectLastRun(snapshots, checkpoints);
+		if (!run) {
+			this.notifications.info('No organize run to undo');
+			return;
+		}
+
+		const count = run.snapshots.length;
+		const when = new Date(run.startedAt).toLocaleString();
+		const confirmed = await new ConfirmModal(this.plugin.app, {
+			title: 'Undo last organize run?',
+			message: `${count} note${count === 1 ? '' : 's'} moved by the organize run started ${when} will be moved back to where ${count === 1 ? 'it was' : 'they were'}.`,
+			confirmLabel: 'Move back',
+		}).openAndConfirm();
+		if (!confirmed) return;
+
+		const op = this.notifications.startOperation('Undoing organize run', 'organize-undo-run');
+		const reverted: MoveRecord[] = [];
+		const skipped: SkippedRevert[] = [];
+
+		for (let i = 0; i < run.snapshots.length; i++) {
+			if (op.cancelled) break;
+			const snapshot = run.snapshots[i];
+			op.progress(i + 1, count, 'Moving notes back');
+
+			const file = this.plugin.app.vault.getAbstractFileByPath(snapshot.currentPath);
+			if (!(file instanceof TFile)) {
+				skipped.push({ path: snapshot.currentPath, reason: `note not found; it belonged at ${snapshot.originalPath}` });
+				continue;
+			}
+			if (this.plugin.app.vault.getAbstractFileByPath(snapshot.originalPath)) {
+				skipped.push({ path: snapshot.currentPath, reason: `original path ${snapshot.originalPath} is occupied` });
+				continue;
+			}
+
+			try {
+				await this.noteQueue.run(file.path, async () => {
+					const originalParent = this.getParentPath(snapshot.originalPath);
+					if (originalParent) {
+						await ensureFolder(this.plugin.app, originalParent);
+					}
+					await this.plugin.app.vault.rename(file, snapshot.originalPath);
+				});
+				await this.store.removeSnapshot(snapshot.currentPath);
+				reverted.push({ originalPath: snapshot.currentPath, newPath: snapshot.originalPath });
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				skipped.push({ path: snapshot.currentPath, reason: `move back failed: ${msg}` });
+			}
+
+			await sleep(0);
+		}
+
+		op.finish(`Moved ${reverted.length} note${reverted.length === 1 ? '' : 's'} back — ${skipped.length} need${skipped.length === 1 ? 's' : ''} attention`);
+
+		try {
+			const timestamp = new Date().toISOString();
+			const summaryPath = buildUndoSummaryPath(timestamp);
+			await writeNote(this.plugin.app, summaryPath, generateUndoSummary(reverted, skipped, timestamp));
+			this.notifications.info(`Undo summary saved to ${summaryPath}`);
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			console.warn(`[Synapse] Failed to write undo summary: ${msg}`);
+		}
+	}
+
+	/**
 	 * Core logic for organizing a single file.
 	 * Returns null if the note is already well-placed.
 	 *
-	 * When a new-directory proposal is created and organize auto-accept is on
-	 * (#228), the proposal is accepted immediately (the note is moved). `batch`
-	 * suppresses per-proposal Notices so batch callers can summarize.
+	 * Every relocation — into an existing folder or a new one — is a proposal;
+	 * the note moves only when organize auto-accept is on (#228), in which case
+	 * the proposal is accepted immediately. `batch` suppresses per-proposal
+	 * Notices so batch callers can summarize.
 	 *
 	 * `batchProposedDirs` (when supplied by a batch caller) coalesces new
 	 * directory proposals across the run so variants like "model"/"models"
@@ -603,19 +640,29 @@ export class OrganizeModule implements FeatureModule {
 	 */
 	private async organizeFile(
 		file: TFile,
+		runId: string,
 		batch = false,
 		batchProposedDirs?: Map<string, string>,
 		cacheUse: CacheUse = {}
 	): Promise<OrganizeResult | null> {
 		const analysis = await this.analyzer.analyze(file, trackAiCache(cacheUse));
 
-		if (analysis.topics.length === 0) {
+		// The lane chose to leave the note where it is: no fallback, no proposal (#558).
+		if (analysis.placement?.kind === 'keep') {
+			return null;
+		}
+		if (analysis.topics.length === 0 && analysis.placement?.kind !== 'existing') {
 			return null;
 		}
 
 		const confidenceThreshold = this.getSettings().organize.organizeConfidenceThreshold;
-		const action = this.matcher.determineAction(analysis, undefined, confidenceThreshold);
+		// An existing folder leading the System 1 runoff is evidence against a new folder (#558).
+		const action = this.matcher.determineAction(analysis, undefined, confidenceThreshold, {
+			allowNewDirectory: analysis.placement?.kind !== 'undecided',
+		});
 		const currentDir = this.getParentPath(file.path);
+		const placement = analysis.placement ? { placement: analysis.placement.kind } : {};
+		const lane = analysis.lane ? { lane: analysis.lane } : {};
 
 		if (action.type === 'move') {
 			// Check if moving to a different directory
@@ -623,34 +670,31 @@ export class OrganizeModule implements FeatureModule {
 				return null; // Already in the right place
 			}
 
-			// Direct move to existing directory
-			const candidatePath = normalizePath(
-				`${action.targetDirectory}/${file.name}`
-			);
-
 			// Skip if a file already exists at the destination
-			const newPath = this.findAvailablePath(candidatePath);
-			if (!newPath) {
+			if (!this.findAvailablePath(normalizePath(`${action.targetDirectory}/${file.name}`))) {
 				return null;
 			}
 
-			// Save snapshot for undo
-			const snapshot: OrganizeSnapshot = {
+			const proposal: OrganizeProposal = {
 				id: generateId(),
-				currentPath: newPath,
-				originalPath: file.path,
-				movedAt: new Date().toISOString(),
+				sourceNotePath: file.path,
+				proposedDirectory: action.targetDirectory,
+				proposalKind: 'move',
+				...lane,
+				reasoning: moveReasoning(analysis, action.targetDirectory),
+				createdAt: new Date().toISOString(),
+				status: 'pending',
 			};
-			await this.store.saveSnapshot(snapshot);
+			await this.store.saveProposal(proposal);
 
-			// Perform the move
-			await this.plugin.app.vault.rename(file, newPath);
-
+			const autoAccepted = await this.maybeAutoAccept(proposal.id, file, runId, batch);
 			return {
 				notePath: file.path,
 				action,
-				proposalCreated: false,
-				movedDirectly: true,
+				proposalCreated: true,
+				movedDirectly: autoAccepted,
+				autoAccepted,
+				...placement,
 			};
 		}
 
@@ -668,6 +712,8 @@ export class OrganizeModule implements FeatureModule {
 			id: generateId(),
 			sourceNotePath: file.path,
 			proposedDirectory,
+			proposalKind: 'new-directory',
+			...lane,
 			reasoning: action.reasoning,
 			createdAt: new Date().toISOString(),
 			status: 'pending',
@@ -676,14 +722,15 @@ export class OrganizeModule implements FeatureModule {
 		await this.store.saveProposal(proposal);
 
 		// Auto-accept the freshly created proposal if enabled (#228).
-		const autoAccepted = await this.maybeAutoAccept(proposal.id, batch);
+		const autoAccepted = await this.maybeAutoAccept(proposal.id, file, runId, batch);
 
 		return {
 			notePath: file.path,
 			action: resolvedAction,
 			proposalCreated: true,
-			movedDirectly: false,
+			movedDirectly: autoAccepted,
 			autoAccepted,
+			...placement,
 		};
 	}
 
@@ -773,6 +820,17 @@ export class OrganizeModule implements FeatureModule {
 			}
 		}
 	}
+}
+
+/** Reasoning line for a move into an existing folder. */
+function moveReasoning(analysis: ContentAnalysis, targetDirectory: string): string {
+	if (analysis.placement?.kind === 'existing') {
+		return `The System 1 lane placed this note in "${targetDirectory}" with ${(analysis.placement.confidence * 100).toFixed(0)}% of the runoff.`;
+	}
+	const labels = analysis.topics.map((t) => `"${t.label}"`).join(', ');
+	return labels
+		? `Existing folder "${targetDirectory}" best matches this note's topics: ${labels}.`
+		: `Existing folder "${targetDirectory}" best matches this note.`;
 }
 
 /**

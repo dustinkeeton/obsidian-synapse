@@ -18,6 +18,7 @@ function makeProposal(overrides: Partial<OrganizeProposal> = {}): OrganizePropos
 		id: 'test-id-12345678',
 		sourceNotePath: 'inbox/test.md',
 		proposedDirectory: 'machine-learning',
+		proposalKind: 'new-directory',
 		reasoning: 'Note is about machine learning',
 		createdAt: '2026-03-16T00:00:00.000Z',
 		status: 'pending',
@@ -63,6 +64,25 @@ describe('OrganizeStore', () => {
 	// ── Proposals ──
 
 	describe('proposal CRUD', () => {
+		it('reads a proposal file written before proposalKind existed as a new-directory proposal', async () => {
+			const { proposalKind: _omitted, ...legacy } = makeProposal({ id: 'legacy-1' });
+			mockAdapter.list.mockResolvedValue({ files: ['.synapse/organize/proposals/legacy.json'], folders: [] });
+			mockAdapter.read.mockResolvedValue(JSON.stringify(legacy));
+
+			const loaded = await store.loadProposal('legacy-1');
+
+			expect(loaded).toEqual({ ...legacy, proposalKind: 'new-directory' });
+			expect((await store.loadAllProposals())[0].proposalKind).toBe('new-directory');
+		});
+
+		it('keeps a stored move proposal\'s kind and lane', async () => {
+			const move = makeProposal({ id: 'move-1', proposalKind: 'move', lane: 'system-one' });
+			mockAdapter.list.mockResolvedValue({ files: ['.synapse/organize/proposals/move.json'], folders: [] });
+			mockAdapter.read.mockResolvedValue(JSON.stringify(move));
+
+			expect(await store.loadProposal('move-1')).toEqual(move);
+		});
+
 		it('saves a proposal as JSON', async () => {
 			const proposal = makeProposal();
 			await store.saveProposal(proposal);

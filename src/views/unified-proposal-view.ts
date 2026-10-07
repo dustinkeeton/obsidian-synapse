@@ -596,9 +596,12 @@ export class UnifiedProposalView extends ItemView {
 		});
 
 		card.createEl('small', {
-			text: `Move to ${proposal.proposedDirectory}`,
+			text: organizeTargetLabel(proposal),
 			cls: 'synapse-reasons',
 		});
+		if (proposal.lane === 'system-one') {
+			card.createEl('small', { text: 'Decided by the System 1 lane', cls: 'synapse-reasons' });
+		}
 
 		const preview = proposal.reasoning.slice(0, 200);
 		card.createEl('p', {
@@ -815,13 +818,16 @@ export class UnifiedProposalView extends ItemView {
 		// Proposed directory
 		const dirPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
 		dirPane.createEl('div', {
-			text: 'Proposed directory',
+			text: proposal.proposalKind === 'move' ? 'Move to existing folder' : 'New folder',
 			cls: `synapse-review-pane-label ${reviewPaneLabelClass('organize')}`,
 		});
 		dirPane.createEl('p', {
 			text: proposal.proposedDirectory,
 			cls: 'synapse-organize-directory synapse-review-box--organize',
 		});
+		if (proposal.lane === 'system-one') {
+			dirPane.createEl('small', { text: 'Decided by the System 1 lane', cls: 'synapse-review-reasons' });
+		}
 
 		// Reasoning
 		const reasonPane = contentEl.createDiv({ cls: 'synapse-organize-detail' });
@@ -1547,4 +1553,11 @@ export class UnifiedProposalView extends ItemView {
 			row.createEl('span', { text: label });
 		}
 	}
+}
+
+/** Card headline for an organize proposal: an existing folder reads as a move, a new one as a folder to create. */
+function organizeTargetLabel(proposal: OrganizeProposal): string {
+	return proposal.proposalKind === 'move'
+		? `Move to ${proposal.proposedDirectory}`
+		: `New folder ${proposal.proposedDirectory}`;
 }

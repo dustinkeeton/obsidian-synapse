@@ -19,7 +19,7 @@ export function renderOrganizeSettings(ctx: SettingsSectionContext): void {
 	addEnhancedSlider(
 		new Setting(organizeBody)
 			.setName('New folder confidence threshold')
-			.setDesc('Minimum topic confidence to propose a new folder (0.5-1.0). Higher = fewer new folders.'),
+			.setDesc('Confidence required before Synapse proposes a new folder, whichever lane decides (0.5-1.0). Higher = fewer new folders.'),
 		{
 			min: 0.5,
 			max: 1.0,

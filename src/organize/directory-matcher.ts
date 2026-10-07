@@ -2,6 +2,9 @@ import { App, TFolder } from 'obsidian';
 import { ContentAnalysis, DirectoryScore, OrganizeAction } from './types';
 import { canonicalKey, isFuzzyMatch } from './folder-normalize';
 
+const EXACT_MATCH_BASE = 0.4;
+const EXACT_MATCH_WEIGHT = 0.4;
+
 /**
  * Matches notes to existing directories by semantic relevance.
  * Heavily weights existing directories to minimize new directory creation.
@@ -39,17 +42,25 @@ export class DirectoryMatcher {
 	 * or a propose-new-directory action if none are suitable.
 	 *
 	 * @param minScoreThreshold - Minimum score for a directory to be considered
-	 *   a valid match (0-1). Below this, a new directory will be proposed.
-	 *   Default 0.6 — requires a strong topical match.
+	 *   a valid match (0-1). Default 0.6: an exact canonical topic match clears
+	 *   it on its own from topic confidence 0.5 up; fuzzy and partial matches
+	 *   never do alone.
 	 * @param confidenceThreshold - Minimum confidence of the top topic required
 	 *   to propose a new directory (0-1). Default 0.9 — only highly confident
 	 *   topics justify new folder creation.
+	 * @param opts.allowNewDirectory - `false` skips the new-directory branch
+	 *   entirely (the System 1 lane saw an existing folder lead, #558).
 	 */
 	determineAction(
 		analysis: ContentAnalysis,
 		minScoreThreshold = 0.6,
-		confidenceThreshold = 0.9
+		confidenceThreshold = 0.9,
+		opts: { allowNewDirectory?: boolean } = {}
 	): OrganizeAction {
+		// An existing-folder System 1 placement is a move action (#558); the caller treats the note's own folder as "already placed".
+		if (analysis.placement?.kind === 'existing') {
+			return { type: 'move', targetDirectory: analysis.placement.directoryPath };
+		}
 		const scores = this.scoreDirectories(analysis);
 		const noteDir = this.getParentPath(analysis.notePath);
 
@@ -63,23 +74,39 @@ export class DirectoryMatcher {
 			};
 		}
 
-		// Propose a new directory based on the top topic, but only when
-		// the AI is highly confident about the note's primary topic.
 		const topTopic = analysis.topics[0];
-		if (topTopic && topTopic.confidence >= confidenceThreshold) {
+		if (opts.allowNewDirectory !== false && topTopic && topTopic.confidence >= confidenceThreshold) {
 			const newDir = this.buildDirectoryPath(topTopic.label);
+			// A canonical path that already exists is a move (or "already placed"), never a new folder (#565).
+			const existing = this.findExistingDirectory(newDir);
+			if (existing !== null) {
+				return { type: 'move', targetDirectory: existing };
+			}
+			const laneNote = analysis.placement?.kind === 'new-directory'
+				? ` The System 1 lane found no existing folder fits (${(analysis.placement.confidence * 100).toFixed(0)}%).`
+				: '';
 			return {
 				type: 'propose-new-directory',
 				targetDirectory: newDir,
-				reasoning: `Note is about "${topTopic.label}" (confidence: ${(topTopic.confidence * 100).toFixed(0)}%). No existing directory matches well.`,
+				reasoning: `Note is about "${topTopic.label}" (confidence: ${(topTopic.confidence * 100).toFixed(0)}%). No existing directory matches well.${laneNote}`,
 			};
 		}
 
-		// No topics or confidence too low; keep in place
+		// No topics, confidence too low, or a new folder is not allowed; keep in place
 		return {
 			type: 'move',
 			targetDirectory: noteDir,
 		};
+	}
+
+	/** Existing folder whose full path, else basename, shares `path`'s canonical key; `null` when none does. */
+	findExistingDirectory(path: string): string | null {
+		const key = canonicalKey(path);
+		if (!key) return null;
+		const directories = this.collectDirectories();
+		return directories.find(dir => canonicalKey(dir) === key)
+			?? directories.find(dir => canonicalKey(this.getDirectoryName(dir)) === key)
+			?? null;
 	}
 
 	/**
@@ -105,9 +132,9 @@ export class DirectoryMatcher {
 			const topicKey = canonicalKey(topic.label);
 			if (!topicKey) continue;
 
-			// Exact canonical match with directory name
+			// Exact canonical match with directory name: clears the 0.6 move threshold alone from confidence 0.5 up (#565)
 			if (dirKey && dirKey === topicKey) {
-				score += 0.6 * topic.confidence;
+				score += EXACT_MATCH_BASE + EXACT_MATCH_WEIGHT * topic.confidence;
 			}
 			// Directory name contains the topic (or vice versa)
 			else if (dirKey && (dirKey.includes(topicKey) || topicKey.includes(dirKey))) {

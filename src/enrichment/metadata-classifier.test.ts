@@ -5,15 +5,28 @@ import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 const mockComplete = vi.fn();
 
 vi.mock('../shared', async () => {
-	// Re-export the real JSON helpers — the classifier now narrows parsed
-	// responses via parseJson/isRecord, so the stub must provide them.
 	const { parseJson, isRecord } = await vi.importActual<typeof import('../shared/json-utils')>(
 		'../shared/json-utils'
 	);
+	const { choice, MAX_CHOICE_OPTIONS } = await vi.importActual<typeof import('../shared/decision-client')>(
+		'../shared/decision-client'
+	);
+	const { partitionByConfidence } = await vi.importActual<typeof import('../shared/confidence-router')>(
+		'../shared/confidence-router'
+	);
+	const { redactError } = await vi.importActual<typeof import('../shared/redact')>('../shared/redact');
 	return {
 		AIClient: class MockAIClient {
 			complete = mockComplete;
 		},
+		// Lane off: the generative path is the only path in this file.
+		DecisionClient: class MockDecisionClient {
+			isEnabled = () => false;
+		},
+		MAX_CHOICE_OPTIONS,
+		choice,
+		partitionByConfidence,
+		redactError,
 		sanitizeAIResponse: (text: string) => text,
 		parseJson,
 		isRecord,

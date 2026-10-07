@@ -65,11 +65,12 @@ graph TB
         end
 
         Commands["Commands<br/>(registry · base layer)"]
-        Shared["Shared Layer<br/>AIClient · NoteOperationQueue · Notifications · Validation<br/>Callouts (native bases) · Insertion points · Image preprocessing · URL Detection"]
+        Shared["Shared Layer<br/>AIClient · DecisionClient + confidence router (#558) · NoteOperationQueue · Notifications · Validation<br/>Callouts (native bases) · Insertion points · Image preprocessing · URL Detection"]
     end
 
     subgraph External["External Services"]
         AI["AI Providers<br/>OpenAI · Anthropic · Gemini · Ollama"]
+        S1["TypeSafe Jev<br/>(System 1 decisions · opt-in)"]
         TransAPI["Transcription APIs<br/>Whisper · Deepgram · Gemini"]
         Caps["YouTube captions<br/>(HTTP · no install)"]
         Tools["CLI Tools<br/>yt-dlp · ffmpeg"]
@@ -98,6 +99,7 @@ graph TB
     Features --> Commands
     Features --> CkptMgr
     Shared --> AI
+    Shared -.->|ai.systemOne.enabled| S1
     Audio --> TransAPI
     Video --> Tools
     Video --> Audio
@@ -246,10 +248,13 @@ src/
 │   ├── tidy-store.ts       #   Snapshot storage for undo
 │   └── index.ts            #   TidyModule orchestrator
 │
-├── organize/               # AI-powered directory structuring
-│   ├── content-analyzer.ts #   AI topic extraction for organization
+├── organize/               # AI-powered directory structuring; every relocation is a proposal, moved only on accept / auto-accept
+│   ├── content-analyzer.ts #   System 1 placement first, AI topic extraction as the fallback
+│   ├── placement-decider.ts#   Jev choice over rubric-described folders + escape options; runoff; two-condition rule (#558)
 │   ├── directory-matcher.ts#   Match topics to directories
 │   ├── organize-store.ts   #   Proposal + snapshot persistence
+│   ├── undo-run.ts         #   "Undo last organize run": run selection (runId / checkpoint window) + undo summary
+│   ├── run-summary.ts      #   Scan counters: "N proposals (M to existing folders, K new folders)"
 │   └── index.ts            #   OrganizeModule orchestrator; suggestDirectory(text, aiOpts) is the one seam the registry hands to deep-dive (null under the 0.6 score floor)
 │
 ├── deep-dive/              # Recursive topic exploration
@@ -287,11 +292,14 @@ src/
 │
 ├── shared/                 # Cross-cutting utilities (base layer)
 │   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); per-instance LRU response cache + in-flight coalescing (#397); onCacheHit signal (#527); re-exports redactSecrets
+│   ├── safe-request.ts     #   safeRequest + ApiRequestError — requestUrl with throw:false, timeout, redacted typed status error (#558; shared by both clients)
+│   ├── decision-client.ts  #   DecisionClient — System 1 lane over TypeSafe /v1/systemone (choice · score · noul), budget chunking, 429/529 retry (#558)
+│   ├── confidence-router.ts#   routeByConfidence / partitionByConfidence — act above the floor, generative fallback exactly once (#558)
 │   ├── redact.ts           #   redactSecrets() (strings) + redactError() (raw caught errors) — single source of truth for API-key/token redaction
 │   ├── note-operation-queue.ts # NoteOperationQueue — path-keyed FIFO so read → AI → write cycles on one note never interleave (#483)
 │   ├── feature-module.ts   #   ModuleDeps + FeatureModule + FeatureSettingsKey — the contract every feature module implements (#504)
 │   ├── transcript-cache.ts #   TranscriptCache — persistent media-URL transcript store, LRU-capped at 200 entries / 4M chars (#488)
-│   ├── cache-notice.ts     #   CacheUse + withCacheReport — one wording for "served from cache" finish lines (#527)
+│   ├── cache-notice.ts     #   CacheUse + withCacheReport — one wording for "served from cache" / "decided by the System 1 lane" finish lines (#527, #558)
 │   ├── no-speech.ts        #   NoSpeechDetectedError + hasSpeechContent/isWorthPostProcessing — typed no-speech outcome (#524)
 │   ├── settings-merge.ts   #   deepMergeSettings — prototype-safe deep merge over DEFAULT_SETTINGS (#496)
 │   ├── data-folder-migration.ts # migrateDataFolder — one-time .auto-notes → .synapse rename (#496)
@@ -1041,6 +1049,26 @@ graph TB
     AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout<br/>Error extraction · Secret redaction (shared/redact.ts)"]
 ```
 
+### System 1 Decision Lane (#558)
+
+Classification seats are discrete decisions over sets Synapse already holds, not text generation. Those seats now ask TypeSafe's Jev model first and keep the generative path as the fallback:
+
+```mermaid
+graph LR
+    Seat["Seat<br/>tags · folder · REM titles"] --> Q["Typed questions<br/>choice / score over existing options"]
+    Q --> DC["DecisionClient<br/>(shared/decision-client.ts)"]
+    DC -->|"chunked under 64k/32k tokens · Bearer ai.systemOne.apiKey"| Jev["POST api.typesafe.ai/v1/systemone"]
+    Jev -->|"answer + per-option probabilities"| R{"tags / REM: ≥ feature floor?<br/>placement: runoff majority?"}
+    R -->|yes| S1["System 1 answer<br/>finish notice: decided by the System 1 lane"]
+    R -->|"no · new-* · lane off · any error"| S2["System 2 fallback<br/>AIClient prompt; placement: no new folder unless Jev asked"]
+```
+
+- **Separate lane, not a provider.** Jev answers `{ state, questions }` with typed answers and cannot serve `complete()`/`chat()`, so it has its own settings block (`ai.systemOne`) and credential (`typesafe`) rather than a slot in the provider dropdown. REST via `requestUrl` through the shared `safeRequest`; no npm dependency.
+- **One knob per feature, one meaning each.** REM gates on `rem.confidenceThreshold`; the tag vocabulary seat, which has no feature knob, uses `ai.systemOne.confidenceFloor` (0.6). Organize's `organizeConfidenceThreshold` means "confidence required before a NEW folder" in both lanes and is never the floor for picking an existing folder. The fallback runs exactly once per decision.
+- **Placement is a runoff with a fixed majority rule (#558, #565).** Hidden and organize-excluded folders are not offered; the top five first-round folders (synonyms coalesced on canonical basename) go to one runoff with `<new-directory>`. P(new) at or above the threshold requests a new folder; otherwise a strict majority (0.5) on one folder is a direct move; otherwise the lane is undecided and System 2 may score existing folders but may not propose a new one. An exact canonical topic→folder match moves on its own, and a proposed path that already exists is a move, never a proposal.
+- **Nothing new is invented by the lane.** Options are the vocabulary tags, the vault's existing folders, or the included note titles; `<none>` / `<new-directory>` are the only escape hatches, and only they reach the generative path.
+- **Off by default.** Note text leaves the vault, so the lane is opt-in; with it off (or on any lane error) every seat behaves exactly as before and `/v1/systemone` is never called.
+
 ### Caching & Coalescing (#397)
 
 `AIClient.chat()` wraps the raw provider dispatch with idempotency support, keyed by a deterministic `contentKey([messages, provider, model, temperature, maxTokens])` (inputs only):
@@ -1109,6 +1137,7 @@ SynapseSettings
 +-- settingsVersion -> Persisted schema version (#93); drives the migration runner, stamped to CURRENT_SETTINGS_VERSION (3) on save
 +-- ai              -> Provider, API key, model (default gpt-5.6-sol), temperature, max tokens,
 |                     cacheResponses (#397, opt-in; caching automatic at temperature 0)
+|   +-- systemOne   -> System 1 decision lane (#558): enabled (default OFF), apiKey (TypeSafe), model (jev-latest), confidenceFloor (0.6)
 +-- elaboration     -> Detection thresholds, scan behavior, proposal storage
 |   +-- detection   -> Word threshold, TODO markers, empty sections, exclude tags
 |   +-- proposal    -> Max per note, preserve frontmatter (declared only — accept always keeps it, #552), include context,

@@ -80,14 +80,15 @@ interface RemSettings {
 | `index.ts` | `RemModule`, type + fn re-exports | Orchestrator, commands, scan + accept/reject/undo |
 | `types.ts` | `RemProposal`, `RemLinkCandidate`, `RemOccurrence`, `RemMatchType`, `RemProposalStatus`, `RemSettings` | Type model |
 | `mention-scanner.ts` | `MentionScanner` | Phase 1: literal title/alias mention scanning |
-| `semantic-matcher.ts` | `SemanticMatcher` | Phase 2: always-on AI semantic matching |
+| `semantic-matcher.ts` | `SemanticMatcher`, `RELEVANCE_LEVELS`, `relevanceFromScore` | Phase 2: always-on semantic matching; System 1 `score` per title first when `ai.systemOne` is on (#558) |
 | `rem-applier.ts` | `RemApplier` | Inserts `[[wikilinks]]` into note body for accepted candidates |
 | `rem-store.ts` | `RemStore` | Proposal persistence under `rem.remFolderPath` |
 | `settings-section.ts` | `renderRemSettings` | REM settings UI section |
 | `mention-scanner.test.ts` | Tests | MentionScanner tests |
 | `auto-accept.test.ts` | Tests | Auto-accept behavior tests (#228) |
 | `rem-applier.test.ts` | Tests | RemApplier tests |
-| `semantic-matcher.test.ts` | Tests | SemanticMatcher tests |
+| `semantic-matcher.test.ts` | Tests | SemanticMatcher generative-path tests |
+| `semantic-matcher.system-one.test.ts` | Tests | #558 two-lane: toggle off = zero lane calls + full title list, score shape + restricted prompt + lane relevance, nothing-cleared short-circuit, omitted-title drop, 529 fallback |
 | `index.test.ts` | Tests | RemModule integration tests |
 | `settings-section.test.ts` | Tests | Settings section tests |
 | `review-toast.test.ts` | Tests | Review-toast action: forwarded when auto-accept off, omitted when on (#366) |
@@ -101,6 +102,9 @@ remScanNote(filePath)
   --> gatherCandidates(file, content, cacheUse):
         MentionScanner.scan(...) literal candidates, down-weighted by titleMatchWeight
         SemanticMatcher.match(..., trackAiCache(cacheUse)) always-on, filtered by confidenceThreshold   (#527)
+          #558, lane on (semantic-matcher.ts:100): one score question per included title over RELEVANCE_LEVELS (:20; unrelated / tangential / related / strongly related), state = content[0:4000], chunked by DecisionClient;
+          relevance = P(level 2) + P(level 3) (relevanceFromScore, :30); titles >= confidenceThreshold -> the existing concept-location prompt, title list restricted to them; candidate.confidence = lane relevance;
+          no title cleared -> [] with zero complete() calls; any lane error -> full generative path; aiOpts.onSystemOne() whenever the lane scored
         merge + re-rank by confidence desc + cap at maxLinksPerNote
   --> RemProposal { candidates, status: 'pending' } --> RemStore.save
   --> withCacheReport('Found N linkable mentions' | 'No linkable mentions found', [cacheUse]) Notice (#527) + reviewAction({ generated, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366)
@@ -180,7 +184,8 @@ Interface `settings.ts:216`; defaults `settings.ts:520-526`.
 |-----|------|---------|----------|
 | `enabled` | `boolean` | `true` | Module + command activation |
 | `titleMatchWeight` | `number` | `0.6` | Weight for literal title/alias matches when ranking (0-1) |
-| `confidenceThreshold` | `number` | `0.5` | Min confidence for semantic candidates only (0-1) |
+| `confidenceThreshold` | `number` | `0.5` | Min confidence for semantic candidates only (0-1); also the System 1 relevance floor (#558) |
+| `settings.ai.systemOne` (top-level) | `SystemOneSettings` | `enabled: false` | Gates the System 1 title scoring in `SemanticMatcher` |
 | `maxLinksPerNote` | `number` | `20` | Max link candidates per scanned note |
 | `remFolderPath` | `string` | `.synapse/rem` | Storage folder for proposal JSON files |
 
@@ -199,4 +204,4 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 | `RemApplier` | `./rem-applier` |
 | `RemStore` | `./rem-store` |
 
-Internal-file shared imports: `semantic-matcher.ts` imports `AIClient`, `AIRequestOptions` (type; `match(..., aiOpts?)` forwards it to `complete()`, #527), `isRecord`, `parseJson`, `getIncludedMarkdownFiles`, `redactError` from `../shared`. Its AI-call failure sink routes `console.warn` through `redactError` (redaction single-source-of-truth); the JSON-parse failure path logs a static message with no error payload. `rem-store.ts` imports `ensureFolder`, `isRecord`, `readJsonFile`; `settings-section.ts` imports `addEnhancedSlider`, `SettingsSectionContext`.
+Internal-file shared imports: `semantic-matcher.ts` imports `AIClient`, `DecisionClient`, `score` (#558), `DecisionRequestOptions`/`ScoreAnswer`/`ScoreQuestion` (types; `match(..., aiOpts?)` forwards `aiOpts` to `decide()` and `complete()`, #527), `isRecord`, `parseJson`, `getIncludedMarkdownFiles`, `redactError` from `../shared`. Its System 1 failure sink also routes `console.warn` through `redactError`. Its AI-call failure sink routes `console.warn` through `redactError` (redaction single-source-of-truth); the JSON-parse failure path logs a static message with no error payload. `rem-store.ts` imports `ensureFolder`, `isRecord`, `readJsonFile`; `settings-section.ts` imports `addEnhancedSlider`, `SettingsSectionContext`.

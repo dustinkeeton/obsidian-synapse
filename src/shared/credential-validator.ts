@@ -83,6 +83,7 @@ export async function validateCredentials(
 				url: probe.url,
 				method: probe.method,
 				headers: probe.headers,
+				body: probe.body,
 				// Don't throw — Obsidian strips the body on error, and we need the
 				// status code + body to tell "invalid key" apart from other failures.
 				throw: false,

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PROVIDER_METADATA, aiProviderToCredential } from './provider-metadata';
 import type { CredentialProvider } from './provider-metadata';
 
-const KEYED: CredentialProvider[] = ['openai', 'anthropic', 'gemini', 'deepgram'];
+const KEYED: CredentialProvider[] = ['openai', 'anthropic', 'gemini', 'deepgram', 'typesafe'];
 const ALL: CredentialProvider[] = [...KEYED, 'ollama'];
 
 describe('PROVIDER_METADATA', () => {
@@ -120,5 +120,23 @@ describe('aiProviderToCredential', () => {
 		['ollama', 'ollama'],
 	] as const)('maps AI provider %s → credential %s', (ai, cred) => {
 		expect(aiProviderToCredential(ai)).toBe(cred);
+	});
+});
+
+describe('PROVIDER_METADATA.typesafe (#558)', () => {
+	it('builds a minimal POST probe with a Bearer header and a one-noul body', () => {
+		const probe = PROVIDER_METADATA.typesafe.buildProbe({ key: ' tsk-test ' });
+		expect(probe).not.toBeNull();
+		expect(probe?.method).toBe('POST');
+		expect(probe?.url).toBe('https://api.typesafe.ai/v1/systemone');
+		expect(probe?.headers.Authorization).toBe('Bearer tsk-test');
+		const body = JSON.parse(probe?.body ?? '{}') as { state: string; model: string; questions: Record<string, { type: string }> };
+		expect(body.model).toBe('jev-latest');
+		expect(Object.values(body.questions).map((q) => q.type)).toEqual(['noul']);
+	});
+
+	it('is not reachable from the AI provider dropdown', () => {
+		expect(aiProviderToCredential('openai')).toBe('openai');
+		expect(Object.keys(PROVIDER_METADATA)).toContain('typesafe');
 	});
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SETTINGS, MODEL_OPTIONS } from './settings';
+import { DEFAULT_SETTINGS, MODEL_OPTIONS, SYSTEM_ONE_MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
 import { PROPOSAL_KINDS } from './views/types';
 import { CURRENT_SETTINGS_VERSION } from './shared/settings-migrations';
@@ -172,5 +172,33 @@ describe('illustrate Mermaid toggle (#549)', () => {
 		const merged = deepMergeSettings(DEFAULT_SETTINGS, saved);
 		expect(merged.illustrate.mermaid).toBe(false);
 		expect(merged.illustrate.providers).toEqual({ wikimedia: false, openverse: true });
+	});
+});
+
+describe('System 1 decision lane settings (#558)', () => {
+	it('defaults to off with an empty key, jev-latest, and a 0.6 floor', () => {
+		expect(DEFAULT_SETTINGS.ai.systemOne).toEqual({
+			enabled: false,
+			apiKey: '',
+			model: 'jev-latest',
+			confidenceFloor: 0.6,
+		});
+		expect(DEFAULT_SETTINGS.ai.systemOne.model in SYSTEM_ONE_MODEL_OPTIONS).toBe(true);
+	});
+
+	it('back-fills the block for a persisted settings file that predates it', () => {
+		const persisted = structuredClone(DEFAULT_SETTINGS) as unknown as { ai: Record<string, unknown> };
+		delete persisted.ai.systemOne;
+		persisted.ai.apiKey = 'sk-saved';
+		const merged = deepMergeSettings(DEFAULT_SETTINGS, persisted as unknown as Record<string, unknown>);
+		expect(merged.ai.systemOne).toEqual(DEFAULT_SETTINGS.ai.systemOne);
+		expect(merged.ai.apiKey).toBe('sk-saved');
+	});
+
+	it('keeps a persisted System 1 block intact', () => {
+		const merged = deepMergeSettings(DEFAULT_SETTINGS, {
+			ai: { systemOne: { enabled: true, apiKey: 'k', model: 'jev-1.13.0', confidenceFloor: 0.8 } },
+		});
+		expect(merged.ai.systemOne).toEqual({ enabled: true, apiKey: 'k', model: 'jev-1.13.0', confidenceFloor: 0.8 });
 	});
 });

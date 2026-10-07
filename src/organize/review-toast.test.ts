@@ -98,6 +98,7 @@ describe('OrganizeModule Review toast action (#340)', () => {
 					id,
 					sourceNotePath: 'inbox/note.md',
 					proposedDirectory: 'Machine Learning',
+					proposalKind: 'new-directory',
 					reasoning: 'Note is about machine learning',
 					createdAt: '2026-06-11T00:00:00.000Z',
 					status: 'pending',
@@ -183,10 +184,7 @@ describe('OrganizeModule Review toast action (#340)', () => {
 
 		await mod.organizeNote(sourceFile as never);
 
-		expect(scanOp.finish).toHaveBeenCalledWith(
-			'Proposal created for new directory',
-			undefined
-		);
+		expect(scanOp.finish).toHaveBeenCalledWith('Moved to Machine Learning');
 		// The note was moved by auto-accept.
 		expect((app.vault as unknown as { rename: ReturnType<typeof vi.fn> }).rename).toHaveBeenCalledTimes(1);
 	});
