@@ -6,16 +6,25 @@ export interface NoteTopic {
 	confidence: number;
 }
 
+/** An existing directory chosen by the System 1 lane (#558). */
+export interface Placement {
+	directoryPath: string;
+	/** Calibrated confidence (0-1) from the lane */
+	confidence: number;
+}
+
 /** Result of analyzing a note's content to determine its topical fit. */
 export interface ContentAnalysis {
 	/** Path of the analyzed note */
 	notePath: string;
-	/** Extracted topics sorted by confidence */
+	/** Extracted topics sorted by confidence; empty when `placement` is set */
 	topics: NoteTopic[];
 	/** Existing tags on the note */
 	tags: string[];
 	/** Existing outgoing link paths */
 	links: string[];
+	/** Confident System 1 placement; `determineAction` moves there directly */
+	placement?: Placement;
 }
 
 /** Score representing how well a note fits a given directory. */

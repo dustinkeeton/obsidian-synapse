@@ -50,6 +50,10 @@ export class DirectoryMatcher {
 		minScoreThreshold = 0.6,
 		confidenceThreshold = 0.9
 	): OrganizeAction {
+		// A confident System 1 placement is a direct move (#558); the caller treats the note's own folder as "already placed".
+		if (analysis.placement) {
+			return { type: 'move', targetDirectory: analysis.placement.directoryPath };
+		}
 		const scores = this.scoreDirectories(analysis);
 		const noteDir = this.getParentPath(analysis.notePath);
 

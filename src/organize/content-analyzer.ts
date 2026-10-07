@@ -1,8 +1,16 @@
 import { App, TFile, getAllTags } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, isRecord, parseFrontmatter, parseJson, sanitizeAIResponse, withRetry } from '../shared';
-import type { AIRequestOptions } from '../shared';
-import { ContentAnalysis, NoteTopic } from './types';
+import { AIClient, isRecord, parseFrontmatter, parseJson, routeByConfidence, sanitizeAIResponse, withRetry } from '../shared';
+import type { AIRequestOptions, DecisionLane, DecisionRequestOptions } from '../shared';
+import { PlacementDecider } from './placement-decider';
+import { ContentAnalysis, NoteTopic, Placement } from './types';
+
+/** Either a confident existing-folder placement from the System 1 lane or the generative topics. */
+export interface ResolvedPlacement {
+	topics: NoteTopic[];
+	placement?: Placement;
+	lane: DecisionLane;
+}
 
 const SYSTEM_PROMPT = `You are a note organization assistant. Given the content of a note, determine its primary topics/categories.
 
@@ -27,19 +35,22 @@ Example output:
  */
 export class ContentAnalyzer {
 	private aiClient: AIClient;
+	private placement: PlacementDecider;
 
 	constructor(
 		private app: App,
-		private getSettings: () => SynapseSettings
+		private getSettings: () => SynapseSettings,
+		placement?: PlacementDecider
 	) {
 		this.aiClient = new AIClient(getSettings);
+		this.placement = placement ?? new PlacementDecider(app, getSettings);
 	}
 
 	/**
 	 * Analyze a note's content to determine its topical categories.
 	 * Combines AI topic extraction with existing metadata signals.
 	 */
-	async analyze(file: TFile, aiOpts?: AIRequestOptions): Promise<ContentAnalysis> {
+	async analyze(file: TFile, aiOpts?: DecisionRequestOptions): Promise<ContentAnalysis> {
 		const content = await this.app.vault.read(file);
 		const parsed = parseFrontmatter(content);
 
@@ -48,15 +59,34 @@ export class ContentAnalyzer {
 		const existingTags = cache ? (getAllTags(cache) || []) : [];
 		const existingLinks = this.getOutgoingLinks(file);
 
-		// Extract topics from content via AI
-		const topics = await this.extractTopics(parsed.body, existingTags, aiOpts);
+		const { topics, placement } = await this.resolvePlacement(parsed.body, existingTags, aiOpts);
 
 		return {
 			notePath: file.path,
 			topics,
 			tags: existingTags,
 			links: existingLinks,
+			...(placement ? { placement } : {}),
 		};
+	}
+
+	/**
+	 * System 1 placement over existing folders at or above
+	 * `organize.organizeConfidenceThreshold`; otherwise (lane off, "new
+	 * directory", low confidence, or any lane error) the existing
+	 * {@link extractTopics} path, unchanged (#558).
+	 */
+	async resolvePlacement(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement> {
+		const routed = await routeByConfidence<Placement, ResolvedPlacement>({
+			systemOne: this.placement.isAvailable() ? () => this.placement.decide(body, tags, aiOpts) : null,
+			floor: this.getSettings().organize.organizeConfidenceThreshold,
+			confidenceOf: (p) => p.confidence,
+			accept: (p) => ({ topics: [], placement: p, lane: 'system-one' }),
+			fallback: async () => ({ topics: await this.extractTopics(body, tags, aiOpts), lane: 'system-two' }),
+			label: 'organize placement',
+		});
+		if (routed.lane === 'system-one') aiOpts?.onSystemOne?.();
+		return routed.value;
 	}
 
 	/**

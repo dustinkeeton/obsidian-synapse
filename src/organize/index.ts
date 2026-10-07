@@ -7,10 +7,11 @@ import {
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 	trackAiCache, withCacheReport,
 } from '../shared';
-import type { AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DecisionRequestOptions, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import type { MoveRecord } from '../shared';
 import { ContentAnalyzer } from './content-analyzer';
 import { DirectoryMatcher } from './directory-matcher';
+import { PlacementDecider } from './placement-decider';
 import { canonicalKey, isFuzzyMatch } from './folder-normalize';
 import { OrganizeStore } from './organize-store';
 import { OrganizeAction, OrganizeProposal, OrganizeResult, OrganizeSnapshot } from './types';
@@ -24,6 +25,7 @@ export type {
 	NoteTopic,
 	OrganizeAction,
 	OrganizeProposalStatus,
+	Placement,
 } from './types';
 /** Score floor for `suggestDirectory`; below it the caller keeps its own default placement. */
 const SUGGEST_DIRECTORY_MIN_SCORE = 0.6;
@@ -59,14 +61,15 @@ export class OrganizeModule implements FeatureModule {
 		this.registrar = deps.registrar;
 		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
-		this.analyzer = new ContentAnalyzer(deps.plugin.app, deps.getSettings);
+		this.analyzer = new ContentAnalyzer(deps.plugin.app, deps.getSettings, new PlacementDecider(deps.plugin.app, deps.getSettings));
 		this.matcher = new DirectoryMatcher(deps.plugin.app);
 		this.store = new OrganizeStore(deps.plugin.app, deps.getSettings);
 	}
 
-	/** Best existing folder for free text by topic match, or null when nothing clears the score floor; wired into deep-dive by the module registry. */
-	async suggestDirectory(text: string, aiOpts?: AIRequestOptions): Promise<string | null> {
-		const topics = await this.analyzer.extractTopics(text, [], aiOpts);
+	/** Best existing folder for free text — a confident System 1 placement, else topic match — or null when nothing clears the score floor; wired into deep-dive by the module registry. */
+	async suggestDirectory(text: string, aiOpts?: DecisionRequestOptions): Promise<string | null> {
+		const { topics, placement } = await this.analyzer.resolvePlacement(text, [], aiOpts);
+		if (placement) return placement.directoryPath;
 		if (topics.length === 0) return null;
 		const scores = this.matcher.scoreDirectories({ notePath: '', topics, tags: [], links: [] });
 		return scores.length > 0 && scores[0].score >= SUGGEST_DIRECTORY_MIN_SCORE ? scores[0].directoryPath : null;
@@ -609,7 +612,7 @@ export class OrganizeModule implements FeatureModule {
 	): Promise<OrganizeResult | null> {
 		const analysis = await this.analyzer.analyze(file, trackAiCache(cacheUse));
 
-		if (analysis.topics.length === 0) {
+		if (analysis.topics.length === 0 && !analysis.placement) {
 			return null;
 		}
 
