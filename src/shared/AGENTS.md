@@ -715,7 +715,7 @@ seat --> DecisionClient.isEnabled()?  no  --> generative path (byte-for-byte tod
                                                |-- below floor | null | throw: generative fallback, exactly once
 ```
 
-Seats and floors: `enrichment/metadata-classifier.ts` (one `choice` per vocabulary category; floor `ai.systemOne.confidenceFloor`), `organize/placement-decider.ts` + `content-analyzer.ts` (one `choice` over existing folders + `<new-directory>`; floor `organize.organizeConfidenceThreshold`), `rem/semantic-matcher.ts` (one `score` per title, relevance = P(related) + P(strongly related); floor `rem.confidenceThreshold`). No lane answer can create a folder, tag, or value that does not already exist; only `<new-*>` options reach the generative path.
+Seats and floors: `enrichment/metadata-classifier.ts` (one `choice` per vocabulary category; floor `ai.systemOne.confidenceFloor`), `organize/placement-decider.ts` + `content-analyzer.ts` (one `choice` over existing folders + `<new-directory>`; floor `organize.organizeConfidenceThreshold`), `rem/semantic-matcher.ts` (lane-only: one `score` per title, relevance = P(strongly related), then one anchor `choice` per survivor over the note's sentences + `<none>`; floor `rem.confidenceThreshold`; a lane error skips the note, #566). No lane answer can create a folder, tag, or value that does not already exist; only `<new-*>` options reach the generative path.
 
 ## CheckpointManager Lifecycle
 

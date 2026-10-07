@@ -6,6 +6,24 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-10-07: REM runs on the System 1 lane alone when the lane is on; relevance counts only "strongly related"; every link needs an anchor (#566)
+
+**Context**: REM proposed links between unrelated notes even with `rem.confidenceThreshold` at 0.85. The lane's relevance summed the *related* and *strongly related* mass, and "related" meant topical overlap. A replay over three notes (309 candidate titles) showed the rejected links ("Corrigibility" at 0.58, "How to", "positioning") all sat in the band the loose measure admits and the strongly-related mass rejects. The generative prompt still ran after the lane, both to re-filter the survivors on uncalibrated judgement and to name the anchor phrase. Nothing checked that the anchor appeared in the note, and targets the note already linked to were scored again on every re-run.
+
+**Decision**: With `ai.systemOne.enabled` on, REM makes no `complete()` call. A `score` per title (already-linked targets left out, folder path in the question) gives relevance as P(strongly related) alone, gated by `rem.confidenceThreshold`. One `choice` per survivor (top `maxLinksPerNote` by relevance) over the note's sentences plus `<none>`, in one batched request, picks the anchor; `<none>` drops the title. **A lane error on a note skips that note with a warning; it does not fall back to the generative matcher** (maintainer decision). With the lane off, the generative path is unchanged except that a match whose concept has no occurrence in the note is dropped. Candidates and stored proposals record `lane`, and the review surface shows it. Overlapping anchors keep the higher-ranked candidate. `rem.confidenceThreshold` stays at 0.5, now described as the minimum relevance in either lane.
+
+**Alternatives considered**:
+- **Fall back to the generative matcher on a lane error** — rejected; that fallback is the noisy path this change retires, and a skipped note can be re-run.
+- **Weight *related* at 0.5** — rejected; the replay's rejected links sit in exactly that band.
+- **A two-stage `noul` ("would a reader want this link?") after the score** — deferred; the anchor `choice` with `<none>` already gives a second gate on the survivors, and a third question per title adds cost without replay evidence that it helps.
+- **A REM-specific System 1 floor** — rejected; one knob per feature, one meaning.
+
+**Rationale**: Locating an anchor is a choice over the note's own sentences, a System 1 question, so the generative call added cost and uncalibrated judgement without adding anything the lane cannot answer. Anchors are whole sentences, so a link always attaches to text that discusses the target.
+
+**Impact**: `rem/semantic-matcher.ts` splits into `matchOnLane` / `matchGenerative`, adds `anchorSentences`, `RemLaneError`, and already-linked exclusion; new `rem/overlaps.ts`; `RemLinkCandidate.lane`, `RemProposal.lane`; skipped notes are counted in the scan finish notice. The 20-note human-marked before/after sample is left to the maintainer.
+
+---
+
 ## 2026-10-06: Classification seats get a System 1 decision lane (TypeSafe Jev) beside the generative client, over REST (#558)
 
 **Context**: Four seats — tag vocabulary, directory placement, REM semantic matching, and (deferred) frontmatter attributes — asked a chat model to emit JSON that we then fence-stripped, parsed, type-guarded, and validated against a set we already held. Each paid a full completion per note, invented near-duplicates (`folder-normalize.ts` exists to coalesce them), and gated on a "confidence" the model was asked to make up. TypeSafe's Jev answers typed questions (`choice`, `score`, `noul`) over a `state` with per-option probabilities and a calibrated `confidence`, at $0.042 per million input tokens.
