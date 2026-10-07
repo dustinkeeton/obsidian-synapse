@@ -185,6 +185,7 @@ Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries
 | `synapse:organize-current-note` | Organize current note | editorCallback | organize | p | active | |
 | `synapse:scan-directory-organize` | Scan folder for organization | callback | organize | p, f | active | organize |
 | `synapse:undo-organize` | Undo last organize on current note | editorCallback | organize | p | disabled | |
+| `synapse:undo-organize-run` | Undo last organize run | callback | organize | p | active | |
 | `synapse:deep-dive` | Deep dive current note | editorCallback | deep-dive | p | active | |
 | `synapse:clear-deep-dive` | Clear deep dive proposals | callback | deep-dive | p | disabled | |
 | `synapse:summarize-current-note` | Summarize current note | editorCallback | summarize | p | active | |

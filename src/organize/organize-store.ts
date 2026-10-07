@@ -130,6 +130,16 @@ export class OrganizeStore {
 		return readJsonFile(this.app.vault.adapter, path, isOrganizeSnapshot);
 	}
 
+	async loadAllSnapshots(): Promise<OrganizeSnapshot[]> {
+		const files = await this.listFiles(this.snapshotFolder);
+		const snapshots: OrganizeSnapshot[] = [];
+		for (const filePath of files) {
+			const snapshot = await readJsonFile(this.app.vault.adapter, filePath, isOrganizeSnapshot);
+			if (snapshot) snapshots.push(snapshot);
+		}
+		return snapshots;
+	}
+
 	async removeSnapshot(currentPath: string): Promise<void> {
 		const path = this.snapshotPath(currentPath);
 		try {

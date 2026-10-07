@@ -124,6 +124,7 @@ A fully disabled feature (onload never runs) produces zero attempts and so canno
 | `organize-current-note` | Organize current note | organize | active | palette | note | — |
 | `scan-directory-organize` | Scan folder for organization | organize | active | palette, fire-synapse | vault | organize |
 | `undo-organize` | Undo last organize on current note | organize | disabled | palette | note | — |
+| `undo-organize-run` | Undo last organize run | organize | active | palette | global | — |
 | `deep-dive` | Deep dive current note | deep-dive | active | palette | note | — |
 | `clear-deep-dive` | Clear deep dive proposals | deep-dive | disabled | palette | global | — |
 | `summarize-current-note` | Summarize current note | summarize | active | palette | note | — |

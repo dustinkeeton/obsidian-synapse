@@ -90,6 +90,8 @@ export interface OrganizeSnapshot {
 	originalPath: string;
 	/** When the move was performed */
 	movedAt: string;
+	/** Id of the organize run (checkpoint id for scans, a fresh id otherwise) that moved the note; absent on snapshots written before bulk undo existed */
+	runId?: string;
 }
 
 /** Result of organizing a single note. */

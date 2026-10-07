@@ -37,6 +37,7 @@ export const COMMAND_REGISTRY: readonly CommandDefinition[] = [
 	{ id: 'organize-current-note', name: 'Organize current note', feature: 'organize', status: 'active', flows: ['palette'], context: 'note' },
 	{ id: 'scan-directory-organize', name: 'Scan folder for organization', feature: 'organize', status: 'active', flows: ['palette', 'fire-synapse'], context: 'vault', pipelineKey: 'organize' },
 	{ id: 'undo-organize', name: 'Undo last organize on current note', feature: 'organize', status: 'disabled', flows: ['palette'], context: 'note' },
+	{ id: 'undo-organize-run', name: 'Undo last organize run', feature: 'organize', status: 'active', flows: ['palette'], context: 'global' },
 
 	// --- deep-dive (src/deep-dive/index.ts) ---
 	{ id: 'deep-dive', name: 'Deep dive current note', feature: 'deep-dive', status: 'active', flows: ['palette'], context: 'note' },

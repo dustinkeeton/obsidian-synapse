@@ -10,13 +10,13 @@ import {
 import { SYNAPSE_PIPELINE } from '../pipeline';
 import type { CommandDefinition } from './types';
 
-/** The 25 real, user-invocable command ids (excludes the synthetic pipeline entry). */
+/** The 26 real, user-invocable command ids (excludes the synthetic pipeline entry). */
 const EXPECTED_COMMAND_IDS = [
 	'review-proposals', 'manage-checkpoints', 'transcribe-media',
 	'transcribe-note-media', 'fire',
 	'scan-vault', 'scan-current-note', 'clear-proposals',
 	'enrich-current-note', 'scan-vault-enrichment', 'undo-enrichment',
-	'organize-current-note', 'scan-directory-organize', 'undo-organize',
+	'organize-current-note', 'scan-directory-organize', 'undo-organize', 'undo-organize-run',
 	'deep-dive', 'clear-deep-dive',
 	'summarize-current-note', 'scan-vault-summarize',
 	'tidy-current-note', 'undo-tidy',
@@ -26,7 +26,7 @@ const EXPECTED_COMMAND_IDS = [
 ];
 
 describe('COMMAND_REGISTRY', () => {
-	it('contains all 25 real commands plus the synthetic tidy-vault entry', () => {
+	it('contains all 26 real commands plus the synthetic tidy-vault entry', () => {
 		expect(COMMAND_REGISTRY).toHaveLength(EXPECTED_COMMAND_IDS.length + 1);
 		for (const id of EXPECTED_COMMAND_IDS) {
 			expect(REGISTRY_BY_ID.has(id)).toBe(true);

@@ -5,7 +5,7 @@ import {
 	getMarkdownFiles, NotificationManager, ensureFolder,
 	writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
-	trackAiCache, withCacheReport,
+	trackAiCache, withCacheReport, ConfirmModal, sleep,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DecisionRequestOptions, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import type { MoveRecord } from '../shared';
@@ -14,6 +14,8 @@ import { DirectoryMatcher } from './directory-matcher';
 import { PlacementDecider } from './placement-decider';
 import { canonicalKey, isFuzzyMatch } from './folder-normalize';
 import { OrganizeStore } from './organize-store';
+import { buildUndoSummaryPath, generateUndoSummary, selectLastRun } from './undo-run';
+import type { SkippedRevert } from './undo-run';
 import { OrganizeAction, OrganizeProposal, OrganizeResult, OrganizeSnapshot } from './types';
 
 export type {
@@ -105,6 +107,12 @@ export class OrganizeModule implements FeatureModule {
 				}
 			},
 		});
+
+		this.registrar.register('undo-organize-run', this.getSettings().organize.enabled, {
+			callback: () => {
+				fireAndForget(this.undoOrganizeRun(), 'Undo last organize run', { notifications: this.notifications });
+			},
+		});
 	}
 
 	onunload(): void {}
@@ -151,7 +159,7 @@ export class OrganizeModule implements FeatureModule {
 					const cacheUse: CacheUse = {};
 					const result = await this.noteQueue.run(
 						file.path,
-						() => this.organizeFile(file, true, batchProposedDirs, cacheUse)
+						() => this.organizeFile(file, checkpoint.id, true, batchProposedDirs, cacheUse)
 					);
 					cacheUses.push(cacheUse);
 
@@ -245,7 +253,7 @@ export class OrganizeModule implements FeatureModule {
 		try {
 			const result = await this.noteQueue.run(
 				file.path,
-				() => this.organizeFile(file, false, undefined, cacheUse),
+				() => this.organizeFile(file, generateId(), false, undefined, cacheUse),
 				{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
 			);
 
@@ -377,7 +385,7 @@ export class OrganizeModule implements FeatureModule {
 				const cacheUse: CacheUse = {};
 				const result = await this.noteQueue.run(
 					eligible[i].path,
-					() => this.organizeFile(eligible[i], true, batchProposedDirs, cacheUse)
+					() => this.organizeFile(eligible[i], checkpoint.id, true, batchProposedDirs, cacheUse)
 				);
 				cacheUses.push(cacheUse);
 
@@ -461,7 +469,7 @@ export class OrganizeModule implements FeatureModule {
 	 * view refresh; used by batch auto-accept so callers emit one summary
 	 * Notice and refresh once. (Error and "cannot move" Notices still fire.)
 	 */
-	async acceptProposal(id: string, options?: { silent?: boolean }): Promise<void> {
+	async acceptProposal(id: string, options?: { silent?: boolean; runId?: string }): Promise<void> {
 		const queued = await this.store.loadProposal(id);
 		if (!queued) {
 			this.notifications.info('Proposal not found');
@@ -472,7 +480,7 @@ export class OrganizeModule implements FeatureModule {
 	}
 
 	/** Queue-free core of acceptProposal; runs holding the note's queue slot (#483). */
-	private async applyAccept(id: string, options?: { silent?: boolean }): Promise<void> {
+	private async applyAccept(id: string, options?: { silent?: boolean; runId?: string }): Promise<void> {
 		const proposal = await this.store.loadProposal(id);
 		if (!proposal) return;
 		// Guard against double-acceptance (cascade safety): only act on a
@@ -510,6 +518,7 @@ export class OrganizeModule implements FeatureModule {
 				currentPath: newPath,
 				originalPath: file.path,
 				movedAt: new Date().toISOString(),
+				runId: options?.runId ?? generateId(),
 			};
 			await this.store.saveSnapshot(snapshot);
 
@@ -546,10 +555,10 @@ export class OrganizeModule implements FeatureModule {
 	 *
 	 * `batch` suppresses the per-proposal Notice (caller emits a summary).
 	 */
-	private async maybeAutoAccept(proposalId: string, batch = false): Promise<boolean> {
+	private async maybeAutoAccept(proposalId: string, runId: string, batch = false): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
 		// Callers already hold the note's queue slot (#483), so apply directly.
-		await this.applyAccept(proposalId, { silent: batch });
+		await this.applyAccept(proposalId, { silent: batch, runId });
 		if (!batch) {
 			this.notifications.info('Auto-accepted organize proposal');
 		}
@@ -597,6 +606,80 @@ export class OrganizeModule implements FeatureModule {
 	}
 
 	/**
+	 * Move every note of the most recent organize run back to where it was
+	 * (see {@link selectLastRun} for how the run is chosen), newest move first,
+	 * after an explicit confirmation. Notes missing from their post-move path or
+	 * whose original path is now occupied are reported, not forced.
+	 */
+	async undoOrganizeRun(): Promise<void> {
+		const snapshots = await this.store.loadAllSnapshots();
+		const checkpoints = await this.checkpointManager.listAll();
+		const run = selectLastRun(snapshots, checkpoints);
+		if (!run) {
+			this.notifications.info('No organize run to undo');
+			return;
+		}
+
+		const count = run.snapshots.length;
+		const when = new Date(run.startedAt).toLocaleString();
+		const confirmed = await new ConfirmModal(this.plugin.app, {
+			title: 'Undo last organize run?',
+			message: `${count} note${count === 1 ? '' : 's'} moved by the organize run started ${when} will be moved back to where ${count === 1 ? 'it was' : 'they were'}.`,
+			confirmLabel: 'Move back',
+		}).openAndConfirm();
+		if (!confirmed) return;
+
+		const op = this.notifications.startOperation('Undoing organize run', 'organize-undo-run');
+		const reverted: MoveRecord[] = [];
+		const skipped: SkippedRevert[] = [];
+
+		for (let i = 0; i < run.snapshots.length; i++) {
+			if (op.cancelled) break;
+			const snapshot = run.snapshots[i];
+			op.progress(i + 1, count, 'Moving notes back');
+
+			const file = this.plugin.app.vault.getAbstractFileByPath(snapshot.currentPath);
+			if (!(file instanceof TFile)) {
+				skipped.push({ path: snapshot.currentPath, reason: `note not found; it belonged at ${snapshot.originalPath}` });
+				continue;
+			}
+			if (this.plugin.app.vault.getAbstractFileByPath(snapshot.originalPath)) {
+				skipped.push({ path: snapshot.currentPath, reason: `original path ${snapshot.originalPath} is occupied` });
+				continue;
+			}
+
+			try {
+				await this.noteQueue.run(file.path, async () => {
+					const originalParent = this.getParentPath(snapshot.originalPath);
+					if (originalParent) {
+						await ensureFolder(this.plugin.app, originalParent);
+					}
+					await this.plugin.app.vault.rename(file, snapshot.originalPath);
+				});
+				await this.store.removeSnapshot(snapshot.currentPath);
+				reverted.push({ originalPath: snapshot.currentPath, newPath: snapshot.originalPath });
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				skipped.push({ path: snapshot.currentPath, reason: `move back failed: ${msg}` });
+			}
+
+			await sleep(0);
+		}
+
+		op.finish(`Moved ${reverted.length} note${reverted.length === 1 ? '' : 's'} back — ${skipped.length} need${skipped.length === 1 ? 's' : ''} attention`);
+
+		try {
+			const timestamp = new Date().toISOString();
+			const summaryPath = buildUndoSummaryPath(timestamp);
+			await writeNote(this.plugin.app, summaryPath, generateUndoSummary(reverted, skipped, timestamp));
+			this.notifications.info(`Undo summary saved to ${summaryPath}`);
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			console.warn(`[Synapse] Failed to write undo summary: ${msg}`);
+		}
+	}
+
+	/**
 	 * Core logic for organizing a single file.
 	 * Returns null if the note is already well-placed.
 	 *
@@ -610,6 +693,7 @@ export class OrganizeModule implements FeatureModule {
 	 */
 	private async organizeFile(
 		file: TFile,
+		runId: string,
 		batch = false,
 		batchProposedDirs?: Map<string, string>,
 		cacheUse: CacheUse = {}
@@ -651,6 +735,7 @@ export class OrganizeModule implements FeatureModule {
 				currentPath: newPath,
 				originalPath: file.path,
 				movedAt: new Date().toISOString(),
+				runId,
 			};
 			await this.store.saveSnapshot(snapshot);
 
@@ -688,7 +773,7 @@ export class OrganizeModule implements FeatureModule {
 		await this.store.saveProposal(proposal);
 
 		// Auto-accept the freshly created proposal if enabled (#228).
-		const autoAccepted = await this.maybeAutoAccept(proposal.id, batch);
+		const autoAccepted = await this.maybeAutoAccept(proposal.id, runId, batch);
 
 		return {
 			notePath: file.path,
