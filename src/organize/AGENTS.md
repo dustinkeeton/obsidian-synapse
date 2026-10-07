@@ -15,7 +15,7 @@ class OrganizeModule {
 
   constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:54; ModuleDeps = { plugin, getSettings, notifications, checkpointManager, registrar, noteQueue } (#504)
 
-  suggestDirectory(text: string, aiOpts?: AIRequestOptions): Promise<string | null>   // index.ts:68; ContentAnalyzer.extractTopics(text, [], aiOpts) -> DirectoryMatcher.scoreDirectories; top directoryPath when score >= SUGGEST_DIRECTORY_MIN_SCORE (0.6, index.ts:29), else null; unqueued, no vault write; the registry injects it into deep-dive
+  suggestDirectory(text: string, aiOpts?: DecisionRequestOptions): Promise<string | null>   // index.ts:70; ContentAnalyzer.resolvePlacement(text, [], aiOpts): a confident System 1 placement returns its directoryPath directly (#558); else topics -> DirectoryMatcher.scoreDirectories; top directoryPath when score >= SUGGEST_DIRECTORY_MIN_SCORE (0.6, index.ts:31), else null; unqueued, no vault write; the registry injects it into deep-dive
   onload(): Promise<void>
   onunload(): void
   getPendingProposals(): Promise<OrganizeProposal[]>
@@ -65,12 +65,25 @@ Batch loops (`scanDirectory`, `resumeFromCheckpoint`) take one slot per note, ne
 ## ContentAnalyzer (`content-analyzer.ts`)
 
 ```ts
+interface ResolvedPlacement { topics: NoteTopic[]; placement?: Placement; lane: DecisionLane }   // content-analyzer.ts:9
 class ContentAnalyzer {
-  constructor(app: App, getSettings: () => SynapseSettings)
-  analyze(file: TFile, aiOpts?: AIRequestOptions): Promise<ContentAnalysis>          // aiOpts forwarded to extractTopics (#527)
-  extractTopics(body: string, tags: string[], aiOpts?: AIRequestOptions): Promise<NoteTopic[]>   // aiOpts reaches complete() inside withRetry
+  constructor(app: App, getSettings: () => SynapseSettings, placement?: PlacementDecider)   // :40; default PlacementDecider(app, getSettings)
+  analyze(file: TFile, aiOpts?: DecisionRequestOptions): Promise<ContentAnalysis>          // :53; reads body/tags/links, then resolvePlacement; sets ContentAnalysis.placement when the lane decided
+  resolvePlacement(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement>   // :79; routeByConfidence(systemOne: placement.decide when available, floor: organize.organizeConfidenceThreshold, fallback: extractTopics); calls aiOpts.onSystemOne() on lane 'system-one' (#558)
+  extractTopics(body: string, tags: string[], aiOpts?: AIRequestOptions): Promise<NoteTopic[]>   // aiOpts reaches complete() inside withRetry; unchanged generative path
   parseTopicResponse(raw: string): NoteTopic[]
   topicsFromTags(tags: string[]): NoteTopic[]
+}
+```
+
+## PlacementDecider (`placement-decider.ts`, #558)
+
+```ts
+const NEW_DIRECTORY_OPTION = '<new-directory>'   // :9; '<' cannot appear in a vault folder name
+class PlacementDecider {
+  constructor(app: App, getSettings: () => SynapseSettings)   // owns a DecisionClient + DirectoryMatcher (for collectDirectories)
+  isAvailable(): boolean                                      // :29; DecisionClient.isEnabled()
+  decide(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<Placement | null>   // :33; null for blank body / no folders / '<new-directory>' / unknown path; one choice over collectDirectories() + '<new-directory>' (state = body[0:3000] + tags), split into questions of 254 folders past the 255-option cap; >1 chunk winners -> one more choice among the winners; throws on lane errors (router falls back)
 }
 ```
 
@@ -86,7 +99,7 @@ class DirectoryMatcher {
     analysis: ContentAnalysis,
     minScoreThreshold?: number,    // default 0.6
     confidenceThreshold?: number   // default 0.9
-  ): OrganizeAction
+  ): OrganizeAction                // :54; analysis.placement -> { type: 'move', targetDirectory } before any scoring (#558)
   scoreDirectory(dirPath: string, analysis: ContentAnalysis, noteDir: string): number
   collectDirectories(): string[]
   buildDirectoryPath(topicLabel: string): string
@@ -98,8 +111,9 @@ class DirectoryMatcher {
 | File | Class/Function | Role |
 |------|---------------|------|
 | `index.ts` | `OrganizeModule`, `buildSummaryPath` | Module entry point and public API |
-| `content-analyzer.ts` | `ContentAnalyzer` | AI topic extraction from note body, tags, and links |
-| `directory-matcher.ts` | `DirectoryMatcher` | Scores existing directories; proposes new ones |
+| `content-analyzer.ts` | `ContentAnalyzer`, `ResolvedPlacement` | System 1 placement routing (#558) over AI topic extraction from note body, tags, and links |
+| `placement-decider.ts` | `PlacementDecider`, `NEW_DIRECTORY_OPTION` | System 1 `choice` over existing folders + new-directory (#558) |
+| `directory-matcher.ts` | `DirectoryMatcher` | Scores existing directories; proposes new ones; honours `ContentAnalysis.placement` |
 | `folder-normalize.ts` | `singularize`, `canonicalKey`, `editDistance`, `isFuzzyMatch` | Morphology-aware canonical keys for coalescing similar folder names (#172) |
 | `organize-store.ts` | `OrganizeStore` | JSON persistence for proposals and move snapshots |
 | `settings-section.ts` | `renderOrganizeSettings` | Settings UI renderer |
@@ -113,8 +127,9 @@ class DirectoryMatcher {
 organizeNote(file) / scanDirectory() / resumeFromCheckpoint()
   --> noteQueue.run(file.path, () => organizeFile(...))   [#483: slot held for the whole cycle]
         organizeFile(file, batch?, batchProposedDirs?, cacheUse?)    [queue-free core, index.ts:604]
-          --> ContentAnalyzer.analyze(file, trackAiCache(cacheUse))  [AI: extract topics; #527]
-          --> DirectoryMatcher.determineAction(analysis, confidenceThreshold)
+          --> ContentAnalyzer.analyze(file, trackAiCache(cacheUse))  [#558: System 1 placement at/above organizeConfidenceThreshold -> analysis.placement, topics []; else AI topic extraction; #527]
+          --> return null when topics is empty AND no placement (index.ts:615)
+          --> DirectoryMatcher.determineAction(analysis, confidenceThreshold)   [placement -> direct move to that folder; own folder -> null "already placed"]
             if existing dir matches:
               --> OrganizeStore.saveSnapshot()  [undo backup]
               --> vault.rename(file, newPath)  [direct move]
@@ -220,7 +235,8 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 | `settings.organize.proposalFolderPath` | `string` | `.synapse/organize/proposals` |
 | `settings.organize.snapshotFolderPath` | `string` | `.synapse/organize/snapshots` |
 | `settings.organize.excludeTags` | `string[]` | `['no-organize']` |
-| `settings.organize.organizeConfidenceThreshold` | `number` | `0.9` |
+| `settings.organize.organizeConfidenceThreshold` | `number` | `0.9` (also the System 1 placement floor, #558) |
+| `settings.ai.systemOne` (top-level) | `SystemOneSettings` | `enabled: false` — gates `PlacementDecider` |
 | `settings.autoAccept.organize` | `boolean` | `false` |
 | `settings.exclusions` | `ExclusionRule[]` | `[{pattern:'.synapse/**',features:'all'}, {pattern:'templates/**',features:'all'}]` |
 
@@ -236,7 +252,8 @@ Out: nothing is imported by another feature. `modules/registry.ts:111-116` wraps
 - `maybeAutoAccept` must call `applyAccept`, never `acceptProposal` — it already runs under the note's queue key (#483).
 - Move skips if a file already exists at the destination (returns null, does not overwrite).
 - Batch scan coalesces near-identical proposed directories via `batchProposedDirs` map — variants like "model"/"models" resolve to a single folder (#172).
-- `organizeConfidenceThreshold` gates new-directory proposals; `minScoreThreshold` (0.6, hardcoded in `determineAction` call site) gates existing-directory moves.
+- `organizeConfidenceThreshold` gates new-directory proposals and the System 1 placement floor (#558); `minScoreThreshold` (0.6, hardcoded in `determineAction` call site) gates topic-scored existing-directory moves.
+- The System 1 lane never creates a folder: only `<new-directory>` (or low confidence / a lane error) reaches `extractTopics` and the propose-new-folder path (`placement-decider.ts:9`, `content-analyzer.ts:79`).
 - Summary notes (Mermaid `graph LR` move diagram via `generateOrganizeSummary`) written to `.synapse/organize/summaries/{YYYY-MM-DD}-organize-summary.md` by `writeOrganizeSummary` / `buildSummaryPath`.
 - `deep-dive` calls `onOrganizeRequested` which invokes `organizeNote` on accepted deep-dive notes (when `deepDive.autoOrganizeOnAccept` is true). Same for `summarize.autoOrganizeOnSummarize`. `main.ts` dispatches both through `fireAndForget` — never awaited — so they simply enqueue behind whatever holds the note's slot (#483), no cycle.
 - Completion toasts carry a "Review" action via `reviewAction({ generated, shouldAutoAccept, openProposalView })` (#366) — gated on `generated && !shouldAutoAccept() && !postOp`; the action opens the proposal view through `onOpenProposalView`. Used in the `finish()` handlers of `organizeNote`, `scanDirectory`, and `resumeFromCheckpoint`. When organize auto-accept is on the note is already moved, so no Review button appears.

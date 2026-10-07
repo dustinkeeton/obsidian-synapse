@@ -6,6 +6,24 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-10-06: Classification seats get a System 1 decision lane (TypeSafe Jev) beside the generative client, over REST (#558)
+
+**Context**: Four seats — tag vocabulary, directory placement, REM semantic matching, and (deferred) frontmatter attributes — asked a chat model to emit JSON that we then fence-stripped, parsed, type-guarded, and validated against a set we already held. Each paid a full completion per note, invented near-duplicates (`folder-normalize.ts` exists to coalesce them), and gated on a "confidence" the model was asked to make up. TypeSafe's Jev answers typed questions (`choice`, `score`, `noul`) over a `state` with per-option probabilities and a calibrated `confidence`, at $0.042 per million input tokens.
+
+**Decision**: Add `shared/decision-client.ts` as a **separate lane**, not a fifth `AIProvider`, and route three seats through it with the existing generative path as the low-confidence fallback. The client speaks REST to `POST /v1/systemone` through the shared `safeRequest` (extracted to `shared/safe-request.ts`, now throwing a typed `ApiRequestError`), chunks question maps under the documented 64k/32k token budgets, retries only 429/529, caches under the same rule as `AIClient`, and surfaces 401/422 as `DecisionLaneError`. `shared/confidence-router.ts` (`routeByConfidence`, `partitionByConfidence`) runs the fallback exactly once — on lane off, a null answer, a sub-floor confidence, or any error. Floors reuse each seat's own setting (`organize.organizeConfidenceThreshold`, `rem.confidenceThreshold`) with `ai.systemOne.confidenceFloor` (0.6) for the tag seat. `CacheUse.systemOne` carries lane attribution into the finish notice. The lane is **off by default**; `typesafe` joins `CredentialProvider` with a minimal POST probe so the existing Test button works.
+
+**Alternatives considered**:
+- **Extend `AIClient` with a `'typesafe'` provider** — rejected; Jev cannot serve `complete()`/`chat()`, so every generative caller would need a guard, and the provider dropdown would offer a model that cannot elaborate or summarize.
+- **Take the `@typesafe-ai/sdk` dependency** — rejected; the plugin runs in Obsidian's Electron/mobile runtime with a no-runtime-dependency policy, and the REST surface is one endpoint with a JSON body that `requestUrl` already handles.
+- **Make the lane the only path** — rejected; calibrated confidence is the point, and acting on a low-confidence answer would be worse than today's prompt. Below the floor the old path runs unchanged.
+- **A GET-less `skipped` credential probe** — rejected; a Test button that never tests is worse UX than one billable `noul` over the word `ping`, so `ProbeSpec` gained `method: 'POST'` + `body`.
+
+**Rationale**: The seats are decisions over sets Synapse already holds. A choice over those sets structurally cannot hallucinate a tag, folder, or title, so the vault converges on what exists instead of branching; only a `<none>` / `<new-directory>` answer that clears the floor reaches the generative path. Keeping Jev out of `AIProvider` keeps the type system honest about what each client can do.
+
+**Impact**: New `shared/safe-request.ts`, `shared/decision-client.ts`, `shared/confidence-router.ts`, `organize/placement-decider.ts`, `settings-ui/system-one-credentials.ts` (+ tests); `ai.systemOne` settings block (back-filled by `deepMergeSettings`, no migration); `typesafe` in `provider-metadata.ts`; `CacheUse.systemOne` + lane wording in `cache-notice.ts`; `MetadataClassifier`, `ContentAnalyzer`/`DirectoryMatcher`/`OrganizeModule.suggestDirectory`, `SemanticMatcher` each gain a lane-first path with the old path byte-for-byte behind the toggle. The frontmatter-attribute seat and a live 200-note cost measurement are deferred to a follow-up issue. TypeSafe keys document no prefix, so redaction relies on the `Bearer ` arm. PR #563.
+
+---
+
 ## 2026-10-06: Audit pass — five defense-in-depth closures at input and workflow boundaries
 
 **Context**: Security pass 1 of the 2026-10-06 audit (`chore/audit-2026-10-06`). No finding was exploitable on its own; each one was a boundary that trusted a value it had not checked itself.

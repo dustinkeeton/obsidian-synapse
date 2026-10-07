@@ -4,7 +4,7 @@ last-updated: 2026-10-06
 
 # Shared Module
 
-Cross-cutting base layer used by all feature modules: AI client, secret redaction, file operations, base64 encoding, notifications, in-app update checking, validation, frontmatter parsing, checkpoint management, per-note AI-operation serialization, the media-URL transcript store, ID generation, note-title predicates, URL platform detection / classification, web / Reddit / tweet content fetching, credential validation, JSON utilities, Node.js desktop-only loader, and the feature-module lifecycle contract (`ModuleDeps` / `FeatureModule` / `FeatureSettingsKey`, #504). Depends on NO feature module — this is the bottom of the dependency graph (one type-only edge to `commands/` for `CommandRegistrar`, erased at compile time).
+Cross-cutting base layer used by all feature modules: AI client, System 1 decision client + confidence router (#558), secret redaction, file operations, base64 encoding, notifications, in-app update checking, validation, frontmatter parsing, checkpoint management, per-note AI-operation serialization, the media-URL transcript store, ID generation, note-title predicates, URL platform detection / classification, web / Reddit / tweet content fetching, credential validation, JSON utilities, Node.js desktop-only loader, and the feature-module lifecycle contract (`ModuleDeps` / `FeatureModule` / `FeatureSettingsKey`, #504). Depends on NO feature module — this is the bottom of the dependency graph (one type-only edge to `commands/` for `CommandRegistrar`, erased at compile time).
 
 Canonical homes (re-exported elsewhere for back-compat — import from the `shared` barrel, never an internal file):
 - `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) — moved here from `src/video/` to break the former shared⇄video import cycle; the `video` barrel no longer re-exports the functions (only `Platform` via `video/types.ts:3`), so every consumer imports from `shared`.
@@ -35,6 +35,46 @@ export { redactSecrets }                              // re-export of redact.ts 
 // + in-flight coalescing (#397). Cacheable when ai.temperature === 0 OR ai.cacheResponses === true.
 // Key = contentKey([JSON(messages), provider, model, temperature, maxTokens]); bypassCache skips the
 // cache read + coalescing but still refreshes the cache; only successful dispatches are cached.
+
+// safe-request.ts (#558; extracted from ai-client.ts, shared by AIClient and DecisionClient)
+class ApiRequestError extends Error { readonly status: number }   // safe-request.ts:9; message = `API error (<status>): <redactSecrets(detail)>`
+function safeRequest(options: RequestUrlParam, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<RequestUrlResponse>   // safe-request.ts:17; requestUrl({...options, throw:false}) raced against the timeout (120s); throws ApiRequestError on status >= 400
+
+// decision-client.ts (#558) — System 1 lane over TypeSafe's POST /v1/systemone; NOT an AIProvider
+const SYSTEM_ONE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'   // :9
+const MAX_CHOICE_OPTIONS = 255                                        // :17; Jev's per-choice option cap
+interface ChoiceQuestion { type: 'choice'; instructions: string; criteria: Record<string, string | null> }
+interface ScoreQuestion  { type: 'score';  instructions: string; criteria: string[] }            // 2-10 ordered levels
+interface NoulQuestion   { type: 'noul';   instructions: string; criteria?: { true?: string; false?: string } }
+type DecisionQuestion = ChoiceQuestion | ScoreQuestion | NoulQuestion
+interface ChoiceAnswer { type: 'choice'; choice: string; probabilities: Record<string, number>; confidence: number }
+interface ScoreAnswer  { type: 'score'; score: number; legend: Record<string, string>; probabilities: Record<string, number>; confidence: number }   // probabilities keyed by level index '0'..'n-1'
+interface NoulAnswer   { type: 'noul'; noul: number }                 // Jev returns no confidence for noul
+type DecisionAnswer = ChoiceAnswer | ScoreAnswer | NoulAnswer
+interface DecisionUsage { inputTokens: number; outputTokens: number }
+interface DecisionResult<Q> { answers: { [K in keyof Q]: AnswerFor<Q[K]> }; usage: DecisionUsage; requests: number }   // requests = HTTP calls made (0 = fully replayed)
+interface DecisionRequestOptions extends AIRequestOptions { onSystemOne?: () => void }   // :87; a seat calls onSystemOne when the lane decided its result
+type DecisionLaneFailure = 'disabled' | 'unauthorized' | 'invalid-request' | 'budget' | 'malformed-response'
+class DecisionLaneError extends Error { readonly reason: DecisionLaneFailure }   // :94; 401 -> unauthorized, 422 -> invalid-request; message redacted
+function choice(instructions: string, criteria: Record<string, string | null>): ChoiceQuestion   // :101
+function score(instructions: string, levels: string[]): ScoreQuestion                            // :105
+function noul(instructions: string, criteria?: { true?: string; false?: string }): NoulQuestion  // :109
+function answerConfidence(answer: DecisionAnswer): number   // :114; choice/score -> confidence; noul -> max(noul, 1 - noul)
+function estimateTokens(value: unknown): number             // chars / 4 over the JSON form
+function chunkQuestions<Q>(state: string, questions: Record<string, Q>): Array<Record<string, Q>>   // :124; greedy split under 80% of 64k tokens/request; throws DecisionLaneError('budget') when state + one question exceeds 80% of 32k
+class DecisionClient {
+  constructor(getSettings: () => SynapseSettings)                                     // :217
+  isEnabled(): boolean                                                                // :223; ai.systemOne.enabled && apiKey non-blank — seats skip the lane entirely otherwise
+  decide<Q>(state: string, questions: Q, opts?: DecisionRequestOptions): Promise<DecisionResult<Q>>   // :229; one request per chunk, answers merged, usage summed; Authorization: Bearer <key>; withRetry x3 (1s base) on 429/529 only; cacheable under the same rule as AIClient (temperature 0 or cacheResponses), key = contentKey([state, JSON(chunk), model]); bypassCache re-dispatches; onCacheHit fires once if any chunk replayed; failures never cached
+}
+
+// confidence-router.ts (#558)
+type DecisionLane = 'system-one' | 'system-two'                                      // :4
+interface RoutedDecision<T> { value: T; lane: DecisionLane; confidence?: number }
+interface ConfidenceRoute<A, T> { systemOne: (() => Promise<A | null>) | null; floor: number; confidenceOf(a: A): number; accept(a: A): T; fallback(): Promise<T>; label?: string }
+function routeByConfidence<A, T>(route: ConfidenceRoute<A, T>): Promise<RoutedDecision<T>>   // :27; systemOne null (lane off), null answer, confidence < floor, or a throw (console.warn via redactError) -> fallback() exactly once; floor is inclusive
+interface ConfidencePartition<A> { confident: Record<string, A>; uncertain: string[] }
+function partitionByConfidence<A>(answers: Record<string, A>, floor: number, confidenceOf: (a: A) => number): ConfidencePartition<A>   // :53; batch form — only uncertain ids go to the generative path
 
 // redact.ts (single source of truth for secret redaction)
 function redactSecrets(text: string): string         // replaces sk-/key-/dg-/Bearer/Token/anthropic-/AIza secrets with [REDACTED]
@@ -314,8 +354,8 @@ interface Checkpoint {
 }
 
 // provider-metadata.ts
-type CredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'deepgram' | 'ollama'
-interface ProbeSpec { method: 'GET'; url: string; headers: Record<string, string> }
+type CredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'deepgram' | 'ollama' | 'typesafe'   // :23; typesafe keys ai.systemOne (#558), not an AIProvider
+interface ProbeSpec { method: 'GET' | 'POST'; url: string; headers: Record<string, string>; body?: string }   // :26; POST only for typesafe (Jev has no GET surface): one noul over state 'ping'
 interface ProviderMetadata {
   label: string
   getKeyUrl: string
@@ -442,13 +482,13 @@ class TranscriptCache {
 }
 // Never throws: unreadable/corrupt file = empty store, failed write = console.warn(redactError). Lazy single load, in-memory map, full-file rewrite on every put/get.
 
-// cache-notice.ts (#527) — single source of "served from cache" finish wording
-interface CacheUse { transcript?: boolean; ai?: boolean }          // which caches served any part of ONE result
-function usedCache(use: CacheUse): boolean                         // module-only (not on the barrel); the filter behind withCacheReport
-function mergeCacheUse(uses: CacheUse[]): CacheUse                 // OR per cache (several sources -> one result)
+// cache-notice.ts (#527, #558) — single source of "served from cache" / "decided by the System 1 lane" finish wording
+interface CacheUse { transcript?: boolean; ai?: boolean; systemOne?: boolean }   // :7; which caches served any part of ONE result + whether the System 1 lane decided it
+function usedCache(use: CacheUse): boolean                         // module-only (not on the barrel); cache flags only
+function mergeCacheUse(uses: CacheUse[]): CacheUse                 // OR per flag (several sources -> one result)
 function transcriptCacheUse(result: { cached?: boolean; aiCached?: boolean }): CacheUse   // routed URL transcript flags -> CacheUse
-function trackAiCache(use: CacheUse): AIRequestOptions             // { onCacheHit } that sets use.ai; any replayed call in an operation marks it
-function withCacheReport(message: string, items: CacheUse[], unit?: string): string   // items = one per result; no hit -> message unchanged; 1 item -> ' — used a cached transcript ("Fetch a fresh transcript" in Transcribe media replaces it)' | ' — used a cached AI response' | both; >1 -> ' — N of M <unit>s served from cache' (unit = singular noun for one item: 'note' | 'proposal' | 'summary' | 'transcription' | 'extraction'; every batch caller passes one)
+function trackAiCache(use: CacheUse): DecisionRequestOptions       // :38; { onCacheHit -> use.ai = true, onSystemOne -> use.systemOne = true }; assignable to AIRequestOptions
+function withCacheReport(message: string, items: CacheUse[], unit?: string): string   // :70; no cache hit and no lane -> message unchanged; 1 item -> ' — used a cached transcript (...)' | ' — used a cached AI response' | ' — decided by the System 1 lane', cache note and lane note joined by '; '; >1 -> ' — N of M <unit>s served from cache' and/or ' — N of M <unit>s decided by the System 1 lane' joined by '; '
 
 // no-speech.ts (#524) — typed no-speech outcome shared by audio, video, transcription
 const NO_SPEECH_MESSAGE: string                                   // 'No speech detected — nothing to transcribe'
@@ -523,7 +563,12 @@ function scoreLyricsContent(content: string): number
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `ai-client.ts` | `AIClient`, `AIRequestOptions`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support. `chat()`/`complete()` accept `opts?: AIRequestOptions` and wrap a private `dispatch(messages, requestedModel)` with an opt-in per-instance LRU response cache (max 50) + in-flight coalescing (#397; key via `contentKey` over messages + provider + resolved model + temperature + maxTokens); `opts.model` overrides `ai.model` for that call only (`:383`) and is passed to `callOpenAI/Anthropic/Gemini/Ollama(messages, requestedModel)`; `safeRequest`, `resolveModelId`, `cacheGet`/`cacheSet`, `to*Content` (internal). Imports `redactSecrets` from `redact.ts`, `contentKey` from `hash-utils.ts` |
+| `safe-request.ts` | `safeRequest`, `ApiRequestError`, `DEFAULT_REQUEST_TIMEOUT_MS`, `extractErrorMessage` | `requestUrl` with `throw:false`, a 120s timeout, and a redacted typed status error (#558; extracted from `ai-client.ts`). Imports `redact`, `json-utils` |
+| `decision-client.ts` | `DecisionClient`, `DecisionLaneError`, `choice`/`score`/`noul`, `answerConfidence`, `estimateTokens`, `chunkQuestions`, `SYSTEM_ONE_ENDPOINT`, `MAX_CHOICE_OPTIONS`, question/answer types, `DecisionRequestOptions`, `DecisionLaneFailure` | System 1 lane (#558): typed REST client over TypeSafe `/v1/systemone`, budget chunking, 429/529 retry, per-instance LRU cache (max 50) under the AIClient cache rule, redaction on every error path. Imports `safe-request`, `api-utils` (`withRetry`), `json-utils`, `hash-utils`, `redact`; type-only `settings`, `ai-client` |
+| `decision-client.test.ts` | Tests | Builders, chunking + budget error, request shape (Bearer, throw:false), 401/422/429/529/timeout/malformed paths, key redaction, cache hit/bypass/no-cache-on-failure |
+| `confidence-router.ts` | `routeByConfidence`, `partitionByConfidence`, `DecisionLane`, `RoutedDecision`, `ConfidenceRoute`, `ConfidencePartition` | Confidence routing (#558): act on the System 1 answer at or above the floor, otherwise run the generative fallback exactly once (lane off / null / below floor / throw). Imports `redact` |
+| `confidence-router.test.ts` | Tests | Above/at/below floor, disabled, null, throw (redacted warn), fallback-once, partition |
+| `ai-client.ts` | `AIClient`, `AIRequestOptions`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support. `chat()`/`complete()` accept `opts?: AIRequestOptions` and wrap a private `dispatch(messages, requestedModel)` with an opt-in per-instance LRU response cache (max 50) + in-flight coalescing (#397; key via `contentKey` over messages + provider + resolved model + temperature + maxTokens); `opts.model` overrides `ai.model` for that call only (`:383`) and is passed to `callOpenAI/Anthropic/Gemini/Ollama(messages, requestedModel)`; `resolveModelId`, `cacheGet`/`cacheSet`, `to*Content` (internal). Imports `safeRequest` from `safe-request.ts` (#558), `redactSecrets` from `redact.ts`, `contentKey` from `hash-utils.ts` |
 | `ai-client.test.ts` | Tests | Per-provider request/response shapes (Gemini, OpenAI, Anthropic) + `redactSecrets` re-export |
 | `redact.ts` | `redactSecrets`, `redactError` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). `redactSecrets` consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts`, `update-checker.ts`, `notifications.ts`; `redactError(value)` renders a caught error to a redacted log-safe string (stack ?? `name: message` -> redactSecrets) for every raw-error console sink (main, data-folder-migration, onboarding, checkpoints, update-checker, transcript-cache, audio, intake, rem, elaboration x2, shared/image-preprocess, transcription x2, clipboard catches in notifications + video settings, fire-and-forget). Behavior covered by `redact.test.ts` |
 | `redact.test.ts` | Tests | Redaction pattern tests |
@@ -578,8 +623,8 @@ function scoreLyricsContent(content: string): number
 | `feature-module.ts` | `ModuleDeps`, `FeatureModule`, `FeatureSettingsKey` | Feature-module lifecycle contract (#504): the service bundle every module constructor takes first, the `onload`/`onunload` + optional proposal-hook-slot interface `modules/registry.ts` drives, and the settings-key union that gates load. Type-only imports (`obsidian` `Plugin`, `../settings`, `../commands` `CommandRegistrar`); no runtime code |
 | `transcript-cache.ts` | `TranscriptCache`, `canonicalMediaUrl`, `transcriptCacheKey`, `CachedTranscript`, `TranscriptCacheEntry`, `TranscriptCacheOptions` | Persistent media-URL transcript store (#488) at `.synapse/transcript-cache.json`, keyed by canonical URL + time range. Consumed by `transcription/url-transcription.ts` (router read-through/write-through via the `TranscriptStore` slice), constructed once in `main.ts` (`SynapsePlugin.transcriptCache`), cleared from `video/settings-section.ts`. Imports `url-detector`, `json-utils`, `file-utils` (`ensureFolder`), `redact` |
 | `no-speech.ts` | `NoSpeechDetectedError`, `isNoSpeechError`, `hasSpeechContent`, `isWorthPostProcessing`, `noSpeechNotice`, `NO_SPEECH_MESSAGE`, `MIN_TRANSCRIPT_CHARS_FOR_AI` | No-speech outcome (#524). Thrown by `audio/transcriber.ts`, `audio/index.ts`, `transcription/url-transcription.ts`, `transcription/local-extraction-strategy.ts`; branched on by the audio/video/transcription write sites; `summarize` matches it by name. No imports |
-| `cache-notice.ts` | `CacheUse`, `mergeCacheUse`, `transcriptCacheUse`, `trackAiCache`, `withCacheReport` (barrel); `usedCache` (module-only) | Cache-hit reporting (#527): wording + batch aggregation for operation finish messages. Type-only import of `ai-client`. Used by audio, video, transcription, summarize, tidy, elaboration, enrichment, deep-dive, organize, rem, title, image |
-| `cache-notice.test.ts` | Tests | Unchanged-on-miss, per-cache wording, batch aggregation, flag mapping |
+| `cache-notice.ts` | `CacheUse`, `mergeCacheUse`, `transcriptCacheUse`, `trackAiCache`, `withCacheReport` (barrel); `usedCache` (module-only) | Cache-hit (#527) and System 1 lane (#558) reporting: wording + batch aggregation for operation finish messages. Type-only import of `decision-client`. Used by audio, video, transcription, summarize, tidy, elaboration, enrichment, deep-dive, organize, rem, title, image |
+| `cache-notice.test.ts` | Tests | Unchanged-on-miss, per-cache wording, lane wording, batch aggregation, flag mapping |
 | `no-speech.test.ts` | Tests | Error name/message, cause-chain + cycle matching, blank/annotation detection, AI minimum length, notice wording |
 | `transcript-cache.test.ts` | Tests | Canonicalization, key/time-range separation, round-trip persistence, LRU entry + char eviction, corrupt-file tolerance, write-failure tolerance |
 | `tweet-fetcher.ts` | `fetchTweetContent`, `isTwitterUrl`, `TweetContent` | Twitter/X.com tweet fetching with oEmbed → fxtwitter → vxtwitter fallback chain |
@@ -592,9 +637,9 @@ function scoreLyricsContent(content: string): number
 | `exclusions.test.ts` | Tests | Exclusion matcher + migration tests |
 | `content-schemas.ts` | `ContentSchema`, `PipelineStage`, `SchemaMode`, `CONTENT_SCHEMAS`, `detectSchemaFor`, `isRecipeContent`, `scoreRecipeContent`, `isReceiptContent`, `scoreReceiptContent`, `isLyricsContent`, `scoreLyricsContent` | Content-aware formatting registry (#233): recipe/receipt/lyrics detection heuristics + prompts, stage-gated via `appliesTo` and `mode`. `isLyricsContent`/`scoreLyricsContent` added for audio transcription lyric reformatting (#234) |
 | `content-schemas.test.ts` | Tests | Schema detection + scoring + stage-gate lock tests |
-| `provider-metadata.ts` | `PROVIDER_METADATA`, `aiProviderToCredential`, `CredentialProvider`, `ProviderMetadata`, `ProbeSpec` | Per-provider credential metadata: console URL, placeholder, format hint, minimal authenticated probe spec. Pure data module (no Obsidian runtime import). Covers openai/anthropic/gemini/deepgram/ollama |
-| `provider-metadata.test.ts` | Tests | `PROVIDER_METADATA` probe specs (keyed + keyless ollama), `aiProviderToCredential` |
-| `credential-validator.ts` | `validateCredentials`, `ValidationResult`, `ValidationStatus`, `ValidateOptions` | Live credential validation via provider probe; 10s timeout; never throws; redacts secrets from all error messages. Status: `valid`/`invalid`/`error`/`skipped` |
+| `provider-metadata.ts` | `PROVIDER_METADATA`, `aiProviderToCredential`, `CredentialProvider`, `ProviderMetadata`, `ProbeSpec` | Per-provider credential metadata: console URL, placeholder, format hint, minimal authenticated probe spec (GET; POST for `typesafe`, whose API has no GET surface, #558). Pure data module (no Obsidian runtime import). Covers openai/anthropic/gemini/deepgram/ollama/typesafe (`:143`, console `https://console.typesafe.ai/keys`) |
+| `provider-metadata.test.ts` | Tests | `PROVIDER_METADATA` probe specs (keyed + keyless ollama + typesafe POST body), `aiProviderToCredential` |
+| `credential-validator.ts` | `validateCredentials`, `ValidationResult`, `ValidationStatus`, `ValidateOptions` | Live credential validation via provider probe (forwards `probe.body` for POST probes); 10s timeout; never throws; redacts secrets from all error messages. Status: `valid`/`invalid`/`error`/`skipped` |
 | `credential-validator.test.ts` | Tests | `validateCredentials` successful probes, invalid keys, other failures |
 | `credential-field.ts` | `decorateCredentialField`, `CredentialFieldOptions`, `CredentialFieldHandle` | Decorates a Setting row with a Test button, get-key deep link, and live status chip. Result applied via `setTimeout(0)` (macrotask) to avoid Obsidian settings DOM freeze (#335). The validation-catch path renders its error into the status chip through `redactSecrets` so a key echoed in a thrown message never reaches the chip |
 | `credential-field.test.ts` | Tests | `decorateCredentialField` Test button, deep link, status chip |
@@ -653,6 +698,24 @@ AIClient.chat(messages) --> dispatch(messages)
 |
 All use Obsidian requestUrl via safeRequest() (120s timeout, redacts secrets in error bodies via redactSecrets)
 ```
+
+## System 1 Decision Lane (#558)
+
+`DecisionClient` is a second lane beside `AIClient`, not a fifth provider: Jev answers typed questions over a `state` and cannot serve `complete()`/`chat()`. Every seat keeps its generative path as the fallback.
+
+```
+seat --> DecisionClient.isEnabled()?  no  --> generative path (byte-for-byte today's)
+                                      yes --> decide(state, questions, aiOpts)
+                                               |-- chunkQuestions(): 80% of 64k tokens/request, 80% of 32k for state + one question (chars/4)
+                                               |-- per chunk: cache read (same rule as AIClient) -> POST /v1/systemone (Bearer ai.systemOne.apiKey, model ai.systemOne.model)
+                                               |     429/529 -> withRetry x3 (1s, 2s); 401 -> DecisionLaneError('unauthorized'); 422 -> 'invalid-request'; bad shape -> 'malformed-response'
+                                               |-- merge answers, sum usage, onCacheHit once if any chunk replayed
+                                      --> routeByConfidence / partitionByConfidence against the seat's floor
+                                               |-- at/above floor: System 1 answer; seat calls aiOpts.onSystemOne() -> CacheUse.systemOne -> "decided by the System 1 lane"
+                                               |-- below floor | null | throw: generative fallback, exactly once
+```
+
+Seats and floors: `enrichment/metadata-classifier.ts` (one `choice` per vocabulary category; floor `ai.systemOne.confidenceFloor`), `organize/placement-decider.ts` + `content-analyzer.ts` (one `choice` over existing folders + `<new-directory>`; floor `organize.organizeConfidenceThreshold`), `rem/semantic-matcher.ts` (one `score` per title, relevance = P(related) + P(strongly related); floor `rem.confidenceThreshold`). No lane answer can create a folder, tag, or value that does not already exist; only `<new-*>` options reach the generative path.
 
 ## CheckpointManager Lifecycle
 

@@ -28,7 +28,10 @@ function isSectionVisible(entry: SettingsSectionEntry, platform?: { isDesktop: b
 function renderDevBuildBanner(containerEl: HTMLElement, info: BuildInfo, version: string): void   // settings-tab.ts:66 — `.synapse-dev-build-banner` callout: bold "Development build" lead + `describeDevBuild` detail
 
 // global-sections.ts
-function renderAiConfiguration(ctx: SettingsSectionContext): void   // :75  configSection('ai'); hosts renderTranscriptionCredentials
+function renderAiConfiguration(ctx: SettingsSectionContext): void   // :81  configSection('ai'); hosts renderTranscriptionCredentials and, last, renderSystemOneCredentials (:243, #558)
+
+// system-one-credentials.ts:7 (#558)
+function renderSystemOneCredentials(body: HTMLElement, ctx: SettingsSectionContext): void   // "System 1 decisions" toggle (rerender on change); when on: "TypeSafe API key" password row decorated via decorateCredentialField(provider 'typesafe'), "Decision model" dropdown over SYSTEM_ONE_MODEL_OPTIONS (unknown saved model normalized to the first option before the row renders), "Confidence floor" enhanced slider 0.5-0.95 step 0.05; writes settings.ai.systemOne
 function renderAutoAccept(ctx: SettingsSectionContext): void        // :268 configSection('autoAccept'); subscribes via ctx.onFeatureToggle
 function renderExclusions(ctx: SettingsSectionContext): void        // :339 configSection('exclusions')
 function renderGeneral(ctx: SettingsSectionContext): void           // :428 configSection('general')
@@ -42,6 +45,8 @@ function renderAbout(ctx: SettingsSectionContext): void             // :468 conf
 | `index.ts` | `SynapseSettingTab` | Barrel |
 | `settings-tab.ts` | `SynapseSettingTab`, `SETTINGS_SECTIONS`, `SettingsSectionEntry`, `isSectionVisible`, `renderDevBuildBanner` | Orchestrator: section registry, platform gating, per-section reset footers (#442), version footer, dev-build banner top + bottom (#542) |
 | `global-sections.ts` | `renderAiConfiguration`, `renderAutoAccept`, `renderExclusions`, `renderGeneral`, `renderAbout` | Cross-feature section renderers |
+| `system-one-credentials.ts` | `renderSystemOneCredentials` | System 1 decision lane rows inside the AI configuration section (#558) |
+| `system-one-credentials.test.ts` | Tests | Toggle-only when off; key/model/floor rows + Test affordance when on; toggle persists + rerenders; unknown model normalized |
 | `settings-tab.test.ts` | Tests | Registry order/visibility, auto-accept live state, exclusions chips, reset rows, production footer vs dev banner (build info injected via the constructor); mocks `../changelog` and `../shared/confirm-modal` |
 | `global-sections.test.ts` | Tests | General section toggles, auto-accept `onFeatureToggle` refresh; mocks `../changelog` |
 
@@ -57,7 +62,9 @@ function renderAbout(ctx: SettingsSectionContext): void             // :468 conf
 | `MODEL_OPTIONS`, `AIProvider` (type) | `../settings` | `global-sections.ts:2-3` |
 | `addEnhancedSlider`, `FolderPickerModal`, `ALL_FEATURE_IDS`, `renderFeatureChipSelect`, `PROVIDER_METADATA`, `aiProviderToCredential`, `decorateCredentialField`, `ConfirmModal`, `applyResetAll` + types | `../shared` | `global-sections.ts:4-19` |
 | `PROPOSAL_KINDS`, `ProposalKind` (type) | `../views` | `global-sections.ts:20-21` |
-| `renderTranscriptionCredentials` | `../audio` | `global-sections.ts:22` |
+| `renderTranscriptionCredentials` | `../audio` | `global-sections.ts:23` |
+| `renderSystemOneCredentials` | `./system-one-credentials` | `global-sections.ts:24` |
+| `Setting` · `SYSTEM_ONE_MODEL_OPTIONS` · `PROVIDER_METADATA`, `addEnhancedSlider`, `decorateCredentialField` + `CredentialFieldHandle`, `SettingsSectionContext` (types) | `obsidian` · `../settings` · `../shared` | `system-one-credentials.ts:1-4` |
 | `applyApiKeyEmphasis`, `API_KEY_NO_SUBSCRIPTION_NOTE` | `../onboarding` | `global-sections.ts:23` |
 | `foldActiveNoteProperties` | `../properties-fold` | `global-sections.ts:24` |
 | `ChangelogModal` | `../changelog` | `global-sections.ts:25` |
