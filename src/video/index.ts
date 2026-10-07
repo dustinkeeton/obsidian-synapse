@@ -4,7 +4,7 @@ import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import { AudioModule, TranscriptionResult } from '../audio';
 import {
-	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, calloutForTranscriptionResult,
+	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, buildMediaEmbedLines, calloutForTranscriptionResult,
 	CheckpointManager, NoteOperationQueue, generateId, detectPlatform, loadNodeModules,
 	isPathExcluded, findAvailableVaultPath, isNoSpeechError, noSpeechNotice,
 	transcriptCacheUse, withCacheReport,
@@ -244,14 +244,10 @@ export class VideoModule implements FeatureModule {
 					};
 				}
 
-				const blockLines: string[] = [''];
-
-				// Embed the downloaded video if setting is on
-				if (this.getSettings().video.embedInNote && result.videoVaultPath) {
-					const fileName = result.videoVaultPath.split('/').pop()!;
-					blockLines.push(`![[${fileName}]]`);
-					blockLines.push('');
-				}
+				const blockLines: string[] = [
+					'',
+					...buildMediaEmbedLines(result.videoVaultPath, this.getSettings().video.embedInNote),
+				];
 
 				const { type, verb } = calloutForTranscriptionResult(result);
 				const callout = buildCallout(

@@ -8,6 +8,8 @@ export interface TranscribedMedia {
 	cached?: boolean;
 	/** AI post-processing replayed a cached response (#527). */
 	aiCached?: boolean;
+	/** Vault path of a media file the transcription downloaded (local extraction only). */
+	videoVaultPath?: string;
 }
 
 export interface SummarizeTarget {

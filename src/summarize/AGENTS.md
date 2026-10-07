@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-06
 ---
 
 # Summarize Module
 
-Summarizes a note's own prose plus the URLs, transcription blocks, and audio embeds it references, emitting either per-item summary callouts or one combined summary, and creating standalone notes for enrichment-section links. Video URLs and audio embeds are transcribed via injected callbacks (no static `video/` import). Media URLs are transcribed on every platform (the injected callback runs the tiered router, which reads/writes the shared transcript store, #488); a media URL whose transcription fails is a failed target — page HTML is never summarized in its place.
+Summarizes a note's own prose plus the URLs, transcription blocks, and audio embeds it references, emitting either per-item summary callouts or one combined summary, and creating standalone notes for enrichment-section links. Video URLs and audio embeds are transcribed via injected callbacks (no static `video/` import). Media URLs are transcribed on every platform (the injected callback runs the tiered router, which reads/writes the shared transcript store, #488); a media URL whose transcription fails is a failed target — page HTML is never summarized in its place. A media URL whose transcription downloaded a video into the vault gets that video embedded above its summary callout (#561, gated on `video.embedInNote`, never duplicated).
 
 ## Public API (`index.ts`)
 
@@ -25,7 +25,7 @@ class SummarizeModule {
 }
 
 // types.ts; structurally matches the router's UrlTranscript (#527)
-interface TranscribedMedia { text: string; cached?: boolean; aiCached?: boolean }
+interface TranscribedMedia { text: string; cached?: boolean; aiCached?: boolean; videoVaultPath?: string }   // videoVaultPath: vault path of a downloaded video (#561)
 
 // Injected callback: tier-routed media URL transcription (modules/registry.ts).
 type TranscribeUrlFn = (
@@ -78,11 +78,11 @@ awaited, so there is no cycle).
 | `note-scanner.test.ts` | Tests | Scanner + prose-extraction tests |
 | `summarize-module.test.ts` | Tests | SummarizeModule integration tests |
 | `audio-summarize.test.ts` | Tests | Audio-embed summarization tests |
-| `combine-summarize.test.ts` | Tests | Combined-summary tests (#367) |
+| `combine-summarize.test.ts` | Tests | Combined-summary tests (#367); downloaded video embedded once above the combined callout (#561) |
 | `summarize-modal.test.ts` | Tests | Selection-modal tests |
 | `settings-section.test.ts` | Tests | Settings-section render tests |
 | `video-dependency-notice.test.ts` | Tests | yt-dlp/ffmpeg onboarding-notice tests (#382) |
-| `media-url-summarize.test.ts` | Tests | Media-URL summarize contract (#488): transcript summarized without insertion, failed transcription inserts nothing and never fetches page HTML, combined path aborts on media failure |
+| `media-url-summarize.test.ts` | Tests | Media-URL summarize contract (#488): transcript summarized without insertion, failed transcription inserts nothing and never fetches page HTML, combined path aborts on media failure. Downloaded-media embeds (#561): embed above the summary callout, none when `video.embedInNote` is off, never duplicated when the note already embeds the file, one per source above a combined callout |
 
 ## Target Types (`types.ts`)
 
@@ -130,7 +130,7 @@ combineSelectedTargets(file, targets, op, content)                    index.ts:3
   --> join sections w/ '## <label>' + '---' separators, slice(maxContentLength)
   --> Summarizer.summarize(combinedText, labels, style, prompt)
         prompt = customPrompt > schema('summary') > COMPREHENSIVE_SUMMARY_PROMPT
-  --> vault.process(file): append ONE 'Combined summary (N items)' callout at end
+  --> vault.process(file): append buildMediaEmbedLines(path, video.embedInNote, current) per downloaded video, then ONE 'Combined summary (N items)' callout at end (#561)
 
 processFileTargets(file, targets, op, content)                        index.ts:594
   (queue-free core — the caller holds the slot)
@@ -141,7 +141,7 @@ processFileTargets(file, targets, op, content)                        index.ts:5
     audio:        fetchContentForAudio() -> summarize -> splice inline callout
     transcription: reuse target.content -> summarize -> splice inline callout
     note-content:  reuse target.content -> summarize -> splice inline callout
-    inline URL:    fetchUrlContentOrNotify() -> summarize -> splice inline callout
+    inline URL:    fetchUrlContentOrNotify() -> { text, videoVaultPath? } -> summarize -> splice buildMediaEmbedLines(videoVaultPath, video.embedInNote, lines) + inline callout (#561)
                    prompt = customPrompt > schema('summary') > style default
   --> vault.process(file, finalContent)   [source written FIRST]
   --> vault.create() per pendingNote      [new notes AFTER source]
@@ -196,7 +196,7 @@ Routing order for a target URL:
 3. `isRedditUrl(url)` -> `fetchRedditContent(url, max)` (Reddit is generic 'article'; routed explicitly to the RSS fetcher).
 4. else -> `fetchPageContent(url, max)` (non-media URLs only).
 
-`transcribeUrl`/`transcribeAudio` are injected by `modules/registry.ts` (after `deps`) on EVERY platform. `transcribeUrl` delegates to `UrlTranscriptionRouter.transcribe(url, { update })` and returns the router's `UrlTranscript` unchanged (read here as `TranscribedMedia`: `text`, `cached`, `aiCached`); the router consults the shared `TranscriptCache` first (so a URL transcribed explicitly earlier is reused, wherever or whether its callout appears in the note) and writes every fresh tier result through (so an explicit "Transcribe media" after a summarize never re-runs caption fetch / download / ASR), then runs the caption tier on every platform and the yt-dlp tier on desktop only — a non-YouTube or caption-less URL on mobile rejects with `NoTranscriptionPathError` (#184). Summarize inserts only the summary callout, never the transcript. `isSupportedUrl`, `detectPlatform`, `isRedditUrl` all resolve from the `shared` barrel; there is NO static import of `video/` or `transcription/`.
+`transcribeUrl`/`transcribeAudio` are injected by `modules/registry.ts` (after `deps`) on EVERY platform. `transcribeUrl` delegates to `UrlTranscriptionRouter.transcribe(url, { update })` and returns the router's `UrlTranscript` unchanged (read here as `TranscribedMedia`: `text`, `cached`, `aiCached`); the router consults the shared `TranscriptCache` first (so a URL transcribed explicitly earlier is reused, wherever or whether its callout appears in the note) and writes every fresh tier result through (so an explicit "Transcribe media" after a summarize never re-runs caption fetch / download / ASR), then runs the caption tier on every platform and the yt-dlp tier on desktop only — a non-YouTube or caption-less URL on mobile rejects with `NoTranscriptionPathError` (#184). Summarize inserts the summary callout, never the transcript; when the transcript carries `videoVaultPath` (fresh download or store hit) the per-item and combined paths splice `buildMediaEmbedLines(videoVaultPath, video.embedInNote, noteContent)` directly above the callout (#561). `isSupportedUrl`, `detectPlatform`, `isRedditUrl` all resolve from the `shared` barrel; there is NO static import of `video/` or `transcription/`.
 
 ## Combined Summaries (#367)
 
@@ -262,7 +262,7 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 
 | Import | From |
 |--------|------|
-| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks` | `../shared` (index.ts) |
+| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks`, `buildMediaEmbedLines` | `../shared` (index.ts) |
 | `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks`, `isCalloutHeader`, `calloutHeaderSource` | `../shared` (note-scanner.ts) |
 | `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:10) |
 | `findAudioEmbeds` | `../audio` |
@@ -272,3 +272,7 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 | `findSummarizeTargets`, `extractNoteProse`, `hasSummaryBelow`, `SummarizeTarget`, `SummarizeSelectionModal`, `Summarizer` | local (`./note-scanner`, `./types`, `./summarize-modal`, `./summarizer`) |
 
 NO static import of `../video`. Video transcription is callback-only (`TranscribeUrlFn`).
+
+## Downloaded Media Invariant (#561)
+
+Every consumer of `transcribeUrl` MUST run the shared embed step: a transcript whose `videoVaultPath` is set means a file was downloaded into the vault, and the note the action worked on must embed it via `buildMediaEmbedLines(videoVaultPath, settings.video.embedInNote, noteContent)` (shared `media-embed.ts`) above the content it produced. `fetchContentForUrl` returns `{ text, videoVaultPath? }` so the path survives the module boundary; the helper is the only embed writer (no inline `![[...]]` construction) and dedupes against the note so Transcribe-then-Summarize on one URL yields exactly one embed.

@@ -2,7 +2,7 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import {
-	getMarkdownFiles, NotificationManager, buildCallout,
+	getMarkdownFiles, NotificationManager, buildCallout, buildMediaEmbedLines,
 	CALLOUT_TYPES, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
 	mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport, findMarkdownLinks,
@@ -63,6 +63,9 @@ interface ProcessResult {
 /** Per-run accumulator of fetched material. */
 type SourceCollector = { urls: string[]; images: SourceImage[] };
 const newSourceCollector = (): SourceCollector => ({ urls: [], images: [] });
+
+/** Fetched URL text plus the vault path of any media the fetch downloaded (#561). */
+interface FetchedContent { text: string; videoVaultPath?: string }
 
 /** Region hint for post-op follow-ups: the summary callout written this run (by title when exactly one). */
 function producedSummaryRegion(titles: string[]): SourceContext['producedRegion'] {
@@ -422,6 +425,7 @@ export class SummarizeModule implements FeatureModule {
 		// #488: a combined summary missing its media transcript would misdescribe the video
 		let mediaFailed = false;
 		const sources = newSourceCollector();
+		const downloaded: string[] = [];
 
 		for (const target of targets) {
 			if (op.cancelled) return empty;
@@ -436,7 +440,9 @@ export class SummarizeModule implements FeatureModule {
 					text = await this.fetchContentForAudio(target.source, file, settings.maxContentLength, use);
 				} else {
 					op.update(`Fetching ${target.source}`);
-					text = await this.fetchContentForUrl(target.source, settings.maxContentLength, op, use, sources);
+					const fetched = await this.fetchContentForUrl(target.source, settings.maxContentLength, op, use, sources);
+					text = fetched.text;
+					if (fetched.videoVaultPath) downloaded.push(fetched.videoVaultPath);
 				}
 				if (text.trim()) {
 					const label = labelForTarget(target);
@@ -490,9 +496,13 @@ export class SummarizeModule implements FeatureModule {
 			`Sources: ${labels.join(', ')}\n\n${summary}`
 		);
 
-		// Append at the end of the note's current content.
+		// Append at the end of the note's current content, each downloaded video embedded once above it.
+		const embedInNote = this.getSettings().video.embedInNote;
 		await this.plugin.app.vault.process(file, (current) => {
 			const lines = current.split('\n');
+			for (const path of downloaded) {
+				lines.push(...buildMediaEmbedLines(path, embedInNote, lines.join('\n')));
+			}
 			lines.push(...callout.split('\n'));
 			return lines.join('\n');
 		});
@@ -678,7 +688,7 @@ export class SummarizeModule implements FeatureModule {
 
 						op.update(`Summarizing ${title}`);
 						const summary = await this.summarizer.summarize(
-							pageContent,
+							pageContent.text,
 							target.source,
 							settings.summaryStyle,
 							COMPREHENSIVE_SUMMARY_PROMPT,
@@ -714,6 +724,7 @@ export class SummarizeModule implements FeatureModule {
 				} else {
 					// -- Inline target: insert summary blockquote --
 					let textToSummarize: string;
+					let videoVaultPath: string | undefined;
 
 					if (target.type === 'audio' && this.transcribeAudio) {
 						op.update(`Transcribing audio ${target.source}`);
@@ -738,7 +749,8 @@ export class SummarizeModule implements FeatureModule {
 							sources
 						);
 						if (fetched === null) continue;
-						textToSummarize = fetched;
+						textToSummarize = fetched.text;
+						videoVaultPath = fetched.videoVaultPath;
 					}
 
 					if (!textToSummarize.trim()) {
@@ -774,7 +786,8 @@ export class SummarizeModule implements FeatureModule {
 					);
 					calloutTitles.push(`Summary of ${target.source}`);
 
-					lines.splice(target.endLine + 1, 0, ...callout.split('\n'));
+					const embedLines = buildMediaEmbedLines(videoVaultPath, this.getSettings().video.embedInNote, lines.join('\n'));
+					lines.splice(target.endLine + 1, 0, ...embedLines, ...callout.split('\n'));
 
 					inlineCompleted++;
 					cacheUses.push(use);
@@ -822,7 +835,7 @@ export class SummarizeModule implements FeatureModule {
 		op: OperationHandle,
 		use: CacheUse,
 		sources?: SourceCollector
-	): Promise<string> {
+	): Promise<FetchedContent> {
 		sources?.urls.push(url);
 		if (isSupportedUrl(url)) {
 			if (!this.transcribeUrl) {
@@ -833,7 +846,7 @@ export class SummarizeModule implements FeatureModule {
 				const transcript = await this.transcribeUrl(url, op);
 				Object.assign(use, transcriptCacheUse(transcript));
 				if (transcript.thumbnailUrl) sources?.images.push({ url: transcript.thumbnailUrl, pageUrl: url, title: transcript.title });
-				return transcript.text.slice(0, maxLength);
+				return { text: transcript.text.slice(0, maxLength), videoVaultPath: transcript.videoVaultPath };
 			} catch (error) {
 				// Preserve a typed video-dependency error (yt-dlp/ffmpeg) so the
 				// caller can offer onboarding (#382); matched by name to avoid a
@@ -846,19 +859,19 @@ export class SummarizeModule implements FeatureModule {
 		}
 
 		if (detectPlatform(url)?.platform === 'twitter') {
-			return fetchTweetContent(url, maxLength);
+			return { text: await fetchTweetContent(url, maxLength) };
 		}
 
 		// Reddit is classified as a generic 'article' platform, so route it
 		// explicitly (as Elaborate does) to the dedicated RSS fetcher; the
 		// JS-rendered HTML page fetchPageContent would get has no readable text.
 		if (isRedditUrl(url)) {
-			return fetchRedditContent(url, maxLength);
+			return { text: await fetchRedditContent(url, maxLength) };
 		}
 
 		const page = await fetchPageContentWithImages(url, maxLength);
 		sources?.images.push(...page.images);
-		return page.text;
+		return { text: page.text };
 	}
 
 	/**
@@ -872,8 +885,8 @@ export class SummarizeModule implements FeatureModule {
 		op: OperationHandle,
 		use: CacheUse,
 		sources?: SourceCollector
-	): Promise<string | null> {
-		let content: string;
+	): Promise<FetchedContent | null> {
+		let content: FetchedContent;
 		try {
 			content = await this.fetchContentForUrl(source, maxLength, op, use, sources);
 		} catch (error) {
@@ -885,7 +898,7 @@ export class SummarizeModule implements FeatureModule {
 			});
 			return null;
 		}
-		if (!content.trim()) {
+		if (!content.text.trim()) {
 			this.notifications.error(linkLoadError(source, 'page returned no readable text'));
 			return null;
 		}
