@@ -15,7 +15,7 @@ class OrganizeModule {
 
   constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:54; ModuleDeps = { plugin, getSettings, notifications, checkpointManager, registrar, noteQueue } (#504)
 
-  suggestDirectory(text: string, aiOpts?: DecisionRequestOptions): Promise<string | null>   // index.ts:70; ContentAnalyzer.resolvePlacement(text, [], aiOpts): a confident System 1 placement returns its directoryPath directly (#558); else topics -> DirectoryMatcher.scoreDirectories; top directoryPath when score >= SUGGEST_DIRECTORY_MIN_SCORE (0.6, index.ts:31), else null; unqueued, no vault write; the registry injects it into deep-dive
+  suggestDirectory(text: string, aiOpts?: DecisionRequestOptions): Promise<string | null>   // index.ts:74; ContentAnalyzer.resolvePlacement(text, [], aiOpts): a placement of kind 'existing' returns its directoryPath directly (#558); else topics -> DirectoryMatcher.scoreDirectories; top directoryPath when score >= SUGGEST_DIRECTORY_MIN_SCORE (0.6, index.ts:31), else null; unqueued, no vault write; the registry injects it into deep-dive
   onload(): Promise<void>
   onunload(): void
   getPendingProposals(): Promise<OrganizeProposal[]>
@@ -65,11 +65,11 @@ Batch loops (`scanDirectory`, `resumeFromCheckpoint`) take one slot per note, ne
 ## ContentAnalyzer (`content-analyzer.ts`)
 
 ```ts
-interface ResolvedPlacement { topics: NoteTopic[]; placement?: Placement; lane: DecisionLane }   // content-analyzer.ts:9
+interface ResolvedPlacement { topics: NoteTopic[]; placement?: Placement; lane: DecisionLane }   // content-analyzer.ts:9; placement is the lane's answer whenever the lane ran (any kind); topics [] only for kind 'existing'
 class ContentAnalyzer {
   constructor(app: App, getSettings: () => SynapseSettings, placement?: PlacementDecider)   // :40; default PlacementDecider(app, getSettings)
-  analyze(file: TFile, aiOpts?: DecisionRequestOptions): Promise<ContentAnalysis>          // :53; reads body/tags/links, then resolvePlacement; sets ContentAnalysis.placement when the lane decided
-  resolvePlacement(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement>   // :79; routeByConfidence(systemOne: placement.decide when available, floor: organize.organizeConfidenceThreshold, fallback: extractTopics); calls aiOpts.onSystemOne() on lane 'system-one' (#558)
+  analyze(file: TFile, aiOpts?: DecisionRequestOptions): Promise<ContentAnalysis>          // :53; reads body/tags/links, then resolvePlacement; sets ContentAnalysis.placement when the lane answered
+  resolvePlacement(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement>   // :79; kind 'existing' -> { topics: [], placement, lane: 'system-one' } + aiOpts.onSystemOne(); 'new-directory' | 'undecided' -> extractTopics + placement carried, lane 'system-two'; lane off / null / any lane error (console.warn via redactError, :89) -> topics only (#558)
   extractTopics(body: string, tags: string[], aiOpts?: AIRequestOptions): Promise<NoteTopic[]>   // aiOpts reaches complete() inside withRetry; unchanged generative path
   parseTopicResponse(raw: string): NoteTopic[]
   topicsFromTags(tags: string[]): NoteTopic[]
@@ -79,13 +79,27 @@ class ContentAnalyzer {
 ## PlacementDecider (`placement-decider.ts`, #558)
 
 ```ts
-const NEW_DIRECTORY_OPTION = '<new-directory>'   // :9; '<' cannot appear in a vault folder name
+const NEW_DIRECTORY_OPTION = '<new-directory>'   // :10; '<' cannot appear in a vault folder name
+const PLACEMENT_MAJORITY = 0.5                   // :12; existing-folder acceptance = strict majority of runoff mass; fixed, not a setting
+const RUNOFF_SIZE = 5                            // :14; folders carried from round 1 into the runoff
 class PlacementDecider {
-  constructor(app: App, getSettings: () => SynapseSettings)   // owns a DecisionClient + DirectoryMatcher (for collectDirectories)
-  isAvailable(): boolean                                      // :29; DecisionClient.isEnabled()
-  decide(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<Placement | null>   // :33; null for blank body / no folders / '<new-directory>' / unknown path; one choice over collectDirectories() + '<new-directory>' (state = body[0:3000] + tags), split into questions of 254 folders past the 255-option cap; >1 chunk winners -> one more choice among the winners; throws on lane errors (router falls back)
+  constructor(app: App, getSettings: () => SynapseSettings)   // :36; owns a DecisionClient + DirectoryMatcher (for collectDirectories)
+  isAvailable(): boolean                                      // :41; DecisionClient.isEnabled()
+  decide(body: string, tags: string[], aiOpts?: DecisionRequestOptions): Promise<Placement | null>   // :45; null for blank body / no eligible folders; round 1 = one choice per 254 candidateDirectories() + '<new-directory>' (state = body[0:3000] + tags); shortlist (:88) = top RUNOFF_SIZE folders by summed probability (zero-mass dropped), coalesced on canonical basename (coalesceByBasename, :137: summed probability, first path represents); one runoff choice over the shortlist + '<new-directory>' (skipped when round 1 was a single question over exactly the shortlist); resolve (:110) below; throws on lane errors (ContentAnalyzer falls back)
+  candidateDirectories(): string[]                            // :78; collectDirectories() minus hidden folders (any segment starting with '.') and folders covered by isPathExcluded(dir | dir/note.md, 'organize', settings); the note's own folder stays eligible ("stay" is a valid answer)
 }
+function coalesceByBasename(options: { directoryPath: string; probability: number }[]): same   // :137
 ```
+
+Decision rule (`resolve`, :110), evaluated on the runoff probabilities:
+
+| Condition | Result |
+|-----------|--------|
+| P(`<new-directory>`) >= `organize.organizeConfidenceThreshold` | `{ kind: 'new-directory', confidence }` — System 2 names the folder (`allowNewDirectory: true`) |
+| else top existing folder >= `PLACEMENT_MAJORITY` (0.5) | `{ kind: 'existing', directoryPath, confidence }` — direct move, no generative call |
+| else | `{ kind: 'undecided', leading, confidence }` — System 2 may score existing folders but never proposes a new one (`allowNewDirectory: false`) |
+
+`organizeConfidenceThreshold` is never the acceptance floor for an existing folder; a synonym-rich vault (`AI` / `artificial-intelligence` / `ai-agent`) splits mass so a 0.52 / 0.30 answer is a near-unanimous decision reported as low confidence.
 
 Note: `extractTopics` on `ContentAnalyzer` takes `(body: string, tags: string[])` — different from `TopicAnalyzer.extractTopics` in `deep-dive` which takes `(content, title, ancestorTopics)`.
 
@@ -98,9 +112,11 @@ class DirectoryMatcher {
   determineAction(
     analysis: ContentAnalysis,
     minScoreThreshold?: number,    // default 0.6
-    confidenceThreshold?: number   // default 0.9
-  ): OrganizeAction                // :54; analysis.placement -> { type: 'move', targetDirectory } before any scoring (#558)
-  scoreDirectory(dirPath: string, analysis: ContentAnalysis, noteDir: string): number
+    confidenceThreshold?: number,  // default 0.9
+    opts?: { allowNewDirectory?: boolean }   // default true; false skips the new-directory branch entirely (#558 undecided)
+  ): OrganizeAction                // :54; placement.kind 'existing' -> { type: 'move', targetDirectory } before any scoring (#558); candidates exclude noteDir; top candidate >= minScoreThreshold -> move; else (allowNewDirectory && topTopic.confidence >= confidenceThreshold) -> findExistingDirectory(buildDirectoryPath(label)): hit -> move there (noteDir hit = caller no-op), miss -> propose-new-directory (reasoning names the lane when placement.kind is 'new-directory'); else move to noteDir (#565)
+  findExistingDirectory(path: string): string | null   // :103; existing folder sharing path's canonicalKey — full path first, then basename; null when none
+  scoreDirectory(dirPath: string, analysis: ContentAnalysis, noteDir: string): number   // exact canonical topic match = EXACT_MATCH_BASE 0.4 + 0.4 x confidence (:5; clears 0.6 alone from confidence 0.5 up, #565); partial / path-segment / fuzzy tiers stay weak (max 0.4 x confidence)
   collectDirectories(): string[]
   buildDirectoryPath(topicLabel: string): string
 }
@@ -112,8 +128,8 @@ class DirectoryMatcher {
 |------|---------------|------|
 | `index.ts` | `OrganizeModule`, `buildSummaryPath` | Module entry point and public API |
 | `content-analyzer.ts` | `ContentAnalyzer`, `ResolvedPlacement` | System 1 placement routing (#558) over AI topic extraction from note body, tags, and links |
-| `placement-decider.ts` | `PlacementDecider`, `NEW_DIRECTORY_OPTION` | System 1 `choice` over existing folders + new-directory (#558) |
-| `directory-matcher.ts` | `DirectoryMatcher` | Scores existing directories; proposes new ones; honours `ContentAnalysis.placement` |
+| `placement-decider.ts` | `PlacementDecider`, `NEW_DIRECTORY_OPTION`, `PLACEMENT_MAJORITY`, `RUNOFF_SIZE`, `coalesceByBasename` | System 1 `choice` over eligible folders + new-directory, runoff, three-way decision rule (#558) |
+| `directory-matcher.ts` | `DirectoryMatcher` | Scores existing directories; proposes new ones only when the canonical path does not exist (#565); honours `ContentAnalysis.placement` |
 | `folder-normalize.ts` | `singularize`, `canonicalKey`, `editDistance`, `isFuzzyMatch` | Morphology-aware canonical keys for coalescing similar folder names (#172) |
 | `organize-store.ts` | `OrganizeStore` | JSON persistence for proposals and move snapshots |
 | `settings-section.ts` | `renderOrganizeSettings` | Settings UI renderer |
@@ -127,9 +143,9 @@ class DirectoryMatcher {
 organizeNote(file) / scanDirectory() / resumeFromCheckpoint()
   --> noteQueue.run(file.path, () => organizeFile(...))   [#483: slot held for the whole cycle]
         organizeFile(file, batch?, batchProposedDirs?, cacheUse?)    [queue-free core, index.ts:604]
-          --> ContentAnalyzer.analyze(file, trackAiCache(cacheUse))  [#558: System 1 placement at/above organizeConfidenceThreshold -> analysis.placement, topics []; else AI topic extraction; #527]
-          --> return null when topics is empty AND no placement (index.ts:615)
-          --> DirectoryMatcher.determineAction(analysis, confidenceThreshold)   [placement -> direct move to that folder; own folder -> null "already placed"]
+          --> ContentAnalyzer.analyze(file, trackAiCache(cacheUse))  [#558: System 1 runoff -> analysis.placement of kind existing (topics []) | new-directory | undecided (both with AI topics); lane off/error -> AI topic extraction only; #527]
+          --> return null when topics is empty AND placement.kind !== 'existing' (index.ts:619)
+          --> DirectoryMatcher.determineAction(analysis, undefined, confidenceThreshold, { allowNewDirectory: placement?.kind !== 'undecided' })   [index.ts:626; existing -> direct move; own folder -> null "already placed"; OrganizeResult.placement = placement.kind]
             if existing dir matches:
               --> OrganizeStore.saveSnapshot()  [undo backup]
               --> vault.rename(file, newPath)  [direct move]
@@ -192,6 +208,13 @@ type OrganizeAction =
   | { type: 'move'; targetDirectory: string }
   | { type: 'propose-new-directory'; targetDirectory: string; reasoning: string }
 
+type PlacementKind = 'existing' | 'new-directory' | 'undecided'   // types.ts:10
+type Placement =                                                   // types.ts:35; System 1 lane answer (#558)
+  | { kind: 'existing'; directoryPath: string; confidence: number }
+  | { kind: 'new-directory'; confidence: number }
+  | { kind: 'undecided'; leading: string; confidence: number }
+// ContentAnalysis.placement?: Placement; OrganizeResult.placement?: PlacementKind
+
 interface OrganizeProposal {
   id: string
   sourceNotePath: string
@@ -235,8 +258,8 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 | `settings.organize.proposalFolderPath` | `string` | `.synapse/organize/proposals` |
 | `settings.organize.snapshotFolderPath` | `string` | `.synapse/organize/snapshots` |
 | `settings.organize.excludeTags` | `string[]` | `['no-organize']` |
-| `settings.organize.organizeConfidenceThreshold` | `number` | `0.9` (also the System 1 placement floor, #558) |
-| `settings.ai.systemOne` (top-level) | `SystemOneSettings` | `enabled: false` — gates `PlacementDecider` |
+| `settings.organize.organizeConfidenceThreshold` | `number` | `0.9` — confidence required before a NEW folder is proposed, in both lanes (System 2 top-topic confidence; System 1 P(`<new-directory>`)); never the floor for picking an existing folder (#558, #565) |
+| `settings.ai.systemOne` (top-level) | `SystemOneSettings` | `enabled: false` — gates `PlacementDecider`; its `confidenceFloor` is NOT used by organize |
 | `settings.autoAccept.organize` | `boolean` | `false` |
 | `settings.exclusions` | `ExclusionRule[]` | `[{pattern:'.synapse/**',features:'all'}, {pattern:'templates/**',features:'all'}]` |
 
@@ -252,8 +275,10 @@ Out: nothing is imported by another feature. `modules/registry.ts:111-116` wraps
 - `maybeAutoAccept` must call `applyAccept`, never `acceptProposal` — it already runs under the note's queue key (#483).
 - Move skips if a file already exists at the destination (returns null, does not overwrite).
 - Batch scan coalesces near-identical proposed directories via `batchProposedDirs` map — variants like "model"/"models" resolve to a single folder (#172).
-- `organizeConfidenceThreshold` gates new-directory proposals and the System 1 placement floor (#558); `minScoreThreshold` (0.6, hardcoded in `determineAction` call site) gates topic-scored existing-directory moves.
-- The System 1 lane never creates a folder: only `<new-directory>` (or low confidence / a lane error) reaches `extractTopics` and the propose-new-folder path (`placement-decider.ts:9`, `content-analyzer.ts:79`).
+- `organizeConfidenceThreshold` has one meaning in both lanes: confidence required before a new folder is proposed. Existing-folder acceptance is `PLACEMENT_MAJORITY` (0.5, fixed) in the lane and `minScoreThreshold` (0.6, hardcoded at the `determineAction` call site) in System 2.
+- The System 1 lane never creates a folder, and an existing folder leading its runoff is evidence AGAINST a new one: `undecided` runs `determineAction` with `allowNewDirectory: false` (`index.ts:626`). Only `new-directory` (P >= threshold), lane off, or a lane error can reach the propose-new-folder path (`placement-decider.ts:110`, `content-analyzer.ts:79`).
+- `propose-new-directory` is never returned for a path that already exists (full-path or basename canonical match, `findExistingDirectory`, `directory-matcher.ts:103`); a hit is a move, or a no-op when it is the note's own folder (#565). The batch coalescer (`batchProposedDirs`) only dedups within a run.
+- Lane options exclude hidden folders and folders covered by organize exclusion rules (`candidateDirectories`, `placement-decider.ts:78`); folders like `attachments` stay eligible unless the user excludes them.
 - Summary notes (Mermaid `graph LR` move diagram via `generateOrganizeSummary`) written to `.synapse/organize/summaries/{YYYY-MM-DD}-organize-summary.md` by `writeOrganizeSummary` / `buildSummaryPath`.
 - `deep-dive` calls `onOrganizeRequested` which invokes `organizeNote` on accepted deep-dive notes (when `deepDive.autoOrganizeOnAccept` is true). Same for `summarize.autoOrganizeOnSummarize`. `main.ts` dispatches both through `fireAndForget` — never awaited — so they simply enqueue behind whatever holds the note's slot (#483), no cycle.
 - Completion toasts carry a "Review" action via `reviewAction({ generated, shouldAutoAccept, openProposalView })` (#366) — gated on `generated && !shouldAutoAccept() && !postOp`; the action opens the proposal view through `onOpenProposalView`. Used in the `finish()` handlers of `organizeNote`, `scanDirectory`, and `resumeFromCheckpoint`. When organize auto-accept is on the note is already moved, so no Review button appears.

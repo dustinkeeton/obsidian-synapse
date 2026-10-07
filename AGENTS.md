@@ -254,7 +254,7 @@ SynapseSettings {
       enabled: boolean                              // default: false (note text leaves the vault; opt-in)
       apiKey: string                                // default: '' (CredentialProvider 'typesafe'; Test button via a minimal POST probe)
       model: string                                 // default: 'jev-latest' (dropdown over SYSTEM_ONE_MODEL_OPTIONS, settings.ts:106: jev-latest | jev-1.13.0 | jev-preview)
-      confidenceFloor: number                       // default: 0.6 (routing floor for seats without their own threshold — the tag vocabulary seat)
+      confidenceFloor: number                       // default: 0.6 (routing floor ONLY for seats without a feature-level threshold — the tag vocabulary seat; organize and REM use their own knobs)
     }
   }
   elaboration: ElaborationSettings {
@@ -351,7 +351,7 @@ SynapseSettings {
     proposalFolderPath: string                      // default: '.synapse/organize/proposals'
     snapshotFolderPath: string                      // default: '.synapse/organize/snapshots'
     excludeTags: string[]                           // default: ['no-organize']
-    organizeConfidenceThreshold: number             // default: 0.9
+    organizeConfidenceThreshold: number             // default: 0.9 (confidence before a NEW folder is proposed, both lanes; never the existing-folder floor — #558/#565)
   }
   deepDive: DeepDiveSettings {
     enabled: boolean                                // default: true
@@ -570,10 +570,10 @@ A second lane beside `AIClient` for classification seats, off by default (`ai.sy
 | Seat | Question | State | Floor | Fallback (unchanged generative path) |
 |------|----------|-------|-------|--------------------------------------|
 | Tag vocabulary (`enrichment/metadata-classifier.ts:115`) | one `choice` per `TagVocabularyEntry` over its tags + `<none>` | body[0:3000] + existing tags | `ai.systemOne.confidenceFloor` | `getClassificationsFromAI` restricted to uncertain categories |
-| Directory placement (`organize/placement-decider.ts:33`, `organize/content-analyzer.ts:79`) | one `choice` over `collectDirectories()` + `<new-directory>` (chunked past 254 folders, winners settled by a second choice) | body[0:3000] + tags | `organize.organizeConfidenceThreshold` | `ContentAnalyzer.extractTopics` + propose-new-folder |
+| Directory placement (`organize/placement-decider.ts:45`, `organize/content-analyzer.ts:79`) | round 1: one `choice` per 254 eligible folders (hidden + organize-excluded dropped) + `<new-directory>`; runoff: one `choice` over the top 5 (coalesced on canonical basename) + `<new-directory>` | body[0:3000] + tags | P(`<new-directory>`) >= `organize.organizeConfidenceThreshold` -> new folder requested; else top folder >= `PLACEMENT_MAJORITY` 0.5 -> existing (direct move); else undecided | `extractTopics` + `determineAction(allowNewDirectory: kind !== 'undecided')` — an undecided lane never yields a new folder; `propose-new-directory` never targets an existing path (#565) |
 | REM (`rem/semantic-matcher.ts:183`) | one `score` per included title over `RELEVANCE_LEVELS`; relevance = P(related) + P(strongly related) | content[0:4000] | `rem.confidenceThreshold` | concept-location prompt restricted to cleared titles; full prompt on lane error |
 
-Routing: `routeByConfidence` / `partitionByConfidence` (`shared/confidence-router.ts:27,53`) — the fallback runs exactly once, on lane off, a null answer, confidence below the floor, or any lane error (`console.warn` via `redactError`). `chunkQuestions` (`shared/decision-client.ts:124`) splits a question map under 80% of the 64k-token request limit (32k for state + one question; chars/4). Retries only 429/529 (x3, 1s base); 401/422 are `DecisionLaneError` (`unauthorized` / `invalid-request`). Cache rule and key shape mirror `AIClient` (`contentKey([state, JSON(chunk), model])`). Lane attribution: a seat calls `aiOpts.onSystemOne()` -> `CacheUse.systemOne` -> `withCacheReport` appends "decided by the System 1 lane" / "N of M notes decided by the System 1 lane" (`shared/cache-notice.ts:54`). Invariant: the lane never creates a folder, tag, or value that does not already exist; only a `<new-*>` option reaches the generative path.
+Routing: `routeByConfidence` / `partitionByConfidence` (`shared/confidence-router.ts:27,53`) for the binary seats (tags, REM) — the fallback runs exactly once, on lane off, a null answer, confidence below the floor, or any lane error (`console.warn` via `redactError`); the placement seat is three-way and maps its `Placement.kind` in plain code (`organize/content-analyzer.ts`). Threshold semantics: each feature keeps ONE knob with ONE meaning — `organizeConfidenceThreshold` = confidence before a NEW folder in either lane; existing-folder acceptance is a fixed majority rule, not a setting. `chunkQuestions` (`shared/decision-client.ts:124`) splits a question map under 80% of the 64k-token request limit (32k for state + one question; chars/4). Retries only 429/529 (x3, 1s base); 401/422 are `DecisionLaneError` (`unauthorized` / `invalid-request`). Cache rule and key shape mirror `AIClient` (`contentKey([state, JSON(chunk), model])`). Lane attribution: a seat calls `aiOpts.onSystemOne()` -> `CacheUse.systemOne` -> `withCacheReport` appends "decided by the System 1 lane" / "N of M notes decided by the System 1 lane" (`shared/cache-notice.ts:54`). Invariant: the lane never creates a folder, tag, or value that does not already exist; only a `<new-*>` option reaches the generative path.
 
 ## External Dependencies (Runtime)
 

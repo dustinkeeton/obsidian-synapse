@@ -1055,13 +1055,14 @@ graph LR
     Seat["Seat<br/>tags · folder · REM titles"] --> Q["Typed questions<br/>choice / score over existing options"]
     Q --> DC["DecisionClient<br/>(shared/decision-client.ts)"]
     DC -->|"chunked under 64k/32k tokens · Bearer ai.systemOne.apiKey"| Jev["POST api.typesafe.ai/v1/systemone"]
-    Jev -->|"answer + calibrated confidence"| R{"routeByConfidence<br/>≥ floor?"}
+    Jev -->|"answer + per-option probabilities"| R{"tags / REM: ≥ feature floor?<br/>placement: runoff majority?"}
     R -->|yes| S1["System 1 answer<br/>finish notice: decided by the System 1 lane"]
-    R -->|"no · new-* · lane off · any error"| S2["System 2 fallback<br/>AIClient prompt, byte-for-byte today's"]
+    R -->|"no · new-* · lane off · any error"| S2["System 2 fallback<br/>AIClient prompt; placement: no new folder unless Jev asked"]
 ```
 
 - **Separate lane, not a provider.** Jev answers `{ state, questions }` with typed answers and cannot serve `complete()`/`chat()`, so it has its own settings block (`ai.systemOne`) and credential (`typesafe`) rather than a slot in the provider dropdown. REST via `requestUrl` through the shared `safeRequest`; no npm dependency.
-- **Floors reuse what each seat already exposes.** Organize gates on `organize.organizeConfidenceThreshold`, REM on `rem.confidenceThreshold`; the tag vocabulary seat uses the global `ai.systemOne.confidenceFloor` (0.6). The fallback runs exactly once per decision.
+- **One knob per feature, one meaning each.** REM gates on `rem.confidenceThreshold`; the tag vocabulary seat, which has no feature knob, uses `ai.systemOne.confidenceFloor` (0.6). Organize's `organizeConfidenceThreshold` means "confidence required before a NEW folder" in both lanes and is never the floor for picking an existing folder. The fallback runs exactly once per decision.
+- **Placement is a runoff with a fixed majority rule (#558, #565).** Hidden and organize-excluded folders are not offered; the top five first-round folders (synonyms coalesced on canonical basename) go to one runoff with `<new-directory>`. P(new) at or above the threshold requests a new folder; otherwise a strict majority (0.5) on one folder is a direct move; otherwise the lane is undecided and System 2 may score existing folders but may not propose a new one. An exact canonical topic→folder match moves on its own, and a proposed path that already exists is a move, never a proposal.
 - **Nothing new is invented by the lane.** Options are the vocabulary tags, the vault's existing folders, or the included note titles; `<none>` / `<new-directory>` are the only escape hatches, and only they reach the generative path.
 - **Off by default.** Note text leaves the vault, so the lane is opt-in; with it off (or on any lane error) every seat behaves exactly as before and `/v1/systemone` is never called.
 
