@@ -27,6 +27,8 @@ export type {
 	DecisionRequestOptions,
 	DecisionLaneFailure,
 } from './decision-client';
+export { routeByConfidence, partitionByConfidence } from './confidence-router';
+export type { DecisionLane, RoutedDecision, ConfidenceRoute, ConfidencePartition } from './confidence-router';
 export type { ChatMessage, ContentBlock, TextContentBlock, ImageContentBlock } from './types';
 export {
 	withRetry,
