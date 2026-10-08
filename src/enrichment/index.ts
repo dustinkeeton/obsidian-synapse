@@ -526,7 +526,8 @@ export class EnrichmentModule implements FeatureModule {
 				this.promptBuilder.suggestFrontmatter(
 					classifierBody,
 					parsed.frontmatter,
-					aiOpts
+					aiOpts,
+					(keys) => this.analyzer.buildFrontmatterValueIndex(keys)
 				),
 			]);
 
