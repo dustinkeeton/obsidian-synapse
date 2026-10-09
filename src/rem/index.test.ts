@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi, type Mock, type MockIn
 import { RemModule } from './index';
 import { RemStore } from './rem-store';
 import { MentionScanner } from './mention-scanner';
-import { SemanticMatcher } from './semantic-matcher';
+import { RemLaneError, SemanticMatcher } from './semantic-matcher';
 import { RemProposal, RemLinkCandidate } from './types';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
@@ -43,7 +43,9 @@ interface MockRegistrar {
 	register: Mock<(id: string, userEnabled: boolean, spec: unknown) => void>;
 }
 
-function candidate(matchedText: string, line = 0): RemLinkCandidate {
+let nextLine = 0;
+
+function candidate(matchedText: string, line = nextLine++): RemLinkCandidate {
 	return {
 		targetPath: `notes/${matchedText}.md`,
 		targetDisplayName: matchedText,
@@ -206,6 +208,83 @@ describe('RemModule', () => {
 			expect(result!.candidates.map((c) => c.matchedText)).toEqual(['Relevant', 'TitleHit']);
 			const title = result!.candidates.find((c) => c.matchedText === 'TitleHit')!;
 			expect(title.confidence).toBeCloseTo(0.6);
+		});
+	});
+
+	describe('System 1 lane outcomes (#566)', () => {
+		it('skips the note with a warning and saves nothing when the lane fails', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('Foo content');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			matchSpy.mockRejectedValue(new RemLaneError(new Error('overloaded')));
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('notes/A.md');
+
+			expect(result).toBeNull();
+			expect(saveSpy).not.toHaveBeenCalled();
+			expect(notifications.info).toHaveBeenCalledWith(expect.stringContaining('System 1 lane failed'));
+			expect(warn).toHaveBeenCalled();
+		});
+
+		it('records the semantic lane on the stored proposal', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('content');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			matchSpy.mockResolvedValue([{ ...candidate('ML'), matchType: 'semantic', confidence: 0.9, lane: 'system-one' }]);
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('notes/A.md');
+
+			expect(result!.lane).toBe('system-one');
+			expect(saveSpy).toHaveBeenCalledWith(expect.objectContaining({ lane: 'system-one' }));
+		});
+
+		it('omits the lane when the proposal has only literal matches', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('Foo content');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('notes/A.md');
+
+			expect(result).not.toHaveProperty('lane');
+		});
+
+		it('drops a lower-ranked candidate whose anchor overlaps a higher-ranked one', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('Foo is here.');
+			scanSpy.mockReturnValue([candidate('Foo', 0)]);
+			matchSpy.mockResolvedValue([{
+				...candidate('Sentence', 0),
+				matchedText: 'Foo is here.',
+				matchType: 'semantic',
+				confidence: 0.9,
+				occurrences: [{ lineNumber: 0, lineText: 'Foo is here.', startOffset: 0, endOffset: 12 }],
+			}]);
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('notes/A.md');
+
+			expect(result!.candidates.map((c) => c.targetDisplayName)).toEqual(['Sentence']);
+		});
+
+		it('directory scan: counts lane-skipped notes in the finish notice and keeps the rest', async () => {
+			app.vault.getMarkdownFiles.mockReturnValue([mockFile('notes/A.md'), mockFile('notes/B.md')]);
+			app.vault.read.mockResolvedValue('Foo content');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			matchSpy.mockRejectedValueOnce(new RemLaneError(new Error('overloaded'))).mockResolvedValue([]);
+			vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+			const op = makeOp();
+			notifications.startOperation.mockReturnValue(op);
+			const module = await loadedModule();
+
+			const created = await module.remScanDirectory();
+
+			expect(created).toBe(1);
+			expect(op.error).not.toHaveBeenCalled();
+			expect(op.finish).toHaveBeenCalledWith(expect.stringContaining('1 skipped after a System 1 lane failure'), expect.anything());
 		});
 	});
 

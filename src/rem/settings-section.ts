@@ -2,6 +2,9 @@ import { Setting } from 'obsidian';
 import { addEnhancedSlider } from '../shared';
 import type { SettingsSectionContext } from '../shared';
 
+export const REM_THRESHOLD_DESC =
+	'Minimum relevance (0-1) a semantic link needs before it is proposed. With System 1 decisions on, relevance is the probability that the linked note is strongly related to this note; otherwise it is the AI model\'s own rating. Literal title matches are not gated.';
+
 /**
  * Render the REM (Link Discovery) settings accordion (#243).
  */
@@ -19,7 +22,7 @@ export function renderRemSettings(ctx: SettingsSectionContext): void {
 	addEnhancedSlider(
 		new Setting(remBody)
 			.setName('Confidence threshold')
-			.setDesc('Minimum confidence for semantic matches (0-1)'),
+			.setDesc(REM_THRESHOLD_DESC),
 		{
 			min: 0,
 			max: 1,

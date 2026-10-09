@@ -5,13 +5,20 @@ import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule } from '../shared';
 import type { CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport } from '../shared';
+import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport } from '../shared';
 import { MentionScanner } from './mention-scanner';
-import { SemanticMatcher } from './semantic-matcher';
+import { RemLaneError, SemanticMatcher } from './semantic-matcher';
 import { RemApplier } from './rem-applier';
+import { withoutOverlaps } from './overlaps';
 import { RemStore } from './rem-store';
 
 export type { RemProposal, RemLinkCandidate, RemOccurrence, RemSettings } from './types';
+
+const LANE_SKIP_NOTICE = 'Skipped REM for this note: the System 1 lane failed. Try again later.';
+
+function laneSkipNote(skipped: number): string {
+	return skipped > 0 ? `, ${skipped} skipped after a System 1 lane failure` : '';
+}
 
 /**
  * REM (Re-link & Enrich Mappings) module.
@@ -83,11 +90,11 @@ export class RemModule implements FeatureModule {
 
 	/**
 	 * Gather link candidates for a note: literal title/alias matches (down-weighted
-	 * by `titleMatchWeight`) merged with always-on semantic matches, then re-ranked
-	 * by confidence and capped at `maxLinksPerNote` (#380). Centralizes the scan
-	 * pipeline so single-note, directory, and resumed scans behave identically.
+	 * by `titleMatchWeight`) merged with always-on semantic matches, re-ranked by
+	 * confidence, overlapping anchors dropped, and capped at `maxLinksPerNote` (#380).
+	 * Returns `null` when the System 1 lane failed for the note, which is then skipped (#566).
 	 */
-	private async gatherCandidates(file: TFile, content: string, cacheUse: CacheUse): Promise<RemLinkCandidate[]> {
+	private async gatherCandidates(file: TFile, content: string, cacheUse: CacheUse): Promise<RemLinkCandidate[] | null> {
 		const s = this.getSettings().rem;
 		// Phase 1 — literal title/alias matches, down-weighted from their raw 1.0 so a
 		// title coincidence can't automatically outrank a content-relevant link.
@@ -95,12 +102,29 @@ export class RemModule implements FeatureModule {
 			.map(c => ({ ...c, confidence: c.confidence * s.titleMatchWeight }));
 		// Phase 2 — semantic matching, always on, given the full link budget.
 		const already = new Set(literal.map(c => c.targetPath));
-		const semantic = (await this.semanticMatcher.match(file, content, already, s.maxLinksPerNote, trackAiCache(cacheUse)))
-			.filter(c => c.confidence >= s.confidenceThreshold);
-		// Merge, re-rank by confidence descending, then cap at the per-note budget.
-		return [...literal, ...semantic]
-			.sort((a, b) => b.confidence - a.confidence)
-			.slice(0, s.maxLinksPerNote);
+		let semantic: RemLinkCandidate[];
+		try {
+			semantic = (await this.semanticMatcher.match(file, content, already, s.maxLinksPerNote, trackAiCache(cacheUse)))
+				.filter(c => c.confidence >= s.confidenceThreshold);
+		} catch (error) {
+			if (!(error instanceof RemLaneError)) throw error;
+			console.warn('[Synapse REM] Skipped a note after a System 1 lane failure:', redactError(error));
+			return null;
+		}
+		const ranked = [...literal, ...semantic].sort((a, b) => b.confidence - a.confidence);
+		return withoutOverlaps(ranked).slice(0, s.maxLinksPerNote);
+	}
+
+	private buildProposal(sourceNotePath: string, candidates: RemLinkCandidate[]): RemProposal {
+		const lane = candidates.find(c => c.lane)?.lane;
+		return {
+			id: generateId(),
+			sourceNotePath,
+			createdAt: new Date().toISOString(),
+			candidates,
+			status: 'pending',
+			...(lane ? { lane } : {}),
+		};
 	}
 
 	/**
@@ -129,18 +153,17 @@ export class RemModule implements FeatureModule {
 		const cacheUse: CacheUse = {};
 		const allCandidates = await this.gatherCandidates(tFile, content, cacheUse);
 
+		if (allCandidates === null) {
+			this.notifications.info(LANE_SKIP_NOTICE);
+			return null;
+		}
+
 		if (allCandidates.length === 0) {
 			this.notifications.info(withCacheReport('No linkable mentions found', [cacheUse]));
 			return null;
 		}
 
-		const proposal: RemProposal = {
-			id: generateId(),
-			sourceNotePath: filePath,
-			createdAt: new Date().toISOString(),
-			candidates: allCandidates,
-			status: 'pending',
-		};
+		const proposal = this.buildProposal(filePath, allCandidates);
 
 		await this.store.save(proposal);
 		// Review action only when the proposal stays pending — auto-accept
@@ -204,6 +227,7 @@ export class RemModule implements FeatureModule {
 		});
 
 		let created = 0;
+		let laneSkipped = 0;
 		let autoAcceptedCount = 0;
 		const createdProposalIds: string[] = [];
 		const cacheUses: CacheUse[] = [];
@@ -219,15 +243,10 @@ export class RemModule implements FeatureModule {
 				const cacheUse: CacheUse = {};
 				const allCandidates = await this.gatherCandidates(file, content, cacheUse);
 				cacheUses.push(cacheUse);
+				if (allCandidates === null) laneSkipped++;
 
-				if (allCandidates.length > 0) {
-					const proposal: RemProposal = {
-						id: generateId(),
-						sourceNotePath: file.path,
-						createdAt: new Date().toISOString(),
-						candidates: allCandidates,
-						status: 'pending',
-					};
+				if (allCandidates && allCandidates.length > 0) {
+					const proposal = this.buildProposal(file.path, allCandidates);
 					await this.store.save(proposal);
 					created++;
 					createdProposalIds.push(proposal.id);
@@ -253,7 +272,7 @@ export class RemModule implements FeatureModule {
 			// Review action only when something was generated AND REM auto-accept
 			// is off (#366) — the deep-dive rule, centralized.
 			op.finish(
-				withCacheReport(`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions`, cacheUses, 'note'),
+				withCacheReport(`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions${laneSkipNote(laneSkipped)}`, cacheUses, 'note'),
 				reviewAction({
 					generated: created > 0,
 					shouldAutoAccept: this.shouldAutoAccept,
@@ -281,6 +300,7 @@ export class RemModule implements FeatureModule {
 
 		const createdProposalIds: string[] = [];
 		const cacheUses: CacheUse[] = [];
+		let laneSkipped = 0;
 		let autoAcceptedCount = 0;
 
 		try {
@@ -310,15 +330,10 @@ export class RemModule implements FeatureModule {
 				const cacheUse: CacheUse = {};
 				const candidates = await this.gatherCandidates(file, content, cacheUse);
 				cacheUses.push(cacheUse);
+				if (candidates === null) laneSkipped++;
 
-				if (candidates.length > 0) {
-					const proposal: RemProposal = {
-						id: generateId(),
-						sourceNotePath: filePath,
-						createdAt: new Date().toISOString(),
-						candidates,
-						status: 'pending',
-					};
+				if (candidates && candidates.length > 0) {
+					const proposal = this.buildProposal(filePath, candidates);
 					await this.store.save(proposal);
 					createdProposalIds.push(proposal.id);
 					if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
@@ -340,7 +355,7 @@ export class RemModule implements FeatureModule {
 			const tasks = await this.checkpointManager.complete(checkpoint.id);
 			this.dispatchDeferredTasks(tasks);
 			op.finish(
-				withCacheReport(`Resumed -- generated ${createdProposalIds.length} proposals`, cacheUses, 'note'),
+				withCacheReport(`Resumed -- generated ${createdProposalIds.length} proposals${laneSkipNote(laneSkipped)}`, cacheUses, 'note'),
 				reviewAction({
 					generated: createdProposalIds.length > 0,
 					shouldAutoAccept: this.shouldAutoAccept,

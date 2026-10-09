@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createEl, ToggleComponent } from '../__mocks__/obsidian';
+import { createEl, Setting, ToggleComponent } from '../__mocks__/obsidian';
 import { createSettingsSectionContext } from '../shared';
-import { renderRemSettings } from './settings-section';
+import { REM_THRESHOLD_DESC, renderRemSettings } from './settings-section';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
 
@@ -41,5 +41,15 @@ describe('renderRemSettings', () => {
 		await headerToggle._trigger(false);
 		expect(plugin.settings.rem.enabled).toBe(false);
 		expect(saveSettings).toHaveBeenCalled();
+	});
+
+	it('describes what the confidence threshold gates in both lanes', () => {
+		const { ctx } = makeCtx();
+		Setting.instances.length = 0;
+		renderRemSettings(ctx);
+		const threshold = Setting.instances.find((st) => st.setName.mock.calls.some(([n]) => n === 'Confidence threshold'))!;
+		expect(threshold.setDesc).toHaveBeenCalledWith(REM_THRESHOLD_DESC);
+		expect(REM_THRESHOLD_DESC).toMatch(/strongly related/);
+		expect(REM_THRESHOLD_DESC).toMatch(/before it is proposed/);
 	});
 });

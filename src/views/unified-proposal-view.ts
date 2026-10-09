@@ -1184,6 +1184,9 @@ export class UnifiedProposalView extends ItemView {
 			text: `${candidates.length} link${candidates.length === 1 ? '' : 's'} | ${parts.join(', ')}`,
 			cls: 'synapse-reasons',
 		});
+		if (proposal.lane === 'system-one') {
+			card.createEl('small', { text: 'Semantic links decided by the System 1 lane', cls: 'synapse-reasons' });
+		}
 
 		// Preview: show first few candidates
 		const previewItems = candidates.slice(0, 3);
@@ -1265,6 +1268,9 @@ export class UnifiedProposalView extends ItemView {
 					text: `${Math.round(candidate.confidence * 100)}%`,
 					cls: 'synapse-quality-badge',
 				});
+				if (candidate.lane === 'system-one') {
+					headingRow.createEl('small', { text: 'System 1 lane', cls: 'synapse-review-reasons' });
+				}
 			}
 
 			// Checkbox row for this candidate
