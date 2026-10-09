@@ -6,6 +6,26 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-10-09: REM accept never splices blind — every link is re-checked against the live note; summary callouts are unlinkable (#575)
+
+**Context**: Accepting a REM proposal on a note with a Summary block garbled the text — `google` became `googlele]]`. The applier inserted `[[target|text]]` at the line and character positions captured when the note was scanned. If the note changed before accept (a Summary inserted above the match, for example), the insertion landed on the wrong characters. Nothing checked that the text at those positions was still the matched text.
+
+**Decision**:
+- **Validate each link at accept time.** Inside the atomic `vault.process` callback, the text at the stored position must equal the matched text (case-insensitive) and sit outside a skip region.
+- **Re-locate, else drop.** A stale link moves to the nearest whole-word match (same line first, then by line distance) that is not in a skip region and not already claimed; if none exists, it is dropped and an info notice reports "Skipped N link(s)".
+- **No-op when nothing applies.** The note is left untouched, the proposal stays pending, and a notice asks the user to re-run REM. Proposal status records only the links actually applied.
+- **Summary callouts become skip regions.** One shared `rem/skip-regions.ts` serves the scanner, the applier, and a new gather-time filter that drops semantic-lane matches inside summaries, code, and existing links. Word boundaries are Unicode-aware.
+
+**Alternatives considered**:
+- **Keep the blind splice** — rejected; it silently damages user prose, and the undo snapshot only helps if the user notices.
+- **Leave summary callouts linkable** — rejected; summaries are regenerated AI output, so links inside them are fragile.
+
+**Rationale**: REM rewrites the user's own text, so it must never write to a position it has not just confirmed. Skipping a link is recoverable by re-running REM; garbled text is not.
+
+**Impact**: `rem/rem-applier.ts` returns a `RemApplyResult` (applied, dropped, applied candidates); `rem/index.ts` accept path; skip-region logic moved out of `rem/mention-scanner.ts` into the new `rem/skip-regions.ts`, which finds summary callouts with the shared `scanBlocks` parser. Summarize's output format is unchanged.
+
+---
+
 ## 2026-10-09: One global voice setting governs generated prose; neutral by default, verbatim material exempt (#540)
 
 **Context**: Generated prose had no consistent narrative voice. Elaboration told the model to "preserve the original voice", so on a first-person note it wrote *as the user*, claiming opinions and experiences they never had. Deep dive hard-coded an encyclopedic tone, and summarize said nothing, so a first-person source produced a first-person summary.

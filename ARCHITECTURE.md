@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Last updated**: 2026-10-09 · **Version**: 1.3.0
+**Last updated**: 2026-10-09 · **Version**: 1.4.0
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
@@ -174,7 +174,9 @@ src/
 ├── rem/                    # In-place [[wikilink]] discovery
 │   ├── mention-scanner.ts  #   Literal title/alias matches (down-weighted by titleMatchWeight, #380)
 │   ├── semantic-matcher.ts #   Always-on AI semantic matches (#380)
-│   ├── rem-applier.ts      #   Insert wikilinks into note body
+│   ├── overlaps.ts         #   Drop overlapping anchors; higher-ranked candidate wins (#566)
+│   ├── skip-regions.ts     #   Unlinkable ranges (frontmatter, code, links, summary callouts) shared by scanner, applier, semantic filter (#575)
+│   ├── rem-applier.ts      #   Re-validate each link position against the live note, then insert wikilinks (#575)
 │   ├── rem-store.ts        #   Proposal persistence
 │   └── index.ts            #   RemModule orchestrator
 │
@@ -859,7 +861,7 @@ Every feature that reads a note, calls the AI, and writes the result back goes t
 - **Acquire once.** Public entry points (`transcribeAndInsert`, `scanNote`, `enrich`, `acceptProposal`, …) take the slot and delegate to a queue-free private core. Nesting would self-deadlock, so writes to *other* notes made while holding a key (title backlink remediation, merge targets, deep-dive syllabus, organize summaries) stay unqueued.
 - **Post-op chains line up behind.** The automatic enrichment and title checks fired from inside a slot are never awaited, so they simply enqueue behind the primary write and read what it produced.
 - **Visible only when it matters.** User-invoked work passes `onWait`, which updates its operation toast to "Waiting for another Synapse operation on <note>"; automatic follow-ups wait silently.
-- **Unqueued by design.** REM accept/undo and intake stamp/move/breadcrumb write inside atomic `vault.process` callbacks that re-derive from fresh content.
+- **Unqueued by design.** REM accept/undo and intake stamp/move/breadcrumb write inside atomic `vault.process` callbacks that re-derive from fresh content. REM accept re-checks every scan-time link position against the note as it is now, re-finds moved text, and drops what it cannot find (#575).
 
 ---
 
@@ -874,7 +876,7 @@ Seven modules generate proposals that appear in the unified sidebar (`PROPOSAL_K
 | Organize | New directory suggestion | Directory path + AI reasoning | Create directory, move file |
 | Deep Dive | Generated child note | Read-only content preview | Create note at proposed path |
 | Title | Rename suggestion (distinct state on collision) | Current vs proposed title + reasoning | Rename file; on filename collision resolve via `iterate`/`merge` (#408); inbound links rewritten with display text preserved (#485) |
-| REM | `[[wikilink]]` insertions | Per-match checkboxes | **Rewrites note body** (snapshot kept for undo) |
+| REM | `[[wikilink]]` insertions | Per-match checkboxes | **Rewrites note body** (snapshot kept for undo); each link is re-located against the live note or skipped with a "Skipped N link(s)" notice; if none apply, the note is untouched and the proposal stays pending (#575) |
 | Illustrate | Photo / diagram / chart items, each with a placement preview | Per-item checkboxes; remote thumbnail + license + attribution shown before accept (nothing downloaded yet) | Downloads accepted photos into the attachment folder and inserts the embed + `synapse-illustrate` caption callout (or a Mermaid fence) at the re-resolved anchor, in one `vault.process` (#213) |
 
 ### Proposal States
