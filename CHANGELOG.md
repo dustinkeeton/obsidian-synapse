@@ -5,6 +5,13 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] - 2026-10-09
+
+### Fixed
+
+- Accepting a REM link proposal no longer garbles the note when it changed after the scan, for example after a summary was added above the linked text. Each link is checked against the note's current text and moved to the nearest matching word, or skipped with a notice if it can no longer be found. If no link can be placed, the note is left untouched and the proposal stays pending so you can re-run REM
+- REM no longer suggests links inside Synapse summary callouts
+
 ## [1.4.0] - 2026-10-09
 
 ### Added
