@@ -13,7 +13,7 @@ class RemModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null
 
-  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:51; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar); #228 getter default () => false
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:52; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar); #228 getter default () => false
   onload(): Promise<void>
   onunload(): void
   remScanNote(filePath: string): Promise<RemProposal | null>
@@ -85,7 +85,7 @@ interface RemSettings {
 | `semantic-matcher.ts` | `SemanticMatcher`, `RELEVANCE_LEVELS`, `relevanceFromScore`, `anchorSentences`, `RemLaneError`, `NO_ANCHOR` | Phase 2: semantic matching; lane-only (`score` + anchor `choice`) when `ai.systemOne` is on, one generative prompt otherwise (#558, #566) |
 | `overlaps.ts` | `withoutOverlaps` | Drops occurrences overlapping a higher-ranked candidate's, then candidates left with none |
 | `rem-applier.ts` | `RemApplier`, `RemApplyResult` | Inserts `[[wikilinks]]` for accepted candidates after validating each occurrence against the fresh content (re-locate nearest whole-word non-skipped match, else drop; #575) |
-| `skip-regions.ts` | `buildSkipRegions`, `isInSkipRegion`, `isWordBoundary`, `lineStartOffsets`, `withoutSkipRegions` | Unlinkable ranges (frontmatter, code, wikilinks/embeds, md links, `synapse-summary` callouts) shared by scanner, applier, and the semantic filter |
+| `skip-regions.ts` | `SkipRegion`, `buildSkipRegions`, `isInSkipRegion`, `isWordBoundary`, `lineStartOffsets`, `withoutSkipRegions` | Unlinkable ranges (frontmatter, code, wikilinks/embeds, md links, `synapse-summary` callouts) shared by scanner, applier, and the semantic filter |
 | `rem-store.ts` | `RemStore` | Proposal persistence under `rem.remFolderPath` |
 | `settings-section.ts` | `renderRemSettings` | REM settings UI section |
 | `mention-scanner.test.ts` | Tests | MentionScanner tests |
@@ -175,7 +175,7 @@ Resume re-checks exclusion rules silently (a path may have been excluded after c
 ## Exclusion Rules
 
 ```ts
-// index.ts:L503-509
+// index.ts:L512-518
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (
