@@ -5,7 +5,27 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.3.0] - 2026-10-06
+## [1.4.0] - 2026-10-09
+
+### Added
+
+- An optional System 1 decision lane answers Synapse's classification questions — tag vocabulary, frontmatter values, organize placement, and REM links — with TypeSafe Jev, a typed decision model, instead of a generative prompt. Confident answers skip the generative AI call entirely; uncertain ones fall back to your AI provider. It is off by default; turn it on under **System 1 decisions** in AI configuration with a TypeSafe API key, and set its **Confidence floor** there. Finish messages say when a result was decided by the lane, and the lane can only pick folders, tags, and values that already exist in your vault
+- A new **Voice** setting in AI configuration controls whose voice generated prose uses in elaborations, deep dives, and summaries. The default, Neutral, never writes as you; you can also match the note's existing voice, write in first person, or describe a custom voice. Quoted or transcribed material — transcripts, quotes, lyrics, code — always keeps its original wording
+- **Undo last organize run** moves every note from the most recent organize run back to where it was, after asking you to confirm. Notes that were deleted or whose original location is now taken are listed for you to handle instead of being overwritten
+- Summarize now embeds media it downloads in the note it summarized, above the summary, just as Transcribe does. It follows the existing **Embed video in note** setting and never adds a second copy of an embed the note already has
+- The About section of settings has been redesigned: it shows the version and license with a **What's new** button, adds GitHub Sponsors and Buy Me a Coffee buttons for supporting development, and moves **Reset all settings** into a clearly marked danger zone
+
+### Changed
+
+- Organize now proposes every move, including moves into folders that already exist, instead of moving notes directly. Notes only move without review when **Auto-accept** is on for organize. Proposal cards read **Move to** for an existing folder and **New folder** for a new one, and scan summaries count each kind
+- Organize only proposes a new folder when it is confident the note should start one, and it can now decide to leave a note where it is
+- REM proposes fewer, better links. A link must point to a note on the same subject, not just the same broad field, and it must be anchored to a specific place in your note. Notes you already link to are no longer suggested again. With the System 1 lane on, REM uses the lane alone; if the lane fails for a note, that note is skipped rather than falling back to the generative path
+
+### Fixed
+
+- The auto-accept description for elaboration now says accepting rewrites the note body, matching what it does
+- REM no longer hangs on a candidate with an empty matched concept
+
 
 ### Added
 
