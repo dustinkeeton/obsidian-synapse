@@ -144,7 +144,7 @@ describe('ElaborationModule auto-accept (#228)', () => {
 		const pending = await mod.getPendingProposals();
 		expect(pending).toHaveLength(0);
 
-		// The note was modified (the elaboration callout was appended on accept).
+		// The note was modified (the body was rewritten on accept).
 		expect(mockPlugin.app.vault.process).toHaveBeenCalledTimes(1);
 	});
 
