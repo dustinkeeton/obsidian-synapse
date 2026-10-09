@@ -25,6 +25,7 @@ import { renderSystemOneCredentials } from './system-one-credentials';
 import { applyApiKeyEmphasis, API_KEY_NO_SUBSCRIPTION_NOTE } from '../onboarding';
 import { foldActiveNoteProperties } from '../properties-fold';
 import { ChangelogModal } from '../changelog';
+import { FUNDING_LINKS } from './funding';
 
 /** Per-kind Auto-Accept copy; mutating kinds (organize, title, rem) carry a caution. */
 const AUTO_ACCEPT_LABELS: Record<ProposalKind, { name: string; desc: string }> = {
@@ -473,25 +474,25 @@ export function renderGeneral(ctx: SettingsSectionContext): void {
 }
 
 /**
- * About — support links (kept in sync with `manifest.json` fundingUrl and
- * `.github/FUNDING.yml`), the changelog link (#375), and the global reset-all (#420).
+ * About — support buttons (URLs from FUNDING_LINKS), the changelog link (#375),
+ * and the global reset-all (#420).
  */
 export function renderAbout(ctx: SettingsSectionContext): void {
 	const { plugin } = ctx;
 	const aboutBody = ctx.configSection('about', 'About');
-	const line = aboutBody.createDiv({ cls: 'setting-item-description' });
-	line.createSpan({
-		text: 'Synapse is free and open source. Support development → ',
+	const support = aboutBody.createDiv({ cls: 'synapse-sponsor-row' });
+	support.createDiv({
+		cls: 'setting-item-description',
+		text: 'Synapse is free and open source. Support development:',
 	});
-	line.createEl('a', {
-		text: 'GitHub Sponsors',
-		attr: { href: 'https://github.com/sponsors/dustinkeeton' },
-	});
-	line.createSpan({ text: ' · ' });
-	line.createEl('a', {
-		text: 'Buy Me a Coffee',
-		attr: { href: 'https://www.buymeacoffee.com/dustinkeeton' },
-	});
+	const buttons = support.createDiv({ cls: 'synapse-sponsor-buttons' });
+	for (const { label, url } of FUNDING_LINKS) {
+		buttons.createEl('a', {
+			text: label,
+			cls: 'synapse-sponsor-button',
+			attr: { href: url, target: '_blank', rel: 'noopener', 'aria-label': `Support Synapse on ${label}` },
+		});
+	}
 
 	const changelogLine = aboutBody.createDiv({ cls: 'setting-item-description' });
 	changelogLine.createSpan({ text: 'See what changed across versions → ' });

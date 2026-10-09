@@ -30,6 +30,7 @@ import { SynapseSettingTab, SETTINGS_SECTIONS, isSectionVisible } from './settin
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
 import { createSettingsSectionContext } from '../shared';
+import { FUNDING_LINKS } from './funding';
 import type { BuildInfo } from '../shared';
 
 /** Tooltip of the REM accordion-header enable toggle (`src/rem/settings-section.ts`). */
@@ -303,21 +304,45 @@ describe('SynapseSettingTab — transcription credentials in AI Configuration (#
 	);
 });
 
-describe('SynapseSettingTab — About support links (#274)', () => {
-	it('renders static GitHub Sponsors and Buy Me a Coffee links', () => {
+describe('SynapseSettingTab — About support buttons (#274, #529)', () => {
+	const renderSponsorButtons = (): StubEl[] => {
 		const { tab } = makeTab();
 		tab.display();
-
 		const containerEl = (tab as unknown as { containerEl: StubEl }).containerEl;
-		const anchors = findAnchors(containerEl);
-		const byHref = new Map(
-			anchors.map((a) => [a.getAttribute('href'), a.textContent]),
+		return findAnchors(containerEl).filter((a) =>
+			String(a.className).split(/\s+/).includes('synapse-sponsor-button'),
 		);
-		expect(byHref.get('https://github.com/sponsors/dustinkeeton')).toBe(
-			'GitHub Sponsors',
+	};
+
+	it('renders GitHub Sponsors and Buy Me a Coffee as sponsor buttons with funding URLs', () => {
+		const buttons = renderSponsorButtons();
+
+		expect(buttons.map((b) => [b.textContent, b.getAttribute('href')])).toEqual(
+			FUNDING_LINKS.map((l) => [l.label, l.url]),
 		);
-		expect(byHref.get('https://www.buymeacoffee.com/dustinkeeton')).toBe(
-			'Buy Me a Coffee',
+	});
+
+	it('gives each button an accessible name that includes its visible label and opens externally', () => {
+		const buttons = renderSponsorButtons();
+
+		for (const b of buttons) {
+			expect(b.getAttribute('aria-label')).toContain(b.textContent);
+			expect(b.getAttribute('target')).toBe('_blank');
+			expect(b.getAttribute('rel')).toBe('noopener');
+		}
+	});
+
+	it('groups both buttons in the dedicated sponsor-buttons row', () => {
+		const { tab } = makeTab();
+		tab.display();
+		const containerEl = (tab as unknown as { containerEl: StubEl }).containerEl;
+
+		const rows = walkEls(containerEl).filter((el) =>
+			String(el.className).split(/\s+/).includes('synapse-sponsor-buttons'),
+		);
+		expect(rows).toHaveLength(1);
+		expect(findAnchors(rows[0]).map((a) => a.textContent)).toEqual(
+			FUNDING_LINKS.map((l) => l.label),
 		);
 	});
 });

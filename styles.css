@@ -1673,6 +1673,46 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
   cursor: pointer;
 }
 
+/* About support buttons (#529): Iris body, no gold; tag-qualified to beat Obsidian's anchor styles. */
+.synapse-sponsor-row {
+  padding: 0.75em 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.synapse-sponsor-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+  margin-top: var(--size-4-2, 8px);
+}
+a.synapse-sponsor-button,
+a.synapse-sponsor-button:visited {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: var(--size-4-1, 4px) var(--size-4-3, 12px);
+  border: 1px solid #5A3EF0;
+  border-radius: var(--button-radius, 6px);
+  background-color: #5A3EF0;
+  color: #FFFFFF;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold, 600);
+  line-height: 1.5;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+a.synapse-sponsor-button:hover {
+  background-color: #4A30D6;
+  border-color: #4A30D6;
+  color: #FFFFFF;
+  text-decoration: none;
+}
+a.synapse-sponsor-button:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus, var(--interactive-accent));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
 /* Summarize modal: the combine toggle hides while fewer than two combinable items are selected. */
 .synapse-summarize-combine.is-hidden {
   display: none;
