@@ -258,6 +258,7 @@ Open **Settings > Synapse** to configure the plugin. All features can be individ
 | Ollama endpoint | URL for local Ollama server (shown when Ollama selected) | `http://localhost:11434` |
 | Model | AI model for the selected provider | GPT-4o |
 | Temperature | Controls randomness (0 = deterministic, 1 = creative) | 0.7 |
+| Voice | How elaboration, deep dive, and summaries write: Neutral (third person, never writes as you), Match the note (mirrors the note's register without speaking for you), First person (writes as you, opt-in), or Custom (your own instruction). Quoted or transcribed material always keeps its original wording | Neutral |
 
 Each API-key field carries a **Get an API key →** link to the right provider's console and a
 **Test** button that makes a minimal authenticated request and reports **✓ Connected** or

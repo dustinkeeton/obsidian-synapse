@@ -228,6 +228,8 @@ All under `settings.summarize` (`SummarizeSettings`, `settings.ts:230`):
 | `includeNoteContent` | `boolean` | `true` | Summarize the note's own prose as an additional item (#367) |
 | `combineSummaries` | `boolean` | `true` | Emit ONE combined summary instead of a callout per item (#367) |
 
+`Summarizer.summarize` appends `voiceInstruction(settings.ai)` (`settings.ai.voice`, default `'neutral'`) to every system prompt -- style default, schema, `COMPREHENSIVE_SUMMARY_PROMPT`, and `customPrompt` alike (summarizer.ts:27, #540). The fragment exempts quoted/transcribed material from re-voicing.
+
 Path exclusion: centralized `settings.exclusions: ExclusionRule[]`; no per-module `excludeFolders`. Checked via `isPathExcluded(path, 'summarize', settings)`; tag exclusion via `matchesExcludeTag(file, excludeTags, metadataCache)` (both in `isExcluded`, `index.ts:1095`).
 
 ## Content-Aware Schemas

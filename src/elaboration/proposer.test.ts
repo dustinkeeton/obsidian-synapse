@@ -1335,3 +1335,51 @@ describe('ProposalGenerator -- full-body rewrite prompt (#552)', () => {
 		expect(prompt).not.toContain('created: 2026-01-01');
 	});
 });
+
+describe('ProposalGenerator — voice setting (#540)', () => {
+	let settings: SynapseSettings;
+	let generator: ProposalGenerator;
+	const detection: DetectionResult = { notePath: 'notes/stub.md', reasons: [{ type: 'user-requested' }] };
+
+	beforeEach(() => {
+		mockComplete.mockClear();
+		mockComplete.mockResolvedValue('Expanded content here.');
+		const mockApp = {
+			vault: {
+				getAbstractFileByPath: vi.fn().mockImplementation((path: string) => new TFile(path)),
+				cachedRead: vi.fn().mockResolvedValue('I want to look into sourdough starters and my options for flour.'),
+				read: vi.fn(),
+				readBinary: vi.fn(),
+			},
+			metadataCache: {
+				getCache: vi.fn().mockReturnValue(null),
+				getFirstLinkpathDest: vi.fn().mockReturnValue(null),
+			},
+		};
+		settings = makeSettings();
+		settings.elaboration.proposal.includeSourceContext = false;
+		settings.image.enabled = false;
+		generator = new ProposalGenerator(mockApp as unknown as App, () => settings, makeNotifications());
+	});
+
+	it('sends the neutral voice fragment by default and drops the old "preserve the original voice" wording', async () => {
+		await generator.generate(detection);
+
+		const [, systemPrompt] = mockComplete.mock.calls[0];
+		expect(systemPrompt).toContain('neutral, third-person voice');
+		expect(systemPrompt).toContain('Never use "I", "me", "my", "we" or "our" as the author');
+		expect(systemPrompt).toContain('keeps its original wording and voice');
+		expect(systemPrompt).toContain('Preserve the original intent');
+		expect(systemPrompt).not.toMatch(/original voice/i);
+	});
+
+	it('picks up a voice change on the next generate without rebuilding the generator', async () => {
+		await generator.generate(detection);
+		settings.ai.voice = 'custom';
+		settings.ai.voiceCustom = 'Write like a field guide.';
+		await generator.generate(detection);
+
+		expect(mockComplete.mock.calls[1][1]).toContain('Write like a field guide.');
+		expect(mockComplete.mock.calls[1][1]).not.toContain('neutral, third-person voice');
+	});
+});

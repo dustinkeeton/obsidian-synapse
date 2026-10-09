@@ -22,6 +22,7 @@ import { PROPOSAL_KINDS } from '../views';
 import type { ProposalKind } from '../views';
 import { renderTranscriptionCredentials } from '../audio';
 import { renderSystemOneCredentials } from './system-one-credentials';
+import { renderVoiceSetting } from './voice-setting';
 import { applyApiKeyEmphasis, API_KEY_NO_SUBSCRIPTION_NOTE } from '../onboarding';
 import { foldActiveNoteProperties } from '../properties-fold';
 import { ChangelogModal } from '../changelog';
@@ -238,6 +239,8 @@ export function renderAiConfiguration(ctx: SettingsSectionContext): void {
 					await plugin.saveSettings();
 				})
 		);
+
+	renderVoiceSetting(aiBody, ctx);
 
 	// System 1 decision lane (#558): a second key block, not a provider dropdown entry.
 	renderSystemOneCredentials(aiBody, ctx);

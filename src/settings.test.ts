@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_SETTINGS, MODEL_OPTIONS, SYSTEM_ONE_MODEL_OPTIONS } from './settings';
 import type { AIProvider } from './settings';
 import { PROPOSAL_KINDS } from './views/types';
-import { CURRENT_SETTINGS_VERSION } from './shared/settings-migrations';
+import { CURRENT_SETTINGS_VERSION, migrateSettings } from './shared/settings-migrations';
 import { deepMergeSettings } from './shared/settings-merge';
 
 describe('autoAccept settings (#228)', () => {
@@ -200,5 +200,30 @@ describe('System 1 decision lane settings (#558)', () => {
 			ai: { systemOne: { enabled: true, apiKey: 'k', model: 'jev-1.13.0', confidenceFloor: 0.8 } },
 		});
 		expect(merged.ai.systemOne).toEqual({ enabled: true, apiKey: 'k', model: 'jev-1.13.0', confidenceFloor: 0.8 });
+	});
+});
+
+describe('voice setting (#540)', () => {
+	it('defaults fresh installs to neutral with no custom text', () => {
+		expect(DEFAULT_SETTINGS.ai.voice).toBe('neutral');
+		expect(DEFAULT_SETTINGS.ai.voiceCustom).toBe('');
+	});
+
+	it('resolves an upgraded current-version settings file that predates the keys to neutral', () => {
+		const persisted = structuredClone(DEFAULT_SETTINGS) as unknown as { ai: Record<string, unknown> };
+		delete persisted.ai.voice;
+		delete persisted.ai.voiceCustom;
+		persisted.ai.apiKey = 'sk-saved';
+		const migrated = migrateSettings(persisted, CURRENT_SETTINGS_VERSION);
+		const merged = deepMergeSettings(DEFAULT_SETTINGS, migrated);
+		expect(merged.ai.voice).toBe('neutral');
+		expect(merged.ai.voiceCustom).toBe('');
+		expect(merged.ai.apiKey).toBe('sk-saved');
+	});
+
+	it('keeps a persisted voice choice', () => {
+		const merged = deepMergeSettings(DEFAULT_SETTINGS, { ai: { voice: 'custom', voiceCustom: 'Be terse.' } });
+		expect(merged.ai.voice).toBe('custom');
+		expect(merged.ai.voiceCustom).toBe('Be terse.');
 	});
 });

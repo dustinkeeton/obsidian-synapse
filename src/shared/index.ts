@@ -165,6 +165,8 @@ export {
 export type { SettingsMigration } from './settings-migrations';
 export { migrateDataFolder, LEGACY_DATA_FOLDER, DATA_FOLDER } from './data-folder-migration';
 export { deepMergeSettings } from './settings-merge';
+export { voiceInstruction, VOICE_OPTIONS } from './voice';
+export type { VoiceMode, VoiceSettings } from './voice';
 export {
 	CONTENT_SCHEMAS,
 	detectSchemaFor,

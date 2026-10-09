@@ -145,9 +145,9 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
    |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:251)
    |  Guard B: attempted>0 && externalContext='' && isLinkDominated -> return null (proposer.ts:126)
    |  buildPrompt(basename, BODY, ...) always prepends `Note title: "<basename>"` (proposer.ts:183); the prompt never carries YAML
-   |  System prompt REWRITE_SYSTEM_PROMPT (proposer.ts:37) + REWRITE_INSTRUCTIONS (proposer.ts:41): output the COMPLETE rewritten
-   |  body, keep every sentence/embed/wikilink/URL, no frontmatter, no code fence
-   |  AIClient.complete(prompt, systemPrompt, aiOpts)  (proposer.ts:135; aiOpts = trackAiCache(cacheUse), #527)
+   |  System prompt REWRITE_SYSTEM_PROMPT (proposer.ts:37) + voiceInstruction(settings.ai) (proposer.ts:131, #540) + REWRITE_INSTRUCTIONS (proposer.ts:41):
+   |  output the COMPLETE rewritten body, preserve the original intent, keep every sentence/embed/wikilink/URL, no frontmatter, no code fence
+   |  AIClient.complete(prompt, systemPrompt, aiOpts)  (proposer.ts:136; aiOpts = trackAiCache(cacheUse), #527)
    |  proposedAdditions = stripCodeFences(sanitizeAIResponse(raw))  -- the rewritten body
    |  Returns: Proposal (id===contentKey===key, originalContent=full content, status:'pending', insertionPoint:'replace') | null
    |
@@ -277,7 +277,7 @@ All under `settings.elaboration` unless noted.
 | `proposal.maxProposalsPerNote` | number | 3 | Per-note pending-proposal cap; `guardProposal` skips with reason `cap` once reached (index.ts:157) |
 | `proposal.preserveFrontmatter` | boolean | true | Defined in settings; not referenced by module code |
 
-Path exclusions use centralized `settings.exclusions: ExclusionRule[]` via `isPathExcluded(path,'elaboration',settings)`; there is no per-module `excludeFolders`. Auto-accept is `settings.autoAccept.elaboration` (default false), passed in via `shouldAutoAccept: () => boolean`; module code never mutates settings. Image analysis reads `settings.image.enabled`, `settings.image.visionModel`, `settings.image.maxImageSizeMb`, `settings.ai.model`. The dedup content key additionally folds in `settings.ai.provider`, `settings.ai.model`, `settings.ai.temperature`, `settings.ai.maxTokens` (`proposalContentKey`, proposer.ts:20).
+Path exclusions use centralized `settings.exclusions: ExclusionRule[]` via `isPathExcluded(path,'elaboration',settings)`; there is no per-module `excludeFolders`. Auto-accept is `settings.autoAccept.elaboration` (default false), passed in via `shouldAutoAccept: () => boolean`; module code never mutates settings. Image analysis reads `settings.image.enabled`, `settings.image.visionModel`, `settings.image.maxImageSizeMb`, `settings.ai.model`. The rewrite system prompt reads `settings.ai.voice`/`settings.ai.voiceCustom` per call via `voiceInstruction` (#540); voice is NOT part of the dedup key. The dedup content key additionally folds in `settings.ai.provider`, `settings.ai.model`, `settings.ai.temperature`, `settings.ai.maxTokens` (`proposalContentKey`, proposer.ts:20).
 
 ## Commands Registered
 

@@ -453,6 +453,12 @@ const SETTINGS_MIGRATIONS: SettingsMigration[]         // ordered chain: v1 excl
 function readSettingsVersion(raw: Record<string, unknown> | null | undefined): number   // 0 when absent/non-numeric
 function migrateSettings(raw: Record<string, unknown>, fromVersion: number): Record<string, unknown>   // clones, replays migrations with to > fromVersion
 
+// voice.ts (#540) — narrative voice for model-authored prose; no imports
+type VoiceMode = 'neutral' | 'match-note' | 'first-person' | 'custom'
+interface VoiceSettings { voice: VoiceMode; voiceCustom: string }   // the settings.ai slice; local so shared/ never imports settings.ts
+const VOICE_OPTIONS: Record<VoiceMode, string>   // dropdown labels
+function voiceInstruction(settings: VoiceSettings): string   // voice rule + VERBATIM_EXEMPTION_RULE; unknown voice or blank custom -> neutral
+
 // settings-merge.ts:10 — persisted settings over defaults; nested records recurse, arrays/primitives overwrite; drops __proto__/constructor/prototype keys; NOT a deep clone (untouched nested defaults shared by reference)
 function deepMergeSettings<T extends object>(target: T, source: Record<string, unknown>): T
 
@@ -663,6 +669,8 @@ function scoreLyricsContent(content: string): number
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
 | `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:285`) |
 | `settings-merge.test.ts` | Tests | Merge semantics + pollution-key tests |
+| `voice.ts` | `voiceInstruction`, `VOICE_OPTIONS`, `VoiceMode`, `VoiceSettings` (+ rule constants for tests) | System-prompt voice fragment for prose-authoring call sites (#540). No imports |
+| `voice.test.ts` | Tests | Per-option output, custom trim + blank fallback, unknown-value fallback, verbatim exemption on every option |
 | `data-folder-migration.ts` | `migrateDataFolder`, `LEGACY_DATA_FOLDER`, `DATA_FOLDER` | One-time `.auto-notes/` -> `.synapse/` data-folder rename via `DataAdapter` (skip when absent, warn when both exist, `notifications.success`/`error` outcome). Imports `redact`, `notifications` (type). Called once at `main.ts:50` |
 | `data-folder-migration.test.ts` | Tests | Rename / skip / conflict / failure paths |
 | `json-utils.ts` | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` | Type-safe JSON helpers. `parseJson` returns `unknown` (not `any`). `readJsonFile` reads via `DataAdapter`, validates with a type guard, returns `null` on any failure |
@@ -807,6 +815,8 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `wrapUntrusted` | elaboration/proposer (fetched-link content + image-analysis prompt fencing) |
 | `findAvailableVaultPath` | video/index (same-day re-download), title/index (duplicate "iterate" resolution, #408) |
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
+| `voiceInstruction` | elaboration/proposer, deep-dive/note-generator, summarize/summarizer (#540) |
+| `VOICE_OPTIONS` | settings-ui/voice-setting |
 | `deepMergeSettings` | main (`loadSettings`, `main.ts:285`: migrated raw record over `DEFAULT_SETTINGS`) |
 | `migrateDataFolder` | main (`onload`, `main.ts:50`, right after `NotificationManager` construction) |
 | `extractGeminiResponseText` | ai-client (callGemini), audio/transcriber (Gemini provider) |

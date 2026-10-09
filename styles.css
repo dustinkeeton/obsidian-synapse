@@ -188,6 +188,13 @@ body {
   resize: vertical;
 }
 
+/* ── Settings voice custom instruction (#540) ── */
+
+textarea.synapse-voice-custom-input {
+  width: 100%;
+  resize: vertical;
+}
+
 /* ── Settings tab version footer ── */
 
 .synapse-settings-footer {
