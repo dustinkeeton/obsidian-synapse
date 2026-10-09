@@ -133,6 +133,7 @@ export default tseslint.config(
 					//    following common noun (e.g. "recipes" → "Recipes");
 					//  - a quoted command name referenced mid-sentence, whose own
 					//    (already sentence-case) capitalization must be preserved.
+					//  - a mid-sentence fragment split into its own <strong> element.
 					ignoreRegex: [
 						'GitHub Sponsors',
 						'Buy Me a Coffee',
@@ -141,6 +142,7 @@ export default tseslint.config(
 						'e\\.g\\.',
 						'Scan folder for stub notes',
 						'System 1',
+						'^including API keys$',
 					],
 				},
 			],

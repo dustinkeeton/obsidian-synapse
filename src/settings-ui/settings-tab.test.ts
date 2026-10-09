@@ -30,6 +30,7 @@ import { SynapseSettingTab, SETTINGS_SECTIONS, isSectionVisible } from './settin
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
 import { createSettingsSectionContext } from '../shared';
+import { FUNDING_LINKS } from './funding';
 import type { BuildInfo } from '../shared';
 
 /** Tooltip of the REM accordion-header enable toggle (`src/rem/settings-section.ts`). */
@@ -303,45 +304,86 @@ describe('SynapseSettingTab — transcription credentials in AI Configuration (#
 	);
 });
 
-describe('SynapseSettingTab — About support links (#274)', () => {
-	it('renders static GitHub Sponsors and Buy Me a Coffee links', () => {
-		const { tab } = makeTab();
-		tab.display();
+/** Every element in the rendered tab carrying `cls` (asserted via className split). */
+function byClass(tab: SynapseSettingTab, cls: string): StubEl[] {
+	const containerEl = (tab as unknown as { containerEl: StubEl }).containerEl;
+	return walkEls(containerEl).filter((el) => String(el.className).split(/\s+/).includes(cls));
+}
 
-		const containerEl = (tab as unknown as { containerEl: StubEl }).containerEl;
-		const anchors = findAnchors(containerEl);
-		const byHref = new Map(
-			anchors.map((a) => [a.getAttribute('href'), a.textContent]),
-		);
-		expect(byHref.get('https://github.com/sponsors/dustinkeeton')).toBe(
-			'GitHub Sponsors',
-		);
-		expect(byHref.get('https://www.buymeacoffee.com/dustinkeeton')).toBe(
-			'Buy Me a Coffee',
-		);
-	});
-});
+/** Concatenated own-text of an element and its descendants (the mock does not aggregate). */
+function deepText(el: StubEl): string {
+	return [el.textContent ?? '', ...walkEls(el).map((c) => c.textContent ?? '')].join('');
+}
 
-describe('SynapseSettingTab — About "What\'s new" changelog link (#375)', () => {
+describe('SynapseSettingTab — About app info card (#529)', () => {
 	beforeEach(() => {
 		(ChangelogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
 		changelogOpen.mockClear();
 	});
 
-	it('renders a "What\'s new" link that opens the changelog modal on click', () => {
+	it('shows the version from plugin.manifest and the AGPL-3.0 licence', () => {
 		const { tab } = makeTab();
 		tab.display();
 
-		const containerEl = (tab as unknown as { containerEl: StubEl }).containerEl;
-		const link = findAnchors(containerEl).find((a) => a.textContent === "What's new");
-		expect(link).toBeDefined();
+		const [card] = byClass(tab, 'synapse-about-card');
+		expect(byClass(tab, 'synapse-about-version').map((el) => el.textContent)).toEqual(['v0.0.0-test']);
+		expect(deepText(card)).toContain('Free and open source · AGPL-3.0 licensed');
+	});
+
+	it('renders a "What\'s new" button that opens the changelog modal on click', () => {
+		const { tab } = makeTab();
+		tab.display();
+
+		const [button] = byClass(tab, 'synapse-about-whats-new');
+		expect(button.tagName).toBe('BUTTON');
+		expect(deepText(button)).toBe("What's new");
 
 		const preventDefault = vi.fn();
-		link!.dispatchEvent({ type: 'click', preventDefault });
+		button.dispatchEvent({ type: 'click', preventDefault });
 
-		expect(preventDefault).toHaveBeenCalled();
 		expect(ChangelogModal).toHaveBeenCalledTimes(1);
 		expect(changelogOpen).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('SynapseSettingTab — About support tiles (#274, #529)', () => {
+	it('renders one external-link tile per FUNDING_LINKS entry with its URL, title and subtitle', () => {
+		const { tab } = makeTab();
+		tab.display();
+
+		const tiles = byClass(tab, 'synapse-sponsor-tile');
+		expect(tiles.map((t) => [t.tagName, t.getAttribute('href'), deepText(t)])).toEqual(
+			FUNDING_LINKS.map((l) => ['A', l.url, `${l.label}${l.subtitle}`]),
+		);
+		for (const t of tiles) {
+			expect(t.getAttribute('target')).toBe('_blank');
+			expect(t.getAttribute('rel')).toBe('noopener');
+		}
+	});
+
+	it('gives each tile a distinct per-platform class and an accessible name with its label', () => {
+		const { tab } = makeTab();
+		tab.display();
+
+		const tiles = byClass(tab, 'synapse-sponsor-tile');
+		expect(byClass(tab, 'synapse-sponsor-tile--github-sponsors')).toEqual([tiles[0]]);
+		expect(byClass(tab, 'synapse-sponsor-tile--buy-me-a-coffee')).toEqual([tiles[1]]);
+		tiles.forEach((t, i) => {
+			expect(t.getAttribute('aria-label')).toContain(FUNDING_LINKS[i].label);
+		});
+	});
+
+	it('requests the platform icon and the external-arrow icon on each tile', () => {
+		const { tab } = makeTab();
+		tab.display();
+
+		const icons = byClass(tab, 'synapse-sponsor-tile').map((t) =>
+			walkEls(t).map((el) => el.getAttribute('data-icon')).filter(Boolean),
+		);
+		expect(icons).toEqual([
+			['heart', 'arrow-up-right'],
+			['coffee', 'arrow-up-right'],
+		]);
 	});
 });
 
@@ -635,18 +677,42 @@ describe('SynapseSettingTab — global reset all (#420)', () => {
 		confirmResult.mockReset();
 	});
 
-	function resetAllButton(): ButtonComponent | undefined {
-		return ButtonComponent.instances.find((b) => b.buttonText === 'Reset all settings');
+	function resetAllButton(tab: SynapseSettingTab): StubEl {
+		const [btn] = byClass(tab, 'synapse-reset-button');
+		return btn;
 	}
 
-	it('renders a "Reset all settings" mod-destructive button in About (#533)', () => {
+	async function clickReset(tab: SynapseSettingTab): Promise<void> {
+		resetAllButton(tab).dispatchEvent({ type: 'click' });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	}
+
+	it('renders a "Reset…" button named "Reset all settings" inside the danger-zone card (#529)', () => {
 		const { tab } = makeTab();
 		tab.display();
 
-		const btn = resetAllButton();
-		expect(btn).toBeDefined();
-		expect(btn!.classes).toContain('mod-destructive');
-		expect(btn!.setWarning).not.toHaveBeenCalled();
+		const [card] = byClass(tab, 'synapse-danger-card');
+		const btn = resetAllButton(tab);
+		expect(walkEls(card)).toContain(btn);
+		expect(btn.tagName).toBe('BUTTON');
+		expect(btn.getAttribute('aria-label')).toBe('Reset all settings');
+		expect(deepText(btn)).toBe('Reset…');
+		expect(deepText(card)).toContain('Clears every setting, including API keys');
+		expect(deepText(card)).toContain('Keeps your notes and proposals');
+	});
+
+	it('opens the reset-all confirmation when the Reset button is clicked', async () => {
+		confirmResult.mockResolvedValue(false);
+		const { tab } = makeTab();
+		tab.display();
+
+		await clickReset(tab);
+
+		expect(ConfirmModal).toHaveBeenCalledTimes(1);
+		expect((ConfirmModal as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({
+			title: 'Reset all settings?',
+			confirmLabel: 'Reset all settings',
+		});
 	});
 
 	it('restores all settings and preserves bookkeeping when confirmed', async () => {
@@ -660,7 +726,7 @@ describe('SynapseSettingTab — global reset all (#420)', () => {
 		});
 		tab.display();
 
-		await resetAllButton()!._click();
+		await clickReset(tab);
 
 		// Everything reset to defaults…
 		expect(plugin.settings.ai.apiKey).toBe('');
@@ -679,7 +745,7 @@ describe('SynapseSettingTab — global reset all (#420)', () => {
 		});
 		tab.display();
 
-		await resetAllButton()!._click();
+		await clickReset(tab);
 
 		expect(plugin.settings.ai.apiKey).toBe('sk');
 		expect(plugin.saveSettings).not.toHaveBeenCalled();

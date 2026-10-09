@@ -1766,6 +1766,243 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
   cursor: pointer;
 }
 
+/* About section (#529). Fixed hex only for Iris and the two platform tiles; compound selectors beat Obsidian's button/anchor rules. */
+.synapse-about-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-4-3, 12px);
+  margin: var(--size-4-3, 12px) 0;
+  padding: var(--size-4-3, 12px) var(--size-4-4, 16px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l, 12px);
+  background-color: var(--background-secondary);
+}
+.synapse-about-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-m, 8px);
+  background-color: #5A3EF0;
+  color: #FFFFFF;
+}
+.synapse-about-mark svg {
+  width: 24px;
+  height: 24px;
+}
+.synapse-about-info {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.synapse-about-name {
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-normal);
+}
+.synapse-about-version {
+  margin-left: 0.35em;
+  color: var(--text-muted);
+}
+.synapse-about-subtitle {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.synapse-about-card button.synapse-about-whats-new,
+.synapse-danger-card button.synapse-reset-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  height: auto;
+  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+  border-radius: var(--button-radius, 6px);
+  box-shadow: none;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium, 500);
+  cursor: pointer;
+}
+.synapse-about-card button.synapse-about-whats-new {
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--interactive-normal);
+  color: var(--text-normal);
+}
+.synapse-about-card button.synapse-about-whats-new:hover {
+  background-color: var(--interactive-hover);
+}
+.synapse-about-whats-new .synapse-about-button-icon {
+  color: var(--text-accent);
+}
+.synapse-about-button-icon {
+  display: inline-flex;
+}
+.synapse-about-button-icon svg,
+.synapse-sponsor-tile-arrow svg,
+.synapse-danger-item-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.synapse-about-heading {
+  margin-top: var(--size-4-6, 24px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold, 600);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.synapse-about-heading--danger {
+  color: var(--text-error);
+}
+.synapse-about-intro {
+  margin: var(--size-4-1, 4px) 0 var(--size-4-3, 12px);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+.synapse-sponsor-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: var(--size-4-3, 12px);
+}
+.synapse-sponsor-tiles a.synapse-sponsor-tile,
+.synapse-sponsor-tiles a.synapse-sponsor-tile:visited,
+.synapse-sponsor-tiles a.synapse-sponsor-tile:hover {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-3, 12px);
+  min-width: 0;
+  padding: var(--size-4-3, 12px) var(--size-4-4, 16px);
+  border: 1px solid transparent;
+  border-radius: var(--radius-l, 12px);
+  text-decoration: none;
+  cursor: pointer;
+}
+.synapse-sponsor-tiles a.synapse-sponsor-tile:focus-visible,
+.synapse-about-card button.synapse-about-whats-new:focus-visible,
+.synapse-danger-card button.synapse-reset-button:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus, var(--interactive-accent));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.synapse-sponsor-tile-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-m, 8px);
+}
+.synapse-sponsor-tile-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.synapse-sponsor-tile-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+.synapse-sponsor-tile-title {
+  font-weight: var(--font-semibold, 600);
+}
+.synapse-sponsor-tile-subtitle {
+  font-size: var(--font-ui-small);
+}
+.synapse-sponsor-tile-arrow {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.synapse-sponsor-tiles a.synapse-sponsor-tile--github-sponsors,
+.synapse-sponsor-tiles a.synapse-sponsor-tile--github-sponsors:visited {
+  border-color: #3D444D;
+  background-color: #24292F;
+  color: #FFFFFF;
+}
+.synapse-sponsor-tiles a.synapse-sponsor-tile--github-sponsors:hover {
+  border-color: #59636E;
+  background-color: #2D333B;
+  color: #FFFFFF;
+}
+.synapse-sponsor-tile--github-sponsors .synapse-sponsor-tile-subtitle {
+  color: #D1D9E0;
+}
+.synapse-sponsor-tile--github-sponsors .synapse-sponsor-tile-icon {
+  background-color: #3F2E3B;
+  color: #DB61A2;
+}
+.synapse-sponsor-tiles a.synapse-sponsor-tile--buy-me-a-coffee,
+.synapse-sponsor-tiles a.synapse-sponsor-tile--buy-me-a-coffee:visited {
+  border-color: #E6C700;
+  background-color: #FFDD00;
+  color: #0D0C22;
+}
+.synapse-sponsor-tiles a.synapse-sponsor-tile--buy-me-a-coffee:hover {
+  border-color: #CCB000;
+  background-color: #F5D400;
+  color: #0D0C22;
+}
+.synapse-sponsor-tile--buy-me-a-coffee .synapse-sponsor-tile-subtitle {
+  color: #3B3A4A;
+}
+.synapse-sponsor-tile--buy-me-a-coffee .synapse-sponsor-tile-icon {
+  background-color: #EBCB00;
+  color: #0D0C22;
+}
+.synapse-danger-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-4-3, 12px);
+  margin-top: var(--size-4-2, 8px);
+  padding: var(--size-4-3, 12px) var(--size-4-4, 16px);
+  border: 1px solid rgba(var(--color-red-rgb), 0.45);
+  border-radius: var(--radius-l, 12px);
+  background-color: rgba(var(--color-red-rgb), 0.06);
+}
+.synapse-danger-info {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.synapse-danger-title {
+  font-weight: var(--font-semibold, 600);
+  color: var(--text-normal);
+}
+.synapse-danger-card ul.synapse-danger-list {
+  margin: var(--size-4-2, 8px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.synapse-danger-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+.synapse-danger-item-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.synapse-danger-item--clears .synapse-danger-item-icon {
+  color: var(--text-error);
+}
+.synapse-danger-item--keeps .synapse-danger-item-icon {
+  color: var(--text-success);
+}
+.synapse-danger-card button.synapse-reset-button {
+  border: 1px solid var(--text-error);
+  background-color: transparent;
+  color: var(--text-error);
+}
+.synapse-danger-card button.synapse-reset-button:hover {
+  background-color: rgba(var(--color-red-rgb), 0.12);
+  color: var(--text-error);
+}
+.synapse-danger-note {
+  margin-top: var(--size-4-2, 8px);
+}
+
 /* Summarize modal: the combine toggle hides while fewer than two combinable items are selected. */
 .synapse-summarize-combine.is-hidden {
   display: none;
