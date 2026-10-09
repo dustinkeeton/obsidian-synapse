@@ -1,4 +1,4 @@
-import { AIClient, sanitizeAIResponse } from '../shared';
+import { AIClient, sanitizeAIResponse, voiceInstruction } from '../shared';
 import type { AIRequestOptions } from '../shared';
 import { SynapseSettings } from '../settings';
 
@@ -24,7 +24,7 @@ export class Summarizer {
 		customPrompt?: string,
 		opts?: AIRequestOptions
 	): Promise<string> {
-		const systemPrompt = customPrompt || STYLE_PROMPTS[style];
+		const systemPrompt = `${customPrompt || STYLE_PROMPTS[style]}\n\n${voiceInstruction(this.getSettings().ai)}`;
 
 		const userPrompt = `Source: ${source}\n\nIf image URLs are present in the source content, preserve them as markdown image embeds (![alt](url)) rather than describing the image. For internal images like [[image.jpg]], embed them as ![[image.jpg]].\n\n${content}`;
 

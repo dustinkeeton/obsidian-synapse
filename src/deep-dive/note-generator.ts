@@ -1,5 +1,5 @@
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, voiceInstruction } from '../shared';
 import type { AIRequestOptions } from '../shared';
 import { ExtractedTopic } from './types';
 
@@ -35,7 +35,8 @@ Rules:
 - If URLs are provided, reference them naturally in the text
 - If image URLs are present, preserve them as markdown image embeds (![alt](url)) rather than describing the image. For internal images like [[image.jpg]], embed them as ![[image.jpg]]
 - Do NOT include the note title as an H1 — Obsidian uses the filename
-- Write in an encyclopedic, informative tone`;
+- Write in an encyclopedic, informative tone
+- ${voiceInstruction(this.getSettings().ai)}`;
 
 		const urlContext = topic.relatedUrls.length > 0
 			? `\nRelevant URLs: ${topic.relatedUrls.join(', ')}`

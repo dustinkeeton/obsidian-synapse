@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Summarizer } from './summarizer';
 import { DEFAULT_SETTINGS } from '../settings';
+import type { SynapseSettings } from '../settings';
+import { voiceInstruction } from '../shared/voice';
 
 const mockComplete = vi
 	.fn<(prompt: string, systemPrompt?: string, opts?: unknown) => Promise<string>>()
@@ -51,11 +53,12 @@ describe('Summarizer', () => {
 		expect(systemPrompt).toContain('key takeaway');
 	});
 
-	it('uses custom prompt when provided', async () => {
+	it('uses custom prompt when provided, followed by the voice fragment (#540)', async () => {
 		await summarizer.summarize('Content', 'source', 'bullets', 'My custom prompt');
 
 		const [, systemPrompt] = mockComplete.mock.calls[0];
-		expect(systemPrompt).toBe('My custom prompt');
+		expect(systemPrompt).toBe(`My custom prompt\n\n${voiceInstruction(DEFAULT_SETTINGS.ai)}`);
+		expect(systemPrompt).not.toContain('bullet');
 	});
 
 	it('includes image embed preservation instruction in user prompt', async () => {
@@ -91,5 +94,57 @@ describe('Summarizer', () => {
 		const result = await summarizer.summarize('Content', 'source', 'bullets');
 		expect(result).not.toContain('<script>');
 		expect(result).toContain('Clean text');
+	});
+});
+
+const FIRST_PERSON_TRANSCRIPT = "[00:00] I think we should ship the beta next week. My team is ready.";
+const BLOCK_QUOTE_NOTE = '# Reading notes\n\n> I have measured out my life with coffee spoons.\n\nThe poem uses domestic imagery.';
+const LYRICS_NOTE = '## Lyrics\n\nI walk the line, my heart is mine\nWe sing until the morning light';
+
+describe('Summarizer — voice setting (#540)', () => {
+	let settings: SynapseSettings;
+	let summarizer: Summarizer;
+
+	beforeEach(() => {
+		mockComplete.mockReset();
+		mockComplete.mockResolvedValue('summary');
+		settings = structuredClone(DEFAULT_SETTINGS);
+		summarizer = new Summarizer(() => settings);
+	});
+
+	it('appends the neutral voice fragment to every built-in style prompt', async () => {
+		for (const style of ['bullets', 'paragraph', 'key-points'] as const) {
+			mockComplete.mockClear();
+			await summarizer.summarize('Content', 'source', style);
+			const [, systemPrompt] = mockComplete.mock.calls[0];
+			expect(systemPrompt).toContain('neutral, third-person voice');
+			expect(systemPrompt?.endsWith(voiceInstruction(settings.ai))).toBe(true);
+		}
+	});
+
+	it('picks up a voice change on the next call without rebuilding the summarizer', async () => {
+		await summarizer.summarize('Content', 'source', 'bullets');
+		settings.ai.voice = 'first-person';
+		await summarizer.summarize('Content', 'source', 'bullets');
+
+		expect(mockComplete.mock.calls[0][1]).toContain('neutral, third-person voice');
+		expect(mockComplete.mock.calls[1][1]).toContain('Write in the first person');
+		expect(mockComplete.mock.calls[1][1]).not.toContain('neutral, third-person voice');
+	});
+
+	it.each([
+		['first-person transcript', FIRST_PERSON_TRANSCRIPT],
+		['block quote', BLOCK_QUOTE_NOTE],
+		['lyrics', LYRICS_NOTE],
+	])('passes a %s through verbatim with the verbatim exemption under neutral', async (_label, fixture) => {
+		mockComplete.mockResolvedValue(`The source is summarized below.\n\n${fixture}`);
+		const result = await summarizer.summarize(fixture, 'source', 'paragraph');
+
+		expect(result).toContain(fixture);
+		const [userPrompt, systemPrompt] = mockComplete.mock.calls[0];
+		expect(userPrompt).toContain(fixture);
+		expect(systemPrompt).toContain('neutral, third-person voice');
+		expect(systemPrompt).toContain('keeps its original wording and voice');
+		expect(systemPrompt).toContain('apply this voice only to text you write yourself');
 	});
 });

@@ -9,6 +9,8 @@ import type { TitleDuplicateStrategy } from './title/types';
 // Type-only import. illustrate/types.ts has no imports, so this never forms a cycle.
 import type { IllustrateSettings, IllustrateRunAfterKey } from './illustrate/types';
 export type { IllustrateRunAfterKey };
+// Type-only import. shared/voice.ts has no imports, so this never forms a cycle.
+import type { VoiceMode } from './shared/voice';
 // Runtime value import — the sanctioned `settings → shared` direction. Imported
 // DIRECTLY from the module (not via the `./shared` barrel) to stay clear of any
 // barrel import cycle; settings-migrations only depends on shared/exclusions, so
@@ -132,6 +134,10 @@ export interface AISettings {
 	 * caching to any temperature. "Regenerate" actions always bypass the cache.
 	 */
 	cacheResponses: boolean;
+	/** Narrative voice for elaboration, deep dive, and summarize prose (#540). */
+	voice: VoiceMode;
+	/** Free-text voice instruction, used only when `voice` is `custom`. */
+	voiceCustom: string;
 	systemOne: SystemOneSettings;
 }
 
@@ -469,6 +475,8 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		maxTokens: 2048,
 		temperature: 0.7,
 		cacheResponses: false,
+		voice: 'neutral',
+		voiceCustom: '',
 		systemOne: {
 			enabled: false,
 			apiKey: '',

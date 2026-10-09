@@ -233,6 +233,9 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 | `settings.deepDive.autoOrganizeOnAccept` | `boolean` | `false` |
 | `settings.autoAccept['deep-dive']` | `boolean` | `false` |
 | `settings.exclusions` | `ExclusionRule[]` | see `settings.ts` defaults |
+| `settings.ai.voice` / `settings.ai.voiceCustom` | `VoiceMode` / `string` | `'neutral'` / `''` |
+
+`NoteGenerator.generateContent` keeps the encyclopedic-tone rule and appends `voiceInstruction(settings.ai)` as the last rule, read per call (note-generator.ts:39, #540).
 
 ## Dependencies
 

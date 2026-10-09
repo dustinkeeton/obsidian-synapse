@@ -412,6 +412,8 @@ export class Setting {
 	 * (e.g. credential-field.test.ts passes `{}` and inspects the stub directly).
 	 */
 	settingEl: StubEl;
+	/** Mirrors Obsidian's control column, for raw-DOM controls appended to a row. */
+	controlEl: StubEl;
 	/** Child components created via add*, mirroring Obsidian's `components`. */
 	components: ToggleComponent[] = [];
 	/** Every Setting constructed since the last reset (tests clear between cases). */
@@ -420,6 +422,10 @@ export class Setting {
 	name = '';
 	constructor(containerEl?: { createDiv?: (cls: string) => StubEl }) {
 		this.settingEl = containerEl?.createDiv?.('setting-item') ?? createStubEl();
+		// Some tests hand in a bare container whose createDiv returns a non-stub.
+		this.controlEl = typeof this.settingEl?.createDiv === 'function'
+			? this.settingEl.createDiv('setting-item-control')
+			: createStubEl();
 		Setting.instances.push(this);
 	}
 	setName = vi.fn(function (this: Setting, name: string) {

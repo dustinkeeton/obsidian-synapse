@@ -3,6 +3,7 @@ import { requestUrl, type RequestUrlParam } from '../__mocks__/obsidian';
 import { AIClient, redactSecrets } from './ai-client';
 import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 import type { ChatMessage, ContentBlock } from './types';
+import { voiceInstruction } from './voice';
 
 const mockRequestUrl = vi.mocked(requestUrl);
 
@@ -761,5 +762,21 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 		await Promise.all([client.chat(QUESTION, { onCacheHit }), client.chat(QUESTION, { onCacheHit })]);
 
 		expect(onCacheHit).not.toHaveBeenCalled();
+	});
+
+	it('keys the cache on the system prompt, so switching voice never replays a stale result (#540)', async () => {
+		settings.ai.temperature = 0;
+		mockRequestUrl
+			.mockResolvedValueOnce(openAIResponse('neutral answer'))
+			.mockResolvedValueOnce(openAIResponse('first-person answer'));
+
+		const neutral = await client.complete('Summarize', `Base. ${voiceInstruction({ voice: 'neutral', voiceCustom: '' })}`);
+		const firstPerson = await client.complete('Summarize', `Base. ${voiceInstruction({ voice: 'first-person', voiceCustom: '' })}`);
+		const neutralAgain = await client.complete('Summarize', `Base. ${voiceInstruction({ voice: 'neutral', voiceCustom: '' })}`);
+
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+		expect(neutral).toBe('neutral answer');
+		expect(firstPerson).toBe('first-person answer');
+		expect(neutralAgain).toBe('neutral answer');
 	});
 });

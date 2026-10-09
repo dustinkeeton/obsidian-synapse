@@ -66,3 +66,40 @@ describe('NoteGenerator — image embed preservation', () => {
 		expect(systemPrompt).toContain('embed them as ![[image.jpg]]');
 	});
 });
+
+describe('NoteGenerator — voice setting (#540)', () => {
+	const topic: ExtractedTopic = {
+		title: 'Sourdough',
+		description: 'Starter care',
+		relevance: 0.8,
+		existsInVault: false,
+		relatedUrls: [],
+	};
+
+	beforeEach(() => {
+		mockComplete.mockClear();
+		mockComplete.mockResolvedValue('## Overview\n\nGenerated content.');
+	});
+
+	it('keeps the encyclopedic rule and appends the neutral voice fragment by default', async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		await new NoteGenerator(() => settings).generateContent(topic, 'Parent', 'Source');
+
+		const [, systemPrompt] = mockComplete.mock.calls[0];
+		expect(systemPrompt).toContain('Write in an encyclopedic, informative tone');
+		expect(systemPrompt).toContain('neutral, third-person voice');
+		expect(systemPrompt).toContain('keeps its original wording and voice');
+	});
+
+	it('picks up a voice change on the next call without rebuilding the generator', async () => {
+		const settings: SynapseSettings = structuredClone(DEFAULT_SETTINGS);
+		const generator = new NoteGenerator(() => settings);
+		await generator.generateContent(topic, 'Parent', 'Source');
+		settings.ai.voice = 'match-note';
+		await generator.generateContent(topic, 'Parent', 'Source');
+
+		expect(mockComplete.mock.calls[0][1]).toContain('neutral, third-person voice');
+		expect(mockComplete.mock.calls[1][1]).toContain('Match the register and grammatical person');
+		expect(mockComplete.mock.calls[1][1]).not.toContain('neutral, third-person voice');
+	});
+});
