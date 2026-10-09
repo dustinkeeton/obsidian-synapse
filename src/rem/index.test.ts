@@ -191,6 +191,35 @@ describe('RemModule', () => {
 			expect(result!.candidates.map((c) => c.matchedText)).toEqual(['ML']);
 		});
 
+		it('drops semantic occurrences inside a synapse-summary callout at gather time (#575)', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('> [!summary|synapse-summary] Summary\n> ML recap\n\nML body');
+			scanSpy.mockReturnValue([]);
+			matchSpy.mockResolvedValue([
+				{
+					...candidate('ML'),
+					matchType: 'semantic',
+					confidence: 0.9,
+					occurrences: [{ lineNumber: 1, lineText: '> ML recap', startOffset: 2, endOffset: 4 }],
+				},
+				{
+					...candidate('ML'),
+					targetPath: 'notes/Machine Learning.md',
+					matchType: 'semantic',
+					confidence: 0.8,
+					occurrences: [{ lineNumber: 3, lineText: 'ML body', startOffset: 0, endOffset: 2 }],
+				},
+			]);
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('notes/A.md');
+
+			expect(result!.candidates.map((c) => c.targetPath)).toEqual(['notes/Machine Learning.md']);
+			expect(saveSpy).toHaveBeenCalledWith(expect.objectContaining({
+				candidates: [expect.objectContaining({ targetPath: 'notes/Machine Learning.md' })],
+			}));
+		});
+
 		it('re-ranks a down-weighted title match below a stronger semantic match (#380)', async () => {
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
 			app.vault.read.mockResolvedValue('content discussing machine learning');
