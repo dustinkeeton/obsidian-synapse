@@ -28,7 +28,7 @@ function isSectionVisible(entry: SettingsSectionEntry, platform?: { isDesktop: b
 function renderDevBuildBanner(containerEl: HTMLElement, info: BuildInfo, version: string): void   // settings-tab.ts:66 — `.synapse-dev-build-banner` callout: bold "Development build" lead + `describeDevBuild` detail
 
 // global-sections.ts
-function renderAiConfiguration(ctx: SettingsSectionContext): void   // :81  configSection('ai'); hosts renderTranscriptionCredentials, renderVoiceSetting (:243, #540) and, last, renderSystemOneCredentials (:246, #558)
+function renderAiConfiguration(ctx: SettingsSectionContext): void   // :83  configSection('ai'); hosts renderTranscriptionCredentials, renderVoiceSetting (:244, #540) and, last, renderSystemOneCredentials (:247, #558)
 
 // voice-setting.ts:17 (#540)
 function renderVoiceSetting(body: HTMLElement, ctx: SettingsSectionContext): void   // one `.synapse-voice-card`: "Voice" Setting row (`.synapse-voice-row`, raw-DOM `select.synapse-voice-select` over VOICE_OPTIONS in row.controlEl; unknown saved value -> neutral), `.synapse-voice-neutral-note` only while neutral, `.synapse-voice-custom` panel (label + hint, `textarea.synapse-voice-custom-input`, info-icon blank hint, live `N chars` count) only while custom; card gets `synapse-voice-card--custom` while custom; all toggled in place, no rerender; writes settings.ai.voice / voiceCustom
