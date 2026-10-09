@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-10-09
 ---
 
 # Changelog Module
 
-In-app "What's new" (#375): parses the build-inlined `CHANGELOG.md` (esbuild `.md` text loader, `esbuild.config.mjs:44`; ambient type `shared/markdown.d.ts`) and renders it in a modal opened from the settings tab.
+In-app "What's new" (#375): parses the build-inlined `CHANGELOG.md` (esbuild `.md` text loader, `esbuild.config.mjs:79`; ambient type `shared/markdown.d.ts`) and renders it in a modal opened from the settings tab.
 
 ## Public API
 

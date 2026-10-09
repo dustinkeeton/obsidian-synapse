@@ -1,10 +1,10 @@
 # Architecture Overview
 
-**Last updated**: 2026-10-06 · **Version**: 1.2.0
+**Last updated**: 2026-10-09 · **Version**: 1.3.0
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
-The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (302 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `illustrate/` (#213) is the newest feature module, merged after 1.2.0.
+The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (302 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `illustrate/` (#213) is the newest feature module, shipped in 1.3.0.
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -27,7 +27,7 @@ The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, che
 
 ## System Diagram
 
-**Interactive version:** [`docs/diagrams/synapse-system.html`](docs/diagrams/synapse-system.html) (self-contained HTML; open it in a browser). It shows `main.ts` handing one `ModuleDeps` bundle to `modules/registry.ts`, the registry constructing the note and media feature modules, every feature standing on the `shared/` + `commands/` base layer, the coordination layers reaching features only by injection, and the five things that leave the vault — AI providers, transcription APIs, YouTube captions / yt-dlp, the two photo libraries, and `.synapse/` JSON on disk. Its source is [`docs/diagrams/synapse-system.json`](docs/diagrams/synapse-system.json).
+**Interactive version:** [`docs/diagrams/synapse-system.html`](docs/diagrams/synapse-system.html) (self-contained HTML; open it in a browser). It shows `main.ts` handing one `ModuleDeps` bundle to `modules/registry.ts`, the registry constructing the note and media feature modules, every feature standing on the `shared/` + `commands/` base layer, the coordination layers reaching features only by injection, the outside services Synapse reaches — AI providers, the opt-in TypeSafe Jev decision lane, transcription APIs, YouTube captions / yt-dlp, and the two photo libraries — and the `.synapse/` JSON it keeps on disk. Its source is [`docs/diagrams/synapse-system.json`](docs/diagrams/synapse-system.json).
 
 The same topology, inline:
 
@@ -133,9 +133,9 @@ Both `shared/` and `commands/` are **base layers**: every feature may depend on 
 
 ```
 src/
-├── main.ts                 # Plugin entry — lifecycle glue only (295 lines, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, callback injection
-├── settings.ts             # Type definitions, defaults, MODEL_OPTIONS + TRANSCRIPTION_MODEL_OPTIONS (#521); type-only imports of ProposalKind + ExclusionRule
-├── settings-ui/            # SynapseSettingTab — declarative SETTINGS_SECTIONS list (#506); cross-feature sections in global-sections.ts
+├── main.ts                 # Plugin entry — lifecycle glue only (302 lines, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, callback injection
+├── settings.ts             # Type definitions, defaults, MODEL_OPTIONS + TRANSCRIPTION_MODEL_OPTIONS (#521) + SYSTEM_ONE_MODEL_OPTIONS (#558); type-only imports (ProposalKind, ExclusionRule, TitleDuplicateStrategy, IllustrateSettings, VoiceMode)
+├── settings-ui/            # SynapseSettingTab — declarative SETTINGS_SECTIONS list (#506); cross-feature sections in global-sections.ts; voice card (voice-setting.ts, #540); System 1 rows (system-one-credentials.ts, #558); About support tiles from FUNDING_LINKS (funding.ts, #529)
 ├── onboarding/             # Pure first-run welcome logic (#89): planFirstRun, needsApiKey, runFirstRunOnboarding
 ├── brand-icons/            # registerSynapseIcons(): S-Signal mark + per-feature glyphs (before any ribbon/setIcon use)
 ├── changelog/              # parseChangelog/renderChangelog + ChangelogModal over the build-inlined CHANGELOG.md (#375)
@@ -316,6 +316,8 @@ src/
 │   ├── image-preprocess.ts #   preprocessImage — downscale/re-encode oversized vision payloads (moved here from image/ in the 2026-10-06 audit)
 │   ├── insertion-point.ts  #   resolveInsertionPoint / applyInsertion / locateRegion — structure-aware placement that never splits a paragraph, list, fence, or table (#213)
 │   ├── source-context.ts   #   SourceContext / SourceImage — the material a completed action processed, handed to post-op legs (#213)
+│   ├── voice.ts            #   voiceInstruction() — the one narrative-voice fragment for elaboration, deep dive, and summarize prompts; verbatim material exempt (#540)
+│   ├── media-embed.ts      #   buildMediaEmbedLines() — one embed builder for every action that downloads media into the vault (#561)
 │   ├── prose-reduction.ts  #   reduceToProse / isEffectivelyEmptyProse — "is there real prose here?" shared by elaboration and summarize (#544)
 │   ├── build-info.ts       #   BUILD_INFO stamped by esbuild on every (re)build; drives the dev-build banner in settings (#542)
 │   ├── url-detector.ts     #   YouTube/TikTok/Instagram URL parsing (moved here 2026-06-08)
@@ -478,7 +480,7 @@ Key constraints:
 - **One router, one transcript store** (#488). Every URL path (unified modal, note-media batch, summarize, intake) shares a single `UrlTranscriptionRouter` built over `SynapsePlugin.transcriptCache`. Tier results are written through; later requests for the same canonical URL (+ time range) are served from the store unless `forceRefresh` is set — which also bypasses the AI response cache for post-processing (#527).
 - **No speech is a typed outcome** (#524). `NoSpeechDetectedError` (`shared/no-speech.ts`) is thrown at the transcriber seam and re-checked by `AudioModule`, the extraction tier, and the router. Write sites notify and write nothing; the transcript store never receives it; blank text never reaches an AI prompt.
 - **Shared utilities are imported via the `../shared` barrel** — never through a sibling feature module or an internal `shared/` file. Canonical homes (`url-detector`, `redact`, `encoding`) live in `shared/` and re-export elsewhere only for back-compat.
-- **Deep Dive reuses Organize by injection only.** `modules/registry.ts:111-116` wraps `OrganizeModule.suggestDirectory(text, aiOpts)` (`organize/index.ts:68`; `null` under the 0.6 score floor) in a lambda for `DeepDiveModule`'s `auto-organize` nesting mode. `deep-dive` has no `../organize` import, and organize precedes deep-dive in `MODULE_FACTORIES` for this reason; `ContentAnalyzer` and `DirectoryMatcher` are internal to organize.
+- **Deep Dive reuses Organize by injection only.** `modules/registry.ts:111-116` wraps `OrganizeModule.suggestDirectory(text, aiOpts)` (`organize/index.ts:80`; `null` under the 0.6 score floor) in a lambda for `DeepDiveModule`'s `auto-organize` nesting mode. `deep-dive` has no `../organize` import, and organize precedes deep-dive in `MODULE_FACTORIES` for this reason; `ContentAnalyzer` and `DirectoryMatcher` are internal to organize.
 - **Views imports feature modules as types only** (including REM); its runtime imports are `fireAndForget` from `shared` and `FEATURE_ICONS` from `commands`.
 - **One shared `NoteOperationQueue`** (#483) arrives in every module via `ModuleDeps` and is used by audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive, and `transcription/insert-url-transcript`. A public entry point takes the note's slot exactly once and delegates to a queue-free private core; acquiring twice would deadlock.
 - **CheckpointManager is a singleton** — created in `main.ts` and delivered through `ModuleDeps`; modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) keep it. `tidy`, `title`, and `intake` receive the bundle but do not use it; `transcription` is not a module.
@@ -993,6 +995,9 @@ summarizer.ts
   |-- Output: structured summary with amalgamated ingredients, step images, etc.
 ```
 
+- **Prose follows the voice setting** (#540). Every summarize system prompt — built-in styles and a user's custom prompt alike — ends with the shared `voiceInstruction()`, so a first-person source does not produce a first-person summary. Quoted and transcribed passages keep their original wording.
+- **Downloaded media gets embedded, once** (#561). When transcribing a media URL downloads a video into the vault, summarize places `![[video]]` above the summary (one embed per downloaded source in a combined summary). It honors `video.embedInNote` and skips a file the note already embeds — the same `buildMediaEmbedLines()` the transcription paths use.
+
 ---
 
 ## Storage Layer
@@ -1137,7 +1142,8 @@ AI-generated content that lands beside the user's text uses Obsidian callouts fr
 SynapseSettings
 +-- settingsVersion -> Persisted schema version (#93); drives the migration runner, stamped to CURRENT_SETTINGS_VERSION (3) on save
 +-- ai              -> Provider, API key, model (default gpt-5.6-sol), temperature, max tokens,
-|                     cacheResponses (#397, opt-in; caching automatic at temperature 0)
+|                     cacheResponses (#397, opt-in; caching automatic at temperature 0),
+|                     voice (#540: neutral · match-note · first-person · custom; default neutral) + voiceCustom
 |   +-- systemOne   -> System 1 decision lane (#558): enabled (default OFF), apiKey (TypeSafe), model (jev-latest), confidenceFloor (0.6)
 +-- elaboration     -> Detection thresholds, scan behavior, proposal storage
 |   +-- detection   -> Word threshold, TODO markers, empty sections, exclude tags

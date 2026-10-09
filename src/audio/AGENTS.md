@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Audio Module
@@ -179,7 +179,7 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 
 ## Settings Keys
 
-All under `settings.audio` (interface `AudioSettings`, `settings.ts:151`; defaults `settings.ts:471`):
+All under `settings.audio` (interface `AudioSettings`, `settings.ts:177`; defaults `settings.ts:506`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -192,14 +192,14 @@ All under `settings.audio` (interface `AudioSettings`, `settings.ts:151`; defaul
 | `localWhisperPath` | string | `''` | Reserved for `local-whisper` CLI path (provider not implemented) |
 | `language` | string | `''` | Language hint; empty = auto-detect |
 | `autoFormatLyrics` | boolean | `true` | Auto-detect song transcripts and reformat as structured lyrics (#234) |
-| `postProcessing` | `PostProcessingSettings` | see below | AI transcript cleanup block (`settings.ts:143`) |
+| `postProcessing` | `PostProcessingSettings` | see below | AI transcript cleanup block (`settings.ts:169`) |
 
-`postProcessing` (`PostProcessingSettings`, `settings.ts:143`), consumed by `post-processor.ts`:
+`postProcessing` (`PostProcessingSettings`, `settings.ts:169`), consumed by `post-processor.ts`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `postProcessing.enabled` | boolean | `true` | Master switch; off returns the raw transcript unchanged |
-| `postProcessing.removeFiller` | boolean | `false` | Strip filler words / false starts (opt-in per vault, `settings.ts:486`; #465) |
+| `postProcessing.removeFiller` | boolean | `false` | Strip filler words / false starts (opt-in per vault, `settings.ts:521`; #465) |
 | `postProcessing.addStructure` | boolean | `true` | Add punctuation, paragraph breaks, headers |
 | `postProcessing.extractKeyPoints` | boolean | `false` | Prepend a "Key Points" summary section |
 | `postProcessing.customPrompt` | string | `''` | Extra instruction appended to the cleanup prompt |

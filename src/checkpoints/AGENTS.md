@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-10-09
 ---
 
 # Checkpoints Module
@@ -23,7 +23,7 @@ interface CheckpointRecoveryDeps {
   refreshView: () => Promise<void>           // re-render the proposal sidebar after resume/discard
 }
 
-// checkpoint-recovery.ts:25
+// checkpoint-recovery.ts:24
 class CheckpointRecoveryModule {
   constructor(deps: CheckpointRecoveryDeps)
   onload(): void                              // registers manage-checkpoints; arms checkForIncomplete after STARTUP_CHECK_DELAY_MS

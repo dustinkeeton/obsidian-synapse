@@ -6,7 +6,7 @@ import type { ProposalKind } from './views/types';
 import type { ExclusionRule } from './shared/exclusions';
 // Type-only import. title/types.ts has no imports, so this never forms a cycle.
 import type { TitleDuplicateStrategy } from './title/types';
-// Type-only import. illustrate/types.ts has no imports, so this never forms a cycle.
+// Type-only import, erased at compile time, so its shared/ type imports never form a runtime cycle.
 import type { IllustrateSettings, IllustrateRunAfterKey } from './illustrate/types';
 export type { IllustrateRunAfterKey };
 // Type-only import. shared/voice.ts has no imports, so this never forms a cycle.

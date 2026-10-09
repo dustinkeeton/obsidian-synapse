@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Video Module
@@ -52,7 +52,7 @@ type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown'
 
 // Owned by this module
 function findVideoUrls(content: string): VideoUrlEmbed[]   // re-exported via index.ts:28
-function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:382
+function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:378
 
 // Types (re-exported index.ts:17-25)
 interface VideoProcessOptions {
@@ -107,7 +107,7 @@ class DependencyMissingError extends Error {   // audio-extractor.ts:77
   readonly tool: 'yt-dlp' | 'ffmpeg'
 }
 class AudioCodecReadError extends Error {}     // audio-extractor.ts:57; ffprobe could not read the audio codec
-function hasTranscriptionBelow(lines: string[], embedLine: number, url: string): boolean  // note-scanner.ts:33
+function hasTranscriptionBelow(lines: string[], embedLine: number, url: string): boolean  // note-scanner.ts:31
 class FrameExtractor {                          // frame-extractor.ts:6 — placeholder, throws on use
   constructor(getSettings: () => SynapseSettings)
   extractFrames(videoPath: string): Promise<string[]>
@@ -123,7 +123,7 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 | `note-scanner.test.ts` | Tests | Note scanner unit tests |
 | `audio-extractor.ts` | `AudioExtractor`, `DependencyMissingError`, `AudioCodecReadError` | yt-dlp/ffmpeg via `execFile` (no shell); URL download, file extract, clip, concat, dependency check, no-audio detection |
 | `audio-extractor.test.ts` | Tests | AudioExtractor unit tests |
-| `ffmpeg-availability.ts` | `createFfmpegAvailability` | Memoized ffmpeg probe factory; consumed by `main.ts:205` as `NoteMediaTranscriptionDeps.isFfmpegAvailable` (combine-audio gate in `NoteMediaModal`) |
+| `ffmpeg-availability.ts` | `createFfmpegAvailability` | Memoized ffmpeg probe factory; consumed by `main.ts:212` as `NoteMediaTranscriptionDeps.isFfmpegAvailable` (combine-audio gate in `NoteMediaModal`) |
 | `ffmpeg-availability.test.ts` | Tests | Memoization, no-extractor false, probe-failure false |
 | `frame-extractor.ts` | `FrameExtractor` | Placeholder; `extractFrames` throws unless disabled (unimplemented) |
 | `settings-section.ts` | `renderVideoSettings` | Video settings accordion renderer for settings-tab.ts |
@@ -206,7 +206,7 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 
 Registered via `registrar.register('check-dependencies', ...)` (index.ts:68); Obsidian prefixes the manifest id with `synapse:`. The handler reports yt-dlp/ffmpeg presence and brew install hints. Transcription palette commands (`transcribe-media`, `transcribe-note-media`) are wired in `main.ts`, not here.
 
-## Settings Keys (VideoSettings, settings.ts:173)
+## Settings Keys (VideoSettings, `settings.ts:199`)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -216,7 +216,7 @@ Registered via `registrar.register('check-dependencies', ...)` (index.ts:68); Ob
 | `video.tempFolder` | `string` | `'.synapse/temp'` | Vault folder ensured on load for temp work |
 | `video.downloadFolder` | `string` | `'Media'` | Vault folder to save downloaded videos (empty = do not save) |
 | `video.embedInNote` | `boolean` | `true` | Add `![[video.mp4]]` embed to note when a video is saved |
-| `video.captionsFirst` | `boolean` | `true` | Prefer the YouTube caption tier over download+transcribe (#184; `settings.ts:186`); consumed by `transcription/caption-strategy.ts` `canHandle`, toggle rendered at `settings-section.ts:173` |
+| `video.captionsFirst` | `boolean` | `true` | Prefer the YouTube caption tier over download+transcribe (#184; `settings.ts:212`); consumed by `transcription/caption-strategy.ts` `canHandle`, toggle rendered at `settings-section.ts:173` |
 | `video.frameExtraction.enabled` | `boolean` | `false` | Frame extraction gate (unimplemented) |
 | `video.frameExtraction.intervalSeconds` | `number` | `30` | Seconds between extracted frames |
 | `video.frameExtraction.visionModel` | `string` | `'gpt-5.6-sol'` | Vision model for frame analysis |

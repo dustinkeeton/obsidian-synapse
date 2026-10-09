@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Modules Registry
@@ -11,40 +11,40 @@ Feature-module lifecycle registry (#504): the single ordered list that construct
 Exported from `index.ts`:
 
 ```ts
-// registry.ts:35
+// registry.ts:37-38
 type FeatureModules = { [K in FeatureSettingsKey]: FeatureModuleClasses[K] }   // one slot per enabled-flagged settings section; video: VideoModule | null
 type FeatureModuleKey = keyof FeatureModules                                     // 'elaboration' | 'audio' | 'video' | 'image' | 'enrichment' | 'summarize' | 'tidy' | 'organize' | 'deepDive' | 'title' | 'rem' | 'illustrate' | 'intake'
 
-// registry.ts:39
+// registry.ts:41
 interface ModuleWiring {
   transcribeUrl: RoutedUrlTranscriber   // tier-routed URL transcription; set as video.urlTranscriber and handed to summarize as transcribeUrl
   intake: IntakeDeps                    // fireOnFile + transcribeUrlToNote
 }
 
-// registry.ts:44
+// registry.ts:46
 interface ModuleFactoryContext {
   deps: ModuleDeps
   built: Readonly<Partial<FeatureModules>>   // modules constructed by earlier entries
   wiring: ModuleWiring
 }
 
-// registry.ts:51
+// registry.ts:53
 type ModuleEntry = {
   key: FeatureModuleKey                      // settings section gating onload via settings[key].enabled
   platform?: () => boolean                   // omitted = every platform; false leaves the slot null
   create: (ctx: ModuleFactoryContext) => FeatureModule
 }
 
-// registry.ts:74
+// registry.ts:76
 const MODULE_FACTORIES: readonly ModuleEntry[]   // elaboration, audio, video (desktop), image, enrichment, summarize, tidy, organize, deepDive, title, rem, illustrate, intake
 
-// registry.ts:119
+// registry.ts:128
 function constructFeatureModules(deps: ModuleDeps, wiring: ModuleWiring): FeatureModules   // constructs all (disabled included); throws if a dependency entry is missing
-// registry.ts:129
+// registry.ts:138
 function listFeatureModules(modules: FeatureModules): FeatureModule[]                      // registry order, nulls omitted
-// registry.ts:135
+// registry.ts:144
 function loadFeatureModules(modules: FeatureModules, settings: SynapseSettings): Promise<void>   // awaits onload() per enabled module, in order
-// registry.ts:142
+// registry.ts:151
 function unloadFeatureModules(modules: FeatureModules): void                               // onunload() in reverse registry order
 ```
 
@@ -76,7 +76,7 @@ function unloadFeatureModules(modules: FeatureModules): void                    
 
 ## Wiring (main.ts)
 
-`main.ts:60-81` builds `ModuleDeps` and calls `constructFeatureModules`; the `ModuleWiring` closures resolve `SynapsePlugin.urlTranscription` / `synapseRunner`, which `main.ts:84-100` builds right after construction (they only run at operation time). `main.ts:173-177` assigns `onViewRefreshNeeded` / `onOpenProposalView` on every module exposing those slots, then `loadFeatureModules`; `onunload` (`main.ts:267`) calls `unloadFeatureModules`.
+`main.ts:60-81` builds `ModuleDeps` and calls `constructFeatureModules`; the `ModuleWiring` closures resolve `SynapsePlugin.urlTranscription` / `synapseRunner`, which `main.ts:84-101` builds right after construction (they only run at operation time). `main.ts:178-182` assigns `onViewRefreshNeeded` / `onOpenProposalView` on every module exposing those slots, then `loadFeatureModules`; `onunload` (`main.ts:274`) calls `unloadFeatureModules`.
 
 ## Dependencies
 

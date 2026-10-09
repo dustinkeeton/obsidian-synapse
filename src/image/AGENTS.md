@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Image Module
@@ -26,7 +26,7 @@ const IMAGE_EXTENSIONS: RegExp   // /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i
 const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi
 
 // NOT exported here any more: `preprocessImage` / `PreprocessResult` / `arrayBufferToBase64` live in `shared`
-// (`shared/image-preprocess.ts`, `shared/encoding.ts`; barrel `shared/index.ts:20-22`)
+// (`shared/image-preprocess.ts`, `shared/encoding.ts`; barrel `shared/index.ts:49-50`)
 
 // re-exported from ./settings-section (index.ts:243)
 function renderImageSettings(ctx: SettingsSectionContext): void
@@ -64,7 +64,7 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
 | `types.ts` | `ImageEmbed`, `OCRResult` | Type definitions |
 | `extractor.ts` | `ImageExtractor` | Multi-modal OCR via `AIClient.chat()` with `ContentBlock[]`; passes the vision model per call via `AIRequestOptions.model`; downscales via `shared` `preprocessImage` |
 | `note-scanner.ts` | `findImageEmbeds`, `hasExtractionBelow`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX` | Scan note text for image embeds; skip embeds already OCR'd |
-| `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `src/settings-ui/settings-tab.ts:41`) |
+| `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `src/settings-ui/settings-tab.ts:42`) |
 | `index.ts` | `ImageModule` + barrel re-exports | Orchestrator, public extraction methods, checkpoint management, per-note queue serialization (private `queued`, `insertFileExtraction`, `insertExtractions`, #483) |
 | `extractor.test.ts`, `note-scanner.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests (`preprocess.test.ts` moved to `shared/image-preprocess.test.ts`) |
 | `cache-report.test.ts` | Tests | #527 finish wording: single-OCR hit/miss, batch aggregate hit/miss |
@@ -116,7 +116,7 @@ Output callout (collapsed):
 
 ## Vision Model Override
 
-`ImageExtractor.extract()` (extractor.ts:46) passes `{ ...aiOpts, model: settings.image.visionModel || settings.ai.model }` to `AIClient.chat()`. `AIRequestOptions.model` (`shared/ai-client.ts:33`) is a per-call override: `chat()` resolves `opts.model || ai.model` (`ai-client.ts:383`), keys the response cache on it, and threads it through `dispatch` to every provider call. `settings.ai.model` is never mutated, so concurrent callers cannot observe a foreign model. Empty `visionModel` means no override.
+`ImageExtractor.extract()` (extractor.ts:46) passes `{ ...aiOpts, model: settings.image.visionModel || settings.ai.model }` to `AIClient.chat()`. `AIRequestOptions.model` (`shared/ai-client.ts:31`) is a per-call override: `chat()` resolves `opts.model || ai.model` (`ai-client.ts:337`), keys the response cache on it, and threads it through `dispatch` to every provider call. `settings.ai.model` is never mutated, so concurrent callers cannot observe a foreign model. Empty `visionModel` means no override.
 
 ## Exclusion Behavior
 
@@ -133,7 +133,7 @@ Path exclusions use the centralized `settings.exclusions: ExclusionRule[]`:
 
 ## Settings
 
-`ImageSettings` (settings.ts:190); defaults at settings.ts:507. All under `settings.image`:
+`ImageSettings` (`settings.ts:216`); defaults at `settings.ts:542`. All under `settings.image`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|

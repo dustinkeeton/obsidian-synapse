@@ -1,17 +1,17 @@
 # Project Status
 
-**Last updated**: 2026-10-06
-**Version**: 1.2.0 (released 2026-09-17)
-**Health**: Green — `tsc` clean, **2808/2808 tests passing (204 files)**, lint clean, dependency graph acyclic, no critical/high security findings. The 2026-10-06 audit closed six defense-in-depth gaps, none exploitable on its own.
+**Last updated**: 2026-10-09
+**Version**: 1.3.0 (released 2026-10-06)
+**Health**: Green — `tsc` clean, **2916/2916 tests passing (211 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
 ## At a Glance
 
-- **25 modules** under `src/` (including the thin `settings-ui/`, `onboarding/`, `brand-icons/`, `changelog/`, and `properties-fold/` folders) plus top-level `main.ts` (302 lines — lifecycle glue only; `modules/registry.ts` constructs, loads, and unloads every feature with one `ModuleDeps` bundle first) and `settings.ts`. **New since 1.2.0: `illustrate/`** (#213).
-- **1.2.0 (2026-09-17)**: media with no speech writes nothing and says so (#524); every finish message reports when a cached transcript or AI response was used, and "Fetch a fresh transcript" bypasses the AI cache too (#527); per-note buttons in the actions sidebar run on the first click (#352).
-- **Unreleased — System 1 decision lane (#558)**: tag vocabulary, directory placement, and REM title scoring can ask TypeSafe's Jev model first (typed `choice`/`score` questions over options Synapse already holds, calibrated confidence) and fall back to the generative prompt below the floor; opt-in via `ai.systemOne` because note text leaves the vault; finish notices say when the lane decided. The frontmatter-attribute seat is a follow-up. **Organize never moves a note without a proposal** (moves into existing folders are now `move` proposals; only `autoAccept.organize` applies them), the placement lane describes folders by their notes and can answer "keep" / "none", and a new **Undo last organize run** command reverts a whole run through `vault.rename`.
-- **Unreleased — merged 2026-10-06**: **Illustrate** proposes licensed photos from Wikimedia Commons / Openverse, opt-in because search terms leave the vault (#213), with Mermaid diagrams and charts behind a second opt-in (#549); **accepting an elaboration replaces the note body in place** under byte-for-byte frontmatter (#552); **callouts are written as native base types** — `[!quote|synapse-transcription]` — so theme styling applies (#554); a dev build shows a banner in settings (#542); URL extraction keeps balanced parentheses (#543); link-only notes stay out of combined summaries (#544); the audit pass enforced module boundaries (per-call `model` override, `AudioClipper`, deep-dive ← organize by injection) and hardened input/workflow seams.
+- **25 modules** under `src/` (including the thin `settings-ui/`, `onboarding/`, `brand-icons/`, `changelog/`, and `properties-fold/` folders) plus top-level `main.ts` (302 lines — lifecycle glue only; `modules/registry.ts` constructs, loads, and unloads every feature with one `ModuleDeps` bundle first) and `settings.ts`.
+- **1.3.0 (2026-10-06)**: **Illustrate** proposes licensed photos from Wikimedia Commons / Openverse, opt-in because search terms leave the vault (#213), with Mermaid diagrams and charts behind a second opt-in (#549); **accepting an elaboration replaces the note body in place** under byte-for-byte frontmatter (#552); **callouts are written as native base types** — `[!quote|synapse-transcription]` — so theme styling applies (#554); a dev build shows a banner in settings (#542); URL extraction keeps balanced parentheses (#543); link-only notes stay out of combined summaries (#544).
+- **Unreleased — System 1 decision lane (#558, #563, #566)**: tag vocabulary, frontmatter values, directory placement, and REM link scoring can ask TypeSafe's Jev model first (typed `choice`/`score` questions over options Synapse already holds, calibrated confidence); opt-in via `ai.systemOne` because note text leaves the vault. With the lane on, **REM runs on the lane alone** and counts only "strongly related" relevance, and every link needs an anchor in the note. **Organize never moves a note without a proposal**, and **Undo last organize run** reverts a whole run.
+- **Unreleased — 2026-10-09**: a **Voice** setting (Neutral · Match the note · First person · Custom) steers elaboration, deep dive, and summarize prose (#540); the settings **About** section is now an info card, GitHub Sponsors / Buy Me a Coffee tiles, and a danger-zone reset (#529); Summarize embeds a video the transcriber downloaded, once (#561).
 - **Fire Synapse pipeline** runs elaboration → summarize → enrichment → REM → illustrate → tidy → organize; the **intake folder** auto-feeds it. All proposals land in one **unified proposal sidebar**; a **Synapse actions sidebar** (#289) gives touch-friendly buttons.
 
 ## Module Status (20 modules; the five thin folders above are omitted)
@@ -25,13 +25,13 @@
 | video | `src/video/` | Download + transcribe YouTube/TikTok/Instagram via yt-dlp/ffmpeg; `captionsFirst` toggle (#184) | Working (download tier desktop only; local file + frames not impl.) |
 | image | `src/image/` | OCR via vision models (per-call model override), auto-downscale via `shared`, batch + checkpoints | Working |
 | transcription | `src/transcription/` | Unified modals, time-range modal (#464), URL tier router over the transcript cache (#184/#488), hardened caption fetch (#501); contracts in `types.ts` | Working (clipping desktop only) |
-| enrichment | `src/enrichment/` | Tags, links, refs, frontmatter | Working |
-| summarize | `src/summarize/` | URL/transcription/audio + note prose; per-item or combined (#367); media URLs are transcribe-only (#488); link-only notes excluded (#544) | Working |
+| enrichment | `src/enrichment/` | Tags, links, refs, frontmatter; vocabulary tags and frontmatter values can go through the System 1 lane (#558/#563) | Working |
+| summarize | `src/summarize/` | URL/transcription/audio + note prose; per-item or combined (#367); media URLs are transcribe-only (#488); link-only notes excluded (#544); downloaded video embedded once (#561) | Working |
 | tidy | `src/tidy/` | Spelling/formatting fixes (+ undo) | Working |
-| organize | `src/organize/` | AI directory structuring, folder coalescing (#172); `suggestDirectory` seam for deep-dive | Working |
+| organize | `src/organize/` | AI directory structuring, folder coalescing (#172); every relocation a proposal; undo a whole run (#558/#565); `suggestDirectory` seam for deep-dive | Working |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction + child notes; auto-organize nesting via injected folder suggestion | Working |
 | title | `src/title/` | Untitled/mismatch detection → rename; collision handling (#408); backlink remediation (#485) | Working |
-| rem | `src/rem/` | In-place `[[wikilink]]` discovery; always-on semantic matching (#380) | Working |
+| rem | `src/rem/` | In-place `[[wikilink]]` discovery; always-on semantic matching (#380); lane-only scoring when System 1 is on (#566) | Working |
 | illustrate | `src/illustrate/` | AI-chosen spots get a licensed photo (Wikimedia Commons / Openverse) or, with `illustrate.mermaid` on, a Mermaid diagram / chart from the note's own numbers; per-item review; post-op legs via `runAfter` (#213/#549) | Working (opt-in, default off) |
 | intake | `src/intake/` | Watch folder (#111); media-URL transcription (#112); shared-capture adoption (#455); startup catch-up scan (#462) | Working |
 | pipeline | `src/pipeline/` | Fire Synapse runner + post-op hook builders (enrich → title check, auto-organize, illustrate leg) | Working |
@@ -41,8 +41,8 @@
 
 ## Current Focus
 
-- **Audit pass (2026-10-06, branch `chore/audit-2026-10-06`)** — architecture refactor (`254ad5d`) and security hardenings (`cabbc2a`) landed; machine docs and these human docs regrounded in the same pass. The interactive system diagram now lives at `docs/diagrams/synapse-system.html`.
-- **Open follow-ups**: frontmatter attribute suggestions through the System 1 lane (follow-up to #558); live before/after cost measurement of the lane on a real vault; self-hosted extraction tier for non-YouTube URLs on mobile (#181, ADR 001 accepted; #182 override + connectivity status); holistic UX review (#465); operation-toast cancel progress (#269).
+- **Docs refresh (2026-10-09)** — machine docs, these human docs, and the README regrounded after the System 1, voice, and About merges. The interactive system diagram (`docs/diagrams/synapse-system.html`) now shows TypeSafe.
+- **Open follow-ups**: live before/after cost measurement of the System 1 lane on a real vault; run auto-enrich once after a note's operation chain (#536); feature flags for unreleased work on main (#545); self-hosted extraction tier for non-YouTube URLs on mobile (#181, ADR 001 accepted; #182 override + connectivity status); holistic UX review (#465); operation-toast cancel progress (#269).
 
 ## Security Posture
 
@@ -82,6 +82,7 @@
 | OpenAI / Anthropic / Gemini API keys | Chat models (incl. vision); Whisper + Gemini audio transcription | User-configured |
 | Deepgram API key | Deepgram transcription (optional; pinned to `nova-3-general`, #521) | User-configured |
 | Wikimedia Commons / Openverse (HTTP) | Illustrate photo search — keyless | Works on every platform; Illustrate is opt-in |
+| TypeSafe API key (`api.typesafe.ai`) | System 1 decision lane (Jev) | User-configured; opt-in, off by default |
 
 ## Build & Test
 

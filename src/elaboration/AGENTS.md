@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Elaboration Module
@@ -54,10 +54,10 @@ interface Proposal {
 
 // index.ts private queue cores (#483): every public entry point above acquires the note's
 // NoteOperationQueue slot ONCE and delegates to one of these, which must never re-enter the queue.
-private generateForNote(file: TFile, userInvoked: boolean, op: OperationHandle): Promise<void>   // index.ts:407; core of scanNote
-private generateForBatch(detection: DetectionResult): Promise<{ proposal: Proposal | null; autoAccepted: boolean; cacheUse: CacheUse }>   // index.ts:165; per-note core for scanVault + resumeFromCheckpoint; cacheUse filled via trackAiCache (#527)
-private applyProposal(id: string, editedContent?: string, options?: { silent?: boolean }): Promise<boolean>   // index.ts:498; core of acceptProposal, re-loads the proposal under the slot; true only when the note was rewritten
-private maybeAutoAccept(proposal: Proposal, batch?: boolean): Promise<boolean>   // index.ts:550; returns applyProposal's result, so a stale-body skip is not counted as accepted
+private generateForNote(file: TFile, userInvoked: boolean, op: OperationHandle): Promise<void>   // index.ts:408; core of scanNote
+private generateForBatch(detection: DetectionResult): Promise<{ proposal: Proposal | null; autoAccepted: boolean; cacheUse: CacheUse }>   // index.ts:166; per-note core for scanVault + resumeFromCheckpoint; cacheUse filled via trackAiCache (#527)
+private applyProposal(id: string, editedContent?: string, options?: { silent?: boolean }): Promise<boolean>   // index.ts:499; core of acceptProposal, re-loads the proposal under the slot; true only when the note was rewritten
+private maybeAutoAccept(proposal: Proposal, batch?: boolean): Promise<boolean>   // index.ts:551; returns applyProposal's result, so a stale-body skip is not counted as accepted
 
 // proposer.ts (NOT re-exported from index.ts; consumed internally by index.ts)
 class ProposalGenerator {
@@ -76,7 +76,7 @@ function proposalContentKey(
 function renderElaborationSettings(ctx: SettingsSectionContext): void
 ```
 
-`DetectionReason`, `DetectionResult`, `Proposal` are re-exported from `index.ts` via `export type` (index.ts:18). `ImageAnalysis` and `ImageAnalyzer` stay internal to `image-analyzer.ts` (not re-exported from `index.ts`). New proposals always set `insertionPoint: 'replace'` (proposer.ts:146); `'append' | 'after-heading' | 'replace-section'` and `insertionTarget` stay on the type only so proposal files written before #552 still pass `isProposal` (proposal-store.ts:12), and accepting such a file rewrites the body like any other.
+`DetectionReason`, `DetectionResult`, `Proposal` are re-exported from `index.ts` via `export type` (index.ts:18). `ImageAnalysis` and `ImageAnalyzer` stay internal to `image-analyzer.ts` (not re-exported from `index.ts`). New proposals always set `insertionPoint: 'replace'` (proposer.ts:147); `'append' | 'after-heading' | 'replace-section'` and `insertionTarget` stay on the type only so proposal files written before #552 still pass `isProposal` (proposal-store.ts:12), and accepting such a file rewrites the body like any other.
 
 ## File Inventory
 
@@ -111,8 +111,8 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
 1. scanVault(folderPath?, skipConfirmation?, onlyFile?) / scanNote(file, userInvoked=true)
    |  #483: each note's detect -> generate -> save -> auto-accept cycle runs inside that note's
    |  NoteOperationQueue slot -- scanNote via noteQueue.run(file.path, generateForNote, { onWait })
-   |  (index.ts:399, wait surfaced on the toast), the batch loops via
-   |  noteQueue.run(notePath, generateForBatch) per item (index.ts:208, index.ts:337, silent)
+   |  (index.ts:400, wait surfaced on the toast), the batch loops via
+   |  noteQueue.run(notePath, generateForBatch) per item (index.ts:209, index.ts:338, silent)
    |
 2. PlaceholderDetector.detect(file)  (detector.ts:12)
    |  Checks: TODO markers, empty sections, word count, sparse links
@@ -125,7 +125,7 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
    |  Phase 2: notifications.confirm() snackbar (skipped when skipConfirmation)
    |  Phase 3: checkpointed, cancellable generation
    |
-4. guardProposal(detection)  (index.ts:135) -- idempotency/dedup, before any AI call
+4. guardProposal(detection)  (index.ts:136) -- idempotency/dedup, before any AI call
    |  key = proposalContentKey(path, cachedRead FULL content, reasons, settings)  (proposer.ts:20)
    |  skip 'duplicate' if a pending/accepted proposal shares key (rejected does NOT block)
    |  skip 'cap' if pending proposals for note >= proposal.maxProposalsPerNote
@@ -140,11 +140,11 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
    |    2. outbound links (<=5, first 500 chars each)
    |    3. note tags (frontmatter + inline, folded) + <=10 tag-sibling titles -- only if includeBacklinkContext
    |  the first entry that does not fit ends gathering; whole block wrapped via wrapUntrusted(_, 'related notes')
-   |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:409)
+   |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:410)
    |  Context: external URLs (<=3) -- tweet(500) / Reddit(2000) / article(2000); video hosts skipped
-   |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:251)
+   |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:252)
    |  Guard B: attempted>0 && externalContext='' && isLinkDominated -> return null (proposer.ts:126)
-   |  buildPrompt(basename, BODY, ...) always prepends `Note title: "<basename>"` (proposer.ts:183); the prompt never carries YAML
+   |  buildPrompt(basename, BODY, ...) always prepends `Note title: "<basename>"` (proposer.ts:184); the prompt never carries YAML
    |  System prompt REWRITE_SYSTEM_PROMPT (proposer.ts:37) + voiceInstruction(settings.ai) (proposer.ts:131, #540) + REWRITE_INSTRUCTIONS (proposer.ts:41):
    |  output the COMPLETE rewritten body, preserve the original intent, keep every sentence/embed/wikilink/URL, no frontmatter, no code fence
    |  AIClient.complete(prompt, systemPrompt, aiOpts)  (proposer.ts:136; aiOpts = trackAiCache(cacheUse), #527)
@@ -155,20 +155,20 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
    |
 7. maybeAutoAccept(proposal) when shouldAutoAccept() === true
    |
-8. Finish line (#527): one CacheUse per note (index.ts:168 batch, index.ts:439 single)
-   |  scanVault:            withCacheReport(`Generated N proposal(s)`, cacheUses, 'proposal')  (index.ts:378)
-   |  resumeFromCheckpoint: withCacheReport(`Resumed -- generated N proposal(s)`, cacheUses, 'proposal')  (index.ts:239)
-   |  scanNote:             withCacheReport('Proposal generated', [cacheUse])  (index.ts:453)
+8. Finish line (#527): one CacheUse per note (index.ts:169 batch, index.ts:440 single)
+   |  scanVault:            withCacheReport(`Generated N proposal(s)`, cacheUses, 'proposal')  (index.ts:379)
+   |  resumeFromCheckpoint: withCacheReport(`Resumed -- generated N proposal(s)`, cacheUses, 'proposal')  (index.ts:240)
+   |  scanNote:             withCacheReport('Proposal generated', [cacheUse])  (index.ts:454)
    |  cacheUses collects only notes that produced a proposal (index.ts:214, index.ts:343)
    |
 9. onViewRefreshNeeded() -> main refreshes unified view
    |
 10. User action (unified view / legacy modal):
-   Accept -> acceptProposal takes the source note's queue slot (silently, index.ts:487)
-             -> applyProposal (index.ts:498): status guard; stale-body guard
+   Accept -> acceptProposal takes the source note's queue slot (silently, index.ts:488)
+             -> applyProposal (index.ts:499): status guard; stale-body guard
              (vault.read(file) !== proposal.originalContent, index.ts:513) -> silent: skip /
-             interactive: ConfirmModal (index.ts:516), cancel = skip;
-             then vault.process(file, d => splitRawFrontmatter(d).raw + sanitizeRewrittenBody(additions))  (index.ts:526)
+             interactive: ConfirmModal (index.ts:517), cancel = skip;
+             then vault.process(file, d => splitRawFrontmatter(d).raw + sanitizeRewrittenBody(additions))  (index.ts:527)
    Reject -> status = 'rejected'
 ```
 
@@ -185,7 +185,7 @@ Body is analyzed with frontmatter stripped (detector.ts:61). Inbound links resol
 
 ## Title Signal and Anti-Fabrication Guards (#380, #387)
 
-The note title is surfaced as context in every prompt (`Note title: "<basename>"`, proposer.ts:183); an empty body seeds the proposal from the title alone rather than an empty block (proposer.ts:189). "Body" here is the frontmatter-stripped content (proposer.ts:81), so a frontmatter-only note counts as empty.
+The note title is surfaced as context in every prompt (`Note title: "<basename>"`, proposer.ts:184); an empty body seeds the proposal from the title alone rather than an empty block (proposer.ts:190). "Body" here is the frontmatter-stripped content (proposer.ts:81), so a frontmatter-only note counts as empty.
 
 Guard A (empty-body + generic title), proposer.ts:95:
 
@@ -196,13 +196,13 @@ if (body.trim() === '' && isGenericTitle(noteFile.basename)) {
 }
 ```
 
-`isGenericTitle` is imported from the `../shared` barrel (shared/index.ts:152), which re-exports it from `shared/title-detector.ts:69` -- not a local copy, and not from the `title/` feature module (dependency rules forbid feature-to-feature imports; `title/` re-exports `isUntitled` from the same shared source). `isGenericTitle(t) === isUntitled(t) || isDateStyleTitle(t) || isBareUrlTitle(t)` (shared/title-detector.ts:69-71). It returns true for Obsidian "Untitled" defaults, date-style daily-note names (e.g. `2026-06-25`, `YYYYMMDD`, `DD-MM-YYYY`), and bare URLs. A real title like "Photosynthesis" is not generic, so the title-led prompt still runs.
+`isGenericTitle` is imported from the `../shared` barrel (shared/index.ts:186), which re-exports it from `shared/title-detector.ts:69` -- not a local copy, and not from the `title/` feature module (dependency rules forbid feature-to-feature imports; `title/` re-exports `isUntitled` from the same shared source). `isGenericTitle(t) === isUntitled(t) || isDateStyleTitle(t) || isBareUrlTitle(t)` (shared/title-detector.ts:69-71). It returns true for Obsidian "Untitled" defaults, date-style daily-note names (e.g. `2026-06-25`, `YYYYMMDD`, `DD-MM-YYYY`), and bare URLs. A real title like "Photosynthesis" is not generic, so the title-led prompt still runs.
 
 Guard B (link-dominated note, all fetches failed), proposer.ts:126: when the note is essentially just link(s) and every external fetch returned nothing, `generate()` returns null rather than fabricating from a URL slug. `isLinkDominated` delegates to the shared `isEffectivelyEmptyProse` (`shared/prose-reduction.ts`: URLs and `![[embeds]]` removed, links reduced to their label, fewer than `MIN_PROSE_CHARS` = 10 letters/digits left), the same rule summarize uses to drop empty note content (#544). Both guards return `null`; callers skip the file without creating a proposal.
 
 ## Idempotency and Dedup (content key)
 
-Idempotency is content-key only: accepting writes no callout, no HTML-comment marker and no frontmatter field, so nothing in the note says "already elaborated". Re-scanning an unchanged note must not spend an AI call or create a duplicate proposal; a rewritten note has a new body, hence a new key, and may be proposed on again. `guardProposal(detection)` (index.ts:135) runs before every generate+save site (scanVault, resumeFromCheckpoint, scanNote):
+Idempotency is content-key only: accepting writes no callout, no HTML-comment marker and no frontmatter field, so nothing in the note says "already elaborated". Re-scanning an unchanged note must not spend an AI call or create a duplicate proposal; a rewritten note has a new body, hence a new key, and may be proposed on again. `guardProposal(detection)` (index.ts:136) runs before every generate+save site (scanVault, resumeFromCheckpoint, scanNote):
 
 ```ts
 guardProposal(detection: DetectionResult): Promise<
@@ -220,14 +220,14 @@ guardProposal(detection: DetectionResult): Promise<
 
 Accept is a rewrite (#552): the note body is replaced by the proposal's body; summaries and every other feature keep their callouts.
 
-`acceptProposal(id, editedContent?, options?)` (index.ts:480) is a thin queue wrapper (#483): it loads the proposal for its `sourceNotePath`, takes that note's `NoteOperationQueue` slot silently (index.ts:487), and runs `applyProposal` (index.ts:498), which RE-loads the proposal so the status guard is evaluated under the slot rather than against a pre-wait snapshot. In `applyProposal`, in order:
+`acceptProposal(id, editedContent?, options?)` (index.ts:481) is a thin queue wrapper (#483): it loads the proposal for its `sourceNotePath`, takes that note's `NoteOperationQueue` slot silently (index.ts:488), and runs `applyProposal` (index.ts:499), which RE-loads the proposal so the status guard is evaluated under the slot rather than against a pre-wait snapshot. In `applyProposal`, in order:
 
 1. No-op (`false`) if `proposal.status !== 'pending'` (double-accept guard) or the note is missing.
-2. Stale-body guard (index.ts:513): `vault.read(file)` is compared byte-for-byte with `proposal.originalContent` (the full file as `cachedRead` at generation). On mismatch, `options.silent` -> return `false`, proposal stays `pending`, nothing written; otherwise `ConfirmModal` (index.ts:516; title "Note changed since this proposal was generated", confirm label "Replace", dismissal = cancel) and only an explicit confirm continues. The modal is awaited outside `vault.process` while holding the note's queue slot.
-3. `vault.process(file, d => raw + body)` (index.ts:526): `raw` is `splitRawFrontmatter(d).raw` (the leading `---` block byte-for-byte, `''` when absent -- never re-serialised, never added); `body` is `sanitizeRewrittenBody(editedContent ?? proposedAdditions)` (index.ts:608) = `stripCodeFences(sanitizeAIResponse(...))`, a model-echoed leading frontmatter block dropped, `trimEnd()` + exactly one `\n`.
+2. Stale-body guard (index.ts:513): `vault.read(file)` is compared byte-for-byte with `proposal.originalContent` (the full file as `cachedRead` at generation). On mismatch, `options.silent` -> return `false`, proposal stays `pending`, nothing written; otherwise `ConfirmModal` (index.ts:517; title "Note changed since this proposal was generated", confirm label "Replace", dismissal = cancel) and only an explicit confirm continues. The modal is awaited outside `vault.process` while holding the note's queue slot.
+3. `vault.process(file, d => raw + body)` (index.ts:527): `raw` is `splitRawFrontmatter(d).raw` (the leading `---` block byte-for-byte, `''` when absent -- never re-serialised, never added); `body` is `sanitizeRewrittenBody(editedContent ?? proposedAdditions)` (index.ts:609) = `stripCodeFences(sanitizeAIResponse(...))`, a model-echoed leading frontmatter block dropped, `trimEnd()` + exactly one `\n`.
 4. `store.updateStatus(id,'accepted')`, Notice + refresh unless `options.silent`, then `onProposalAccepted?.(sourceNotePath, { sourceUrls: extractUrls(previousContent), producedRegion: { kind: 'whole-note' } })`; return `true`.
 
-`maybeAutoAccept` (index.ts:550) forwards `applyProposal`'s boolean: batch auto-accept passes `silent: true`, so a stale note is skipped and left pending and the "Auto-accepted N" summary counts only real rewrites; single-note auto-accept passes `silent: false` and therefore gets the modal on a stale note.
+`maybeAutoAccept` (index.ts:551) forwards `applyProposal`'s boolean: batch auto-accept passes `silent: true`, so a stale note is skipped and left pending and the "Auto-accepted N" summary counts only real rewrites; single-note auto-accept passes `silent: false` and therefore gets the modal on a stale note.
 
 ## Image Analysis
 
@@ -255,7 +255,7 @@ const MAX_IMAGES_PER_NOTE = 5
 - Caps at `MAX_IMAGES_PER_NOTE` (5).
 - Resolves via `metadataCache.getFirstLinkpathDest`; reads binary; downscales over `settings.image.maxImageSizeMb` (default 5) MB via `preprocessImage` from the `../shared` barrel (image-analyzer.ts:117; downscale surfaced via `notifications.info`, 3s dedup #396).
 - Passes the vision model per call: `aiClient.chat(..., { ...aiOpts, model: settings.image.visionModel || settings.ai.model })` (image-analyzer.ts:150); `settings.ai.model` is never mutated.
-- Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:411).
+- Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:412).
 
 ## Configuration
 
@@ -302,7 +302,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 | type `SettingsSectionContext` | `../shared` | settings-section.ts |
 | `CommandRegistrar`, `isInFlow` | `../commands` | index.ts |
 
-No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:424). `index.ts` no longer imports `buildCallout` / `CALLOUT_TYPES`; `CALLOUT_TYPES.elaboration` and its CSS remain in `shared/callouts.ts` + `styles.css` only to render notes elaborated before #552.
+No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:425). `index.ts` no longer imports `buildCallout` / `CALLOUT_TYPES`; `CALLOUT_TYPES.elaboration` and its CSS remain in `shared/callouts.ts` + `styles.css` only to render notes elaborated before #552.
 
 ## Invariants / Gotchas
 

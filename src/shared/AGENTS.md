@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Shared Module
@@ -10,7 +10,7 @@ Canonical homes (re-exported elsewhere for back-compat — import from the `shar
 - `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) — moved here from `src/video/` to break the former shared⇄video import cycle; the `video` barrel no longer re-exports the functions (only `Platform` via `video/types.ts:3`), so every consumer imports from `shared`.
 - `redact.ts` (`redactSecrets`, `redactError`) — single source of truth for API-key/token redaction; `ai-client.ts` re-exports `redactSecrets` (only). `redactSecrets` is consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts` (Test-button validation-catch message), `update-checker.ts` (fetch-failure detail), and `notifications.ts` (operation-error + notifyError paths). `redactError(value)` renders a caught error to a redacted, log-safe string (prefers `.stack`, falls back to `name: message`, then `redactSecrets`); it is the one sanctioned way to log a raw error, routed through by every raw-error console sink (`main.ts` settings-migration catch, `shared/data-folder-migration.ts`, `onboarding/onboarding.ts` first-run catch, `checkpoints/checkpoint-recovery.ts`, `update-checker.ts` unexpected-error catch, `transcript-cache.ts`, audio, intake, rem/semantic-matcher, elaboration/image-analyzer, elaboration/proposer, shared/image-preprocess, transcription/caption-strategy + youtube-captions, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, shared/fire-and-forget). Previously `ai-client` and the former `api-utils.notifyError` each kept inline copies that drifted (the `notifyError` copy lacked the Google `AIza` pattern). The console-sink contract is lint-enforced (#418) by the custom type-aware rule `synapse/no-unredacted-console` (`scripts/eslint-rules/no-unredacted-console.mjs`, scoped in `eslint.config.mjs` to shipped `src/**/*.ts`, excluding tests/mocks/test-utils): every value reaching `console.*` must be statically string-like or routed through `redactError`/`redactSecrets`.
 - `encoding.ts` (`arrayBufferToBase64`, `base64EncodedLength`) — base64 helpers shared by audio + image + elaboration; nothing re-exports them any more (the former `image/preprocess.ts` back-compat re-export is gone).
-- `image-preprocess.ts` (`preprocessImage`, `PreprocessResult`) — moved here from `image/preprocess.ts` so `elaboration/image-analyzer.ts` and `image/extractor.ts` both reach it without a cross-feature import; barrel `index.ts:21-22`.
+- `image-preprocess.ts` (`preprocessImage`, `PreprocessResult`) — moved here from `image/preprocess.ts` so `elaboration/image-analyzer.ts` and `image/extractor.ts` both reach it without a cross-feature import; barrel `index.ts:50-51`.
 - `title-detector.ts` (`isUntitled`, `isGenericTitle`) — note-title predicates; lives here (not in `title/`) so non-title features can reuse them without a cross-feature import. `title/title-detector.ts` re-exports `isUntitled`.
 
 ## Public API
@@ -19,10 +19,10 @@ Exported from `index.ts`:
 
 ```ts
 // ai-client.ts
-interface AIRequestOptions {                          // ai-client.ts:23; type re-exported from the barrel (#527)
+interface AIRequestOptions {                          // ai-client.ts:21; type re-exported from the barrel (#527)
   bypassCache?: boolean                               // forces fresh dispatch for "regenerate"
   onCacheHit?: () => void                             // #527; called only when the response is replayed from the cache (never for a dispatch, a bypass, or a coalesced join)
-  model?: string                                      // ai-client.ts:33; per-call model (e.g. image.visionModel); chat() resolves `opts.model || ai.model` (:383), keys the cache on it, and threads it through dispatch() to every provider call — settings.ai.model is never mutated
+  model?: string                                      // ai-client.ts:31; per-call model (e.g. image.visionModel); chat() resolves `opts.model || ai.model` (:337), keys the cache on it, and threads it through dispatch() to every provider call — settings.ai.model is never mutated
 }
 class AIClient {
   constructor(getSettings: () => SynapseSettings)
@@ -63,7 +63,7 @@ function answerConfidence(answer: DecisionAnswer): number   // :114; choice/scor
 function estimateTokens(value: unknown): number             // chars / 4 over the JSON form
 function chunkQuestions<Q>(state: string, questions: Record<string, Q>): Array<Record<string, Q>>   // :124; greedy split under 80% of 64k tokens/request; throws DecisionLaneError('budget') when state + one question exceeds 80% of 32k
 class DecisionClient {
-  constructor(getSettings: () => SynapseSettings)                                     // :217
+  constructor(getSettings: () => SynapseSettings)                                     // :220
   isEnabled(): boolean                                                                // :223; ai.systemOne.enabled && apiKey non-blank — seats skip the lane entirely otherwise
   decide<Q>(state: string, questions: Q, opts?: DecisionRequestOptions): Promise<DecisionResult<Q>>   // :229; one request per chunk, answers merged, usage summed; Authorization: Bearer <key>; withRetry x3 (1s base) on 429/529 only; cacheable under the same rule as AIClient (temperature 0 or cacheResponses), key = contentKey([state, JSON(chunk), model]); bypassCache re-dispatches; onCacheHit fires once if any chunk replayed; failures never cached
 }
@@ -574,7 +574,7 @@ function scoreLyricsContent(content: string): number
 | `decision-client.test.ts` | Tests | Builders, chunking + budget error, request shape (Bearer, throw:false), 401/422/429/529/timeout/malformed paths, key redaction, cache hit/bypass/no-cache-on-failure |
 | `confidence-router.ts` | `routeByConfidence`, `partitionByConfidence`, `DecisionLane`, `RoutedDecision`, `ConfidenceRoute`, `ConfidencePartition` | Confidence routing (#558): act on the System 1 answer at or above the floor, otherwise run the generative fallback exactly once (lane off / null / below floor / throw). Imports `redact` |
 | `confidence-router.test.ts` | Tests | Above/at/below floor, disabled, null, throw (redacted warn), fallback-once, partition |
-| `ai-client.ts` | `AIClient`, `AIRequestOptions`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support. `chat()`/`complete()` accept `opts?: AIRequestOptions` and wrap a private `dispatch(messages, requestedModel)` with an opt-in per-instance LRU response cache (max 50) + in-flight coalescing (#397; key via `contentKey` over messages + provider + resolved model + temperature + maxTokens); `opts.model` overrides `ai.model` for that call only (`:383`) and is passed to `callOpenAI/Anthropic/Gemini/Ollama(messages, requestedModel)`; `resolveModelId`, `cacheGet`/`cacheSet`, `to*Content` (internal). Imports `safeRequest` from `safe-request.ts` (#558), `redactSecrets` from `redact.ts`, `contentKey` from `hash-utils.ts` |
+| `ai-client.ts` | `AIClient`, `AIRequestOptions`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support. `chat()`/`complete()` accept `opts?: AIRequestOptions` and wrap a private `dispatch(messages, requestedModel)` with an opt-in per-instance LRU response cache (max 50) + in-flight coalescing (#397; key via `contentKey` over messages + provider + resolved model + temperature + maxTokens); `opts.model` overrides `ai.model` for that call only (`:337`) and is passed to `callOpenAI/Anthropic/Gemini/Ollama(messages, requestedModel)`; `resolveModelId`, `cacheGet`/`cacheSet`, `to*Content` (internal). Imports `safeRequest` from `safe-request.ts` (#558), `redactSecrets` from `redact.ts`, `contentKey` from `hash-utils.ts` |
 | `ai-client.test.ts` | Tests | Per-provider request/response shapes (Gemini, OpenAI, Anthropic) + `redactSecrets` re-export |
 | `redact.ts` | `redactSecrets`, `redactError` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). `redactSecrets` consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts`, `update-checker.ts`, `notifications.ts`; `redactError(value)` renders a caught error to a redacted log-safe string (stack ?? `name: message` -> redactSecrets) for every raw-error console sink (main, data-folder-migration, onboarding, checkpoints, update-checker, transcript-cache, audio, intake, rem, elaboration x2, shared/image-preprocess, transcription x2, clipboard catches in notifications + video settings, fire-and-forget). Behavior covered by `redact.test.ts` |
 | `redact.test.ts` | Tests | Redaction pattern tests |
@@ -616,7 +616,7 @@ function scoreLyricsContent(content: string): number
 | `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests |
 | `open-scan-folder-picker.ts` | `openScanFolderPicker` | Unified scan-folder picker wrapper over `FolderPickerModal`; root-first sort so Enter-on-open scans the whole vault; `onChoose(undefined)` = root. Used by main (`fire`) and the elaboration, enrichment, summarize, organize, rem folder-scan commands |
 | `open-scan-folder-picker.test.ts` | Tests | Scan folder picker tests |
-| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:158` (direct import; section reset), `settings-ui/global-sections.ts:515` (via barrel; reset all), `elaboration/index.ts:516` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:35` cites the settle-once pattern in a comment only, no import |
+| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:158` (direct import; section reset), `settings-ui/global-sections.ts:574` (via barrel; reset all), `elaboration/index.ts:517` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:35` cites the settle-once pattern in a comment only, no import |
 | `confirm-modal.test.ts` | Tests | ConfirmModal tests |
 | `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |
 | `settings-reset.test.ts` | Tests | Reset helper tests |
@@ -667,7 +667,7 @@ function scoreLyricsContent(content: string): number
 | `extract-image-urls.test.ts` | Tests | `extractImageUrls` ordering/resolution/filters/cap; `fetchPageContentWithImages`; `fetchHtmlDocument` content type |
 | `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag |
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
-| `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:285`) |
+| `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:292`) |
 | `settings-merge.test.ts` | Tests | Merge semantics + pollution-key tests |
 | `voice.ts` | `voiceInstruction`, `VOICE_OPTIONS`, `VoiceMode`, `VoiceSettings` (+ rule constants for tests) | System-prompt voice fragment for prose-authoring call sites (#540). No imports |
 | `voice.test.ts` | Tests | Per-option output, custom trim + blank fallback, unknown-value fallback, verbatim exemption on every option |
@@ -723,7 +723,7 @@ seat --> DecisionClient.isEnabled()?  no  --> generative path (byte-for-byte tod
                                                |-- below floor | null | throw: generative fallback, exactly once
 ```
 
-Seats and floors: `enrichment/metadata-classifier.ts` (one `choice` per vocabulary category; floor `ai.systemOne.confidenceFloor`), `organize/placement-decider.ts` + `content-analyzer.ts` (one `choice` over existing folders + `<new-directory>`; floor `organize.organizeConfidenceThreshold`), `rem/semantic-matcher.ts` (lane-only: one `score` per title, relevance = P(strongly related), then one anchor `choice` per survivor over the note's sentences + `<none>`; floor `rem.confidenceThreshold`; a lane error skips the note, #566). No lane answer can create a folder, tag, or value that does not already exist; only `<new-*>` options reach the generative path.
+Seats and floors: `enrichment/metadata-classifier.ts` (one `choice` per vocabulary category; floor `ai.systemOne.confidenceFloor`), `enrichment/prompt-builder.ts` (one `choice` per missing lane frontmatter key over its vault values + `<new-value>`; floor `ai.systemOne.confidenceFloor`), `organize/placement-decider.ts` + `content-analyzer.ts` (one `choice` over existing folders + `<new-directory>`; floor `organize.organizeConfidenceThreshold`), `rem/semantic-matcher.ts` (lane-only: one `score` per title, relevance = P(strongly related), then one anchor `choice` per survivor over the note's sentences + `<none>`; floor `rem.confidenceThreshold`; a lane error skips the note, #566). No lane answer can create a folder, tag, or value that does not already exist; only `<new-*>` options reach the generative path.
 
 ## CheckpointManager Lifecycle
 
@@ -808,7 +808,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 |---------|---------|
 | `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index, summarize/summarizer, organize/content-analyzer, deep-dive/topic-analyzer, deep-dive/note-generator, rem/semantic-matcher, title/title-suggester |
 | `redactSecrets` | ai-client (safeRequest error bodies + API-error wrap), credential-validator (probe error messages), credential-field (Test-button validation-catch chip message), update-checker (fetch-failure detail), notifications (`error`/`notifyError`/operation-error toast + console paths) |
-| `redactError` | main (settings-migration console sink only, `main.ts:281`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, shared/image-preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
+| `redactError` | main (settings-migration console sink only, `main.ts:288`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, shared/image-preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
 | `withCacheReport` / `trackAiCache` / `transcriptCacheUse` / `mergeCacheUse` | audio/index, video/index, transcription/insert-url-transcript, summarize/index, tidy/index, elaboration/index, enrichment/index, deep-dive/index, organize/index, rem/index, title/index, image/index (#527 finish messages) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
@@ -817,7 +817,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
 | `voiceInstruction` | elaboration/proposer, deep-dive/note-generator, summarize/summarizer (#540) |
 | `VOICE_OPTIONS` | settings-ui/voice-setting |
-| `deepMergeSettings` | main (`loadSettings`, `main.ts:285`: migrated raw record over `DEFAULT_SETTINGS`) |
+| `deepMergeSettings` | main (`loadSettings`, `main.ts:292`: migrated raw record over `DEFAULT_SETTINGS`) |
 | `migrateDataFolder` | main (`onload`, `main.ts:50`, right after `NotificationManager` construction) |
 | `extractGeminiResponseText` | ai-client (callGemini), audio/transcriber (Gemini provider) |
 | `arrayBufferToBase64` / `base64EncodedLength` | image/extractor, elaboration/image-analyzer, audio/transcriber (Gemini inline audio), shared/image-preprocess (`base64EncodedLength` only) |

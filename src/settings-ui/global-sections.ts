@@ -32,7 +32,7 @@ import { FUNDING_LINKS } from './funding';
 const AUTO_ACCEPT_LABELS: Record<ProposalKind, { name: string; desc: string }> = {
 	elaboration: {
 		name: 'Elaboration',
-		desc: 'Automatically accept elaboration proposals as generated (appends an elaboration callout to the note).',
+		desc: 'Automatically accept elaboration proposals as generated (rewrites the note body with the expanded version).',
 	},
 	enrichment: {
 		name: 'Enrichment',

@@ -1,4 +1,4 @@
-import type { RegionLocator, ResolvedInsertion } from '../shared/insertion-point';
+import type { RegionLocator, ResolvedInsertion } from '../shared';
 
 /** Visual kinds the analyzer can propose for one spot in a note. */
 export type IllustrateSpotKind = 'photo' | 'diagram' | 'chart';
