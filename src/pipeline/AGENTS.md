@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-10-09
 ---
 
 # Pipeline Module
 
-Fire Synapse orchestration: runs the ordered multi-phase pipeline (elaboration -> summarize -> enrichment -> rem -> illustrate -> tidy -> organize) over a folder or a single note, where each phase is one feature module's scan function gated by settings and the command registry. Also builds the post-op chaining hooks (enrich -> title check, auto-organize) that `main.ts` assigns to each feature module's completion slot (#483).
+Fire Synapse orchestration: runs the ordered multi-phase pipeline (elaboration -> summarize -> enrichment -> rem -> illustrate -> tidy -> organize) over a folder or a single note, where each phase is one feature module's scan function gated by settings and the command registry. Also builds the post-op chaining hooks (enrich -> title check, illustrate, auto-organize) that `main.ts` assigns to each feature module's completion slot (#483).
 
 ## Public API
 
@@ -51,7 +51,7 @@ class SynapseRunner {
   fireOnFile(file: TFile): Promise<void>;   // single-note scoped (intake #111)
 }
 
-// types.ts:51 / :54 / :56 / :58 (#483 post-op wiring)
+// types.ts:54 / :57 / :60 / :62 / :64 (#483 post-op wiring)
 type PostOpSource = 'elaboration' | 'audio' | 'video' | 'image' | 'summarize' | 'deep-dive' | 'enrichment';   // 'enrichment' (#213) chains illustrate only, never re-enrichment
 type PostOpTrigger = 'elaboration' | 'transcription' | 'summarization' | 'deep-dive';   // EnrichmentTrigger minus 'manual'
 type PostOpContext = SourceContext;   // shared/source-context.ts: { sourceUrls?, sourceImages?, producedRegion? } — the material the action processed and the region it wrote (#213)
@@ -67,9 +67,9 @@ interface PostOpHookDeps {
   organizeNote: (file: TFile) => Promise<unknown>;
   illustrateNote: (filePath: string, ctx?: PostOpContext) => Promise<void>;   // #213 illustrate leg
 }
-// post-op-hooks.ts — null when no leg is wired (module hook slot left untouched)
+// post-op-hooks.ts:44 — null when no leg is wired (module hook slot left untouched)
 function buildPostOpHook(deps: PostOpHookDeps, source: PostOpSource): PostOpHook | null;
-// post-op-hooks.ts:53 — null unless organize.enabled AND the trigger's opt-in flag
+// post-op-hooks.ts:82 — null unless organize.enabled AND the trigger's opt-in flag
 function buildAutoOrganizeHook(deps: PostOpHookDeps, trigger: AutoOrganizeTrigger): ((file: TFile) => void) | null;
 ```
 
@@ -77,9 +77,9 @@ function buildAutoOrganizeHook(deps: PostOpHookDeps, trigger: AutoOrganizeTrigge
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `types.ts` | `PipelineModuleKey`, `PipelineModuleMap`, `PipelinePhase`, `PipelineScanFn`, `SYNAPSE_PIPELINE`, `PostOpSource`, `PostOpTrigger`, `PostOpHook`, `AutoOrganizeTrigger` | Phase model + ordered phase list + scan-fn contract + post-op hook types |
+| `types.ts` | `PipelineModuleKey`, `PipelineModuleMap`, `PipelinePhase`, `PipelineScanFn`, `SYNAPSE_PIPELINE`, `PostOpSource`, `PostOpTrigger`, `PostOpContext`, `PostOpHook`, `AutoOrganizeTrigger` | Phase model + ordered phase list + scan-fn contract + post-op hook types |
 | `synapse-runner.ts` | `SynapseRunner` | Sequential phase executor with per-phase progress + error isolation |
-| `post-op-hooks.ts` | `buildPostOpHook`, `buildAutoOrganizeHook`, `PostOpHookDeps` | Settings-gated post-op hook factories (enrich -> title check; single-note auto-organize); every dispatch goes through `fireAndForget` |
+| `post-op-hooks.ts` | `buildPostOpHook`, `buildAutoOrganizeHook`, `PostOpHookDeps` | Settings-gated post-op hook factories (enrich -> title check; illustrate; single-note auto-organize); every dispatch goes through `fireAndForget` |
 | `index.ts` | re-exports everything above | Barrel (public API) |
 | `synapse-runner.test.ts` | tests | Runner behaviour (filtering, progress, error isolation, fireOnFile) |
 | `fire-flow-gate.test.ts` | tests | Flow-gate filtering via `isPipelineKeyInFlow` |
@@ -87,7 +87,7 @@ function buildAutoOrganizeHook(deps: PostOpHookDeps, trigger: AutoOrganizeTrigge
 
 ## Ordered Phases (`SYNAPSE_PIPELINE`)
 
-Source: types.ts:L41-L48. Order is load-bearing — the runner executes phases in array order.
+Source: `types.ts:43-51`. Order is load-bearing — the runner executes phases in array order.
 
 | Order | key | label |
 |-------|-----|-------|
@@ -117,14 +117,14 @@ fire(folderPath?)  /  fireOnFile(file)
   --> if !op.cancelled: op.finish('Fire Synapse complete — <completed> phases run')
 ```
 
-- `fire` (synapse-runner.ts:L14): folder-scoped; never passes `onlyFile`.
-- `fireOnFile` (synapse-runner.ts:L70): scopes `folderPath` to the note's parent folder so `getMarkdownFiles` returns a superset that includes it, then passes the note as `onlyFile` (3rd arg) so each module filters to that single path. A root-level note (parent is root/undefined) passes `folderPath = undefined`. Uses operation id `synapse-fire-file`; `fire` uses `synapse-fire`.
+- `fire` (`synapse-runner.ts:14`): folder-scoped; never passes `onlyFile`.
+- `fireOnFile` (`synapse-runner.ts:70`): scopes `folderPath` to the note's parent folder so `getMarkdownFiles` returns a superset that includes it, then passes the note as `onlyFile` (3rd arg) so each module filters to that single path. A root-level note (parent is root/undefined) passes `folderPath = undefined`. Uses operation id `synapse-fire-file`; `fire` uses `synapse-fire`.
 
 ## Post-Op Hooks (`post-op-hooks.ts`)
 
-Wired in `main.ts:180-194`: one `PostOpHookDeps` (`main.ts:180-186`) feeds `buildPostOpHook` for each source (`elaboration.onProposalAccepted`, `audio.onTranscriptionComplete`, `video.onTranscriptionComplete`, `image.onExtractionComplete`, `summarize.onSummaryComplete`, `deepDive.onNoteAccepted`) and `buildAutoOrganizeHook` for `deepDive.onOrganizeRequested` / `summarize.onOrganizeRequested`.
+Wired in `main.ts:185-201`: one `PostOpHookDeps` (`main.ts:185-192`; `illustrateNote` -> `illustrate.illustrateNote(filePath, ctx)`, `:191`) feeds `buildPostOpHook` for each source (`elaboration.onProposalAccepted`, `audio.onTranscriptionComplete`, `video.onTranscriptionComplete`, `image.onExtractionComplete`, `summarize.onSummaryComplete`, `enrichment.onEnrichmentApplied` (`:198`), `deepDive.onNoteAccepted`) and `buildAutoOrganizeHook` for `deepDive.onOrganizeRequested` / `summarize.onOrganizeRequested`.
 
-`buildPostOpHook(deps, source)` builds independent legs at wire time and runs every wired leg per call with `(filePath, ctx)`; `null` when no leg is wired. `enrichment.onEnrichmentApplied` is also wired (source `'enrichment'`, illustrate leg only).
+`buildPostOpHook(deps, source)` builds independent legs at wire time and runs every wired leg per call with `(filePath, ctx)`; `null` when no leg is wired (`post-op-hooks.ts:77`). Source `'enrichment'` (`enrichment.onEnrichmentApplied`) gets the illustrate leg only.
 
 | Leg | Wire-time gate | Per-call behavior |
 |-----|----------------|-------------------|
@@ -136,7 +136,7 @@ Wired in `main.ts:180-194`: one `PostOpHookDeps` (`main.ts:180-186`) feeds `buil
 
 Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the note body; enrichment accept -> `sourceUrls` = links in the note body; deep-dive accept -> `sourceUrls` = `topic.relatedUrls` + links in the generated body; summarize -> `sourceUrls` = fetched URLs, `sourceImages` = page images (`fetchPageContentWithImages`) + media thumbnails, `producedRegion` = its `synapse-summary` callout (title when exactly one was written), fired ONCE per distinct note path per run; URL transcription (`insert-url-transcript.ts`) -> `sourceUrls` = [url], `sourceImages` = YouTube poster frame when the caption tier exposed one, `producedRegion` = the transcript callout; elaboration / enrichment / deep-dive -> `producedRegion: { kind: 'whole-note' }`; local audio/video/image embeds pass nothing.
 
-`buildAutoOrganizeHook(deps, trigger)` (`post-op-hooks.ts:53`): `null` unless `organize.enabled` AND (`deepDive.autoOrganizeOnAccept` for `'deep-dive'` | `summarize.autoOrganizeOnSummarize` for `'summarize'`); otherwise `(file) => fireAndForget(organizeNote(file))`.
+`buildAutoOrganizeHook(deps, trigger)` (`post-op-hooks.ts:82`): `null` unless `organize.enabled` AND (`deepDive.autoOrganizeOnAccept` for `'deep-dive'` | `summarize.autoOrganizeOnSummarize` for `'summarize'`); otherwise `(file) => fireAndForget(organizeNote(file))`.
 
 ## Configuration
 
@@ -144,8 +144,9 @@ Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the not
 |-----------------|--------|--------|
 | `settings[phase.key].enabled` | per-feature settings section keyed by `PipelineModuleKey` | Phase included only when its feature is enabled |
 | `getSettings()` | injected accessor | Read-only; runner never mutates settings |
-| `enrichment.enabled`, `enrichment.autoEnrich`, `deepDive.autoEnrichOnAccept`, `title.enabled`, `title.checkAfterOperations` | `post-op-hooks.ts:34-48` | Post-op hook shape (see table above); title gate re-read live under auto-enrich |
-| `organize.enabled`, `deepDive.autoOrganizeOnAccept`, `summarize.autoOrganizeOnSummarize` | `post-op-hooks.ts:57-62` | Auto-organize hook wired or `null` |
+| `enrichment.enabled`, `enrichment.autoEnrich`, `deepDive.autoEnrichOnAccept`, `title.enabled`, `title.checkAfterOperations` | `post-op-hooks.ts:52-65` | Post-op hook shape (see table above); title gate re-read live under auto-enrich |
+| `illustrate.enabled` (wire time + live), `illustrate.runAfter[key]` (live) | `post-op-hooks.ts:68-75` | Illustrate leg wired / fired |
+| `organize.enabled`, `deepDive.autoOrganizeOnAccept`, `summarize.autoOrganizeOnSummarize` | `post-op-hooks.ts:86-91` | Auto-organize hook wired or `null` |
 
 ## Error States
 
@@ -159,12 +160,12 @@ Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the not
 
 | Import | From |
 |--------|------|
-| `isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean` | `../commands` (registry.ts:L107; fail-open on unmapped key) |
+| `isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean` | `../commands` (`registry.ts:112`; fail-open on unmapped key) |
 | `fireAndForget` (runtime) | `../shared` (`post-op-hooks.ts:2`) |
-| `NotificationManager` (type) | `../shared` |
-| `SynapseSettings` (type) | `../settings` |
+| `NotificationManager`, `SourceContext` (types) | `../shared` (`post-op-hooks.ts:3`, `types.ts:2`) |
+| `SynapseSettings`, `IllustrateRunAfterKey` (types) | `../settings` (`post-op-hooks.ts:4`; `IllustrateRunAfterKey` is re-exported by `settings.ts:11` from `illustrate/types`) |
 | `TFile` (type) | `obsidian` (`types.ts:1`, `post-op-hooks.ts:1`) |
-| `PipelineModuleMap` instances | injected by `main.ts:92-99` from each feature module's scan fn |
-| `PostOpHookDeps` instance | injected by `main.ts:180-186` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote` wrapped with `{ postOp: true }` where applicable) |
+| `PipelineModuleMap` instances | injected by `main.ts:92-100` from each feature module's scan fn |
+| `PostOpHookDeps` instance | injected by `main.ts:185-192` (`enrichment.enrich`, `title.checkTitle` wrapped with `{ postOp: true }`; `organize.organizeNote`; `illustrate.illustrateNote`) |
 
 Pipeline imports `commands` (for the `fire-synapse` flow gate) and `shared` (`fireAndForget`) but NOT the feature modules directly — `main.ts` injects the `PipelineModuleMap` and `PostOpHookDeps`, keeping the runner and the hooks decoupled from concrete feature implementations.

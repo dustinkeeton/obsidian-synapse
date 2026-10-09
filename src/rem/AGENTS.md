@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-07
+last-updated: 2026-10-09
 ---
 
 # REM Module
@@ -190,7 +190,7 @@ Single-note command (`rem-current-note`) names the matched rule in the Notice. D
 
 All under `settings.rem` (`RemSettings`):
 
-Interface `settings.ts:216`; defaults `settings.ts:520-526`.
+Interface `settings.ts:301`; defaults `settings.ts:615-621`.
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Image Module
@@ -64,7 +64,7 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
 | `types.ts` | `ImageEmbed`, `OCRResult` | Type definitions |
 | `extractor.ts` | `ImageExtractor` | Multi-modal OCR via `AIClient.chat()` with `ContentBlock[]`; passes the vision model per call via `AIRequestOptions.model`; downscales via `shared` `preprocessImage` |
 | `note-scanner.ts` | `findImageEmbeds`, `hasExtractionBelow`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX` | Scan note text for image embeds; skip embeds already OCR'd |
-| `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `src/settings-ui/settings-tab.ts:41`) |
+| `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `src/settings-ui/settings-tab.ts:42`) |
 | `index.ts` | `ImageModule` + barrel re-exports | Orchestrator, public extraction methods, checkpoint management, per-note queue serialization (private `queued`, `insertFileExtraction`, `insertExtractions`, #483) |
 | `extractor.test.ts`, `note-scanner.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests (`preprocess.test.ts` moved to `shared/image-preprocess.test.ts`) |
 | `cache-report.test.ts` | Tests | #527 finish wording: single-OCR hit/miss, batch aggregate hit/miss |
@@ -133,7 +133,7 @@ Path exclusions use the centralized `settings.exclusions: ExclusionRule[]`:
 
 ## Settings
 
-`ImageSettings` (settings.ts:190); defaults at settings.ts:507. All under `settings.image`:
+`ImageSettings` (`settings.ts:216`); defaults at `settings.ts:542`. All under `settings.image`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|

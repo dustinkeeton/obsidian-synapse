@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-09
 ---
 
 # Enrichment Module
@@ -199,8 +199,8 @@ In (consumed by this module):
 - `src/shared` types `ModuleDeps`, `FeatureModule`, `OperationHandle` (constructor bundle + lifecycle contract, #504)
 
 Out (consumed by other modules):
-- `src/modules/registry.ts`: constructs `new EnrichmentModule(deps, autoAccept(deps, 'enrichment'))` (`modules/registry.ts:90`)
-- `src/main.ts`: wires `onViewRefreshNeeded`, `onOpenProposalView`; calls `scanVault()` (`main.ts:95`), `getPendingProposals()` (`main.ts:111`), `resumeFromCheckpoint()` (`main.ts:124`), `acceptSelectedFromView()` / `rejectFromView()` (`main.ts:146-147`), `enrich(path, trigger, { postOp: true })` via `PostOpHookDeps.enrich` (`main.ts:183`)
+- `src/modules/registry.ts`: constructs `new EnrichmentModule(deps, autoAccept(deps, 'enrichment'))` (`modules/registry.ts:92`)
+- `src/main.ts`: wires `onViewRefreshNeeded`, `onOpenProposalView`; calls `scanVault()` (`main.ts:95`), `getPendingProposals()` (`main.ts:112`), `resumeFromCheckpoint()` (`main.ts:126`), `acceptSelectedFromView()` / `rejectFromView()` (`main.ts:149-150`), `enrich(path, trigger, { postOp: true })` via `PostOpHookDeps.enrich` (`main.ts:188`); assigns `onEnrichmentApplied = buildPostOpHook(postOpDeps, 'enrichment')` (`main.ts:198`; illustrate leg only, fired from `enrichment/index.ts:646-649` with `sourceUrls` + `producedRegion: { kind: 'whole-note' }`)
 
 No feature-module dependencies (enrichment does not import from elaboration, transcription, etc.).
 
@@ -270,7 +270,7 @@ private isExcluded(file: TFile): boolean {
 
 ## Settings Keys
 
-All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:213-228`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:513-539`).
+All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:239-254`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:548-574`).
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -291,7 +291,7 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:21
 | `settings.exclusions` (top-level) | `ExclusionRule[]` | — | Path/glob exclusions scoped by feature `'enrichment'`; replaces removed `excludeFolders` |
 | `settings.autoAccept.enrichment` (top-level) | `boolean` | — | Wired to the `shouldAutoAccept` constructor param (#228) |
 
-`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:207-211`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book). `EnrichmentWeightSettings` defaults (`settings.ts:527-534`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
+`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:233-237`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book). `EnrichmentWeightSettings` defaults (`settings.ts:562-569`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
 
 ## Invariants
 

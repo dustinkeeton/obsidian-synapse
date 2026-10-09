@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-09
 ---
 
 # Commands Module
@@ -16,7 +16,7 @@ type CommandStatus = 'active' | 'deprecated' | 'disabled'   // only 'active' reg
 type CommandFlow = 'palette' | 'fire-synapse' | 'startup'                                       // (types.ts:14)
 type CommandContext = 'note' | 'vault' | 'global'           // runtime env; drives sidebar gating (types.ts:25)
 type FeatureKey = 'main' | 'elaboration' | 'enrichment' | 'organize' | 'deep-dive'
-               | 'summarize' | 'tidy' | 'rem' | 'video'                                          // (types.ts:28)
+               | 'summarize' | 'tidy' | 'rem' | 'illustrate' | 'video'                          // (types.ts:28)
 
 interface CommandDefinition {                                                                   // (types.ts:40)
   id: string                       // command id WITHOUT plugin prefix, e.g. 'scan-vault' (Obsidian -> 'synapse:scan-vault')
@@ -32,15 +32,15 @@ interface CommandDefinition {                                                   
 
 // registry.ts
 const COMMAND_REGISTRY: readonly CommandDefinition[]                                             // (registry.ts:15)
-const REGISTRY_BY_ID: ReadonlyMap<string, CommandDefinition>                                     // (registry.ts:70)
-function buildPipelineKeyMap(commands: readonly CommandDefinition[]): Map<string, CommandDefinition>  // throws on dup pipelineKey (registry.ts:78)
-const REGISTRY_BY_PIPELINE_KEY: ReadonlyMap<string, CommandDefinition>   // 1:1, built via buildPipelineKeyMap (registry.ts:93)
-function isInFlow(id: string, flow: CommandFlow): boolean                // exists && active && in flow (registry.ts:97)
-function isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean  // fail-OPEN on unmapped key (registry.ts:107)
+const REGISTRY_BY_ID: ReadonlyMap<string, CommandDefinition>                                     // (registry.ts:75)
+function buildPipelineKeyMap(commands: readonly CommandDefinition[]): Map<string, CommandDefinition>  // throws on dup pipelineKey (registry.ts:83)
+const REGISTRY_BY_PIPELINE_KEY: ReadonlyMap<string, CommandDefinition>   // 1:1, built via buildPipelineKeyMap (registry.ts:98)
+function isInFlow(id: string, flow: CommandFlow): boolean                // exists && active && in flow (registry.ts:102)
+function isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean  // fail-OPEN on unmapped key (registry.ts:112)
 
 // icons.ts
 const FEATURE_ICONS: Record<FeatureKey, string>     // default glyph name per feature; build fails if a key is missing (icons.ts:26)
-function resolveActionIcon(def: CommandDefinition): string   // def.icon ?? FEATURE_ICONS[def.feature] (icons.ts:44)
+function resolveActionIcon(def: CommandDefinition): string   // def.icon ?? FEATURE_ICONS[def.feature] (icons.ts:45)
 
 // actions.ts
 function listPaletteActions(registered: ReadonlySet<string>): CommandDefinition[]   // registry entries that passed register()'s gate, in registry order (actions.ts:22)
@@ -106,7 +106,7 @@ A fully disabled feature (onload never runs) produces zero attempts and so canno
 
 ## Command Registry
 
-24 entries: 23 real (registered via `register()`) + 1 synthetic pipeline-only (`tidy-vault`, never registered). 6 ship `status: 'disabled'` as a developer master switch and are gated out of registration. Source: `registry.ts:15`. All palette entries omit an explicit `icon` and inherit `FEATURE_ICONS[feature]` except the 5 `main` entries (icons: `review-proposals`=synapse, `manage-checkpoints`=synapse-checkpoints, `transcribe-media`=synapse-transcribe, `transcribe-note-media`=synapse-transcribe, `fire`=synapse-fire).
+27 entries: 26 real (registered via `register()`) + 1 synthetic pipeline-only (`tidy-vault`, never registered). 6 ship `status: 'disabled'` as a developer master switch and are gated out of registration. Source: `registry.ts:15`. All palette entries omit an explicit `icon` and inherit `FEATURE_ICONS[feature]` except the 5 `main` entries (icons: `review-proposals`=synapse, `manage-checkpoints`=synapse-checkpoints, `transcribe-media`=synapse-transcribe, `transcribe-note-media`=synapse-transcribe, `fire`=synapse-fire).
 
 | id | name | feature | status | flows | context | pipelineKey |
 |----|------|---------|--------|-------|---------|-------------|
@@ -133,10 +133,12 @@ A fully disabled feature (onload never runs) produces zero attempts and so canno
 | `undo-tidy` | Undo last tidy on current note | tidy | disabled | palette | note | — |
 | `rem-current-note` | REM: discover links in current note | rem | active | palette | note | — |
 | `rem-directory` | Scan folder for links | rem | active | palette, fire-synapse | vault | rem |
+| `illustrate-current-note` | Illustrate current note | illustrate | active | palette | note | — |
+| `illustrate-folder` | Scan folder for notes to illustrate | illustrate | active | palette, fire-synapse | vault | illustrate |
 | `check-dependencies` | Check external tool availability | video | active | palette | global | — |
 | `tidy-vault` | Scan folder for notes to tidy | tidy | active | fire-synapse | vault | tidy |
 
-`tidy-vault` is synthetic: pipeline-only, never passed to `register()`. The pipeline runs `tidy.scanVault()` (vault-wide) under `pipelineKey: 'tidy'`, distinct from the `tidy-current-note` palette command which runs `tidy()` on one note. See `registry.ts:66`.
+`tidy-vault` is synthetic: pipeline-only, never passed to `register()`. The pipeline runs `tidy.scanVault()` (vault-wide) under `pipelineKey: 'tidy'`, distinct from the `tidy-current-note` palette command which runs `tidy()` on one note. See `registry.ts:65-71`.
 
 ## Consumers
 

@@ -39,9 +39,10 @@
           "ai",
           "stt",
           "videosrc",
-          "imagelibs"
+          "imagelibs",
+          "systemone"
         ],
-        "note": "The only outbound surfaces: AI providers, transcription APIs, video sources, and the two licensed photo libraries."
+        "note": "Outbound only: AI providers, the opt-in System 1 lane, transcription APIs, video sources, and two photo libraries."
       }
     ]
   },
@@ -216,6 +217,20 @@
         200,
         72
       ]
+    },
+    {
+      "id": "systemone",
+      "type": "external",
+      "label": "TypeSafe Jev",
+      "sublabel": "System 1 decisions · opt-in",
+      "pos": [
+        760,
+        580
+      ],
+      "size": [
+        220,
+        64
+      ]
     }
   ],
   "connections": [
@@ -380,6 +395,13 @@
         780,
         318
       ]
+    },
+    {
+      "id": "base-systemone",
+      "from": "base",
+      "to": "systemone",
+      "label": "typed questions",
+      "variant": "dashed"
     }
   ],
   "cards": [
@@ -404,7 +426,8 @@
       "title": "What leaves the vault",
       "items": [
         "AI calls go through one AIClient over requestUrl; yt-dlp/ffmpeg are desktop-only",
-        "Illustrate sends an AI-proposed search query, never note text"
+        "Illustrate sends an AI-proposed search query, never note text",
+        "System 1 decisions (TypeSafe) are off by default; turned on, note text goes to Jev"
       ]
     }
   ]

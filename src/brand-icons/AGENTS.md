@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-14
+last-updated: 2026-10-09
 ---
 
 # Brand Icons Module
@@ -15,9 +15,27 @@ Exported from `index.ts`:
 const SYNAPSE_ICON_SVG: string
 // brand-icons.ts:40 — icon name -> SVG body; every key is registered
 const SYNAPSE_ICONS: Readonly<Record<string, string>>
-// brand-icons.ts:67
+// brand-icons.ts:68 — addIcon(name, svg) for every SYNAPSE_ICONS entry
 function registerSynapseIcons(): void
 ```
+
+## Icon Keys
+
+`SYNAPSE_ICONS` keys, in declaration order (`brand-icons.ts:42-60`): 15 entries.
+
+| Key | Line | Referenced by |
+|-----|------|---------------|
+| `synapse` | 42 | `main.ts:214` ribbon; `views/unified-proposal-view.ts:74` `getIcon`; `commands/registry.ts` (`review-proposals` icon) |
+| `synapse-actions` | 45 | `main.ts:216` ribbon; `views/synapse-actions-view.ts:67` `getIcon` |
+| `synapse-transcribe` | 47 | `main.ts:215` ribbon; `commands/registry.ts` (`transcribe-media`, `transcribe-note-media`) |
+| `synapse-fire` | 48 | `commands/registry.ts` (`fire`) |
+| `synapse-checkpoints` | 49 | `commands/registry.ts` (`manage-checkpoints`) |
+| `synapse-main` | 51 | `commands/icons.ts` `FEATURE_ICONS.main` |
+| `synapse-elaboration` .. `synapse-rem` | 52-58 | `commands/icons.ts` `FEATURE_ICONS` (elaboration, enrichment, organize, deep-dive, summarize, tidy, rem) |
+| `synapse-illustrate` | 59 | `commands/icons.ts:35` `FEATURE_ICONS.illustrate`; glyph asset `assets/brand/glyphs/synapse-illustrate.svg` |
+| `synapse-video` | 60 | `commands/icons.ts` `FEATURE_ICONS.video` |
+
+The `synapse-illustrate` callout identity (`shared/callouts.ts:21`) shares the name only; its callout icon is `lucide-image` (`styles.css:146-149`), not this glyph.
 
 ## File Inventory
 

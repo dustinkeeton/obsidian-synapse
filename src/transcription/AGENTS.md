@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Transcription Module
@@ -224,7 +224,7 @@ Single modal combining audio file selection and video URL input (`unified-modal.
     - Otherwise `TimeRangeModal.openAndChoose()`: `selection` → `TimeRange`; `full` → `undefined`; `cancelled` → return without calling any callback
 - Callbacks receive `timeRange?: TimeRange` (undefined = full file)
 
-Opened by `openUnifiedTranscriptionModal` (`open-unified-modal.ts:13`), whose deps are built in `main.ts:196-204` (`onTranscribeFile` -> `AudioModule.transcribeFileToActiveNote`, `onComplete` -> `audio.onTranscriptionComplete`). Triggered by ribbon `synapse-transcribe` (`main.ts:208`, registered on every platform). The registry entry `transcribe-media` is `status: 'disabled'` (`commands/registry.ts:22`), so `main.ts:221-223` attempts registration for the audit but no palette command ships.
+Opened by `openUnifiedTranscriptionModal` (`open-unified-modal.ts:13`), whose deps are built in `main.ts:203-211` (`onTranscribeFile` -> `AudioModule.transcribeFileToActiveNote`, `onComplete` -> `audio.onTranscriptionComplete`). Triggered by ribbon `synapse-transcribe` (`main.ts:215`, registered on every platform). The registry entry `transcribe-media` is `status: 'disabled'` (`commands/registry.ts:22`), so `main.ts:228-230` attempts registration for the audit but no palette command ships.
 
 ## NoteMediaModal
 
@@ -238,7 +238,7 @@ Selection modal for media embedded in the current note (`note-media-modal.ts`):
   - `onTranscribeAudio` receives `combine: boolean` as second arg; caller decides behavior
 - "Process selected" dispatches to separate audio/video/image callbacks
 
-Opened by `transcribeNoteMedia` (`note-media-transcription.ts:25`) via command `synapse:transcribe-note-media` (`editorCallback`, `main.ts:224-239`; scans `ctx.file`'s embeds, `notifications.info('No media found in this note')` when none, `:40-43`). Video embeds are collected only when `settings.video.enabled && deps.onTranscribeVideo` (`:33`); `main.ts:235` passes `onTranscribeVideo` only when `VideoModule` exists (desktop), so on mobile the modal's `onTranscribeVideo` is an unreachable no-op (`:57`).
+Opened by `transcribeNoteMedia` (`note-media-transcription.ts:25`) via command `synapse:transcribe-note-media` (`editorCallback`, `main.ts:231-246`; scans `ctx.file`'s embeds, `notifications.info('No media found in this note')` when none, `:40-43`). Video embeds are collected only when `settings.video.enabled && deps.onTranscribeVideo` (`:33`); `main.ts:242` passes `onTranscribeVideo` only when `VideoModule` exists (desktop), so on mobile the modal's `onTranscribeVideo` is an unreachable no-op (`:57`).
 
 ## Duration Detection
 
@@ -276,7 +276,7 @@ URLs (`detectUrlDuration`):
 
 ## URL Transcription Router (#184)
 
-Tier order is the array built by `createUrlTranscriptionRouter` (`create-url-router.ts:17-21`): `[CaptionStrategy, LocalExtractionStrategy?]` (extraction tier appended only when `deps.extract` is given; `main.ts:85-90` passes it only when `VideoModule` exists, i.e. desktop).
+Tier order is the array built by `createUrlTranscriptionRouter` (`create-url-router.ts:17-21`): `[CaptionStrategy, LocalExtractionStrategy?]` (extraction tier appended only when `deps.extract` is given; `main.ts:87-89` passes it only when `VideoModule` exists, i.e. desktop).
 
 | Tier | `canHandle` | `transcribe` |
 |------|-------------|--------------|
@@ -302,19 +302,19 @@ main.ts:57,84-91    transcriptCache = new TranscriptCache(app)                  
                                                          extract: video ? video.processUrl(...) : undefined, store: transcriptCache })
                  video.urlTranscriber = (url, parentOp) => router.transcribe(url, { update })   // batch note-media path (#184); store-first like every other consumer
 
-UnifiedTranscriptionModal (openUnifiedTranscriptionModal, open-unified-modal.ts:13; deps built main.ts:196-204)
+UnifiedTranscriptionModal (openUnifiedTranscriptionModal, open-unified-modal.ts:13; deps built main.ts:203-211)
   enabledModules = { audio: settings.audio.enabled, video: settings.video.enabled }
   onTranscribeFile(file, timeRange?) --> deps.onTranscribeFile  (= AudioModule.transcribeFileToActiveNote(file, timeRange))
   onTranscribeUrl(url, timeRange?, forceRefresh?) --> insertUrlTranscript(deps, url, timeRange, forceRefresh)
                                            (deps.onComplete = audio.onTranscriptionComplete)
 
-NoteMediaModal (transcribeNoteMedia, note-media-transcription.ts:25; deps built main.ts:227-237;
+NoteMediaModal (transcribeNoteMedia, note-media-transcription.ts:25; deps built main.ts:234-244;
                 embeds from findAudioEmbeds / findVideoUrls / findImageEmbeds, each gated by <feature>.enabled)
   onTranscribeAudio(embeds, combine) --> deps.onTranscribeAudio(file, embeds, combine)
                                            (= combine ? AudioModule.transcribeAndInsertCombined : AudioModule.transcribeAndInsert)
   onTranscribeVideo(embeds)          --> deps.onTranscribeVideo?.(file, embeds)  (= VideoModule.transcribeAndInsert; desktop only)
   onExtractImages(embeds)            --> deps.onExtractImages(file, embeds)      (= ImageModule.extractAndInsert)
-  ffmpegAvailable                    <-- await deps.isFfmpegAvailable()          (= createFfmpegAvailability(audio.extractor), main.ts:205)
+  ffmpegAvailable                    <-- await deps.isFfmpegAvailable()          (= createFfmpegAvailability(audio.extractor), main.ts:212)
 
 Intake (appendUrlTranscript, insert-url-transcript.ts:84; wired main.ts:72-79 as IntakeDeps.transcribeUrlToNote)
   router.transcribe(url, { update }) --> buildUrlTranscriptBlock(result, url, video.embedInNote) --> vault.process(file) append; rethrows

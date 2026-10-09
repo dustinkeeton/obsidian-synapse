@@ -6,6 +6,39 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-10-09: One global voice setting governs generated prose; neutral by default, verbatim material exempt (#540)
+
+**Context**: Generated prose had no consistent narrative voice. Elaboration told the model to "preserve the original voice", so on a first-person note it wrote *as the user*, claiming opinions and experiences they never had. Deep dive hard-coded an encyclopedic tone, and summarize said nothing, so a first-person source produced a first-person summary.
+
+**Decision**: Add `ai.voice` (`neutral` · `match-note` · `first-person` · `custom`, default `neutral`) and `ai.voiceCustom` under AI configuration. One shared `voiceInstruction()` (`shared/voice.ts`) is appended, read per call, to the elaboration, deep dive, and summarize system prompts — including a user's custom summarize prompt. Every option carries the same exemption: transcripts, quotes, lyrics, poetry, code, and chat logs keep their original wording and voice. A blank custom instruction falls back to neutral. The setting renders as one card with an in-card custom panel.
+
+**Alternatives considered**:
+- **Per-feature voice settings** — rejected; one knob with one meaning, and the risk (speaking for the user) is the same in every feature.
+- **Keep "preserve the original voice"** — rejected; that wording is what produced first-person additions.
+- **Apply voice to every AI call** — rejected; titles, tags, OCR, tidy, and transcript cleanup return JSON or reformat the user's own text, not new prose.
+
+**Rationale**: Generated text should never speak for the user unless they ask it to, so the default is the voice that never adopts their perspective.
+
+**Impact**: New `shared/voice.ts` and `settings-ui/voice-setting.ts`; `elaboration/proposer.ts`, `deep-dive/note-generator.ts`, `summarize/summarizer.ts` append the fragment. Existing vaults get `neutral` through the defaults merge, with no migration step. Voice is not part of elaboration's proposal dedup key. README AI-configuration table gains a Voice row.
+
+---
+
+## 2026-10-09: Support links become tiles in a redesigned About section, driven by one funding constant (#529)
+
+**Context**: The settings About section offered support as two inline links in a muted description line — easy to miss even for users looking for them, while the README already showed brand-colored badges.
+
+**Decision**: About becomes three blocks: an info card (brand mark, installed version, AGPL-3.0 license, **What's new** button), a **Support development** pair of GitHub Sponsors and Buy Me a Coffee tiles, and a **Danger zone** card whose **Reset…** button keeps the existing confirmation. The tiles read one `FUNDING_LINKS` constant (`settings-ui/funding.ts`); a test checks it against `manifest.json` `fundingUrl` and `.github/FUNDING.yml`.
+
+**Alternatives considered**:
+- **Keep the inline links** — rejected; they read as body copy.
+- **A banner, toast, or other nudge** — rejected; support stays static and at the bottom of settings, below every functional setting.
+
+**Rationale**: Visible but quiet: a user looking for a way to support the project finds it, and nobody else is interrupted.
+
+**Impact**: `settings-ui/global-sections.ts` (`renderAbout`), new `settings-ui/funding.ts`, styles in `styles.css`.
+
+---
+
 ## 2026-10-07: REM runs on the System 1 lane alone when the lane is on; relevance counts only "strongly related"; every link needs an anchor (#566)
 
 **Context**: REM proposed links between unrelated notes even with `rem.confidenceThreshold` at 0.85. The lane's relevance summed the *related* and *strongly related* mass, and "related" meant topical overlap. A replay over three notes (309 candidate titles) showed the rejected links ("Corrigibility" at 0.58, "How to", "positioning") all sat in the band the loose measure admits and the strongly-related mass rejects. The generative prompt still ran after the lane, both to re-filter the survivors on uncalibrated judgement and to name the anchor phrase. Nothing checked that the anchor appeared in the note, and targets the note already linked to were scored again on every re-run.
@@ -21,6 +54,37 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 **Rationale**: Locating an anchor is a choice over the note's own sentences, a System 1 question, so the generative call added cost and uncalibrated judgement without adding anything the lane cannot answer. Anchors are whole sentences, so a link always attaches to text that discusses the target.
 
 **Impact**: `rem/semantic-matcher.ts` splits into `matchOnLane` / `matchGenerative`, adds `anchorSentences`, `RemLaneError`, and already-linked exclusion; new `rem/overlaps.ts`; `RemLinkCandidate.lane`, `RemProposal.lane`; skipped notes are counted in the scan finish notice. The 20-note human-marked before/after sample is left to the maintainer.
+
+---
+
+## 2026-10-07: Frontmatter suggestions join the System 1 lane, choosing among values the vault already uses (#563)
+
+**Context**: #558 moved three of its four classification seats onto the System 1 lane. The fourth, frontmatter attribute suggestions, still asked the chat model for free-text values for keys like `category`, `status`, and `type`, so near-duplicate values kept multiplying across the vault.
+
+**Decision**: With `ai.systemOne.enabled` on, each lane key the note lacks gets one `choice` over the values already used for that key in included notes (most frequent first, capped at 254) plus `<new-value>`. A confident existing value becomes the suggestion with no `complete()` call. Only `<new-value>`, a sub-floor answer, or a key with no values yet reaches the generative prompt, restricted to those keys. The seat uses `ai.systemOne.confidenceFloor`, since it has no threshold of its own. Lane off, or any lane error, keeps the old prompt unchanged.
+
+**Alternatives considered**:
+- **Leave the seat generative** — rejected; free-text values are exactly the drift the lane exists to stop.
+- **A frontmatter-specific threshold** — rejected; one knob per feature, and enrichment has none for this seat.
+
+**Rationale**: Picking from values the vault already uses is a classification question, which the lane answers with calibrated confidence and no invented spellings.
+
+**Impact**: `enrichment/prompt-builder.ts` (`suggestFrontmatter` gains a lane-first path), `enrichment/vault-analyzer.ts` (`buildFrontmatterValueIndex`, cached per key until the metadata cache resolves again), `FrontmatterValueIndex` in `enrichment/types.ts`. The existing key allowlist and forbidden-key guards apply to both lanes. PR #567.
+
+---
+
+## 2026-10-06: Any action that downloads media into the vault embeds it in the note (#561)
+
+**Context**: When the yt-dlp tier downloaded a video, only the transcription paths embedded it. Summarize used the same transcriber but inserted only its summary callout, leaving the downloaded file orphaned in the download folder.
+
+**Decision**: The transcriber's result now carries `videoVaultPath` through to summarize. One shared embed builder (`buildMediaEmbedLines`, `shared/media-embed.ts`) serves transcription, video, and summarize. Summarize places the embed above the per-item summary, or one embed per downloaded source above the combined summary. Both honor `video.embedInNote` and skip a file the note already embeds.
+
+**Alternatives considered**:
+- **Embed only from Transcribe** — rejected; it leaves orphaned attachments behind every other consumer.
+
+**Rationale**: The rule is uniform: if Synapse put a file in the vault for a note, the note links to it — once.
+
+**Impact**: Every consumer of `transcribeUrl` must run the shared embed step (recorded in `summarize/AGENTS.md` and `transcription/AGENTS.md`). Transcribe followed by Summarize on one URL yields exactly one embed. PR #562.
 
 ---
 

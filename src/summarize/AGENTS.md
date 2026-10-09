@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Summarize Module
@@ -214,7 +214,7 @@ Effectively-empty gate (#544): the target is appended only when `!isEffectivelyE
 
 ## Settings Keys
 
-All under `settings.summarize` (`SummarizeSettings`, `settings.ts:230`):
+All under `settings.summarize` (`SummarizeSettings`, `settings.ts:256`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|

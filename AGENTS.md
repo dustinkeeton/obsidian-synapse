@@ -1,10 +1,10 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Synapse — Agent Reference
 
-AI-powered Obsidian plugin: stub note elaboration, audio/video transcription (caption-first URL tier on every platform, #184), image OCR, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, REM wikilink discovery, intake-folder auto-processing, Fire Synapse multi-phase pipeline, and checkpoint-based operation resumability.
+AI-powered Obsidian plugin: stub note elaboration, audio/video transcription (caption-first URL tier on every platform, #184), image OCR, note enrichment (tags, links, references), summarization, note tidying, semantic organization, recursive deep dive note generation, REM wikilink discovery, media insertion (licensed photos, Mermaid diagrams, note-data charts), intake-folder auto-processing, Fire Synapse multi-phase pipeline, and checkpoint-based operation resumability.
 
 ## Build and Test
 
@@ -27,14 +27,14 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | main | `src/main.ts` | Plugin entry (lifecycle glue only, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, cross-module callback injection | `SynapsePlugin` (default) |
 | modules | `src/modules/` | Feature-module registry (#504): ordered factory list; construct / settings-gated load / reverse unload loops; per-entry platform gating | `MODULE_FACTORIES`, `constructFeatureModules`, `listFeatureModules`, `loadFeatureModules`, `unloadFeatureModules`, types (`FeatureModules`, `FeatureModuleKey`, `ModuleEntry`, `ModuleFactoryContext`, `ModuleWiring`) |
 | checkpoints | `src/checkpoints/` | Checkpoint recovery UX (#496): startup interrupted-operation prompt, `manage-checkpoints` command, sidebar resume/discard; resume dispatch via injected per-module handlers | `CheckpointRecoveryModule`, `STARTUP_CHECK_DELAY_MS`, `CheckpointRecoveryDeps`, `CheckpointResumeHandler`, `CheckpointResumeHandlers` |
-| settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings`, `DEFAULT_SETTINGS`, `AIProvider`, `MODEL_OPTIONS`, `TranscriptionProvider`, `TRANSCRIPTION_MODEL_OPTIONS` (`settings.ts:61,68`), `DeepDiveNestingMode` (`:259`), `AutoAcceptSettings` (`:404`), one `<Feature>Settings` interface per section |
-| settings-ui | `src/settings-ui/` | Obsidian settings UI | `SynapseSettingTab` |
+| settings | `src/settings.ts` | Settings interfaces, defaults, model options | `SynapseSettings` (`settings.ts:432`), `DEFAULT_SETTINGS` (`:468`), `AIProvider` (`:20`), `MODEL_OPTIONS` (`:23`), `TranscriptionProvider` (`:66`), `TRANSCRIPTION_MODEL_OPTIONS` (`:73`), `SYSTEM_ONE_MODEL_OPTIONS` (`:108`), `DeepDiveNestingMode` (`:285`), `AutoAcceptSettings` (`:430`), `IllustrateRunAfterKey` (type re-export from `illustrate/types`, `:11`), one `<Feature>Settings` interface per section (`IllustrateSettings` is declared in `illustrate/types.ts:87`) |
+| settings-ui | `src/settings-ui/` | Obsidian settings UI; section registry, cross-feature sections, voice card (`voice-setting.ts`, #540), System 1 rows, funding tiles (`funding.ts`) | `SynapseSettingTab` (barrel); internal: `SETTINGS_SECTIONS`, `renderVoiceSetting`, `renderSystemOneCredentials`, `FUNDING_LINKS` / `FundingLink` |
 | commands | `src/commands/` | Command registry: developer source of truth + master control (status/flow/context gating), central registrar, drift audit, palette-action derivation | `CommandRegistrar`, `COMMAND_REGISTRY`, `REGISTRY_BY_ID`, `REGISTRY_BY_PIPELINE_KEY`, `isInFlow`, `isPipelineKeyInFlow`, `listPaletteActions`, `FEATURE_ICONS`, `resolveActionIcon`, `auditCommands`, types (`CommandDefinition`, `CommandContext`, `CommandFlow`, `CommandStatus`, `FeatureKey`) |
 | pipeline | `src/pipeline/` | Fire Synapse orchestration: ordered multi-phase run over a folder or single note; table-driven post-op hook builders (enrich -> title check, auto-organize; #496) | `SynapseRunner`, `SYNAPSE_PIPELINE`, `buildPostOpHook`, `buildAutoOrganizeHook`, `PipelineModuleKey`, `PipelineModuleMap`, `PipelinePhase`, `PipelineScanFn`, `PostOpHookDeps`, `PostOpSource`, `PostOpTrigger`, `PostOpHook`, `AutoOrganizeTrigger` |
 | intake | `src/intake/` | Watches intake folder, auto-routes + pipeline-processes new notes (#111); opt-in adoption of root-level shared captures (#455) | `IntakeModule`, `IntakeDispatcher`, `IntakeDeps`, `IntakeRoute`, `SYNAPSE_PROCESSED_FLAG`, `SYNAPSE_PROCESSED_AT_FLAG`, `renderIntakeSettings` |
 | rem | `src/rem/` | REM: discover linkable references, propose in-place `[[wikilink]]` insertions | `RemModule`, `renderRemSettings`, types |
-| illustrate | `src/illustrate/` | Insert Media (#213): AI-chosen spots get a licensed reference photo (Wikimedia Commons / Openverse), an AI Mermaid diagram, or a chart built from the note's own numbers; per-item sidebar review; accept downloads into the attachment folder + inserts embed/callout at the anchor | `IllustrateModule`, `WikimediaProvider`, `OpenverseProvider`, `MediaProvider`, `normalizeLicense`, `isLicenseAllowed`, `validateMermaid`, `buildXyChart`, `parseChartData`, `renderIllustrateSettings`, types (placement via `shared/insertion-point.ts`) |
-| elaboration | `src/elaboration/` | Stub note detection, AI full-body rewrite proposals (#552: accept replaces the note body under the byte-for-byte preserved frontmatter, `elaboration/index.ts:526`; stale-body `ConfirmModal` guard `:513-521`), image analysis for proposals | `ElaborationModule`, `renderElaborationSettings`, types (`ImageAnalyzer` is internal to `image-analyzer.ts`, not barrel-exported) |
+| illustrate | `src/illustrate/` | Insert Media (#213): AI-chosen spots get a licensed reference photo (Wikimedia Commons / Openverse), an AI Mermaid diagram, or a chart built from the note's own numbers; per-item sidebar review; accept downloads into the attachment folder + inserts embed/callout at the anchor | `IllustrateModule`, `WikimediaProvider`, `OpenverseProvider`, `SourceProvider`, `fetchLinkedPageImages`, `normalizeLicense`, `isLicenseAllowed`, `LICENSE_NAMES`, `DEFAULT_LICENSE_FILTER`, `validateMermaid`, `buildXyChart`, `parseChartData`, `renderIllustrateSettings`, `ILLUSTRATE_FEATURE_TOOLTIP`, types (incl. `MediaProvider`) (placement via `shared/insertion-point.ts`) |
+| elaboration | `src/elaboration/` | Stub note detection, AI full-body rewrite proposals (#552: accept replaces the note body under the byte-for-byte preserved frontmatter, `elaboration/index.ts:527`; stale-body `ConfirmModal` guard `:513-523`), image analysis for proposals | `ElaborationModule`, `renderElaborationSettings`, types (`ImageAnalyzer` is internal to `image-analyzer.ts`, not barrel-exported) |
 | audio | `src/audio/` | Audio transcription (Whisper, Deepgram, local), post-processing | `AudioModule`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `renderAudioSettings`, `renderTranscriptionCredentials`, types |
 | video | `src/video/` | Video download (YouTube/TikTok), audio extraction, transcription | `VideoModule`, `AudioExtractor`, `createFfmpegAvailability`, `findVideoUrls`, `renderVideoSettings`, types (URL platform helpers `detectPlatform` / `isSupportedUrl` are NOT re-exported here since the module-boundary refactor; import them from `shared`) |
 | image | `src/image/` | Image OCR via multi-modal AI (vision models), batch extraction with checkpoints | `ImageModule`, `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `renderImageSettings`, types (`ImageExtractor` is internal, not barrel-exported; `preprocessImage` / `arrayBufferToBase64` moved to `shared`) |
@@ -45,7 +45,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 | organize | `src/organize/` | AI-powered semantic directory structuring for notes; every relocation is a proposal (`proposalKind: 'move' | 'new-directory'`), moved only on accept or under `autoAccept.organize`; "Undo last organize run" reverts a whole run through `vault.rename` | `OrganizeModule` (incl. `suggestDirectory(text, aiOpts?)`, `organize/index.ts:80` — the folder-suggestion seam the registry hands to deep-dive; `undoOrganizeRun()`), `buildSummaryPath`, `renderOrganizeSettings`, types (`OrganizeProposal`, `OrganizeProposalKind`, `OrganizeSnapshot`, `OrganizeResult`, `ContentAnalysis`, `DirectoryScore`, `NoteTopic`, `OrganizeAction`, `OrganizeProposalStatus`, `Placement*`); `ContentAnalyzer` / `DirectoryMatcher` are internal (no longer barrel-exported) |
 | deep-dive | `src/deep-dive/` | Recursive topic extraction and child note generation | `DeepDiveModule`, `buildDeepDivePath`, `renderDeepDiveSettings`, syllabus-navigator helpers (`computeTraversalOrder`, `buildNavigationContext`, `renderNavigationBlock`, `renderSyllabusContent`, `buildTreeFromNodes`, `syllabusTitle`, `syllabusPath`, `injectNavigationBlock`), types (`DeepDiveProposal`, `DeepDiveRun`, `ExtractedTopic`, `QualityScore`, `DeepDiveProposalStatus`, `DeepDiveRunStatus`, `TraversalNode`, `NavigationContext`; the `SuggestDirectory` injection type lives in `deep-dive/types.ts:85` and is NOT barrel-exported) |
 | title | `src/title/` | AI title suggestions for untitled/mismatched notes | `TitleModule`, `isUntitled` (re-export), `renderTitleSettings`, types (`TitleProposal`, `TitleProposalTrigger`, `TitleProposalStatus`, `TitleDuplicateStrategy`, `TitleAcceptOutcome`) |
-| shared | `src/shared/` | AI client (multi-modal + opt-in response cache), file utils, validation, notifications, callouts, frontmatter, checkpoints, per-note operation queue, credential metadata + validation, secret redaction, settings migrations + defaults merge, data-folder migration, content hashing, untrusted-content wrapping, review-toast gate, update check, title predicates, feature-module lifecycle contract (#504), no-speech outcome (#524), cache-hit reporting (#527) | `AIClient`, `AIRequestOptions` (`{ bypassCache?; onCacheHit?; model? }` — `model` is a per-call override, `shared/ai-client.ts:33`; `settings.ai.model` is never mutated), `preprocessImage` / `PreprocessResult` (`shared/image-preprocess.ts`, moved from `image/`), `arrayBufferToBase64`, `base64EncodedLength`, `NotificationManager`, `CheckpointManager`, `NoteOperationQueue`, `TranscriptCache`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `redactError`, `reviewAction`, `migrateSettings`, `deepMergeSettings`, `migrateDataFolder`, `hashString`/`contentKey`, `wrapUntrusted`, `findAvailableVaultPath`, `ModuleDeps`, `FeatureModule`, `FeatureSettingsKey`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, `NoSpeechDetectedError`, `isNoSpeechError`, `hasSpeechContent`, `isWorthPostProcessing`, `noSpeechNotice`, `NO_SPEECH_MESSAGE`, `MIN_TRANSCRIPT_CHARS_FOR_AI`, `CacheUse` (`{ transcript?; ai?; systemOne? }`), `mergeCacheUse`, `transcriptCacheUse`, `trackAiCache`, `withCacheReport` (`usedCache` is module-internal), `DecisionClient` / `DecisionLaneError` / `choice` / `score` / `noul` / `answerConfidence` / `chunkQuestions` / `DecisionRequestOptions` (`shared/decision-client.ts`, #558), `routeByConfidence` / `partitionByConfidence` (`shared/confidence-router.ts`), `safeRequest` / `ApiRequestError` (`shared/safe-request.ts`), file/validation utils, callout registry, id-utils |
+| shared | `src/shared/` | AI client (multi-modal + opt-in response cache), file utils, validation, notifications, callouts, frontmatter, checkpoints, per-note operation queue, credential metadata + validation, secret redaction, settings migrations + defaults merge, data-folder migration, content hashing, untrusted-content wrapping, review-toast gate, update check, title predicates, feature-module lifecycle contract (#504), no-speech outcome (#524), cache-hit reporting (#527) | `AIClient`, `AIRequestOptions` (`{ bypassCache?; onCacheHit?; model? }` — `model` is a per-call override, `shared/ai-client.ts:31`; `settings.ai.model` is never mutated), `preprocessImage` / `PreprocessResult` (`shared/image-preprocess.ts`, moved from `image/`), `arrayBufferToBase64`, `base64EncodedLength`, `NotificationManager`, `CheckpointManager`, `NoteOperationQueue`, `TranscriptCache`, `validateCredentials`, `PROVIDER_METADATA`, `decorateCredentialField`, `redactSecrets`, `redactError`, `reviewAction`, `migrateSettings`, `deepMergeSettings`, `migrateDataFolder`, `hashString`/`contentKey`, `wrapUntrusted`, `findAvailableVaultPath`, `ModuleDeps`, `FeatureModule`, `FeatureSettingsKey`, `UpdateChecker`, `isNewerVersion`, `isUntitled`, `isGenericTitle`, `voiceInstruction` / `VOICE_OPTIONS` / `VoiceMode` / `VoiceSettings` (`shared/voice.ts`, #540; re-exported `shared/index.ts:168-169`), `NoSpeechDetectedError`, `isNoSpeechError`, `hasSpeechContent`, `isWorthPostProcessing`, `noSpeechNotice`, `NO_SPEECH_MESSAGE`, `MIN_TRANSCRIPT_CHARS_FOR_AI`, `CacheUse` (`{ transcript?; ai?; systemOne? }`), `mergeCacheUse`, `transcriptCacheUse`, `trackAiCache`, `withCacheReport` (`usedCache` is module-internal), `DecisionClient` / `DecisionLaneError` / `choice` / `score` / `noul` / `answerConfidence` / `chunkQuestions` / `DecisionRequestOptions` (`shared/decision-client.ts`, #558), `routeByConfidence` / `partitionByConfidence` (`shared/confidence-router.ts`), `safeRequest` / `ApiRequestError` (`shared/safe-request.ts`), file/validation utils, callout registry, id-utils |
 | views | `src/views/` | Unified proposal/checkpoint sidebar + registry-driven Synapse actions sidebar; sidebar activation/refresh + registry command dispatch helpers (#496) | `UnifiedProposalView`, `UNIFIED_VIEW_TYPE`, `UnifiedItem`, `SynapseActionsView`, `SYNAPSE_ACTIONS_VIEW_TYPE`, `activateUnifiedView`, `activateSynapseActionsView`, `refreshUnifiedView`, `UnifiedViewSources`, `activeMarkdownFile`, `runRegisteredCommand`, `PROPOSAL_KINDS`, `ProposalKind`, `UnifiedViewCallbacks`, `SynapseActionsCallbacks`, proposal-styles (`SYNAPSE_COLOR_TOKENS`, `FEATURE_COLOR_TOKENS`, `cardClass`, `badgeClass`, `reviewPaneLabelClass`, `actionsGroupClass`) |
 | onboarding | `src/onboarding/` | First-run welcome gate + required-API-key emphasis (#89) | `needsApiKey`, `planFirstRun`, `runFirstRunOnboarding`, `applyApiKeyEmphasis`, `FirstRunPlan`, `FirstRunDeps`, `EmphasisTarget`, `WELCOME_MESSAGE`, `WELCOME_NOTICE_DURATION_MS`, `REQUIRED_FIELD_CLASS`, `API_KEY_DESC`, `API_KEY_REQUIRED_DESC`, `API_KEY_NO_SUBSCRIPTION_NOTE` |
 | brand-icons | `src/brand-icons/` | Registers Synapse SVG icons (S-Signal identity mark + feature glyphs) | `registerSynapseIcons`, `SYNAPSE_ICONS`, `SYNAPSE_ICON_SVG` |
@@ -56,7 +56,7 @@ Output: `main.js` (single bundle, Obsidian loads this)
 
 ```
 main.ts
-  |-- settings.ts  (type-only: ProposalKind from views/types, ExclusionRule from shared/exclusions, TitleDuplicateStrategy from title/types — all erased; PLUS runtime value CURRENT_SETTINGS_VERSION from shared/settings-migrations, the sanctioned settings->shared edge — no cycle, settings-migrations only depends on shared/exclusions)
+  |-- settings.ts  (type-only: ProposalKind from views/types, ExclusionRule from shared/exclusions, TitleDuplicateStrategy from title/types, IllustrateSettings + IllustrateRunAfterKey from illustrate/types (settings.ts:10), VoiceMode from shared/voice (settings.ts:13) — all erased; PLUS runtime value CURRENT_SETTINGS_VERSION from shared/settings-migrations, the sanctioned settings->shared edge — no cycle, settings-migrations only depends on shared/exclusions)
   |-- modules/ --> every feature barrel (runtime; the only file besides settings-ui that imports them all), shared/ (ModuleDeps / FeatureModule / FeatureSettingsKey types), settings.ts (types), obsidian Platform
   |-- settings-ui/ --> settings.ts, shared/, views/, every feature barrel's render<Feature>Settings, onboarding/, properties-fold/, changelog/ (type-only edge to main)
   |-- onboarding/ --> settings.ts (type-only), shared/ (redactError runtime; NotificationManager type)
@@ -65,10 +65,10 @@ main.ts
   |-- changelog/ --> CHANGELOG.md (build-inlined text); type-only edge to main
   |-- properties-fold/ --> settings.ts (type-only); type-only edge to main
   |-- commands/   (depends on NOTHING in src/ — never in a cycle)
-  |-- shared/     (base layer: depends on NO feature module; owns url-detector; ONE type-only edge to commands/ — CommandRegistrar in feature-module.ts, erased at compile time; ONE runtime value edge to settings.ts — DEFAULT_SETTINGS in shared/settings-reset.ts:1 — plus interface-only imports of SynapseSettings/AIProvider in shared/ai-client.ts:2, shared/feature-module.ts:2, shared/provider-metadata.ts:10, shared/update-checker.ts:3; no cycle because settings.ts reaches shared only through shared/settings-migrations.ts, which imports shared/exclusions.ts alone)
-  |-- pipeline/ --> commands/ (isPipelineKeyInFlow), shared/ (fireAndForget); modules injected via PipelineModuleMap / PostOpHookDeps
-  |-- views/ --> type-only: elaboration, enrichment, organize, deep-dive, title, rem, shared (Checkpoint, NotificationManager), commands (CommandDefinition, FeatureKey);
-  |            runtime: shared (fireAndForget, views/unified-proposal-view.ts:9 + views/view-activation.ts:2 + views/command-runner.ts:4), commands (FEATURE_ICONS, views/synapse-actions-view.ts:3; REGISTRY_BY_ID, views/command-runner.ts:3), obsidian MarkdownView (views/command-runner.ts:1)
+  |-- shared/     (base layer: depends on NO feature module; owns url-detector; ONE type-only edge to commands/ — CommandRegistrar in feature-module.ts, erased at compile time; ONE runtime value edge to settings.ts — DEFAULT_SETTINGS in shared/settings-reset.ts:1 — plus interface-only imports of SynapseSettings/AIProvider in shared/ai-client.ts:2, shared/decision-client.ts:1, shared/feature-module.ts:2, shared/provider-metadata.ts:10, shared/update-checker.ts:3; no cycle because settings.ts reaches shared only through shared/settings-migrations.ts, which imports shared/exclusions.ts alone)
+  |-- pipeline/ --> commands/ (isPipelineKeyInFlow), shared/ (fireAndForget; SourceContext type), settings.ts (type-only: SynapseSettings, IllustrateRunAfterKey — pipeline/post-op-hooks.ts:4); modules injected via PipelineModuleMap / PostOpHookDeps
+  |-- views/ --> type-only: elaboration, enrichment, organize, deep-dive, title, rem, illustrate, shared (Checkpoint, NotificationManager), commands (CommandDefinition, FeatureKey);
+  |            runtime: shared (fireAndForget, views/unified-proposal-view.ts:10 + views/view-activation.ts:2 + views/command-runner.ts:4; describeInsertion, views/unified-proposal-view.ts:10), commands (FEATURE_ICONS, views/synapse-actions-view.ts:3; REGISTRY_BY_ID, views/command-runner.ts:3), obsidian MarkdownView (views/command-runner.ts:1)
   |-- elaboration/ --> shared/, commands/ (ImageAnalyzer uses shared AIClient + shared preprocessImage; NO image/ edge)
   |-- audio/ --> shared/, commands/ (no video edge: the ffmpeg clip/concat surface is the structural `AudioClipper` interface in audio/types.ts:43)
   |-- video/ --> shared/ (CheckpointManager, url-detector), commands/, audio/ (AudioModule runtime value edge — reuses transcription pipeline; plus `import type { AudioClipper }` in video/ffmpeg-availability.ts:1)
@@ -78,10 +78,10 @@ main.ts
   |-- summarize/ --> shared/ (incl. isSupportedUrl/detectPlatform), commands/, audio/ (findAudioEmbeds); URL transcription injected at runtime (modules/registry.ts summarize entry -> ModuleWiring.transcribeUrl -> UrlTranscriptionRouter.transcribe; NO static video/transcription import edge)
   |-- tidy/ --> shared/, commands/
   |-- organize/ --> shared/, commands/
-  |-- deep-dive/ --> shared/, commands/ (NO organize import: folder suggestion arrives as the registry-injected `SuggestDirectory` callback, modules/registry.ts:111-116)
+  |-- deep-dive/ --> shared/, commands/ (NO organize import: folder suggestion arrives as the registry-injected `SuggestDirectory` callback, modules/registry.ts:110-116)
   |-- title/ --> shared/
   |-- rem/ --> shared/, commands/
-  |-- illustrate/ --> shared/, commands/ (type-only CommandRegistrar); providers/ via requestUrl only
+  |-- illustrate/ --> shared/ (barrel, plus a deep type-only import of shared/insertion-point in illustrate/types.ts:1), commands/ (type-only CommandRegistrar); providers/ via requestUrl only
   +-- intake/ --> shared/ ONLY (cross-module work via injected IntakeDeps.fireOnFile / transcribeUrlToNote)
 ```
 
@@ -93,57 +93,67 @@ Key constraints:
   (they are injected via `PipelineModuleMap` / `PostOpHookDeps` in main.ts). `checkpoints` likewise reaches
   feature modules only through the injected `CheckpointResumeHandlers`.
 - `intake` imports only `obsidian` + `src/shared/*`; all cross-module work goes through `IntakeDeps`.
-- `modules/registry.ts` (#504) is the one place that names every feature module: `MODULE_FACTORIES` order = construction = load order, unload is the reverse. Every module constructor takes `ModuleDeps` (`plugin`, `getSettings`, `notifications`, `checkpointManager`, `registrar`, `noteQueue`) first; module-specific inputs (auto-accept getter, an `AudioClipper` for audio — a `video/AudioExtractor` instance on desktop, `undefined` elsewhere, `modules/registry.ts:80`; `AudioModule` for video; organize's `suggestDirectory` lambda for deep-dive, `modules/registry.ts:111-116`; summarize transcribe callbacks; `IntakeDeps`) follow positionally and are supplied by the entry's `create`. Platform gating is the entry's `platform` predicate (video: `Platform.isDesktop`), never a `main.ts` special case. Disabled modules are still constructed (reachable by views/hooks), only their `onload()` is skipped. `registry.test.ts` asserts every `src/<feature>/index.ts` `export class *Module` is constructed by the registry.
+- `modules/registry.ts` (#504) is the one place that names every feature module: `MODULE_FACTORIES` order = construction = load order, unload is the reverse. Every module constructor takes `ModuleDeps` (`plugin`, `getSettings`, `notifications`, `checkpointManager`, `registrar`, `noteQueue`) first; module-specific inputs (auto-accept getter, an `AudioClipper` for audio — a `video/AudioExtractor` instance on desktop, `undefined` elsewhere, `modules/registry.ts:80`; `AudioModule` for video; organize's `suggestDirectory` lambda for deep-dive, `modules/registry.ts:110-116`; summarize transcribe callbacks; `IntakeDeps`) follow positionally and are supplied by the entry's `create`. Platform gating is the entry's `platform` predicate (video: `Platform.isDesktop`), never a `main.ts` special case. Disabled modules are still constructed (reachable by views/hooks), only their `onload()` is skipped. `registry.test.ts` asserts every `src/<feature>/index.ts` `export class *Module` is constructed by the registry.
 - `video` depends on `audio` (runtime `AudioModule` import plus `import type { AudioClipper }`, `video/ffmpeg-availability.ts:1`); `audio` imports nothing from `video` — `AudioClipper` (`audio/types.ts:43`) is the structural clip/concat/checkDependencies surface that `AudioExtractor` satisfies. The only remaining type-only back-edge (erased at compile time, no runtime cycle) is `shared/settings-section.ts:1 → main` (`import type SynapsePlugin`)
 - `transcription` owns the URL-transcription tier router (#184: `CaptionStrategy` on every platform, `LocalExtractionStrategy` desktop-only via an injected `VideoModule.processUrl` delegate) plus the modals; media decoding/AI work stays in `audio`, `video`, `image`
 - `summarize` has NO static import of `video` or `transcription`; URL-platform helpers (`isSupportedUrl`/`detectPlatform`) resolve from `shared/url-detector`. It receives a URL-transcription callback (delegating to `UrlTranscriptionRouter.transcribe`, on every platform) and an audio transcribe callback via constructor injection. A router-supported media URL is only ever transcribed — never page-fetched — and a failed transcription inserts no summary (#488)
 - Every URL-transcription path (unified modal, note-media batch, summarize, intake) shares ONE `UrlTranscriptionRouter` constructed over `SynapsePlugin.transcriptCache` (`shared/transcript-cache.ts`, #488): tier results are written through and later requests for the same canonical URL (+ time range) are served from the store unless `forceRefresh` is set. `forceRefresh` also dispatches the tier's AI post-processing fresh (#527; `UrlTranscriptOptions.forceRefresh`, `transcription/types.ts:13`); `UrlTranscript.aiCached` (`transcription/types.ts:44`) is never persisted — `toCachedTranscript` (`transcription/url-transcription.ts:95-98`) drops it, and a store hit sets `cached: true` (`:105`)
-- Cache use is reported, never silent (#527): `AIRequestOptions.onCacheHit` (`shared/ai-client.ts:31`) fires only on a response-cache replay (`shared/ai-client.ts:404`), never on a dispatch or a coalesced join. The response-cache key includes the resolved model (`opts.model || ai.model`, `shared/ai-client.ts:383`), so a vision-model call never replays a default-model response. `trackAiCache(use)` builds the option that flips `CacheUse.ai`; `transcriptCacheUse(result)` maps a router result's `cached`/`aiCached`; `mergeCacheUse` folds per-note uses; `withCacheReport(message, uses, unit?)` (`shared/cache-notice.ts:50`) appends the finish-line note — one item names the cache(s) used, a batch reports `N of M <unit>s served from cache`. Every AI-calling module's operation toast and the URL inserts (`transcription/insert-url-transcript.ts:69,101`) finish through it
+- Cache use is reported, never silent (#527): `AIRequestOptions.onCacheHit` (`shared/ai-client.ts:29`) fires only on a response-cache replay (`shared/ai-client.ts:358`), never on a dispatch or a coalesced join. The response-cache key includes the resolved model (`opts.model || ai.model`, `shared/ai-client.ts:337`), so a vision-model call never replays a default-model response. `trackAiCache(use)` builds the option that flips `CacheUse.ai`; `transcriptCacheUse(result)` maps a router result's `cached`/`aiCached`; `mergeCacheUse` folds per-note uses; `withCacheReport(message, uses, unit?)` (`shared/cache-notice.ts:70`) appends the finish-line note — one item names the cache(s) used, a batch reports `N of M <unit>s served from cache`. Every AI-calling module's operation toast and the URL inserts (`transcription/insert-url-transcript.ts:74,106`) finish through it
 - No speech is a typed outcome (#524): `NoSpeechDetectedError` (`shared/no-speech.ts`) is thrown at the `Transcriber` seam and re-checked by `AudioModule.transcribe`, the extraction tier, and the router; write sites notify and write nothing, the transcript store never receives it, and blank transcripts never reach an AI prompt
-- `deep-dive` reuses `organize` for auto-organize nesting mode ONLY through the injected `SuggestDirectory` callback (`deep-dive/types.ts:85`; registry passes `(text, aiOpts) => organize.suggestDirectory(text, aiOpts)`); the score floor `SUGGEST_DIRECTORY_MIN_SCORE = 0.6` lives in `organize/index.ts:29`
+- `deep-dive` reuses `organize` for auto-organize nesting mode ONLY through the injected `SuggestDirectory` callback (`deep-dive/types.ts:85`; registry passes `(text, aiOpts) => organize.suggestDirectory(text, aiOpts)`); the score floor `SUGGEST_DIRECTORY_MIN_SCORE = 0.6` lives in `organize/index.ts:41`
 - `image` module uses multi-modal `AIClient.chat()` with `ContentBlock[]` for vision; the vision model is passed per call as `AIRequestOptions.model` (`image/extractor.ts:46`, `elaboration/image-analyzer.ts:150`) — no module mutates `settings.ai.model`
 - `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
 - All feature modules depend on `shared`; no circular dependencies
-- Modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) retain `CheckpointManager` from `ModuleDeps`; `tidy`, `title`, `intake` receive the bundle but do not keep it; `transcription` is not a module
-- Every feature whose write follows read -> AI -> write receives the single `NoteOperationQueue` (#483): audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive — plus `transcription/insert-url-transcript` via `InsertUrlTranscriptDeps.noteQueue`. Public entry points take the note's slot exactly ONCE and delegate to a queue-free private core; acquiring twice (the same key or a second one) would deadlock. Batch scans take one slot per note, never one per batch. Writes to OTHER notes while holding a key stay unqueued by design (title backlink remediation + merge targets, deep-dive syllabus/sibling nav, organize summary notes)
-- Unqueued by design, because they re-derive inside the atomic callback instead of writing a pre-computed snapshot: `rem` accept/undo (`rem/index.ts:399,467` — `vault.process` recomputes the link application against fresh content) and `intake` stamp/move/breadcrumb (`intake/index.ts:489,559` `vault.process`, `:580` `fileManager.renameFile` — frontmatter stamps and a separate log note, run after every pipeline phase has finished). `SynapseRunner.fireOnFile` awaits its phases in sequence, so each phase acquires and releases the note's slot in turn
-- `views` imports feature modules as types only; its runtime imports are `fireAndForget` (`shared`), `FEATURE_ICONS` + `REGISTRY_BY_ID` (`commands`), and `MarkdownView` (`obsidian`). Sidebar activation/refresh (`view-activation.ts`) reads proposals through the injected `UnifiedViewSources`
+- Modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem, illustrate) retain `CheckpointManager` from `ModuleDeps`; `tidy`, `title`, `intake` receive the bundle but do not keep it; `transcription` is not a module
+- Every feature whose write follows read -> AI -> write receives the single `NoteOperationQueue` (#483): audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive, illustrate — plus `transcription/insert-url-transcript` via `InsertUrlTranscriptDeps.noteQueue`. Public entry points take the note's slot exactly ONCE and delegate to a queue-free private core; acquiring twice (the same key or a second one) would deadlock. Batch scans take one slot per note, never one per batch. Writes to OTHER notes while holding a key stay unqueued by design (title backlink remediation + merge targets, deep-dive syllabus/sibling nav, organize summary notes)
+- Unqueued by design, because they re-derive inside the atomic callback instead of writing a pre-computed snapshot: `rem` accept/undo (`rem/index.ts:414,482` — `vault.process` recomputes the link application against fresh content) and `intake` stamp/move/breadcrumb (`intake/index.ts:489,559` `vault.process`, `:580` `fileManager.renameFile` — frontmatter stamps and a separate log note, run after every pipeline phase has finished). `SynapseRunner.fireOnFile` awaits its phases in sequence, so each phase acquires and releases the note's slot in turn
+- `views` imports feature modules as types only; its runtime imports are `fireAndForget` + `describeInsertion` (`shared`), `FEATURE_ICONS` + `REGISTRY_BY_ID` (`commands`), and `MarkdownView` (`obsidian`). Sidebar activation/refresh (`view-activation.ts`) reads proposals through the injected `UnifiedViewSources`
 - Path exclusion is centralized (#307): the single `settings.exclusions: ExclusionRule[]` (model + matcher in `shared/exclusions.ts`) replaces the former per-module `excludeFolders` fields. Modules gate via `isPathExcluded(path, FeatureId, settings)` / `findMatchingRule`. Tag exclusion (`excludeTags`) stays per-module. `main.loadSettings()` runs a one-time `buildMigratedExclusions()` migration for upgraders whose persisted data has no `exclusions` key
+
+Sanctioned exceptions:
+- `settings.ts` type-only imports from feature internal type files: `title/types` (`TitleDuplicateStrategy`, `settings.ts:8`) and `illustrate/types` (`IllustrateSettings`, `IllustrateRunAfterKey`, `settings.ts:10`). Erased at compile time; no runtime cycle.
+
+Known architecture issues (unfixed):
+
+| Location | Issue |
+|----------|-------|
+| `illustrate/types.ts:1` | Deep import `../shared/insertion-point` (type-only) instead of the `../shared` barrel |
+| `settings.ts:9` | Comment claims `illustrate/types.ts` has no imports; it has one type-only import (`shared/insertion-point`). No runtime cycle (type-only, erased) |
 
 ## Plugin Lifecycle (main.ts)
 
-`src/main.ts` (295 lines, #496/#504) owns only: settings load/save, single-instance service construction, the registry-driven module lifecycle, view/ribbon/command registration, and the injection of cross-module callbacks. It names no module in its lifecycle: `modules/registry.ts` constructs, loads and unloads them (see `src/modules/AGENTS.md`); `main.ts` only destructures the typed `FeatureModules` record to wire views, hooks and commands.
+`src/main.ts` (302 lines, #496/#504) owns only: settings load/save, single-instance service construction, the registry-driven module lifecycle, view/ribbon/command registration, and the injection of cross-module callbacks. It names no module in its lifecycle: `modules/registry.ts` constructs, loads and unloads them (see `src/modules/AGENTS.md`); `main.ts` only destructures the typed `FeatureModules` record (`main.ts:82`) to wire views, hooks and commands.
 
 ```
 onload()
-  |-- loadSettings()  (main.ts:272; #93 version-stamped migrations: readSettingsVersion(raw) -> migrateSettings(raw, from) replays every migration with to>from [v1 excludeFolders -> exclusions #307, v2 drop inert rem.semanticMatching, v3 audio.whisperModel -> audio.transcriptionModel #521] -> deepMergeSettings(DEFAULT_SETTINGS, migrated) (shared/settings-merge.ts) -> stamp settingsVersion = CURRENT_SETTINGS_VERSION -> saveData once on upgrade)
+  |-- loadSettings()  (main.ts:279; #93 version-stamped migrations: readSettingsVersion(raw) -> migrateSettings(raw, from) replays every migration with to>from [v1 excludeFolders -> exclusions #307, v2 drop inert rem.semanticMatching, v3 audio.whisperModel -> audio.transcriptionModel #521] -> deepMergeSettings(DEFAULT_SETTINGS, migrated) (shared/settings-merge.ts; fills keys added without a migration, e.g. ai.voice / ai.voiceCustom / illustrate) -> stamp settingsVersion = CURRENT_SETTINGS_VERSION -> saveData once on upgrade)
   |-- registerSynapseIcons()  (brand-icons/; registers all synapse-* glyphs before any ribbon/setIcon/view use)
   |-- new NotificationManager(); migrateDataFolder(vault.adapter, notifications)  (shared/data-folder-migration.ts; .auto-notes -> .synapse, one-time; main.ts:49-50)
   |-- addSettingTab; status bar attached on desktop only
   |-- new CheckpointManager(app), new NoteOperationQueue(), transcriptCache = new TranscriptCache(app), new CommandRegistrar(this)  (single instances, main.ts:55-59)
   |-- deps: ModuleDeps = { plugin, getSettings, notifications, checkpointManager, registrar, noteQueue }  (main.ts:60-67)
-  |-- modules = modules.constructFeatureModules(deps, wiring)  (main.ts:69-81; #504; MODULE_FACTORIES order, audio before video, video only when Platform.isDesktop; every module constructed, disabled ones included)
+  |-- modules = modules.constructFeatureModules(deps, wiring)  (main.ts:69-80; #504; MODULE_FACTORIES order, audio before video, video only when Platform.isDesktop; every module constructed, disabled ones included)
   |     wiring.transcribeUrl -> this.urlTranscription.transcribe (set as video.urlTranscriber + summarize transcribeUrl by the registry)
   |     wiring.intake = { fireOnFile -> this.synapseRunner.fireOnFile, transcribeUrlToNote -> transcription.appendUrlTranscript }  (closures resolve the two fields built next; they only run at operation time)
   |-- this.urlTranscription = createUrlTranscriptionRouter({ getSettings, processTranscriptText: audio.processTranscriptText(raw, opts), extract?, store: transcriptCache })  (#184/#488; main.ts:84-91; extraction tier only when video exists; extract forwards `bypassCache: opts.forceRefresh` into video.processUrl, main.ts:88, #527)
-  |-- build PipelineModuleMap + this.synapseRunner = new SynapseRunner(...)  (main.ts:92-100)
-  |-- new UpdateChecker({ currentVersion, app, notifications, getSettings, saveSettings })  (#365; main.ts:101)
-  |-- viewSources: UnifiedViewSources (main.ts:109); refreshView = views.refreshUnifiedView(workspace, viewSources); openProposalView = fireAndForget(views.activateUnifiedView(...))
-  |-- resumeHandlers: CheckpointResumeHandlers (main.ts:122; video entry notifies "not available on mobile" when VideoModule is null); checkpoints = new CheckpointRecoveryModule({ checkpointManager, notifications, registrar, resumeHandlers, refreshView })  (main.ts:135)
-  |-- registerView(UNIFIED_VIEW_TYPE) (main.ts:143), registerView(SYNAPSE_ACTIONS_VIEW_TYPE) (main.ts:162; runAction -> views.runRegisteredCommand, isNoteActive -> views.activeMarkdownFile); active-leaf-change -> SynapseActionsView.refresh()
-  |-- registerPropertiesAutoFold(this, getSettings)  (#381)
-  |-- for each modules.listFeatureModules(modules): assign onViewRefreshNeeded / onOpenProposalView where the slot exists (main.ts:173-176; the six proposal modules)
-  |-- await modules.loadFeatureModules(modules, settings)  (main.ts:177; onload() per settings.<key>.enabled entry, registry order, intake included)
-  |-- post-op hooks (main.ts:180-194): pipeline.buildPostOpHook(postOpDeps, source) per source; buildAutoOrganizeHook for deep-dive / summarize
-  |-- openUnifiedModal = transcription.openUnifiedTranscriptionModal(deps) (main.ts:196); isFfmpegAvailable = video.createFfmpegAvailability(audio.extractor) (main.ts:205)
-  |-- addRibbonIcon x3 (main.ts:207-211); registrar.register('review-proposals')
-  |-- checkpoints.onload()  (registers manage-checkpoints; arms the 3s startup interrupted-operation check; main.ts:216)
-  |-- updateCheckTimeout = setTimeout(updateChecker.maybeCheck, 5000)  (#365; self-gated, once/day)
-  |-- registrar.register('transcribe-media' -> openUnifiedModal, 'transcribe-note-media' -> transcription.transcribeNoteMedia(deps, ctx.file))  (main.ts:221-239)
-  |-- registrar.register('fire' -> synapseRunner.fire); auditCommands(registrar.getAttempted())  (logs drift; main.ts:241-249)
-  +-- runFirstRunOnboarding({ getSettings, isFreshInstall, markSeen, notifications })  (#89; onboarding/; main.ts:250)
+  |-- build PipelineModuleMap (main.ts:92-100; illustrate -> illustrate.scanVault) + this.synapseRunner = new SynapseRunner(...)  (main.ts:101)
+  |-- new UpdateChecker({ currentVersion, app, notifications, getSettings, saveSettings })  (#365; main.ts:102-108)
+  |-- viewSources: UnifiedViewSources (main.ts:110-119; seven proposal readers incl. illustrate + checkpoints); refreshView = views.refreshUnifiedView(workspace, viewSources); openProposalView = fireAndForget(views.activateUnifiedView(...))
+  |-- resumeHandlers: CheckpointResumeHandlers (main.ts:124-137; video entry notifies "not available on mobile" when VideoModule is null; illustrate entry main.ts:136); checkpoints = new CheckpointRecoveryModule({ checkpointManager, notifications, registrar, resumeHandlers, refreshView })  (main.ts:138)
+  |-- registerView(UNIFIED_VIEW_TYPE) (main.ts:146-164; incl. onIllustrateAcceptSelected / onIllustrateReject, :160-161), registerView(SYNAPSE_ACTIONS_VIEW_TYPE) (main.ts:167; runAction -> views.runRegisteredCommand, isNoteActive -> views.activeMarkdownFile); active-leaf-change -> SynapseActionsView.refresh() (main.ts:172-175)
+  |-- registerPropertiesAutoFold(this, getSettings)  (#381; main.ts:176)
+  |-- for each modules.listFeatureModules(modules): assign onViewRefreshNeeded / onOpenProposalView where the slot exists (main.ts:178-181; the seven proposal modules: elaboration, enrichment, organize, deep-dive, title, rem, illustrate)
+  |-- await modules.loadFeatureModules(modules, settings)  (main.ts:182; onload() per settings.<key>.enabled entry, registry order, intake included)
+  |-- post-op hooks (main.ts:185-201): pipeline.buildPostOpHook(postOpDeps, source) per source (incl. enrichment.onEnrichmentApplied, :198); buildAutoOrganizeHook for deep-dive / summarize
+  |-- openUnifiedModal = transcription.openUnifiedTranscriptionModal(deps) (main.ts:203-211); isFfmpegAvailable = video.createFfmpegAvailability(audio.extractor) (main.ts:212)
+  |-- addRibbonIcon x3 (main.ts:214-218); registrar.register('review-proposals') (main.ts:220-222)
+  |-- checkpoints.onload()  (registers manage-checkpoints; arms the 3s startup interrupted-operation check; main.ts:223)
+  |-- updateCheckTimeout = setTimeout(updateChecker.maybeCheck, 5000)  (#365; self-gated, once/day; main.ts:224)
+  |-- registrar.register('transcribe-media' -> openUnifiedModal, 'transcribe-note-media' -> transcription.transcribeNoteMedia(deps, ctx.file))  (main.ts:227-246)
+  |-- registrar.register('fire' -> synapseRunner.fire); auditCommands(registrar.getAttempted())  (logs drift; main.ts:248-256)
+  +-- runFirstRunOnboarding({ getSettings, isFreshInstall, markSeen, notifications })  (#89; onboarding/; main.ts:257-265)
 
-onunload()  (main.ts:261)
+onunload()  (main.ts:268)
   |-- clearTimeout(updateCheckTimeout)
   |-- checkpoints?.onunload()
   |-- modules.unloadFeatureModules(modules)  (reverse registry order; skipped when construction never ran)
@@ -167,7 +177,7 @@ Cluster -> destination map (#496):
 
 ## Command Registry
 
-Source of truth: `src/commands/registry.ts` (mirrored here). 23 registry entries + 1 synthetic pipeline-only entry. Only `status: active` entries register/run; 6 ship `disabled` as a developer master switch (gated out of registration). Flows: `p`=palette, `f`=fire-synapse, `s`=startup. `pipelineKey` links an entry to a Fire Synapse phase. Each entry also carries a `context` (`note` | `vault` | `global`); the Synapse actions sidebar (`listPaletteActions`) uses it to disable per-note (`note`) buttons when no note is active.
+Source of truth: `src/commands/registry.ts` (mirrored here). 26 registry entries + 1 synthetic pipeline-only entry. Only `status: active` entries register/run; 6 ship `disabled` as a developer master switch (gated out of registration). Flows: `p`=palette, `f`=fire-synapse, `s`=startup. `pipelineKey` links an entry to a Fire Synapse phase. Each entry also carries a `context` (`note` | `vault` | `global`); the Synapse actions sidebar (`listPaletteActions`) uses it to disable per-note (`note`) buttons when no note is active.
 
 | ID | Name | Type | Module | Flows | Status | pipelineKey |
 |----|------|------|--------|-------|--------|-------------|
@@ -208,7 +218,7 @@ All ribbon glyphs are custom Synapse brand icons registered by `registerSynapseI
 | Icon | Label | Action |
 |------|-------|--------|
 | `synapse` | Review proposals | Opens unified proposal sidebar |
-| `synapse-transcribe` | Transcribe media | Opens unified transcription modal (every platform since #184; `main.ts:208` -> `transcription.openUnifiedTranscriptionModal`) |
+| `synapse-transcribe` | Transcribe media | Opens unified transcription modal (every platform since #184; `main.ts:215` -> `transcription.openUnifiedTranscriptionModal`) |
 | `synapse-actions` | Synapse actions | Opens registry-driven actions sidebar |
 
 ## View Types
@@ -228,11 +238,11 @@ All AI-generated content uses Obsidian callouts written as `> [!<base>|<identity
 |-----|----------|------|-------|
 | summary | `synapse-summary` | `summary` | Inline URL/transcription summaries |
 | transcription | `synapse-transcription` | `quote` | Audio/video transcriptions |
-| lyrics | `synapse-lyrics` | `quote` | Transcripts reformatted by the lyrics schema (#234; `calloutForTranscriptionResult`, `shared/callouts.ts:53-55`); the summarize note-scanner never re-condenses it into a summary (`shared/callouts.ts:44-49`); the audio note-scanner counts it as already transcribed (`audio/note-scanner.ts:50`) |
+| lyrics | `synapse-lyrics` | `quote` | Transcripts reformatted by the lyrics schema (#234; `calloutForTranscriptionResult`, `shared/callouts.ts:50-58`); the summarize note-scanner never re-condenses it into a summary (`shared/callouts.ts:44-49`); the audio note-scanner counts it as already transcribed (`audio/note-scanner.ts:50`) |
 | verse | `synapse-verse` | `note` | Registered only (`shared/callouts.ts:14`); no write site in `src/` — the lyrics schema prompt emits `[!verse]` (`shared/content-schemas.ts:330-333`) |
 | chorus | `synapse-chorus` | `note` | Registered only (`shared/callouts.ts:15`); no write site in `src/` — the lyrics schema prompt emits `[!chorus]` (`shared/content-schemas.ts:330-336`) |
 | enrichment | `synapse-enrichment` | `info` | Enrichment sections |
-| elaboration | `synapse-elaboration` | `note` | Legacy: no write site in `src/` since #552 (accept rewrites the body, `elaboration/index.ts:526`); registered (`shared/callouts.ts:17`) + styled (`styles.css:152`, bare selector only) to render pre-#552 notes |
+| elaboration | `synapse-elaboration` | `note` | Legacy: no write site in `src/` since #552 (accept rewrites the body, `elaboration/index.ts:527`); registered (`shared/callouts.ts:17`) + styled (`styles.css:152`, bare selector only) to render pre-#552 notes |
 | deepDive | `synapse-deep-dive` | `note` | Deep dive content |
 | nav | `synapse-nav` | `note` | Deep dive navigation blocks (`deep-dive/syllabus-navigator.ts` writes via `calloutHeaderLine`, removes via `calloutHeaderSource`) |
 | ocr | `synapse-ocr` | `quote` | Image OCR extraction results |
@@ -251,10 +261,12 @@ SynapseSettings {
     maxTokens: number                               // default: 2048
     temperature: number                             // default: 0.7
     cacheResponses: boolean                         // default: false (#397; opt-in AI response cache; caching is automatic at temperature 0)
-    systemOne: SystemOneSettings {                  // #558; System 1 decision lane (TypeSafe Jev) — settings.ts:113, defaults settings.ts:472
+    voice: VoiceMode                                // default: 'neutral' (#540; 'neutral' | 'match-note' | 'first-person' | 'custom', shared/voice.ts; settings.ts:138, default :478); prose voice for elaboration, deep dive, summarize via voiceInstruction()
+    voiceCustom: string                             // default: '' (settings.ts:140, default :479); used only when voice === 'custom'; blank -> neutral
+    systemOne: SystemOneSettings {                  // #558; System 1 decision lane (TypeSafe Jev) — settings.ts:115, defaults settings.ts:480
       enabled: boolean                              // default: false (note text leaves the vault; opt-in)
       apiKey: string                                // default: '' (CredentialProvider 'typesafe'; Test button via a minimal POST probe)
-      model: string                                 // default: 'jev-latest' (dropdown over SYSTEM_ONE_MODEL_OPTIONS, settings.ts:106: jev-latest | jev-1.13.0 | jev-preview)
+      model: string                                 // default: 'jev-latest' (dropdown over SYSTEM_ONE_MODEL_OPTIONS, settings.ts:108: jev-latest | jev-1.13.0 | jev-preview)
       confidenceFloor: number                       // default: 0.6 (routing floor ONLY for seats without a feature-level threshold — the tag vocabulary seat; organize and REM use their own knobs)
     }
   }
@@ -272,7 +284,7 @@ SynapseSettings {
     }
     proposal: ProposalSettings {
       maxProposalsPerNote: number                   // default: 3
-      preserveFrontmatter: boolean                  // default: true; declared only (settings.ts:131,470), no read site -- accept always keeps frontmatter (#552)
+      preserveFrontmatter: boolean                  // default: true; declared only (settings.ts:154,501), no read site -- accept always keeps frontmatter (#552)
       includeSourceContext: boolean                  // default: true
       includeBacklinkContext: boolean                // default: true (#500; backlink excerpts + tag siblings in the elaboration prompt)
     }
@@ -379,6 +391,19 @@ SynapseSettings {
     maxLinksPerNote: number                         // default: 20
     remFolderPath: string                           // default: '.synapse/rem'
   }
+  illustrate: IllustrateSettings {                  // #213; interface illustrate/types.ts:87, defaults settings.ts:623-635; opt-in (search terms leave the vault)
+    enabled: boolean                                // default: false
+    providers: Record<'wikimedia' | 'openverse', boolean>   // default: { wikimedia: true, openverse: true }
+    mermaid: boolean                                // default: false (AI Mermaid diagrams + note-data charts; off = photo spots only)
+    runAfter: Record<IllustrateRunAfterKey, boolean>  // keys elaboration | transcription | summarize | enrichment | deepDive; all default false; read live by the post-op illustrate leg
+    fetchLinkedPages: boolean                       // default: false (one request per linked page for source images)
+    maxLinkedPagesPerNote: number                   // default: 3
+    maxItemsPerNote: number                         // default: 3
+    licenseFilter: string[]                         // default: ['CC0', 'Public domain', 'CC BY', 'CC BY-SA']
+    preferDownload: boolean                         // default: true (off = embed the remote URL)
+    proposalFolderPath: string                      // default: '.synapse/illustrate'
+    excludeTags: string[]                           // default: ['no-illustrate']
+  }
   intake: IntakeSettings {
     enabled: boolean                                // default: true
     intakeFolder: string                            // default: 'Inbox'
@@ -400,6 +425,7 @@ SynapseSettings {
     'deep-dive': boolean                            // default: false
     title: boolean                                  // default: false
     rem: boolean                                    // default: false (NOTE: rewrites note body)
+    illustrate: boolean                             // default: false (settings.ts:657)
   }
   onboarding: OnboardingSettings {
     hasSeenWelcome: boolean                         // default: false (first-run welcome gate, #89)
@@ -418,7 +444,7 @@ Centralized path exclusion (#307). `ExclusionRule` and the glob matcher live in
 
 ```ts
 type FeatureId = 'elaboration' | 'enrichment' | 'summarize' | 'tidy' | 'organize'
-               | 'deep-dive' | 'audio' | 'video' | 'title' | 'image' | 'rem' | 'intake'
+               | 'deep-dive' | 'audio' | 'video' | 'title' | 'image' | 'rem' | 'intake' | 'illustrate'   // shared/exclusions.ts:16
 interface ExclusionRule { pattern: string; features: 'all' | FeatureId[] }
 // ALL_FEATURE_IDS (exclusions.ts) is a compile-time exhaustiveness guard over this union.
 ```
@@ -463,10 +489,10 @@ matches the `UnifiedItem` union exactly.
 
 ## Cross-Module Callbacks (wired in main.ts)
 
-Post-op hooks are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook(postOpDeps, source)` / `buildAutoOrganizeHook(postOpDeps, trigger)`, `main.ts:180-194`); `PostOpHookDeps` injects `enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`.
+Post-op hooks are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook(postOpDeps, source)` / `buildAutoOrganizeHook(postOpDeps, trigger)`, `main.ts:185-201`); `PostOpHookDeps` (`main.ts:185-192`) injects `enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`, `illustrate.illustrateNote` (`:191`).
 
 ```
-// #552: elaboration fires after the whole body is rewritten; ctx.producedRegion = { kind: 'whole-note' } (elaboration/index.ts:538)
+// #552: elaboration fires after the whole body is rewritten; ctx.producedRegion = { kind: 'whole-note' } (elaboration/index.ts:539)
 elaboration.onProposalAccepted(filePath) --> enrichment.enrich(filePath, 'elaboration')
 audio.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transcription')
 video.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transcription')
@@ -484,12 +510,17 @@ image.onExtractionComplete(filePath)     --> title.checkTitle(filePath)
 summarize.onSummaryComplete(filePath)    --> title.checkTitle(filePath)
 deepDive.onNoteAccepted(filePath)        --> title.checkTitle(filePath)
 
+// Illustrate leg (#213; pipeline/post-op-hooks.ts:68-75): wired when illustrate.enabled; fires only when illustrate.runAfter[key] is true LIVE
+<source hook>(filePath, ctx)             --> illustrate.illustrateNote(filePath, ctx)   // key: elaboration | transcription (audio/video/image) | summarize | deepDive | enrichment
+enrichment.onEnrichmentApplied(filePath, ctx) = buildPostOpHook(postOpDeps, 'enrichment')  (main.ts:198; illustrate leg only, never re-enrichment)
+
 elaboration.onViewRefreshNeeded()        --> views.refreshUnifiedView(workspace, viewSources)
 enrichment.onViewRefreshNeeded()         --> views.refreshUnifiedView(workspace, viewSources)
 organize.onViewRefreshNeeded()           --> views.refreshUnifiedView(workspace, viewSources)
 deepDive.onViewRefreshNeeded()           --> views.refreshUnifiedView(workspace, viewSources)
 title.onViewRefreshNeeded()              --> views.refreshUnifiedView(workspace, viewSources)
 rem.onViewRefreshNeeded()                --> views.refreshUnifiedView(workspace, viewSources)
+illustrate.onViewRefreshNeeded()         --> views.refreshUnifiedView(workspace, viewSources)
 <module>.onOpenProposalView()            --> views.activateUnifiedView(workspace, viewSources)   // "Review" toast action (#340)
 
 // Intake (IntakeDeps = ModuleWiring.intake, main.ts:72-79, handed to IntakeModule by the registry)
@@ -501,8 +532,8 @@ intake.deps.transcribeUrlToNote(url, _, file) --> transcription.appendUrlTranscr
 
 // Set by modules/registry.ts at construction (ModuleWiring.transcribeUrl = main.ts:70-71 -> urlTranscription.transcribe)
 video.urlTranscriber(url, parentOp)      --> wiring.transcribeUrl(url, parentOp)
-summarize.transcribeUrl(url, parentOp)   --> wiring.transcribeUrl(url, parentOp)   // full UrlTranscript passed through as TranscribedMedia { text, cached?, aiCached? } (modules/registry.ts:97)
-summarize.transcribeAudio(file)          --> vault.readBinary(file) -> audio.transcribe(data, file.name) -> { text: processed || raw, aiCached } (modules/registry.ts:98-102)
+summarize.transcribeUrl(url, parentOp)   --> wiring.transcribeUrl(url, parentOp)   // full UrlTranscript passed through as TranscribedMedia { text, cached?, aiCached? } (modules/registry.ts:99)
+summarize.transcribeAudio(file)          --> vault.readBinary(file) -> audio.transcribe(data, file.name) -> { text: processed || raw, aiCached } (modules/registry.ts:100-104)
 ```
 
 Enrichment callbacks wired when `enrichment.enabled && enrichment.autoEnrich` (evaluated once at wire time).
@@ -510,7 +541,8 @@ Deep-dive enrichment wired when `deepDive.autoEnrichOnAccept`.
 Deep-dive organize wired when `deepDive.autoOrganizeOnAccept && organize.enabled`.
 Summarize organize wired when `summarize.autoOrganizeOnSummarize && organize.enabled`.
 Title checks wired when `title.enabled && title.checkAfterOperations` — read LIVE per call under auto-enrich, once at wire time for the standalone (enrichment-off) hook. A source whose gates all fail keeps a `null` hook.
-Auto-accept getters wired for elaboration, enrichment, organize, deep-dive, title, rem (default `false`).
+Illustrate leg wired when `illustrate.enabled` (wire time); `illustrate.enabled && illustrate.runAfter[key]` re-read LIVE per call.
+Auto-accept getters wired for elaboration, enrichment, organize, deep-dive, title, rem, illustrate (default `false`).
 
 All callbacks are dispatched through `fireAndForget` (never awaited, `pipeline/post-op-hooks.ts`). For the queued modules (elaboration, audio, video, image) the callback fires from INSIDE the primary operation's `NoteOperationQueue` slot, so the chained `enrichment.enrich` / `title.checkTitle` enqueue BEHIND the primary write and run against the content it produced — nothing awaits them, so there is no cycle and no deadlock (#483). `title.acceptProposal` holds the PRE-rename key; work already queued under the old path runs afterwards, finds no file and exits early.
 
@@ -518,7 +550,7 @@ Automatic post-op chained calls pass `{ postOp: true }` (`enrichment.enrich(path
 
 ## Checkpoint System
 
-All vault-scan operations (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) use `CheckpointManager` for resumable operations:
+All vault-scan operations (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem, illustrate) use `CheckpointManager` for resumable operations:
 
 ```
 main.ts creates single CheckpointManager, injected into all modules
@@ -536,7 +568,7 @@ main.ts creates single CheckpointManager, injected into all modules
   |
   |-- UnifiedProposalView: shows checkpoint banner with Resume/Discard buttons
   |     -> CheckpointRecoveryModule.resume(id) / discard(id)
-  |-- resume(id): checkpointManager.resume -> resumeHandlers[checkpoint.module](checkpoint)  (map built in main.ts:122; each entry is <module>.resumeFromCheckpoint) -> refreshView()
+  |-- resume(id): checkpointManager.resume -> resumeHandlers[checkpoint.module](checkpoint)  (map built in main.ts:124-137; each entry is <module>.resumeFromCheckpoint) -> refreshView()
 ```
 
 Checkpoint cleanup: completed/discarded checkpoints older than 7 days are auto-removed on startup.
