@@ -256,7 +256,7 @@ body {
 }
 select.synapse-voice-select,
 textarea.synapse-voice-custom-input {
-  background: var(--background-primary);
+  background-color: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   color: var(--text-normal);
