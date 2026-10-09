@@ -152,9 +152,9 @@ Registry entries live in `src/commands/registry.ts`. Source ids are bare; Obsidi
 | `undo-tidy` | Undo last tidy on current note | disabled | palette | note | editorCallback → `undoTidy(file)` | never (gated off by status) |
 | `tidy-vault` | Scan folder for notes to tidy | active | fire-synapse | vault | pipeline → `scanVault()` | synthetic; never passed to `register()` |
 
-- `tidy-current-note` editorCallback (index.ts:52): if `findMatchingRule(path, "tidy", settings)` matches, shows a Notice naming the rule pattern and skips; otherwise runs `tidy(file)`.
-- `undo-tidy` is attempted in `onload()` (index.ts:67) but its registry status is `disabled`, so `addCommand` is never called.
-- `tidy-vault` (`commands/registry.ts:66`) is pipeline-only with `pipelineKey: 'tidy'`; Fire Synapse runs `scanVault()` vault-wide. It has no matching palette command (the palette `tidy-current-note` runs `tidy()` on one note — a different operation).
+- `tidy-current-note` editorCallback (index.ts:55): if `findMatchingRule(path, "tidy", settings)` matches, shows a Notice naming the rule pattern and skips; otherwise runs `tidy(file)`.
+- `undo-tidy` is attempted in `onload()` (index.ts:71) but its registry status is `disabled`, so `addCommand` is never called.
+- `tidy-vault` (`commands/registry.ts:71`) is pipeline-only with `pipelineKey: 'tidy'`; Fire Synapse runs `scanVault()` vault-wide. It has no matching palette command (the palette `tidy-current-note` runs `tidy()` on one note — a different operation).
 
 ## Configuration
 

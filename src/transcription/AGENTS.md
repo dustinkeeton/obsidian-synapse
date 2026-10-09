@@ -11,7 +11,7 @@ Transcription UI (unified modal, note-media modal, time-range modal, duration de
 Re-exported from the `index.ts` barrel (`index.ts:1-39`). Every data type of the router/tiers (`UrlTranscriptOptions`, `TranscriptStore`, `UrlTranscript`, `UrlTranscriptionStrategy`, `ProcessedTranscript`, `ProcessTranscriptOptions`, `ProcessTranscript`, `LocalExtractionDelegate`, `YouTubeTranscript`, `CaptionCue`, `VideoChapter`, `DurationResult`) is declared in `types.ts` and re-exported via `index.ts:21-31` (except `ProcessTranscriptOptions`, `CaptionCue`, `VideoChapter`, which stay module-internal). `NodeDeps` (`duration-detector.ts:38`) is not barrel-exported; it is only the type of the optional `deps?` param.
 
 ```ts
-// unified-modal.ts:14
+// unified-modal.ts:13
 class UnifiedTranscriptionModal extends Modal {
   constructor(
     app: App,
@@ -152,7 +152,7 @@ interface InsertUrlTranscriptDeps {
   onComplete?: (filePath: string) => void           // post-transcription hook (enrichment/title check)
 }
 function insertUrlTranscript(deps: InsertUrlTranscriptDeps, url: string, timeRange?: TimeRange, forceRefresh?: boolean): Promise<void>   // forceRefresh default false (#488)
-// insert-url-transcript.ts:84 — intake variant (#112/#184): appends to `file` under toast `intake-url-<path>`; RETHROWS on failure, except no speech (#524): notice, no write, resolves
+// insert-url-transcript.ts:89 — intake variant (#112/#184): appends to `file` under toast `intake-url-<path>`; RETHROWS on failure, except no speech (#524): notice, no write, resolves
 function appendUrlTranscript(
   deps: Pick<InsertUrlTranscriptDeps, 'app' | 'getSettings' | 'notifications' | 'router'>,
   url: string,
@@ -211,15 +211,15 @@ function transcribeNoteMedia(deps: NoteMediaTranscriptionDeps, file: TFile): Pro
 ## UnifiedTranscriptionModal
 
 Single modal combining audio file selection and video URL input (`unified-modal.ts`):
-- Local-file section rendered only when `enabledModules.audio || enabledModules.video` (`unified-modal.ts:39`)
+- Local-file section rendered only when `enabledModules.audio || enabledModules.video` (`unified-modal.ts:38`)
 - Dropdown lists all audio files in vault (filtered by `AUDIO_EXTENSIONS`, honors audio path exclusions via `isPathExcluded(path, 'audio', settings)`, #323)
-- URL section rendered when `enabledModules.video` on every platform (`unified-modal.ts:77`; no desktop gate since #184)
+- URL section rendered when `enabledModules.video` on every platform (`unified-modal.ts:76`; no desktop gate since #184)
 - URL text field with platform detection badge (`detectPlatform`); unknown non-empty input shows "Unsupported URL"
 - "Fetch a fresh transcript" toggle (`Setting.addToggle`, default off) sets `forceRefresh`, forwarded as the third `onTranscribeUrl` argument on both platforms (#488)
 - File selection and URL input are mutually exclusive (setting one clears the other)
-- On submit (`handleTranscribe`, `unified-modal.ts:130`): rejects a URL that fails `detectPlatform` via `notifications.info` (`:135`); empty input prompts to select a file or enter a URL
-  - Mobile (`!Platform.isDesktop`): transcribes the full file/URL with no duration step (`unified-modal.ts:145`, `:166`)
-  - Desktop: duration detection (ffprobe for files, yt-dlp for URLs) → `chooseTimeRange` (`unified-modal.ts:177`)
+- On submit (`handleTranscribe`, `unified-modal.ts:129`): rejects a URL that fails `detectPlatform` via `notifications.info` (`:134`); empty input prompts to select a file or enter a URL
+  - Mobile (`!Platform.isDesktop`): transcribes the full file/URL with no duration step (`unified-modal.ts:144`, `:165`)
+  - Desktop: duration detection (ffprobe for files, yt-dlp for URLs) → `chooseTimeRange` (`unified-modal.ts:186`)
     - Duration defined but < `MIN_SLIDER_DURATION` (10s): full file, no prompt
     - Otherwise `TimeRangeModal.openAndChoose()`: `selection` → `TimeRange`; `full` → `undefined`; `cancelled` → return without calling any callback
 - Callbacks receive `timeRange?: TimeRange` (undefined = full file)
@@ -290,9 +290,9 @@ Router (`url-transcription.ts`): with a `cache` and no `forceRefresh`, `cache.ge
 2. Attempt A: POST Innertube `/youtubei/v1/player` as the pinned ANDROID client (`INNERTUBE_ANDROID_CLIENT`, `:57`; bump `clientVersion` when YouTube answers 400 FAILED_PRECONDITION)
 3. Attempt B (only when A yields no tracks): GET watch page, balanced-brace extraction of `ytInitialPlayerResponse` (`extractJsonAfterMarker`, `:229`); web track URLs may be POT-gated (200 + empty body)
 4. `selectCaptionTrack` (`:366`): manual tracks before ASR, preferred languages in order, else first available
-5. Fetch json3 cues (`collectJson3Cues`, `:469`); empty → `null`
-6. `parseChaptersFromDescription` (`:530`) + `formatCaptionTranscript` (`:612`) → `{ text, structured }` (speaker-turn `>>` markers / chapters = structured)
-7. Any fetch/parse failure → `console.warn(redactError)` + `null`; per-request timeout 30s (`:72`); consent cookies sent unconditionally (`:84`)
+5. Fetch json3 cues (`collectJson3Cues`, `:449`); empty → `null`
+6. `parseChaptersFromDescription` (`:510`) + `formatCaptionTranscript` (`:592`) → `{ text, structured }` (speaker-turn `>>` markers / chapters = structured)
+7. Any fetch/parse failure → `console.warn(redactError)` + `null`; per-request timeout 30s (`:37`); consent cookies sent unconditionally (`:49`)
 
 ## Data Flow
 
@@ -316,7 +316,7 @@ NoteMediaModal (transcribeNoteMedia, note-media-transcription.ts:25; deps built 
   onExtractImages(embeds)            --> deps.onExtractImages(file, embeds)      (= ImageModule.extractAndInsert)
   ffmpegAvailable                    <-- await deps.isFfmpegAvailable()          (= createFfmpegAvailability(audio.extractor), main.ts:212)
 
-Intake (appendUrlTranscript, insert-url-transcript.ts:84; wired main.ts:72-79 as IntakeDeps.transcribeUrlToNote)
+Intake (appendUrlTranscript, insert-url-transcript.ts:89; wired main.ts:72-79 as IntakeDeps.transcribeUrlToNote)
   router.transcribe(url, { update }) --> buildUrlTranscriptBlock(result, url, video.embedInNote) --> vault.process(file) append; rethrows
 
 Other router consumers: summarize transcribeUrl callback (modules/registry.ts summarize entry via ModuleWiring.transcribeUrl), intake (above) — all four entry points (unified modal, note-media batch, summarize, intake) share the ONE router and therefore the one transcript store: any of them populates it and any of them reuses it (#488). Only the unified modal exposes `forceRefresh`; "Clear transcript cache" in the Video settings section (`video/settings-section.ts`) empties the store for every path.

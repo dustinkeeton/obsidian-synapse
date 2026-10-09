@@ -76,7 +76,7 @@ function proposalContentKey(
 function renderElaborationSettings(ctx: SettingsSectionContext): void
 ```
 
-`DetectionReason`, `DetectionResult`, `Proposal` are re-exported from `index.ts` via `export type` (index.ts:18). `ImageAnalysis` and `ImageAnalyzer` stay internal to `image-analyzer.ts` (not re-exported from `index.ts`). New proposals always set `insertionPoint: 'replace'` (proposer.ts:146); `'append' | 'after-heading' | 'replace-section'` and `insertionTarget` stay on the type only so proposal files written before #552 still pass `isProposal` (proposal-store.ts:12), and accepting such a file rewrites the body like any other.
+`DetectionReason`, `DetectionResult`, `Proposal` are re-exported from `index.ts` via `export type` (index.ts:18). `ImageAnalysis` and `ImageAnalyzer` stay internal to `image-analyzer.ts` (not re-exported from `index.ts`). New proposals always set `insertionPoint: 'replace'` (proposer.ts:147); `'append' | 'after-heading' | 'replace-section'` and `insertionTarget` stay on the type only so proposal files written before #552 still pass `isProposal` (proposal-store.ts:12), and accepting such a file rewrites the body like any other.
 
 ## File Inventory
 
@@ -140,11 +140,11 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
    |    2. outbound links (<=5, first 500 chars each)
    |    3. note tags (frontmatter + inline, folded) + <=10 tag-sibling titles -- only if includeBacklinkContext
    |  the first entry that does not fit ends gathering; whole block wrapped via wrapUntrusted(_, 'related notes')
-   |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:409)
+   |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:410)
    |  Context: external URLs (<=3) -- tweet(500) / Reddit(2000) / article(2000); video hosts skipped
-   |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:251)
+   |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:252)
    |  Guard B: attempted>0 && externalContext='' && isLinkDominated -> return null (proposer.ts:126)
-   |  buildPrompt(basename, BODY, ...) always prepends `Note title: "<basename>"` (proposer.ts:183); the prompt never carries YAML
+   |  buildPrompt(basename, BODY, ...) always prepends `Note title: "<basename>"` (proposer.ts:184); the prompt never carries YAML
    |  System prompt REWRITE_SYSTEM_PROMPT (proposer.ts:37) + voiceInstruction(settings.ai) (proposer.ts:131, #540) + REWRITE_INSTRUCTIONS (proposer.ts:41):
    |  output the COMPLETE rewritten body, preserve the original intent, keep every sentence/embed/wikilink/URL, no frontmatter, no code fence
    |  AIClient.complete(prompt, systemPrompt, aiOpts)  (proposer.ts:136; aiOpts = trackAiCache(cacheUse), #527)
@@ -185,7 +185,7 @@ Body is analyzed with frontmatter stripped (detector.ts:61). Inbound links resol
 
 ## Title Signal and Anti-Fabrication Guards (#380, #387)
 
-The note title is surfaced as context in every prompt (`Note title: "<basename>"`, proposer.ts:183); an empty body seeds the proposal from the title alone rather than an empty block (proposer.ts:189). "Body" here is the frontmatter-stripped content (proposer.ts:81), so a frontmatter-only note counts as empty.
+The note title is surfaced as context in every prompt (`Note title: "<basename>"`, proposer.ts:184); an empty body seeds the proposal from the title alone rather than an empty block (proposer.ts:190). "Body" here is the frontmatter-stripped content (proposer.ts:81), so a frontmatter-only note counts as empty.
 
 Guard A (empty-body + generic title), proposer.ts:95:
 
@@ -196,7 +196,7 @@ if (body.trim() === '' && isGenericTitle(noteFile.basename)) {
 }
 ```
 
-`isGenericTitle` is imported from the `../shared` barrel (shared/index.ts:152), which re-exports it from `shared/title-detector.ts:69` -- not a local copy, and not from the `title/` feature module (dependency rules forbid feature-to-feature imports; `title/` re-exports `isUntitled` from the same shared source). `isGenericTitle(t) === isUntitled(t) || isDateStyleTitle(t) || isBareUrlTitle(t)` (shared/title-detector.ts:69-71). It returns true for Obsidian "Untitled" defaults, date-style daily-note names (e.g. `2026-06-25`, `YYYYMMDD`, `DD-MM-YYYY`), and bare URLs. A real title like "Photosynthesis" is not generic, so the title-led prompt still runs.
+`isGenericTitle` is imported from the `../shared` barrel (shared/index.ts:186), which re-exports it from `shared/title-detector.ts:69` -- not a local copy, and not from the `title/` feature module (dependency rules forbid feature-to-feature imports; `title/` re-exports `isUntitled` from the same shared source). `isGenericTitle(t) === isUntitled(t) || isDateStyleTitle(t) || isBareUrlTitle(t)` (shared/title-detector.ts:69-71). It returns true for Obsidian "Untitled" defaults, date-style daily-note names (e.g. `2026-06-25`, `YYYYMMDD`, `DD-MM-YYYY`), and bare URLs. A real title like "Photosynthesis" is not generic, so the title-led prompt still runs.
 
 Guard B (link-dominated note, all fetches failed), proposer.ts:126: when the note is essentially just link(s) and every external fetch returned nothing, `generate()` returns null rather than fabricating from a URL slug. `isLinkDominated` delegates to the shared `isEffectivelyEmptyProse` (`shared/prose-reduction.ts`: URLs and `![[embeds]]` removed, links reduced to their label, fewer than `MIN_PROSE_CHARS` = 10 letters/digits left), the same rule summarize uses to drop empty note content (#544). Both guards return `null`; callers skip the file without creating a proposal.
 
@@ -255,7 +255,7 @@ const MAX_IMAGES_PER_NOTE = 5
 - Caps at `MAX_IMAGES_PER_NOTE` (5).
 - Resolves via `metadataCache.getFirstLinkpathDest`; reads binary; downscales over `settings.image.maxImageSizeMb` (default 5) MB via `preprocessImage` from the `../shared` barrel (image-analyzer.ts:117; downscale surfaced via `notifications.info`, 3s dedup #396).
 - Passes the vision model per call: `aiClient.chat(..., { ...aiOpts, model: settings.image.visionModel || settings.ai.model })` (image-analyzer.ts:150); `settings.ai.model` is never mutated.
-- Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:411).
+- Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:412).
 
 ## Configuration
 
@@ -302,7 +302,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 | type `SettingsSectionContext` | `../shared` | settings-section.ts |
 | `CommandRegistrar`, `isInFlow` | `../commands` | index.ts |
 
-No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:424). `index.ts` no longer imports `buildCallout` / `CALLOUT_TYPES`; `CALLOUT_TYPES.elaboration` and its CSS remain in `shared/callouts.ts` + `styles.css` only to render notes elaborated before #552.
+No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:425). `index.ts` no longer imports `buildCallout` / `CALLOUT_TYPES`; `CALLOUT_TYPES.elaboration` and its CSS remain in `shared/callouts.ts` + `styles.css` only to render notes elaborated before #552.
 
 ## Invariants / Gotchas
 

@@ -29,16 +29,16 @@ function renderDevBuildBanner(containerEl: HTMLElement, info: BuildInfo, version
 
 // global-sections.ts
 function renderAiConfiguration(ctx: SettingsSectionContext): void   // :83  configSection('ai'); hosts renderTranscriptionCredentials, renderVoiceSetting (:244, #540) and, last, renderSystemOneCredentials (:247, #558)
+function renderAutoAccept(ctx: SettingsSectionContext): void        // :283 configSection('autoAccept'); subscribes via ctx.onFeatureToggle
+function renderExclusions(ctx: SettingsSectionContext): void        // :354 configSection('exclusions')
+function renderGeneral(ctx: SettingsSectionContext): void           // :443 configSection('general')
+function renderAbout(ctx: SettingsSectionContext): void             // :491 configSection('about'); info card (manifest version, What's new → ChangelogModal), support tiles from FUNDING_LINKS, danger-zone reset-all (#529)
 
 // voice-setting.ts:17 (#540)
 function renderVoiceSetting(body: HTMLElement, ctx: SettingsSectionContext): void   // one `.synapse-voice-card`: "Voice" Setting row (`.synapse-voice-row`, raw-DOM `select.synapse-voice-select` over VOICE_OPTIONS in row.controlEl; unknown saved value -> neutral), `.synapse-voice-neutral-note` only while neutral, `.synapse-voice-custom` panel (label + hint, `textarea.synapse-voice-custom-input`, info-icon blank hint, live `N chars` count) only while custom; card gets `synapse-voice-card--custom` while custom; all toggled in place, no rerender; writes settings.ai.voice / voiceCustom
 
 // system-one-credentials.ts:7 (#558)
 function renderSystemOneCredentials(body: HTMLElement, ctx: SettingsSectionContext): void   // "System 1 decisions" toggle (rerender on change); when on: "TypeSafe API key" password row decorated via decorateCredentialField(provider 'typesafe'), "Decision model" dropdown over SYSTEM_ONE_MODEL_OPTIONS (unknown saved model normalized to the first option before the row renders), "Confidence floor" enhanced slider 0.5-0.95 step 0.05; writes settings.ai.systemOne
-function renderAutoAccept(ctx: SettingsSectionContext): void        // :283 configSection('autoAccept'); subscribes via ctx.onFeatureToggle
-function renderExclusions(ctx: SettingsSectionContext): void        // :354 configSection('exclusions')
-function renderGeneral(ctx: SettingsSectionContext): void           // :443 configSection('general')
-function renderAbout(ctx: SettingsSectionContext): void             // :491 configSection('about'); info card (manifest version, What's new → ChangelogModal), support tiles from FUNDING_LINKS, danger-zone reset-all (#529)
 ```
 
 ## File Inventory

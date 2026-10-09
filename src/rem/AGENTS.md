@@ -13,7 +13,7 @@ class RemModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null
 
-  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:44; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar); #228 getter default () => false
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:51; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar); #228 getter default () => false
   onload(): Promise<void>
   onunload(): void
   remScanNote(filePath: string): Promise<RemProposal | null>
@@ -106,7 +106,7 @@ remScanNote(filePath)
   --> gatherCandidates(file, content, cacheUse):
         MentionScanner.scan(...) literal candidates, down-weighted by titleMatchWeight
         SemanticMatcher.match(..., trackAiCache(cacheUse)) always-on, filtered by confidenceThreshold   (#527)
-          titles = included notes minus self, literal matches, and every [[wikilink]] target already in the note (linkedTargets, :318; getFirstLinkpathDest + link text)
+          titles = included notes minus self, literal matches, and every [[wikilink]] target already in the note (linkedTargets, semantic-matcher.ts:318; getFirstLinkpathDest + link text)
           lane on (matchOnLane, :147) — zero complete() calls (#566):
             anchorSentences(content[0:4000]) (:54; frontmatter/code fences/list markers skipped, sentences with [ ] | ` dropped, deduped, <= MAX_CHOICE_OPTIONS-1); none -> []
             one score per title over RELEVANCE_LEVELS (:26) with its folder in the question; relevance = P(strongly related) only (relevanceFromScore, :41)
@@ -171,7 +171,7 @@ Resume re-checks exclusion rules silently (a path may have been excluded after c
 ## Exclusion Rules
 
 ```ts
-// index.ts:L478-484
+// index.ts:L503-509
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (

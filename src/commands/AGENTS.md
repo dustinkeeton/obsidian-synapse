@@ -18,7 +18,7 @@ type CommandContext = 'note' | 'vault' | 'global'           // runtime env; driv
 type FeatureKey = 'main' | 'elaboration' | 'enrichment' | 'organize' | 'deep-dive'
                | 'summarize' | 'tidy' | 'rem' | 'illustrate' | 'video'                          // (types.ts:28)
 
-interface CommandDefinition {                                                                   // (types.ts:40)
+interface CommandDefinition {                                                                   // (types.ts:41)
   id: string                       // command id WITHOUT plugin prefix, e.g. 'scan-vault' (Obsidian -> 'synapse:scan-vault')
   name: string                     // command-palette display name
   feature: FeatureKey

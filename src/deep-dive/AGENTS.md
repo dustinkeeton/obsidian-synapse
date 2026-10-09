@@ -25,7 +25,7 @@ class DeepDiveModule {
   rejectProposal(id: string): Promise<void>                                   // index.ts:227
 }
 
-// types.ts:85 — NOT barrel-exported (index.ts:33-40 exports only the proposal/run/topic types); the registry passes an inline lambda
+// types.ts:85 — NOT barrel-exported (index.ts:32-39 exports only the proposal/run/topic types); the registry passes an inline lambda
 type SuggestDirectory = (text: string, aiOpts?: AIRequestOptions) => Promise<string | null>
 
 function buildDeepDivePath(
@@ -86,7 +86,7 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 
 ## Dependency on `organize` module
 
-`deep-dive` has NO `../organize` import. In `auto-organize` nesting mode, `buildAutoOrganizedPath` (index.ts:629) calls the injected `this.suggestDirectory(topicTitle, aiOpts)` (the proposal's `aiOpts`, #527) when it is non-null; a non-null directory becomes `normalizePath(`${directory}/${safeName}.md`)`, otherwise (null result, thrown error, or no callback wired) it falls back to `buildDeepDivePath` (nested mode, index.ts:647). The topic-extraction + directory-scoring + 0.6 score floor live on the organize side (`OrganizeModule.suggestDirectory`, `organize/index.ts:68`); the registry wires the two (`modules/registry.ts:111-116`).
+`deep-dive` has NO `../organize` import. In `auto-organize` nesting mode, `buildAutoOrganizedPath` (index.ts:629) calls the injected `this.suggestDirectory(topicTitle, aiOpts)` (the proposal's `aiOpts`, #527) when it is non-null; a non-null directory becomes `normalizePath(`${directory}/${safeName}.md`)`, otherwise (null result, thrown error, or no callback wired) it falls back to `buildDeepDivePath` (nested mode, index.ts:647). The topic-extraction + directory-scoring + 0.6 score floor live on the organize side (`OrganizeModule.suggestDirectory`, `organize/index.ts:80`); the registry wires the two (`modules/registry.ts:111-116`).
 
 ## Data Flow
 
@@ -249,7 +249,7 @@ Out: Nothing consumed by other feature modules. `modules/registry.ts:111-116` co
 |-----------|---------------------|
 | Note excluded by rule or excludeTag | `isExcluded` true -> info Notice naming the matched rule pattern; abort before any AI call (index.ts:250) |
 | Empty/unreadable note | info Notice "Could not read note content"; abort (index.ts:263) |
-| Topic extraction throws (Phase 1) | `scanOp.error(...)`; abort, no run created (index.ts:275) |
+| Topic extraction throws (Phase 1) | `scanOp.error(...)`; abort, no run created (index.ts:279) |
 | Zero topics found / all already in vault | `scanOp.finish(withCacheReport('No topics found', [scanUse]))` or info Notice; abort (index.ts:284) |
 | Depth modal dismissed / user declines confirm | info Notice "Deep dive cancelled"; abort (index.ts:303, index.ts:314) |
 | Child topic extraction throws (per-node) | caught; `childTopics = []`, score from content alone, recursion stops for that branch (index.ts:436) |

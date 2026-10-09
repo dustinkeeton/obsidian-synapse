@@ -160,7 +160,7 @@ Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the not
 
 | Import | From |
 |--------|------|
-| `isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean` | `../commands` (`registry.ts:112`; fail-open on unmapped key) |
+| `isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean` | `../commands` (`commands/registry.ts:112`; fail-open on unmapped key) |
 | `fireAndForget` (runtime) | `../shared` (`post-op-hooks.ts:2`) |
 | `NotificationManager`, `SourceContext` (types) | `../shared` (`post-op-hooks.ts:3`, `types.ts:2`) |
 | `SynapseSettings`, `IllustrateRunAfterKey` (types) | `../settings` (`post-op-hooks.ts:4`; `IllustrateRunAfterKey` is re-exported by `settings.ts:11` from `illustrate/types`) |

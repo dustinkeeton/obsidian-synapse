@@ -26,7 +26,7 @@ const IMAGE_EXTENSIONS: RegExp   // /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i
 const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi
 
 // NOT exported here any more: `preprocessImage` / `PreprocessResult` / `arrayBufferToBase64` live in `shared`
-// (`shared/image-preprocess.ts`, `shared/encoding.ts`; barrel `shared/index.ts:20-22`)
+// (`shared/image-preprocess.ts`, `shared/encoding.ts`; barrel `shared/index.ts:49-50`)
 
 // re-exported from ./settings-section (index.ts:243)
 function renderImageSettings(ctx: SettingsSectionContext): void
@@ -116,7 +116,7 @@ Output callout (collapsed):
 
 ## Vision Model Override
 
-`ImageExtractor.extract()` (extractor.ts:46) passes `{ ...aiOpts, model: settings.image.visionModel || settings.ai.model }` to `AIClient.chat()`. `AIRequestOptions.model` (`shared/ai-client.ts:33`) is a per-call override: `chat()` resolves `opts.model || ai.model` (`ai-client.ts:383`), keys the response cache on it, and threads it through `dispatch` to every provider call. `settings.ai.model` is never mutated, so concurrent callers cannot observe a foreign model. Empty `visionModel` means no override.
+`ImageExtractor.extract()` (extractor.ts:46) passes `{ ...aiOpts, model: settings.image.visionModel || settings.ai.model }` to `AIClient.chat()`. `AIRequestOptions.model` (`shared/ai-client.ts:31`) is a per-call override: `chat()` resolves `opts.model || ai.model` (`ai-client.ts:337`), keys the response cache on it, and threads it through `dispatch` to every provider call. `settings.ai.model` is never mutated, so concurrent callers cannot observe a foreign model. Empty `visionModel` means no override.
 
 ## Exclusion Behavior
 

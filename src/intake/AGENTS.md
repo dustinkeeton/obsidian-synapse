@@ -97,7 +97,7 @@ startup catch-up scan (#462), armed by onload via workspace.onLayoutReady + CATC
         markProcessedAndMaybeMove (index.ts:512) --> optional writeCaptureBreadcrumb (index.ts:606)
 ```
 
-`transcribeUrlToNote` implementation is `appendUrlTranscript` (`src/transcription/insert-url-transcript.ts:84`), wired at `main.ts:72-79`: `UrlTranscriptionRouter.transcribe(url)` → `buildUrlTranscriptBlock(result, url, video.embedInNote)` → `vault.process` append under operation toast `intake-url-<path>`; on error the toast reports and the error is rethrown so the note stays un-stamped. No speech (#524) resolves instead: notice, nothing appended, note stamped (final, not retriable).
+`transcribeUrlToNote` implementation is `appendUrlTranscript` (`src/transcription/insert-url-transcript.ts:89`), wired at `main.ts:72-79`: `UrlTranscriptionRouter.transcribe(url)` → `buildUrlTranscriptBlock(result, url, video.embedInNote)` → `vault.process` append under operation toast `intake-url-<path>`; on error the toast reports and the error is rethrown so the note stays un-stamped. No speech (#524) resolves instead: notice, nothing appended, note stamped (final, not retriable).
 
 ## Startup Catch-up Scan (#462)
 

@@ -81,7 +81,7 @@ main.ts
   |-- deep-dive/ --> shared/, commands/ (NO organize import: folder suggestion arrives as the registry-injected `SuggestDirectory` callback, modules/registry.ts:110-116)
   |-- title/ --> shared/
   |-- rem/ --> shared/, commands/
-  |-- illustrate/ --> shared/ (barrel, plus a deep type-only import of shared/insertion-point in illustrate/types.ts:1), commands/ (type-only CommandRegistrar); providers/ via requestUrl only
+  |-- illustrate/ --> shared/ (barrel only), commands/ (type-only CommandRegistrar); providers/ via requestUrl only
   +-- intake/ --> shared/ ONLY (cross-module work via injected IntakeDeps.fireOnFile / transcribeUrlToNote)
 ```
 
@@ -112,13 +112,6 @@ Key constraints:
 
 Sanctioned exceptions:
 - `settings.ts` type-only imports from feature internal type files: `title/types` (`TitleDuplicateStrategy`, `settings.ts:8`) and `illustrate/types` (`IllustrateSettings`, `IllustrateRunAfterKey`, `settings.ts:10`). Erased at compile time; no runtime cycle.
-
-Known architecture issues (unfixed):
-
-| Location | Issue |
-|----------|-------|
-| `illustrate/types.ts:1` | Deep import `../shared/insertion-point` (type-only) instead of the `../shared` barrel |
-| `settings.ts:9` | Comment claims `illustrate/types.ts` has no imports; it has one type-only import (`shared/insertion-point`). No runtime cycle (type-only, erased) |
 
 ## Plugin Lifecycle (main.ts)
 
@@ -267,7 +260,7 @@ SynapseSettings {
       enabled: boolean                              // default: false (note text leaves the vault; opt-in)
       apiKey: string                                // default: '' (CredentialProvider 'typesafe'; Test button via a minimal POST probe)
       model: string                                 // default: 'jev-latest' (dropdown over SYSTEM_ONE_MODEL_OPTIONS, settings.ts:108: jev-latest | jev-1.13.0 | jev-preview)
-      confidenceFloor: number                       // default: 0.6 (routing floor ONLY for seats without a feature-level threshold — the tag vocabulary seat; organize and REM use their own knobs)
+      confidenceFloor: number                       // default: 0.6 (routing floor ONLY for seats without a feature-level threshold — the tag vocabulary and frontmatter-value seats; organize and REM use their own knobs)
     }
   }
   elaboration: ElaborationSettings {

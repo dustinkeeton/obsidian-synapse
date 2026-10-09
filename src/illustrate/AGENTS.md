@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # Illustrate Module
@@ -13,14 +13,14 @@ class IllustrateModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null
 
-  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:65; #228 getter default () => false
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:87; #228 getter default () => false
   onload(): Promise<void>                                            // registers illustrate-current-note, illustrate-folder
   onunload(): void
   getPendingProposals(): Promise<IllustrateProposal[]>
   illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast (info notice + no-op when no provider and Mermaid are enabled); with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch, placed INSIDE ctx.producedRegion when it is a callout; skipped while a run for the path is in flight, when a proposal is already pending, or when the region already holds a synapse-illustrate callout
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:218; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:264
-  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:317; queued write
+  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:277; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:327
+  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:380; queued write
   rejectProposal(id: string): Promise<void>
 }
 

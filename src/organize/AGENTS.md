@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-06
+last-updated: 2026-10-09
 ---
 
 # organize module
@@ -78,7 +78,7 @@ interface ResolvedPlacement { topics: NoteTopic[]; placement?: Placement; lane: 
 class ContentAnalyzer {
   constructor(app: App, getSettings: () => SynapseSettings, placement?: PlacementDecider)   // :40; default PlacementDecider(app, getSettings)
   analyze(file: TFile, aiOpts?: DecisionRequestOptions): Promise<ContentAnalysis>          // :53; reads body/tags/links, derives currentDir from file.parent (vault root -> ''), then resolvePlacement; sets ContentAnalysis.placement and .lane
-  resolvePlacement(body: string, tags: string[], currentDir: string, aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement>   // :82; kind 'existing' | 'keep' -> { topics: [], placement, lane: 'system-one' } + aiOpts.onSystemOne(); 'new-directory' | 'undecided' -> extractTopics + placement carried, lane 'system-two'; lane off / null / any lane error (console.warn via redactError, :92) -> topics only (#558)
+  resolvePlacement(body: string, tags: string[], currentDir: string, aiOpts?: DecisionRequestOptions): Promise<ResolvedPlacement>   // :82; kind 'existing' | 'keep' -> { topics: [], placement, lane: 'system-one' } + aiOpts.onSystemOne(); 'new-directory' | 'undecided' -> extractTopics + placement carried, lane 'system-two'; lane off / null / any lane error (console.warn via redactError, :97) -> topics only (#558)
   extractTopics(body: string, tags: string[], aiOpts?: AIRequestOptions): Promise<NoteTopic[]>   // aiOpts reaches complete() inside withRetry; unchanged generative path
   parseTopicResponse(raw: string): NoteTopic[]
   topicsFromTags(tags: string[]): NoteTopic[]

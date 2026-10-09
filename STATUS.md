@@ -71,7 +71,6 @@
 | Ribbon icons always visible; image checkpoint resume is a no-op | Low | No `removeRibbonIcon` API; resume discards + asks to re-run (same as deep-dive) |
 | Back-edges from the base layer | Low | Type-only: `shared/settings-section.ts → main` (the audio → video one is gone, replaced by `AudioClipper`). Runtime: `shared/settings-reset.ts → settings` (`DEFAULT_SETTINGS`); acyclic because `settings.ts` reaches `shared` only via `settings-migrations.ts` |
 | `rem.titleMatchWeight` has no UI | Low | Edit `data.json` to change (#380) |
-| Stale settings copy | Low | Elaboration auto-accept still says it "appends an elaboration callout" (pre-#552); the System 1 confidence floor says "currently tag vocabulary" though frontmatter uses it too (#563) |
 
 ## External Dependencies (no npm runtime dependencies)
 

@@ -52,7 +52,7 @@ type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown'
 
 // Owned by this module
 function findVideoUrls(content: string): VideoUrlEmbed[]   // re-exported via index.ts:28
-function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:382
+function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:378
 
 // Types (re-exported index.ts:17-25)
 interface VideoProcessOptions {
@@ -107,7 +107,7 @@ class DependencyMissingError extends Error {   // audio-extractor.ts:77
   readonly tool: 'yt-dlp' | 'ffmpeg'
 }
 class AudioCodecReadError extends Error {}     // audio-extractor.ts:57; ffprobe could not read the audio codec
-function hasTranscriptionBelow(lines: string[], embedLine: number, url: string): boolean  // note-scanner.ts:33
+function hasTranscriptionBelow(lines: string[], embedLine: number, url: string): boolean  // note-scanner.ts:31
 class FrameExtractor {                          // frame-extractor.ts:6 — placeholder, throws on use
   constructor(getSettings: () => SynapseSettings)
   extractFrames(videoPath: string): Promise<string[]>
