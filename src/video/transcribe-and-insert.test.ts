@@ -46,7 +46,8 @@ function makeModule() {
 			video: { enabled: true, embedInNote: true, downloadFolder: 'Media' },
 			exclusions: [],
 		}) as never;
-	const plugin = { app: { vault } } as never;
+	const metadataCache = { getFirstLinkpathDest: vi.fn((lp: string) => (lp === 'Real' ? {} : null)) };
+	const plugin = { app: { vault, metadataCache } } as never;
 
 	const mod = new VideoModule(
 		makeModuleDeps({
@@ -88,6 +89,20 @@ describe('VideoModule.transcribeAndInsert tier routing (#184)', () => {
 		const content = store.get(noteFile.path)!;
 		expect(content).toContain('> [!quote|synapse-transcription]- Transcription of');
 		expect(content).toContain('> caption transcript');
+	});
+
+	it('unlinks transcript wikilinks to missing notes but keeps the video embed (#581)', async () => {
+		const { mod, store, noteFile } = makeModule();
+		mod.urlTranscriber = vi.fn().mockResolvedValue({
+			text: 'about [[Real]] and [[Ghost]]',
+			videoVaultPath: 'Media/2026-07-15-video.mp4',
+		});
+
+		await mod.transcribeAndInsert(noteFile as never, [embed(1)]);
+
+		const content = store.get(noteFile.path)!;
+		expect(content).toContain('![[2026-07-15-video.mp4]]');
+		expect(content).toContain('> about [[Real]] and Ghost');
 	});
 
 	it('embeds the downloaded video when the routed result carries a vault path', async () => {

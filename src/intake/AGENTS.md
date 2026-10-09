@@ -176,3 +176,7 @@ All under `settings.intake` (`IntakeSettings`, `settings.ts:328`; defaults `DEFA
 | `fireOnFile`, `transcribeUrlToNote` | injected via `IntakeDeps` (wired in `main.ts:72-79`) | |
 
 Architecture rule: intake imports no feature module. `fireOnFile` is `SynapseRunner.fireOnFile`; `transcribeUrlToNote` is `appendUrlTranscript` from `src/transcription/insert-url-transcript.ts` (router transcribe + `buildUrlTranscriptBlock` + append), both injected by `main.ts`.
+
+## Unresolved Links (#581)
+
+- Fetched article text is run through `stripUnresolvedLinks` before it is appended; the capture-log breadcrumb links only to the note it just moved.

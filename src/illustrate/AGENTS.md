@@ -154,3 +154,7 @@ acceptProposal(id, itemIds)
 | `requestUrl`, `TFile`, `Plugin`, `normalizePath`, `Setting` | `obsidian` |
 
 No feature-module imports. Mobile-safe: `requestUrl` only, no Node built-ins.
+
+## Unresolved Links (#581)
+
+- Accepted item captions and built blocks pass through `stripUnresolvedLinks` (captions are unlinked before the `alreadyInserted` check so dedup stays stable); `![[asset]]` embeds and Mermaid fences are untouched.

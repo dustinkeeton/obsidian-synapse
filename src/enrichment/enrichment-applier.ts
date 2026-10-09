@@ -2,7 +2,7 @@ import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import {
 	mergeTags, parseFrontmatter, serializeFrontmatter, buildCallout, CALLOUT_TYPES, calloutHeaderSource,
-	ENRICHMENT_START, ENRICHMENT_END, asStringArray,
+	ENRICHMENT_START, ENRICHMENT_END, asStringArray, linkResolves, stripUnresolvedLinks,
 } from '../shared';
 import { EnrichmentProposal, AcceptedItems } from './types';
 
@@ -46,6 +46,8 @@ export class EnrichmentApplier {
 		settings: SynapseSettings['enrichment']
 	): string {
 		const parsed = parseFrontmatter(content);
+		const path = proposal.sourceNotePath;
+		const unlink = <T>(value: T): T => this.unlinkMissing(value, path);
 
 		// 1. Merge tags into frontmatter
 		if (accepted.tags.length > 0) {
@@ -64,15 +66,15 @@ export class EnrichmentApplier {
 					const existing = asStringArray(raw);
 					parsed.frontmatter[fm.key] = [
 						...existing,
-						...fm.value.filter(v => !existing.includes(v)),
+						...unlink(fm.value).filter(v => !existing.includes(v)),
 					];
 				} else {
-					parsed.frontmatter[fm.key] = fm.value;
+					parsed.frontmatter[fm.key] = unlink(fm.value);
 				}
 			} else {
 				// Only add if key doesn't already exist
 				if (!(fm.key in parsed.frontmatter)) {
-					parsed.frontmatter[fm.key] = fm.value;
+					parsed.frontmatter[fm.key] = unlink(fm.value);
 				}
 			}
 		}
@@ -86,7 +88,8 @@ export class EnrichmentApplier {
 		// Build Related Notes section
 		const acceptedLinkPaths = new Set(accepted.internalLinks);
 		const internalLinks = proposal.result.internalLinks.filter(l =>
-			acceptedLinkPaths.has(l.targetPath)
+			acceptedLinkPaths.has(l.targetPath) &&
+			linkResolves(this.linkText(l.displayText), this.app.metadataCache, path)
 		);
 
 		if (internalLinks.length > 0) {
@@ -166,6 +169,19 @@ export class EnrichmentApplier {
 		return serializeFrontmatter(parsed.frontmatter, body);
 	}
 
+	/** Strip unresolved wikilinks from AI-suggested frontmatter strings (#581). */
+	private unlinkMissing<T>(value: T, sourcePath: string): T {
+		const cache = this.app.metadataCache;
+		if (typeof value === 'string') return stripUnresolvedLinks(value, cache, sourcePath) as T;
+		if (Array.isArray(value)) return value.map(v => this.unlinkMissing(v as unknown, sourcePath)) as T;
+		return value;
+	}
+
+	/** The link text written for a Related Notes entry. */
+	private linkText(displayText: string): string {
+		return displayText.replace(/[[\]|]/g, '');
+	}
+
 	private buildLinksSection(
 		links: { targetPath: string; displayText: string; reason: string }[],
 		heading: string
@@ -173,7 +189,7 @@ export class EnrichmentApplier {
 		const bodyLines: string[] = [];
 		for (const link of links) {
 			// Sanitize display text and reason to prevent wikilink/markdown injection
-			const safeDisplay = link.displayText.replace(/[[\]|]/g, '');
+			const safeDisplay = this.linkText(link.displayText);
 			const safeReason = link.reason.replace(/[[\]()]/g, '');
 			bodyLines.push(`- [[${safeDisplay}]] — ${safeReason}`);
 		}

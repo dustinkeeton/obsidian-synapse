@@ -110,6 +110,21 @@ describe('IllustrateModule', () => {
 			expect(IllustrateStore.prototype.updateStatus).toHaveBeenCalledWith('prop1', 'partially-accepted', ['i-photo']);
 		});
 
+		it('unlinks caption wikilinks to missing notes and keeps the embed (#581)', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+			app.metadataCache.getFirstLinkpathDest.mockImplementation((lp: string) => (lp === 'Red panda' ? mockFile('Red panda.md') : null));
+			vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/red-panda.jpg'));
+			const p = proposal();
+			p.items[0].caption = 'A [[Red panda]] in a [[Bamboo Forest|forest]]';
+			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue(p);
+
+			await module.acceptProposal('prop1', ['i-photo']);
+
+			const written = (await app.vault.process.mock.results[0].value) as string;
+			expect(written).toContain('![[attachments/red-panda.jpg]]');
+			expect(written).toContain('> [!note|synapse-illustrate] A [[Red panda]] in a forest\n');
+		});
+
 		it('embeds the remote URL without downloading when preferDownload is off', async () => {
 			settings.illustrate.preferDownload = false;
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));

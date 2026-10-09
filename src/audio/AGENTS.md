@@ -239,3 +239,7 @@ never interpreted as text.
 No commands registered directly by this module; `main.ts` registers the unified transcription commands and routes them here:
 - `synapse:transcribe-media` (registry `status: disabled` — gated out) -> `UnifiedTranscriptionModal` -> `AudioModule.transcribeFileToActiveNote(file, timeRange?)`
 - `synapse:transcribe-note-media` (active) -> `NoteMediaModal` -> `transcribeAndInsert(file, embeds)` or `transcribeAndInsertCombined(file, embeds)` when the user opts to combine (ffmpeg-gated)
+
+## Unresolved Links (#581)
+
+- Transcription blocks (single, batch, combined) pass through `stripUnresolvedLinks` before insertion.

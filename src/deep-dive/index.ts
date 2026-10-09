@@ -7,6 +7,7 @@ import {
 	NotificationManager, readNote, writeNote, wordCount,
 	CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport,
+	stripUnresolvedLinks,
 } from '../shared';
 import type { AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { DeepDiveStore } from './deep-dive-store';
@@ -161,8 +162,9 @@ export class DeepDiveModule implements FeatureModule {
 		try {
 			await this.store.updateProposalStatus(id, 'accepted');
 
-			// Build navigation for all accepted proposals in this run
-			await this.updateRunNavigation(proposal.runId, proposal.proposedPath, proposal.proposedContent);
+			// Links resolve at write time: a rejected or not-yet-accepted parent becomes plain text (#581).
+			const content = stripUnresolvedLinks(proposal.proposedContent, this.plugin.app.metadataCache, proposal.proposedPath);
+			await this.updateRunNavigation(proposal.runId, proposal.proposedPath, content);
 
 			if (!options?.silent) {
 				this.notifications.success(`Created ${proposal.proposedPath}`);

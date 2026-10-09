@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createEl, ToggleComponent } from '../__mocks__/obsidian';
+import { createEl, ToggleComponent, Setting } from '../__mocks__/obsidian';
 import { createSettingsSectionContext } from '../shared';
 import { renderDeepDiveSettings } from './settings-section';
 import { DEFAULT_SETTINGS } from '../settings';
@@ -23,7 +23,7 @@ function makeCtx(mutate?: (s: SynapseSettings) => void) {
 }
 
 describe('renderDeepDiveSettings', () => {
-	beforeEach(() => { ToggleComponent.instances.length = 0; });
+	beforeEach(() => { ToggleComponent.instances.length = 0; Setting.instances.length = 0; });
 
 	it('renders an accordion (key "deepDive") with the header toggle reflecting enabled state', () => {
 		const { ctx, containerEl } = makeCtx((s) => { s.deepDive.enabled = true; });
@@ -49,6 +49,18 @@ describe('renderDeepDiveSettings', () => {
 		const headerToggle = ToggleComponent.instances.find((t) => t.tooltip === FEATURE_TOOLTIP)!;
 		await headerToggle._trigger(false);
 		expect(plugin.settings.deepDive.enabled).toBe(false);
+		expect(saveSettings).toHaveBeenCalled();
+	});
+
+	it('renders the auto-REM toggle off by default and persists changes (#581)', async () => {
+		const { ctx, plugin, saveSettings } = makeCtx((s) => { s.deepDive.enabled = true; });
+		renderDeepDiveSettings(ctx);
+		const row = Setting.instances.find((s) => s.name === 'Auto-REM on accept');
+		expect(row).toBeDefined();
+		const toggle = row!.components[0];
+		expect(toggle.getValue()).toBe(false);
+		await toggle._trigger(true);
+		expect(plugin.settings.deepDive.autoRemOnAccept).toBe(true);
 		expect(saveSettings).toHaveBeenCalled();
 	});
 });

@@ -7,7 +7,7 @@ import {
 	ensureFolder, NotificationManager, sanitizeUrl, buildCallout, buildMediaEmbedLines, calloutForTranscriptionResult,
 	CheckpointManager, NoteOperationQueue, generateId, detectPlatform, loadNodeModules,
 	isPathExcluded, findAvailableVaultPath, isNoSpeechError, noSpeechNotice,
-	transcriptCacheUse, withCacheReport,
+	transcriptCacheUse, withCacheReport, stripUnresolvedLinks,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { AudioExtractor, DependencyMissingError } from './audio-extractor';
@@ -280,7 +280,7 @@ export class VideoModule implements FeatureModule {
 			await this.plugin.app.vault.process(noteFile, (data) => {
 				const lines = data.split('\n');
 				for (const ins of inserts) {
-					lines.splice(ins.line + 1, 0, ins.block);
+					lines.splice(ins.line + 1, 0, stripUnresolvedLinks(ins.block, this.plugin.app.metadataCache, noteFile.path));
 				}
 				return lines.join('\n');
 			});

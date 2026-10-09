@@ -295,6 +295,7 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:23
 
 ## Invariants
 
+- Related Notes entries whose link text does not resolve (`linkResolves`) are dropped at apply time; unresolved `[[links]]` in suggested frontmatter strings become plain text (#581).
 - Applied sections are Obsidian callouts `> [!info|synapse-enrichment]` (`CALLOUT_TYPES.enrichment`, `src/shared/callouts.ts:L16`; base from `CALLOUT_BASES`, #554), written via `buildCallout` (`enrichment-applier.ts:L180,L208`); `removeEnrichmentSections` (`:L215`) strips both that form and the legacy bare `> [!synapse-enrichment]` via `calloutHeaderSource`.
 - Idempotent re-write / undo: `removeEnrichmentSections` strips both callout sections AND legacy comment markers `%% synapse-enrichment-start %%` / `%% synapse-enrichment-end %%` (`ENRICHMENT_START` / `ENRICHMENT_END`, `src/shared/callouts.ts:L66-67`) before re-writing (`enrichment-applier.ts:L215-240`).
 - Writes are atomic: `apply` and `undo` re-derive content inside `vault.process` callbacks (`enrichment-applier.ts:L36,L129`).

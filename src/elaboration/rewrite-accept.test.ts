@@ -386,4 +386,34 @@ describe('ElaborationModule accept rewrites the note body (#552)', () => {
 			expect(proposal.insertionPoint).toBe('replace');
 		});
 	});
+
+	describe('unresolved links (#581)', () => {
+		function resolveOnly(...names: string[]) {
+			harness.plugin.app.metadataCache.getFirstLinkpathDest.mockImplementation(
+				((lp: string) => (names.includes(lp) ? {} : null)) as never
+			);
+		}
+
+		it('unlinks model-written links to missing notes but keeps the note\'s own links', async () => {
+			completeMock.mockResolvedValue('See [[Real]], [[Ghost|a ghost]] and [[Someday]].');
+			const mod = build('Stub about [[Someday]].\n');
+			resolveOnly('Real');
+			const proposal = await generatePending(mod);
+
+			await mod.acceptProposal(proposal.id);
+
+			expect(harness.content()).toBe('See [[Real]], a ghost and [[Someday]].\n');
+		});
+
+		it('keeps links the user typed into the review edit', async () => {
+			completeMock.mockResolvedValue('See [[Ghost]].');
+			const mod = build('Stub.\n');
+			resolveOnly();
+			const proposal = await generatePending(mod);
+
+			await mod.acceptProposal(proposal.id, 'See [[Ghost]] and [[My Plan]].');
+
+			expect(harness.content()).toBe('See Ghost and [[My Plan]].\n');
+		});
+	});
 });

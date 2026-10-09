@@ -10,6 +10,7 @@ import {
 	parseFrontmatter,
 	redactError,
 	serializeFrontmatter,
+	stripUnresolvedLinks,
 	writeNote,
 } from '../shared';
 import type { ModuleDeps, FeatureModule } from '../shared';
@@ -486,9 +487,10 @@ export class IntakeModule implements FeatureModule {
 			return;
 		}
 
+		const article = stripUnresolvedLinks(articleContent.trim(), this.plugin.app.metadataCache, file.path);
 		await this.plugin.app.vault.process(file, (current) => {
 			const parsed = parseFrontmatter(current);
-			const newBody = `${parsed.body.trimEnd()}\n\n${articleContent.trim()}\n`;
+			const newBody = `${parsed.body.trimEnd()}\n\n${article}\n`;
 			return serializeFrontmatter(parsed.frontmatter, newBody);
 		});
 	}

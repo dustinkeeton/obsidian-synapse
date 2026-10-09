@@ -68,6 +68,7 @@ vi.mock('../audio', () => ({
 }));
 
 vi.mock('../shared', async () => ({
+	...(await vi.importActual<typeof import('../shared/link-guard')>('../shared/link-guard')),
 	// Use the REAL content-schema registry so auto-format detection runs as in
 	// production (the combined path consults detectSchemaFor on the combined text).
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),

@@ -6,6 +6,7 @@ import {
 	CALLOUT_TYPES, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
 	mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport, findMarkdownLinks,
+	stripUnresolvedLinks, wikilinkTargets,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { OperationHandle } from '../shared';
@@ -503,11 +504,16 @@ export class SummarizeModule implements FeatureModule {
 			for (const path of downloaded) {
 				lines.push(...buildMediaEmbedLines(path, embedInNote, lines.join('\n')));
 			}
-			lines.push(...callout.split('\n'));
+			lines.push(...this.unlinkMissing(callout, file.path, current).split('\n'));
 			return lines.join('\n');
 		});
 
 		return { inlineCompleted: 1, enrichmentCompleted: 0, linksUpdated: 0, newNotePaths: [], cacheUses: [combinedUse], sourceUrls: sources.urls, sourceImages: sources.images, calloutTitles: [combinedTitle] };
+	}
+
+	/** Unlink summary links to missing notes; links already in `keepFrom` (the source note) stay (#581). */
+	private unlinkMissing(summary: string, sourcePath: string, keepFrom = ''): string {
+		return stripUnresolvedLinks(summary, this.plugin.app.metadataCache, sourcePath, { keep: wikilinkTargets(keepFrom) });
 	}
 
 	/**
@@ -700,7 +706,7 @@ export class SummarizeModule implements FeatureModule {
 							content: [
 								`[Original source](${target.source})`,
 								'',
-								summary,
+								this.unlinkMissing(summary, notePath),
 								'',
 							].join('\n'),
 						});
@@ -782,7 +788,7 @@ export class SummarizeModule implements FeatureModule {
 					const callout = buildCallout(
 						CALLOUT_TYPES.summary,
 						`Summary of ${target.source}`,
-						summary
+						this.unlinkMissing(summary, file.path, rawContent)
 					);
 					calloutTitles.push(`Summary of ${target.source}`);
 

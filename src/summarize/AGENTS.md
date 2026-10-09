@@ -278,3 +278,7 @@ NO static import of `../video`. Video transcription is callback-only (`Transcrib
 ## Downloaded Media Invariant (#561)
 
 Every consumer of `transcribeUrl` MUST run the shared embed step: a transcript whose `videoVaultPath` is set means a file was downloaded into the vault, and the note the action worked on must embed it via `buildMediaEmbedLines(videoVaultPath, settings.video.embedInNote, noteContent)` (shared `media-embed.ts`) above the content it produced. `fetchContentForUrl` returns `{ text, videoVaultPath? }` so the path survives the module boundary; the helper is the only embed writer (no inline `![[...]]` construction) and dedupes against the note so Transcribe-then-Summarize on one URL yields exactly one embed.
+
+## Unresolved Links (#581)
+
+- Summary text (inline, combined, and new summary notes) passes through `stripUnresolvedLinks` before it is written; links already in the source note are kept (`wikilinkTargets` keep list).

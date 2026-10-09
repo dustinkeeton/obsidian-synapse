@@ -44,6 +44,12 @@ describe('rewriteLinkText', () => {
 		expect(rewriteLinkText('[[Inbox/Untitled.md|Custom]]', OLD, NEW)).toBe('[[Inbox/Neural Networks.md|Custom]]');
 	});
 
+	it('moves a folder-qualified link into the new folder so it still resolves (#581)', () => {
+		expect(rewriteLinkText('[[Inbox/Untitled]]', OLD, 'Topics/Neural Networks.md')).toBe('[[Topics/Neural Networks|Inbox/Untitled]]');
+		expect(rewriteLinkText('[[Inbox/Untitled]]', OLD, 'Neural Networks.md')).toBe('[[Neural Networks|Inbox/Untitled]]');
+		expect(rewriteLinkText('[[Untitled]]', OLD, 'Topics/Neural Networks.md')).toBe('[[Neural Networks|Untitled]]');
+	});
+
 	it('matches the written basename case-insensitively but rewrites to the real new name', () => {
 		expect(rewriteLinkText('[[untitled]]', OLD, NEW)).toBe('[[Neural Networks|untitled]]');
 	});

@@ -129,12 +129,13 @@ acceptProposal(id, options?)                            [public, index.ts:144]
         applyAccept(id, options?)                       [queue-free core, index.ts:154]
           --> re-load proposal (double-accept guard evaluated UNDER the slot)
           --> DeepDiveStore.updateProposalStatus('accepted')
-          --> updateRunNavigation(runId, proposedPath, proposedContent)
+          --> stripUnresolvedLinks(proposedContent, metadataCache, proposedPath)   [#581; unaccepted parent -> plain text]
+          --> updateRunNavigation(runId, proposedPath, content)
             --> computeTraversalOrder(proposals, run)
             --> renderSyllabusContent() -> writeNote(syllabusPath)      [OTHER note, unqueued]
             --> for each accepted node: injectNavigationBlock() -> writeNote()
                                                                         [OTHER notes, unqueued]
-          --> onNoteAccepted?.(proposedPath)  [triggers enrichment; enqueues behind this accept]
+          --> onNoteAccepted?.(proposedPath)  [post-op chain: enrichment, REM if deepDive.autoRemOnAccept (#581); enqueues behind this accept]
           --> onOrganizeRequested?.(file)  [triggers organize if deepDive.autoOrganizeOnAccept]
 
 rejectProposal(id)                                      [unqueued, index.ts:227]
@@ -231,11 +232,12 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 | `settings.deepDive.excludeTags` | `string[]` | `['no-deep-dive']` |
 | `settings.deepDive.autoEnrichOnAccept` | `boolean` | `true` |
 | `settings.deepDive.autoOrganizeOnAccept` | `boolean` | `false` |
+| `settings.deepDive.autoRemOnAccept` | `boolean` | `false` |
 | `settings.autoAccept['deep-dive']` | `boolean` | `false` |
 | `settings.exclusions` | `ExclusionRule[]` | see `settings.ts` defaults |
 | `settings.ai.voice` / `settings.ai.voiceCustom` | `VoiceMode` / `string` | `'neutral'` / `''` |
 
-`NoteGenerator.generateContent` keeps the encyclopedic-tone rule and appends `voiceInstruction(settings.ai)` as the last rule, read per call (note-generator.ts:39, #540).
+`NoteGenerator.generateContent` asks for plain prose with no `[[wikilinks]]` and a `tags`-only frontmatter (#581); the only deep-dive-written links are `parent:`, navigation and syllabus links to accepted notes. `NoteGenerator.generateContent` keeps the encyclopedic-tone rule and appends `voiceInstruction(settings.ai)` as the last rule, read per call (note-generator.ts:39, #540).
 
 ## Dependencies
 

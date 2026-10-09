@@ -31,6 +31,7 @@ function makeDeps(router: UrlTranscriptionRouter) {
 	const op = { update: vi.fn(), finish: vi.fn(), error: vi.fn() };
 	const app = {
 		workspace: { getActiveFile: () => activeFile },
+		metadataCache: { getFirstLinkpathDest: vi.fn((lp: string) => (lp === 'Real' ? {} : null)) },
 		vault: {
 			process: vi.fn(async (_f: unknown, fn: (d: string) => string) => {
 				content = fn(content);
@@ -81,6 +82,26 @@ describe('insertUrlTranscript transcript reuse (#488)', () => {
 		expect(content()).toContain('> new');
 		expect(op.finish).toHaveBeenCalledWith('Transcription added to note');
 		expect((await store.get(URL))?.text).toBe('new');
+	});
+});
+
+describe('unresolved transcript links (#581)', () => {
+	const linked = (): UrlTranscript => ({ text: 'See [[Real]] and [[Ghost|a ghost]]', raw: 'raw', source: 'captions' });
+
+	it('insertUrlTranscript unlinks wikilinks to missing notes', async () => {
+		const { deps, content } = makeDeps(new UrlTranscriptionRouter([tier(linked())], memoryStore()));
+
+		await insertUrlTranscript(deps, URL);
+
+		expect(content()).toContain('> See [[Real]] and a ghost');
+	});
+
+	it('appendUrlTranscript unlinks wikilinks to missing notes', async () => {
+		const { deps, content } = makeDeps(new UrlTranscriptionRouter([tier(linked())], memoryStore()));
+
+		await appendUrlTranscript(deps, URL, new TFile('notes/a.md') as never);
+
+		expect(content()).toContain('> See [[Real]] and a ghost');
 	});
 });
 

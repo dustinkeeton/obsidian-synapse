@@ -5,6 +5,7 @@ import {
 	getMarkdownFiles, parseFrontmatter, generateId, fireAndForget, openScanFolderPicker,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, redactError,
 	resolveInsertionPoint, applyInsertion, locateRegion, wordCount, parseCalloutHeader, CALLOUT_TYPES,
+	stripUnresolvedLinks,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
@@ -385,7 +386,10 @@ export class IllustrateModule implements FeatureModule {
 			this.notifications.info('Source note no longer exists');
 			return;
 		}
-		const accepted = proposal.items.filter((item) => acceptedItemIds.includes(item.id));
+		const cache = this.plugin.app.metadataCache;
+		const accepted = proposal.items
+			.filter((item) => acceptedItemIds.includes(item.id))
+			.map((item) => ({ ...item, caption: stripUnresolvedLinks(item.caption, cache, file.path) }));
 		if (accepted.length === 0) {
 			await this.rejectProposal(id);
 			return;
@@ -396,7 +400,7 @@ export class IllustrateModule implements FeatureModule {
 			const fresh = accepted.filter((item) => !alreadyInserted(current, item));
 			const blocks: Array<{ item: IllustrateItem; block: string }> = [];
 			for (const item of fresh) {
-				blocks.push({ item, block: await this.buildBlock(item, file) });
+				blocks.push({ item, block: stripUnresolvedLinks(await this.buildBlock(item, file), cache, file.path) });
 			}
 			if (blocks.length === 0) return;
 			// Re-resolve against the live note: the stored placement is only the review preview.

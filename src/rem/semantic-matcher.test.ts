@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { SemanticMatcher } from './semantic-matcher';
-import { AIClient } from '../shared';
+import { AIClient, stripUnresolvedLinks } from '../shared';
+import { RemApplier } from './rem-applier';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile } from '../__test-utils__/mock-factories';
 import type { App, TFile } from 'obsidian';
@@ -120,6 +121,24 @@ describe('SemanticMatcher', () => {
 
 		const result = await makeMatcher().match(source, 'x', new Set(), 10);
 		expect(result).toEqual([]);
+	});
+
+	it('only ever inserts links that resolve to existing notes (#581)', async () => {
+		const source = mockFile('notes/Source.md');
+		const vaultFiles = [source, mockFile('notes/Real.md')];
+		app.vault.getMarkdownFiles.mockReturnValue(vaultFiles);
+		completeSpy.mockResolvedValue(JSON.stringify([
+			{ title: 'Real', matchedConcept: 'real thing', confidence: 0.9 },
+			{ title: 'Hallucinated', matchedConcept: 'imagined thing', confidence: 0.9 },
+		]));
+		const content = 'A real thing and an imagined thing.';
+
+		const candidates = await makeMatcher().match(source, content, new Set(), 10);
+		const { content: linked } = new RemApplier().apply(content, candidates);
+
+		const resolver = { getFirstLinkpathDest: (lp: string) => vaultFiles.find((f) => f.basename === lp) ?? null };
+		expect(linked).toContain('[[Real|real thing]]');
+		expect(stripUnresolvedLinks(linked, resolver, source.path)).toBe(linked);
 	});
 
 	it('sorts by confidence descending and caps results at maxLinks', async () => {
