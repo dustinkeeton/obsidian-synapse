@@ -38,7 +38,7 @@ function renderSystemOneCredentials(body: HTMLElement, ctx: SettingsSectionConte
 function renderAutoAccept(ctx: SettingsSectionContext): void        // :268 configSection('autoAccept'); subscribes via ctx.onFeatureToggle
 function renderExclusions(ctx: SettingsSectionContext): void        // :339 configSection('exclusions')
 function renderGeneral(ctx: SettingsSectionContext): void           // :428 configSection('general')
-function renderAbout(ctx: SettingsSectionContext): void             // :468 configSection('about'); hosts the global reset-all
+function renderAbout(ctx: SettingsSectionContext): void             // :468 configSection('about'); info card (manifest version, What's new → ChangelogModal), support tiles from FUNDING_LINKS, danger-zone reset-all (#529)
 ```
 
 ## File Inventory
@@ -48,11 +48,13 @@ function renderAbout(ctx: SettingsSectionContext): void             // :468 conf
 | `index.ts` | `SynapseSettingTab` | Barrel |
 | `settings-tab.ts` | `SynapseSettingTab`, `SETTINGS_SECTIONS`, `SettingsSectionEntry`, `isSectionVisible`, `renderDevBuildBanner` | Orchestrator: section registry, platform gating, per-section reset footers (#442), version footer, dev-build banner top + bottom (#542) |
 | `global-sections.ts` | `renderAiConfiguration`, `renderAutoAccept`, `renderExclusions`, `renderGeneral`, `renderAbout` | Cross-feature section renderers |
+| `funding.ts` | `FUNDING_LINKS`, `FundingLink` | Single source of funding id/label/URL/subtitle/icon for the About support tiles (#529) |
+| `funding.test.ts` | Tests | `FUNDING_LINKS` matches `manifest.json` fundingUrl and `.github/FUNDING.yml` |
 | `system-one-credentials.ts` | `renderSystemOneCredentials` | System 1 decision lane rows inside the AI configuration section (#558) |
 | `voice-setting.ts` | `renderVoiceSetting` | Voice dropdown + conditional custom-instruction textarea inside the AI configuration section (#540) |
 | `voice-setting.test.ts` | Tests | Options + neutral default; change persists and toggles the textarea in place; textarea pre-fill + input persists; unknown voice normalized |
 | `system-one-credentials.test.ts` | Tests | Toggle-only when off; key/model/floor rows + Test affordance when on; toggle persists + rerenders; unknown model normalized |
-| `settings-tab.test.ts` | Tests | Registry order/visibility, auto-accept live state, exclusions chips, reset rows, production footer vs dev banner (build info injected via the constructor); mocks `../changelog` and `../shared/confirm-modal` |
+| `settings-tab.test.ts` | Tests | Registry order/visibility, auto-accept live state, exclusions chips, reset rows, production footer vs dev banner (build info injected via the constructor), About info card/support tiles/danger-zone reset (#529); mocks `../changelog` and `../shared/confirm-modal` |
 | `global-sections.test.ts` | Tests | General section toggles, auto-accept `onFeatureToggle` refresh; mocks `../changelog` |
 
 ## Dependencies
