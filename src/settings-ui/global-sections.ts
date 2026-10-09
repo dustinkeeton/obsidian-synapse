@@ -1,4 +1,4 @@
-import { Setting } from 'obsidian';
+import { Setting, setIcon } from 'obsidian';
 import { MODEL_OPTIONS } from '../settings';
 import type { AIProvider } from '../settings';
 import {
@@ -473,62 +473,118 @@ export function renderGeneral(ctx: SettingsSectionContext): void {
 		);
 }
 
-/**
- * About — support buttons (URLs from FUNDING_LINKS), the changelog link (#375),
- * and the global reset-all (#420).
- */
-export function renderAbout(ctx: SettingsSectionContext): void {
-	const { plugin } = ctx;
-	const aboutBody = ctx.configSection('about', 'About');
-	const support = aboutBody.createDiv({ cls: 'synapse-sponsor-row' });
-	support.createDiv({
-		cls: 'setting-item-description',
-		text: 'Synapse is free and open source. Support development:',
-	});
-	const buttons = support.createDiv({ cls: 'synapse-sponsor-buttons' });
-	for (const { label, url } of FUNDING_LINKS) {
-		buttons.createEl('a', {
-			text: label,
-			cls: 'synapse-sponsor-button',
-			attr: { href: url, target: '_blank', rel: 'noopener', 'aria-label': `Support Synapse on ${label}` },
-		});
-	}
+const ABOUT_LICENSE = 'AGPL-3.0';
+const SUPPORT_INTRO =
+	'If Synapse has earned a place in your workflow, you can support continued development on either platform.';
 
-	const changelogLine = aboutBody.createDiv({ cls: 'setting-item-description' });
-	changelogLine.createSpan({ text: 'See what changed across versions → ' });
-	const changelogLink = changelogLine.createEl('a', {
-		text: "What's new",
-		cls: 'synapse-changelog-link',
-		attr: { href: '#' },
+/** Icon span stamped with `data-icon` so tests can assert which glyph was requested. */
+function iconSpan(parent: HTMLElement, cls: string, icon: string): HTMLElement {
+	const el = parent.createSpan({ cls, attr: { 'aria-hidden': 'true', 'data-icon': icon } });
+	setIcon(el, icon);
+	return el;
+}
+
+/** About — app info card, support tiles from FUNDING_LINKS (#529), and the danger-zone reset-all (#420). */
+export function renderAbout(ctx: SettingsSectionContext): void {
+	const aboutBody = ctx.configSection('about', 'About');
+	renderAboutInfoCard(aboutBody, ctx);
+	renderAboutSupport(aboutBody);
+	renderAboutDangerZone(aboutBody, ctx);
+}
+
+function renderAboutInfoCard(body: HTMLElement, ctx: SettingsSectionContext): void {
+	const { plugin } = ctx;
+	const card = body.createDiv({ cls: 'synapse-about-card' });
+	iconSpan(card, 'synapse-about-mark', 'synapse-actions');
+
+	const info = card.createDiv({ cls: 'synapse-about-info' });
+	const title = info.createDiv({ cls: 'synapse-about-title' });
+	title.createSpan({ cls: 'synapse-about-name', text: 'Synapse' });
+	title.createSpan({ cls: 'synapse-about-version', text: `v${plugin.manifest.version}` });
+	info.createDiv({
+		cls: 'synapse-about-subtitle',
+		text: `Free and open source · ${ABOUT_LICENSE} licensed`,
 	});
-	changelogLink.addEventListener('click', (evt) => {
+
+	const whatsNew = card.createEl('button', {
+		cls: 'synapse-about-whats-new',
+		attr: { type: 'button' },
+	});
+	iconSpan(whatsNew, 'synapse-about-button-icon', 'sparkles');
+	whatsNew.createSpan({ text: "What's new" });
+	whatsNew.addEventListener('click', (evt) => {
 		evt.preventDefault();
 		new ChangelogModal(plugin.app, plugin).open();
 	});
+}
 
-	new Setting(aboutBody)
-		.setName('Reset all settings')
-		.setDesc(
-			'Restore every Synapse setting to its shipped defaults, including your ' +
-			'API keys. This cannot be undone. Your notes and proposals are not affected.',
-		)
-		.addButton((btn) =>
-			btn
-				.setButtonText('Reset all settings')
-				.setClass('mod-destructive')
-				.onClick(async () => {
-					const confirmed = await new ConfirmModal(plugin.app, {
-						title: 'Reset all settings?',
-						message:
-							'This restores every Synapse setting to its defaults, including ' +
-							'your API keys, and cannot be undone. Your notes and proposals ' +
-							'are not affected.',
-						confirmLabel: 'Reset all settings',
-					}).openAndConfirm();
-					if (!confirmed) return;
-					plugin.settings = applyResetAll(plugin.settings);
-					await plugin.saveSettings();
-					ctx.rerender();
-				}),
-		);
+function renderAboutSupport(body: HTMLElement): void {
+	body.createDiv({ cls: 'synapse-about-heading', text: 'Support development' });
+	body.createDiv({ cls: 'synapse-about-intro', text: SUPPORT_INTRO });
+
+	const tiles = body.createDiv({ cls: 'synapse-sponsor-tiles' });
+	for (const link of FUNDING_LINKS) {
+		const tile = tiles.createEl('a', {
+			cls: ['synapse-sponsor-tile', `synapse-sponsor-tile--${link.id}`],
+			attr: {
+				href: link.url,
+				target: '_blank',
+				rel: 'noopener',
+				'aria-label': `${link.label}: ${link.subtitle} (opens in browser)`,
+			},
+		});
+		iconSpan(tile, 'synapse-sponsor-tile-icon', link.icon);
+		const text = tile.createSpan({ cls: 'synapse-sponsor-tile-text' });
+		text.createSpan({ cls: 'synapse-sponsor-tile-title', text: link.label });
+		text.createSpan({ cls: 'synapse-sponsor-tile-subtitle', text: link.subtitle });
+		iconSpan(tile, 'synapse-sponsor-tile-arrow', 'arrow-up-right');
+	}
+}
+
+function renderAboutDangerZone(body: HTMLElement, ctx: SettingsSectionContext): void {
+	const { plugin } = ctx;
+	body.createDiv({
+		cls: ['synapse-about-heading', 'synapse-about-heading--danger'],
+		text: 'Danger zone',
+	});
+
+	const card = body.createDiv({ cls: 'synapse-danger-card' });
+	const info = card.createDiv({ cls: 'synapse-danger-info' });
+	info.createDiv({ cls: 'synapse-danger-title', text: 'Reset all settings' });
+	const list = info.createEl('ul', { cls: 'synapse-danger-list' });
+	const clears = list.createEl('li', { cls: ['synapse-danger-item', 'synapse-danger-item--clears'] });
+	iconSpan(clears, 'synapse-danger-item-icon', 'x');
+	const clearsText = clears.createSpan({ text: 'Clears every setting, ' });
+	clearsText.createEl('strong', { text: 'including API keys' });
+	const keeps = list.createEl('li', { cls: ['synapse-danger-item', 'synapse-danger-item--keeps'] });
+	iconSpan(keeps, 'synapse-danger-item-icon', 'check');
+	keeps.createSpan({ text: 'Keeps your notes and proposals' });
+
+	const reset = card.createEl('button', {
+		cls: 'synapse-reset-button',
+		attr: { type: 'button', 'aria-label': 'Reset all settings' },
+	});
+	iconSpan(reset, 'synapse-about-button-icon', 'rotate-ccw');
+	reset.createSpan({ text: 'Reset…' });
+	reset.addEventListener('click', () => {
+		void (async () => {
+			const confirmed = await new ConfirmModal(plugin.app, {
+				title: 'Reset all settings?',
+				message:
+					'This restores every Synapse setting to its defaults, including ' +
+					'your API keys, and cannot be undone. Your notes and proposals ' +
+					'are not affected.',
+				confirmLabel: 'Reset all settings',
+			}).openAndConfirm();
+			if (!confirmed) return;
+			plugin.settings = applyResetAll(plugin.settings);
+			await plugin.saveSettings();
+			ctx.rerender();
+		})();
+	});
+
+	body.createDiv({
+		cls: ['setting-item-description', 'synapse-danger-note'],
+		text: "You'll be asked to confirm. This can't be undone.",
+	});
 }
