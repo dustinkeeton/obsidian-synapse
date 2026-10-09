@@ -7,8 +7,9 @@ import type { CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
 import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport } from '../shared';
 import { MentionScanner } from './mention-scanner';
+import { withoutSkipRegions } from './skip-regions';
 import { RemLaneError, SemanticMatcher } from './semantic-matcher';
-import { RemApplier } from './rem-applier';
+import { RemApplier, type RemApplyResult } from './rem-applier';
 import { withoutOverlaps } from './overlaps';
 import { RemStore } from './rem-store';
 
@@ -111,7 +112,7 @@ export class RemModule implements FeatureModule {
 			console.warn('[Synapse REM] Skipped a note after a System 1 lane failure:', redactError(error));
 			return null;
 		}
-		const ranked = [...literal, ...semantic].sort((a, b) => b.confidence - a.confidence);
+		const ranked = [...literal, ...withoutSkipRegions(semantic, content)].sort((a, b) => b.confidence - a.confidence);
 		return withoutOverlaps(ranked).slice(0, s.maxLinksPerNote);
 	}
 
@@ -408,28 +409,36 @@ export class RemModule implements FeatureModule {
 			return;
 		}
 
-		// Apply the links atomically: re-derive against the FRESH content inside
-		// the callback, and capture that same content as the undo snapshot.
+		// Validate scan-time offsets against the FRESH content; capture it as the undo snapshot.
 		let originalContent = '';
+		let outcome: RemApplyResult = { content: '', applied: 0, dropped: 0, appliedCandidates: [] };
 		await this.plugin.app.vault.process(tFile, (data) => {
 			originalContent = data;
-			return this.applier.apply(data, accepted);
+			outcome = this.applier.apply(data, accepted);
+			return outcome.applied > 0 ? outcome.content : data;
 		});
+		const { applied, dropped, appliedCandidates } = outcome;
 
-		// Update proposal status with undo data
-		const status = accepted.length === proposal.candidates.length
+		if (applied === 0) {
+			this.notifications.info('No links inserted: the note changed since the REM scan. Run REM on it again.');
+			return;
+		}
+
+		const appliedTexts = [...new Set(appliedCandidates.map(c => c.matchedText))];
+		const status = appliedCandidates.length === proposal.candidates.length
 			? 'accepted' as const
 			: 'partially-accepted' as const;
-		await this.store.updateStatus(
-			id,
-			status,
-			acceptedMatchTexts,
-			originalContent
-		);
+		await this.store.updateStatus(id, status, appliedTexts, originalContent);
+
+		if (dropped > 0) {
+			this.notifications.info(
+				`Skipped ${dropped} link${dropped === 1 ? '' : 's'} whose text changed since the REM scan`
+			);
+		}
 
 		if (!options?.silent) {
 			this.notifications.success(
-				`Inserted ${accepted.length} wikilink${accepted.length === 1 ? '' : 's'}`
+				`Inserted ${appliedCandidates.length} wikilink${appliedCandidates.length === 1 ? '' : 's'}`
 			);
 			await this.refreshView();
 		}

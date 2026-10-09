@@ -29,7 +29,7 @@ vi.mock('./mention-scanner', () => ({
 // Applier returns a sentinel so we can confirm the accept path wrote it.
 vi.mock('./rem-applier', () => ({
 	RemApplier: class MockRemApplier {
-		apply = vi.fn().mockReturnValue('CONTENT WITH [[Backpropagation]] LINK');
+		apply = vi.fn((_content: string, accepted: unknown[]) => ({ content: 'CONTENT WITH [[Backpropagation]] LINK', applied: accepted.length, dropped: 0, appliedCandidates: accepted }));
 	},
 }));
 

@@ -247,6 +247,33 @@ describe('MentionScanner', () => {
 			expect(results).toHaveLength(1);
 			expect(results[0].occurrences[0].lineNumber).toBe(3);
 		});
+
+		it('should skip Synapse summary callouts in either header spelling', () => {
+			const source = makeFile('source.md', 'source');
+			const content = [
+				'> [!summary|synapse-summary] Summary of a talk',
+				'> All about machine learning.',
+				'',
+				'> [!synapse-summary] Legacy summary',
+				'> More machine learning.',
+			].join('\n');
+
+			expect(scanner.scan(source, content, 20)).toHaveLength(0);
+		});
+
+		it('should still match plain quotes and text after a summary callout', () => {
+			const source = makeFile('source.md', 'source');
+			const content = [
+				'> [!summary|synapse-summary] Summary',
+				'> machine learning inside',
+				'',
+				'> machine learning quoted',
+				'machine learning after',
+			].join('\n');
+			const results = scanner.scan(source, content, 20);
+
+			expect(results[0].occurrences.map(o => o.lineNumber)).toEqual([3, 4]);
+		});
 	});
 
 	describe('overlapping matches (longest wins)', () => {

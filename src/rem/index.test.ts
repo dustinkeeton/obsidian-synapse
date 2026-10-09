@@ -348,6 +348,46 @@ describe('RemModule', () => {
 			expect(updateStatusSpy).not.toHaveBeenCalled();
 		});
 
+		it('links text that moved since the scan instead of splicing at stale offsets (#575)', async () => {
+			loadSpy.mockResolvedValue(pendingProposal());
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('> [!summary|synapse-summary] Summary\n> recap\n\nFoo line\nBar line');
+			const module = await loadedModule();
+
+			await module.acceptProposal('p1', ['Foo', 'Bar']);
+
+			const written = (await app.vault.process.mock.results[0].value) as unknown as string;
+			expect(written).toBe('> [!summary|synapse-summary] Summary\n> recap\n\n[[Foo]] line\n[[Bar]] line');
+			expect(updateStatusSpy).toHaveBeenCalledWith('p1', 'accepted', ['Foo', 'Bar'], expect.any(String));
+		});
+
+		it('reports links dropped because their text is gone and records only applied ones (#575)', async () => {
+			loadSpy.mockResolvedValue(pendingProposal());
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('Foo line\nsomething else');
+			const module = await loadedModule();
+
+			await module.acceptProposal('p1', ['Foo', 'Bar']);
+
+			expect(updateStatusSpy).toHaveBeenCalledWith('p1', 'partially-accepted', ['Foo'], 'Foo line\nsomething else');
+			expect(notifications.info).toHaveBeenCalledWith(expect.stringContaining('Skipped 1 link'));
+		});
+
+		it('leaves the note and proposal untouched when no link can be applied (#575)', async () => {
+			loadSpy.mockResolvedValue(pendingProposal());
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('rewritten note');
+			const module = await loadedModule();
+
+			await module.acceptProposal('p1', ['Foo', 'Bar']);
+
+			const written = (await app.vault.process.mock.results[0].value) as unknown as string;
+			expect(written).toBe('rewritten note');
+			expect(updateStatusSpy).not.toHaveBeenCalled();
+			expect(notifications.success).not.toHaveBeenCalled();
+			expect(notifications.info).toHaveBeenCalledWith(expect.stringContaining('No links inserted'));
+		});
+
 		it('returns early when the proposal cannot be loaded', async () => {
 			loadSpy.mockResolvedValue(null);
 			const module = await loadedModule();

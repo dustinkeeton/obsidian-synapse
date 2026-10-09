@@ -1,6 +1,7 @@
 import type { App, CachedMetadata, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import { normalizeFrontmatterTags, getIncludedMarkdownFiles } from '../shared';
+import { buildSkipRegions, isInSkipRegion, isWordBoundary, type SkipRegion } from './skip-regions';
 import type { RemLinkCandidate, RemOccurrence } from './types';
 
 /** Entry in the lookup table: a term and the note it maps to. */
@@ -15,12 +16,6 @@ interface LookupEntry {
 	targetDisplayName: string;
 	/** Whether this entry came from an alias */
 	isAlias: boolean;
-}
-
-/** Region of text to skip during scanning. */
-interface SkipRegion {
-	start: number;
-	end: number;
 }
 
 /**
@@ -45,7 +40,7 @@ export class MentionScanner {
 		const lookup = this.buildLookupTable(sourceFile.path);
 		if (lookup.length === 0) return [];
 
-		const skipRegions = this.buildSkipRegions(content);
+		const skipRegions = buildSkipRegions(content);
 		const lines = content.split('\n');
 
 		// Track matches: key = targetPath + matchedText
@@ -136,69 +131,6 @@ export class MentionScanner {
 	}
 
 	/**
-	 * Build a list of character ranges to skip during scanning:
-	 * - YAML frontmatter (--- delimited)
-	 * - Fenced code blocks
-	 * - Inline code
-	 * - Existing wikilinks
-	 * - Image/file embeds
-	 * - Markdown links
-	 */
-	private buildSkipRegions(content: string): SkipRegion[] {
-		const regions: SkipRegion[] = [];
-
-		// Frontmatter: starts at position 0 with ---
-		if (content.startsWith('---')) {
-			const endIdx = content.indexOf('\n---', 3);
-			if (endIdx !== -1) {
-				regions.push({ start: 0, end: endIdx + 4 });
-			}
-		}
-
-		// Fenced code blocks (``` or ~~~)
-		const fencedCodeRegex = /^(```|~~~).*\n[\s\S]*?\n\1/gm;
-		let match: RegExpExecArray | null;
-		while ((match = fencedCodeRegex.exec(content)) !== null) {
-			regions.push({ start: match.index, end: match.index + match[0].length });
-		}
-
-		// Inline code
-		const inlineCodeRegex = /`[^`\n]+`/g;
-		while ((match = inlineCodeRegex.exec(content)) !== null) {
-			regions.push({ start: match.index, end: match.index + match[0].length });
-		}
-
-		// Existing wikilinks and embeds: [[...]] and ![[...]]
-		const wikilinkRegex = /!?\[\[[^\]]+\]\]/g;
-		while ((match = wikilinkRegex.exec(content)) !== null) {
-			regions.push({ start: match.index, end: match.index + match[0].length });
-		}
-
-		// Markdown links: [text](url)
-		const mdLinkRegex = /\[[^\]]*\]\([^)]*\)/g;
-		while ((match = mdLinkRegex.exec(content)) !== null) {
-			regions.push({ start: match.index, end: match.index + match[0].length });
-		}
-
-		// Sort by start position
-		regions.sort((a, b) => a.start - b.start);
-
-		return regions;
-	}
-
-	/**
-	 * Check if a position falls within any skip region.
-	 */
-	private isInSkipRegion(absStart: number, absEnd: number, regions: SkipRegion[]): boolean {
-		for (const region of regions) {
-			if (region.start > absEnd) break; // Regions are sorted
-			if (absStart >= region.start && absEnd <= region.end) return true;
-			if (absStart < region.end && absEnd > region.start) return true;
-		}
-		return false;
-	}
-
-	/**
 	 * Scan a single line for term matches.
 	 */
 	private scanLine(
@@ -222,7 +154,7 @@ export class MentionScanner {
 				const end = idx + entry.term.length;
 
 				// Check word boundaries
-				if (!this.isWordBoundary(lineLower, idx, end)) {
+				if (!isWordBoundary(lineLower, idx, end)) {
 					searchFrom = idx + 1;
 					continue;
 				}
@@ -243,7 +175,7 @@ export class MentionScanner {
 				// Check skip regions
 				const absStart = lineOffset + idx;
 				const absEnd = lineOffset + end;
-				if (this.isInSkipRegion(absStart, absEnd, skipRegions)) {
+				if (isInSkipRegion(absStart, absEnd, skipRegions)) {
 					searchFrom = idx + 1;
 					continue;
 				}
@@ -269,34 +201,5 @@ export class MentionScanner {
 			}
 		}
 	}
-
-	/**
-	 * Check if a match at the given position has word boundaries on both sides.
-	 * A word boundary exists when the character before/after is not a word character.
-	 */
-	private isWordBoundary(text: string, start: number, end: number): boolean {
-		// Check left boundary
-		if (start > 0) {
-			const charBefore = text[start - 1];
-			if (this.isWordChar(charBefore)) return false;
-		}
-		// Check right boundary
-		if (end < text.length) {
-			const charAfter = text[end];
-			if (this.isWordChar(charAfter)) return false;
-		}
-		return true;
-	}
-
-	/**
-	 * Determine if a character is a "word character" for boundary checking.
-	 * Includes letters, digits, and underscore.
-	 */
-	private isWordChar(ch: string): boolean {
-		// Fast path for ASCII
-		if (/[a-zA-Z0-9_]/.test(ch)) return true;
-		// Unicode letters and marks
-		if (/[\p{L}\p{M}\p{N}]/u.test(ch)) return true;
-		return false;
-	}
 }
+
