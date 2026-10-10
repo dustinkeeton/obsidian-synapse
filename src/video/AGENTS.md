@@ -123,7 +123,7 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 | `note-scanner.test.ts` | Tests | Note scanner unit tests |
 | `audio-extractor.ts` | `AudioExtractor`, `DependencyMissingError`, `AudioCodecReadError` | yt-dlp/ffmpeg via `execFile` (no shell); URL download, file extract, clip, concat, dependency check, no-audio detection |
 | `audio-extractor.test.ts` | Tests | AudioExtractor unit tests |
-| `ffmpeg-availability.ts` | `createFfmpegAvailability` | Memoized ffmpeg probe factory; consumed by `main.ts:212` as `NoteMediaTranscriptionDeps.isFfmpegAvailable` (combine-audio gate in `NoteMediaModal`) |
+| `ffmpeg-availability.ts` | `createFfmpegAvailability` | Memoized ffmpeg probe factory; consumed by `main.ts:213` as `NoteMediaTranscriptionDeps.isFfmpegAvailable` (combine-audio gate in `NoteMediaModal`) |
 | `ffmpeg-availability.test.ts` | Tests | Memoization, no-extractor false, probe-failure false |
 | `frame-extractor.ts` | `FrameExtractor` | Placeholder; `extractFrames` throws unless disabled (unimplemented) |
 | `settings-section.ts` | `renderVideoSettings` | Video settings accordion renderer for settings-tab.ts |
@@ -267,7 +267,7 @@ VideoModule → AudioModule is the one documented cross-feature runtime dependen
 
 ## Invariants / Gotchas
 
-- Batch transcript blocks pass through `stripUnresolvedLinks` before insertion; `![[downloaded video]]` embeds are untouched (#581).
+- Batch transcript blocks pass through `stripUnresolvedLinks` before insertion (index.ts:283); `![[downloaded video]]` embeds are untouched (#581).
 - Desktop-only: `loadNodeModules()` throws `DesktopOnlyError` off-desktop; VideoModule is constructed only when the registry entry's `platform: () => Platform.isDesktop` predicate passes (`modules/registry.ts`) and may be null. AudioExtractor also asserts desktop at first fs/subprocess access.
 - `FrameExtractor` (`frame-extractor.ts`) is a placeholder: `extractFrames` returns `[]` when disabled, otherwise throws "not yet implemented".
 - `AudioExtractor.concatAudio` re-encodes via the ffmpeg concat filter (handles mixed mp3/wav/m4a/ogg/flac/webm/aac).

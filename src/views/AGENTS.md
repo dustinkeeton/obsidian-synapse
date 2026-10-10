@@ -221,7 +221,7 @@ new SynapseActionsView(leaf, {
 });
 ```
 
-Activation entry points: ribbon `synapse` and every module's `onOpenProposalView` slot call `activateUnifiedView` via `openProposalView` (`main.ts:121-122`, `:178-181`, `:214`); command `review-proposals` (`main.ts:220-222`); ribbon `synapse-actions` calls `activateSynapseActionsView` (`main.ts:216-218`).
+Activation entry points: ribbon `synapse` and every module's `onOpenProposalView` slot call `activateUnifiedView` via `openProposalView` (`main.ts:121-122`, `:178-181`, `:215`); command `review-proposals` (`main.ts:221-223`); ribbon `synapse-actions` calls `activateSynapseActionsView` (`main.ts:217-219`).
 
 ## Dependencies
 

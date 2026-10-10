@@ -6,6 +6,60 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-10-09: Deep-dive auto-REM on accept defaults ON (#581)
+
+**Context**: Deep-dive notes no longer carry their own wikilinks (see the next entry), so a new note arrives unlinked unless something else links it. The REM scan that does this is AI-backed, which raised the question of whether to ship it off to save cost.
+
+**Decision**: Add `deepDive.autoRemOnAccept` (toggle "Auto-REM on accept"), **default ON**. Accepting a deep-dive note runs a REM scan on it when both this toggle and `rem.enabled` are on at wiring time, independent of `deepDive.autoEnrichOnAccept`.
+
+**Alternatives considered**:
+- **Default OFF to save AI cost** — rejected; Synapse never defaults an AI-backed setting off for cost reasons, and the sibling `deepDive.autoEnrichOnAccept` already defaults ON.
+- **Fold the REM scan into the auto-enrich toggle** — rejected; linking and enrichment are separate features with separate switches.
+
+**Rationale**: Without the scan, the plain-prose change would leave every accepted deep-dive note with no links at all. Matching the sibling default keeps the post-accept behavior predictable.
+
+**Impact**: New REM leg in `pipeline/post-op-hooks.ts`; `main.ts` wraps the scan in the note's queue slot so it waits behind the accept. Existing vaults pick up the default through the defaults merge, with no migration. Known gap (#585): the leg isn't marked post-op, so each accepted note can raise its own REM notices and "Review" toast.
+
+---
+
+## 2026-10-09: Links resolve at write time — no Synapse write points at a missing note (#581)
+
+**Context**: Several actions wrote AI-generated `[[wikilinks]]` to notes that don't exist. Deep dive also wrote speculative links (and a `related` field) into every generated note.
+
+**Decision**:
+- **One guard on every write.** All AI-generated or fetched text goes through `stripUnresolvedLinks` (`shared/link-guard.ts`) before it is written. A `[[link]]` whose note doesn't exist becomes plain text (its alias, if any). Embeds, heading-only links, and code are left alone.
+- **Keep what the user owns.** Elaboration accept passes the note's existing links and any links the user typed while editing the proposal as `keep`, so they survive even when unresolved.
+- **Deep dive writes plain prose.** Generation asks for no wikilinks; REM supplies links instead, and REM only ever links to notes that exist.
+
+**Alternatives considered**:
+- **Fix only the deep-dive prompt** — rejected; models still emit links, and transcription, summarize, intake, and illustrate write fetched text that can contain them too.
+- **Strip every link, including the user's** — rejected; an unresolved link the user wrote is their intent, not an AI artifact.
+
+**Rationale**: Checking against the vault at write time is the only point that sees both the final text and the current set of notes. One shared helper keeps every write path consistent.
+
+**Impact**: Wired into audio, video, image OCR, intake, URL transcript insertion, summarize, elaboration, deep dive, illustrate, and enrichment (which filters Related Notes and frontmatter links the same way). Deep dive's prompt in `deep-dive/note-generator.ts` now forbids wikilinks.
+
+---
+
+## 2026-10-09: Illustrate places each image at most once per note (#583)
+
+**Context**: When two spots in a note matched the same image, Illustrate proposed it twice — and accepting both put the same photo in the note twice.
+
+**Decision**:
+- **Best-fitting spot wins.** When several spots resolve to the same image, the spot whose query, caption, and anchor best match it (`imageRelevance`) keeps it; ties go to the earliest line in the note.
+- **Losers re-resolve or drop.** Each losing spot searches again with every claimed image excluded — the next source image, then the photo libraries. If nothing is left, the spot is dropped.
+- **Source images need some overlap.** The source provider drops any image whose alt/title shares no words with the query.
+- **Accept skips what's already there.** A photo whose remote URL is already in the note is skipped on accept.
+
+**Alternatives considered**:
+- **Also skip a photo whose attribution line is already in the note** — rejected after it shipped in the first cut; images with blank alt text from one page share an attribution line, so the check skipped every image after the first. Proposal-time dedupe and the remote-URL check already prevent repeats.
+
+**Rationale**: Deduping when the proposal is built means the user never reviews duplicates. The accept-time check covers notes that changed after the proposal, and keeps accept safe to repeat.
+
+**Impact**: `illustrate/index.ts` (`dedupePhotos`, `spotFit`, `duplicateLosers`, `alreadyInserted`); `illustrate/providers/source.ts` (zero-overlap filter; its `imageRelevance` also scores spot fit).
+
+---
+
 ## 2026-10-09: REM accept never splices blind — every link is re-checked against the live note; summary callouts are unlinkable (#575)
 
 **Context**: Accepting a REM proposal on a note with a Summary block garbled the text — `google` became `googlele]]`. The applier inserted `[[target|text]]` at the line and character positions captured when the note was scanned. If the note changed before accept (a Summary inserted above the match, for example), the insertion landed on the wrong characters. Nothing checked that the text at those positions was still the matched text.

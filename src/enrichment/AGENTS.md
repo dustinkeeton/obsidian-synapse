@@ -200,7 +200,7 @@ In (consumed by this module):
 
 Out (consumed by other modules):
 - `src/modules/registry.ts`: constructs `new EnrichmentModule(deps, autoAccept(deps, 'enrichment'))` (`modules/registry.ts:92`)
-- `src/main.ts`: wires `onViewRefreshNeeded`, `onOpenProposalView`; calls `scanVault()` (`main.ts:95`), `getPendingProposals()` (`main.ts:112`), `resumeFromCheckpoint()` (`main.ts:126`), `acceptSelectedFromView()` / `rejectFromView()` (`main.ts:149-150`), `enrich(path, trigger, { postOp: true })` via `PostOpHookDeps.enrich` (`main.ts:188`); assigns `onEnrichmentApplied = buildPostOpHook(postOpDeps, 'enrichment')` (`main.ts:198`; illustrate leg only, fired from `enrichment/index.ts:646-649` with `sourceUrls` + `producedRegion: { kind: 'whole-note' }`)
+- `src/main.ts`: wires `onViewRefreshNeeded`, `onOpenProposalView`; calls `scanVault()` (`main.ts:95`), `getPendingProposals()` (`main.ts:112`), `resumeFromCheckpoint()` (`main.ts:126`), `acceptSelectedFromView()` / `rejectFromView()` (`main.ts:149-150`), `enrich(path, trigger, { postOp: true })` via `PostOpHookDeps.enrich` (`main.ts:188`); assigns `onEnrichmentApplied = buildPostOpHook(postOpDeps, 'enrichment')` (`main.ts:199`; illustrate leg only, fired from `enrichment/index.ts:646-649` with `sourceUrls` + `producedRegion: { kind: 'whole-note' }`)
 
 No feature-module dependencies (enrichment does not import from elaboration, transcription, etc.).
 
@@ -270,7 +270,7 @@ private isExcluded(file: TFile): boolean {
 
 ## Settings Keys
 
-All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:239-254`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:548-574`).
+All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:239-254`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:550-576`).
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -291,18 +291,18 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:23
 | `settings.exclusions` (top-level) | `ExclusionRule[]` | — | Path/glob exclusions scoped by feature `'enrichment'`; replaces removed `excludeFolders` |
 | `settings.autoAccept.enrichment` (top-level) | `boolean` | — | Wired to the `shouldAutoAccept` constructor param (#228) |
 
-`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:233-237`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book). `EnrichmentWeightSettings` defaults (`settings.ts:562-569`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
+`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:233-237`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book). `EnrichmentWeightSettings` defaults (`settings.ts:564-571`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
 
 ## Invariants
 
-- Related Notes entries whose link text does not resolve (`linkResolves`) are dropped at apply time; unresolved `[[links]]` in suggested frontmatter strings become plain text (#581).
-- Applied sections are Obsidian callouts `> [!info|synapse-enrichment]` (`CALLOUT_TYPES.enrichment`, `src/shared/callouts.ts:L16`; base from `CALLOUT_BASES`, #554), written via `buildCallout` (`enrichment-applier.ts:L180,L208`); `removeEnrichmentSections` (`:L215`) strips both that form and the legacy bare `> [!synapse-enrichment]` via `calloutHeaderSource`.
-- Idempotent re-write / undo: `removeEnrichmentSections` strips both callout sections AND legacy comment markers `%% synapse-enrichment-start %%` / `%% synapse-enrichment-end %%` (`ENRICHMENT_START` / `ENRICHMENT_END`, `src/shared/callouts.ts:L66-67`) before re-writing (`enrichment-applier.ts:L215-240`).
-- Writes are atomic: `apply` and `undo` re-derive content inside `vault.process` callbacks (`enrichment-applier.ts:L36,L129`).
+- Related Notes entries whose link text does not resolve (`linkResolves`) are dropped at apply time (`enrichment-applier.ts:90-93`, link text via private `linkText`, `:181`); unresolved `[[links]]` in suggested frontmatter strings become plain text (private `unlinkMissing`, `:173`, recurses into arrays) (#581).
+- Applied sections are Obsidian callouts `> [!info|synapse-enrichment]` (`CALLOUT_TYPES.enrichment`, `src/shared/callouts.ts:L16`; base from `CALLOUT_BASES`, #554), written via `buildCallout` (`enrichment-applier.ts:L196,L224`); `removeEnrichmentSections` (`:L231`) strips both that form and the legacy bare `> [!synapse-enrichment]` via `calloutHeaderSource`.
+- Idempotent re-write / undo: `removeEnrichmentSections` strips both callout sections AND legacy comment markers `%% synapse-enrichment-start %%` / `%% synapse-enrichment-end %%` (`ENRICHMENT_START` / `ENRICHMENT_END`, `src/shared/callouts.ts:L66-67`) before re-writing (`enrichment-applier.ts:L231-256`).
+- Writes are atomic: `apply` and `undo` re-derive content inside `vault.process` callbacks (`enrichment-applier.ts:L36,L132`).
 - Frontmatter keys never overwritten: `action: 'add'` skips if key exists; `action: 'merge'` appends new array values (dedup via `asStringArray`).
 - Frontmatter key allowlist `^[a-z][a-z0-9_-]{0,49}$` (`prompt-builder.ts:17`); forbidden keys (`__proto__`, `constructor`, `prototype`, `toString`, `valueOf`, `hasOwnProperty`) blocked (`prompt-builder.ts:20-27`); `tags` key also rejected.
 - Tag format `^[a-zA-Z0-9][a-zA-Z0-9_/-]{0,49}$`; only vocabulary tags accepted, hallucinated tags dropped (`metadata-classifier.ts:16,69-84`).
-- External URL validation: HTTP/HTTPS only, in both proposal generation (`prompt-builder.ts:42-49`) and write-out (`enrichment-applier.ts:196-205`).
+- External URL validation: HTTP/HTTPS only, in both proposal generation (`prompt-builder.ts:42-49`) and write-out (`enrichment-applier.ts:212-221`).
 - New-note topic threshold: a topic must be surfaced by 2+ notes during a vault scan to become a suggestion; new-note candidate `relevanceScore` = `0.5` (`topic-extractor.ts:124,129`).
 - Double-acceptance guard: `acceptSelected` and `maybeAutoAccept` bail if `proposal.status !== 'pending'` (`index.ts:632`, `index.ts:607`); both re-load the proposal inside the queue slot, so a wait cannot leave the decision on stale state (#483).
 - Empty proposals skipped: `enrichFile` returns `null` when no items are produced (`index.ts:553`).

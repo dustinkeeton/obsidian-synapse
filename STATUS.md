@@ -1,17 +1,19 @@
 # Project Status
 
 **Last updated**: 2026-10-09
-**Version**: 1.4.0 (released 2026-10-09)
-**Health**: Green — `tsc` clean, **2938/2938 tests passing (212 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
+**Version**: 1.4.1 (released 2026-10-09)
+**Health**: Green — `tsc` clean, **2985/2985 tests passing (216 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
 ## At a Glance
 
-- **25 modules** under `src/` (including the thin `settings-ui/`, `onboarding/`, `brand-icons/`, `changelog/`, and `properties-fold/` folders) plus top-level `main.ts` (302 lines — lifecycle glue only; `modules/registry.ts` constructs, loads, and unloads every feature with one `ModuleDeps` bundle first) and `settings.ts`.
+- **25 modules** under `src/` (including the thin `settings-ui/`, `onboarding/`, `brand-icons/`, `changelog/`, and `properties-fold/` folders) plus top-level `main.ts` (303 lines — lifecycle glue only; `modules/registry.ts` constructs, loads, and unloads every feature with one `ModuleDeps` bundle first) and `settings.ts`.
 - **1.4.0 (2026-10-09)**: an opt-in **System 1 decision lane** (#558, #563, #566) lets tag vocabulary, frontmatter values, directory placement, and REM link scoring ask TypeSafe's Jev model first (typed `choice`/`score` questions over options Synapse already holds); off by default via `ai.systemOne` because note text leaves the vault. With the lane on, **REM runs on the lane alone** and every link needs an anchor in the note. **Organize never moves a note without a proposal**, and **Undo last organize run** reverts a whole run. Also: a **Voice** setting for generated prose (#540), a redesigned settings **About** section (#529), and Summarize embeds a downloaded video once (#561).
 - **1.3.0 (2026-10-06)**: **Illustrate** proposes licensed photos, plus opt-in Mermaid diagrams and charts (#213, #549); **accepting an elaboration replaces the note body in place** (#552); callouts are written as native base types (#554).
-- **Unreleased — REM accept checks the note first (#575)**: accepting REM links re-checks each scan-time position against the note as it is now. A link whose text moved is re-found at the nearest whole-word match outside code, links, frontmatter, and summary callouts; one that cannot be found is skipped with a "Skipped N link(s)" notice. If nothing applies, the note is left untouched and the proposal stays pending.
+- **1.4.1 (2026-10-09) — REM accept checks the note first (#575)**: accepting REM links re-checks each scan-time position against the note as it is now. A moved link is re-found at the nearest whole-word match outside code, links, frontmatter, and summary callouts; one that cannot be found is skipped with a "Skipped N link(s)" notice. If nothing applies, the note is untouched and the proposal stays pending.
+- **Unreleased on main — no links to missing notes (#581)**: every write of AI-generated or fetched text turns `[[links]]` to notes that don't exist into plain text (elaboration accept keeps the note's own and user-typed links). Deep-dive writes plain prose and, with **Auto-REM on accept** (`deepDive.autoRemOnAccept`, default on), REM-scans each accepted note to link it to existing notes.
+- **Unreleased on main — one image per note (#583)**: Illustrate places each image at most once per note (the best-fitting spot keeps it), drops source images with zero word overlap with the query, and accept skips a photo whose remote URL is already in the note.
 - **Fire Synapse pipeline** runs elaboration → summarize → enrichment → REM → illustrate → tidy → organize; the **intake folder** auto-feeds it. All proposals land in one **unified proposal sidebar**; a **Synapse actions sidebar** (#289) gives touch-friendly buttons.
 
 ## Module Status (20 modules; the five thin folders above are omitted)
@@ -29,19 +31,19 @@
 | summarize | `src/summarize/` | URL/transcription/audio + note prose; per-item or combined (#367); media URLs are transcribe-only (#488); link-only notes excluded (#544); downloaded video embedded once (#561) | Working |
 | tidy | `src/tidy/` | Spelling/formatting fixes (+ undo) | Working |
 | organize | `src/organize/` | AI directory structuring, folder coalescing (#172); every relocation a proposal; undo a whole run (#558/#565); `suggestDirectory` seam for deep-dive | Working |
-| deep-dive | `src/deep-dive/` | Recursive topic extraction + child notes; auto-organize nesting via injected folder suggestion | Working |
+| deep-dive | `src/deep-dive/` | Recursive topic extraction + child notes written as plain prose (no wikilinks); auto-REM on accept (#581); auto-organize nesting via injected folder suggestion | Working |
 | title | `src/title/` | Untitled/mismatch detection → rename; collision handling (#408); backlink remediation (#485) | Working |
 | rem | `src/rem/` | In-place `[[wikilink]]` discovery; always-on semantic matching (#380); lane-only scoring when System 1 is on (#566); accept re-validates link positions against the live note (#575) | Working |
-| illustrate | `src/illustrate/` | AI-chosen spots get a licensed photo (Wikimedia Commons / Openverse) or, with `illustrate.mermaid` on, a Mermaid diagram / chart from the note's own numbers; per-item review; post-op legs via `runAfter` (#213/#549) | Working (opt-in, default off) |
+| illustrate | `src/illustrate/` | AI-chosen spots get a licensed photo (Wikimedia Commons / Openverse) or, with `illustrate.mermaid` on, a Mermaid diagram / chart from the note's own numbers; per-item review; each image placed at most once per note (#583); post-op legs via `runAfter` (#213/#549) | Working (opt-in, default off) |
 | intake | `src/intake/` | Watch folder (#111); media-URL transcription (#112); shared-capture adoption (#455); startup catch-up scan (#462) | Working |
-| pipeline | `src/pipeline/` | Fire Synapse runner + post-op hook builders (enrich → title check, auto-organize, illustrate leg) | Working |
+| pipeline | `src/pipeline/` | Fire Synapse runner + post-op hook builders (enrich → title check, deep-dive REM leg #581, illustrate leg, auto-organize) | Working |
 | commands | `src/commands/` | Command registry + registrar + drift audit | Working |
-| shared | `src/shared/` | AIClient (+ cache/coalescing, `onCacheHit`, per-call `model`), `NoteOperationQueue`, `TranscriptCache`, callout registry with native bases (#554), insertion-point placement (#213), prose reduction (#544), build info (#542), image preprocessing, no-speech outcome, `ModuleDeps` contract, validation, checkpoints, redaction, settings migrations (v3) | Working (base layer) |
+| shared | `src/shared/` | AIClient (+ cache/coalescing, `onCacheHit`, per-call `model`), `NoteOperationQueue`, `TranscriptCache`, callout registry with native bases (#554), insertion-point placement (#213), prose reduction (#544), build info (#542), image preprocessing, no-speech outcome, `ModuleDeps` contract, validation, checkpoints, redaction, settings migrations (v3), unresolved-wikilink guard (#581) | Working (base layer) |
 | views | `src/views/` | Unified proposal sidebar (seven proposal kinds) + Synapse actions sidebar; direct `editorCallback` dispatch (#352) | Working |
 
 ## Current Focus
 
-- **Docs refresh (2026-10-09)** — machine docs and these human docs updated for the 1.4.0 release and the REM stale-offset fix (#575). The interactive system diagram (`docs/diagrams/synapse-system.html`) shows TypeSafe.
+- **Docs refresh (2026-10-09)** — machine docs and these human docs updated for the 1.4.1 release, the write-time link guard and deep-dive auto-REM (#581), and Illustrate's one-image-per-note dedupe (#583). The interactive system diagram (`docs/diagrams/synapse-system.html`) shows TypeSafe.
 - **Open follow-ups**: live before/after cost measurement of the System 1 lane on a real vault; run auto-enrich once after a note's operation chain (#536); feature flags for unreleased work on main (#545); self-hosted extraction tier for non-YouTube URLs on mobile (#181, ADR 001 accepted; #182 override + connectivity status); holistic UX review (#465); operation-toast cancel progress (#269).
 
 ## Security Posture
@@ -64,6 +66,7 @@
 |------|----------|-------|
 | Non-YouTube URLs on mobile | Medium | TikTok/Instagram need yt-dlp; on mobile the note stays un-stamped for desktop sync until the self-hosted tier (#181, ADR 001) ships |
 | Not implemented: local Whisper, local video files, frame extraction | Medium | `local-whisper` hidden from the dropdown and throws; "coming soon" command; `FrameExtractor` placeholder |
+| Deep-dive auto-REM is noisy (#585) | Low | The REM post-op leg isn't marked post-op, so each accepted deep-dive note can raise its own REM notices and "Review" toast |
 | No-speech detection is heuristic beyond `whisper-1` | Low | `no_speech_prob` exists only in `whisper-1` `verbose_json`; other models rely on the blank/annotation-only check. The 0.8 and 10-character thresholds are conservative constants, not measured (#524) |
 | Silent intake video gets a second notice | Low | Intake stamps the note after a no-speech result; summarize then retries the same URL and shows the same notice (no negative cache entry, #524) |
 | Legacy `[!synapse-*]` callouts are never migrated | Low | Read by the dual-format matcher and rewritten only when a feature touches the note (#554); `synapse-elaboration` survives only to render pre-#552 notes |
@@ -90,5 +93,5 @@
 |---------|---------|
 | `npm run dev` | esbuild watch (development; stamps the dev-build banner, #542) |
 | `npm run build` | `tsc -noEmit -skipLibCheck` + esbuild production bundle |
-| `npm test` | Vitest — **2808/2808 passing** (204 files) |
+| `npm test` | Vitest — **2985/2985 passing** (216 files) |
 | `npm run lint` | ESLint — `obsidianmd/*` store-review mirror + `synapse/no-unredacted-console` (#418) |

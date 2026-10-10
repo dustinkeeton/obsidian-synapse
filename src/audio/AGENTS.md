@@ -8,7 +8,7 @@ Transcribes audio files from the vault using configurable providers (Whisper API
 
 ## Public API
 
-Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTranscriptionCredentials`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioClipper`, `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry` (`index.ts:19-20`). `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
+Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTranscriptionCredentials`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioClipper`, `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry` (`index.ts:20-21`). `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
 
 ```ts
 // types.ts:43 — structural ffmpeg surface; video's AudioExtractor satisfies it, so audio never imports video
@@ -19,8 +19,8 @@ interface AudioClipper {
 }
 
 class AudioModule {
-  readonly extractor?: AudioClipper                            // index.ts:32; undefined on mobile; also drives video/createFfmpegAvailability (#214)
-  constructor(deps: ModuleDeps, extractor?: AudioClipper)     // index.ts:46; ModuleDeps bundle first (#504: plugin, getSettings, notifications, checkpointManager, registrar, noteQueue); extractor = desktop-only clipping/concat (registry passes a video/AudioExtractor on desktop, modules/registry.ts:80)
+  readonly extractor?: AudioClipper                            // index.ts:33; undefined on mobile; also drives video/createFfmpegAvailability (#214)
+  constructor(deps: ModuleDeps, extractor?: AudioClipper)     // index.ts:47; ModuleDeps bundle first (#504: plugin, getSettings, notifications, checkpointManager, registrar, noteQueue); extractor = desktop-only clipping/concat (registry passes a video/AudioExtractor on desktop, modules/registry.ts:80)
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
@@ -111,7 +111,7 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 1. User triggers via UnifiedTranscriptionModal or NoteMediaModal (in transcription/)
    |
 2a. transcribeFileToActiveNote(file, timeRange?) -- single file to active note
-   |  Reads binary, clips audio via this.extractor (AudioClipper) if timeRange provided (desktop only); temp files unlinked in finally (index.ts:230-242)
+   |  Reads binary, clips audio via this.extractor (AudioClipper) if timeRange provided (desktop only); temp files unlinked in finally (index.ts:231-243)
    |  Calls transcribe(), builds callout with time-range label, appends to active note
    |
 2b. transcribeAndInsert(noteFile, embeds) -- batch from note scan
@@ -160,13 +160,13 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 
 | Public entry point | Queue key | Private core |
 |---|---|---|
-| `transcribeFileToActiveNote(file, timeRange?)` | active note path | `insertFileTranscription(activeFile, file, op, timeRange?)` (index.ts:213) |
-| `transcribeAndInsert(noteFile, embeds)` | `noteFile.path` | `insertTranscriptions(noteFile, embeds, op)` (index.ts:303) |
-| `transcribeAndInsertCombined(noteFile, embeds)` | `noteFile.path` (2+ embeds only) | `insertCombinedTranscription(noteFile, embeds, op)` (index.ts:438) |
+| `transcribeFileToActiveNote(file, timeRange?)` | active note path | `insertFileTranscription(activeFile, file, op, timeRange?)` (index.ts:214) |
+| `transcribeAndInsert(noteFile, embeds)` | `noteFile.path` | `insertTranscriptions(noteFile, embeds, op)` (index.ts:304) |
+| `transcribeAndInsertCombined(noteFile, embeds)` | `noteFile.path` (2+ embeds only) | `insertCombinedTranscription(noteFile, embeds, op)` (index.ts:439) |
 
-- `private queued<T>(file, op, run)` (index.ts:87) wraps `noteQueue.run(file.path, run, { onWait })`; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (audio commands are user-invoked, so a wait is surfaced).
-- `transcribeAndInsertCombined` with `<2` embeds short-circuits to the PUBLIC `transcribeAndInsert` BEFORE acquiring (index.ts:423), so the slot is still taken exactly once.
-- The combined-transcription fallbacks call `insertTranscriptions` DIRECTLY (index.ts:470) — they already hold the note's slot, and re-entering would self-deadlock.
+- `private queued<T>(file, op, run)` (index.ts:88) wraps `noteQueue.run(file.path, run, { onWait })`; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (audio commands are user-invoked, so a wait is surfaced).
+- `transcribeAndInsertCombined` with `<2` embeds short-circuits to the PUBLIC `transcribeAndInsert` BEFORE acquiring (index.ts:424), so the slot is still taken exactly once.
+- The combined-transcription fallbacks call `insertTranscriptions` DIRECTLY (index.ts:471) — they already hold the note's slot, and re-entering would self-deadlock.
 - `transcribe(audioData, fileName, options?)` is queue-free: it takes bytes, not a note, and is also called by `VideoModule.processUrl()`.
 
 ## Note Scanning
@@ -179,7 +179,7 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 
 ## Settings Keys
 
-All under `settings.audio` (interface `AudioSettings`, `settings.ts:177`; defaults `settings.ts:506`):
+All under `settings.audio` (interface `AudioSettings`, `settings.ts:177`; defaults `settings.ts:508`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -199,7 +199,7 @@ All under `settings.audio` (interface `AudioSettings`, `settings.ts:177`; defaul
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `postProcessing.enabled` | boolean | `true` | Master switch; off returns the raw transcript unchanged |
-| `postProcessing.removeFiller` | boolean | `false` | Strip filler words / false starts (opt-in per vault, `settings.ts:521`; #465) |
+| `postProcessing.removeFiller` | boolean | `false` | Strip filler words / false starts (opt-in per vault, `settings.ts:523`; #465) |
 | `postProcessing.addStructure` | boolean | `true` | Add punctuation, paragraph breaks, headers |
 | `postProcessing.extractKeyPoints` | boolean | `false` | Prepend a "Key Points" summary section |
 | `postProcessing.customPrompt` | string | `''` | Extra instruction appended to the cleanup prompt |
@@ -212,7 +212,7 @@ When `timeRange` is provided to `transcribeFileToActiveNote()`:
 1. Audio file written to `os.tmpdir()` (`synapse-clip-src-<ts>.mp3`)
 2. `this.extractor.clipAudio(tempPath, start, end)` (`AudioClipper`; ffmpeg, desktop only) clips it
 3. Clipped audio data passed to `transcribe()`
-4. Both temp files are unlinked in a `finally` (index.ts:236-242), so a failed write/clip/read never leaks vault audio into the OS temp dir
+4. Both temp files are unlinked in a `finally` (index.ts:237-243), so a failed write/clip/read never leaks vault audio into the OS temp dir
 5. Callout title includes time range: "Transcription of file.mp3 [01:30 - 05:00]"
 6. Falls back to full-file transcription on mobile (no `extractor`), with an info notice
 
@@ -242,4 +242,4 @@ No commands registered directly by this module; `main.ts` registers the unified 
 
 ## Unresolved Links (#581)
 
-- Transcription blocks (single, batch, combined) pass through `stripUnresolvedLinks` before insertion.
+- Transcription blocks (single, batch, combined) pass through `stripUnresolvedLinks` before insertion (index.ts:262, :388, :511).

@@ -133,7 +133,7 @@ Path exclusions use the centralized `settings.exclusions: ExclusionRule[]`:
 
 ## Settings
 
-`ImageSettings` (`settings.ts:216`); defaults at `settings.ts:542`. All under `settings.image`:
+`ImageSettings` (`settings.ts:216`); defaults at `settings.ts:544`. All under `settings.image`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -188,7 +188,7 @@ Downscale path re-encodes to JPEG. Lossless sources (`image/png`, `image/bmp`, `
 
 ## Invariants / Gotchas
 
-- OCR blocks (single + batch) pass through `stripUnresolvedLinks` before insertion (#581).
+- OCR blocks (single + batch) pass through `stripUnresolvedLinks` before insertion (index.ts:91, :210; #581).
 - Per-note serialization (#483): both public entry points take the target note's `NoteOperationQueue` slot exactly once via `queued()` (index.ts:40) and delegate to a queue-free core; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (OCR is user-invoked). The cores must never re-enter the queue.
 - `extractAndInsert` sorts embeds by descending line and applies all inserts atomically in one `vault.process()` so earlier splices never shift later lines.
 - A 2000ms `window.setTimeout` delay separates successive API calls to respect rate limits.
