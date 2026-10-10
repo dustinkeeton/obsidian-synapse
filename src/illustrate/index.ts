@@ -15,12 +15,12 @@ import { IllustrateStore } from './proposal-store';
 import { AssetWriter } from './asset-writer';
 import { WikimediaProvider } from './providers/wikimedia';
 import { OpenverseProvider } from './providers/openverse';
-import { SourceProvider } from './providers/source';
+import { SourceProvider, imageRelevance } from './providers/source';
 import { fetchLinkedPageImages, MAX_LINKED_PAGE_IMAGES } from './linked-pages';
 import { isLicenseAllowed } from './license';
 import { buildXyChart } from './chart';
 import { validateMermaid } from './diagram';
-import { buildMermaidItemBlock, buildPhotoBlock } from './inserter';
+import { attributionLine, buildMermaidItemBlock, buildPhotoBlock } from './inserter';
 import { isEligibleNote, hasIllustrations, MIN_WORDS_TO_ILLUSTRATE } from './note-scanner';
 import type { IllustrateItem, IllustrateProposal, IllustrateSpot, MediaCandidate, MediaProvider } from './types';
 
@@ -59,10 +59,44 @@ function hasCaptionCallout(content: string, caption: string): boolean {
 	});
 }
 
-/** Accept is idempotent: a visual whose caption callout or Mermaid body is already in the note is skipped. */
+/** Accept is idempotent: a visual whose caption callout, image (remote URL or attribution line), or Mermaid body is already in the note is skipped. */
 function alreadyInserted(content: string, item: IllustrateItem): boolean {
 	if (hasCaptionCallout(content, item.caption)) return true;
-	return item.kind !== 'photo' && content.includes(item.mermaid);
+	if (item.kind !== 'photo') return content.includes(item.mermaid);
+	const { candidate } = item;
+	return (candidate.fileUrl !== '' && content.includes(candidate.fileUrl)) || content.includes(attributionLine(candidate));
+}
+
+interface ResolvedSpot {
+	spot: IllustrateSpot;
+	index: number;
+	item: IllustrateItem | null;
+}
+
+/** How well a spot's query, caption, and anchor describe the image it resolved to. */
+function spotFit(spot: IllustrateSpot, candidate: MediaCandidate): number {
+	if (spot.kind !== 'photo') return 0;
+	const image = { url: candidate.fileUrl, alt: candidate.title, title: candidate.attribution, pageUrl: candidate.pageUrl };
+	return imageRelevance(image, `${spot.query} ${spot.caption} ${spot.anchor}`);
+}
+
+/** Spots sharing an image with a better-fitting spot; ties go to the earlier spot in the note. */
+function duplicateLosers(resolved: ResolvedSpot[]): ResolvedSpot[] {
+	const groups = new Map<string, Array<{ entry: ResolvedSpot; fit: number; line: number }>>();
+	for (const entry of resolved) {
+		if (entry.item?.kind !== 'photo') continue;
+		const { candidate, placement } = entry.item;
+		const group = groups.get(candidate.fileUrl) ?? [];
+		group.push({ entry, fit: spotFit(entry.spot, candidate), line: placement?.line ?? Number.MAX_SAFE_INTEGER });
+		groups.set(candidate.fileUrl, group);
+	}
+	const losers: ResolvedSpot[] = [];
+	for (const group of groups.values()) {
+		if (group.length < 2) continue;
+		group.sort((a, b) => b.fit - a.fit || a.line - b.line || a.entry.index - b.entry.index);
+		losers.push(...group.slice(1).map((g) => g.entry));
+	}
+	return losers;
 }
 
 export class IllustrateModule implements FeatureModule {
@@ -128,7 +162,7 @@ export class IllustrateModule implements FeatureModule {
 		return providers;
 	}
 
-	private async findPhoto(query: string, sourceImages?: SourceImage[]): Promise<MediaCandidate | null> {
+	private async findPhoto(query: string, sourceImages?: SourceImage[], exclude?: ReadonlySet<string>): Promise<MediaCandidate | null> {
 		const allowed = this.getSettings().illustrate.licenseFilter;
 		const providers: MediaProvider[] = sourceImages && sourceImages.length > 0
 			? [new SourceProvider(sourceImages), ...this.activeProviders()]
@@ -136,7 +170,7 @@ export class IllustrateModule implements FeatureModule {
 		for (const provider of providers) {
 			try {
 				const candidates = await provider.search(query, { limit: CANDIDATES_PER_QUERY });
-				const match = candidates.find((c) => isLicenseAllowed(c.license, allowed));
+				const match = candidates.find((c) => !exclude?.has(c.fileUrl) && isLicenseAllowed(c.license, allowed));
 				if (match) return match;
 			} catch (error) {
 				console.warn(`[Synapse] Illustrate: ${provider.id} search failed: ${redactError(error)}`);
@@ -151,17 +185,29 @@ export class IllustrateModule implements FeatureModule {
 		return mermaid || this.activeProviders().length > 0;
 	}
 
-	private async resolveItem(spot: IllustrateSpot, content: string, sourceImages?: SourceImage[], region?: RegionLocator): Promise<IllustrateItem | null> {
+	private async resolveItem(spot: IllustrateSpot, content: string, sourceImages?: SourceImage[], region?: RegionLocator, exclude?: ReadonlySet<string>): Promise<IllustrateItem | null> {
 		if (spot.kind !== 'photo' && !this.getSettings().illustrate.mermaid) return null;
 		const placement = resolveInsertionPoint(content, anchorFor(spot.anchor), resolveOptions(region));
 		const base = { id: generateId(), anchor: spot.anchor, caption: spot.caption, rationale: spot.rationale, placement, region };
 		if (spot.kind === 'photo') {
-			const candidate = await this.findPhoto(`${spot.query} ${spot.caption}`, sourceImages);
+			const candidate = await this.findPhoto(`${spot.query} ${spot.caption}`, sourceImages, exclude);
 			return candidate ? { ...base, kind: 'photo', candidate } : null;
 		}
 		if (spot.kind === 'diagram') return { ...base, kind: 'diagram', mermaid: spot.mermaid };
 		const mermaid = validateMermaid(buildXyChart(spot.chart));
 		return mermaid ? { ...base, kind: 'chart', mermaid } : null;
+	}
+
+	/** Each image lands in a note at most once: losing spots re-resolve without every claimed image, or drop. */
+	private async dedupePhotos(resolved: ResolvedSpot[], content: string, sourceImages?: SourceImage[], region?: RegionLocator): Promise<void> {
+		const claimed = new Set<string>();
+		for (let pass = 0; pass < resolved.length; pass++) {
+			const losers = duplicateLosers(resolved);
+			if (losers.length === 0) return;
+			for (const r of resolved) if (r.item?.kind === 'photo') claimed.add(r.item.candidate.fileUrl);
+			for (const loser of losers) loser.item = await this.resolveItem(loser.spot, content, sourceImages, region, claimed);
+		}
+		for (const loser of duplicateLosers(resolved)) loser.item = null;
 	}
 
 	/** Analyze one note (or just the produced region) and persist a proposal; null when nothing is worth illustrating. */
@@ -178,11 +224,12 @@ export class IllustrateModule implements FeatureModule {
 			}
 		}
 		const spots = await this.analyzer.analyze(file.path, text, trackAiCache(cacheUse));
-		const items: IllustrateItem[] = [];
-		for (const spot of spots) {
-			const item = await this.resolveItem(spot, content, sourceImages, region);
-			if (item) items.push(item);
+		const resolved: ResolvedSpot[] = [];
+		for (const [index, spot] of spots.entries()) {
+			resolved.push({ spot, index, item: await this.resolveItem(spot, content, sourceImages, region) });
 		}
+		await this.dedupePhotos(resolved, content, sourceImages, region);
+		const items = resolved.flatMap((r) => (r.item ? [r.item] : []));
 		if (items.length === 0) return null;
 		const proposal: IllustrateProposal = {
 			id: generateId(),
@@ -393,7 +440,14 @@ export class IllustrateModule implements FeatureModule {
 		let inserted = 0;
 		await this.noteQueue.run(file.path, async () => {
 			const current = await this.plugin.app.vault.read(file);
-			const fresh = accepted.filter((item) => !alreadyInserted(current, item));
+			const seen = new Set<string>();
+			const fresh = accepted.filter((item) => {
+				if (alreadyInserted(current, item)) return false;
+				if (item.kind !== 'photo') return true;
+				if (seen.has(item.candidate.fileUrl)) return false;
+				seen.add(item.candidate.fileUrl);
+				return true;
+			});
 			const blocks: Array<{ item: IllustrateItem; block: string }> = [];
 			for (const item of fresh) {
 				blocks.push({ item, block: await this.buildBlock(item, file) });

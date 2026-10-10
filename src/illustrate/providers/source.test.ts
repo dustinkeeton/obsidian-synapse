@@ -20,13 +20,16 @@ describe('imageRelevance', () => {
 
 describe('SourceProvider', () => {
 	it('ranks by relevance, keeps input order for ties, and honors the limit', async () => {
-		const results = await new SourceProvider(images).search('red panda', { limit: 2 });
+		const results = await new SourceProvider(images).search('red pandas bamboo', { limit: 2 });
 		expect(results.map((c) => c.fileUrl)).toEqual(['https://example.com/panda.jpg', 'https://example.com/hero.jpg']);
+		const limited = await new SourceProvider(images).search('pandas', { limit: 1 });
+		expect(limited.map((c) => c.fileUrl)).toEqual(['https://example.com/hero.jpg']);
 	});
 
-	it('still returns zero-overlap images so a lone thumbnail is usable', async () => {
-		const results = await new SourceProvider([images[2]]).search('red panda', { limit: 5 });
-		expect(results).toHaveLength(1);
+	it('drops zero-overlap images so an unrelated source image never beats a stock photo', async () => {
+		expect(await new SourceProvider([images[2]]).search('red panda', { limit: 5 })).toEqual([]);
+		const results = await new SourceProvider(images).search('red panda', { limit: 5 });
+		expect(results.map((c) => c.fileUrl)).toEqual(['https://example.com/panda.jpg']);
 	});
 
 	it('maps an image to a Source page candidate with the page as license and attribution target', () => {
