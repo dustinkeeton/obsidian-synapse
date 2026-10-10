@@ -303,6 +303,26 @@ describe('RemModule', () => {
 			expect(notifications.info).not.toHaveBeenCalled();
 			expect(refresh).toHaveBeenCalled();
 		});
+
+		it('auto-accepts without the auto-accept notices', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('Foo here');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			loadSpy.mockImplementation(async () => ({
+				id: 'x',
+				sourceNotePath: 'notes/A.md',
+				createdAt: '2026-06-11T00:00:00.000Z',
+				candidates: [candidate('Foo')],
+				status: 'pending',
+			}));
+			const module = await loadedModule(() => true);
+
+			await module.remScanNote('notes/A.md', { postOp: true });
+
+			expect(updateStatusSpy).toHaveBeenCalledWith(expect.any(String), 'accepted', ['Foo'], expect.any(String));
+			expect(notifications.info).not.toHaveBeenCalled();
+			expect(notifications.success).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('remScanNote queue slot (#585)', () => {

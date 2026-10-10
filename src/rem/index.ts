@@ -132,7 +132,7 @@ export class RemModule implements FeatureModule {
 
 	/**
 	 * Scan a single note for linkable mentions, holding the note's queue slot.
-	 * `options.postOp` (automatic post-op run) silences info notices and the result toast (#585).
+	 * `options.postOp` (automatic post-op run) silences info notices, the result toast and auto-accept notices (#585).
 	 */
 	async remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null> {
 		return this.noteQueue.run(filePath, () => this.scanNote(filePath, options));
@@ -190,8 +190,8 @@ export class RemModule implements FeatureModule {
 			);
 		}
 
-		// Single-note path: auto-accept the whole proposal if enabled (#228).
-		await this.maybeAutoAccept(proposal);
+		// Single-note path: auto-accept the whole proposal if enabled (#228); post-op stays silent (#585).
+		await this.maybeAutoAccept(proposal, options?.postOp);
 
 		await this.refreshView();
 		return proposal;

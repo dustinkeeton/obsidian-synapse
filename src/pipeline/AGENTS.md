@@ -131,7 +131,7 @@ Wired in `main.ts:185-202`: one `PostOpHookDeps` (`main.ts:185-193`; `illustrate
 |-----|----------------|-------------------|
 | enrich + title | source != `'enrichment'`; `enrichment.enabled && enrichment.autoEnrich`; NOT (deep-dive with `!deepDive.autoEnrichOnAccept` — that opts the source out of the whole enrich/title chain) | `fireAndForget(enrich(filePath, TRIGGER_BY_SOURCE[source]))`, then a title check gated LIVE on `title.enabled && title.checkAfterOperations` |
 | standalone title | source != `'enrichment'`, auto-enrich off, `title.enabled && title.checkAfterOperations` | `fireAndForget(checkTitle(filePath))` |
-| deep-dive REM (#581) | source == `'deep-dive'`; `rem.enabled && deepDive.autoRemOnAccept` | `fireAndForget(remNote(filePath))`; main.ts wires `rem.remScanNote(filePath, { postOp: true })`; RemModule takes the queue slot (REM's own auto-accept applies) |
+| deep-dive REM (#581) | source == `'deep-dive'`; `rem.enabled && deepDive.autoRemOnAccept` | `fireAndForget(remNote(filePath))`; main.ts wires `rem.remScanNote(filePath, { postOp: true })`; RemModule takes the queue slot (REM's own auto-accept applies, silently) |
 | illustrate (#213) | `illustrate.enabled` | LIVE: `illustrate.enabled && illustrate.runAfter[RUN_AFTER_BY_SOURCE[source]]` -> `fireAndForget(illustrateNote(filePath, ctx))` |
 
 `TRIGGER_BY_SOURCE`: elaboration -> `'elaboration'`; audio/video/image -> `'transcription'`; summarize -> `'summarization'`; deep-dive -> `'deep-dive'`. `RUN_AFTER_BY_SOURCE`: elaboration -> `elaboration`; audio/video/image -> `transcription`; summarize -> `summarize`; deep-dive -> `deepDive`; enrichment -> `enrichment`.
