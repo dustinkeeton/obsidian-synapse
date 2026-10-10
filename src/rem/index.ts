@@ -2,7 +2,7 @@ import type { Plugin } from 'obsidian';
 import { TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { CommandRegistrar } from '../commands';
-import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule } from '../shared';
+import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule, NoteOperationQueue } from '../shared';
 import type { CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
 import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport } from '../shared';
@@ -31,6 +31,7 @@ export class RemModule implements FeatureModule {
 	private notifications: NotificationManager;
 	private checkpointManager: CheckpointManager;
 	private registrar: CommandRegistrar;
+	private noteQueue: NoteOperationQueue;
 	private store!: RemStore;
 	private scanner!: MentionScanner;
 	private semanticMatcher!: SemanticMatcher;
@@ -55,6 +56,7 @@ export class RemModule implements FeatureModule {
 		this.notifications = deps.notifications;
 		this.checkpointManager = deps.checkpointManager;
 		this.registrar = deps.registrar;
+		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 	}
 
@@ -129,19 +131,26 @@ export class RemModule implements FeatureModule {
 	}
 
 	/**
-	 * Scan a single note for linkable mentions.
+	 * Scan a single note for linkable mentions, holding the note's queue slot.
+	 * `options.postOp` (automatic post-op run) silences info notices, the result toast and auto-accept notices (#585).
 	 */
-	async remScanNote(filePath: string): Promise<RemProposal | null> {
+	async remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null> {
+		return this.noteQueue.run(filePath, () => this.scanNote(filePath, options));
+	}
+
+	/** Single-note scan core, already holding the note's queue slot. */
+	private async scanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null> {
+		const info = (message: string) => { if (!options?.postOp) this.notifications.info(message); };
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) {
-			this.notifications.info('File not found');
+			info('File not found');
 			return null;
 		}
 
 		const tFile = file;
 		if (this.isExcluded(tFile)) {
 			const rule = findMatchingRule(tFile.path, 'rem', this.getSettings());
-			this.notifications.info(
+			info(
 				rule
 					? `Skipped — "${tFile.path}" is excluded by rule "${rule.pattern}"`
 					: 'Note is excluded from REM scanning (excluded tag)'
@@ -155,12 +164,12 @@ export class RemModule implements FeatureModule {
 		const allCandidates = await this.gatherCandidates(tFile, content, cacheUse);
 
 		if (allCandidates === null) {
-			this.notifications.info(LANE_SKIP_NOTICE);
+			info(LANE_SKIP_NOTICE);
 			return null;
 		}
 
 		if (allCandidates.length === 0) {
-			this.notifications.info(withCacheReport('No linkable mentions found', [cacheUse]));
+			info(withCacheReport('No linkable mentions found', [cacheUse]));
 			return null;
 		}
 
@@ -169,18 +178,20 @@ export class RemModule implements FeatureModule {
 		await this.store.save(proposal);
 		// Review action only when the proposal stays pending — auto-accept
 		// (applied right after) inserts the links, leaving nothing to review (#366).
-		this.notifications.success(
-			withCacheReport(`Found ${allCandidates.length} linkable mention${allCandidates.length === 1 ? '' : 's'}`, [cacheUse]),
-			undefined,
-			reviewAction({
-				generated: true,
-				shouldAutoAccept: this.shouldAutoAccept,
-				openProposalView: this.onOpenProposalView,
-			})
-		);
+		if (!options?.postOp) {
+			this.notifications.success(
+				withCacheReport(`Found ${allCandidates.length} linkable mention${allCandidates.length === 1 ? '' : 's'}`, [cacheUse]),
+				undefined,
+				reviewAction({
+					generated: true,
+					shouldAutoAccept: this.shouldAutoAccept,
+					openProposalView: this.onOpenProposalView,
+				})
+			);
+		}
 
-		// Single-note path: auto-accept the whole proposal if enabled (#228).
-		await this.maybeAutoAccept(proposal);
+		// Single-note path: auto-accept the whole proposal if enabled (#228); post-op stays silent (#585).
+		await this.maybeAutoAccept(proposal, options?.postOp);
 
 		await this.refreshView();
 		return proposal;

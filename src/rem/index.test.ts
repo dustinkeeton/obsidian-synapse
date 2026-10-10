@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin, TFile } from 'obsidian';
 import type { CheckpointManager, NotificationManager, NoticeAction, Checkpoint } from '../shared';
+import { NoteOperationQueue } from '../shared/note-operation-queue';
 import type { CommandRegistrar } from '../commands';
 
 // The mock TFile (from __test-utils__) and obsidian's real TFile differ
@@ -237,6 +238,119 @@ describe('RemModule', () => {
 			expect(result!.candidates.map((c) => c.matchedText)).toEqual(['Relevant', 'TitleHit']);
 			const title = result!.candidates.find((c) => c.matchedText === 'TitleHit')!;
 			expect(title.confidence).toBeCloseTo(0.6);
+		});
+	});
+
+	describe('remScanNote post-op run (#585)', () => {
+		it('raises no notice when the file does not exist', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(null);
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('missing.md', { postOp: true });
+
+			expect(result).toBeNull();
+			expect(notifications.info).not.toHaveBeenCalled();
+		});
+
+		it('raises no notice when the note is excluded', async () => {
+			settings.exclusions = [{ pattern: 'Archive/**', features: ['rem'] }];
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('Archive/Old.md'));
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('Archive/Old.md', { postOp: true });
+
+			expect(result).toBeNull();
+			expect(notifications.info).not.toHaveBeenCalled();
+		});
+
+		it('raises no notice when the System 1 lane fails', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('Foo content');
+			matchSpy.mockRejectedValue(new RemLaneError(new Error('overloaded')));
+			vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('notes/A.md', { postOp: true });
+
+			expect(result).toBeNull();
+			expect(notifications.info).not.toHaveBeenCalled();
+		});
+
+		it('raises no notice when no linkable mentions are found', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('nothing here');
+			const module = await loadedModule();
+
+			const result = await module.remScanNote('notes/A.md', { postOp: true });
+
+			expect(result).toBeNull();
+			expect(notifications.info).not.toHaveBeenCalled();
+		});
+
+		it('saves the proposal and refreshes the view without a result toast', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('mentions Foo');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			const module = await loadedModule();
+			const refresh = vi.fn().mockResolvedValue(undefined);
+			module.onViewRefreshNeeded = refresh;
+
+			const result = await module.remScanNote('notes/A.md', { postOp: true });
+
+			expect(result!.status).toBe('pending');
+			expect(saveSpy).toHaveBeenCalledWith(expect.objectContaining({ sourceNotePath: 'notes/A.md' }));
+			expect(notifications.success).not.toHaveBeenCalled();
+			expect(notifications.info).not.toHaveBeenCalled();
+			expect(refresh).toHaveBeenCalled();
+		});
+
+		it('auto-accepts without the auto-accept notices', async () => {
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('Foo here');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			loadSpy.mockImplementation(async () => ({
+				id: 'x',
+				sourceNotePath: 'notes/A.md',
+				createdAt: '2026-06-11T00:00:00.000Z',
+				candidates: [candidate('Foo')],
+				status: 'pending',
+			}));
+			const module = await loadedModule(() => true);
+
+			await module.remScanNote('notes/A.md', { postOp: true });
+
+			expect(updateStatusSpy).toHaveBeenCalledWith(expect.any(String), 'accepted', ['Foo'], expect.any(String));
+			expect(notifications.info).not.toHaveBeenCalled();
+			expect(notifications.success).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('remScanNote queue slot (#585)', () => {
+		it('waits for an operation already holding the note slot', async () => {
+			const noteQueue = new NoteOperationQueue();
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('nothing here');
+			const module = new RemModule(makeModuleDeps({
+				plugin,
+				getSettings: () => settings,
+				notifications: notifications as unknown as NotificationManager,
+				checkpointManager: checkpointManager as unknown as CheckpointManager,
+				registrar: registrar as unknown as CommandRegistrar,
+				noteQueue,
+			}));
+			await module.onload();
+			let releaseHolder!: () => void;
+			const holder = noteQueue.run('notes/A.md', () => new Promise<void>((r) => { releaseHolder = r; }));
+
+			const scan = module.remScanNote('notes/A.md', { postOp: true });
+			await Promise.resolve();
+			expect(app.vault.read).not.toHaveBeenCalled();
+
+			releaseHolder();
+			await holder;
+			await scan;
+			expect(app.vault.read).toHaveBeenCalledTimes(1);
+			expect(noteQueue.size).toBe(0);
 		});
 	});
 

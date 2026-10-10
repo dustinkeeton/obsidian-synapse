@@ -105,7 +105,7 @@ Key constraints:
 - `elaboration` module includes `ImageAnalyzer` for analyzing images in notes during proposal generation
 - All feature modules depend on `shared`; no circular dependencies
 - Modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem, illustrate) retain `CheckpointManager` from `ModuleDeps`; `tidy`, `title`, `intake` receive the bundle but do not keep it; `transcription` is not a module
-- Every feature whose write follows read -> AI -> write receives the single `NoteOperationQueue` (#483): audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive, illustrate — plus `transcription/insert-url-transcript` via `InsertUrlTranscriptDeps.noteQueue`. Public entry points take the note's slot exactly ONCE and delegate to a queue-free private core; acquiring twice (the same key or a second one) would deadlock. Batch scans take one slot per note, never one per batch. Writes to OTHER notes while holding a key stay unqueued by design (title backlink remediation + merge targets, deep-dive syllabus/sibling nav, organize summary notes). Exception to "the module takes its own slot": the deep-dive post-op REM scan's slot is taken in `main.ts:192` (`noteQueue.run(filePath, () => rem.remScanNote(filePath))`), not inside `RemModule` (#581)
+- Every feature whose write follows read -> AI -> write receives the single `NoteOperationQueue` (#483): audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive, illustrate, rem (single-note `remScanNote` only, #585) — plus `transcription/insert-url-transcript` via `InsertUrlTranscriptDeps.noteQueue`. Public entry points take the note's slot exactly ONCE and delegate to a queue-free private core; acquiring twice (the same key or a second one) would deadlock. Batch scans take one slot per note, never one per batch. Writes to OTHER notes while holding a key stay unqueued by design (title backlink remediation + merge targets, deep-dive syllabus/sibling nav, organize summary notes).
 - Unqueued by design, because they re-derive inside the atomic callback instead of writing a pre-computed snapshot: `rem` accept/undo (`rem/index.ts:415,491` — `vault.process` validates scan-time offsets against fresh content, re-locates stale ones, drops what cannot be found) and `intake` stamp/move/breadcrumb (`intake/index.ts:491,561` `vault.process`, `:582` `fileManager.renameFile` — frontmatter stamps and a separate log note, run after every pipeline phase has finished). `SynapseRunner.fireOnFile` awaits its phases in sequence, so each phase acquires and releases the note's slot in turn
 - `views` imports feature modules as types only; its runtime imports are `fireAndForget` + `describeInsertion` (`shared`), `FEATURE_ICONS` + `REGISTRY_BY_ID` (`commands`), and `MarkdownView` (`obsidian`). Sidebar activation/refresh (`view-activation.ts`) reads proposals through the injected `UnifiedViewSources`
 - Path exclusion is centralized (#307): the single `settings.exclusions: ExclusionRule[]` (model + matcher in `shared/exclusions.ts`) replaces the former per-module `excludeFolders` fields. Modules gate via `isPathExcluded(path, FeatureId, settings)` / `findMatchingRule`. Tag exclusion (`excludeTags`) stays per-module. `main.loadSettings()` runs a one-time `buildMigratedExclusions()` migration for upgraders whose persisted data has no `exclusions` key
@@ -138,7 +138,7 @@ onload()
   |-- registerPropertiesAutoFold(this, getSettings)  (#381; main.ts:176)
   |-- for each modules.listFeatureModules(modules): assign onViewRefreshNeeded / onOpenProposalView where the slot exists (main.ts:178-181; the seven proposal modules: elaboration, enrichment, organize, deep-dive, title, rem, illustrate)
   |-- await modules.loadFeatureModules(modules, settings)  (main.ts:182; onload() per settings.<key>.enabled entry, registry order, intake included)
-  |-- post-op hooks (main.ts:185-202): postOpDeps (main.ts:185-193; remNote -> noteQueue.run(path, () => rem.remScanNote(path)), :192); pipeline.buildPostOpHook(postOpDeps, source) per source (incl. enrichment.onEnrichmentApplied, :199); buildAutoOrganizeHook for deep-dive / summarize
+  |-- post-op hooks (main.ts:185-202): postOpDeps (main.ts:185-193; remNote -> rem.remScanNote(path, { postOp: true }), :192); pipeline.buildPostOpHook(postOpDeps, source) per source (incl. enrichment.onEnrichmentApplied, :199); buildAutoOrganizeHook for deep-dive / summarize
   |-- openUnifiedModal = transcription.openUnifiedTranscriptionModal(deps) (main.ts:204-212); isFfmpegAvailable = video.createFfmpegAvailability(audio.extractor) (main.ts:213)
   |-- addRibbonIcon x3 (main.ts:215-219); registrar.register('review-proposals') (main.ts:221-223)
   |-- checkpoints.onload()  (registers manage-checkpoints; arms the 3s startup interrupted-operation check; main.ts:224)
@@ -484,7 +484,7 @@ matches the `UnifiedItem` union exactly.
 
 ## Cross-Module Callbacks (wired in main.ts)
 
-Post-op hooks are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook(postOpDeps, source)` / `buildAutoOrganizeHook(postOpDeps, trigger)`, `main.ts:185-202`); `PostOpHookDeps` (`main.ts:185-193`) injects `enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`, `illustrate.illustrateNote` (`:191`), `remNote` = `noteQueue.run(filePath, () => rem.remScanNote(filePath))` (`:192`, #581).
+Post-op hooks are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook(postOpDeps, source)` / `buildAutoOrganizeHook(postOpDeps, trigger)`, `main.ts:185-202`); `PostOpHookDeps` (`main.ts:185-193`) injects `enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`, `illustrate.illustrateNote` (`:191`), `remNote` = `rem.remScanNote(filePath, { postOp: true })` (`:192`, #581/#585).
 
 ```
 // #552: elaboration fires after the whole body is rewritten; ctx.producedRegion = { kind: 'whole-note' } (elaboration/index.ts:546)
@@ -494,7 +494,7 @@ video.onTranscriptionComplete(filePath)  --> enrichment.enrich(filePath, 'transc
 image.onExtractionComplete(filePath)     --> enrichment.enrich(filePath, 'transcription')
 summarize.onSummaryComplete(filePath)    --> enrichment.enrich(filePath, 'summarization')
 deepDive.onNoteAccepted(filePath)        --> enrichment.enrich(filePath, 'deep-dive')
-deepDive.onNoteAccepted(filePath)        --> noteQueue.run(filePath, () => rem.remScanNote(filePath))   // #581 REM leg, pipeline/post-op-hooks.ts:70-73; gated rem.enabled && deepDive.autoRemOnAccept
+deepDive.onNoteAccepted(filePath)        --> rem.remScanNote(filePath, { postOp: true })   // #581 REM leg, pipeline/post-op-hooks.ts:70-73; gated rem.enabled && deepDive.autoRemOnAccept
 deepDive.onOrganizeRequested(file)       --> organize.organizeNote(file)
 summarize.onOrganizeRequested(file)      --> organize.organizeNote(file)
 
@@ -543,7 +543,7 @@ Auto-accept getters wired for elaboration, enrichment, organize, deep-dive, titl
 
 All callbacks are dispatched through `fireAndForget` (never awaited, `pipeline/post-op-hooks.ts`). For the queued modules (elaboration, audio, video, image) the callback fires from INSIDE the primary operation's `NoteOperationQueue` slot, so the chained `enrichment.enrich` / `title.checkTitle` enqueue BEHIND the primary write and run against the content it produced — nothing awaits them, so there is no cycle and no deadlock (#483). `title.acceptProposal` holds the PRE-rename key; work already queued under the old path runs afterwards, finds no file and exits early.
 
-Automatic post-op enrich and title calls pass `{ postOp: true }` (`enrichment.enrich(path, trigger, { postOp: true })`, `title.checkTitle(path, { postOp: true })`) so the secondary auto-run never surfaces an extra "Review" toast — the centralized `reviewAction` gate (#366) suppresses the affordance on post-op runs. Exception: the deep-dive REM leg calls `rem.remScanNote(filePath)` with no `postOp` flag (`remScanNote` takes no options, `rem/index.ts:134`), so each accepted deep-dive note can raise REM's info notices and "Review" affordance. `onTitleAccept(id, resolution?)` forwards the user's duplicate-resolution choice (`'iterate'` | `'merge'`, #408) into `title.acceptProposal`.
+Automatic post-op enrich, title and REM calls pass `{ postOp: true }` (`enrichment.enrich(path, trigger, { postOp: true })`, `title.checkTitle(path, { postOp: true })`, `rem.remScanNote(path, { postOp: true })`) so the secondary auto-run never surfaces an extra "Review" toast — the centralized `reviewAction` gate (#366) suppresses the affordance on post-op runs; REM's post-op scan also drops its info notices, result toast and auto-accept notices (#585). `onTitleAccept(id, resolution?)` forwards the user's duplicate-resolution choice (`'iterate'` | `'merge'`, #408) into `title.acceptProposal`.
 
 ## Checkpoint System
 

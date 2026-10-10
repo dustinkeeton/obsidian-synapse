@@ -13,10 +13,10 @@ class RemModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null
 
-  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:52; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar); #228 getter default () => false
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:53; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar, noteQueue); #228 getter default () => false
   onload(): Promise<void>
   onunload(): void
-  remScanNote(filePath: string): Promise<RemProposal | null>   // index.ts:134; also the deep-dive post-op REM leg target (#581); takes no queue slot and no postOp option
+  remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null>   // index.ts:137; takes the note's queue slot once (#585); postOp silences info notices + result toast + auto-accept notices
   remScanDirectory(folderPath?: string, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   acceptProposal(id: string, acceptedMatchTexts: string[], options?: { silent?: boolean }): Promise<void>
@@ -103,7 +103,7 @@ interface RemSettings {
 ## Data Flow
 
 ```
-remScanNote(filePath)
+remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private scanNote core
   --> isExcluded? (isPathExcluded 'rem' + enrichment.excludeTags)
   --> gatherCandidates(file, content, cacheUse):
         MentionScanner.scan(...) literal candidates, down-weighted by titleMatchWeight
@@ -119,7 +119,7 @@ remScanNote(filePath)
         RemLaneError -> console.warn via redactError, gatherCandidates returns null -> note skipped (single note: info Notice; scans: ", N skipped after a System 1 lane failure" in the finish line)
         merge (semantic filtered by withoutSkipRegions) + re-rank by confidence desc + withoutOverlaps + cap at maxLinksPerNote
   --> buildProposal: RemProposal { candidates, status: 'pending', lane? } --> RemStore.save
-  --> withCacheReport('Found N linkable mentions' | 'No linkable mentions found', [cacheUse]) Notice (#527) + reviewAction({ generated, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366)
+  --> withCacheReport('Found N linkable mentions' | 'No linkable mentions found', [cacheUse]) Notice (#527) + reviewAction({ generated, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366); options.postOp -> no info notices, no result toast, silent auto-accept (#585)
   --> maybeAutoAccept(proposal)   (#228, when shouldAutoAccept())
   --> refreshView()
 
@@ -170,10 +170,10 @@ WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This
 
 | Caller | Wiring | Gate |
 |--------|--------|------|
-| deep-dive accept (`deepDive.onNoteAccepted`) | `PostOpHookDeps.remNote` = `noteQueue.run(filePath, () => rem.remScanNote(filePath))` (`main.ts:192`); leg in `pipeline/post-op-hooks.ts:70-73`, dispatched via `fireAndForget` | wire time: `rem.enabled && deepDive.autoRemOnAccept` |
+| deep-dive accept (`deepDive.onNoteAccepted`) | `PostOpHookDeps.remNote` = `rem.remScanNote(filePath, { postOp: true })` (`main.ts:192`); leg in `pipeline/post-op-hooks.ts:70-73`, dispatched via `fireAndForget` | wire time: `rem.enabled && deepDive.autoRemOnAccept` |
 
-- The note's `NoteOperationQueue` slot is taken in `main.ts`, not in `RemModule` (REM's own entry points stay unqueued, see root `AGENTS.md`). It enqueues behind the deep-dive accept that holds the same `proposedPath` key.
-- No `{ postOp: true }`: `remScanNote` has no options parameter, so the post-op scan raises the same info notices (`No linkable mentions found`, exclusion skip) and `reviewAction` "Review" affordance as a user-invoked scan. `autoAccept.rem` applies (`maybeAutoAccept`).
+- `remScanNote` takes the note's `NoteOperationQueue` slot itself (#585), so the leg enqueues behind the deep-dive accept that holds the same `proposedPath` key. `remScanDirectory` / `resumeFromCheckpoint` stay unqueued.
+- `{ postOp: true }` suppresses the file-not-found, exclusion, lane-skip and no-mentions notices and the "Found N linkable mentions" toast; a pending proposal surfaces only via `refreshView()`. `autoAccept.rem` still applies, silently: `maybeAutoAccept(proposal, postOp)` skips the "Auto-accepted REM links" and "Inserted N wikilinks" notices.
 - Links only to existing notes: semantic candidates whose `title` is not an included vault note are dropped (`semantic-matcher.ts:247-248`); literal candidates come from vault titles (`MentionScanner`). Covered by `semantic-matcher.test.ts` "only ever inserts links that resolve to existing notes (#581)".
 
 ## Checkpoint Behavior
