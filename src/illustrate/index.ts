@@ -20,7 +20,7 @@ import { fetchLinkedPageImages, MAX_LINKED_PAGE_IMAGES } from './linked-pages';
 import { isLicenseAllowed } from './license';
 import { buildXyChart } from './chart';
 import { validateMermaid } from './diagram';
-import { attributionLine, buildMermaidItemBlock, buildPhotoBlock } from './inserter';
+import { buildMermaidItemBlock, buildPhotoBlock } from './inserter';
 import { isEligibleNote, hasIllustrations, MIN_WORDS_TO_ILLUSTRATE } from './note-scanner';
 import type { IllustrateItem, IllustrateProposal, IllustrateSpot, MediaCandidate, MediaProvider } from './types';
 
@@ -59,12 +59,11 @@ function hasCaptionCallout(content: string, caption: string): boolean {
 	});
 }
 
-/** Accept is idempotent: a visual whose caption callout, image (remote URL or attribution line), or Mermaid body is already in the note is skipped. */
+/** Accept is idempotent: a visual whose caption callout, remote image URL, or Mermaid body is already in the note is skipped. */
 function alreadyInserted(content: string, item: IllustrateItem): boolean {
 	if (hasCaptionCallout(content, item.caption)) return true;
 	if (item.kind !== 'photo') return content.includes(item.mermaid);
-	const { candidate } = item;
-	return (candidate.fileUrl !== '' && content.includes(candidate.fileUrl)) || content.includes(attributionLine(candidate));
+	return item.candidate.fileUrl !== '' && content.includes(item.candidate.fileUrl);
 }
 
 interface ResolvedSpot {

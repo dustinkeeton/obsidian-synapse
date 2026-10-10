@@ -141,7 +141,7 @@ illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoi
 
 acceptProposal(id, itemIds)
   --> under noteQueue.run(path): photos downloaded first (AssetWriter) unless !preferDownload; failure -> remote URL embed + info notice
-  --> items whose synapse-illustrate callout titled `<caption>` (either spelling, `parseCalloutHeader`) or Mermaid body already exist in the note, or photos whose fileUrl or attributionLine is already present (or repeats an earlier accepted item's fileUrl), are skipped (alreadyInserted); success notice reports `(N already present)`
+  --> items whose synapse-illustrate callout titled `<caption>` (either spelling, `parseCalloutHeader`) or Mermaid body already exist in the note, or photos whose remote fileUrl is already present (or repeats an earlier accepted item's fileUrl), are skipped (alreadyInserted); success notice reports `(N already present)`
   --> one vault.process: blocks.reduce(applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor), resolveOptions(item.region)), block))   // re-resolved live; stored placement is preview only; item.region -> inside the callout with `> ` prefixes
   --> status accepted | partially-accepted, acceptedItemIds
 ```

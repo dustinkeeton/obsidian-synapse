@@ -7,6 +7,8 @@ import { AssetWriter } from './asset-writer';
 import { WikimediaProvider } from './providers/wikimedia';
 import { OpenverseProvider } from './providers/openverse';
 import * as linkedPages from './linked-pages';
+import { toSourceCandidate } from './providers/source';
+import { buildPhotoBlock } from './inserter';
 import { DEFAULT_SETTINGS, type SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { CheckpointManager, NotificationManager, NoticeAction } from '../shared';
@@ -311,17 +313,26 @@ describe('IllustrateModule', () => {
 			expect(items.map((i) => (i.kind === 'photo' ? i.candidate.fileUrl : null))).toEqual([wings.url, ovCandidate.fileUrl, candidate.fileUrl]);
 		});
 
-		it('skips a photo whose image is already embedded under another caption', async () => {
+		it('skips a photo whose remote image is already embedded under another caption', async () => {
 			const items = [{ id: 'i-photo', kind: 'photo' as const, anchor: '## Habitat', caption: 'Another caption', rationale: '', candidate }];
 			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({ ...proposal(), items });
-			const remote = NOTE + '\n\n![A red panda](https://upload.wikimedia.org/rp.jpg)';
-			const downloaded = NOTE + '\n\n![[attachments/red-panda.jpg]]\n\n> [!note|synapse-illustrate] A red panda\n> Source: [Red panda.jpg](https://commons.wikimedia.org/wiki/File:Red_panda.jpg) · License: [CC BY-SA](https://cc/by-sa) · Jane';
-			for (const content of [remote, downloaded]) {
-				app.vault.read.mockResolvedValue(content);
-				await module.acceptProposal('prop1', ['i-photo']);
-			}
+			app.vault.read.mockResolvedValue(NOTE + '\n\n![A red panda](https://upload.wikimedia.org/rp.jpg)');
+			await module.acceptProposal('prop1', ['i-photo']);
 			expect(app.vault.process).not.toHaveBeenCalled();
 			expect(notifications.success).toHaveBeenCalledWith('Inserted 0 visuals (1 already present)');
+		});
+
+		it('accepts a second blank-alt image from a page whose first image is already embedded', async () => {
+			const page = { pageUrl: 'https://example.com/pandas', title: 'Red pandas' };
+			const first = toSourceCandidate({ url: 'https://example.com/one.jpg', ...page });
+			const second = toSourceCandidate({ url: 'https://example.com/two.jpg', ...page });
+			const items = [{ id: 'p2', kind: 'photo' as const, anchor: '## Lifecycle', caption: 'Two', rationale: '', candidate: second }];
+			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({ ...proposal(), items });
+			const firstItem = { id: 'p1', kind: 'photo' as const, anchor: '## Habitat', caption: 'One', rationale: '', candidate: first };
+			app.vault.read.mockResolvedValue(NOTE + '\n\n' + buildPhotoBlock(firstItem, 'attachments/one.jpg'));
+			vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/two.jpg'));
+			await module.acceptProposal('prop1', ['p2']);
+			expect(notifications.success).toHaveBeenCalledWith('Inserted 1 visual');
 		});
 
 		it('embeds an image shared by two accepted items only once', async () => {
