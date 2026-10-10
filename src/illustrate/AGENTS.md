@@ -13,14 +13,14 @@ class IllustrateModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null
 
-  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:87; #228 getter default () => false
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:121; #228 getter default () => false
   onload(): Promise<void>                                            // registers illustrate-current-note, illustrate-folder
   onunload(): void
   getPendingProposals(): Promise<IllustrateProposal[]>
   illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast (info notice + no-op when no provider and Mermaid are enabled); with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch, placed INSIDE ctx.producedRegion when it is a callout; skipped while a run for the path is in flight, when a proposal is already pending, or when the region already holds a synapse-illustrate callout
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:277; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:327
-  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:380; queued write
+  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:324; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:374
+  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:427; queued write
   rejectProposal(id: string): Promise<void>
 }
 
@@ -31,7 +31,7 @@ interface MediaProvider {
 }
 class WikimediaProvider implements MediaProvider                     // keyless Commons API, file namespace, 1024px scaled URL
 class OpenverseProvider implements MediaProvider                     // keyless /v1/images/; resetRun() + OPENVERSE_MAX_QUERIES_PER_RUN = 10
-class SourceProvider implements MediaProvider                        // id 'source'; built per call from ctx.sourceImages; ranked by alt/title token overlap (imageRelevance); license 'Source page', licenseUrl = pageUrl
+class SourceProvider implements MediaProvider                        // id 'source'; built per call from ctx.sourceImages; ranked by alt/title token overlap (imageRelevance), zero-overlap images dropped; license 'Source page', licenseUrl = pageUrl
 fetchLinkedPageImages(urls: string[], { maxPages, maxImages? }): Promise<SourceImage[]>   // linked-pages.ts: fetchHtmlDocument + extractImageUrls per page; skips non-HTML / non-http(s); per-URL failures debug-logged; cap 12
 
 // license.ts
@@ -123,6 +123,7 @@ illustrateNote(path, ctx)   // post-op (#213)
   --> images = ctx.sourceImages; if fetchLinkedPages && ctx.sourceUrls && images < 3: += fetchLinkedPageImages(urls, { maxPages: maxLinkedPagesPerNote, maxImages: 12 - images })
   --> region = ctx.producedRegion kind 'callout' ? locateRegion(content, region) : none; region already has a synapse-illustrate callout (hasCallout, either spelling) -> null
   --> buildProposal(file, {}, images, region): analyzer sees ONLY the region's de-prefixed text; placements resolved with { within: region, insideContainers: true }; photo spots try SourceProvider(images) first (license 'Source page' must pass licenseFilter), then enabled repositories
+  --> dedupePhotos (#583, every buildProposal): an image matched by several spots stays at the spot with the highest imageRelevance(query+caption+anchor), tie -> earliest placement line; losers re-resolve excluding every claimed fileUrl (next source image, then repositories) or drop
   --> maybeAutoAccept; refreshView; errors -> notifyError (no operation toast, no confirm)
 
 illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoint(cp)
@@ -140,7 +141,7 @@ illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoi
 
 acceptProposal(id, itemIds)
   --> under noteQueue.run(path): photos downloaded first (AssetWriter) unless !preferDownload; failure -> remote URL embed + info notice
-  --> items whose synapse-illustrate callout titled `<caption>` (either spelling, `parseCalloutHeader`) or Mermaid body already exist in the note are skipped (alreadyInserted); success notice reports `(N already present)`
+  --> items whose synapse-illustrate callout titled `<caption>` (either spelling, `parseCalloutHeader`) or Mermaid body already exist in the note, or photos whose remote fileUrl is already present (or repeats an earlier accepted item's fileUrl), are skipped (alreadyInserted); success notice reports `(N already present)`
   --> one vault.process: blocks.reduce(applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor), resolveOptions(item.region)), block))   // re-resolved live; stored placement is preview only; item.region -> inside the callout with `> ` prefixes
   --> status accepted | partially-accepted, acceptedItemIds
 ```

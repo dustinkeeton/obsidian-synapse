@@ -7,6 +7,8 @@ import { AssetWriter } from './asset-writer';
 import { WikimediaProvider } from './providers/wikimedia';
 import { OpenverseProvider } from './providers/openverse';
 import * as linkedPages from './linked-pages';
+import { toSourceCandidate } from './providers/source';
+import { buildPhotoBlock } from './inserter';
 import { DEFAULT_SETTINGS, type SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { CheckpointManager, NotificationManager, NoticeAction } from '../shared';
@@ -260,6 +262,93 @@ describe('IllustrateModule', () => {
 			await module.illustrateNote('notes/a.md', ctx);
 			expect(analyze).not.toHaveBeenCalled();
 			expect(notifications.info).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('one placement per image (#583)', () => {
+		const wings = { url: 'https://example.com/wings.jpg', alt: 'Red panda in a tree', pageUrl: 'https://example.com/pandas' };
+		const ovCandidate: MediaCandidate = { ...candidate, provider: 'openverse', title: 'Panda.jpg', fileUrl: 'https://ov/p.jpg', pageUrl: 'https://ov/p' };
+
+		beforeEach(() => {
+			settings.illustrate.licenseFilter.push('Source page');
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+		});
+
+		function savedItems() {
+			return vi.mocked(IllustrateStore.prototype.save).mock.calls[0][0].items;
+		}
+
+		it('places a lone source image once, at the best-matching spot, and drops spots with nothing else', async () => {
+			vi.spyOn(WikimediaProvider.prototype, 'search').mockResolvedValue([]);
+			vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([
+				{ kind: 'photo', anchor: '## Habitat', caption: 'c', rationale: '', query: 'panda' },
+				{ kind: 'photo', anchor: '## Lifecycle', caption: 'c', rationale: '', query: 'red panda tree' },
+			]);
+			await module.illustrateNote('notes/a.md', { sourceImages: [wings] });
+			const items = savedItems();
+			expect(items).toHaveLength(1);
+			expect(items[0]).toMatchObject({ anchor: '## Lifecycle', candidate: { fileUrl: wings.url } });
+		});
+
+		it('breaks a relevance tie by note order, not analyzer order', async () => {
+			vi.spyOn(WikimediaProvider.prototype, 'search').mockResolvedValue([]);
+			vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([
+				{ kind: 'photo', anchor: '## Lifecycle', caption: 'c', rationale: '', query: 'red panda' },
+				{ kind: 'photo', anchor: '## Habitat', caption: 'c', rationale: '', query: 'red panda' },
+			]);
+			await module.illustrateNote('notes/a.md', { sourceImages: [wings] });
+			expect(savedItems().map((i) => i.anchor)).toEqual(['## Habitat']);
+		});
+
+		it('falls losing spots through to stock providers without repeating any image', async () => {
+			vi.spyOn(WikimediaProvider.prototype, 'search').mockResolvedValue([candidate]);
+			vi.mocked(OpenverseProvider.prototype.search).mockResolvedValue([ovCandidate]);
+			vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([
+				{ kind: 'photo', anchor: '## Habitat', caption: 'a', rationale: '', query: 'red panda tree' },
+				{ kind: 'photo', anchor: '## Lifecycle', caption: 'b', rationale: '', query: 'red panda' },
+				{ kind: 'photo', anchor: '# Red panda', caption: 'd', rationale: '', query: 'panda food' },
+			]);
+			await module.illustrateNote('notes/a.md', { sourceImages: [wings] });
+			const items = savedItems();
+			expect(items.map((i) => (i.kind === 'photo' ? i.candidate.fileUrl : null))).toEqual([wings.url, ovCandidate.fileUrl, candidate.fileUrl]);
+		});
+
+		it('skips a photo whose remote image is already embedded under another caption', async () => {
+			const items = [{ id: 'i-photo', kind: 'photo' as const, anchor: '## Habitat', caption: 'Another caption', rationale: '', candidate }];
+			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({ ...proposal(), items });
+			app.vault.read.mockResolvedValue(NOTE + '\n\n![A red panda](https://upload.wikimedia.org/rp.jpg)');
+			await module.acceptProposal('prop1', ['i-photo']);
+			expect(app.vault.process).not.toHaveBeenCalled();
+			expect(notifications.success).toHaveBeenCalledWith('Inserted 0 visuals (1 already present)');
+		});
+
+		it('accepts a second blank-alt image from a page whose first image is already embedded', async () => {
+			const page = { pageUrl: 'https://example.com/pandas', title: 'Red pandas' };
+			const first = toSourceCandidate({ url: 'https://example.com/one.jpg', ...page });
+			const second = toSourceCandidate({ url: 'https://example.com/two.jpg', ...page });
+			const items = [{ id: 'p2', kind: 'photo' as const, anchor: '## Lifecycle', caption: 'Two', rationale: '', candidate: second }];
+			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({ ...proposal(), items });
+			const firstItem = { id: 'p1', kind: 'photo' as const, anchor: '## Habitat', caption: 'One', rationale: '', candidate: first };
+			app.vault.read.mockResolvedValue(NOTE + '\n\n' + buildPhotoBlock(firstItem, 'attachments/one.jpg'));
+			vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/two.jpg'));
+			await module.acceptProposal('prop1', ['p2']);
+			expect(notifications.success).toHaveBeenCalledWith('Inserted 1 visual');
+		});
+
+		it('embeds an image shared by two accepted items only once', async () => {
+			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({
+				...proposal(),
+				items: [
+					{ id: 'p1', kind: 'photo', anchor: '## Habitat', caption: 'One', rationale: '', candidate },
+					{ id: 'p2', kind: 'photo', anchor: '## Lifecycle', caption: 'Two', rationale: '', candidate },
+				],
+			});
+			const download = vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/red-panda.jpg'));
+			await module.acceptProposal('prop1', ['p1', 'p2']);
+			const written = (await app.vault.process.mock.results[0].value) as string;
+			expect(download).toHaveBeenCalledTimes(1);
+			expect(written.split('![[attachments/red-panda.jpg]]')).toHaveLength(2);
+			expect(notifications.success).toHaveBeenCalledWith('Inserted 1 visual (1 already present)');
 		});
 	});
 
