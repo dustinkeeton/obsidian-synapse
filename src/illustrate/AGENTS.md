@@ -123,7 +123,7 @@ illustrateNote(path, ctx)   // post-op (#213)
   --> images = ctx.sourceImages; if fetchLinkedPages && ctx.sourceUrls && images < 3: += fetchLinkedPageImages(urls, { maxPages: maxLinkedPagesPerNote, maxImages: 12 - images })
   --> region = ctx.producedRegion kind 'callout' ? locateRegion(content, region) : none; region already has a synapse-illustrate callout (hasCallout, either spelling) -> null
   --> buildProposal(file, {}, images, region): analyzer sees ONLY the region's de-prefixed text; placements resolved with { within: region, insideContainers: true }; photo spots try SourceProvider(images) first (license 'Source page' must pass licenseFilter), then enabled repositories
-  --> dedupePhotos (#583, every buildProposal): an image matched by several spots stays at the spot with the highest imageRelevance(query+caption+anchor), tie -> earliest placement line; losers re-resolve excluding every claimed fileUrl (next source image, then repositories) or drop
+  --> dedupePhotos (#583, every buildProposal; private, index.ts:202; helpers spotFit :77, duplicateLosers :84; findPhoto/resolveItem take exclude?: ReadonlySet<string>): an image matched by several spots stays at the spot with the highest imageRelevance(query+caption+anchor), tie -> earliest placement line; losers re-resolve excluding every claimed fileUrl (next source image, then repositories) or drop
   --> maybeAutoAccept; refreshView; errors -> notifyError (no operation toast, no confirm)
 
 illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoint(cp)
@@ -150,7 +150,8 @@ acceptProposal(id, itemIds)
 
 | Import | From |
 |--------|------|
-| `AIClient`, `wrapUntrusted`, `parseJson`, `isRecord`, `stripCodeFences`, `sanitizeUrl`, `buildCallout`, `CALLOUT_TYPES.illustrate`, `parseFrontmatter`, `resolveInsertionPoint`, `applyInsertion`, `fetchHtmlDocument`, `extractImageUrls`, `SourceContext`/`SourceImage`, `wordCount`, `readJsonFile`, `ensureFolder`, exclusions, cache-notice, `reviewAction`, `redactError`, `fireAndForget`, `openScanFolderPicker` | `../shared` |
+| `AIClient`, `wrapUntrusted`, `parseJson`, `isRecord`, `stripCodeFences`, `sanitizeUrl`, `buildCallout`, `CALLOUT_TYPES.illustrate`, `parseFrontmatter`, `resolveInsertionPoint`, `applyInsertion`, `fetchHtmlDocument`, `extractImageUrls`, `SourceContext`/`SourceImage`, `wordCount`, `readJsonFile`, `ensureFolder`, exclusions, cache-notice, `reviewAction`, `redactError`, `fireAndForget`, `openScanFolderPicker`, `stripUnresolvedLinks` | `../shared` |
+| `imageRelevance` (also `SourceProvider`) | `./providers/source` (index.ts:19; scores spot fit for `dedupePhotos`) |
 | `CommandRegistrar` (type) | `../commands` |
 | `requestUrl`, `TFile`, `Plugin`, `normalizePath`, `Setting` | `obsidian` |
 
@@ -158,4 +159,4 @@ No feature-module imports. Mobile-safe: `requestUrl` only, no Node built-ins.
 
 ## Unresolved Links (#581)
 
-- Accepted item captions and built blocks pass through `stripUnresolvedLinks` (captions are unlinked before the `alreadyInserted` check so dedup stays stable); `![[asset]]` embeds and Mermaid fences are untouched.
+- Accepted item captions (index.ts:438) and built blocks (index.ts:456) pass through `stripUnresolvedLinks` (captions are unlinked before the `alreadyInserted` check so dedup stays stable); `![[asset]]` embeds and Mermaid fences are untouched.

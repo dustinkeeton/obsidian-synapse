@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-09-17
+last-updated: 2026-10-09
 ---
 
 # title module
@@ -52,7 +52,7 @@ type TitleAcceptOutcome =
 | `title-suggester.ts` | `TitleSuggester` | AI title suggestion and mismatch detection |
 | `title-store.ts` | `TitleProposalStore` | JSON persistence in `settings.title.proposalFolderPath` |
 | `content-key.ts` | `titleContentKey` | Deterministic input-keyed dedup hash for proposals (#408) |
-| `backlink-remediation.ts` | `collectInboundLinks`, `rewriteLinkText`, `rewriteContent` | Inbound-link snapshot + display-text-preserving rewrite for accepted renames (#485) |
+| `backlink-remediation.ts` | `collectInboundLinks`, `rewriteLinkText`, `rewriteContent` | Inbound-link snapshot + display-text-preserving rewrite for accepted renames (#485); folder-qualified links follow the note to its new folder (#581) |
 | `settings-section.ts` | `renderTitleSettings` | Title settings accordion (enabled toggle + duplicate-handling dropdown) (#408) |
 | `title-detector.ts` | re-exports `isUntitled` | Thin re-export of `isUntitled` through the `../shared` barrel (never the internal `shared/title-detector` file, per the shared-import rule); canonical home is `shared/title-detector.ts` |
 | `types.ts` | -- | All title types |
@@ -233,7 +233,7 @@ Out: consumed by `main.ts` (TitleModule, checkTitle), `views/` (TitleProposal, T
 
 ## Invariants / Gotchas
 
-- Remediation is deterministic (no AI text); a folder-qualified link whose folder matches the old note's moves to the new note's folder so a cross-folder merge never leaves it dangling (#581).
+- Remediation is deterministic (no AI text); a folder-qualified link whose folder matches the old note's (case-insensitive) moves to the new note's folder so a cross-folder merge never leaves it dangling (#581; private `retargetLinkpath`, backlink-remediation.ts:84, helper `folderPrefix` :98). Bare links and links with a non-matching folder keep their written folder.
 - No `CheckpointManager` — title proposals are always single-note, never batched.
 - Per-note serialization (#483): `checkUntitled`, `checkMismatch`, and `acceptProposal` each acquire the note's `NoteOperationQueue` slot exactly ONCE (silently — no `onWait`) and delegate to a private core (`proposeUntitled`, `proposeFromMismatch`, `applyAccept`) that must never re-enter the queue. `checkTitle` only routes and takes no slot itself. `maybeAutoAccept` runs inside `proposeUntitled`/`proposeFromMismatch`, so it calls `applyAccept` directly (index.ts:81), never `acceptProposal`. Backlink remediation writes to OTHER notes and stays unqueued by design (a second key would introduce lock ordering).
 - `acceptProposal` guards against double-acceptance: returns `{ status: 'skipped' }` if `proposal.status !== 'pending'`. The guard lives in `applyAccept`, which re-loads the proposal under the queue slot so a wait cannot leave the decision on stale state.

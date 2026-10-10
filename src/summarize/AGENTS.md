@@ -14,7 +14,7 @@ class SummarizeModule {
   onOrganizeRequested: ((file: TFile) => void) | null
 
   constructor(
-    deps: ModuleDeps,                  // index.ts:157; plugin, getSettings, notifications, checkpointManager, registrar, noteQueue (#483)
+    deps: ModuleDeps,                  // index.ts:158; plugin, getSettings, notifications, checkpointManager, registrar, noteQueue (#483)
     transcribeUrl?: TranscribeUrlFn,
     transcribeAudio?: TranscribeAudioFn
   )
@@ -50,16 +50,16 @@ keyed on the note being summarized; the queue-free cores (`processTargetsForFile
 
 | Site | Key | Wrapped core | onWait | Notes |
 |------|-----|--------------|--------|-------|
-| `processTargetsCombined` (index.ts:311) | `file.path` | `processTargetsForFile(..., combine=true)` | `op.update("Waiting for another Synapse operation on <basename>")` | interactive combined path |
-| `processTargets` (index.ts:578) | `file.path` | `processFileTargets(...)` | same | interactive per-item path |
-| `resumeFromCheckpoint` loop (index.ts:217) | `file.path` | `vault.read` + `collectTargets` + `processTargetsForFile` | none | one slot per note, never per batch |
-| `scanVault` loop (index.ts:1109) | `file.path` | `vault.read` + `collectTargets` + `processTargetsForFile` | none | one slot per note, never per batch |
+| `processTargetsCombined` (index.ts:312) | `file.path` | `processTargetsForFile(..., combine=true)` | `op.update("Waiting for another Synapse operation on <basename>")` | interactive combined path |
+| `processTargets` (index.ts:584) | `file.path` | `processFileTargets(...)` | same | interactive per-item path |
+| `resumeFromCheckpoint` loop (index.ts:218) | `file.path` | `vault.read` + `collectTargets` + `processTargetsForFile` | none | one slot per note, never per batch |
+| `scanVault` loop (index.ts:1115) | `file.path` | `vault.read` + `collectTargets` + `processTargetsForFile` | none | one slot per note, never per batch |
 
 Batch loops take the slot BEFORE the `vault.read` + `collectTargets` so target line numbers cannot
 go stale under us. The batch callback returns `null` when `targets.length === 0`; the caller
-`continue`s on a falsy result (index.ts:229, index.ts:1121).
+`continue`s on a falsy result (index.ts:230, index.ts:1127).
 
-`fireEnrichmentCallbacks` (index.ts:612) and `onOrganizeRequested` fire AFTER the slot is released,
+`fireEnrichmentCallbacks` (index.ts:618) and `onOrganizeRequested` fire AFTER the slot is released,
 so the enrichment / title / organize follow-ups enqueue BEHIND this operation and read the summary
 it just wrote (`onOrganizeRequested` is dispatched through `fireAndForget` in `main.ts`, never
 awaited, so there is no cycle).
@@ -101,22 +101,22 @@ interface SummarizeTarget {
 ## Data Flow
 
 ```
-summarizeNote(file)                                   index.ts:260
-  --> collectTargets(content, sourcePath)             index.ts:518
+summarizeNote(file)                                   index.ts:261
+  --> collectTargets(content, sourcePath)             index.ts:524
         findSummarizeTargets(content)    [URLs, transcription blocks]
         findAudioEmbeds(...)             [audio embeds w/o summary below]
         extractNoteProse(content)        [appends 'note-content' if includeNoteContent && !isEffectivelyEmptyProse(prose)]
   --> 1 target:  processTargets(file, targets, content)            [per-item, no modal]
   --> 2+ targets: SummarizeSelectionModal(defaults={includeNoteContent, combineSummaries})
         callback(selected, combine):
-          combine  -> processTargetsCombined(file, selected, content)   index.ts:282   [modal forces combine=false when countCombinable(selected) < 2]
-          !combine -> processTargets(file, selected, content)           index.ts:284
+          combine  -> processTargetsCombined(file, selected, content)   index.ts:283   [modal forces combine=false when countCombinable(selected) < 2]
+          !combine -> processTargets(file, selected, content)           index.ts:285
 
 processTargetsCombined / processTargets
   --> noteQueue.run(file.path, <core>, { onWait })    -- #483 slot held for the whole cycle
   --> after the slot releases: fireEnrichmentCallbacks(), onOrganizeRequested?.()
 
-processTargetsForFile(file, targets, op, content, combine)            index.ts:337
+processTargetsForFile(file, targets, op, content, combine)            index.ts:338
   (queue-free core — the caller holds the slot)
   combine == false:
     --> processFileTargets(file, targets, op, content)
@@ -124,7 +124,7 @@ processTargetsForFile(file, targets, op, content, combine)            index.ts:3
     --> enrichment refs first (per-item):  processFileTargets(enrichmentTargets)
     --> everything else folded into ONE summary: combineSelectedTargets(summarizable)
 
-combineSelectedTargets(file, targets, op, content)                    index.ts:400
+combineSelectedTargets(file, targets, op, content)                    index.ts:401
   per target: reuse note-content/transcript content, else fetch URL / transcribe audio
   --> a failed router-supported media URL sets mediaFailed -> return empty, NO callout (#488)
   --> join sections w/ '## <label>' + '---' separators, slice(maxContentLength)
@@ -132,7 +132,7 @@ combineSelectedTargets(file, targets, op, content)                    index.ts:4
         prompt = customPrompt > schema('summary') > COMPREHENSIVE_SUMMARY_PROMPT
   --> vault.process(file): append buildMediaEmbedLines(path, video.embedInNote, current) per downloaded video, then ONE 'Combined summary (N items)' callout at end (#561)
 
-processFileTargets(file, targets, op, content)                        index.ts:635
+processFileTargets(file, targets, op, content)                        index.ts:641
   (queue-free core — the caller holds the slot)
   for each target (reverse line order):
     enrichment ref (inEnrichmentSection + linkTitle):
@@ -147,7 +147,7 @@ processFileTargets(file, targets, op, content)                        index.ts:6
   --> vault.create() per pendingNote      [new notes AFTER source]
   returns { inlineCompleted, enrichmentCompleted, linksUpdated, newNotePaths }
 
-fireEnrichmentCallbacks(path, result)                                 index.ts:612
+fireEnrichmentCallbacks(path, result)                                 index.ts:618
   (called only AFTER the note's queue slot is released, #483)
   --> onSummaryComplete?.(path, ctx)  [only if inlineCompleted>0 and enrichmentCompleted==0; ctx = { sourceUrls, sourceImages, producedRegion: synapse-summary callout }] (#213)
   --> onSummaryComplete?.(newNotePath, ctx)  per created note (producedRegion whole-note); each distinct path fires at most once per run
@@ -157,13 +157,13 @@ fireEnrichmentCallbacks(path, result)                                 index.ts:6
 ## Vault Scan (checkpointed)
 
 ```
-scanVault(folderPath?, skipConfirmation?, onlyFile?)                  index.ts:1014
+scanVault(folderPath?, skipConfirmation?, onlyFile?)                  index.ts:1020
   Phase 1: collect files with targets (cancellable scan; onlyFile narrows scope, #111)
   Phase 2: user confirmation (skipped when skipConfirmation=true / Fire Synapse)
   Phase 3: checkpointed processing
     --> checkpointManager.create({ module: 'summarize', items })
     --> addDeferredTask('refresh-sidebar-view')
-    --> per file: noteQueue.run(file.path, async () => {            index.ts:1109
+    --> per file: noteQueue.run(file.path, async () => {            index.ts:1115
                     re-read + collectTargets
                     if no targets -> null (caller continues)
                     processTargetsForFile(..., combineSummaries)
@@ -174,8 +174,8 @@ scanVault(folderPath?, skipConfirmation?, onlyFile?)                  index.ts:1
     --> completeItem() after each file
     --> on cancel: discard(); on success: complete() + dispatchDeferredTasks
 
-resumeFromCheckpoint(checkpoint)                                      index.ts:193
-  --> per file: same noteQueue.run(...) shape as scanVault              index.ts:217
+resumeFromCheckpoint(checkpoint)                                      index.ts:194
+  --> per file: same noteQueue.run(...) shape as scanVault              index.ts:218
   --> completeItem() per file; on cancel discard(); on success complete()
 ```
 
@@ -230,7 +230,7 @@ All under `settings.summarize` (`SummarizeSettings`, `settings.ts:256`):
 
 `Summarizer.summarize` appends `voiceInstruction(settings.ai)` (`settings.ai.voice`, default `'neutral'`) to every system prompt -- style default, schema, `COMPREHENSIVE_SUMMARY_PROMPT`, and `customPrompt` alike (summarizer.ts:27, #540). The fragment exempts quoted/transcribed material from re-voicing.
 
-Path exclusion: centralized `settings.exclusions: ExclusionRule[]`; no per-module `excludeFolders`. Checked via `isPathExcluded(path, 'summarize', settings)`; tag exclusion via `matchesExcludeTag(file, excludeTags, metadataCache)` (both in `isExcluded`, `index.ts:1152`).
+Path exclusion: centralized `settings.exclusions: ExclusionRule[]`; no per-module `excludeFolders`. Checked via `isPathExcluded(path, 'summarize', settings)`; tag exclusion via `matchesExcludeTag(file, excludeTags, metadataCache)` (both in `isExcluded`, `index.ts:1158`).
 
 ## Content-Aware Schemas
 
@@ -264,9 +264,9 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 
 | Import | From |
 |--------|------|
-| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks`, `buildMediaEmbedLines` | `../shared` (index.ts) |
+| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContent`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks`, `buildMediaEmbedLines`, `stripUnresolvedLinks`, `wikilinkTargets` | `../shared` (index.ts) |
 | `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks`, `isCalloutHeader`, `calloutHeaderSource` | `../shared` (note-scanner.ts) |
-| `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:10) |
+| `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:11) |
 | `findAudioEmbeds` | `../audio` |
 | `CommandRegistrar` | `../commands` |
 | `SynapseSettings` | `../settings` |
@@ -282,3 +282,4 @@ Every consumer of `transcribeUrl` MUST run the shared embed step: a transcript w
 ## Unresolved Links (#581)
 
 - Summary text (inline, combined, and new summary notes) passes through `stripUnresolvedLinks` before it is written; links already in the source note are kept (`wikilinkTargets` keep list).
+- Single funnel: private `unlinkMissing(summary, sourcePath, keepFrom = '')` (index.ts:515). Sites: combined callout (index.ts:507, keep = note content), new summary note body (index.ts:709, no keep list), inline callout (index.ts:791, keep = note content).

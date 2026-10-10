@@ -16,7 +16,7 @@ class RemModule {
   constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:52; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar); #228 getter default () => false
   onload(): Promise<void>
   onunload(): void
-  remScanNote(filePath: string): Promise<RemProposal | null>
+  remScanNote(filePath: string): Promise<RemProposal | null>   // index.ts:134; also the deep-dive post-op REM leg target (#581); takes no queue slot and no postOp option
   remScanDirectory(folderPath?: string, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   acceptProposal(id: string, acceptedMatchTexts: string[], options?: { silent?: boolean }): Promise<void>
@@ -166,6 +166,16 @@ When true, a freshly generated proposal is accepted in full immediately after cr
 
 WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This is unlike proposal kinds that only add separate sections.
 
+## Post-Op Caller (#581)
+
+| Caller | Wiring | Gate |
+|--------|--------|------|
+| deep-dive accept (`deepDive.onNoteAccepted`) | `PostOpHookDeps.remNote` = `noteQueue.run(filePath, () => rem.remScanNote(filePath))` (`main.ts:192`); leg in `pipeline/post-op-hooks.ts:70-73`, dispatched via `fireAndForget` | wire time: `rem.enabled && deepDive.autoRemOnAccept` |
+
+- The note's `NoteOperationQueue` slot is taken in `main.ts`, not in `RemModule` (REM's own entry points stay unqueued, see root `AGENTS.md`). It enqueues behind the deep-dive accept that holds the same `proposedPath` key.
+- No `{ postOp: true }`: `remScanNote` has no options parameter, so the post-op scan raises the same info notices (`No linkable mentions found`, exclusion skip) and `reviewAction` "Review" affordance as a user-invoked scan. `autoAccept.rem` applies (`maybeAutoAccept`).
+- Links only to existing notes: semantic candidates whose `title` is not an included vault note are dropped (`semantic-matcher.ts:247-248`); literal candidates come from vault titles (`MentionScanner`). Covered by `semantic-matcher.test.ts` "only ever inserts links that resolve to existing notes (#581)".
+
 ## Checkpoint Behavior
 
 `remScanDirectory` and `resumeFromCheckpoint` use `CheckpointManager` with module `'rem'`. Items tracked as `rem-{index}-{path}`. On error or cancel, all proposals created in the run are batch-rejected via `rejectProposalBatch()`.
@@ -194,7 +204,7 @@ Single-note command (`rem-current-note`) names the matched rule in the Notice. D
 
 All under `settings.rem` (`RemSettings`):
 
-Interface `settings.ts:301`; defaults `settings.ts:615-621`.
+Interface `settings.ts:303`; defaults `settings.ts:618-624`.
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|

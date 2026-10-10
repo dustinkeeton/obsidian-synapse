@@ -1,10 +1,10 @@
 # Architecture Overview
 
-**Last updated**: 2026-10-09 · **Version**: 1.4.0
+**Last updated**: 2026-10-09 · **Version**: 1.4.1
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
-The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (302 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `illustrate/` (#213) is the newest feature module, shipped in 1.3.0.
+The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (303 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `illustrate/` (#213) is the newest feature module, shipped in 1.3.0.
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -19,6 +19,7 @@ The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, che
 - **`views/`** holds the two sidebars: the **unified proposal view** (review/accept every proposal type) and the **Synapse actions view** (registry-driven, touch-friendly buttons so mobile users reach any command without the palette).
 - **`transcription/`** holds the transcription modals and the **URL tier router** (#184): YouTube captions over plain HTTP first, desktop yt-dlp/ffmpeg second. It reaches `audio` and `video` only through callbacks injected by `main.ts`. Every URL path shares one router built over a **persistent transcript cache** (`shared/transcript-cache.ts`, #488), so a URL is transcribed once and reused by the modal, summarize, and intake.
 - **`checkpoints/`** owns the checkpoint *recovery* UX (#496) — the delayed startup "interrupted operations" prompt, the `manage-checkpoints` command, and the sidebar's resume/discard buttons. Persistence stays in `shared/checkpoint-manager.ts`; resume reaches a feature module only through an injected handler map.
+- **No links to missing notes** (#581). Every write of AI-generated or fetched text passes through `stripUnresolvedLinks` (`shared/link-guard.ts`), which turns a `[[link]]` to a note that doesn't exist into plain text (alias kept as the visible text). Embeds and code are left alone, and an elaboration accept keeps links already in the note and links the user typed during review.
 - **One note, one operation at a time.** A single `NoteOperationQueue` (`shared/note-operation-queue.ts`, #483) is injected into every module that reads a note, calls the AI, and writes it back, so two features never interleave writes on the same note.
 - **Cache use is never silent** (#527). When a result came from the transcript cache or the AI response cache, the operation's finish message says so — one shared wording in `shared/cache-notice.ts`, and a single "N of M notes served from cache" line for batches.
 - **Mobile safety**: the plugin ships `isDesktopOnly: false`. Anything that needs Node.js (yt-dlp, ffmpeg, the filesystem) is funneled through one guarded loader (`shared/node-loader.ts`) that refuses to run off-desktop, so the bundle loads cleanly on mobile and desktop-only features degrade gracefully.
@@ -94,6 +95,7 @@ graph TB
     Commands -.->|derives buttons| Actions
     Pipe -.->|injected modules| Features
     Pipe -.->|post-op illustrate leg| Ill
+    Pipe -.->|post-op REM leg for deep-dive| Rem
     Intake -.->|injected fireOnFile| Pipe
     Features --> Shared
     Features --> Commands
@@ -133,7 +135,7 @@ Both `shared/` and `commands/` are **base layers**: every feature may depend on 
 
 ```
 src/
-├── main.ts                 # Plugin entry — lifecycle glue only (302 lines, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, callback injection
+├── main.ts                 # Plugin entry — lifecycle glue only (303 lines, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, callback injection
 ├── settings.ts             # Type definitions, defaults, MODEL_OPTIONS + TRANSCRIPTION_MODEL_OPTIONS (#521) + SYSTEM_ONE_MODEL_OPTIONS (#558); type-only imports (ProposalKind, ExclusionRule, TitleDuplicateStrategy, IllustrateSettings, VoiceMode)
 ├── settings-ui/            # SynapseSettingTab — declarative SETTINGS_SECTIONS list (#506); cross-feature sections in global-sections.ts; voice card (voice-setting.ts, #540); System 1 rows (system-one-credentials.ts, #558); About support tiles from FUNDING_LINKS (funding.ts, #529)
 ├── onboarding/             # Pure first-run welcome logic (#89): planFirstRun, needsApiKey, runFirstRunOnboarding
@@ -161,7 +163,7 @@ src/
 │
 ├── pipeline/               # Fire Synapse: ordered multi-phase runner
 │   ├── synapse-runner.ts   #   Sequential phase executor (fire / fireOnFile)
-│   ├── post-op-hooks.ts    #   buildPostOpHook / buildAutoOrganizeHook — the enrich → title-check and auto-organize wiring (#496)
+│   ├── post-op-hooks.ts    #   buildPostOpHook / buildAutoOrganizeHook — enrich → title check, deep-dive REM leg (#581), illustrate leg, auto-organize (#496)
 │   ├── types.ts            #   SYNAPSE_PIPELINE phase list + scan-fn contract
 │   └── index.ts            #   Barrel export
 │
@@ -261,7 +263,7 @@ src/
 │
 ├── deep-dive/              # Recursive topic exploration
 │   ├── topic-analyzer.ts   #   AI topic extraction from note content
-│   ├── note-generator.ts   #   AI content generation for topics
+│   ├── note-generator.ts   #   AI content generation for topics — plain prose, no [[wikilinks]] (#581)
 │   ├── quality-scorer.ts   #   Local heuristic quality scoring
 │   ├── syllabus-navigator.ts # Traversal ordering, syllabus index, navigation
 │   ├── deep-dive-store.ts  #   Proposal + run persistence
@@ -270,7 +272,7 @@ src/
 │
 ├── illustrate/             # Insert Media (#213): licensed photos + opt-in Mermaid diagrams/charts (#549); opt-in module
 │   ├── note-analyzer.ts    #   One AI call -> validated spots (photo | diagram | chart); photo-only prompt when illustrate.mermaid is off
-│   ├── providers/          #   wikimedia.ts + openverse.ts (keyless search via requestUrl), source.ts (images from the acted-on material)
+│   ├── providers/          #   wikimedia.ts + openverse.ts (keyless search via requestUrl), source.ts (images from the acted-on material; zero-overlap images dropped; imageRelevance)
 │   ├── linked-pages.ts     #   Opt-in linked-page image pooling for chained runs
 │   ├── license.ts          #   normalizeLicense / isLicenseAllowed; default allow-list CC0 · Public domain · CC BY · CC BY-SA
 │   ├── diagram.ts          #   validateMermaid (known first token, no fences/scripts, <= 4000 chars)
@@ -280,7 +282,7 @@ src/
 │   ├── proposal-store.ts   #   JSON files in illustrate.proposalFolderPath
 │   ├── note-scanner.ts     #   Batch eligibility (>= 80 words, no existing illustrate callout)
 │   ├── settings-section.ts #   Providers, Mermaid toggle, license chips, runAfter toggles, empty-config helper
-│   └── index.ts            #   IllustrateModule: commands, scan/resume, post-op illustrateNote(ctx), accept = download + one vault.process
+│   └── index.ts            #   IllustrateModule: commands, scan/resume, post-op illustrateNote(ctx), one image per note (#583), accept = download + one vault.process
 │
 ├── title/                  # Note title suggestions
 │   ├── index.ts            #   TitleModule: title checking, proposal lifecycle, collision resolution (iterate/merge, #408)
@@ -317,6 +319,7 @@ src/
 │   ├── encoding.ts         #   arrayBufferToBase64 / base64EncodedLength (shared by audio/image/elaboration)
 │   ├── image-preprocess.ts #   preprocessImage — downscale/re-encode oversized vision payloads (moved here from image/ in the 2026-10-06 audit)
 │   ├── insertion-point.ts  #   resolveInsertionPoint / applyInsertion / locateRegion — structure-aware placement that never splits a paragraph, list, fence, or table (#213)
+│   ├── link-guard.ts       #   stripUnresolvedLinks() — unresolved [[links]] become plain text on every AI/fetched write; keeps embeds, code, and kept linkpaths (#581)
 │   ├── source-context.ts   #   SourceContext / SourceImage — the material a completed action processed, handed to post-op legs (#213)
 │   ├── voice.ts            #   voiceInstruction() — the one narrative-voice fragment for elaboration, deep dive, and summarize prompts; verbatim material exempt (#540)
 │   ├── media-embed.ts      #   buildMediaEmbedLines() — one embed builder for every action that downloads media into the vault (#561)
@@ -506,7 +509,7 @@ graph LR
 - **Gating.** A phase runs only if its feature is `enabled` *and* the command registry lists it in the `fire-synapse` flow.
 - **Decoupling.** The runner never imports the feature modules. `main.ts` builds a `PipelineModuleMap` (phase key → scan function) and injects it, so the runner stays independent of concrete features.
 - **Two entry points.** `fire(folder?)` scans a whole folder; `fireOnFile(file)` scopes every phase to a single note (this is what the intake watcher calls).
-- **Post-op hooks live here too** (`pipeline/post-op-hooks.ts`, #496). `buildPostOpHook(deps, source)` produces the "enrich, then check the title" follow-up each feature fires after it writes; `buildAutoOrganizeHook` produces the optional organize step for deep-dive and summarize. `main.ts` builds them once and assigns them to the modules — the gating rules are in the Cross-Module Communication section below.
+- **Post-op hooks live here too** (`pipeline/post-op-hooks.ts`, #496). `buildPostOpHook(deps, source)` produces the follow-up each feature fires after it writes: enrich then check the title, the REM scan after a deep-dive accept (#581), and the illustrate leg; `buildAutoOrganizeHook` produces the optional organize step for deep-dive and summarize. `main.ts` builds them once and assigns them to the modules — the gating rules are in the Cross-Module Communication section below.
 
 ---
 
@@ -809,7 +812,7 @@ URL detection (`shared/url-detector.ts`) recognizes:
 
 ## Cross-Module Communication
 
-All inter-module communication flows through nullable callback assignments made in `main.ts`. No event bus, no pub-sub. The hook functions themselves are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook`, `buildAutoOrganizeHook`, #496) from an injected `PostOpHookDeps` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`); the URL-transcription and intake callbacks are attached by `modules/registry.ts` at construction (#504). Elaboration's hook fires after the whole body has been rewritten, so its `SourceContext.producedRegion` is `{ kind: 'whole-note' }` (#552).
+All inter-module communication flows through nullable callback assignments made in `main.ts`. No event bus, no pub-sub. The hook functions themselves are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook`, `buildAutoOrganizeHook`, #496) from an injected `PostOpHookDeps` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`, `illustrate.illustrateNote`, and `remNote`, which runs `rem.remScanNote` inside the note's queue slot, #581); the URL-transcription and intake callbacks are attached by `modules/registry.ts` at construction (#504). Elaboration's hook fires after the whole body has been rewritten, so its `SourceContext.producedRegion` is `{ kind: 'whole-note' }` (#552).
 
 > This diagram is the wiring-level detail behind the per-note cascade — subgraph **a** of the master command-pipeline overview in [`README.md` → How it all fits together](README.md#how-it-all-fits-together), which is the canonical birds-eye view. The setting names and defaults on the edges below match that diagram.
 
@@ -826,6 +829,7 @@ graph LR
 
     Enrich["Enrichment.enrich()<br/>gated by enrichment.autoEnrich (default ON)"]
     TitleChk["Title.checkTitle()<br/>gated by title.checkAfterOperations (default ON)"]
+    RemScan["REM.remScanNote()<br/>(in the note's queue slot)"]
 
     Elab -->|"'elaboration'"| Enrich
     Audio -->|"'transcription'"| Enrich
@@ -840,6 +844,7 @@ graph LR
     Img --> TitleChk
     Summ --> TitleChk
     DDa --> TitleChk
+    DDa -->|"deepDive.autoRemOnAccept (default ON) · rem.enabled"| RemScan
 
     DD2["Deep Dive<br/>onOrganizeRequested"] -->|"deepDive.autoOrganizeOnAccept (default OFF)"| Org["Organize.organizeNote()"]
     Summ2["Summarize<br/>onOrganizeRequested"] -->|"summarize.autoOrganizeOnSummarize (default OFF)"| Org
@@ -848,6 +853,8 @@ graph LR
 ```
 
 > **Deep Dive caveat.** When global enrichment is on (`enrichment.autoEnrich` ON) but `deepDive.autoEnrichOnAccept` is OFF, accepting a deep-dive note wires *neither* the enrich nor the title callback — so the title check is effectively gated behind `deepDive.autoEnrichOnAccept` too. The standalone title-only fallback (each trigger → `Title.checkTitle()` with no enrich) is wired only when `enrichment.autoEnrich` is OFF.
+
+> **Deep-dive REM leg (#581).** Accepting a deep-dive note also REM-scans it when `rem.enabled` and `deepDive.autoRemOnAccept` (default ON) are both on at wiring time — independent of `autoEnrichOnAccept`. Deep-dive generation writes no wikilinks, so this scan is what links the new note to notes that already exist. It runs as an ordinary REM scan, not a post-op one (see #585): each accepted note can raise REM's own notices and "Review" toast.
 
 > **Illustrate leg (#213).** The same `buildPostOpHook` chains `illustrate.illustrateNote(filePath, ctx)` after the enrich/title step when `illustrate.enabled` is on at wiring time and the source's `illustrate.runAfter.<key>` toggle (`elaboration`, `transcription` for audio/video/image, `summarize`, `enrichment`, `deepDive` — all default OFF) is on, read live at fire time. `ctx` is the `SourceContext` the action produced (its URLs, images, and the callout region it wrote), so the visual is sourced from that material first and placed inside that region.
 
@@ -860,6 +867,7 @@ Every feature that reads a note, calls the AI, and writes the result back goes t
 - **Path-keyed FIFO.** Operations on the same note run in submission order; different notes run independently. A failing operation releases its slot and cannot poison the chain.
 - **Acquire once.** Public entry points (`transcribeAndInsert`, `scanNote`, `enrich`, `acceptProposal`, …) take the slot and delegate to a queue-free private core. Nesting would self-deadlock, so writes to *other* notes made while holding a key (title backlink remediation, merge targets, deep-dive syllabus, organize summaries) stay unqueued.
 - **Post-op chains line up behind.** The automatic enrichment and title checks fired from inside a slot are never awaited, so they simply enqueue behind the primary write and read what it produced.
+- **One exception: the deep-dive REM scan.** REM's own entry points take no queue slot, so `main.ts` wraps the post-op scan in `noteQueue.run(path, …)` itself. It lines up behind the deep-dive accept that created the note (#581).
 - **Visible only when it matters.** User-invoked work passes `onWait`, which updates its operation toast to "Waiting for another Synapse operation on <note>"; automatic follow-ups wait silently.
 - **Unqueued by design.** REM accept/undo and intake stamp/move/breadcrumb write inside atomic `vault.process` callbacks that re-derive from fresh content. REM accept re-checks every scan-time link position against the note as it is now, re-finds moved text, and drops what it cannot find (#575).
 
@@ -874,10 +882,10 @@ Seven modules generate proposals that appear in the unified sidebar (`PROPOSAL_K
 | Elaboration | Full-body rewrite of the note (image-aware) | Editable textarea ("Proposed rewrite") | **Replaces the note body in place** (#552); frontmatter kept byte-for-byte; if the note changed since generation, a confirm modal ("Replace" / dismiss = cancel) gates the write |
 | Enrichment | Tags, links, refs, frontmatter | Per-item checkboxes | Cherry-pick items, apply with markers |
 | Organize | New directory suggestion | Directory path + AI reasoning | Create directory, move file |
-| Deep Dive | Generated child note | Read-only content preview | Create note at proposed path |
+| Deep Dive | Generated child note | Read-only content preview | Create note at proposed path; links to missing notes become plain text, then an auto-REM scan adds links to existing notes (#581) |
 | Title | Rename suggestion (distinct state on collision) | Current vs proposed title + reasoning | Rename file; on filename collision resolve via `iterate`/`merge` (#408); inbound links rewritten with display text preserved (#485) |
 | REM | `[[wikilink]]` insertions | Per-match checkboxes | **Rewrites note body** (snapshot kept for undo); each link is re-located against the live note or skipped with a "Skipped N link(s)" notice; if none apply, the note is untouched and the proposal stays pending (#575) |
-| Illustrate | Photo / diagram / chart items, each with a placement preview | Per-item checkboxes; remote thumbnail + license + attribution shown before accept (nothing downloaded yet) | Downloads accepted photos into the attachment folder and inserts the embed + `synapse-illustrate` caption callout (or a Mermaid fence) at the re-resolved anchor, in one `vault.process` (#213) |
+| Illustrate | Photo / diagram / chart items, each with a placement preview | Per-item checkboxes; remote thumbnail + license + attribution shown before accept (nothing downloaded yet) | Downloads accepted photos into the attachment folder and inserts the embed + `synapse-illustrate` caption callout (or a Mermaid fence) at the re-resolved anchor, in one `vault.process` (#213); a photo whose remote URL is already in the note is skipped (#583) |
 
 ### Proposal States
 
@@ -1209,6 +1217,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Caption fetch hardening | YouTube caption URLs pass `sanitizeUrl` and go over Obsidian `requestUrl` with a 30 s per-request timeout. Since #501: caption tracks fetch only over `https:` from `youtube.com`/`googlevideo.com` with no embedded credentials; player JSON is bounded at 8 MiB and the track body at 16 MiB before `JSON.parse`; chapter titles and cue text are markdown-escaped at the render boundary; the video title is control-char-stripped and length-bounded. Any fetch/parse failure logs via `redactError` and falls through to the next tier | `transcription/youtube-captions.ts` |
 | yt-dlp argv hardening | Every yt-dlp invocation ends its option list with `--` before the URL positional — the download path since #501 and the duration probe since 2026-10-06 (`duration-detector.ts:139`); `dumpJson()` re-runs `sanitizeUrl()` at its own boundary; the dependency probe runs the configured tool path through `sanitizePath` before `which` (`audio-extractor.ts:585`) | `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
 | Related-notes fencing | Elaboration's backlink/outbound/tag context block is wrapped via `wrapUntrusted(_, 'related notes')`, so a linking note cannot forge a closing fence or smuggle instructions (#500) | `elaboration/proposer.ts` |
+| Dangling-link guard | AI-generated and fetched text is written through `stripUnresolvedLinks`, so no Synapse write creates a `[[link]]` to a note that doesn't exist; elaboration accept keeps the note's own and user-typed links (#581) | `shared/link-guard.ts` |
 | Outbound-URL scheme check | Illustrate writes only `http:`/`https:` provider URLs into a note (`httpUrlOrEmpty`); any other scheme degrades the link or remote embed to plain caption text (2026-10-06) | `illustrate/inserter.ts:6` |
 | Redirect pinning | A Reddit share page may only redirect the follow-up fetch to a Reddit URL, re-run through `sanitizeUrl` first (2026-10-06) | `shared/reddit-fetcher.ts:203-206` |
 | Temp-file cleanup | Clipped-audio source copy and ffmpeg output are unlinked in a `finally` on every exit path, so a failed clip never leaves vault audio in the OS temp dir (2026-10-06) | `audio/index.ts:230-242` |
