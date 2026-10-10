@@ -128,7 +128,7 @@ export function renderDeepDiveSettings(ctx: SettingsSectionContext): void {
 
 	new Setting(deepDiveBody)
 		.setName('Auto-REM on accept')
-		.setDesc('Run REM on each accepted deep dive note to link it to notes that already exist (uses AI)')
+		.setDesc('Automatically run REM when a deep dive note is accepted, linking it to notes that already exist')
 		.addToggle((toggle) =>
 			toggle
 				.setValue(plugin.settings.deepDive.autoRemOnAccept)

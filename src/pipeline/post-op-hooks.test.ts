@@ -54,7 +54,10 @@ describe('buildPostOpHook', () => {
 	});
 
 	it('returns null for deep-dive when autoEnrichOnAccept is off under auto-enrich', () => {
-		const { deps } = makeDeps((s) => { s.deepDive.autoEnrichOnAccept = false; });
+		const { deps } = makeDeps((s) => {
+			s.deepDive.autoEnrichOnAccept = false;
+			s.deepDive.autoRemOnAccept = false;
+		});
 		expect(buildPostOpHook(deps, 'deep-dive')).toBeNull();
 		expect(buildPostOpHook(deps, 'audio')).not.toBeNull();
 	});
@@ -160,8 +163,14 @@ describe('buildPostOpHook — illustrate leg (#213)', () => {
 });
 
 describe('buildPostOpHook deep-dive REM leg (#581)', () => {
-	it('is not wired by default', () => {
+	it('is wired by default', () => {
 		const { deps } = makeDeps();
+		buildPostOpHook(deps, 'deep-dive')!('n.md');
+		expect(deps.remNote).toHaveBeenCalledWith('n.md');
+	});
+
+	it('is not wired when autoRemOnAccept is off', () => {
+		const { deps } = makeDeps((s) => { s.deepDive.autoRemOnAccept = false; });
 		buildPostOpHook(deps, 'deep-dive')!('n.md');
 		expect(deps.remNote).not.toHaveBeenCalled();
 	});

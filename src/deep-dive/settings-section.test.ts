@@ -52,15 +52,15 @@ describe('renderDeepDiveSettings', () => {
 		expect(saveSettings).toHaveBeenCalled();
 	});
 
-	it('renders the auto-REM toggle off by default and persists changes (#581)', async () => {
+	it('renders the auto-REM toggle on by default and persists changes (#581)', async () => {
 		const { ctx, plugin, saveSettings } = makeCtx((s) => { s.deepDive.enabled = true; });
 		renderDeepDiveSettings(ctx);
 		const row = Setting.instances.find((s) => s.name === 'Auto-REM on accept');
 		expect(row).toBeDefined();
 		const toggle = row!.components[0];
-		expect(toggle.getValue()).toBe(false);
-		await toggle._trigger(true);
-		expect(plugin.settings.deepDive.autoRemOnAccept).toBe(true);
+		expect(toggle.getValue()).toBe(true);
+		await toggle._trigger(false);
+		expect(plugin.settings.deepDive.autoRemOnAccept).toBe(false);
 		expect(saveSettings).toHaveBeenCalled();
 	});
 });

@@ -607,7 +607,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		excludeTags: ['no-deep-dive'],
 		autoEnrichOnAccept: true,
 		autoOrganizeOnAccept: false,
-		autoRemOnAccept: false,
+		autoRemOnAccept: true,
 	},
 	title: {
 		enabled: true,

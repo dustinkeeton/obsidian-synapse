@@ -232,7 +232,7 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 | `settings.deepDive.excludeTags` | `string[]` | `['no-deep-dive']` |
 | `settings.deepDive.autoEnrichOnAccept` | `boolean` | `true` |
 | `settings.deepDive.autoOrganizeOnAccept` | `boolean` | `false` |
-| `settings.deepDive.autoRemOnAccept` | `boolean` | `false` |
+| `settings.deepDive.autoRemOnAccept` | `boolean` | `true` |
 | `settings.autoAccept['deep-dive']` | `boolean` | `false` |
 | `settings.exclusions` | `ExclusionRule[]` | see `settings.ts` defaults |
 | `settings.ai.voice` / `settings.ai.voiceCustom` | `VoiceMode` / `string` | `'neutral'` / `''` |
