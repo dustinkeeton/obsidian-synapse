@@ -69,6 +69,7 @@ vi.mock('../video', () => ({
 // Content fetchers are stubbed here (they moved from ./content-fetcher into
 // ../shared) to avoid real network calls.
 vi.mock('../shared', async () => ({
+	...(await vi.importActual<typeof import('../shared/link-guard')>('../shared/link-guard')),
 	// Use the REAL content-schema registry (recipe/receipt detection + prompts)
 	// so auto-format behavior is exercised faithfully through the shared barrel.
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
@@ -460,6 +461,21 @@ describe('SummarizeModule note content (#367)', () => {
 		expect(lastSummarizerInstance.summarize).toHaveBeenCalledTimes(1);
 		expect(lastSummarizerInstance.summarize.mock.calls[0][0]).toContain('The note body prose.');
 		expect(mockPlugin.app.vault.process).toHaveBeenCalled();
+	});
+
+	it('unlinks summary links to missing notes but keeps links the note already has (#581)', async () => {
+		vi.mocked(findSummarizeTargets).mockReturnValueOnce([]);
+		vi.mocked(extractNoteProse).mockReturnValueOnce('The note body prose.');
+		mockPlugin.app.vault.read.mockResolvedValue('# Title\n\nAbout [[Mine]].\n');
+		(mockPlugin.app.metadataCache as Record<string, unknown>).getFirstLinkpathDest = vi.fn().mockReturnValue(null);
+		await module.onload();
+		lastSummarizerInstance.summarize.mockResolvedValue('Ties to [[Ghost|a ghost]] and [[Mine]].');
+		const cmd = mockPlugin.addCommand.mock.calls.find((c) => c[0].id === 'summarize-current-note')![0];
+
+		await cmd.editorCallback?.({}, { file: new TFile('notes/My Note.md') });
+
+		const written = await (mockPlugin.app.vault.process.mock.results.at(-1)!.value as Promise<string>);
+		expect(written).toContain('Ties to a ghost and [[Mine]].');
 	});
 
 	it('treats a prose-only note as nothing to summarize when includeNoteContent is off', async () => {

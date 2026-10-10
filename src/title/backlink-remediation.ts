@@ -89,7 +89,15 @@ function retargetLinkpath(linkpath: string, oldPath: string, newPath: string): s
 	const hadExt = /\.md$/i.test(name);
 	const base = hadExt ? name.slice(0, -3) : name;
 	if (base.toLowerCase() !== noteBasename(oldPath).toLowerCase()) return null;
-	return dir + noteBasename(newPath) + (hadExt ? '.md' : '');
+	// A folder-qualified link must follow the note into its new folder (cross-folder merge) or it dangles (#581).
+	const newDir = dir.toLowerCase() === folderPrefix(oldPath).toLowerCase() && dir ? folderPrefix(newPath) : dir;
+	return newDir + noteBasename(newPath) + (hadExt ? '.md' : '');
+}
+
+/** Folder part of a vault path including the trailing slash, e.g. `Inbox/Old.md` -> `Inbox/`. */
+function folderPrefix(path: string): string {
+	const slash = path.lastIndexOf('/');
+	return slash >= 0 ? path.slice(0, slash + 1) : '';
 }
 
 const WIKILINK_RE = /^(!?)\[\[([^\][|]*)(?:\|([^\][]*))?\]\]$/;

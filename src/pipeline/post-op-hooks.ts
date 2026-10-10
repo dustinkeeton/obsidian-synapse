@@ -12,6 +12,8 @@ export interface PostOpHookDeps {
 	organizeNote: (file: TFile) => Promise<unknown>;
 	/** Illustrate the note from the material the action processed (#213); gated live by `illustrate.runAfter`. */
 	illustrateNote: (filePath: string, ctx?: PostOpContext) => Promise<void>;
+	/** REM-scan one note; links only to notes that exist (#581). */
+	remNote: (filePath: string) => Promise<unknown>;
 }
 
 /** Enrichment trigger recorded on the proposal for each post-op source; enrichment never re-enriches itself. */
@@ -38,7 +40,7 @@ const RUN_AFTER_BY_SOURCE: Record<PostOpSource, IllustrateRunAfterKey> = {
 /**
  * Post-op chain for one source, each leg gated independently: auto-enrich
  * (wire time) + title check (live under auto-enrich, wire time standalone),
- * then illustrate (wire-gated on `illustrate.enabled`, `runAfter` read live).
+ * deep-dive REM (wire time, `deepDive.autoRemOnAccept`), then illustrate (wire-gated on `illustrate.enabled`, `runAfter` read live).
  * Returns null when no leg is wired so the module's hook slot stays untouched.
  */
 export function buildPostOpHook(deps: PostOpHookDeps, source: PostOpSource): PostOpHook | null {
@@ -63,6 +65,11 @@ export function buildPostOpHook(deps: PostOpHookDeps, source: PostOpSource): Pos
 		} else if (titleCheck) {
 			legs.push((filePath) => checkTitle(filePath));
 		}
+	}
+
+	if (source === 'deep-dive' && settings.rem.enabled && settings.deepDive.autoRemOnAccept) {
+		legs.push((filePath) =>
+			fireAndForget(deps.remNote(filePath), 'Discover REM links', { notifications }));
 	}
 
 	if (settings.illustrate.enabled) {

@@ -72,6 +72,7 @@ vi.mock('../audio', () => ({
 // Mock the shared module. Content fetchers are stubbed here (they moved from
 // ./content-fetcher into ../shared) to avoid real network calls.
 vi.mock('../shared', async () => ({
+	...(await vi.importActual<typeof import('../shared/link-guard')>('../shared/link-guard')),
 	// Use the REAL content-schema registry so auto-format detection runs as in
 	// production rather than throwing on an undefined mock.
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),

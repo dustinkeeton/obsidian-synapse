@@ -66,6 +66,7 @@ interface PostOpHookDeps {
   checkTitle: (filePath: string) => Promise<void>;
   organizeNote: (file: TFile) => Promise<unknown>;
   illustrateNote: (filePath: string, ctx?: PostOpContext) => Promise<void>;   // #213 illustrate leg
+  remNote: (filePath: string) => Promise<unknown>;                           // #581 deep-dive REM leg
 }
 // post-op-hooks.ts:44 — null when no leg is wired (module hook slot left untouched)
 function buildPostOpHook(deps: PostOpHookDeps, source: PostOpSource): PostOpHook | null;
@@ -130,6 +131,7 @@ Wired in `main.ts:185-201`: one `PostOpHookDeps` (`main.ts:185-192`; `illustrate
 |-----|----------------|-------------------|
 | enrich + title | source != `'enrichment'`; `enrichment.enabled && enrichment.autoEnrich`; NOT (deep-dive with `!deepDive.autoEnrichOnAccept` — that opts the source out of the whole enrich/title chain) | `fireAndForget(enrich(filePath, TRIGGER_BY_SOURCE[source]))`, then a title check gated LIVE on `title.enabled && title.checkAfterOperations` |
 | standalone title | source != `'enrichment'`, auto-enrich off, `title.enabled && title.checkAfterOperations` | `fireAndForget(checkTitle(filePath))` |
+| deep-dive REM (#581) | source == `'deep-dive'`; `rem.enabled && deepDive.autoRemOnAccept` | `fireAndForget(remNote(filePath))`; main.ts wires `noteQueue.run(filePath, () => rem.remScanNote(filePath))` (REM's own auto-accept applies) |
 | illustrate (#213) | `illustrate.enabled` | LIVE: `illustrate.enabled && illustrate.runAfter[RUN_AFTER_BY_SOURCE[source]]` -> `fireAndForget(illustrateNote(filePath, ctx))` |
 
 `TRIGGER_BY_SOURCE`: elaboration -> `'elaboration'`; audio/video/image -> `'transcription'`; summarize -> `'summarization'`; deep-dive -> `'deep-dive'`. `RUN_AFTER_BY_SOURCE`: elaboration -> `elaboration`; audio/video/image -> `transcription`; summarize -> `summarize`; deep-dive -> `deepDive`; enrichment -> `enrichment`.
@@ -145,6 +147,7 @@ Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the not
 | `settings[phase.key].enabled` | per-feature settings section keyed by `PipelineModuleKey` | Phase included only when its feature is enabled |
 | `getSettings()` | injected accessor | Read-only; runner never mutates settings |
 | `enrichment.enabled`, `enrichment.autoEnrich`, `deepDive.autoEnrichOnAccept`, `title.enabled`, `title.checkAfterOperations` | `post-op-hooks.ts:52-65` | Post-op hook shape (see table above); title gate re-read live under auto-enrich |
+| `rem.enabled`, `deepDive.autoRemOnAccept` | `post-op-hooks.ts` deep-dive REM leg | REM leg wired for deep-dive only |
 | `illustrate.enabled` (wire time + live), `illustrate.runAfter[key]` (live) | `post-op-hooks.ts:68-75` | Illustrate leg wired / fired |
 | `organize.enabled`, `deepDive.autoOrganizeOnAccept`, `summarize.autoOrganizeOnSummarize` | `post-op-hooks.ts:86-91` | Auto-organize hook wired or `null` |
 

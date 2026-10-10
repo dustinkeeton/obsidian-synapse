@@ -4,7 +4,7 @@ import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, sanitizeAIResponse,
 	CheckpointManager, NoteOperationQueue, generateId, isPathExcluded, findMatchingRule,
-	trackAiCache, withCacheReport,
+	trackAiCache, withCacheReport, stripUnresolvedLinks,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { ImageEmbed } from './types';
@@ -88,7 +88,7 @@ export class ImageModule implements FeatureModule {
 				true
 			);
 
-			await this.plugin.app.vault.process(activeFile, (data) => data + ocrBlock);
+			await this.plugin.app.vault.process(activeFile, (data) => data + stripUnresolvedLinks(ocrBlock, this.plugin.app.metadataCache, activeFile.path));
 			this.onExtractionComplete?.(activeFile.path);
 			op.finish(withCacheReport(`OCR of ${file.name} added to note`, [use]));
 		} catch (error) {
@@ -207,7 +207,7 @@ export class ImageModule implements FeatureModule {
 			await this.plugin.app.vault.process(noteFile, (data) => {
 				const lines = data.split('\n');
 				for (const ins of inserts) {
-					lines.splice(ins.line + 1, 0, ins.block);
+					lines.splice(ins.line + 1, 0, stripUnresolvedLinks(ins.block, this.plugin.app.metadataCache, noteFile.path));
 				}
 				return lines.join('\n');
 			});

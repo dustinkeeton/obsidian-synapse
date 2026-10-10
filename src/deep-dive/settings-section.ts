@@ -127,6 +127,18 @@ export function renderDeepDiveSettings(ctx: SettingsSectionContext): void {
 		);
 
 	new Setting(deepDiveBody)
+		.setName('Auto-REM on accept')
+		.setDesc('Automatically run REM when a deep dive note is accepted, linking it to notes that already exist')
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.deepDive.autoRemOnAccept)
+				.onChange(async (value) => {
+					plugin.settings.deepDive.autoRemOnAccept = value;
+					await plugin.saveSettings();
+				})
+		);
+
+	new Setting(deepDiveBody)
 		.setName('Excluded tags')
 		.setDesc('Notes with these tags will skip deep dive')
 		.addText((text) =>

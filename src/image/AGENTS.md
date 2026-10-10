@@ -188,6 +188,7 @@ Downscale path re-encodes to JPEG. Lossless sources (`image/png`, `image/bmp`, `
 
 ## Invariants / Gotchas
 
+- OCR blocks (single + batch) pass through `stripUnresolvedLinks` before insertion (#581).
 - Per-note serialization (#483): both public entry points take the target note's `NoteOperationQueue` slot exactly once via `queued()` (index.ts:40) and delegate to a queue-free core; `onWait` updates the operation toast to `Waiting for another Synapse operation on <basename>` (OCR is user-invoked). The cores must never re-enter the queue.
 - `extractAndInsert` sorts embeds by descending line and applies all inserts atomically in one `vault.process()` so earlier splices never shift later lines.
 - A 2000ms `window.setTimeout` delay separates successive API calls to respect rate limits.

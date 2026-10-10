@@ -7,6 +7,7 @@ import {
 	CheckpointManager, NoteOperationQueue, generateId, formatTimeRange, loadNodeModules,
 	isPathExcluded, findMatchingRule, redactError,
 	NoSpeechDetectedError, hasSpeechContent, isNoSpeechError, noSpeechNotice, withCacheReport,
+	stripUnresolvedLinks,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
@@ -258,7 +259,7 @@ export class AudioModule implements FeatureModule {
 				true
 			);
 
-			await this.plugin.app.vault.process(activeFile, (data) => data + transcriptionBlock);
+			await this.plugin.app.vault.process(activeFile, (data) => data + stripUnresolvedLinks(transcriptionBlock, this.plugin.app.metadataCache, activeFile.path));
 			this.onTranscriptionComplete?.(activeFile.path);
 			op.finish(withCacheReport(`Transcription of ${file.name} added to note`, [{ ai: result.aiCached }]));
 		} catch (error) {
@@ -384,7 +385,7 @@ export class AudioModule implements FeatureModule {
 			await this.plugin.app.vault.process(noteFile, (data) => {
 				const lines = data.split('\n');
 				for (const ins of inserts) {
-					lines.splice(ins.line + 1, 0, ins.block);
+					lines.splice(ins.line + 1, 0, stripUnresolvedLinks(ins.block, this.plugin.app.metadataCache, noteFile.path));
 				}
 				return lines.join('\n');
 			});
@@ -507,7 +508,7 @@ export class AudioModule implements FeatureModule {
 			const insertLine = Math.max(...embeds.map(e => e.line));
 			await this.plugin.app.vault.process(noteFile, (data) => {
 				const lines = data.split('\n');
-				lines.splice(insertLine + 1, 0, block);
+				lines.splice(insertLine + 1, 0, stripUnresolvedLinks(block, this.plugin.app.metadataCache, noteFile.path));
 				return lines.join('\n');
 			});
 

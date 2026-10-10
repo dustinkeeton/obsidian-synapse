@@ -363,6 +363,7 @@ Out: consumed by `main.ts` only (`createUrlTranscriptionRouter`, `openUnifiedTra
 
 ## Invariants / Gotchas
 
+- `insertUrlTranscript` / `appendUrlTranscript` run the transcript block through `stripUnresolvedLinks` before appending (#581).
 - No media decoding or AI calls live here; the caption tier's post-processing and the extraction tier's download/transcribe run inside `audio`/`video` through the injected callbacks
 - `insertUrlTranscript` owns the active note's `NoteOperationQueue` slot for the transcribe → append cycle (#483) and must never be called from inside another queued operation on the same note; `appendUrlTranscript` (intake) takes no queue slot and rethrows so the intake note stays un-stamped/retriable
 - Tier order is the array order handed to `UrlTranscriptionRouter`; a strategy returning `null` falls through; only a real failure throws; all tiers declining raises `NoTranscriptionPathError`

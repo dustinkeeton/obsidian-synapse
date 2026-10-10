@@ -23,7 +23,10 @@ interface MockFileManager {
 	renameFile: Mock<(file: ObsidianTFile, newPath: string) => Promise<void>>;
 }
 interface MockPlugin {
-	app: { vault: MockVault; fileManager: MockFileManager; workspace: MockWorkspace };
+	app: {
+		vault: MockVault; fileManager: MockFileManager; workspace: MockWorkspace;
+		metadataCache: { getFirstLinkpathDest: Mock<(linkpath: string, sourcePath: string) => unknown> };
+	};
 	registerEvent: Mock<(ref: unknown) => void>;
 }
 
@@ -156,7 +159,7 @@ describe('IntakeModule', () => {
 		};
 
 		plugin = {
-			app: { vault, fileManager, workspace },
+			app: { vault, fileManager, workspace, metadataCache: { getFirstLinkpathDest: vi.fn((lp: string) => (lp === 'Real' ? {} : null)) } },
 			registerEvent: vi.fn(),
 		};
 
@@ -630,6 +633,14 @@ describe('IntakeModule', () => {
 			// The article branch now runs the whole pipeline (fireOnFile), whose
 			// organize phase relocates the note — there is no elaborate-only path.
 			expect(deps.fireOnFile).toHaveBeenCalledTimes(1);
+		});
+
+		it('unlinks article wikilinks to notes that do not exist (#581)', async () => {
+			vi.mocked(fetchArticleContent).mockResolvedValueOnce('See [[Real]] and [[Ghost|elsewhere]].');
+			emit('create', 'Inbox/art.md', 'https://example.com/post');
+			await flushDebounce();
+
+			expect(store.get('Inbox/art.md')).toContain('See [[Real]] and elsewhere.');
 		});
 
 		it('bare unknown URL → general pipeline', async () => {

@@ -251,6 +251,12 @@ function calloutForTranscriptionResult(result: { reformatted?: boolean; schemaId
 function mediaEmbedFor(videoVaultPath: string): string | undefined                                                  // file name only; undefined for a folder-only path
 function buildMediaEmbedLines(videoVaultPath: string | undefined, embedInNote: boolean, noteContent?: string): string[]   // [embed, ''] or [] when off / nothing downloaded / noteContent already carries the embed
 
+// link-guard.ts (#581) — every action writing AI/fetched text runs it so no `[[link]]` to a missing note lands in the vault
+interface LinkResolver { getFirstLinkpathDest(linkpath: string, sourcePath: string): unknown }   // MetadataCache satisfies it
+function stripUnresolvedLinks(text: string, resolver: LinkResolver, sourcePath: string, options?: { keep?: Iterable<string> }): string   // unresolved [[t]] / [[t|a]] -> a ?? t; `[[N#H]]`/`[[N^id]]` resolve by N; leaves `![[...]]`, `[[#H]]`, code fences + inline code, and `keep` linkpaths (case-insensitive) untouched
+function wikilinkTargets(text: string): Set<string>                                       // lowercased note parts of non-embed links outside code; feed to `keep` to preserve a note's own links
+function linkResolves(linkpath: string, resolver: LinkResolver, sourcePath: string): boolean
+
 // diagram-generator.ts
 function generateTreeDiagram(root: TreeNode): string
 function generateMoveDiagram(moves: MoveRecord[]): string
@@ -609,6 +615,8 @@ function scoreLyricsContent(content: string): number
 | `callouts.test.ts` | Tests | Every type has a base; header token/line; identity + matcher for both spellings (nested prefix, fold marker, base-only `[!summary]` rejected); `calloutHeaderSource` fragment; `buildCallout` round-trips through the matcher |
 | `media-embed.ts` | `mediaEmbedFor`, `buildMediaEmbedLines` | Downloaded-media embed lines (#561): one builder for the `![[file]]` + blank line every write site puts above a transcription/summary callout; gated on `video.embedInNote`, dedupes against the note content when given. No imports. Used by `transcription/url-transcription.ts`, `video/index.ts`, `summarize/index.ts` |
 | `media-embed.test.ts` | Tests | File-name-only link, folder-only path, on/off, no download, already-embedded, different file embedded |
+| `link-guard.ts` | `stripUnresolvedLinks`, `wikilinkTargets`, `linkResolves`, `LinkResolver`, `StripLinksOptions` | Unresolved-wikilink guard (#581). No imports. Used by deep-dive, elaboration, summarize, enrichment, intake, illustrate, audio, video, image, transcription |
+| `link-guard.test.ts` | Tests | Resolved, unresolved, aliased, heading/block refs, same-note refs, embeds, code, table-escaped pipe, keep, frontmatter |
 | `diagram-generator.ts` | `generateTreeDiagram`, `generateMoveDiagram`, `generateOrganizeSummary`, `TreeNode`, `MoveRecord` | Mermaid diagram generation for organize summaries |
 | `diagram-generator.test.ts` | Tests | Diagram generator tests |
 | `slider-helper.ts` | `addEnhancedSlider` | Settings UI helper for range sliders with ticks |

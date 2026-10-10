@@ -1,5 +1,5 @@
 import type { App, TFile } from 'obsidian';
-import { findMatchingRule, isNoSpeechError, noSpeechNotice, transcriptCacheUse, withCacheReport, calloutForTranscriptionResult, formatTimeRange } from '../shared';
+import { findMatchingRule, isNoSpeechError, noSpeechNotice, transcriptCacheUse, withCacheReport, calloutForTranscriptionResult, formatTimeRange, stripUnresolvedLinks } from '../shared';
 import type { NoteOperationQueue, NotificationManager, TimeRange, SourceContext } from '../shared';
 import type { SynapseSettings } from '../settings';
 import { buildUrlTranscriptBlock, UrlTranscriptionRouter } from './url-transcription';
@@ -64,7 +64,7 @@ export async function insertUrlTranscript(
 				getSettings().video.embedInNote,
 				timeRange
 			);
-			await app.vault.process(activeFile, (data) => data + block);
+			await app.vault.process(activeFile, (data) => data + stripUnresolvedLinks(block, app.metadataCache, activeFile.path));
 			const { type, verb } = calloutForTranscriptionResult(result);
 			deps.onComplete?.(activeFile.path, {
 				sourceUrls: [url],
@@ -102,7 +102,7 @@ export async function appendUrlTranscript(
 		const block = buildUrlTranscriptBlock(
 			result, url, deps.getSettings().video.embedInNote
 		);
-		await deps.app.vault.process(file, (data) => data + block);
+		await deps.app.vault.process(file, (data) => data + stripUnresolvedLinks(block, deps.app.metadataCache, file.path));
 		op.finish(withCacheReport('Transcript added', [transcriptCacheUse(result)]));
 	} catch (error) {
 		if (isNoSpeechError(error)) {

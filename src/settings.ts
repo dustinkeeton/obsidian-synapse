@@ -296,6 +296,8 @@ export interface DeepDiveSettings {
 	excludeTags: string[];
 	autoEnrichOnAccept: boolean;
 	autoOrganizeOnAccept: boolean;
+	/** Run REM on each accepted note so links are added only to notes that exist (#581). */
+	autoRemOnAccept: boolean;
 }
 
 export interface RemSettings {
@@ -605,6 +607,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		excludeTags: ['no-deep-dive'],
 		autoEnrichOnAccept: true,
 		autoOrganizeOnAccept: false,
+		autoRemOnAccept: true,
 	},
 	title: {
 		enabled: true,

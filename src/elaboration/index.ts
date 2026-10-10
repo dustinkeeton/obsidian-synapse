@@ -8,6 +8,7 @@ import {
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager,
 	NoteOperationQueue, generateId, ConfirmModal, splitRawFrontmatter,
 	fireAndForget, reviewAction, openScanFolderPicker, trackAiCache, withCacheReport,
+	stripUnresolvedLinks, wikilinkTargets,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { PlaceholderDetector } from './detector';
@@ -523,12 +524,18 @@ export class ElaborationModule implements FeatureModule {
 		}
 
 		const rewritten = sanitizeRewrittenBody(editedContent ?? proposal.proposedAdditions);
+		// Links the user typed into the review edit are theirs, not the model's.
+		const generated = wikilinkTargets(proposal.proposedAdditions);
+		const userLinks = editedContent === undefined
+			? []
+			: [...wikilinkTargets(editedContent)].filter((t) => !generated.has(t));
 		let body = '';
 		await this.plugin.app.vault.process(file, (data) => {
 			body = data;
 			const { raw } = splitRawFrontmatter(data);
 			const frontmatter = raw && !raw.endsWith('\n') ? raw + '\n' : raw;
-			return frontmatter + rewritten;
+			const keep = [...wikilinkTargets(data), ...userLinks];
+			return frontmatter + stripUnresolvedLinks(rewritten, this.plugin.app.metadataCache, file.path, { keep });
 		});
 
 		await this.store.updateStatus(id, 'accepted');

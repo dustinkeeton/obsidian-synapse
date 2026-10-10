@@ -233,6 +233,7 @@ Out: consumed by `main.ts` (TitleModule, checkTitle), `views/` (TitleProposal, T
 
 ## Invariants / Gotchas
 
+- Remediation is deterministic (no AI text); a folder-qualified link whose folder matches the old note's moves to the new note's folder so a cross-folder merge never leaves it dangling (#581).
 - No `CheckpointManager` — title proposals are always single-note, never batched.
 - Per-note serialization (#483): `checkUntitled`, `checkMismatch`, and `acceptProposal` each acquire the note's `NoteOperationQueue` slot exactly ONCE (silently — no `onWait`) and delegate to a private core (`proposeUntitled`, `proposeFromMismatch`, `applyAccept`) that must never re-enter the queue. `checkTitle` only routes and takes no slot itself. `maybeAutoAccept` runs inside `proposeUntitled`/`proposeFromMismatch`, so it calls `applyAccept` directly (index.ts:81), never `acceptProposal`. Backlink remediation writes to OTHER notes and stays unqueued by design (a second key would introduce lock ordering).
 - `acceptProposal` guards against double-acceptance: returns `{ status: 'skipped' }` if `proposal.status !== 'pending'`. The guard lives in `applyAccept`, which re-loads the proposal under the queue slot so a wait cannot leave the decision on stale state.

@@ -17,6 +17,7 @@ function makeDeps(mutate: (s: SynapseSettings) => void = () => {}) {
 		checkTitle: vi.fn().mockResolvedValue(undefined),
 		organizeNote: vi.fn().mockResolvedValue(null),
 		illustrateNote: vi.fn().mockResolvedValue(undefined),
+		remNote: vi.fn().mockResolvedValue(null),
 	};
 	return { deps, settings };
 }
@@ -53,7 +54,10 @@ describe('buildPostOpHook', () => {
 	});
 
 	it('returns null for deep-dive when autoEnrichOnAccept is off under auto-enrich', () => {
-		const { deps } = makeDeps((s) => { s.deepDive.autoEnrichOnAccept = false; });
+		const { deps } = makeDeps((s) => {
+			s.deepDive.autoEnrichOnAccept = false;
+			s.deepDive.autoRemOnAccept = false;
+		});
 		expect(buildPostOpHook(deps, 'deep-dive')).toBeNull();
 		expect(buildPostOpHook(deps, 'audio')).not.toBeNull();
 	});
@@ -155,6 +159,53 @@ describe('buildPostOpHook — illustrate leg (#213)', () => {
 		buildPostOpHook(deps, 'audio')!('a.md', ctx);
 		expect(deps.enrich).toHaveBeenCalledWith('a.md', 'transcription');
 		expect(deps.illustrateNote).toHaveBeenCalledWith('a.md', ctx);
+	});
+});
+
+describe('buildPostOpHook deep-dive REM leg (#581)', () => {
+	it('is wired by default', () => {
+		const { deps } = makeDeps();
+		buildPostOpHook(deps, 'deep-dive')!('n.md');
+		expect(deps.remNote).toHaveBeenCalledWith('n.md');
+	});
+
+	it('is not wired when autoRemOnAccept is off', () => {
+		const { deps } = makeDeps((s) => { s.deepDive.autoRemOnAccept = false; });
+		buildPostOpHook(deps, 'deep-dive')!('n.md');
+		expect(deps.remNote).not.toHaveBeenCalled();
+	});
+
+	it('REM-scans the accepted note when autoRemOnAccept is on', () => {
+		const { deps } = makeDeps((s) => { s.deepDive.autoRemOnAccept = true; });
+		buildPostOpHook(deps, 'deep-dive')!('n.md');
+		expect(deps.remNote).toHaveBeenCalledWith('n.md');
+		expect(deps.enrich).toHaveBeenCalledWith('n.md', 'deep-dive');
+	});
+
+	it('runs independently of the enrich/title chain', () => {
+		const { deps } = makeDeps((s) => {
+			s.deepDive.autoRemOnAccept = true;
+			s.deepDive.autoEnrichOnAccept = false;
+			s.illustrate.enabled = false;
+		});
+		buildPostOpHook(deps, 'deep-dive')!('n.md');
+		expect(deps.remNote).toHaveBeenCalledWith('n.md');
+		expect(deps.enrich).not.toHaveBeenCalled();
+	});
+
+	it('is not wired when REM is disabled', () => {
+		const { deps } = makeDeps((s) => {
+			s.deepDive.autoRemOnAccept = true;
+			s.rem.enabled = false;
+		});
+		buildPostOpHook(deps, 'deep-dive')!('n.md');
+		expect(deps.remNote).not.toHaveBeenCalled();
+	});
+
+	it.each(['elaboration', 'audio', 'summarize', 'enrichment'] as const)('is never wired for %s', (source) => {
+		const { deps } = makeDeps((s) => { s.deepDive.autoRemOnAccept = true; });
+		buildPostOpHook(deps, source)?.('n.md');
+		expect(deps.remNote).not.toHaveBeenCalled();
 	});
 });
 

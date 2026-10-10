@@ -306,6 +306,7 @@ No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny lo
 
 ## Invariants / Gotchas
 
+- Accept unlinks model-written `[[links]]` to missing notes via `stripUnresolvedLinks`, keeping links already in the note and links the user typed into the review edit (#581).
 - `scanVault` and `resumeFromCheckpoint` create/advance a checkpoint; cancellation or error auto-rejects all proposals created in the run (`rejectProposalBatch`) and discards the checkpoint.
 - `generate()` returning `null` (either anti-fabrication guard) is not an error: callers complete the checkpoint item and skip without saving a proposal (index.ts:173 batch, index.ts:441 single note).
 - Proposal `id` is deterministic: `id === contentKey`. Re-scanning an unchanged note recomputes the same key, so `guardProposal` returns `duplicate` and no second AI call fires; a `rejected` proposal with that key does not block a fresh attempt (#395).

@@ -37,6 +37,7 @@ describe('EnrichmentApplier', () => {
 
 	beforeEach(() => {
 		app = createMockApp();
+		app.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile('target.md'));
 		settings = makeSettings();
 		applier = new EnrichmentApplier(app as unknown as App, () => settings);
 	});
@@ -57,6 +58,52 @@ describe('EnrichmentApplier', () => {
 		const written = (await app.vault.process.mock.results[0].value) as unknown as string;
 		return written;
 	}
+
+	describe('apply unresolved links (#581)', () => {
+		const resolveOnly = (...names: string[]) =>
+			app.metadataCache.getFirstLinkpathDest.mockImplementation((lp: string) => (names.includes(lp) ? mockFile(`${lp}.md`) : null));
+
+		it('drops accepted Related Notes entries whose note does not exist', async () => {
+			resolveOnly('Real');
+			const proposal = makeProposal({
+				result: {
+					...emptyResult(),
+					internalLinks: [
+						{ targetPath: 'Real.md', displayText: 'Real', reason: 'r', relevanceScore: 1 },
+						{ targetPath: 'Gone.md', displayText: 'Gone', reason: 'g', relevanceScore: 1 },
+					],
+				},
+			});
+			const accepted: AcceptedItems = { ...emptyAccepted(), internalLinks: ['Real.md', 'Gone.md'] };
+
+			const result = await runApply('# Note\n', proposal, accepted);
+
+			expect(result).toContain('[[Real]]');
+			expect(result).not.toContain('Gone');
+			expect(app.metadataCache.getFirstLinkpathDest).toHaveBeenCalledWith('Real', 'notes/Test.md');
+		});
+
+		it('unlinks missing-note wikilinks in suggested frontmatter values', async () => {
+			resolveOnly('Real');
+			const proposal = makeProposal({
+				result: {
+					...emptyResult(),
+					frontmatter: [
+						{ key: 'related', value: ['[[Real]]', '[[Ghost]]'], action: 'add' },
+						{ key: 'up', value: '[[Ghost|parent]]', action: 'add' },
+					],
+				},
+			});
+			const accepted: AcceptedItems = { ...emptyAccepted(), frontmatter: ['related', 'up'] };
+
+			const result = await runApply('# Note\n', proposal, accepted);
+
+			expect(result).toContain('[[Real]]');
+			expect(result).not.toContain('[[Ghost');
+			expect(result).toContain('Ghost');
+			expect(result).toContain('parent');
+		});
+	});
 
 	describe('apply', () => {
 		it('does nothing when the source note is not a TFile', async () => {

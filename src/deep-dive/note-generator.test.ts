@@ -65,6 +65,23 @@ describe('NoteGenerator — image embed preservation', () => {
 		);
 		expect(systemPrompt).toContain('embed them as ![[image.jpg]]');
 	});
+
+	it('forbids speculative wikilinks and drops the related frontmatter field (#581)', async () => {
+		const topic: ExtractedTopic = {
+			title: 'Test Topic',
+			description: 'A topic for testing',
+			relevance: 0.8,
+			existsInVault: false,
+			relatedUrls: [],
+		};
+
+		await generator.generateContent(topic, 'Parent Note', 'Source content');
+
+		const [, systemPrompt] = mockComplete.mock.calls[0];
+		expect(systemPrompt).toContain('do NOT write [[wikilinks]]');
+		expect(systemPrompt).not.toContain('Include [[wikilinks]]');
+		expect(systemPrompt).not.toMatch(/related\)/);
+	});
 });
 
 describe('NoteGenerator — voice setting (#540)', () => {
