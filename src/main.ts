@@ -189,7 +189,7 @@ export default class SynapsePlugin extends Plugin {
 			checkTitle: (filePath) => title.checkTitle(filePath, { postOp: true }),
 			organizeNote: (file) => organize.organizeNote(file),
 			illustrateNote: (filePath, ctx) => illustrate.illustrateNote(filePath, ctx),
-			remNote: (filePath) => this.noteQueue.run(filePath, () => rem.remScanNote(filePath)),
+			remNote: (filePath) => rem.remScanNote(filePath, { postOp: true }),
 		};
 		elaboration.onProposalAccepted = buildPostOpHook(postOpDeps, 'elaboration');
 		audio.onTranscriptionComplete = buildPostOpHook(postOpDeps, 'audio');

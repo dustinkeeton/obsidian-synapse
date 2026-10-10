@@ -123,7 +123,7 @@ fire(folderPath?)  /  fireOnFile(file)
 
 ## Post-Op Hooks (`post-op-hooks.ts`)
 
-Wired in `main.ts:185-202`: one `PostOpHookDeps` (`main.ts:185-193`; `illustrateNote` -> `illustrate.illustrateNote(filePath, ctx)`, `:191`; `remNote` -> `this.noteQueue.run(filePath, () => rem.remScanNote(filePath))`, `:192`) feeds `buildPostOpHook` for each source (`elaboration.onProposalAccepted`, `audio.onTranscriptionComplete`, `video.onTranscriptionComplete`, `image.onExtractionComplete`, `summarize.onSummaryComplete`, `enrichment.onEnrichmentApplied` (`:199`), `deepDive.onNoteAccepted`) and `buildAutoOrganizeHook` for `deepDive.onOrganizeRequested` / `summarize.onOrganizeRequested`.
+Wired in `main.ts:185-202`: one `PostOpHookDeps` (`main.ts:185-193`; `illustrateNote` -> `illustrate.illustrateNote(filePath, ctx)`, `:191`; `remNote` -> `rem.remScanNote(filePath, { postOp: true })`, `:192`) feeds `buildPostOpHook` for each source (`elaboration.onProposalAccepted`, `audio.onTranscriptionComplete`, `video.onTranscriptionComplete`, `image.onExtractionComplete`, `summarize.onSummaryComplete`, `enrichment.onEnrichmentApplied` (`:199`), `deepDive.onNoteAccepted`) and `buildAutoOrganizeHook` for `deepDive.onOrganizeRequested` / `summarize.onOrganizeRequested`.
 
 `buildPostOpHook(deps, source)` builds independent legs at wire time and runs every wired leg per call with `(filePath, ctx)`; `null` when no leg is wired (`post-op-hooks.ts:84`). Source `'enrichment'` (`enrichment.onEnrichmentApplied`) gets the illustrate leg only. Leg order per call: enrich/title, REM, illustrate (`post-op-hooks.ts:53-82`).
 
@@ -131,7 +131,7 @@ Wired in `main.ts:185-202`: one `PostOpHookDeps` (`main.ts:185-193`; `illustrate
 |-----|----------------|-------------------|
 | enrich + title | source != `'enrichment'`; `enrichment.enabled && enrichment.autoEnrich`; NOT (deep-dive with `!deepDive.autoEnrichOnAccept` — that opts the source out of the whole enrich/title chain) | `fireAndForget(enrich(filePath, TRIGGER_BY_SOURCE[source]))`, then a title check gated LIVE on `title.enabled && title.checkAfterOperations` |
 | standalone title | source != `'enrichment'`, auto-enrich off, `title.enabled && title.checkAfterOperations` | `fireAndForget(checkTitle(filePath))` |
-| deep-dive REM (#581) | source == `'deep-dive'`; `rem.enabled && deepDive.autoRemOnAccept` | `fireAndForget(remNote(filePath))`; main.ts wires `noteQueue.run(filePath, () => rem.remScanNote(filePath))` (REM's own auto-accept applies) |
+| deep-dive REM (#581) | source == `'deep-dive'`; `rem.enabled && deepDive.autoRemOnAccept` | `fireAndForget(remNote(filePath))`; main.ts wires `rem.remScanNote(filePath, { postOp: true })`; RemModule takes the queue slot (REM's own auto-accept applies) |
 | illustrate (#213) | `illustrate.enabled` | LIVE: `illustrate.enabled && illustrate.runAfter[RUN_AFTER_BY_SOURCE[source]]` -> `fireAndForget(illustrateNote(filePath, ctx))` |
 
 `TRIGGER_BY_SOURCE`: elaboration -> `'elaboration'`; audio/video/image -> `'transcription'`; summarize -> `'summarization'`; deep-dive -> `'deep-dive'`. `RUN_AFTER_BY_SOURCE`: elaboration -> `elaboration`; audio/video/image -> `transcription`; summarize -> `summarize`; deep-dive -> `deepDive`; enrichment -> `enrichment`.
@@ -169,6 +169,6 @@ Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the not
 | `SynapseSettings`, `IllustrateRunAfterKey` (types) | `../settings` (`post-op-hooks.ts:4`; `IllustrateRunAfterKey` is re-exported by `settings.ts:11` from `illustrate/types`) |
 | `TFile` (type) | `obsidian` (`types.ts:1`, `post-op-hooks.ts:1`) |
 | `PipelineModuleMap` instances | injected by `main.ts:92-100` from each feature module's scan fn |
-| `PostOpHookDeps` instance | injected by `main.ts:185-193` (`enrichment.enrich`, `title.checkTitle` wrapped with `{ postOp: true }`; `organize.organizeNote`; `illustrate.illustrateNote`; `remNote` = `noteQueue.run(filePath, () => rem.remScanNote(filePath))` — no `{ postOp: true }`, the queue slot is taken in `main.ts`, not in `RemModule`) |
+| `PostOpHookDeps` instance | injected by `main.ts:185-193` (`enrichment.enrich`, `title.checkTitle` wrapped with `{ postOp: true }`; `organize.organizeNote`; `illustrate.illustrateNote`; `remNote` = `rem.remScanNote(filePath, { postOp: true })`; `RemModule` takes the queue slot) |
 
 Pipeline imports `commands` (for the `fire-synapse` flow gate) and `shared` (`fireAndForget`) but NOT the feature modules directly — `main.ts` injects the `PipelineModuleMap` and `PostOpHookDeps`, keeping the runner and the hooks decoupled from concrete feature implementations.
