@@ -1,5 +1,5 @@
 import { Plugin, TFile } from 'obsidian';
-import { extractUrls, findUrls } from '../shared';
+import { extractUrls, findUrls, type ScanTarget, scanScopeLabel } from '../shared';
 import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
@@ -100,8 +100,8 @@ export class EnrichmentModule implements FeatureModule {
 
 		this.registrar.register('scan-vault-enrichment', this.getSettings().enrichment.enabled, {
 			callback: () => {
-				openScanFolderPicker(this.plugin.app, (path) => {
-					fireAndForget(this.scanVault(path), 'Scan folder for enrichment', { notifications: this.notifications });
+				openScanFolderPicker(this.plugin.app, (scope) => {
+					fireAndForget(this.scanVault(scope), 'Scan folder for enrichment', { notifications: this.notifications });
 				});
 			},
 		});
@@ -219,15 +219,16 @@ export class EnrichmentModule implements FeatureModule {
 	 * 4. Resolve cross-note new-note candidates -- only topics referenced
 	 *    by 2+ notes become new-note link suggestions
 	 */
-	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+	async scanVault(target?: ScanTarget, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+		const folderLabel = scanScopeLabel(target);
 		// -- Phase 1: Collect eligible files & warm caches --
-		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
+		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for enrichment`,
 			'enrichment-vault-scan'
 		);
 
-		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		let allFiles = getMarkdownFiles(this.plugin.app, target);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
 		const eligible: TFile[] = [];
@@ -290,7 +291,7 @@ export class EnrichmentModule implements FeatureModule {
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'enrichment',
-			operationLabel: `Enrichment: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			operationLabel: `Enrichment: vault scan${folderLabel ? ` (${folderLabel})` : ''}`,
 			items: checkpointItems,
 		});
 

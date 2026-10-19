@@ -6,6 +6,7 @@ import {
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, redactError,
 	resolveInsertionPoint, applyInsertion, locateRegion, wordCount, parseCalloutHeader, CALLOUT_TYPES,
 	stripUnresolvedLinks,
+	scanScopeLabel, type ScanTarget,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
@@ -140,8 +141,8 @@ export class IllustrateModule implements FeatureModule {
 		});
 		this.registrar.register('illustrate-folder', this.getSettings().illustrate.enabled, {
 			callback: () => {
-				openScanFolderPicker(this.plugin.app, (path) => {
-					fireAndForget(this.scanVault(path), 'Scan folder for notes to illustrate', { notifications: this.notifications });
+				openScanFolderPicker(this.plugin.app, (scope) => {
+					fireAndForget(this.scanVault(scope), 'Scan folder for notes to illustrate', { notifications: this.notifications });
 				});
 			},
 		});
@@ -321,14 +322,15 @@ export class IllustrateModule implements FeatureModule {
 		}
 	}
 
-	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+	async scanVault(target?: ScanTarget, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+		const folderLabel = scanScopeLabel(target);
 		if (!this.hasOutputKind()) {
 			this.notifications.info(NOTHING_ENABLED_MESSAGE);
 			return 0;
 		}
-		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
+		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(`${scopeLabel} for notes to illustrate`, 'illustrate-vault-scan');
-		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		let allFiles = getMarkdownFiles(this.plugin.app, target);
 		if (onlyFile) allFiles = allFiles.filter((f) => f.path === onlyFile.path);
 		const eligible: TFile[] = [];
 		try {
@@ -363,7 +365,7 @@ export class IllustrateModule implements FeatureModule {
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'illustrate',
-			operationLabel: `Illustrate: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			operationLabel: `Illustrate: vault scan${folderLabel ? ` (${folderLabel})` : ''}`,
 			items: checkpointItems,
 		});
 		await this.checkpointManager.addDeferredTask(checkpoint.id, { id: generateId(), type: 'refresh-sidebar-view', data: {} });

@@ -139,7 +139,7 @@ class UpdateChecker {
 function ensureFolder(app: App, path: string): Promise<void>
 function readNote(app: App, path: string): Promise<string | null>
 function writeNote(app: App, path: string, content: string): Promise<TFile>
-function getMarkdownFiles(app: App, folder?: string): TFile[]
+function getMarkdownFiles(app: App, target?: ScanTarget): TFile[]   // recursive by default; {recursive:false} keeps direct children only (root: no '/' in path)
 function getIncludedMarkdownFiles(app: App, feature: FeatureId, settings: ExclusionSettings, folder?: string): TFile[]
 function wordCount(text: string): number
 function findAvailableVaultPath(app: App, desiredPath: string): string   // Obsidian-style de-dup: appends -1,-2,... before the extension until free
@@ -267,10 +267,21 @@ function generateOrganizeSummary(moves: MoveRecord[], timestamp: string): string
 function addEnhancedSlider(setting: Setting, options: SliderOptions): void
 
 // folder-picker-modal.ts
+function suggestFolders(root: TFolder, query: string): TFolder[]   // root always included; exact match > root > rest (#416)
 class FolderPickerModal extends SuggestModal<TFolder> { ... }
 
+// scan-scope.ts (#589)
+interface ScanScope { folder?: string; recursive: boolean }   // folder undefined = vault root
+type ScanTarget = string | ScanScope   // bare string = recursive folder
+function toScanScope(target?: ScanTarget): ScanScope
+function scanScopeLabel(target?: ScanTarget): string | undefined   // undefined = recursive vault; '<folder>' recursive; '<folder|vault root> (top level)' non-recursive
+
+// scan-folder-picker-modal.ts (#589)
+interface ScanFolderSuggestion { folder: TFolder; recursive: boolean }
+class ScanFolderPickerModal extends SuggestModal<ScanFolderSuggestion>   // row 2 = root top-level only; Shift+Enter = this folder only (via internal chooser.useSelectedItem)
+
 // open-scan-folder-picker.ts:9
-function openScanFolderPicker(app: App, onChoose: (path: string | undefined) => void): void   // undefined = vault root
+function openScanFolderPicker(app: App, onChoose: (scope: ScanScope) => void): void   // Enter on open = whole vault; ↓ Enter = root top level only
 
 // confirm-modal.ts:4 / :22 (#420; settle-once yes/no modal; dismiss = false)
 interface ConfirmModalOptions { title: string; message: string; confirmLabel?: string }   // confirmLabel default 'Reset'
@@ -595,7 +606,7 @@ function scoreLyricsContent(content: string): number
 | `update-checker.ts` | `UpdateChecker`, `isNewerVersion`, `UpdateCheckerDeps` | In-app "newer Synapse available" check (#365). Polls the plugin's own public GitHub Releases API at most once/24h (gated on `settings.updates.enableUpdateNotifications`), compares the latest tag to the running version, and shows a sticky notice via `notifications.infoSticky` whose button opens Settings → Community plugins. Fails silently (offline/non-200/malformed → logged `null`); the fetch-failure detail is logged through `redactSecrets` and the outer unexpected-error catch through `redactError`. Records the shown version so it never nags twice. `isNewerVersion` is pure semver gt |
 | `update-checker.test.ts` | Tests | UpdateChecker + isNewerVersion tests |
 | `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `getIncludedMarkdownFiles`, `wordCount`, `findAvailableVaultPath` | Vault file operations. `getIncludedMarkdownFiles` drops notes excluded by centralized exclusion rules for a given `FeatureId`. `findAvailableVaultPath` resolves a non-colliding vault path (Obsidian-style `-1`/`-2` suffix before the extension); used by video re-downloads + title duplicate "iterate" resolution (#408) |
-| `file-utils.test.ts` | Tests | `getIncludedMarkdownFiles` exclusion filtering, `findAvailableVaultPath` suffixing |
+| `file-utils.test.ts` | Tests | `getMarkdownFiles` recursive/non-recursive scope, `getIncludedMarkdownFiles` exclusion filtering, `findAvailableVaultPath` suffixing |
 | `api-utils.ts` | `withRetry`, `sleep`, `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError` | Retry with exponential backoff + per-error `shouldRetry` gate, network-error classification/disclosure. `notifyError` no longer lives here — error display moved to `NotificationManager` |
 | `api-utils.test.ts` | Tests | `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError`, `withRetry` |
 | `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
@@ -621,10 +632,14 @@ function scoreLyricsContent(content: string): number
 | `diagram-generator.ts` | `generateTreeDiagram`, `generateMoveDiagram`, `generateOrganizeSummary`, `TreeNode`, `MoveRecord` | Mermaid diagram generation for organize summaries |
 | `diagram-generator.test.ts` | Tests | Diagram generator tests |
 | `slider-helper.ts` | `addEnhancedSlider` | Settings UI helper for range sliders with ticks |
-| `folder-picker-modal.ts` | `FolderPickerModal` | Modal for folder selection with autocomplete |
+| `folder-picker-modal.ts` | `FolderPickerModal`, `suggestFolders` | Modal for folder selection with autocomplete; `suggestFolders` shared with `ScanFolderPickerModal` |
 | `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests |
-| `open-scan-folder-picker.ts` | `openScanFolderPicker` | Unified scan-folder picker wrapper over `FolderPickerModal`; root-first sort so Enter-on-open scans the whole vault; `onChoose(undefined)` = root. Used by main (`fire`) and the elaboration, enrichment, summarize, organize, rem folder-scan commands |
+| `open-scan-folder-picker.ts` | `openScanFolderPicker` | Unified scan-folder picker wrapper over `ScanFolderPickerModal`; root-first sort so Enter-on-open scans the whole vault; `onChoose(ScanScope)`. Used by main (`fire`) and the elaboration, enrichment, summarize, organize, rem folder-scan commands |
 | `open-scan-folder-picker.test.ts` | Tests | Scan folder picker tests |
+| `scan-scope.ts` | `ScanScope`, `ScanTarget`, `toScanScope`, `scanScopeLabel` | Folder-scan scope model (#589); processing-source only, candidate/index lookups stay vault-wide via `getIncludedMarkdownFiles` |
+| `scan-scope.test.ts` | Tests | Scope normalization + labels |
+| `scan-folder-picker-modal.ts` | `ScanFolderPickerModal`, `ScanFolderSuggestion`, `ROOT_LABEL`, `ROOT_TOP_LEVEL_LABEL` | Scan picker with top-level-only root row + Shift+Enter non-recursive choice (#589) |
+| `scan-folder-picker-modal.test.ts` | Tests | Row order, scope returned per row/modifier, Shift+Enter registration |
 | `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:158` (direct import; section reset), `settings-ui/global-sections.ts:574` (via barrel; reset all), `elaboration/index.ts:518` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:35` cites the settle-once pattern in a comment only, no import |
 | `confirm-modal.test.ts` | Tests | ConfirmModal tests |
 | `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |

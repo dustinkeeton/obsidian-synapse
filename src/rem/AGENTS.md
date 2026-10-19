@@ -17,7 +17,7 @@ class RemModule {
   onload(): Promise<void>
   onunload(): void
   remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null>   // index.ts:137; takes the note's queue slot once (#585); postOp silences info notices + result toast + auto-accept notices
-  remScanDirectory(folderPath?: string, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
+  remScanDirectory(target?: ScanTarget, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   acceptProposal(id: string, acceptedMatchTexts: string[], options?: { silent?: boolean }): Promise<void>
   rejectProposal(id: string): Promise<void>
@@ -123,7 +123,7 @@ remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private sca
   --> maybeAutoAccept(proposal)   (#228, when shouldAutoAccept())
   --> refreshView()
 
-remScanDirectory(folderPath?, skipConfirmation?, onlyFile?)
+remScanDirectory(target?, skipConfirmation?, onlyFile?)
   --> getMarkdownFiles filtered by isExcluded
   --> CheckpointManager.create(module: 'rem', items)
   --> addDeferredTask('refresh-sidebar-view')

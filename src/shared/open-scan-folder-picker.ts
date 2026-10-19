@@ -1,16 +1,14 @@
 import type { App } from 'obsidian';
-import { FolderPickerModal } from './folder-picker-modal';
+import { ScanFolderPickerModal } from './scan-folder-picker-modal';
+import type { ScanScope } from './scan-scope';
 
 /**
- * Unified scan folder picker. Opens with an empty query, which FolderPickerModal
- * sorts root-first, so Enter-on-open scans the whole vault. `onChoose` receives
- * the chosen folder path, or `undefined` for the vault root.
+ * Unified scan folder picker. Opens root-first so Enter-on-open scans the whole
+ * vault (#416); the next row (or Shift+Enter on any folder) scans top level only (#589).
  */
 export function openScanFolderPicker(
 	app: App,
-	onChoose: (path: string | undefined) => void,
+	onChoose: (scope: ScanScope) => void,
 ): void {
-	new FolderPickerModal(app, (folder) => {
-		onChoose(folder.isRoot() ? undefined : folder.path);
-	}).open();
+	new ScanFolderPickerModal(app, onChoose).open();
 }

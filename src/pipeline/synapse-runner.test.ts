@@ -146,6 +146,25 @@ describe('SynapseRunner', () => {
 		expect(mockModules.organize).toHaveBeenCalledWith('/my/folder', true);
 	});
 
+	it('fans a top-level-only scope out to every phase, including tidy', async () => {
+		const scope = { recursive: false };
+		await runner.fire(scope);
+
+		for (const key of Object.keys(mockModules) as (keyof PipelineModuleMap)[]) {
+			expect(mockModules[key]).toHaveBeenCalledWith(scope, true);
+		}
+		expect(mockNotifications.startOperation).toHaveBeenCalledWith(
+			'Fire Synapse on vault root (top level) (0/7)',
+			'synapse-fire',
+		);
+	});
+
+	it('keeps the plain Fire Synapse title for a recursive folder scan', async () => {
+		await runner.fire('Inbox');
+
+		expect(mockNotifications.startOperation).toHaveBeenCalledWith('Fire Synapse (0/7)', 'synapse-fire');
+	});
+
 	it('passes skipConfirmation=true to each module', async () => {
 		await runner.fire();
 

@@ -21,7 +21,7 @@ class OrganizeModule {
   getPendingProposals(): Promise<OrganizeProposal[]>
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>      // index.ts:133
   organizeNote(file: TFile): Promise<OrganizeResult | null>        // index.ts:225
-  scanDirectory(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:290; returns the proposal count
+  scanDirectory(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:290; returns the proposal count
   acceptProposal(id: string, options?: { silent?: boolean; runId?: string }): Promise<void>   // index.ts:417
   rejectProposal(id: string): Promise<void>
   undoOrganizeRun(): Promise<void>                                 // index.ts:560; command 'undo-organize-run'
@@ -229,7 +229,7 @@ undoOrganizeRun()  [command: 'undo-organize-run', index.ts:560]
 ## Directory Scan (checkpointed)
 
 ```
-scanDirectory(folderPath?, skipConfirmation?, onlyFile?)
+scanDirectory(target?, skipConfirmation?, onlyFile?)
   Phase 1: Collect eligible files (filtered by isExcluded)
   Phase 2: User confirmation (skipped when skipConfirmation=true)
   Phase 3: Checkpointed processing

@@ -1,5 +1,5 @@
 import { Plugin, TFile } from 'obsidian';
-import { extractUrls } from '../shared';
+import { extractUrls, type ScanTarget, scanScopeLabel } from '../shared';
 import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar, isInFlow } from '../commands';
@@ -65,8 +65,8 @@ export class ElaborationModule implements FeatureModule {
 
 		this.registrar.register('scan-vault', this.getSettings().elaboration.enabled, {
 			callback: () => {
-				openScanFolderPicker(this.plugin.app, (path) => {
-					fireAndForget(this.scanVault(path), 'Scan folder for stub notes', { notifications: this.notifications });
+				openScanFolderPicker(this.plugin.app, (scope) => {
+					fireAndForget(this.scanVault(scope), 'Scan folder for stub notes', { notifications: this.notifications });
 				});
 			},
 		});
@@ -259,11 +259,12 @@ export class ElaborationModule implements FeatureModule {
 	 * 2. Confirmation snackbar -- user decides whether to generate proposals
 	 * 3. Heavy proposal generation with cancellation support
 	 */
-	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+	async scanVault(target?: ScanTarget, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+		const folderLabel = scanScopeLabel(target);
 		// --- Phase 1: Detection (lightweight, local-only) ---
-		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
+		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(scopeLabel, 'vault-scan');
-		let files = getMarkdownFiles(this.plugin.app, folderPath);
+		let files = getMarkdownFiles(this.plugin.app, target);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) files = files.filter(f => f.path === onlyFile.path);
 		const detected: DetectionResult[] = [];
@@ -319,7 +320,7 @@ export class ElaborationModule implements FeatureModule {
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'elaboration',
-			operationLabel: `Elaboration: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			operationLabel: `Elaboration: vault scan${folderLabel ? ` (${folderLabel})` : ''}`,
 			items: checkpointItems,
 		});
 

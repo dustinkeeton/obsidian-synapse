@@ -248,8 +248,8 @@ export default class SynapsePlugin extends Plugin {
 
 		registrar.register('fire', true, {
 			callback: () => {
-				openScanFolderPicker(this.app, (path) => {
-					fireAndForget(this.synapseRunner.fire(path), 'Run all features on a folder', { notifications: this.notifications });
+				openScanFolderPicker(this.app, (scope) => {
+					fireAndForget(this.synapseRunner.fire(scope), 'Run all features on a folder', { notifications: this.notifications });
 				});
 			},
 		});

@@ -22,11 +22,11 @@ type PipelineModuleKey =
   | 'organize';
 
 // Scan-fn contract every pipeline module must satisfy.
-// folderPath scopes the scan; skipConfirmation bypasses the confirm dialog
+// target (folder path | ScanScope) scopes the scan; skipConfirmation bypasses the confirm dialog
 // (always true from Fire Synapse); onlyFile narrows a folder scan to a single
 // note (filtered right after getMarkdownFiles). Returns a processed count or void.
 type PipelineScanFn = (
-  folderPath?: string,
+  target?: ScanTarget,
   skipConfirmation?: boolean,
   onlyFile?: TFile,
 ) => Promise<number | void>;
@@ -47,7 +47,7 @@ class SynapseRunner {
     getSettings: () => SynapseSettings,
     notifications: NotificationManager,
   );
-  fire(folderPath?: string): Promise<void>; // folder-scoped, all active phases
+  fire(target?: ScanTarget): Promise<void>; // folder-scoped, all active phases; non-recursive scope titles the toast "Fire Synapse on <label>"
   fireOnFile(file: TFile): Promise<void>;   // single-note scoped (intake #111)
 }
 
@@ -105,7 +105,7 @@ Organize is intentionally last: it is the content-aware mover that relocates not
 ## Data Flow
 
 ```
-fire(folderPath?)  /  fireOnFile(file)
+fire(target?)  /  fireOnFile(file)
   --> activePhases = SYNAPSE_PIPELINE.filter(p =>
         settings[p.key].enabled && isPipelineKeyInFlow(p.key, 'fire-synapse'))
   --> if activePhases.length === 0: notifications.info('No features are enabled'); return
@@ -113,7 +113,7 @@ fire(folderPath?)  /  fireOnFile(file)
   --> for each phase (sequential, in order):
         if op.cancelled: break
         op.progress(completed, N, 'Phase i/N: <label>')
-        try { await modules[phase.key](folderPath, true[, file]) }  // skipConfirmation=true
+        try { await modules[phase.key](target, true[, file]) }  // skipConfirmation=true
         catch { console.warn('[Synapse] Phase <label> failed: <msg>') }  // isolated; run continues
   --> if !op.cancelled: op.finish('Fire Synapse complete — <completed> phases run')
 ```

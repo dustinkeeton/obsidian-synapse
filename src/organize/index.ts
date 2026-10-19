@@ -6,6 +6,7 @@ import {
 	writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 	trackAiCache, withCacheReport, ConfirmModal, sleep,
+	scanScopeLabel, type ScanTarget,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DecisionRequestOptions, DeferredTask, ModuleDeps, FeatureModule, OperationHandle } from '../shared';
 import type { MoveRecord } from '../shared';
@@ -98,8 +99,8 @@ export class OrganizeModule implements FeatureModule {
 
 		this.registrar.register('scan-directory-organize', this.getSettings().organize.enabled, {
 			callback: () => {
-				openScanFolderPicker(this.plugin.app, (path) => {
-					fireAndForget(this.scanDirectory(path), 'Scan folder for organization', { notifications: this.notifications });
+				openScanFolderPicker(this.plugin.app, (scope) => {
+					fireAndForget(this.scanDirectory(scope), 'Scan folder for organization', { notifications: this.notifications });
 				});
 			},
 		});
@@ -287,15 +288,16 @@ export class OrganizeModule implements FeatureModule {
 	 * 2. User confirmation
 	 * 3. Analyze and organize each file (cancellable)
 	 */
-	async scanDirectory(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+	async scanDirectory(target?: ScanTarget, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+		const folderLabel = scanScopeLabel(target);
 		// Phase 1: Collect eligible files
-		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
+		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for organization`,
 			'organize-scan'
 		);
 
-		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		let allFiles = getMarkdownFiles(this.plugin.app, target);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
 		const eligible: TFile[] = [];
@@ -353,7 +355,7 @@ export class OrganizeModule implements FeatureModule {
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'organize',
-			operationLabel: `Organize: directory scan${folderPath ? ` (${folderPath})` : ''}`,
+			operationLabel: `Organize: directory scan${folderLabel ? ` (${folderLabel})` : ''}`,
 			items: checkpointItems,
 		});
 

@@ -7,6 +7,7 @@ import {
 	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
 	mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport, findMarkdownLinks,
 	stripUnresolvedLinks, wikilinkTargets,
+	scanScopeLabel, type ScanTarget,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { OperationHandle } from '../shared';
@@ -178,8 +179,8 @@ export class SummarizeModule implements FeatureModule {
 
 		this.registrar.register('scan-vault-summarize', this.getSettings().summarize.enabled, {
 			callback: () => {
-				openScanFolderPicker(this.plugin.app, (path) => {
-					fireAndForget(this.scanVault(path), 'Scan folder for notes to summarize', { notifications: this.notifications });
+				openScanFolderPicker(this.plugin.app, (scope) => {
+					fireAndForget(this.scanVault(scope), 'Scan folder for notes to summarize', { notifications: this.notifications });
 				});
 			},
 		});
@@ -1017,15 +1018,16 @@ export class SummarizeModule implements FeatureModule {
 		return `${folderPrefix}${safeName}.md`;
 	}
 
-	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<void> {
+	async scanVault(target?: ScanTarget, skipConfirmation = false, onlyFile?: TFile): Promise<void> {
+		const folderLabel = scanScopeLabel(target);
 		// Phase 1: Scan for files with targets
-		const scopeLabel = folderPath ? `Scanning ${folderPath}` : 'Scanning vault';
+		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for summarizable content`,
 			'summarize-vault-scan'
 		);
 
-		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+		let allFiles = getMarkdownFiles(this.plugin.app, target);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
 		const filesWithTargets: Array<{ file: TFile; targets: SummarizeTarget[] }> = [];
@@ -1090,7 +1092,7 @@ export class SummarizeModule implements FeatureModule {
 		}));
 		const checkpoint = await this.checkpointManager.create({
 			module: 'summarize',
-			operationLabel: `Summarize: vault scan${folderPath ? ` (${folderPath})` : ''}`,
+			operationLabel: `Summarize: vault scan${folderLabel ? ` (${folderLabel})` : ''}`,
 			items: checkpointItems,
 		});
 

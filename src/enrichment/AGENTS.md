@@ -27,7 +27,7 @@ class EnrichmentModule {
   onunload(): void
 
   enrich(filePath: string, trigger: EnrichmentTrigger, options?: { postOp?: boolean }): Promise<void>  // index.ts:414; postOp suppresses chained-auto-enrich Review toast (#366); queue wrapper over private runEnrichment (#483)
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:222
+  scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:222
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>   // index.ts:129
   getPendingProposals(): Promise<EnrichmentProposal[]>   // index.ts:121
   acceptSelectedFromView(id: string, accepted: AcceptedItems, options?: { silent?: boolean }): Promise<void>  // index.ts:569; queue wrapper over private acceptSelected (#483)
@@ -227,7 +227,7 @@ enrich(filePath, trigger, options?)
 ```
 
 ```
-scanVault(folderPath?, skipConfirmation?, onlyFile?)
+scanVault(target?, skipConfirmation?, onlyFile?)
   Phase 1: collect eligible (non-excluded) files; warm buildTagIndex()/buildLinkGraph() caches
   Phase 2: NotificationManager.confirm()  [skipped if skipConfirmation]
   Phase 3: CheckpointManager.create(); cancellable per-file enrichFile() wrapped in

@@ -17,7 +17,7 @@ class ElaborationModule {
   onunload(): void
   getPendingProposals(): Promise<Proposal[]>
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // per-note queue slot around each generateForBatch (#483)
+  scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // per-note queue slot around each generateForBatch (#483)
   scanNote(file: TFile, userInvoked?: boolean): Promise<void>   // queue wrapper over private generateForNote (#483)
   acceptProposal(id: string, editedContent?: string, options?: { silent?: boolean }): Promise<void>   // queue wrapper over private applyProposal (#483); rewrites the note body (#552)
   rejectProposal(id: string): Promise<void>
@@ -108,7 +108,7 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
 ## Data Flow
 
 ```
-1. scanVault(folderPath?, skipConfirmation?, onlyFile?) / scanNote(file, userInvoked=true)
+1. scanVault(target?, skipConfirmation?, onlyFile?) / scanNote(file, userInvoked=true)
    |  #483: each note's detect -> generate -> save -> auto-accept cycle runs inside that note's
    |  NoteOperationQueue slot -- scanNote via noteQueue.run(file.path, generateForNote, { onWait })
    |  (index.ts:401, wait surfaced on the toast), the batch loops via
@@ -285,7 +285,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 
 | Command suffix | Name | Callback type | Action |
 |---------------|------|---------------|--------|
-| `scan-vault` | Scan folder for stub notes | `callback` | `openScanFolderPicker` (index.ts:68) -> `scanVault(path)` |
+| `scan-vault` | Scan folder for stub notes | `callback` | `openScanFolderPicker` (index.ts:68) -> `scanVault(scope)` |
 | `scan-current-note` | Elaborate current note | `editorCallback` | `scanNote(ctx.file)` |
 | `clear-proposals` | Clear all pending proposals | `callback` | delete all pending proposals |
 

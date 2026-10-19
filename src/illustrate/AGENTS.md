@@ -18,7 +18,7 @@ class IllustrateModule {
   onunload(): void
   getPendingProposals(): Promise<IllustrateProposal[]>
   illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast (info notice + no-op when no provider and Mermaid are enabled); with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch, placed INSIDE ctx.producedRegion when it is a callout; skipped while a run for the path is in flight, when a proposal is already pending, or when the region already holds a synapse-illustrate callout
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:324; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
+  scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:324; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:374
   acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:427; queued write
   rejectProposal(id: string): Promise<void>

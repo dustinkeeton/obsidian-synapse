@@ -21,7 +21,7 @@ class SummarizeModule {
   onload(): Promise<void>
   onunload(): void
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<void>
+  scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<void>
 }
 
 // types.ts; structurally matches the router's UrlTranscript (#527)
@@ -157,7 +157,7 @@ fireEnrichmentCallbacks(path, result)                                 index.ts:6
 ## Vault Scan (checkpointed)
 
 ```
-scanVault(folderPath?, skipConfirmation?, onlyFile?)                  index.ts:1020
+scanVault(target?, skipConfirmation?, onlyFile?)                  index.ts:1020
   Phase 1: collect files with targets (cancellable scan; onlyFile narrows scope, #111)
   Phase 2: user confirmation (skipped when skipConfirmation=true / Fire Synapse)
   Phase 3: checkpointed processing
