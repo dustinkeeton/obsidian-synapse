@@ -68,14 +68,44 @@ rendered file (the `doctor` drift gate reverts it).
 
 Every mode runs in two phases:
 
-1. **Plan phase — read-only.** Gather context, classify, and draft. Only reads: `gh issue view`, `gh issue list`, `gh label list`, the milestone list (`gh api repos/$OWNER/$REPO/milestones`), the project-board GraphQL **queries** that resolve the project, Status field, and Backlog option (Workflow step 7c, with 7a's `gh repo view` env resolve as its prerequisite), and source files. Nothing on GitHub changes. Not 7b — it reads the node ID of an issue that does not exist yet in create mode.
-2. **Act phase — mutating.** Runs *only* after the confirmation gate. The mutations are: `gh issue create`, `gh issue edit` (title, body, or labels), any label add/remove, `addSubIssue`, and every project-board and milestone GraphQL mutation.
+1. **Plan phase — read-only.** Gather context, classify, and draft. Only reads: `gh issue view`, `gh issue list`, `gh label list`, the milestone list (`gh api repos/$OWNER/$REPO/milestones`), the project-board GraphQL **queries** that resolve the project, Status field, and Backlog option (Workflow step 7c, with 7a's `gh repo view` env resolve as its prerequisite), the [Attachments](#attachments) reads, and source files. Nothing on GitHub changes. Not 7b — it reads the node ID of an issue that does not exist yet in create mode.
+2. **Act phase — mutating.** Runs *only* after the confirmation gate. The mutations are: `gh issue create`, `gh issue edit` (title, body, or labels), any label add/remove, `addSubIssue`, every project-board and milestone GraphQL mutation, and every [attachment upload](#attachments) (including creating the `issue-assets` branch).
 
 The gate covers **mutating**, not reading — the plan-phase steps are always safe to run. That cuts both ways: a placement the gate *shows* must be one the plan phase actually **looked up**, never a guess. Read whatever it takes to make the plan true; just don't apply any of it.
 
 Declining the gate leaves GitHub state untouched: nothing was created, edited, labeled, or moved, so there is nothing to roll back.
 
 Three things skip the gate: an explicit `--yes` (see [The gate convention](#the-gate-convention)), a rendered `issue.confirmGate` of `false` with no `--confirm` token, and a **non-interactive** agent or CI invocation (see [When called by agents](#when-called-by-agents)).
+
+## Attachments
+
+Files the user uploads alongside the description — a dragged-in screenshot or log, a pasted image — belong in the issue. `gh issue create` has no upload flag and GitHub's `user-attachments` endpoint is browser-only, so a file needs a stable URL first. Create-new and enrich-in-place both run this; batch enrich has no invocation text, so it has no uploads.
+
+1. **Detect (plan phase).** Two shapes, and assume neither:
+   - **On disk** — an absolute or `~/` path in the invocation that resolves to an existing regular file (a drag-in pastes exactly that; unescape `\ ` and strip quotes). Uploadable. Remove the path from the description text. A repo-relative path is a code reference, not an upload.
+   - **Inline only** — a pasted image that arrived as an image content block with no path. There are no bytes on disk to push: **fallback** (step 4). Still read it — it is context for the draft.
+2. **Plan the hosting (plan phase).** Host in the repo the issue lands in, on an orphan `issue-assets` branch that never merges, one folder per issue: `issue-<N>/` when enriching, `<YYYY-MM-DD>-<title-slug>/` when creating (no number exists yet). Read whether the branch exists (`gh api repos/$OWNER/$REPO/branches/issue-assets`) and whether you can push there (`gh repo view --json isPrivate,viewerPermission` — `WRITE`, `MAINTAIN`, or `ADMIN`). No push access, a file over 25 MB, or a file the user drops at the gate takes the fallback.
+3. **Upload (act phase, after the gate, before the create/edit).** Create the branch on first use as a parentless commit, then `PUT` each file via the contents API — a JSON body file, since a base64 screenshot overflows a command-line argument:
+
+   ```bash
+   gh api repos/$OWNER/$REPO/branches/issue-assets --silent 2>/dev/null || {
+     TREE=$(gh api repos/$OWNER/$REPO/git/trees -f 'tree[][path]=README.md' -f 'tree[][mode]=100644' \
+       -f 'tree[][type]=blob' -f 'tree[][content]=Issue attachments. Never merged.' --jq .sha)
+     ROOT=$(gh api repos/$OWNER/$REPO/git/commits -f message='chore: start issue-assets' -f tree="$TREE" --jq .sha)
+     gh api repos/$OWNER/$REPO/git/refs -f ref=refs/heads/issue-assets -f sha="$ROOT" --silent
+   }
+   base64 < "$FILE" | tr -d '\n' > "${TMPDIR:-/tmp}/asset.b64"
+   jq -n --rawfile c "${TMPDIR:-/tmp}/asset.b64" --arg m "chore: attach $NAME" '{message: $m, branch: "issue-assets", content: $c}' > "${TMPDIR:-/tmp}/asset.json"
+   gh api -X PUT "repos/$OWNER/$REPO/contents/$FOLDER/$NAME" --input "${TMPDIR:-/tmp}/asset.json" --silent
+   ```
+
+   `$NAME` is the file's basename, lowercased with spaces → `-`. The link is `https://github.com/$OWNER/$REPO/blob/issue-assets/$FOLDER/$NAME?raw=true`. A failed upload takes the fallback for that file — filing still proceeds.
+4. **Reference (in the body).** Add an `## Attachments` section after Context (in enrich mode, above the Original report block); omit it when there are no uploads. One line per file:
+   - image → `![<name>](<raw url>)`, rendered inline;
+   - any other file → `[<name>](<raw url>)`;
+   - fallback → `` - [ ] drop `<description of the file>` here `` — and a step-8 report line telling the user to attach it by hand in the browser.
+
+**At the gate**, list each file: name, size, and its destination (`issue-assets/<folder>/` in `OWNER/REPO`, or "fallback: placeholder" and why). A public repo's orphan branch is **public** — say so, so the user can drop a screenshot that shows something sensitive. Declining the gate uploads nothing.
 
 ## Workflow
 
@@ -124,6 +154,7 @@ Rules:
 - **Proposed Solution** should be specific enough to act on
 - **Sub-issues** — break the work into discrete, independently-completable tasks when the issue involves more than one logical step. Omit this section for simple, single-task issues.
 - **Context** — omit if nothing useful to link
+- **Attachments** — append the `## Attachments` section only when the invocation carried uploads (see [Attachments](#attachments))
 
 Then finish the plan — **infer, do not apply**. Both of the following are decided here and carried out later, in the act phase.
 
@@ -148,7 +179,8 @@ Present the drafted plan **before** anything mutates, and gate on an explicit ye
 - the full drafted **body**;
 - the **labels** — the type label (step 2) and the inferred priority label (step 3);
 - the **board placement** — "Backlog" plus the milestone you intend to match (or that none matches);
-- any **native sub-issues** you intend to create as separate child issues.
+- any **native sub-issues** you intend to create as separate child issues;
+- any **attachments** — each file, its size, and where it will be hosted (see [Attachments](#attachments)).
 
 Proceed only on an explicit yes. On a decline, **stop**: nothing has been created, edited, or labeled. If the user asks for changes, revise the draft and re-present it — revising is still plan phase.
 
@@ -163,6 +195,8 @@ value. `--yes` exists for an **agent calling this skill** — a hook enriching a
 The gate covers **mutating**, not reading. Steps 1–3 are read-only and always safe to run.
 
 ### 5. Create the issue
+
+Upload any approved attachments first ([Attachments](#attachments) step 3), so the body's links resolve the moment the issue exists.
 
 ```bash
 gh issue create \
@@ -312,6 +346,7 @@ Output the issue URL so the user (or calling agent) can reference it. Include:
 - Priority label applied (or skipped with reason)
 - Board status set (or skipped with reason)
 - Milestone assigned (or skipped with reason)
+- Attachments hosted (with links), and one line per fallback placeholder asking the user to attach that file by hand
 
 ## Enriching an existing issue (waffle:needs-inference)
 
@@ -336,17 +371,18 @@ Use this when `$ARGUMENTS` is an issue reference (`#N`, a bare number, or an iss
    </details>
    ```
 
-   Also settle the rest of the plan, without applying it: the type label (Workflow step 2), the inferred priority label (Workflow step 3), the removal of the `waffle:needs-inference` lifecycle label, and the intended board/milestone placement.
+   Also settle the rest of the plan, without applying it: the type label (Workflow step 2), the inferred priority label (Workflow step 3), the removal of the `waffle:needs-inference` lifecycle label, and the intended board/milestone placement. Plan any uploads ([Attachments](#attachments), folder `issue-<N>/`); their `## Attachments` section sits above the Original report block.
 
 4. **Confirm the plan** — the gate. Steps 1–3 read and draft; everything below mutates the issue. Present, and gate on an explicit yes:
    - the **current → proposed title**;
    - the full **proposed body** (an in-place rewrite replaces what's there — show it before it lands);
    - the **label changes** — type + priority added, `waffle:needs-inference` removed;
-   - the intended **board placement + milestone**.
+   - the intended **board placement + milestone**;
+   - any **attachments** — file, size, destination.
 
    On a decline, **stop** — the issue is untouched. Skipped by `--yes`, by a rendered gate of `false`, and by non-interactive agent/CI callers, exactly as in the create-mode gate ([The gate convention](#the-gate-convention), [When called by agents](#when-called-by-agents)).
 
-5. **Update the issue in place** (use `--body-file` to avoid shell-escaping problems with backticks/`$`/`&`):
+5. **Update the issue in place** — after uploading any approved attachments ([Attachments](#attachments) step 3) — (use `--body-file` to avoid shell-escaping problems with backticks/`$`/`&`):
    ```bash
    gh issue edit <N> --title "<new title>" --body-file <path-to-body>
    ```
@@ -358,7 +394,7 @@ Use this when `$ARGUMENTS` is an issue reference (`#N`, a bare number, or an iss
 
 7. **Project board + milestone** — ensure the issue is on the board with a Status (Backlog if open) and has a milestone, reusing **Workflow step 7** (project integration). Skip whichever is already set.
 
-8. **Report back** — issue URL, a one-line summary of what changed, and confirmation that `waffle:needs-inference` was removed and the board/milestone were applied.
+8. **Report back** — issue URL, a one-line summary of what changed, and confirmation that `waffle:needs-inference` was removed and the board/milestone were applied, plus the attachment lines from Workflow step 8.
 
 ### Batch enrich (no argument)
 
@@ -402,6 +438,12 @@ Drafts "Add CSV import support" with the enhancement-type label, a body explaini
 /issue --yes data export fails silently when the API key is expired
 ```
 Same as the first example with no pause — drafts and creates straight through. Use when the user has said "no need to confirm". A repo that set `issue.confirmGate: false` gets this behavior from bare `/issue`; `/issue --confirm …` brings the pause back for one run.
+
+### With an uploaded screenshot
+```
+/issue the settings page overflows on mobile ~/Desktop/Screenshot\ 2026-10-07.png
+```
+Drafts from the text, minus the path. The gate lists `screenshot-2026-10-07.png` (412 KB) → `issue-assets/2026-10-07-fix-settings-page-overflow/` in this repo, noting the branch is public if the repo is. On a yes: uploads it, then creates the issue with `![screenshot-2026-10-07.png](…?raw=true)` rendering inline under `## Attachments`. A pasted image with no path, or a failed upload, gets a `drop … here` placeholder and a report line asking the user to attach it by hand. On a decline, nothing is uploaded.
 
 ### Enrich an existing issue
 ```

@@ -54,15 +54,15 @@ in config, never by editing this rendered file.
 
 ## Plan first, then act
 
-1. **Plan phase — read-only.** Run the CLI, classify, draft, redact. Nothing on GitHub changes.
-2. **Act phase — mutating.** Exactly one call: `gh issue create`. It runs only after the gate.
+1. **Plan phase — read-only.** Run the CLI, classify, draft, redact, plan attachments. Nothing on GitHub changes.
+2. **Act phase — mutating.** Any approved attachment uploads (step 4b), then `gh issue create`. Nothing runs before the gate.
 
-Declining the gate leaves GitHub untouched; there is nothing to roll back.
+Declining the gate leaves GitHub untouched — nothing filed, nothing uploaded; there is nothing to roll back.
 
 ### 1. Collect the diagnostics
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.16.1 report
+npx --yes github:dustinkeeton/wafflestack#v0.17.2 report
 ```
 
 It prints a collapsed `<details>` block and exits 0 **even when doctor is red** — a red doctor is
@@ -78,7 +78,7 @@ output; use what the user already has, or `doctor`.
 
 ### 2. Resolve the target repo
 
-The toolkit this repo runs is `github:dustinkeeton/wafflestack#v0.16.1`. Take the `OWNER/REPO` inside a
+The toolkit this repo runs is `github:dustinkeeton/wafflestack#v0.17.2`. Take the `OWNER/REPO` inside a
 `github:OWNER/REPO[#ref]` spec — that is where the report goes, so a fork's consumer reports to
 the fork. If the spec is not `github:`-shaped (a local checkout path), use the lock's
 `toolkit.source` from the diagnostics block (`source github:OWNER/REPO`); if that is null too, fall
@@ -137,6 +137,49 @@ draft — the user's prose, pasted command output, file names:
 
 Re-read the whole draft once after redacting. What you show at the gate is what gets published.
 
+### 4b. Attachments
+
+Files the user uploaded with the description — a dragged-in screenshot or log, a pasted image —
+go in the report. Same convention as `/issue`'s Attachments section; `gh issue create` has no
+upload flag, so each file needs a stable URL first:
+
+1. **Detect.** An absolute or `~/` path in the invocation that resolves to an existing regular file
+   (a drag-in; unescape `\ `, strip quotes) is uploadable — and the path itself is redaction
+   material, so drop it from the prose. A pasted image that arrived only as an image content block
+   has no bytes on disk: **fallback**.
+2. **Host in the consuming repo, never upstream.** The reporter usually cannot push to the toolkit
+   repo, so files go on the *consuming* repo's orphan `issue-assets` branch, folder
+   `waffle-report-<YYYY-MM-DD>-<slug>/`, renamed `attachment-<n>.<ext>` (original filenames carry
+   names and paths), and are linked cross-repo:
+   `https://github.com/<consumer>/blob/issue-assets/<folder>/<file>?raw=true`. Read
+   `gh repo view --json nameWithOwner,isPrivate,viewerPermission` first. A **private** consuming
+   repo's raw URL is a dead link upstream, and no push access (`WRITE`/`MAINTAIN`/`ADMIN`) means
+   nothing to host on — both take the fallback; never publish a link that will not render. After
+   the gate, with `C` the consuming `OWNER/REPO`:
+
+   ```bash
+   gh api repos/$C/branches/issue-assets --silent 2>/dev/null || {
+     TREE=$(gh api repos/$C/git/trees -f 'tree[][path]=README.md' -f 'tree[][mode]=100644' \
+       -f 'tree[][type]=blob' -f 'tree[][content]=Issue attachments. Never merged.' --jq .sha)
+     ROOT=$(gh api repos/$C/git/commits -f message='chore: start issue-assets' -f tree="$TREE" --jq .sha)
+     gh api repos/$C/git/refs -f ref=refs/heads/issue-assets -f sha="$ROOT" --silent
+   }
+   base64 < "$FILE" | tr -d '\n' > "${TMPDIR:-/tmp}/asset.b64"
+   jq -n --rawfile c "${TMPDIR:-/tmp}/asset.b64" --arg m "chore: attach $NAME" '{message: $m, branch: "issue-assets", content: $c}' > "${TMPDIR:-/tmp}/asset.json"
+   gh api -X PUT "repos/$C/contents/$FOLDER/$NAME" --input "${TMPDIR:-/tmp}/asset.json" --silent
+   ```
+3. **Reference.** An `## Attachments` section after Context, omitted when there are no uploads:
+   `![attachment-1.png](<raw url>)` for images, `[attachment-2.log](<raw url>)` otherwise.
+4. **Fallback** — inline-only image, private or unpushable consuming repo, or a failed upload: the
+   line is `` - [ ] drop `<neutral description>` here ``, the report still files, and the final
+   report tells the user to attach that file by hand.
+
+**Redaction applies to attachments.** Open each image and log before the gate: a screenshot can
+show config values, the local overlay, a username in a path, or an email exactly as prose can, and
+you cannot blur pixels — recommend dropping a file that shows any of them. A log is text: redact it
+like step 4. A hosted link **names the consuming repo** (`<org>/<repo>`, which step 4 otherwise
+scrubs) on a public branch; the user is approving that disclosure too.
+
 ### 5. Confirm — the gate
 
 Present, and gate on an explicit yes:
@@ -145,6 +188,9 @@ Present, and gate on an explicit yes:
 - **Form / label**: `bug.yml` → `bug`, etc.
 - **Title**
 - **The full body, post-redaction** — the exact bytes, not a summary or a promise about them
+- **Attachments** — each file (new name, size), where it will be hosted (`<consumer>` on the public
+  `issue-assets` branch — which publishes the consuming repo's name) or why it falls back to a
+  placeholder. The user approves the exact set of files that leaves this machine and may drop any.
 
 On a decline, stop. Skipped by `--yes` or a rendered gate of `false` — never by being non-interactive.
 
@@ -156,7 +202,9 @@ Write the approved body to a file (never an inline `--body` and never a heredoc)
 gh issue create --repo OWNER/REPO --title "<title>" --body-file "${TMPDIR:-/tmp}/waffle-report-<slug>.md" --label "<label>"
 ```
 
-Gate on the **exit status**, not the output. On success, report the issue URL.
+Upload the approved attachments first (step 4b), so the body's links resolve when the issue
+lands. Gate on the **exit status**, not the output. On success, report the issue URL, each hosted
+attachment, and one line per placeholder asking the user to attach that file by hand.
 
 **If it fails** — no `gh` auth, no access to the toolkit repo, or the label does not exist there —
 **say plainly that nothing was submitted**, then hand the user the one-paste path:
@@ -175,3 +223,19 @@ Gate on the **exit status**, not the output. On success, report the issue URL.
    `template` + `title` URL and tell the user to paste the printed sections in.
 
 Do not retry with a different account, a different repo, or by dropping the redaction.
+
+## Examples
+
+### A bug with a screenshot, from a public consuming repo
+```
+/waffle-report doctor flags drift right after a clean render ~/Desktop/Screenshot\ 2026-10-07.png
+```
+Collects redacted diagnostics, drafts a `bug.yml` report from the text minus the path, and opens the
+screenshot to check it for leaked values. The gate shows the body plus `attachment-1.png` (380 KB) →
+`<consumer>`'s public `issue-assets` branch, flagging that the link names the consuming repo. On a
+yes: uploads it, then files upstream with the image rendering inline under `## Attachments`.
+
+### The same from a private repo, or with a pasted image
+Nothing can be hosted where the maintainer can see it, so the gate says "fallback: placeholder",
+the body carries `` - [ ] drop `screenshot of the doctor output` here ``, and the final report asks
+the user to drag the file into the filed issue by hand. On a decline, nothing is uploaded or filed.

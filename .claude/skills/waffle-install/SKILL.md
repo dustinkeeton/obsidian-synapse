@@ -31,7 +31,7 @@ item you are unsure of, run **`/waffle-setup`** first to confirm the exact ref.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.16.1 install <refs…> [--force] [--gitignore]
+npx --yes github:dustinkeeton/wafflestack#v0.17.2 install <refs…> [--force] [--gitignore]
 ```
 
 ## Interpret the result
@@ -39,6 +39,12 @@ npx --yes github:dustinkeeton/wafflestack#v0.16.1 install <refs…> [--force] [-
 - **Report what was pulled in.** Installing an item drags its **dependency closure**
   (an agent's `skills:` and any `requires:`) transitively across stacks — the CLI prints the
   added refs. Name them so the user isn't surprised by extra rendered files.
+- **Already selected.** `note: <ref> is already selected via stack <name> — nothing to persist`
+  means a stack in `stacks:` already renders the item: `waffle.yaml` is untouched and the render
+  only repairs a stale or missing copy. Say the install was a no-op. If the user expected it to
+  *do* something, the item was likely present but inactive — a `mods/` ref is enabled through
+  `.claude/settings.json`, and the note names `wafflestack setup`, which prints the
+  `/plugin install` fallback if Claude Code never offered the install.
 - **Report the render.** Relay the `rendered N files` / `removed stale: …` lines.
 - **Missing config.** If the render fails demanding a required key
   (`config.<stack>.<key>`), add it to `.waffle/waffle.yaml` `config:` (or the gitignored
