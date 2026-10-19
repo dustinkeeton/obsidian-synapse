@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-10-19
 ---
 
 # Shared Module
@@ -267,7 +267,7 @@ function generateOrganizeSummary(moves: MoveRecord[], timestamp: string): string
 function addEnhancedSlider(setting: Setting, options: SliderOptions): void
 
 // folder-picker-modal.ts
-function suggestFolders(root: TFolder, query: string): TFolder[]   // root always included; exact match > root > rest (#416)
+function suggestFolders(root: TFolder, query: string): TFolder[]   // folder-picker-modal.ts:4; module export only (not on barrel); root always included; exact match > root > rest (#416)
 class FolderPickerModal extends SuggestModal<TFolder> { ... }
 
 // scan-scope.ts (#589)
@@ -278,7 +278,10 @@ function scanScopeLabel(target?: ScanTarget): string | undefined   // undefined 
 
 // scan-folder-picker-modal.ts (#589)
 interface ScanFolderSuggestion { folder: TFolder; recursive: boolean }
-class ScanFolderPickerModal extends SuggestModal<ScanFolderSuggestion>   // row 2 = root top-level only; Shift+Enter = this folder only (via internal chooser.useSelectedItem)
+class ScanFolderPickerModal extends SuggestModal<ScanFolderSuggestion> {   // row 2 = root top-level only; Shift+Enter = this folder only (via internal chooser.useSelectedItem)
+  constructor(app: App, onChoose: (scope: ScanScope) => void)
+}
+// ROOT_LABEL = '/ (vault root)', ROOT_TOP_LEVEL_LABEL = '/ (vault root — top level only)': module exports only (not on barrel)
 
 // open-scan-folder-picker.ts:9
 function openScanFolderPicker(app: App, onChoose: (scope: ScanScope) => void): void   // Enter on open = whole vault; ↓ Enter = root top level only
@@ -633,14 +636,14 @@ function scoreLyricsContent(content: string): number
 | `diagram-generator.test.ts` | Tests | Diagram generator tests |
 | `slider-helper.ts` | `addEnhancedSlider` | Settings UI helper for range sliders with ticks |
 | `folder-picker-modal.ts` | `FolderPickerModal`, `suggestFolders` | Modal for folder selection with autocomplete; `suggestFolders` shared with `ScanFolderPickerModal` |
-| `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests |
-| `open-scan-folder-picker.ts` | `openScanFolderPicker` | Unified scan-folder picker wrapper over `ScanFolderPickerModal`; root-first sort so Enter-on-open scans the whole vault; `onChoose(ScanScope)`. Used by main (`fire`) and the elaboration, enrichment, summarize, organize, rem folder-scan commands |
+| `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests (sort order exercised through `getSuggestions`) |
+| `open-scan-folder-picker.ts` | `openScanFolderPicker` | Unified scan-folder picker wrapper over `ScanFolderPickerModal` (root-first sort via `suggestFolders`, so Enter-on-open scans the whole vault); `onChoose(ScanScope)`. Used by main (`fire`) and the elaboration, enrichment, illustrate, summarize, organize, rem folder-scan commands |
 | `open-scan-folder-picker.test.ts` | Tests | Scan folder picker tests |
 | `scan-scope.ts` | `ScanScope`, `ScanTarget`, `toScanScope`, `scanScopeLabel` | Folder-scan scope model (#589); processing-source only, candidate/index lookups stay vault-wide via `getIncludedMarkdownFiles` |
 | `scan-scope.test.ts` | Tests | Scope normalization + labels |
 | `scan-folder-picker-modal.ts` | `ScanFolderPickerModal`, `ScanFolderSuggestion`, `ROOT_LABEL`, `ROOT_TOP_LEVEL_LABEL` | Scan picker with top-level-only root row + Shift+Enter non-recursive choice (#589) |
 | `scan-folder-picker-modal.test.ts` | Tests | Row order, scope returned per row/modifier, Shift+Enter registration |
-| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:158` (direct import; section reset), `settings-ui/global-sections.ts:574` (via barrel; reset all), `elaboration/index.ts:518` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:35` cites the settle-once pattern in a comment only, no import |
+| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:158` (direct import; section reset), `settings-ui/global-sections.ts:574` (via barrel; reset all), `elaboration/index.ts:519` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:35` cites the settle-once pattern in a comment only, no import |
 | `confirm-modal.test.ts` | Tests | ConfirmModal tests |
 | `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |
 | `settings-reset.test.ts` | Tests | Reset helper tests |
@@ -872,6 +875,11 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `normalizeFrontmatterTags` | exclusions/matchesExcludeTag, json-utils docs |
 | `splitRawFrontmatter` | elaboration/index (accept: keep the note's raw block, drop a model-echoed one), elaboration/proposer (frontmatter-stripped prompt body) |
 | `ConfirmModal` | elaboration/index (stale-body accept guard, #552), settings-ui/global-sections (reset all) |
+| `openScanFolderPicker` | main (`fire`), elaboration/index, enrichment/index, illustrate/index, organize/index, rem/index, summarize/index (folder-scan commands, #589 `ScanScope`) |
+| `ScanFolderPickerModal` | shared/open-scan-folder-picker (direct import); otherwise barrel-exported only |
+| `scanScopeLabel` | elaboration/index, enrichment/index, illustrate/index, organize/index, rem/index, summarize/index, tidy/index, pipeline/synapse-runner (scan toast/checkpoint labels, #589) |
+| `toScanScope` | shared/file-utils (`getMarkdownFiles`, direct import), rem/index, tidy/index, pipeline/synapse-runner (recursive check, #589) |
+| `ScanTarget` (type) | pipeline/types (`PipelineScanFn`), pipeline/synapse-runner, shared/file-utils, every pipeline module's scan method |
 | `blockquoteOriginal` | no consumers in `src/` (barrel-exported only) |
 | `withRetry` | tidy/index |
 | `generateId` | elaboration, enrichment, summarize, organize, deep-dive (proposal/run IDs) |

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-10-19
 ---
 
 # Tidy Module
@@ -129,7 +129,7 @@ Reachable in code only via the `undo-tidy` command, which is gated off (registry
 4. if !skipConfirmation: confirm("Found N notes to tidy. Proceed?",
      { proceedLabel: "Tidy", cancelLabel: "Cancel" })
      if declined: info("Tidy scan skipped"); return 0
-5. startOperation("Tidying notes", "tidy-vault")
+5. startOperation("Tidying notes" | "Tidying notes in <scanScopeLabel(target)>" (non-recursive), "tidy-vault")
 6. for each file:
      if op.cancelled: break
      op.progress(i+1, total, "Tidying notes")
@@ -185,7 +185,7 @@ Settings UI: `renderTidySettings` (settings-section.ts:7) renders an accordion w
 | Imports | From |
 |---------|------|
 | `Plugin`, `TFile`, `App` | `obsidian` |
-| `AIClient`, `NotificationManager`, `NoteOperationQueue`, `getMarkdownFiles`, `parseFrontmatter`, `sanitizeAIResponse`, `stripCodeFences`, `serializeFrontmatter`, `withRetry`, `generateId`, `isPathExcluded`, `findMatchingRule`, `trackAiCache`, `withCacheReport` (index.ts:4); `ensureFolder` (tidy-store.ts); `SettingsSectionContext` (settings-section.ts) | `../shared` |
+| `AIClient`, `NotificationManager`, `NoteOperationQueue`, `getMarkdownFiles`, `parseFrontmatter`, `sanitizeAIResponse`, `stripCodeFences`, `serializeFrontmatter`, `withRetry`, `generateId`, `isPathExcluded`, `findMatchingRule`, `trackAiCache`, `withCacheReport`, `scanScopeLabel`, `toScanScope`, `ScanTarget` (type) (index.ts:4); `ensureFolder` (tidy-store.ts); `SettingsSectionContext` (settings-section.ts) | `../shared` |
 | `CacheUse`, `OperationHandle`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:5) |
 | `CommandRegistrar` | `../commands` |
 | `SynapseSettings` | `../settings` |
