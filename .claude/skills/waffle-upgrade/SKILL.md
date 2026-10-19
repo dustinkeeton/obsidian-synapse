@@ -16,7 +16,7 @@ before anything is committed.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.16.1 upgrade
+npx --yes github:dustinkeeton/wafflestack#v0.17.2 upgrade
 ```
 
 ## The version this moves TO is the version you RAN (read this before reporting "already up to date")

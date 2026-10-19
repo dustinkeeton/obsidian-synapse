@@ -17,7 +17,7 @@ so a re-run curates an update pass.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.16.1 setup
+npx --yes github:dustinkeeton/wafflestack#v0.17.2 setup
 ```
 
 ## Interpret it for the user

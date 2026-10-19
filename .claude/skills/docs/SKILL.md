@@ -2,11 +2,14 @@
 name: docs
 description: Orchestrates documentation updates by spawning the lead-engineer, docs-agent, and docs-human agents in sequence. The first pass audits the codebase and reports changes, docs-agent writes machine-readable docs, docs-human writes human-readable docs.
 user-invocable: true
+argument-hint: "[optional focus paths]"
 ---
 
 # Documentation Orchestration
 
-When this skill is invoked, run the following pipeline:
+When this skill is invoked, run the following pipeline.
+
+**Focus.** If the caller passed a focus (a list of changed paths, for example from `pr-docs` or the `/audit` chain), add it to every step's prompt below: the audit reports only on what those paths changed, and the two writers update only the doc entries that describe them. With no focus, the pipeline covers the whole project.
 
 ## Step 1: Architecture Audit
 
