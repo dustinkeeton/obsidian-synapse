@@ -6,6 +6,25 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-10-19: Top-level-only scans narrow the work list, not the candidates (#589)
+
+**Context**: Folder scans always included every subfolder. Users wanted to scan just the notes sitting directly in a folder — most often the vault root — without picking up everything below it.
+
+**Decision**:
+- **Scope is an explicit value.** Scans take a `ScanTarget` — a folder path (recursive, as before) or `ScanScope { folder?, recursive }` (`shared/scan-scope.ts`).
+- **The picker keeps its default.** Enter on open still scans the whole vault (#416). A second row scans the vault root's top level only, and Shift+Enter or Shift+click on any folder scans that folder only.
+- **Only the processing set narrows.** `getMarkdownFiles` filters which notes a scan works on. Candidate and index lookups (`getIncludedMarkdownFiles` — REM link targets, elaboration's related notes, deep-dive's topic notes) stay vault-wide.
+
+**Alternatives considered**:
+- **Narrow candidates too** — rejected; a top-level REM scan would then miss links to notes in subfolders, so the scope would change *what* gets suggested, not just *which notes* get worked on.
+- **Make top-level-only the default for the root row** — rejected; Enter-on-open = whole vault is the established behavior from #416.
+
+**Rationale**: Scope answers "which notes should change?", not "what does the vault contain?". Keeping lookups vault-wide means a narrow scan gives the same quality of suggestions as a full one.
+
+**Impact**: New `shared/scan-scope.ts` and `shared/scan-folder-picker-modal.ts`. Scope threads through organize, summarize, illustrate, enrichment, REM, elaboration, tidy, and Fire Synapse; toasts and checkpoint labels name a non-recursive scope (e.g. "vault root (top level)"). Shift+Enter depends on the undocumented `SuggestModal.chooser.useSelectedItem`; without it, the top-level row and Shift+click still work.
+
+---
+
 ## 2026-10-09: Deep-dive auto-REM on accept defaults ON (#581)
 
 **Context**: Deep-dive notes no longer carry their own wikilinks (see the next entry), so a new note arrives unlinked unless something else links it. The REM scan that does this is AI-backed, which raised the question of whether to ship it off to save cost.

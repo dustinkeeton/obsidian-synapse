@@ -1,6 +1,8 @@
 import { App, TFile, normalizePath } from 'obsidian';
 import { isPathExcluded } from './exclusions';
 import type { FeatureId, ExclusionSettings } from './exclusions';
+import { toScanScope } from './scan-scope';
+import type { ScanTarget } from './scan-scope';
 
 export async function ensureFolder(app: App, path: string): Promise<void> {
 	const normalized = normalizePath(path);
@@ -44,11 +46,15 @@ export async function writeNote(
 	return app.vault.create(normalized, content);
 }
 
-export function getMarkdownFiles(app: App, folder?: string): TFile[] {
+export function getMarkdownFiles(app: App, target?: ScanTarget): TFile[] {
 	const files = app.vault.getMarkdownFiles();
-	if (!folder) return files;
-	const normalized = normalizePath(folder);
-	return files.filter(f => f.path.startsWith(normalized + '/'));
+	const { folder, recursive } = toScanScope(target);
+	if (!folder) return recursive ? files : files.filter(f => !f.path.includes('/'));
+	const prefix = normalizePath(folder) + '/';
+	return files.filter(f => {
+		if (!f.path.startsWith(prefix)) return false;
+		return recursive || !f.path.slice(prefix.length).includes('/');
+	});
 }
 
 /**

@@ -67,6 +67,10 @@ export type { FireAndForgetOptions } from './fire-and-forget';
 export type { ModuleDeps, FeatureModule, FeatureSettingsKey } from './feature-module';
 export { FolderPickerModal } from './folder-picker-modal';
 export { openScanFolderPicker } from './open-scan-folder-picker';
+export { ScanFolderPickerModal } from './scan-folder-picker-modal';
+export type { ScanFolderSuggestion } from './scan-folder-picker-modal';
+export { toScanScope, scanScopeLabel } from './scan-scope';
+export type { ScanScope, ScanTarget } from './scan-scope';
 export {
 	sanitizeUrl,
 	sanitizePath,

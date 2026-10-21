@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Last updated**: 2026-10-09 · **Version**: 1.4.1
+**Last updated**: 2026-10-19 · **Version**: 1.4.1
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
@@ -341,7 +341,9 @@ src/
 │   ├── diagram-generator.ts#   Mermaid diagram generation
 │   ├── slider-helper.ts    #   Settings UI helper for range sliders
 │   ├── folder-picker-modal.ts # Modal for folder selection
-│   ├── open-scan-folder-picker.ts # Unified scan-folder picker; Enter-on-open = vault root (1.0.9)
+│   ├── open-scan-folder-picker.ts # Unified scan-folder picker; Enter-on-open = whole vault (1.0.9, #416)
+│   ├── scan-folder-picker-modal.ts # ScanFolderPickerModal — top-level-only root row + Shift+Enter = this folder only (#589)
+│   ├── scan-scope.ts       #   ScanScope {folder?, recursive} / ScanTarget; toScanScope + scanScopeLabel for toast copy (#589)
 │   ├── confirm-modal.ts    #   ConfirmModal — settle-once yes/no; dismiss = false (#420); settings reset + elaboration stale-body guard (#552)
 │   ├── settings-reset.ts   #   Per-section + global reset-to-defaults helpers (1.0.10); the one runtime shared → settings import (DEFAULT_SETTINGS)
 │   ├── api-utils.ts        #   Retry logic + error handling helpers
@@ -508,7 +510,7 @@ graph LR
 - **Illustrate sits after REM and before Tidy** (#213) so the text and links it illustrates already exist. The module is opt-in (`illustrate.enabled`, default off), so a default install's run skips the phase.
 - **Gating.** A phase runs only if its feature is `enabled` *and* the command registry lists it in the `fire-synapse` flow.
 - **Decoupling.** The runner never imports the feature modules. `main.ts` builds a `PipelineModuleMap` (phase key → scan function) and injects it, so the runner stays independent of concrete features.
-- **Two entry points.** `fire(folder?)` scans a whole folder; `fireOnFile(file)` scopes every phase to a single note (this is what the intake watcher calls).
+- **Two entry points.** `fire(target?)` scans a folder — with its subfolders, or top level only (#589, see Folder Scan Scope below); `fireOnFile(file)` scopes every phase to a single note (this is what the intake watcher calls).
 - **Post-op hooks live here too** (`pipeline/post-op-hooks.ts`, #496). `buildPostOpHook(deps, source)` produces the follow-up each feature fires after it writes: enrich then check the title, the REM scan after a deep-dive accept (#581), and the illustrate leg; `buildAutoOrganizeHook` produces the optional organize step for deep-dive and summarize. `main.ts` builds them once and assigns them to the modules — the gating rules are in the Cross-Module Communication section below.
 
 ---
@@ -632,6 +634,31 @@ interface ExclusionRule { pattern: string; features: 'all' | FeatureId[] }
 - **Defaults.** Fresh installs get `[{ pattern: '.synapse/**', features: 'all' }, { pattern: 'templates/**', features: 'all' }]`.
 - **One-time migration.** The `excludeFolders → exclusions` fold now runs as **migration v1** of the version-stamped settings framework (#93, below), still guarded so a user who deliberately cleared exclusions to `[]` keeps `[]`.
 - **Tags stay per-module.** `excludeTags` remains per feature but routes through a shared `matchesExcludeTag` helper (handles inline + frontmatter tags, case-insensitively).
+
+---
+
+## Folder Scan Scope (#589)
+
+Every folder scan can cover a folder **and its subfolders** (the default) or **that folder only**. The scope model is `ScanScope { folder?, recursive }` in `shared/scan-scope.ts`; `folder` undefined means the vault root.
+
+```ts
+type ScanTarget = string | ScanScope;   // a bare path still means "recursive", so old callers are unchanged
+```
+
+**Picking a scope** — the scan picker (`ScanFolderPickerModal`, opened by `openScanFolderPicker`):
+
+| Input | Scans |
+|-------|-------|
+| Enter as soon as the picker opens | Whole vault (unchanged, #416) |
+| Second row, `/ (vault root — top level only)` | Notes directly in the vault root |
+| Enter on any folder | That folder and its subfolders |
+| Shift+Enter or Shift+click on any folder | That folder only |
+
+- **Only the work list narrows.** `getMarkdownFiles(app, target)` picks which notes a scan processes. Lookups that find *candidates* — REM link targets, elaboration's related notes, deep-dive's topic notes — still read the whole vault through `getIncludedMarkdownFiles`. A top-level-only REM scan can still link to a note in a subfolder.
+- **Where scope applies.** Organize, summarize, illustrate, enrichment, REM, elaboration, and tidy scans, plus Fire Synapse (`SynapseRunner.fire`), all accept a `ScanTarget`. Tidy has no picker of its own; it gets scope through Fire Synapse.
+- **Toasts name it.** `scanScopeLabel` adds a "(top level)" suffix — for example "vault root (top level)" — to progress toasts and checkpoint labels. A recursive whole-vault scan keeps its existing "vault" wording.
+
+> **Caveat**: Shift+Enter relies on `SuggestModal.chooser.useSelectedItem`, an undocumented Obsidian internal. If a future Obsidian drops it, Shift+Enter does nothing; the top-level root row and Shift+click still work.
 
 ---
 

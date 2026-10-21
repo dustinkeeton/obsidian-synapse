@@ -315,6 +315,8 @@ export class ItemView {
 export class SuggestModal<T = unknown> {
 	app: unknown;
 	inputEl = { value: '', focus: vi.fn() };
+	scope = { register: vi.fn(), unregister: vi.fn() };
+	setInstructions = vi.fn();
 	constructor(app: unknown) {
 		this.app = app;
 	}

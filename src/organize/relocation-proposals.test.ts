@@ -165,6 +165,14 @@ describe('relocations into existing folders are proposals', () => {
 		expect(finish.mock.calls.at(-1)?.[0]).toBe('1 proposal (1 to existing folder)');
 	});
 
+	it('a top-level-only root scan skips subfolder notes and names the scope (#589)', async () => {
+		const count = await mod.scanDirectory({ recursive: false }, true);
+
+		expect(count).toBe(0);
+		expect(savedProposals()).toEqual([]);
+		expect(notifications.startOperation).toHaveBeenCalledWith('Scanning vault root (top level) for organization', 'organize-scan');
+	});
+
 	it('a scan with auto-accept on moves the note, stamps the snapshot with the checkpoint id, and writes one summary', async () => {
 		autoAccept = true;
 

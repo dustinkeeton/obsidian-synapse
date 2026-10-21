@@ -58,6 +58,7 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/link-guard')>('../shared/link-guard')),
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
 	...(await vi.importActual<typeof import('../shared/cache-notice')>('../shared/cache-notice')),
+	...(await vi.importActual<typeof import('../shared/scan-scope')>('../shared/scan-scope')),
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
 	...(await vi.importActual<typeof import('../shared/media-embed')>('../shared/media-embed')),

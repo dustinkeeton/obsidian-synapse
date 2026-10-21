@@ -1,5 +1,6 @@
 import type { TFile } from 'obsidian';
-import type { NotificationManager } from '../shared';
+import { scanScopeLabel, toScanScope } from '../shared';
+import type { NotificationManager, ScanTarget } from '../shared';
 import type { SynapseSettings } from '../settings';
 import { isPipelineKeyInFlow } from '../commands';
 import { SYNAPSE_PIPELINE, PipelineModuleMap } from './types';
@@ -11,7 +12,7 @@ export class SynapseRunner {
 		private notifications: NotificationManager,
 	) {}
 
-	async fire(folderPath?: string): Promise<void> {
+	async fire(target?: ScanTarget): Promise<void> {
 		const settings = this.getSettings();
 		const activePhases = SYNAPSE_PIPELINE.filter(phase => {
 			const section = settings[phase.key] as { enabled: boolean };
@@ -23,8 +24,9 @@ export class SynapseRunner {
 			return;
 		}
 
+		const title = toScanScope(target).recursive ? 'Fire Synapse' : `Fire Synapse on ${scanScopeLabel(target)}`;
 		const op = this.notifications.startOperation(
-			`Fire Synapse (0/${activePhases.length})`,
+			`${title} (0/${activePhases.length})`,
 			'synapse-fire',
 		);
 
@@ -40,7 +42,7 @@ export class SynapseRunner {
 			);
 
 			try {
-				await this.modules[phase.key](folderPath, true);
+				await this.modules[phase.key](target, true);
 			} catch (error) {
 				const msg = error instanceof Error ? error.message : String(error);
 				console.warn(`[Synapse] Phase ${phase.label} failed: ${msg}`);
@@ -48,7 +50,7 @@ export class SynapseRunner {
 		}
 
 		if (!op.cancelled) {
-			op.finish(`Fire Synapse complete — ${completed} phases run`);
+			op.finish(`${title} complete — ${completed} phases run`);
 		}
 	}
 
