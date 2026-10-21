@@ -5,7 +5,7 @@ import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule, NoteOperationQueue } from '../shared';
 import type { CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport } from '../shared';
+import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport, type ScanTarget, scanScopeLabel, toScanScope } from '../shared';
 import { MentionScanner } from './mention-scanner';
 import { withoutSkipRegions } from './skip-regions';
 import { RemLaneError, SemanticMatcher } from './semantic-matcher';
@@ -80,8 +80,8 @@ export class RemModule implements FeatureModule {
 		// Command: scan directory
 		this.registrar.register('rem-directory', this.getSettings().rem.enabled, {
 			callback: () => {
-				openScanFolderPicker(this.plugin.app, (path) => {
-					fireAndForget(this.remScanDirectory(path), 'Discover REM links in folder', { notifications: this.notifications });
+				openScanFolderPicker(this.plugin.app, (scope) => {
+					fireAndForget(this.remScanDirectory(scope), 'Discover REM links in folder', { notifications: this.notifications });
 				});
 			},
 		});
@@ -200,8 +200,10 @@ export class RemModule implements FeatureModule {
 	/**
 	 * Scan all markdown files in a directory (or vault root) with checkpoint support.
 	 */
-	async remScanDirectory(folderPath?: string, _skipConfirmation = false, onlyFile?: TFile): Promise<number> {
-		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+	async remScanDirectory(target?: ScanTarget, _skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+		const folderLabel = scanScopeLabel(target);
+		const scopeSuffix = toScanScope(target).recursive ? '' : ` in ${folderLabel}`;
+		let allFiles = getMarkdownFiles(this.plugin.app, target);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
 
@@ -214,7 +216,7 @@ export class RemModule implements FeatureModule {
 		}
 
 		const op = this.notifications.startOperation(
-			`REM scanning ${eligible.length} notes`,
+			`REM scanning ${eligible.length} notes${scopeSuffix}`,
 			'rem-directory-scan'
 		);
 
@@ -227,7 +229,7 @@ export class RemModule implements FeatureModule {
 
 		const checkpoint = await this.checkpointManager.create({
 			module: 'rem',
-			operationLabel: `REM scan: ${folderPath || 'vault'}`,
+			operationLabel: `REM scan: ${folderLabel || 'vault'}`,
 			items: checkpointItems,
 			metadata: {},
 		});

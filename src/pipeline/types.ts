@@ -1,9 +1,9 @@
 import type { TFile } from 'obsidian';
-import type { SourceContext } from '../shared';
+import type { ScanTarget, SourceContext } from '../shared';
 
 /**
  * Scan function contract that each pipeline module must satisfy.
- * folderPath scopes the scan; skipConfirmation bypasses the
+ * target scopes the scan (folder path or ScanScope); skipConfirmation bypasses the
  * user-confirmation dialog (always true when called from Fire Synapse).
  *
  * onlyFile narrows an otherwise folder-scoped scan to a single note: when
@@ -15,7 +15,7 @@ import type { SourceContext } from '../shared';
  * omitted, behaviour is identical to the original folder-scoped scan.
  */
 export type PipelineScanFn = (
-	folderPath?: string,
+	target?: ScanTarget,
 	skipConfirmation?: boolean,
 	onlyFile?: TFile,
 ) => Promise<number | void>;

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-10-19
 ---
 
 # organize module
@@ -13,18 +13,18 @@ class OrganizeModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null  // wired by main.ts (#340)
 
-  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:66; ModuleDeps = { plugin, getSettings, notifications, checkpointManager, registrar, noteQueue } (#504)
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:67; ModuleDeps = { plugin, getSettings, notifications, checkpointManager, registrar, noteQueue } (#504)
 
-  suggestDirectory(text: string, aiOpts?: DecisionRequestOptions): Promise<string | null>   // index.ts:80; ContentAnalyzer.resolvePlacement(text, [], '', aiOpts): a placement of kind 'existing' returns its directoryPath (#558); 'keep' or no topics -> null; else topics -> DirectoryMatcher.scoreDirectories; top directoryPath when score >= SUGGEST_DIRECTORY_MIN_SCORE (0.6, index.ts:41), else null; unqueued, no vault write; the registry injects it into deep-dive
+  suggestDirectory(text: string, aiOpts?: DecisionRequestOptions): Promise<string | null>   // index.ts:81; ContentAnalyzer.resolvePlacement(text, [], '', aiOpts): a placement of kind 'existing' returns its directoryPath (#558); 'keep' or no topics -> null; else topics -> DirectoryMatcher.scoreDirectories; top directoryPath when score >= SUGGEST_DIRECTORY_MIN_SCORE (0.6, index.ts:42), else null; unqueued, no vault write; the registry injects it into deep-dive
   onload(): Promise<void>
   onunload(): void
   getPendingProposals(): Promise<OrganizeProposal[]>
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>      // index.ts:133
-  organizeNote(file: TFile): Promise<OrganizeResult | null>        // index.ts:225
-  scanDirectory(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:290; returns the proposal count
-  acceptProposal(id: string, options?: { silent?: boolean; runId?: string }): Promise<void>   // index.ts:417
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>      // index.ts:134
+  organizeNote(file: TFile): Promise<OrganizeResult | null>        // index.ts:226
+  scanDirectory(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:291; returns the proposal count
+  acceptProposal(id: string, options?: { silent?: boolean; runId?: string }): Promise<void>   // index.ts:419
   rejectProposal(id: string): Promise<void>
-  undoOrganizeRun(): Promise<void>                                 // index.ts:560; command 'undo-organize-run'
+  undoOrganizeRun(): Promise<void>                                 // index.ts:562; command 'undo-organize-run'
 }
 
 function buildSummaryPath(timestamp: string): string
@@ -38,7 +38,7 @@ Re-exported settings renderer: `renderOrganizeSettings` (from `./settings-sectio
 
 ## Relocation Rule (binding)
 
-A multi-note or single-note organize never relocates a note without a proposal, regardless of lane. `organizeFile` (index.ts:641) turns a `move` action into a proposal of `proposalKind: 'move'` and a `propose-new-directory` action into `'new-directory'`; both carry the deciding `lane`. Only `maybeAutoAccept` (index.ts:504; `autoAccept.organize` on) moves the note, by applying the proposal immediately. `OrganizeResult.movedDirectly` is therefore `true` only when `autoAccepted` is. Live failure that fixed this rule: 164 of 310 notes moved silently in one scan with auto-accept off, 30 of them into `Media`.
+A multi-note or single-note organize never relocates a note without a proposal, regardless of lane. `organizeFile` (index.ts:643) turns a `move` action into a proposal of `proposalKind: 'move'` and a `propose-new-directory` action into `'new-directory'`; both carry the deciding `lane`. Only `maybeAutoAccept` (index.ts:506; `autoAccept.organize` on) moves the note, by applying the proposal immediately. `OrganizeResult.movedDirectly` is therefore `true` only when `autoAccepted` is. Live failure that fixed this rule: 164 of 310 notes moved silently in one scan with auto-accept off, 30 of them into `Media`.
 
 ## Note Queue (#483)
 
@@ -46,28 +46,28 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 
 | Site | Key | Wrapped core | onWait |
 |------|-----|--------------|--------|
-| `organizeNote` (index.ts:225) | `file.path` | `organizeFile(file, generateId(), false, undefined, cacheUse)` | `op.update("Waiting for another Synapse operation on <basename>")` |
-| `acceptProposal` (index.ts:417) | `queued.sourceNotePath` (PRE-move) | `applyAccept(id, options)` | none |
-| `undoOrganize` (index.ts:526) | `file.path` (current path) | inline `ensureFolder` + `vault.rename` back + snapshot removal | none (local move, no AI call) |
-| `undoOrganizeRun` loop (index.ts:560) | `snapshot.currentPath` per note | `ensureFolder(original parent)` + `vault.rename(file, originalPath)` | none; yields (`sleep(0)`) between notes |
-| `resumeFromCheckpoint` loop (index.ts:133) | `file.path` | `organizeFile(file, checkpoint.id, true, batchProposedDirs, cacheUse)` | none |
-| `scanDirectory` loop (index.ts:290) | `eligible[i].path` | `organizeFile(eligible[i], checkpoint.id, true, batchProposedDirs, cacheUse)` | none |
+| `organizeNote` (index.ts:226) | `file.path` | `organizeFile(file, generateId(), false, undefined, cacheUse)` | `op.update("Waiting for another Synapse operation on <basename>")` |
+| `acceptProposal` (index.ts:419) | `queued.sourceNotePath` (PRE-move) | `applyAccept(id, options)` | none |
+| `undoOrganize` (index.ts:528) | `file.path` (current path) | inline `ensureFolder` + `vault.rename` back + snapshot removal | none (local move, no AI call) |
+| `undoOrganizeRun` loop (index.ts:562) | `snapshot.currentPath` per note | `ensureFolder(original parent)` + `vault.rename(file, originalPath)` | none; yields (`sleep(0)`) between notes |
+| `resumeFromCheckpoint` loop (index.ts:134) | `file.path` | `organizeFile(file, checkpoint.id, true, batchProposedDirs, cacheUse)` | none |
+| `scanDirectory` loop (index.ts:291) | `eligible[i].path` | `organizeFile(eligible[i], checkpoint.id, true, batchProposedDirs, cacheUse)` | none |
 
 Key-lifetime note: `acceptProposal` keys on the PRE-move `sourceNotePath`. A move changes the key,
 exactly like a title rename — work already queued under the old path runs afterwards, finds no file
 there and exits early.
 
-`maybeAutoAccept` (index.ts:504) calls `applyAccept` DIRECTLY, never the public `acceptProposal`.
+`maybeAutoAccept` (index.ts:506) calls `applyAccept` DIRECTLY, never the public `acceptProposal`.
 It runs inside `organizeFile`, which every caller has already queued on that note's
 key; routing it through `acceptProposal` would re-enter the same key and self-deadlock. This is the
 "acquire at most once per operation" rule in its sharpest form. It also hands `applyAccept` the live
 `TFile` (`options.file`) so the rename mutates the caller's instance — intake's move detection
 (`originalPath !== file.path`) depends on it.
 
-`writeOrganizeSummary` (index.ts:793) writes a DIFFERENT note (`.synapse/organize/summaries/...`)
+`writeOrganizeSummary` (index.ts:795) writes a DIFFERENT note (`.synapse/organize/summaries/...`)
 and stays unqueued — incidental writes to other notes are never queued, including from inside
 `applyAccept` while it holds the source note's key. Batch auto-accepts (`silent`) skip the per-accept
-summary; `reportRun` (index.ts:192) writes one for the run.
+summary; `reportRun` (index.ts:193) writes one for the run.
 
 Batch loops (`scanDirectory`, `resumeFromCheckpoint`, `undoOrganizeRun`) take one slot per note, never one per batch.
 
@@ -148,7 +148,7 @@ function buildUndoSummaryPath(timestamp: string): string                        
 function generateUndoSummary(reverted: MoveRecord[], skipped: SkippedRevert[], timestamp: string): string   // :68; move diagram + "Moved back" + "Needs attention" lists
 ```
 
-`undoOrganizeRun` (index.ts:560): `store.loadAllSnapshots()` + `checkpointManager.listAll()` -> `selectLastRun` -> "No organize run to undo" | `ConfirmModal` ("Undo last organize run?", confirm "Move back"; dismiss = cancel) -> per snapshot, newest first: skip when the note is missing at `currentPath` or `originalPath` is occupied (reported, snapshot kept); else `ensureFolder(original parent)`, `vault.rename(file, originalPath)` (so Obsidian rewrites links), `removeSnapshot` -> `op.finish("Moved N notes back — K need attention")` -> undo summary written. Every snapshot saved by `organizeFile`/`applyAccept` carries `runId` (checkpoint id for scans/resume, a fresh id for a single-note organize or a sidebar accept); the checkpoint-window fallback exists for snapshots written before the stamp.
+`undoOrganizeRun` (index.ts:562): `store.loadAllSnapshots()` + `checkpointManager.listAll()` -> `selectLastRun` -> "No organize run to undo" | `ConfirmModal` ("Undo last organize run?", confirm "Move back"; dismiss = cancel) -> per snapshot, newest first: skip when the note is missing at `currentPath` or `originalPath` is occupied (reported, snapshot kept); else `ensureFolder(original parent)`, `vault.rename(file, originalPath)` (so Obsidian rewrites links), `removeSnapshot` -> `op.finish("Moved N notes back — K need attention")` -> undo summary written. Every snapshot saved by `organizeFile`/`applyAccept` carries `runId` (checkpoint id for scans/resume, a fresh id for a single-note organize or a sidebar accept); the checkpoint-window fallback exists for snapshots written before the stamp.
 
 ## Run Summary (`run-summary.ts`)
 
@@ -181,13 +181,13 @@ function describeRun(tally: RunTally): string                                   
 ```
 organizeNote(file) / scanDirectory() / resumeFromCheckpoint()
   --> noteQueue.run(file.path, () => organizeFile(...))   [#483: slot held for the whole cycle]
-        organizeFile(file, runId, batch?, batchProposedDirs?, cacheUse?)    [queue-free core, index.ts:641]
+        organizeFile(file, runId, batch?, batchProposedDirs?, cacheUse?)    [queue-free core, index.ts:643]
           --> ContentAnalyzer.analyze(file, trackAiCache(cacheUse))  [#558: System 1 runoff -> analysis.placement of kind existing | keep (topics []) | new-directory | undecided (both with AI topics); lane off/error -> AI topic extraction only; #527]
-          --> return null when placement.kind === 'keep' (index.ts:651)
-          --> return null when topics is empty AND placement.kind !== 'existing' (index.ts:654)
-          --> DirectoryMatcher.determineAction(analysis, undefined, confidenceThreshold, { allowNewDirectory: placement?.kind !== 'undecided' })   [index.ts:660; existing -> move action; own folder -> null "already placed"; OrganizeResult.placement = placement.kind]
+          --> return null when placement.kind === 'keep' (index.ts:653)
+          --> return null when topics is empty AND placement.kind !== 'existing' (index.ts:656)
+          --> DirectoryMatcher.determineAction(analysis, undefined, confidenceThreshold, { allowNewDirectory: placement?.kind !== 'undecided' })   [index.ts:662; existing -> move action; own folder -> null "already placed"; OrganizeResult.placement = placement.kind]
             if move (target != current dir, destination free):
-              --> OrganizeStore.saveProposal({ proposalKind: 'move', lane, reasoning: moveReasoning() })   [index.ts:826]
+              --> OrganizeStore.saveProposal({ proposalKind: 'move', lane, reasoning: moveReasoning() })   [index.ts:828]
               --> maybeAutoAccept(proposal.id, file, runId, batch)
             if new dir needed:
               --> coalesceProposedDirectory (#172)
@@ -196,10 +196,10 @@ organizeNote(file) / scanDirectory() / resumeFromCheckpoint()
                                                                       never acceptProposal — same key, would deadlock]
           --> { proposalCreated: true, movedDirectly: autoAccepted, autoAccepted, placement }
 
-acceptProposal(id, options?)                              [public, index.ts:417]
+acceptProposal(id, options?)                              [public, index.ts:419]
   --> OrganizeStore.loadProposal(id)  [null -> "Proposal not found"]
   --> noteQueue.run(proposal.sourceNotePath, () => applyAccept(id, options))
-        applyAccept(id, options?)                         [queue-free core, index.ts:428]
+        applyAccept(id, options?)                         [queue-free core, index.ts:430]
           --> re-load proposal (double-accept guard evaluated UNDER the slot)
           --> ensureFolder(proposedDirectory)             [no-op for 'move'; creates the folder for 'new-directory']
           --> OrganizeStore.saveSnapshot({ runId: options.runId ?? generateId() })
@@ -212,14 +212,14 @@ acceptProposal(id, options?)                              [public, index.ts:417]
 rejectProposal(id)                                        [no note write -> unqueued]
   --> OrganizeStore.updateProposalStatus('rejected')
 
-undoOrganize(file)  [command: 'undo-organize', private, index.ts:526]
+undoOrganize(file)  [command: 'undo-organize', private, index.ts:528]
   --> OrganizeStore.loadSnapshot(filePath)
   --> noteQueue.run(file.path, ...)  [silent, no onWait]
         --> ensureFolder(original parent)
         --> vault.rename(file, originalPath)
         --> OrganizeStore.removeSnapshot()
 
-undoOrganizeRun()  [command: 'undo-organize-run', index.ts:560]
+undoOrganizeRun()  [command: 'undo-organize-run', index.ts:562]
   --> OrganizeStore.loadAllSnapshots() + checkpointManager.listAll() -> selectLastRun()
   --> ConfirmModal -> per snapshot (newest first): skip missing/occupied, else
         noteQueue.run(currentPath, ensureFolder + vault.rename back) -> removeSnapshot(); sleep(0)
@@ -229,7 +229,7 @@ undoOrganizeRun()  [command: 'undo-organize-run', index.ts:560]
 ## Directory Scan (checkpointed)
 
 ```
-scanDirectory(folderPath?, skipConfirmation?, onlyFile?)
+scanDirectory(target?, skipConfirmation?, onlyFile?)
   Phase 1: Collect eligible files (filtered by isExcluded)
   Phase 2: User confirmation (skipped when skipConfirmation=true)
   Phase 3: Checkpointed processing
@@ -299,7 +299,7 @@ interface OrganizeResult {
 | Command ID | Enabled When | Description |
 |------------|-------------|-------------|
 | `organize-current-note` | `settings.organize.enabled` | Organize the active note (proposes; moves only under auto-accept) |
-| `scan-directory-organize` | `settings.organize.enabled` | Scan a directory for organization (opens FolderPickerModal) |
+| `scan-directory-organize` | `settings.organize.enabled` | Scan a directory for organization (`openScanFolderPicker` -> `scanDirectory(scope)`) |
 | `undo-organize` | `settings.organize.enabled` | Undo the last organize move on the active note (registry status `disabled`) |
 | `undo-organize-run` | `settings.organize.enabled` | Move every note of the last organize run back (ConfirmModal-gated) |
 
@@ -320,19 +320,19 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 ## Dependencies
 
-In: `shared/` (getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary, generateMoveDiagram, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, ConfirmModal, sleep, CacheUse, AIRequestOptions, openScanFolderPicker, Checkpoint, CheckpointWorkItem, DeferredTask, MoveRecord, OperationHandle, DecisionLane — see `index.ts:4-12`), `settings.ts` (SynapseSettings), `commands/` (CommandRegistrar, `index.ts:3`)
+In: `shared/` (getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary, generateMoveDiagram, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, ConfirmModal, sleep, scanScopeLabel, ScanTarget, CacheUse, AIRequestOptions, openScanFolderPicker, Checkpoint, CheckpointWorkItem, DeferredTask, MoveRecord, OperationHandle, DecisionLane — see `index.ts:4-12`), `settings.ts` (SynapseSettings), `commands/` (CommandRegistrar, `index.ts:3`)
 
 Out: nothing is imported by another feature. `modules/registry.ts:111-116` wraps `OrganizeModule.suggestDirectory` in a lambda and passes it to `DeepDiveModule` (its `SuggestDirectory` type, `deep-dive/types.ts:85`) for auto-organize nesting mode; `deep-dive` has no `../organize` import. `views/unified-proposal-view.ts` renders `proposalKind` ("Move to X" vs "New folder X") and the lane.
 
 ## Invariants / Gotchas
 
 - No relocation without a proposal: `organizeFile` never calls `vault.rename`; only `applyAccept` does (via accept or `maybeAutoAccept`). Intake's `moveWhenDone` fallback therefore handles notes that organize only proposed.
-- Double-acceptance guard lives in `applyAccept`, not `acceptProposal`: the proposal is re-loaded inside the queue slot and the call no-ops if `proposal.status !== 'pending'`, so a pre-wait snapshot can never authorize a second move (index.ts:433).
+- Double-acceptance guard lives in `applyAccept`, not `acceptProposal`: the proposal is re-loaded inside the queue slot and the call no-ops if `proposal.status !== 'pending'`, so a pre-wait snapshot can never authorize a second move (index.ts:435).
 - `maybeAutoAccept` must call `applyAccept`, never `acceptProposal` — it already runs under the note's queue key (#483) — and passes the live `TFile`.
 - A move proposal is skipped (null) when a file already exists at the destination; accept re-checks and refuses to overwrite.
 - Batch scan coalesces near-identical proposed directories via `batchProposedDirs` map — variants like "model"/"models" resolve to a single folder (#172).
 - `organizeConfidenceThreshold` has one meaning in both lanes: confidence required before a new folder is proposed. Existing-folder acceptance is `PLACEMENT_MAJORITY` (0.5) AND `FIRST_ROUND_SUPPORT` (0.25), both fixed, in the lane and `minScoreThreshold` (0.6, hardcoded at the `determineAction` call site) in System 2.
-- The System 1 lane never creates a folder, and an existing folder leading its runoff is evidence AGAINST a new one: `undecided` runs `determineAction` with `allowNewDirectory: false` (`index.ts:660`). Only `new-directory` (P >= threshold), lane off, or a lane error can reach the propose-new-folder path (`placement-decider.ts:130`, `content-analyzer.ts:82`).
+- The System 1 lane never creates a folder, and an existing folder leading its runoff is evidence AGAINST a new one: `undecided` runs `determineAction` with `allowNewDirectory: false` (`index.ts:662`). Only `new-directory` (P >= threshold), lane off, or a lane error can reach the propose-new-folder path (`placement-decider.ts:130`, `content-analyzer.ts:82`).
 - `keep` is terminal: no topics, no `determineAction`, no proposal; `suggestDirectory` returns null for it.
 - The note's current folder is never offered as a folder option (it is `<keep-current>`), so "stay" mass concentrates on one option; the state names the current folder.
 - `propose-new-directory` is never returned for a path that already exists (full-path or basename canonical match, `findExistingDirectory`, `directory-matcher.ts:103`); a hit is a move, or a no-op when it is the note's own folder (#565). The batch coalescer (`batchProposedDirs`) only dedups within a run.

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-10-19
 ---
 
 # Pipeline Module
@@ -22,11 +22,11 @@ type PipelineModuleKey =
   | 'organize';
 
 // Scan-fn contract every pipeline module must satisfy.
-// folderPath scopes the scan; skipConfirmation bypasses the confirm dialog
+// target (folder path | ScanScope) scopes the scan; skipConfirmation bypasses the confirm dialog
 // (always true from Fire Synapse); onlyFile narrows a folder scan to a single
 // note (filtered right after getMarkdownFiles). Returns a processed count or void.
 type PipelineScanFn = (
-  folderPath?: string,
+  target?: ScanTarget,
   skipConfirmation?: boolean,
   onlyFile?: TFile,
 ) => Promise<number | void>;
@@ -47,7 +47,7 @@ class SynapseRunner {
     getSettings: () => SynapseSettings,
     notifications: NotificationManager,
   );
-  fire(folderPath?: string): Promise<void>; // folder-scoped, all active phases
+  fire(target?: ScanTarget): Promise<void>; // folder-scoped, all active phases; non-recursive scope titles the toast "Fire Synapse on <label>"
   fireOnFile(file: TFile): Promise<void>;   // single-note scoped (intake #111)
 }
 
@@ -105,21 +105,22 @@ Organize is intentionally last: it is the content-aware mover that relocates not
 ## Data Flow
 
 ```
-fire(folderPath?)  /  fireOnFile(file)
+fire(target?)  /  fireOnFile(file)
   --> activePhases = SYNAPSE_PIPELINE.filter(p =>
         settings[p.key].enabled && isPipelineKeyInFlow(p.key, 'fire-synapse'))
   --> if activePhases.length === 0: notifications.info('No features are enabled'); return
-  --> op = notifications.startOperation('Fire Synapse (0/N)' | 'Fire Synapse on <basename> (0/N)')
+  --> title = fire: 'Fire Synapse' (recursive) | 'Fire Synapse on <scanScopeLabel(target)>' (non-recursive); fireOnFile: 'Fire Synapse on <basename>'
+  --> op = notifications.startOperation('<title> (0/N)')
   --> for each phase (sequential, in order):
         if op.cancelled: break
         op.progress(completed, N, 'Phase i/N: <label>')
-        try { await modules[phase.key](folderPath, true[, file]) }  // skipConfirmation=true
+        try { await modules[phase.key](target, true[, file]) }  // skipConfirmation=true
         catch { console.warn('[Synapse] Phase <label> failed: <msg>') }  // isolated; run continues
-  --> if !op.cancelled: op.finish('Fire Synapse complete — <completed> phases run')
+  --> if !op.cancelled: op.finish('<title> complete — <completed> phases run')   // fireOnFile: 'Fire Synapse complete — …'
 ```
 
-- `fire` (`synapse-runner.ts:14`): folder-scoped; never passes `onlyFile`.
-- `fireOnFile` (`synapse-runner.ts:70`): scopes `folderPath` to the note's parent folder so `getMarkdownFiles` returns a superset that includes it, then passes the note as `onlyFile` (3rd arg) so each module filters to that single path. A root-level note (parent is root/undefined) passes `folderPath = undefined`. Uses operation id `synapse-fire-file`; `fire` uses `synapse-fire`.
+- `fire` (`synapse-runner.ts:15`): scoped by `target` (folder path or `ScanScope`, passed through unchanged); never passes `onlyFile`. Title computed at `synapse-runner.ts:27`.
+- `fireOnFile` (`synapse-runner.ts:72`): passes a string `folderPath` (recursive) scoped to the note's parent folder so `getMarkdownFiles` returns a superset that includes it, then passes the note as `onlyFile` (3rd arg) so each module filters to that single path. A root-level note (parent is root/undefined) passes `folderPath = undefined`. Uses operation id `synapse-fire-file`; `fire` uses `synapse-fire`.
 
 ## Post-Op Hooks (`post-op-hooks.ts`)
 
@@ -165,10 +166,11 @@ Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the not
 |--------|------|
 | `isPipelineKeyInFlow(pipelineKey: string, flow: CommandFlow): boolean` | `../commands` (`commands/registry.ts:112`; fail-open on unmapped key) |
 | `fireAndForget` (runtime) | `../shared` (`post-op-hooks.ts:2`) |
-| `NotificationManager`, `SourceContext` (types) | `../shared` (`post-op-hooks.ts:3`, `types.ts:2`) |
+| `scanScopeLabel`, `toScanScope` (runtime) | `../shared` (`synapse-runner.ts:2`) |
+| `NotificationManager`, `ScanTarget`, `SourceContext` (types) | `../shared` (`post-op-hooks.ts:3`, `synapse-runner.ts:3`, `types.ts:2`) |
 | `SynapseSettings`, `IllustrateRunAfterKey` (types) | `../settings` (`post-op-hooks.ts:4`; `IllustrateRunAfterKey` is re-exported by `settings.ts:11` from `illustrate/types`) |
 | `TFile` (type) | `obsidian` (`types.ts:1`, `post-op-hooks.ts:1`) |
 | `PipelineModuleMap` instances | injected by `main.ts:92-100` from each feature module's scan fn |
 | `PostOpHookDeps` instance | injected by `main.ts:185-193` (`enrichment.enrich`, `title.checkTitle` wrapped with `{ postOp: true }`; `organize.organizeNote`; `illustrate.illustrateNote`; `remNote` = `rem.remScanNote(filePath, { postOp: true })`; `RemModule` takes the queue slot) |
 
-Pipeline imports `commands` (for the `fire-synapse` flow gate) and `shared` (`fireAndForget`) but NOT the feature modules directly — `main.ts` injects the `PipelineModuleMap` and `PostOpHookDeps`, keeping the runner and the hooks decoupled from concrete feature implementations.
+Pipeline imports `commands` (for the `fire-synapse` flow gate) and `shared` (`fireAndForget`, `scanScopeLabel`, `toScanScope`) but NOT the feature modules directly — `main.ts` injects the `PipelineModuleMap` and `PostOpHookDeps`, keeping the runner and the hooks decoupled from concrete feature implementations.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getIncludedMarkdownFiles, findAvailableVaultPath } from './file-utils';
+import { getMarkdownFiles, getIncludedMarkdownFiles, findAvailableVaultPath } from './file-utils';
 import { TFile } from '../__mocks__/obsidian';
 import { createMockApp } from '../__test-utils__/mock-factories';
 import type { App } from 'obsidian';
@@ -14,6 +14,31 @@ function appWith(files: TFile[]): App {
 	app.vault.getMarkdownFiles.mockReturnValue(files);
 	return app as unknown as App;
 }
+
+describe('getMarkdownFiles', () => {
+	const rootNote = new TFile('loose.md');
+	const inboxNote = new TFile('Inbox/a.md');
+	const archived = new TFile('Inbox/archive/b.md');
+	const inboxSibling = new TFile('Inbox2/c.md');
+	const all = [rootNote, inboxNote, archived, inboxSibling];
+
+	it('returns every file for the default recursive whole-vault scan', () => {
+		expect(getMarkdownFiles(appWith(all))).toEqual(all);
+	});
+
+	it('scans a folder recursively for a bare path', () => {
+		expect(getMarkdownFiles(appWith(all), 'Inbox')).toEqual([inboxNote, archived]);
+	});
+
+	it('keeps only files directly in the vault root when non-recursive', () => {
+		expect(getMarkdownFiles(appWith(all), { recursive: false })).toEqual([rootNote]);
+	});
+
+	it('keeps only a nested folder\'s direct children when non-recursive', () => {
+		expect(getMarkdownFiles(appWith(all), { folder: 'Inbox', recursive: false })).toEqual([inboxNote]);
+		expect(getMarkdownFiles(appWith(all), { folder: 'Inbox/archive', recursive: false })).toEqual([archived]);
+	});
+});
 
 describe('getIncludedMarkdownFiles', () => {
 	it('returns all files when no exclusion rules apply', () => {

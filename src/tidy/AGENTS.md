@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-10-19
 ---
 
 # Tidy Module
@@ -13,7 +13,7 @@ class TidyModule {
   constructor(deps: ModuleDeps)        // index.ts:42; keeps plugin, getSettings, notifications, registrar, noteQueue (#483); checkpointManager not retained
   onload(): Promise<void>
   onunload(): void
-  scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>
+  scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>
   tidy(file: TFile, batchUses?: CacheUse[]): Promise<void>   // batchUses (#527): push this note's CacheUse and keep the per-note toast plain
   // private undoTidy(file: TFile): Promise<void>
 }
@@ -120,16 +120,16 @@ catch: op.error("Tidy failed — <msg>")
 
 Reachable in code only via the `undo-tidy` command, which is gated off (registry status `disabled`); not invokable from the palette today.
 
-## Data Flow — scanVault(folderPath?, skipConfirmation?, onlyFile?) (index.ts:82)
+## Data Flow — scanVault(target?, skipConfirmation?, onlyFile?) (index.ts:82)
 
 ```
-1. getMarkdownFiles(app, folderPath) -> allFiles
+1. getMarkdownFiles(app, target) -> allFiles
 2. if onlyFile: filter to f.path === onlyFile.path        (per-file scoping, #111)
 3. if allFiles.length === 0: return 0
 4. if !skipConfirmation: confirm("Found N notes to tidy. Proceed?",
      { proceedLabel: "Tidy", cancelLabel: "Cancel" })
      if declined: info("Tidy scan skipped"); return 0
-5. startOperation("Tidying notes", "tidy-vault")
+5. startOperation("Tidying notes" | "Tidying notes in <scanScopeLabel(target)>" (non-recursive), "tidy-vault")
 6. for each file:
      if op.cancelled: break
      op.progress(i+1, total, "Tidying notes")
@@ -185,7 +185,7 @@ Settings UI: `renderTidySettings` (settings-section.ts:7) renders an accordion w
 | Imports | From |
 |---------|------|
 | `Plugin`, `TFile`, `App` | `obsidian` |
-| `AIClient`, `NotificationManager`, `NoteOperationQueue`, `getMarkdownFiles`, `parseFrontmatter`, `sanitizeAIResponse`, `stripCodeFences`, `serializeFrontmatter`, `withRetry`, `generateId`, `isPathExcluded`, `findMatchingRule`, `trackAiCache`, `withCacheReport` (index.ts:4); `ensureFolder` (tidy-store.ts); `SettingsSectionContext` (settings-section.ts) | `../shared` |
+| `AIClient`, `NotificationManager`, `NoteOperationQueue`, `getMarkdownFiles`, `parseFrontmatter`, `sanitizeAIResponse`, `stripCodeFences`, `serializeFrontmatter`, `withRetry`, `generateId`, `isPathExcluded`, `findMatchingRule`, `trackAiCache`, `withCacheReport`, `scanScopeLabel`, `toScanScope`, `ScanTarget` (type) (index.ts:4); `ensureFolder` (tidy-store.ts); `SettingsSectionContext` (settings-section.ts) | `../shared` |
 | `CacheUse`, `OperationHandle`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:5) |
 | `CommandRegistrar` | `../commands` |
 | `SynapseSettings` | `../settings` |

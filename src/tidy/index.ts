@@ -1,7 +1,7 @@
 import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
-import { AIClient, NotificationManager, NoteOperationQueue, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId, isPathExcluded, findMatchingRule, trackAiCache, withCacheReport } from '../shared';
+import { AIClient, NotificationManager, NoteOperationQueue, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, serializeFrontmatter, withRetry, generateId, isPathExcluded, findMatchingRule, trackAiCache, withCacheReport, scanScopeLabel, toScanScope, type ScanTarget } from '../shared';
 import type { CacheUse, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
@@ -79,8 +79,8 @@ export class TidyModule implements FeatureModule {
 
 	onunload(): void {}
 
-	async scanVault(folderPath?: string, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
-		let allFiles = getMarkdownFiles(this.plugin.app, folderPath);
+	async scanVault(target?: ScanTarget, skipConfirmation = false, onlyFile?: TFile): Promise<number> {
+		let allFiles = getMarkdownFiles(this.plugin.app, target);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) allFiles = allFiles.filter(f => f.path === onlyFile.path);
 
@@ -100,7 +100,7 @@ export class TidyModule implements FeatureModule {
 		}
 
 		const op = this.notifications.startOperation(
-			'Tidying notes',
+			toScanScope(target).recursive ? 'Tidying notes' : `Tidying notes in ${scanScopeLabel(target)}`,
 			'tidy-vault'
 		);
 

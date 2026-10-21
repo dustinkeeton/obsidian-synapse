@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-10-19
 ---
 
 # REM Module
@@ -17,7 +17,7 @@ class RemModule {
   onload(): Promise<void>
   onunload(): void
   remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null>   // index.ts:137; takes the note's queue slot once (#585); postOp silences info notices + result toast + auto-accept notices
-  remScanDirectory(folderPath?: string, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
+  remScanDirectory(target?: ScanTarget, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   acceptProposal(id: string, acceptedMatchTexts: string[], options?: { silent?: boolean }): Promise<void>
   rejectProposal(id: string): Promise<void>
@@ -123,9 +123,10 @@ remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private sca
   --> maybeAutoAccept(proposal)   (#228, when shouldAutoAccept())
   --> refreshView()
 
-remScanDirectory(folderPath?, skipConfirmation?, onlyFile?)
-  --> getMarkdownFiles filtered by isExcluded
-  --> CheckpointManager.create(module: 'rem', items)
+remScanDirectory(target?, skipConfirmation?, onlyFile?)
+  --> getMarkdownFiles(app, target) filtered by isExcluded
+  --> startOperation('REM scanning N notes' | 'REM scanning N notes in <scanScopeLabel(target)>' (non-recursive))
+  --> CheckpointManager.create(module: 'rem', operationLabel: 'REM scan: <scanScopeLabel(target) | vault>', items)
   --> addDeferredTask('refresh-sidebar-view')
   --> for each file: gatherCandidates(file, content, cacheUse) (literal down-weighted + always-on semantic, merged/re-ranked), push cacheUse, save proposal, maybeAutoAccept(batch=true)
   --> completeItem() per file
@@ -156,7 +157,7 @@ Registered in `onload()` (both gated by `rem.enabled`):
 | ID | Name | Type | Pipeline |
 |----|------|------|---------|
 | `synapse:rem-current-note` | REM: discover links in current note | editorCallback | palette |
-| `synapse:rem-directory` | Scan folder for links | callback (FolderPickerModal) | palette, fire-synapse (`pipelineKey: rem`) |
+| `synapse:rem-directory` | Scan folder for links | callback (`openScanFolderPicker` -> `remScanDirectory(scope)`) | palette, fire-synapse (`pipelineKey: rem`) |
 
 ## Auto-Accept (#228)
 
@@ -221,8 +222,8 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 
 | Import | From |
 |--------|------|
-| `generateId`, `getMarkdownFiles`, `FolderPickerModal`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `redactError`, `reviewAction`, `trackAiCache`, `withCacheReport`, `CacheUse` | `../shared` |
-| `NotificationManager`, `CheckpointManager`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` | `../shared` (type-only) |
+| `generateId`, `getMarkdownFiles`, `openScanFolderPicker`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `redactError`, `reviewAction`, `trackAiCache`, `withCacheReport`, `scanScopeLabel`, `toScanScope`, `ScanTarget` (type) | `../shared` (index.ts:8) |
+| `NotificationManager`, `CheckpointManager`, `ModuleDeps`, `FeatureModule`, `NoteOperationQueue`, `CacheUse`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` (inline `import('../shared')`, index.ts:309) | `../shared` (type-only, index.ts:5-6) |
 | `CommandRegistrar` | `../commands` (type-only) |
 | `SynapseSettings`, `RemSettings` | `../settings` (type-only) |
 | `MentionScanner` | `./mention-scanner` |
