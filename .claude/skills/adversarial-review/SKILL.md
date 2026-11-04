@@ -1,8 +1,8 @@
 ---
 name: adversarial-review
-description: Adversarially review a green PR from a hostile reviewer's seat — read the full diff and poke holes in correctness edge cases, API/naming choices, missing tests, error handling, and simplification opportunities, posting findings as actionable PR review comments. Severity stays honest — no manufactured blockers; "no holes found" is a valid outcome for a genuinely solid PR. Invokable by users and agents.
+description: Adversarially review a green PR from a hostile reviewer's seat — read the full diff and poke holes in correctness edge cases, API/naming choices, missing tests, error handling, and simplification opportunities, posting findings as actionable PR review comments. Severity stays honest — no manufactured blockers; "no holes found" is a valid outcome for a genuinely solid PR. `--integration` instead reviews an integration → main PR for decisions the combined change breaks. Invokable by users and agents.
 user-invocable: true
-argument-hint: "<PR#, number, or PR URL> (omit for the current branch's PR)"
+argument-hint: "<PR#, number, or PR URL> [--integration] (omit the PR for the current branch's PR)"
 ---
 
 # Adversarial Review
@@ -24,7 +24,8 @@ seat and posts its findings back onto the PR as review comments addressed to the
 
 ## 1. Resolve the target PR
 
-Inspect `$ARGUMENTS`:
+Inspect `$ARGUMENTS`. If one whole argument is `--integration`, remove it and run in
+[integration mode](#integration-mode---integration); the rest resolves the PR as below.
 
 | `$ARGUMENTS` | What to do |
 |--------------|------------|
@@ -43,6 +44,44 @@ gh pr view "$N" --json number,title,state,isDraft,headRefName,headRefOid,mergeab
 - If the PR is **closed or merged**, there is nothing to gate — report and stop.
 - If it is a **draft** or its **required checks are not yet green**, say so: this skill is the
   *post-green* gate. You may still review on request, but note that checks haven't passed.
+
+## Integration mode (`--integration`)
+
+Use this mode on the integration → `main` PR an `autopilot` run opens: its head is the run's
+integration branch, and every run PR merged into that branch already passed its own gates. Here,
+sections 2–4 are replaced by this section. Sections 5–7 still apply: the same staging paths,
+read-back, marker, `waffle/adversarial-review` status and severity labels. The summary body's
+second line is `**Adversarial review — integration mode (decision preservation)**`.
+
+**Inputs.** Gather them yourself from the PR's `headRefName` (`<integ>`) and `headRefOid`:
+
+- **The run's merged PRs:** `gh pr list --base <integ> --state merged --limit 200 --json number,title,body,headRefName,mergedAt`.
+  PRs from `autopilot/sync/*` and `autopilot/stage2/*` branches carry no issue and are context only.
+- **Their linked issues:** each `close[sd]?`, `fix(e[sd])?` or `resolve[sd]?` `#N` in those PR
+  bodies (case-insensitive), read with `gh issue view <N> --json number,title,body`. Cross-check
+  against this PR's own `Closes #N` list. Do not use `closingIssuesReferences`, which GitHub fills
+  only for PRs into the default branch.
+- **`DECISIONS.md` at the head:** `gh api "repos/$OWNER/$REPO/contents/DECISIONS.md?ref=$HEAD_SHA" -H "Accept: application/vnd.github.raw"`.
+  Read its headings first and open only the entries the run's changes touch. If the file is absent,
+  review only the PR-against-PR half and say so in the summary.
+- **The combined diff:** `gh pr diff "$N"`, plus this PR's body. Any `NOTE:` lines in the body
+  come from autopilot's overwrite detector: a later PR knowingly rewrote an earlier PR's line.
+  Start with those.
+
+**One question:** *Does the combined change contradict a recorded decision, or does one PR in the
+run undo another's stated intent?*
+
+- **A finding counts only if it cites** a `DECISIONS.md` entry by its exact heading, or a PR and
+  its issue (`#PR (closes #I)`), plus the `file:line` in the head tree that breaks it. Do not post
+  an uncited finding.
+- **Out of scope:** wording-precision nits, section 3's five categories, and anything a per-PR gate
+  already reviewed. A PR that is sound on its own is not a finding here.
+- **No nit tier.** A broken decision or a reverted acceptance criterion is a **blocker**. A
+  partial erosion of one is a **should-fix**.
+- **Always cold.** Never seed history from the PR's earlier reviews or replies, whatever the
+  invocation says: each integration round judges the head on its own evidence.
+- **Clean is valid:** post `No decision conflicts found`, with the counts of PRs, issues and
+  `DECISIONS.md` entries checked.
 
 ## 2. Read the full diff and its surroundings
 
@@ -104,6 +143,11 @@ Assign each finding a severity and let that drive whether it blocks:
   that is worth addressing but wouldn't by itself stop a merge.
 - **nit** — style, naming, or a minor simplification. Label it as optional. Comment wording in
   a deterministic file is at most a nit, and usually not a finding at all.
+
+**The outcome test (#682).** A finding rises above nit only if it names a wrong outcome: wrong
+behavior, a wrong command, path or label, a failing or missing test for changed behavior, or
+skill, agent or doc text that would lead its reader to do the wrong thing. A finding that only
+polishes wording or adds edge-case rules nobody has hit is a nit, whatever file it is in.
 
 Do **not** pad the list. If the only honest finding is one nit, post one nit. If there are
 none, say so (step 6).
@@ -271,7 +315,8 @@ gh pr review "$N" --comment --body-file "${TMPDIR:-/tmp}/waffle-adversarial-revi
 
 Return a concise summary to the caller: the PR URL, the count of findings by severity
 (blocker / should-fix / nit, or "none"), the review event used (`COMMENT` /
-`REQUEST_CHANGES`), and one line on the most important finding if there is one.
+`REQUEST_CHANGES`), and one line on the most important finding if there is one. In integration
+mode, give each finding's citation and the counts of PRs, issues and decisions checked.
 
 ## When called by agents
 
@@ -307,8 +352,8 @@ cold-start rules below, when you are the fresh spawn that *replaces* a resumable
   again — never a skipped gate. Whether this head *was reviewed* is the `waffle/adversarial-review`
   commit status (step 5), and evidence in the new head always outranks recovered history.
 - **An empty context is *not* itself the signal — never infer the seed from it.** A loop may spawn
-  you deliberately **cold**: autopilot's cap-escape evidence pass does precisely that, so that your
-  look at the final head is *not* anchored by what earlier rounds declined — and its prompt says so
+  you deliberately **cold**: autopilot's cold certification rounds and its cap-escape evidence pass
+  do precisely that, so that your look at the head is *not* anchored by what earlier rounds declined — and its prompt says so
   ("this pass is deliberately cold — do not seed history from the PR"). **When the invocation says
   the pass is deliberately cold, do not seed**: seeding would re-anchor you on the very verdicts the
   cold spawn exists to escape, suppressing every finding earlier rounds declined. Absent an

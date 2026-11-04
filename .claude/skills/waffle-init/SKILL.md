@@ -1,20 +1,23 @@
 ---
 name: waffle-init
-description: Scaffold a starter `.waffle/waffle.yaml` so wafflestack can render into this repo. Use in a repo that has never run wafflestack, before picking stacks and running /waffle-render.
+description: Alias of /waffle-setup — scaffolds `.waffle/waffle.yaml` if missing (never overwrites one), then prints the setup playbook and full stack inventory. Use when the user says "init" or asks to initialize wafflestack in this repo.
 user-invocable: true
 argument-hint: "(no refs — add --gitignore to also seed the baseline entries — local overlay, local lock, .waffle/avatars/ — into .gitignore)"
 ---
 
-# Initialize wafflestack in this repo
+# Initialize wafflestack in this repo (alias of /waffle-setup)
 
-Wraps `wafflestack init` — it writes a starter `.waffle/waffle.yaml` (a scaffold of
-`targets:` / `stacks:` / `include:` / `config:` / `eject:`) so this repo can be rendered.
-It **errors if a config already exists** at any generation, so it is safe to run only once.
+`wafflestack init` is an **alias of `wafflestack setup`** (#611): the same command, with
+byte-identical output. When no config exists at any generation it writes a starter
+`.waffle/waffle.yaml` (a scaffold of `targets:` / `stacks:` / `include:` / `config:` /
+`eject:`), then prints the agent playbook and toolkit inventory. It **never overwrites** an
+existing config; on a configured repo it prints the "Current configuration — update mode"
+section instead. Safe to re-run.
 
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.17.2 init
+npx --yes github:dustinkeeton/wafflestack#v0.19.0 init
 ```
 
 Pass `--gitignore` through if `$ARGUMENTS` asks for it — that also appends the
@@ -23,17 +26,11 @@ stack-independent baseline to `.gitignore`: `.waffle/waffle.local.yaml`,
 yet, since no stack is chosen; `install --gitignore` adds it later):
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.17.2 init --gitignore
+npx --yes github:dustinkeeton/wafflestack#v0.19.0 init --gitignore
 ```
 
 ## After it runs
 
-1. Report the file it wrote (`.waffle/waffle.yaml`).
-2. Explain the next two steps and offer to do them:
-   - **Pick stacks + config.** Edit `.waffle/waffle.yaml` — set `targets:` (usually
-     `[claude]`), list `stacks:` (run **`/waffle-setup`** to see the full inventory and each
-     stack's required config), and fill `config:` values. `/waffle-install <ref…>` can do the
-     stack/config edit and render in one step.
-   - **Render.** Run **`/waffle-render`** (or `/waffle-install`) to generate the harness files.
-3. If the command reported that a config already exists, do **not** overwrite it — point the
-   user at the existing `.waffle/waffle.yaml` and suggest `/waffle-setup` (update mode) instead.
+Interpret the output exactly as **`/waffle-setup`** does: report whether a starter was
+written (the `wrote …` line on stderr), then recommend stacks from the inventory, surface
+prerequisites, and point at **`/waffle-install <ref…>`** to persist the choice and render.

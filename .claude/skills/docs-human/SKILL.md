@@ -60,18 +60,21 @@ High-level architecture overview for humans:
 4. Include dates on all log entries
 5. Keep STATUS.md under 100 lines — it's a snapshot, not a history
 
-## Owner-voiced docs — do not rewrite
+## Protected docs — flag drift, don't rewrite
 
-These files are owner-authored. Never rewrite them in a docs pass — if one
-has drifted from reality, flag the drift in your report instead:
+Docs passes don't rewrite these paths (globs allowed). If one has drifted
+from reality, flag the drift in your report instead:
 
-- `README.md` — the project's front door
-- `CLAUDE.md` — the owner's instructions to the harness (and any other
-  harness-native instruction file that is not already a machine doc)
-- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `LICENSE` — governance
-- `CHANGELOG.md` — maintained by the release flow, not by doc writers
-- `.waffle/waffle.yaml`, `.waffle/waffle.local.yaml`, and `.waffle/extensions/**` —
-  consumer config and project-owned extensions
+- `README.md`
+- `CLAUDE.md`
+- `CONTRIBUTING.md`
+- `CODE_OF_CONDUCT.md`
+- `SECURITY.md`
+- `LICENSE`
+- `CHANGELOG.md`
+- `.waffle/waffle.yaml`
+- `.waffle/waffle.local.yaml`
+- `.waffle/extensions/**`
 
 This list does not cover the agent-managed docs — a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way;
 and `DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root — which the doc writers update as usual.

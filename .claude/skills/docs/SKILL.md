@@ -40,7 +40,7 @@ After docs-agent completes, spawn the `docs-human` agent with this prompt:
 
 > The machine docs have just been updated. Update the human-facing documentation — `DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root — to match.
 >
-> Read the updated machine docs and the actual source to ensure accuracy. Follow the docs-human skill guidelines for format, structure, and its guardrails (owner-voiced docs are flagged, never rewritten).
+> Read the updated machine docs and the actual source to ensure accuracy. Follow the docs-human skill guidelines for format, structure, and its guardrails (protected docs are flagged, never rewritten).
 
 ## Important
 

@@ -362,14 +362,51 @@ Reference related issues in comments or the issue body:
 gh issue comment {issue_number} --body "Related to #15 and #23."
 ```
 
-### Query sub-issues of a parent
+### Link an existing issue to a parent epic
+
+Group an already-open issue under an existing parent (an `[epic]` issue) as a native sub-issue — this is what gives the parent its `n of m` progress. Resolve both node IDs, check the child's current parent, then link. The sub-issue mutations are feature-flagged, so pass the `GraphQL-Features` header:
 
 ```bash
-gh api graphql -f query='
+node_id() {
+  gh api graphql -f query='
+    query($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        issue(number: $number) { id }
+      }
+    }
+  ' -f owner="OWNER" -f repo="REPO" -F number="$1" --jq '.data.repository.issue.id'
+}
+PARENT_ID=$(node_id {epic_number})
+CHILD_ID=$(node_id {child_number})
+
+# Current parent of the child (prints nothing when unparented)
+gh api graphql -H "GraphQL-Features: sub_issues" -f query='
+  query($id: ID!) { node(id: $id) { ... on Issue { parent { number title } } } }
+' -f id="$CHILD_ID" --jq '.data.node.parent'
+
+gh api graphql -H "GraphQL-Features: sub_issues" -f query='
+  mutation($parentId: ID!, $childId: ID!) {
+    addSubIssue(input: { issueId: $parentId, subIssueId: $childId }) {
+      issue { number }
+      subIssue { number }
+    }
+  }
+' -f parentId="$PARENT_ID" -f childId="$CHILD_ID"
+```
+
+An issue has at most one parent, so `addSubIssue` fails if the child already has one. To **re-parent**, pass `replaceParent: true` in the `addSubIssue` input: it moves the child in one call. Check the child's current parent first (above), and show any re-parenting to the user before running it.
+
+### Query sub-issues of a parent
+
+Native sub-issues live under `subIssues`. Don't use `trackedIssues`: that is the legacy task-list relation and returns nothing for children linked with `addSubIssue`.
+
+```bash
+gh api graphql -H "GraphQL-Features: sub_issues" -f query='
   query($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
       issue(number: $number) {
-        trackedIssues(first: 50) {
+        subIssuesSummary { total completed percentCompleted }
+        subIssues(first: 50) {
           nodes { number title state }
         }
       }
