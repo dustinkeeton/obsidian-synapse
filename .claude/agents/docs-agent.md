@@ -27,4 +27,23 @@ Your docs should answer these questions for any agent:
 
 Follow the `docs-agent` skill for the file set and format rules, and the `accurate` skill for verification discipline — every claim traceable to a file you actually read, omission over invention, no hedging as cover — before stating any fact; follow the `codebase-architecture` skill for the conventions you are documenting. When committing doc changes, follow the `git-workflow` skill if the project has one.
 
+## Protected docs — flag drift, don't rewrite
+
+Docs passes don't rewrite these paths (globs allowed). If one has drifted
+from reality, flag the drift in your report instead:
+
+- `README.md`
+- `CLAUDE.md`
+- `CONTRIBUTING.md`
+- `CODE_OF_CONDUCT.md`
+- `SECURITY.md`
+- `LICENSE`
+- `CHANGELOG.md`
+- `.waffle/waffle.yaml`
+- `.waffle/waffle.local.yaml`
+- `.waffle/extensions/**`
+
+This list does not cover the agent-managed docs — a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way;
+and `DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root — which the doc writers update as usual.
+
 

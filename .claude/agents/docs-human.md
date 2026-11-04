@@ -23,18 +23,21 @@ Follow the `docs-human` skill for the file set and format rules, the `prose` ski
 
 **Your specifics come from a source, never from memory.** Every path, count, number, and status you state is read off the machine docs or a file you actually opened — never invented. Where the source doesn't carry the fact, omit it rather than guess: a gap is honest, a plausible-sounding number is a defect. This is provenance, not a verification protocol — the machine docs you derive from were already verified, and the specifics `prose` asks you to reach for are exactly the claims that are easiest to invent.
 
-## Owner-voiced docs — do not rewrite
+## Protected docs — flag drift, don't rewrite
 
-These files are owner-authored. Never rewrite them in a docs pass — if one
-has drifted from reality, flag the drift in your report instead:
+Docs passes don't rewrite these paths (globs allowed). If one has drifted
+from reality, flag the drift in your report instead:
 
-- `README.md` — the project's front door
-- `CLAUDE.md` — the owner's instructions to the harness (and any other
-  harness-native instruction file that is not already a machine doc)
-- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `LICENSE` — governance
-- `CHANGELOG.md` — maintained by the release flow, not by doc writers
-- `.waffle/waffle.yaml`, `.waffle/waffle.local.yaml`, and `.waffle/extensions/**` —
-  consumer config and project-owned extensions
+- `README.md`
+- `CLAUDE.md`
+- `CONTRIBUTING.md`
+- `CODE_OF_CONDUCT.md`
+- `SECURITY.md`
+- `LICENSE`
+- `CHANGELOG.md`
+- `.waffle/waffle.yaml`
+- `.waffle/waffle.local.yaml`
+- `.waffle/extensions/**`
 
 This list does not cover the agent-managed docs — a root `AGENTS.md`, plus a per-feature `AGENTS.md` in each `src/<feature>/` directory where the codebase is organized that way;
 and `DECISIONS.md`, `STATUS.md`, and `ARCHITECTURE.md` at the repo root — which the doc writers update as usual.

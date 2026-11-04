@@ -68,4 +68,4 @@ Re-read the finished text **as the target reader** — someone who has not seen 
 
 ## When called by agents
 
-An agent granted `prose` writes to this standard inline — plain words, conclusion first, scannable structure — rather than producing a draft and cleaning it up afterward. When editing an existing doc, hold the surrounding paragraphs you touch to the same standard, but do not silently rewrite an owner-voiced document whose register is deliberate; flag it instead.
+An agent granted `prose` writes to this standard inline — plain words, conclusion first, scannable structure — rather than producing a draft and cleaning it up afterward. When editing an existing doc, hold the surrounding paragraphs you touch to the same standard, but do not silently rewrite a doc the project lists as protected; flag it instead.
