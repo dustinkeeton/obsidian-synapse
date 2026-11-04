@@ -35,6 +35,75 @@ jobs:
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$BODY"
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Lock-only repos commit waffle.yaml + the lock, not the render: rebuild what this job reads (#615).
+      # Inline, npx outside the checkout, --untrusted-config: no PR-head script, .npmrc or stack check runs.
+      - name: Render missing wafflestack resources
+        id: waffle-render
+        env:
+          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.19.0'
+        run: |
+          set -euo pipefail
+          fail() { echo "::error title=waffle-render::$*"; exit 1; }
+          lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+          LOCK=.waffle/waffle.lock.json
+          [ -f "$LOCK" ] || fail "$LOCK is missing; commit it so CI can reproduce the wafflestack render."
+          missing="$(node -e '
+            const fs = require("fs");
+            const l = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const keys = [...Object.keys(l.files || {}), ...Object.keys(l.settings || {})].map((k) => k.replace(/#.*$/, ""));
+            console.log([...new Set(keys)].filter((k) => /^\.claude\//.test(k) && !fs.existsSync(k)).length);
+          ' "$LOCK")"
+          if [ "$missing" = 0 ]; then
+            echo "🧇 waffle-render: every rendered resource is in the checkout; nothing to render."
+            exit 0
+          fi
+          read -r status source ref commit < <(node -e '
+            const t = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).toolkit || {};
+            console.log([t.status, t.source, t.ref, t.commit].map((v) => (typeof v === "string" && /^[^\s]+$/.test(v) ? v : "-")).join(" "));
+          ' "$LOCK")
+          base="${TRUSTED_TOOLKIT%%#*}"
+          [[ "$base" =~ ^github:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail "doctor.toolkitRef ($TRUSTED_TOOLKIT) is not a github:owner/repo spec, so the toolkit cannot be verified."
+          url="https://github.com/${base#github:}"
+          ws="$PWD"
+          npx_render() (
+            for v in $(compgen -e); do case "$(lc "$v")" in npm_config_*) unset "$v" ;; esac; done
+            scratch="$(mktemp -d)"
+            err="$(mktemp)"
+            : > "$scratch/.npmrc"
+            cd "$scratch"
+            NPM_CONFIG_USERCONFIG="$scratch/.npmrc" NPM_CONFIG_GLOBALCONFIG="$scratch/.npmrc" npx --yes "$@" --cwd "$ws" 2> "$err" && rc=0 || rc=$?
+            cat "$err" >&2
+            # A release older than --untrusted-config rejects the flag as a ref (#789).
+            [ "$rc" = 0 ] || ! grep -q 'takes no refs' "$err" || fail "toolkit $1 predates render --untrusted-config; move the lock to a newer release (wafflestack upgrade) or commit the render."
+            exit "$rc"
+          )
+          if [ "$(lc "$base")" = "$(lc "github:${GITHUB_REPOSITORY}")" ]; then
+            want="${TRUSTED_TOOLKIT#"$base"}"
+            want="${want#\#}"
+            if [[ "$want" =~ ^[0-9a-f]{40}$ ]]; then
+              tip="$want"
+            else
+              tip="$(git ls-remote -- "$url" | awk -v r="${want:-HEAD}" '$2 == r || $2 == "refs/heads/" r {h = $1} $2 == "refs/tags/" r {t = $1} $2 == "refs/tags/" r "^{}" {p = $1} END {print (p != "" ? p : t != "" ? t : h)}')"
+            fi
+            [[ "$tip" =~ ^[0-9a-f]{40}$ ]] || fail "the trusted ref ${want:-HEAD} was not found on $base."
+            npx_render "${base}#${tip}" render --allow-unreleased --untrusted-config
+            from="${base}#${tip} (the toolkit's own repo, at its trusted ref, not the PR head)"
+          elif [ "$status" = release ]; then
+            [ "$source" = - ] || [ "$(lc "$source")" = "$(lc "$base")" ] || fail "the lock's toolkit source $source is not the trusted toolkit $base (doctor.toolkitRef); refusing to fetch it."
+            [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "the lock's toolkit ref $ref is not a vX.Y.Z release tag."
+            tagged="$(git ls-remote --tags -- "$url" | awk -v t="refs/tags/$ref" '$2 == t {q = $1} $2 == t "^{}" {p = $1} END {print (p != "" ? p : q)}')"
+            [[ "$tagged" =~ ^[0-9a-f]{40}$ ]] || fail "release tag $ref was not found on $base."
+            [ "$commit" = - ] || { [[ "$commit" =~ ^[0-9a-f]{7,40}$ ]] && [[ "$tagged" == "$commit"* ]]; } || fail "the lock pins commit $commit, but $base tag $ref is $tagged."
+            npx_render "${base}#${tagged}" render --untrusted-config
+            from="${base}#${ref}"
+          else
+            fail "$missing rendered file(s) are absent and the lock records no release pin (toolkit status: $status). Render from a toolkit release (wafflestack upgrade) and commit the lock, or commit the render."
+          fi
+          git diff --name-only -z | xargs -0 -r git checkout --
+          exclude="$(git rev-parse --git-path info/exclude)"
+          mkdir -p "$(dirname "$exclude")"
+          git ls-files --others --exclude-standard | sed 's#^#/#' >> "$exclude"
+          echo "🧇 waffle-render: rendered $missing missing file(s) from ${from}." | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
       - name: Dispatch harness (enrich)
         id: harness
         uses: anthropics/claude-code-action@6c0083bb7289c31716797a039b6367b3079cc46e # v1.0.162
@@ -234,6 +303,75 @@ jobs:
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$BODY"
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Lock-only repos commit waffle.yaml + the lock, not the render: rebuild what this job reads (#615).
+      # Inline, npx outside the checkout, --untrusted-config: no PR-head script, .npmrc or stack check runs.
+      - name: Render missing wafflestack resources
+        id: waffle-render
+        env:
+          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.19.0'
+        run: |
+          set -euo pipefail
+          fail() { echo "::error title=waffle-render::$*"; exit 1; }
+          lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+          LOCK=.waffle/waffle.lock.json
+          [ -f "$LOCK" ] || fail "$LOCK is missing; commit it so CI can reproduce the wafflestack render."
+          missing="$(node -e '
+            const fs = require("fs");
+            const l = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const keys = [...Object.keys(l.files || {}), ...Object.keys(l.settings || {})].map((k) => k.replace(/#.*$/, ""));
+            console.log([...new Set(keys)].filter((k) => /^\.claude\//.test(k) && !fs.existsSync(k)).length);
+          ' "$LOCK")"
+          if [ "$missing" = 0 ]; then
+            echo "🧇 waffle-render: every rendered resource is in the checkout; nothing to render."
+            exit 0
+          fi
+          read -r status source ref commit < <(node -e '
+            const t = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).toolkit || {};
+            console.log([t.status, t.source, t.ref, t.commit].map((v) => (typeof v === "string" && /^[^\s]+$/.test(v) ? v : "-")).join(" "));
+          ' "$LOCK")
+          base="${TRUSTED_TOOLKIT%%#*}"
+          [[ "$base" =~ ^github:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail "doctor.toolkitRef ($TRUSTED_TOOLKIT) is not a github:owner/repo spec, so the toolkit cannot be verified."
+          url="https://github.com/${base#github:}"
+          ws="$PWD"
+          npx_render() (
+            for v in $(compgen -e); do case "$(lc "$v")" in npm_config_*) unset "$v" ;; esac; done
+            scratch="$(mktemp -d)"
+            err="$(mktemp)"
+            : > "$scratch/.npmrc"
+            cd "$scratch"
+            NPM_CONFIG_USERCONFIG="$scratch/.npmrc" NPM_CONFIG_GLOBALCONFIG="$scratch/.npmrc" npx --yes "$@" --cwd "$ws" 2> "$err" && rc=0 || rc=$?
+            cat "$err" >&2
+            # A release older than --untrusted-config rejects the flag as a ref (#789).
+            [ "$rc" = 0 ] || ! grep -q 'takes no refs' "$err" || fail "toolkit $1 predates render --untrusted-config; move the lock to a newer release (wafflestack upgrade) or commit the render."
+            exit "$rc"
+          )
+          if [ "$(lc "$base")" = "$(lc "github:${GITHUB_REPOSITORY}")" ]; then
+            want="${TRUSTED_TOOLKIT#"$base"}"
+            want="${want#\#}"
+            if [[ "$want" =~ ^[0-9a-f]{40}$ ]]; then
+              tip="$want"
+            else
+              tip="$(git ls-remote -- "$url" | awk -v r="${want:-HEAD}" '$2 == r || $2 == "refs/heads/" r {h = $1} $2 == "refs/tags/" r {t = $1} $2 == "refs/tags/" r "^{}" {p = $1} END {print (p != "" ? p : t != "" ? t : h)}')"
+            fi
+            [[ "$tip" =~ ^[0-9a-f]{40}$ ]] || fail "the trusted ref ${want:-HEAD} was not found on $base."
+            npx_render "${base}#${tip}" render --allow-unreleased --untrusted-config
+            from="${base}#${tip} (the toolkit's own repo, at its trusted ref, not the PR head)"
+          elif [ "$status" = release ]; then
+            [ "$source" = - ] || [ "$(lc "$source")" = "$(lc "$base")" ] || fail "the lock's toolkit source $source is not the trusted toolkit $base (doctor.toolkitRef); refusing to fetch it."
+            [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "the lock's toolkit ref $ref is not a vX.Y.Z release tag."
+            tagged="$(git ls-remote --tags -- "$url" | awk -v t="refs/tags/$ref" '$2 == t {q = $1} $2 == t "^{}" {p = $1} END {print (p != "" ? p : q)}')"
+            [[ "$tagged" =~ ^[0-9a-f]{40}$ ]] || fail "release tag $ref was not found on $base."
+            [ "$commit" = - ] || { [[ "$commit" =~ ^[0-9a-f]{7,40}$ ]] && [[ "$tagged" == "$commit"* ]]; } || fail "the lock pins commit $commit, but $base tag $ref is $tagged."
+            npx_render "${base}#${tagged}" render --untrusted-config
+            from="${base}#${ref}"
+          else
+            fail "$missing rendered file(s) are absent and the lock records no release pin (toolkit status: $status). Render from a toolkit release (wafflestack upgrade) and commit the lock, or commit the render."
+          fi
+          git diff --name-only -z | xargs -0 -r git checkout --
+          exclude="$(git rev-parse --git-path info/exclude)"
+          mkdir -p "$(dirname "$exclude")"
+          git ls-files --others --exclude-standard | sed 's#^#/#' >> "$exclude"
+          echo "🧇 waffle-render: rendered $missing missing file(s) from ${from}." | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
       # Deterministic bootstrap BEFORE the paid harness runs (implement only): doing the install
       # here keeps the harness allowlist free of any install/network permission.
       - name: Install project dependencies

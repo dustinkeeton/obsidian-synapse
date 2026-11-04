@@ -16,7 +16,7 @@ build locally.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.17.2 doctor
+npx --yes github:dustinkeeton/wafflestack#v0.19.0 doctor
 ```
 
 Pass `--allow-missing` through when `$ARGUMENTS` asks (or when diagnosing a repo that
@@ -38,7 +38,7 @@ touched. Reach for it when you suspect a change was made to `.waffle/waffle.yaml
 `.waffle/extensions/`, or `stacks/**` and never applied:
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.17.2 doctor --verify-render
+npx --yes github:dustinkeeton/wafflestack#v0.19.0 doctor --verify-render
 ```
 
 It also composes with `--allow-missing` to give a repo that commits **only** the lock a real
@@ -58,7 +58,8 @@ gate — nothing is on disk to compare, so the render is reproduced and checked 
   restore) or the repo intentionally gitignores that render (then `--allow-missing` is the
   right posture, matching the CI workflow's `doctor.flags`).
 - **`absent (generated doc, optional): <path>`** — a generated `.waffle/` overview doc
-  (`CHEATSHEET.md`, `TEAM.md`, their HTML, `AVATARS.md`, `avatars/*.svg`) isn't on disk.
+  (`CHEATSHEET.md`, `TEAM.md`, their HTML, `AVATARS.md`, `avatars/*.svg`, `waffle.reference.yaml`)
+  isn't on disk.
   Informational only: that class is presence-optional, so a repo that gitignores it passes
   plain `doctor` with no flag. A *present* copy is still hash-checked, so a hand-edit to one
   reads as `modified:` above.
@@ -78,11 +79,21 @@ gate — nothing is on disk to compare, so the render is reproduced and checked 
   *not* mean the render is current — only that the tree matches the lock. Add `--verify-render`
   to also confirm both still match the config.
 - **version-skew note** — doctor mentions when the lock was written by a different toolkit
-  version than the one that just ran. That is informational. Since #469 `github:dustinkeeton/wafflestack#v0.17.2`
+  version than the one that just ran. That is informational. Since #469 `github:dustinkeeton/wafflestack#v0.19.0`
   defaults to the release that rendered your lock, so the two agree unless you overrode the key
   (to a fork, an older tag, or an unpinned ref) or the rendered skill is itself stale — re-render
   with **`/waffle-render`** to bring them back together, or run **`/waffle-upgrade`** to move
   forward deliberately.
+- **`a newer toolkit release exists: vX.Y.Z — this CLI is A.B.C`** — informational, never a
+  failure, and distinct from version skew: skew compares the lock with the CLI, this compares the
+  CLI with the newest release. The answer is cached for a day and skipped under `--offline`, so it
+  may lag a fresh tag. To move, run **`/waffle-upgrade`** or the command doctor printed under it.
+- **`mod <name>@<toolkit> is installed at A.B.C (<scope> scope) but this toolkit ships X.Y.Z`** —
+  informational, never a failure (#730). Claude Code is still loading an old copy of the mod. Run
+  the `claude plugin update` command doctor printed (from this repo for `project`/`local` scope),
+  then `/reload-plugins` or restart the session. If the note says *this CLI is unreleased* and
+  comes back after the update, the pinned release has no newer copy yet; it clears at the next
+  release, so do not re-run the update.
 - **toolkit provenance note** — doctor names *which toolkit* produced the render, read from the
   lock's `toolkit` block (its ref and commit SHA, not just a version number). **Every form of this
   note is a warning: none of them fails the check.** Read it as the explanation for a red

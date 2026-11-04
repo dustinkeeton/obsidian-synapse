@@ -16,8 +16,9 @@
       "source": {
         "source": "github",
         "repo": "dustinkeeton/wafflestack",
-        "ref": "v0.17.2"
-      }
+        "ref": "v0.19.0"
+      },
+      "autoUpdate": true
     }
   }
 }

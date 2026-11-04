@@ -62,7 +62,7 @@ rendered file (the `doctor` drift gate reverts it).
 
 `waffle:needs-inference` is the lifecycle label: it marks an issue as awaiting AI fleshing-out, and is **removed** once the issue has been enriched.
 
-`waffle:reassess` is a **human-owned hold**: it marks an issue as needing re-evaluation/reconfirmation before further action, and automation (delegate, autopilot, the label-hook implement path) skips issues carrying it. Enriching such an issue is fine — enrichment is the reconsideration — but **never add or remove** the label yourself: only the human who is reconfirming clears it.
+`waffle:reassess` is a **human-owned hold**: it marks an issue as needing re-evaluation/reconfirmation before further action, and automation (delegate, autopilot, the label-hook implement path) skips issues carrying it. Enriching such an issue is fine — enrichment is the reconsideration — but **never add or remove** the label yourself: only the human who is reconfirming clears it. The one carve-out is upstream: `/waffle-report` applies the hold when it files a consumer report into the toolkit's tracker — its entry point — and nothing but the human removes it.
 
 ## Plan first, then act
 
