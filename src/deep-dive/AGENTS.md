@@ -100,9 +100,12 @@ deepDive(file)  [private, called by command]
     --> selectDepth(app, defaultDepth)  [DepthSelectorModal]
   Phase 2b: User confirmation
   Phase 3: Recursive generation (BFS queue, checkpointed)
-    --> checkpointManager.create(module: 'deep-dive', items: root topics)
+    --> run.pending = { tasks: DeepDiveTask[] (one per new root topic), processedCount: 0 }; saveRun(run)
+    --> checkpointManager.create(module: 'deep-dive', items: root topics, metadata: { runId, rootNotePath })
     --> addDeferredTask('refresh-sidebar-view')
-    for each topic in BFS queue:
+    --> runGeneration(rootFile, rootContent, run, checkpointId)   [shared with resumeFromCheckpoint]
+    --> watchMobilePause(): Platform.isMobile only; hidden -> visible during the loop -> info 'Deep dive paused while Obsidian was in the background — resuming' (listener removed in finally)
+    for each task in run.pending.tasks (source = root note, or parent proposal via parentProposalId; rejected/missing parent -> task skipped):
       --> aiOpts = trackAiCache(cacheUse)   [one CacheUse per proposal, #527]
       --> NoteGenerator.generateContent(topic, parentTitle, parentContent, aiOpts)  [AI]
       --> buildProposedPath(title, rootFile, parentProposedPath, aiOpts)   [auto-organize mode only: AI]
@@ -110,18 +113,19 @@ deepDive(file)  [private, called by command]
       --> scoreQuality({title, childTopics, wordCount, depth, ancestors})
       --> DeepDiveStore.saveProposal()
       --> checkpointManager.completeItem(checkpoint, 'topic-<title>')
-      --> if quality >= threshold && depth+1 < maxDepth: enqueue children
-    --> DeepDiveStore.saveRun()
+      --> if quality >= threshold && depth+1 < maxDepth: enqueue children (new topics only)
+      --> DeepDiveStore.saveRun(run)   [persists the remaining queue after every proposal]
+    --> delete run.pending; DeepDiveStore.saveRun()
     --> on cancel: checkpointManager.discard()
     --> on success: checkpointManager.complete(), dispatch deferred tasks
     --> on success: genOp.finish(withCacheReport(`Generated N proposals (depthSummary)`, cacheUses, 'proposal'), reviewAction({generated, shouldAutoAccept, openProposalView}))  [Review button only if generated && !shouldAutoAccept() (#366); opens via onOpenProposalView]
-    --> on error: checkpointManager.discard()
+    --> on error: run stays 'in-progress' with run.pending; checkpoint stays ACTIVE (resumable); genOp.error('Deep dive interrupted -- ...')
     --> maybeAutoAcceptRun(run.proposalIds)  [if shouldAutoAccept()]
 
 resumeFromCheckpoint(checkpoint)
-  --> Deep dive cannot directly resume (recursive BFS state not serializable)
-  --> Discards checkpoint, notifies user to re-run on source note
-  --> Completed proposals from partial run are already saved
+  --> store.loadRun(checkpoint.metadata.runId); re-read root note
+  --> run.pending present + root note readable: runGeneration(...) continues the queue under the same checkpoint
+  --> otherwise (pre-resume checkpoint, root note gone): info Notice, checkpointManager.discard()
 
 acceptProposal(id, options?)                            [public, index.ts:145]
   --> DeepDiveStore.loadProposal(id)  [null -> "Proposal not found"]
@@ -256,7 +260,7 @@ Out: Nothing consumed by other feature modules. `modules/registry.ts:111-116` co
 | Depth modal dismissed / user declines confirm | info Notice "Deep dive cancelled"; abort (index.ts:305, index.ts:316) |
 | Child topic extraction throws (per-node) | caught; `childTopics = []`, score from content alone, recursion stops for that branch (index.ts:438) |
 | User cancels mid-generation (`genOp.cancelled`) | run.status='cancelled', `checkpointManager.discard`, info Notice; partial proposals stay saved (index.ts:507-513) |
-| Generation loop throws | run.status='cancelled', `checkpointManager.discard`, `genOp.error(...)` (index.ts:540-542) |
+| Generation loop throws (e.g. iOS backgrounding drops the connection after `safeRequest`'s retries) | run stays `in-progress` with `run.pending`, checkpoint kept active, `genOp.error('Deep dive interrupted -- ...')`; resume via `resumeFromCheckpoint` |
 | `acceptProposal` on missing proposal | info Notice "Proposal not found"; no-op BEFORE taking the queue slot (index.ts:147-148) |
 | `applyAccept` on non-pending proposal | silent no-op (double-accept guard, re-checked under the slot) (index.ts:160) |
 | `applyAccept` write failure | `notifyError`, then rethrows `Accept proposal failed: <msg>`; the `noteQueue.run` rejection propagates to the caller and still releases the slot (index.ts:195) |
@@ -267,7 +271,7 @@ Out: Nothing consumed by other feature modules. `modules/registry.ts:111-116` co
 - The double-acceptance guard lives in `applyAccept`, not `acceptProposal`: the proposal is re-loaded inside the queue slot and the call no-ops if `proposal.status !== 'pending'`, so a pre-wait snapshot can never authorize a second note creation (index.ts:160).
 - `rejectProposal` cascades to all child proposals (`DeepDiveStore.cascadeReject`).
 - Checkpoint item IDs use the stable format `'topic-<title>'` (C2) so completed items survive restart.
-- Deep-dive checkpoint cannot be resumed via BFS reconstruction — `resumeFromCheckpoint` discards the checkpoint and prompts user to re-run.
+- Resume state lives in `DeepDiveRun.pending` (`types.ts`), not checkpoint metadata; tasks reference the parent proposal by id instead of copying its content.
 - Auto-accept runs AFTER the full generation loop completes, in creation order (parents before children) so navigation resolves correctly.
 - Syllabus note path: `syllabusPath(rootNotePath, deepDive.noteOutputFolder)` — trashed (not hard-deleted) if all proposals in a run are rejected.
 - `onNoteAccepted` and `onOrganizeRequested` fire even under `silent: true` (batch auto-accept); they are the intended acyclic follow-on chain. They fire from inside `applyAccept` while it still holds `proposedPath`'s queue slot, but `main.ts` dispatches both through `fireAndForget` (never awaited), so they simply enqueue behind the accept and read the note it just wrote (#483).
