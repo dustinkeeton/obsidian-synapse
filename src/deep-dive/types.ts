@@ -79,6 +79,22 @@ export interface DeepDiveRun {
 	};
 	createdAt: string;
 	status: DeepDiveRunStatus;
+	/** Unfinished generation work, kept so an interrupted run can resume from its checkpoint. */
+	pending?: DeepDivePendingWork;
+}
+
+/** One topic still to generate; its source is the root note, or the parent proposal when set. */
+export interface DeepDiveTask {
+	topic: ExtractedTopic;
+	depth: number;
+	ancestorTopics: string[];
+	parentProposalId?: string;
+}
+
+/** Breadth-first generation queue persisted after every generated proposal. */
+export interface DeepDivePendingWork {
+	tasks: DeepDiveTask[];
+	processedCount: number;
 }
 
 /** Existing-folder suggestion for a topic title from the organize engine; wired by the module registry so deep-dive never imports organize. */

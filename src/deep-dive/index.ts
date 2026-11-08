@@ -1,4 +1,4 @@
-import { Plugin, TFile, normalizePath } from 'obsidian';
+import { Platform, Plugin, TFile, normalizePath } from 'obsidian';
 import { extractUrls } from '../shared';
 import type { SourceContext } from '../shared';
 import { SynapseSettings, DeepDiveNestingMode } from '../settings';
@@ -26,9 +26,19 @@ import { TopicAnalyzer } from './topic-analyzer';
 import type {
 	DeepDiveProposal,
 	DeepDiveRun,
+	DeepDiveTask,
 	ExtractedTopic,
 	SuggestDirectory,
 } from './types';
+
+const DEEP_DIVE_RESUMING_MESSAGE = 'Deep dive paused while Obsidian was in the background — resuming';
+
+interface TaskSource {
+	content: string;
+	title: string;
+	path: string;
+	parentProposedPath?: string;
+}
 
 export type {
 	DeepDiveProposal,
@@ -118,18 +128,20 @@ export class DeepDiveModule implements FeatureModule {
 		return this.store.loadPendingProposals();
 	}
 
-	/**
-	 * Resume a deep-dive from a checkpoint (C1).
-	 * The remaining items cannot be directly resumed because deep-dive
-	 * uses a recursive topic-extraction queue. Instead, we discard the
-	 * checkpoint and notify the user to re-run the deep dive.
-	 */
+	/** Resume an interrupted deep-dive from its persisted generation queue (C1). */
 	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
-		this.notifications.info(
-			`Deep dive checkpoint has ${checkpoint.remainingItems.length} remaining items. ` +
-			`Completed items are already saved. Please re-run deep dive on the source note to continue.`
-		);
-		await this.checkpointManager.discard(checkpoint.id);
+		const runId = checkpoint.metadata.runId;
+		const run = typeof runId === 'string' ? await this.store.loadRun(runId) : null;
+		const rootFile = run ? this.plugin.app.vault.getAbstractFileByPath(run.rootNotePath) : null;
+		const rootContent = rootFile instanceof TFile ? await readNote(this.plugin.app, rootFile.path) : null;
+		if (!run?.pending || !(rootFile instanceof TFile) || !rootContent) {
+			this.notifications.info(
+				'This deep dive cannot be resumed. Completed proposals are already saved; re-run deep dive on the source note to continue.'
+			);
+			await this.checkpointManager.discard(checkpoint.id);
+			return;
+		}
+		await this.runGeneration(rootFile, rootContent, run, checkpoint.id);
 	}
 
 	/**
@@ -328,28 +340,20 @@ export class DeepDiveModule implements FeatureModule {
 			createdAt: new Date().toISOString(),
 			status: 'in-progress',
 		};
+		const tasks: DeepDiveTask[] = newTopics.map(topic => ({
+			topic,
+			depth: 0,
+			ancestorTopics: [file.basename],
+		}));
+		run.pending = { tasks, processedCount: 0 };
+		await this.store.saveRun(run);
 
-		const genOp = this.notifications.startOperation(
-			'Generating deep dive',
-			'deep-dive-generate'
-		);
-
-		// Create checkpoint for resumability
-		// Use topic title as the stable ID (C2) -- titles are unique within a run
-		const workItems: CheckpointWorkItem[] = rootTopics
-			.filter(t => !t.existsInVault)
-			.map((topic) => ({
-				id: `topic-${topic.title}`,
-				label: topic.title,
-				payload: {
-					content,
-					title: file.basename,
-					path: file.path,
-					topic,
-					depth: 0,
-					ancestorTopics: [file.basename],
-				},
-			}));
+		// Topic title is the stable item ID (C2) -- titles are unique within a run
+		const workItems: CheckpointWorkItem[] = newTopics.map(topic => ({
+			id: `topic-${topic.title}`,
+			label: topic.title,
+			payload: { path: file.path, topic, depth: 0 },
+		}));
 
 		const checkpoint = await this.checkpointManager.create({
 			module: 'deep-dive',
@@ -365,156 +369,121 @@ export class DeepDiveModule implements FeatureModule {
 			data: {},
 		});
 
+		await this.runGeneration(file, content, run, checkpoint.id);
+	}
+
+	/**
+	 * Breadth-first generation over `run.pending`, persisted after every proposal.
+	 * A failure (e.g. the connection dropping when iOS suspends the app) keeps the
+	 * checkpoint active so the run resumes where it stopped.
+	 */
+	private async runGeneration(rootFile: TFile, rootContent: string, run: DeepDiveRun, checkpointId: string): Promise<void> {
+		const settings = this.getSettings().deepDive;
+		const pending = run.pending ?? { tasks: [], processedCount: 0 };
+		run.pending = pending;
+		const genOp = this.notifications.startOperation('Generating deep dive', 'deep-dive-generate');
+		const sources = new Map<string, TaskSource>();
+		const cacheUses: CacheUse[] = [];
+		const stopPauseNotice = this.watchMobilePause();
+
 		try {
-			// Queue: items to process at each depth
-			type QueueItem = {
-				content: string;
-				title: string;
-				path: string;
-				topics: ExtractedTopic[];
-				depth: number;
-				ancestorTopics: string[];
-				parentProposalId?: string;
-				/** The proposed path of the parent note (used for nested folder placement). */
-				parentProposedPath?: string;
-			};
-
-			const queue: QueueItem[] = [{
-				content,
-				title: file.basename,
-				path: file.path,
-				topics: rootTopics,
-				depth: 0,
-				ancestorTopics: [file.basename],
-			}];
-
-			let processedCount = 0;
-			const cacheUses: CacheUse[] = [];
-
-			while (queue.length > 0 && processedCount < settings.maxNotesPerRun) {
+			while (pending.tasks.length > 0 && pending.processedCount < settings.maxNotesPerRun) {
 				if (genOp.cancelled) break;
 
-				const item = queue.shift()!;
-				const newTopicsForItem = item.topics.filter(t => !t.existsInVault);
+				const task = pending.tasks[0];
+				const source = await this.resolveTaskSource(task, rootFile, rootContent, sources);
+				if (!source) {
+					pending.tasks.shift();
+					continue;
+				}
+				genOp.progress(pending.processedCount + 1, settings.maxNotesPerRun, 'Generating deep dive');
 
-				for (const topic of newTopicsForItem) {
-					if (genOp.cancelled || processedCount >= settings.maxNotesPerRun) break;
+				const { topic } = task;
+				const cacheUse: CacheUse = {};
+				const aiOpts = trackAiCache(cacheUse);
+				const noteContent = await this.generator.generateContent(topic, source.title, source.content, aiOpts);
+				const proposedPath = await this.buildProposedPath(topic.title, rootFile, source.parentProposedPath, aiOpts);
 
-					processedCount++;
-					genOp.progress(processedCount, settings.maxNotesPerRun, 'Generating deep dive');
-
-					// Generate content for this topic
-					const cacheUse: CacheUse = {};
-					const aiOpts = trackAiCache(cacheUse);
-					const noteContent = await this.generator.generateContent(
-						topic,
-						item.title,
-						item.content,
-						aiOpts
-					);
-
-					const proposedPath = await this.buildProposedPath(
-					topic.title,
-					file,
-					item.parentProposedPath,
-					aiOpts
-				);
-
-					// Score quality using child topics (extracted from generated content)
-					const childAncestors = [...item.ancestorTopics, topic.title];
-					let childTopics: ExtractedTopic[] = [];
-
-					// Only extract child topics if we haven't reached max depth
-					if (item.depth + 1 < run.maxDepth) {
-						try {
-							childTopics = await this.analyzer.extractTopics(
-								noteContent,
-								topic.title,
-								childAncestors,
-								aiOpts
-							);
-						} catch {
-							// If child extraction fails, score based on content alone
-							childTopics = [];
-						}
-					}
-
-					const quality = scoreQuality({
-						title: topic.title,
-						childTopicTitles: childTopics.map(t => t.title),
-						wordCount: wordCount(noteContent),
-						depth: item.depth,
-						maxDepth: run.maxDepth,
-						ancestorTopics: item.ancestorTopics,
-					});
-
-					// Create proposal
-					const proposal: DeepDiveProposal = {
-						id: generateId(),
-						runId: run.id,
-						sourceNotePath: item.path,
-						topic,
-						proposedPath,
-						proposedContent: noteContent,
-						depth: item.depth,
-						qualityScore: quality,
-						childProposalIds: [], // Will be populated by children
-						createdAt: new Date().toISOString(),
-						status: 'pending',
-					};
-
-					await this.store.saveProposal(proposal);
-					cacheUses.push(cacheUse);
-					run.proposalIds.push(proposal.id);
-					run.stats.totalProposals++;
-					run.stats.byDepth[item.depth] = (run.stats.byDepth[item.depth] || 0) + 1;
-
-					// Link child to parent
-					if (item.parentProposalId) {
-						const parent = await this.store.loadProposal(item.parentProposalId);
-						if (parent) {
-							parent.childProposalIds.push(proposal.id);
-							await this.store.saveProposal(parent);
-						}
-					}
-
-					// Save checkpoint progress using stable topic-title ID (C2)
-					const itemId = `topic-${topic.title}`;
-					await this.checkpointManager.completeItem(checkpoint.id, itemId);
-
-					// Queue children if quality is above threshold and depth allows
-					if (
-						quality.score >= settings.qualityThreshold &&
-						item.depth + 1 < run.maxDepth &&
-						childTopics.length > 0
-					) {
-						queue.push({
-							content: noteContent,
-							title: topic.title,
-							path: proposedPath,
-							topics: childTopics,
-							depth: item.depth + 1,
-							ancestorTopics: childAncestors,
-							parentProposalId: proposal.id,
-							parentProposedPath: proposedPath,
-						});
-					} else if (quality.score < settings.qualityThreshold) {
-						run.stats.earlyTerminations++;
+				// Score quality using child topics (extracted from generated content)
+				const childAncestors = [...task.ancestorTopics, topic.title];
+				let childTopics: ExtractedTopic[] = [];
+				if (task.depth + 1 < run.maxDepth) {
+					try {
+						childTopics = await this.analyzer.extractTopics(noteContent, topic.title, childAncestors, aiOpts);
+					} catch {
+						childTopics = [];
 					}
 				}
+
+				const quality = scoreQuality({
+					title: topic.title,
+					childTopicTitles: childTopics.map(t => t.title),
+					wordCount: wordCount(noteContent),
+					depth: task.depth,
+					maxDepth: run.maxDepth,
+					ancestorTopics: task.ancestorTopics,
+				});
+
+				const proposal: DeepDiveProposal = {
+					id: generateId(),
+					runId: run.id,
+					sourceNotePath: source.path,
+					topic,
+					proposedPath,
+					proposedContent: noteContent,
+					depth: task.depth,
+					qualityScore: quality,
+					childProposalIds: [],
+					createdAt: new Date().toISOString(),
+					status: 'pending',
+				};
+
+				await this.store.saveProposal(proposal);
+				cacheUses.push(cacheUse);
+				sources.set(proposal.id, { content: noteContent, title: topic.title, path: proposedPath, parentProposedPath: proposedPath });
+				run.proposalIds.push(proposal.id);
+				run.stats.totalProposals++;
+				run.stats.byDepth[task.depth] = (run.stats.byDepth[task.depth] || 0) + 1;
+
+				if (task.parentProposalId) {
+					const parent = await this.store.loadProposal(task.parentProposalId);
+					if (parent) {
+						parent.childProposalIds.push(proposal.id);
+						await this.store.saveProposal(parent);
+					}
+				}
+
+				await this.checkpointManager.completeItem(checkpointId, `topic-${topic.title}`);
+
+				pending.tasks.shift();
+				pending.processedCount++;
+				if (quality.score >= settings.qualityThreshold && task.depth + 1 < run.maxDepth) {
+					for (const child of childTopics.filter(t => !t.existsInVault)) {
+						pending.tasks.push({
+							topic: child,
+							depth: task.depth + 1,
+							ancestorTopics: childAncestors,
+							parentProposalId: proposal.id,
+						});
+					}
+				} else if (quality.score < settings.qualityThreshold) {
+					run.stats.earlyTerminations++;
+				}
+				await this.store.saveRun(run);
 			}
 
 			run.status = genOp.cancelled ? 'cancelled' : 'completed';
+			delete run.pending;
 			await this.store.saveRun(run);
 
 			if (genOp.cancelled) {
 				// Discard checkpoint on user cancellation (C3)
-				await this.checkpointManager.discard(checkpoint.id);
+				await this.checkpointManager.discard(checkpointId);
 				this.notifications.info('Deep dive cancelled');
 			} else {
 				// Mark checkpoint completed and dispatch deferred tasks (I1)
-				const tasks = await this.checkpointManager.complete(checkpoint.id);
-				this.dispatchDeferredTasks(tasks);
+				const deferred = await this.checkpointManager.complete(checkpointId);
+				this.dispatchDeferredTasks(deferred);
 				const depthSummary = Object.entries(run.stats.byDepth)
 					.map(([d, c]) => `depth ${d}: ${c}`)
 					.join(', ');
@@ -537,13 +506,54 @@ export class DeepDiveModule implements FeatureModule {
 
 			await this.onViewRefreshNeeded?.();
 		} catch (error) {
-			run.status = 'cancelled';
-			await this.store.saveRun(run);
-			// Discard checkpoint on error (M7)
-			await this.checkpointManager.discard(checkpoint.id);
+			// Keep the run and checkpoint resumable; generated proposals stay saved.
+			try {
+				await this.store.saveRun(run);
+			} catch {
+				// The last per-proposal save still holds the queue up to the previous step
+			}
 			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Deep dive failed -- ${msg}`);
+			genOp.error(`Deep dive interrupted -- ${msg}. Resume it from "Manage interrupted operations".`);
+			await this.onViewRefreshNeeded?.();
+		} finally {
+			stopPauseNotice();
 		}
+	}
+
+	/** On mobile the OS suspends a backgrounded app, so tell the user the run is picking back up when they return. */
+	private watchMobilePause(): () => void {
+		const doc = typeof activeDocument === 'undefined' ? undefined : activeDocument;
+		if (!Platform.isMobile || !doc) return () => {};
+		let wasHidden = false;
+		const onChange = () => {
+			if (doc.visibilityState === 'hidden') {
+				wasHidden = true;
+			} else if (wasHidden) {
+				wasHidden = false;
+				this.notifications.info(DEEP_DIVE_RESUMING_MESSAGE);
+			}
+		};
+		doc.addEventListener('visibilitychange', onChange);
+		return () => doc.removeEventListener('visibilitychange', onChange);
+	}
+
+	/** Source note for a task: the root note, or its parent proposal (null when that proposal is gone). */
+	private async resolveTaskSource(
+		task: DeepDiveTask,
+		rootFile: TFile,
+		rootContent: string,
+		sources: Map<string, TaskSource>
+	): Promise<TaskSource | null> {
+		if (!task.parentProposalId) {
+			return { content: rootContent, title: rootFile.basename, path: rootFile.path };
+		}
+		const known = sources.get(task.parentProposalId);
+		if (known) return known;
+		const parent = await this.store.loadProposal(task.parentProposalId);
+		if (!parent || parent.status === 'rejected') return null;
+		const source = { content: parent.proposedContent, title: parent.topic.title, path: parent.proposedPath, parentProposedPath: parent.proposedPath };
+		sources.set(parent.id, source);
+		return source;
 	}
 
 	/**

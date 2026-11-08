@@ -38,7 +38,7 @@ export { redactSecrets }                              // re-export of redact.ts 
 
 // safe-request.ts (#558; extracted from ai-client.ts, shared by AIClient and DecisionClient)
 class ApiRequestError extends Error { readonly status: number }   // safe-request.ts:9; message = `API error (<status>): <redactSecrets(detail)>`
-function safeRequest(options: RequestUrlParam, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<RequestUrlResponse>   // safe-request.ts:17; requestUrl({...options, throw:false}) raced against the timeout (120s); throws ApiRequestError on status >= 400
+function safeRequest(options: RequestUrlParam, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<RequestUrlResponse>   // safe-request.ts:17; requestUrl({...options, throw:false}) raced against the timeout (120s); throws ApiRequestError on status >= 400; a requestUrl rejection (dropped connection) retries after NETWORK_RETRY_DELAYS_MS [1s, 3s], first waiting for activeDocument to be visible again; a RequestTimeoutError retries only if the page was hidden during the attempt; HTTP errors never retry here
 
 // decision-client.ts (#558) — System 1 lane over TypeSafe's POST /v1/systemone; NOT an AIProvider
 const SYSTEM_ONE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'   // :9
@@ -590,7 +590,7 @@ function scoreLyricsContent(content: string): number
 
 | File | Exports | Purpose |
 |------|---------|---------|
-| `safe-request.ts` | `safeRequest`, `ApiRequestError`, `DEFAULT_REQUEST_TIMEOUT_MS`, `extractErrorMessage` | `requestUrl` with `throw:false`, a 120s timeout, and a redacted typed status error (#558; extracted from `ai-client.ts`). Imports `redact`, `json-utils` |
+| `safe-request.ts` | `safeRequest`, `ApiRequestError`, `RequestTimeoutError`, `DEFAULT_REQUEST_TIMEOUT_MS`, `NETWORK_RETRY_DELAYS_MS`, `extractErrorMessage` | `requestUrl` with `throw:false`, a 120s timeout, a redacted typed status error (#558; extracted from `ai-client.ts`), and foreground-gated retry of dropped connections (`NETWORK_RETRY_DELAYS_MS`, `RequestTimeoutError`). Imports `redact`, `json-utils` |
 | `decision-client.ts` | `DecisionClient`, `DecisionLaneError`, `choice`/`score`/`noul`, `answerConfidence`, `estimateTokens`, `chunkQuestions`, `SYSTEM_ONE_ENDPOINT`, `MAX_CHOICE_OPTIONS`, question/answer types, `DecisionRequestOptions`, `DecisionLaneFailure` | System 1 lane (#558): typed REST client over TypeSafe `/v1/systemone`, budget chunking, 429/529 retry, per-instance LRU cache (max 50) under the AIClient cache rule, redaction on every error path. Imports `safe-request`, `api-utils` (`withRetry`), `json-utils`, `hash-utils`, `redact`; type-only `settings`, `ai-client` |
 | `decision-client.test.ts` | Tests | Builders, chunking + budget error, request shape (Bearer, throw:false), 401/422/429/529/timeout/malformed paths, key redaction, cache hit/bypass/no-cache-on-failure |
 | `confidence-router.ts` | `routeByConfidence`, `partitionByConfidence`, `DecisionLane`, `RoutedDecision`, `ConfidenceRoute`, `ConfidencePartition` | Confidence routing (#558): act on the System 1 answer at or above the floor, otherwise run the generative fallback exactly once (lane off / null / below floor / throw). Imports `redact` |
