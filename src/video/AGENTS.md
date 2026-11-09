@@ -14,14 +14,14 @@ Re-exported from `index.ts` (the module barrel):
 
 ```ts
 class VideoModule {
-  onTranscriptionComplete: ((filePath: string) => void) | null  // index.ts:41
+  onTranscriptionComplete: ((filePath: string, ctx?: SourceContext) => void) | null  // index.ts:41
   urlTranscriber: RoutedUrlTranscriber | null                   // index.ts:49; set by modules/registry.ts so the batch insert uses the tier router (#184)
   constructor(deps: ModuleDeps, audioModule: AudioModule)        // index.ts:51; deps = plugin, getSettings, notifications, checkpointManager, registrar, noteQueue (#483)
   onload(): Promise<void>                                        // index.ts:62
   onunload(): void                                               // index.ts:73
   processUrl(url: string, options?: VideoProcessOptions, parentOp?: { update: (msg: string) => void }): Promise<TranscriptionResult & { videoVaultPath?: string }>  // index.ts:75
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>    // index.ts:155
-  transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>  // index.ts:163; acquires noteFile's queue slot (#483), then delegates
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>    // index.ts:158
+  transcribeAndInsert(noteFile: TFile, embeds: VideoUrlEmbed[]): Promise<void>  // index.ts:166; acquires noteFile's queue slot (#483), then delegates
 }
 ```
 
@@ -52,7 +52,7 @@ type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown'
 
 // Owned by this module
 function findVideoUrls(content: string): VideoUrlEmbed[]   // re-exported via index.ts:28
-function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:378
+function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:382
 
 // Types (re-exported index.ts:17-25)
 interface VideoProcessOptions {
@@ -61,7 +61,7 @@ interface VideoProcessOptions {
   outputPath?: string
   insertMode?: boolean
   timeRange?: TimeRange
-  bypassCache?: boolean          // types.ts:24; forwarded to AudioModule.transcribe as TranscribeOptions.bypassCache (index.ts:138, #527)
+  bypassCache?: boolean          // types.ts:24; forwarded to AudioModule.transcribe as TranscribeOptions.bypassCache (index.ts:140, #527)
 }
 interface RoutedUrlTranscript {  // types.ts:54; structurally compatible with transcription's UrlTranscript, declared here to avoid a video -> transcription import
   text: string
@@ -97,7 +97,7 @@ interface VideoSource {
 Private (index.ts), documented because it is the queue-free core of `transcribeAndInsert`:
 
 ```ts
-private insertTranscriptions(noteFile: TFile, embeds: VideoUrlEmbed[], op: OperationHandle): Promise<void>  // index.ts:182
+private insertTranscriptions(noteFile: TFile, embeds: VideoUrlEmbed[], op: OperationHandle): Promise<void>  // index.ts:185
 ```
 
 Exported by source files but NOT re-exported through `index.ts`:
@@ -141,8 +141,8 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 2a. transcribeAndInsert(noteFile, embeds) -- batch from note scan; the ONLY
    |  note-writing entry point left on this module
    |  isPathExcluded silent skip (#307); acquires noteFile's NoteOperationQueue
-   |  slot (#483, index.ts:174) then delegates to private insertTranscriptions
-   |  (index.ts:182); creates checkpoint; routes each embed through
+   |  slot (#483, index.ts:177) then delegates to private insertTranscriptions
+   |  (index.ts:185); creates checkpoint; routes each embed through
    |  urlTranscriber (the #184 tier router) with a processUrl fallback;
    |  processes in reverse line order; 2s delay between API calls; atomic splice
    |  via vault.process; cancellable via NotificationManager operation
@@ -172,18 +172,22 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
    |  yt-dlp -x --audio-format mp3 (retry once with -f bestaudio/best on soft failure)
    |  Tool paths via sanitizePath(); env via shellEnv(); --ffmpeg-location only when concrete path
    |
-5a. [if timeRange] AudioExtractor.clipAudio(audioPath, startSeconds, endSeconds)
-   |  ffmpeg -ss/-to -vn -acodec libmp3lame; deletes original unclipped audio;
+   |  Steps 6-8 run inside ONE try/finally (index.ts:106-151) whose finally unlinks the
+   |  current temp audio path on every exit path (download failure, range error, clip failure,
+   |  transcription failure, no speech, success)
+   |
+6. downloadVideoToVault() [if video.downloadFolder set]                    index.ts:307
+   |  AudioExtractor.downloadVideo() --> yt-dlp -f mp4/best to OS tmp
+   |  vault.createBinary() with collision-safe path; temp video unlinked in a finally
+   |  (index.ts:329-346), so a failed read/createBinary leaves nothing in os.tmpdir()
+   |
+7. [if timeRange] AudioExtractor.clipAudio(audioPath, startSeconds, endSeconds)
+   |  ffmpeg -ss/-to -vn -acodec libmp3lame; deletes original unclipped audio (index.ts:128);
    |  endSeconds > metadata.duration throws before clipping
    |
-6. downloadVideoToVault() [if video.downloadFolder set]
-   |  AudioExtractor.downloadVideo() --> yt-dlp -f mp4/best to OS tmp
-   |  vault.createBinary() with collision-safe path; deletes temp file
+8. AudioModule.transcribe(audioData.buffer, title + '.mp3', { sourceName: title, update, bypassCache })
    |
-7. AudioModule.transcribe(audioData.buffer, title + '.mp3', { sourceName: title })
-   |  temp audio file deleted afterward
-   |
-8. Result wrapped in callout (calloutForTranscriptionResult + buildCallout);
+9. Result wrapped in callout (calloutForTranscriptionResult + buildCallout);
    optional ![[file.mp4]] embed when video.embedInNote and a video was saved (shared buildMediaEmbedLines, #561)
 ```
 
@@ -206,7 +210,7 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 
 Registered via `registrar.register('check-dependencies', ...)` (index.ts:68); Obsidian prefixes the manifest id with `synapse:`. The handler reports yt-dlp/ffmpeg presence and brew install hints. Transcription palette commands (`transcribe-media`, `transcribe-note-media`) are wired in `main.ts`, not here.
 
-## Settings Keys (VideoSettings, `settings.ts:199`)
+## Settings Keys (VideoSettings, `settings.ts:213`)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -216,7 +220,7 @@ Registered via `registrar.register('check-dependencies', ...)` (index.ts:68); Ob
 | `video.tempFolder` | `string` | `'.synapse/temp'` | Vault folder ensured on load for temp work |
 | `video.downloadFolder` | `string` | `'Media'` | Vault folder to save downloaded videos (empty = do not save) |
 | `video.embedInNote` | `boolean` | `true` | Add `![[video.mp4]]` embed to note when a video is saved |
-| `video.captionsFirst` | `boolean` | `true` | Prefer the YouTube caption tier over download+transcribe (#184; `settings.ts:212`); consumed by `transcription/caption-strategy.ts` `canHandle`, toggle rendered at `settings-section.ts:173` |
+| `video.captionsFirst` | `boolean` | `true` | Prefer the YouTube caption tier over download+transcribe (#184; `settings.ts:226`); consumed by `transcription/caption-strategy.ts` `canHandle`, toggle rendered at `settings-section.ts:173` |
 | `video.frameExtraction.enabled` | `boolean` | `false` | Frame extraction gate (unimplemented) |
 | `video.frameExtraction.intervalSeconds` | `number` | `30` | Seconds between extracted frames |
 | `video.frameExtraction.visionModel` | `string` | `'opus'` | Vision model for frame analysis |
@@ -267,16 +271,18 @@ VideoModule → AudioModule is the one documented cross-feature runtime dependen
 
 ## Invariants / Gotchas
 
-- Batch transcript blocks pass through `stripUnresolvedLinks` before insertion (index.ts:283); `![[downloaded video]]` embeds are untouched (#581).
+- Batch transcript blocks pass through `stripUnresolvedLinks` before insertion (index.ts:286); `![[downloaded video]]` embeds are untouched (#581).
 - Desktop-only: `loadNodeModules()` throws `DesktopOnlyError` off-desktop; VideoModule is constructed only when the registry entry's `platform: () => Platform.isDesktop` predicate passes (`modules/registry.ts`) and may be null. AudioExtractor also asserts desktop at first fs/subprocess access.
 - `FrameExtractor` (`frame-extractor.ts`) is a placeholder: `extractFrames` returns `[]` when disabled, otherwise throws "not yet implemented".
 - `AudioExtractor.concatAudio` re-encodes via the ffmpeg concat filter (handles mixed mp3/wav/m4a/ogg/flac/webm/aac).
 - `--ffmpeg-location` is emitted only when `ffmpegPath` is a concrete path (contains `/` or `\`); a bare name relies on PATH discovery.
 - `downloadVideoToVault` uses `vault.createBinary()` (not the adapter API); collision-safe naming is delegated to `findAvailableVaultPath` (shared) on a `normalizePath`-ed target, appending `-1`, `-2`, ... before the extension.
-- Per-note serialization (#483): `transcribeAndInsert` acquires `noteFile.path` on the shared `NoteOperationQueue` (index.ts:174) with an `onWait` that updates the operation toast (`Waiting for another Synapse operation on <basename>`), then runs private `insertTranscriptions` (index.ts:182). The core must never re-enter the queue — acquire at most once per operation. `processUrl`/`transcribe` paths that only produce text (no note write) stay unqueued; the caller that writes owns the slot.
+- Per-note serialization (#483): `transcribeAndInsert` acquires `noteFile.path` on the shared `NoteOperationQueue` (index.ts:177) with an `onWait` that updates the operation toast (`Waiting for another Synapse operation on <basename>`), then runs private `insertTranscriptions` (index.ts:185). The core must never re-enter the queue — acquire at most once per operation. `processUrl`/`transcribe` paths that only produce text (no note write) stay unqueued; the caller that writes owns the slot.
 
 ## Security
 
 - URLs validated via `sanitizeUrl()` in both `VideoModule.processUrl` and `AudioExtractor` entry points.
 - Tool and file paths validated via `sanitizePath()`; the `checkDependencies` probe also passes the configured tool name through `sanitizePath` before `which` (audio-extractor.ts:585).
+- OS-temp outputs are named `synapse-<audio|video|clipped|combined>-${Date.now()}-${randomToken()}.<ext>` (audio-extractor.ts:206, 311, 333, 351, 375; shared `randomToken`, CSPRNG hex) so a temp path in the shared `os.tmpdir()` is not guessable.
+- Temp files never outlive `processUrl`: the extracted/clipped audio is unlinked in the `finally` at index.ts:149-151 and the downloaded temp video in the `finally` at index.ts:343-346.
 - All subprocess calls use `execFile` with explicit argument arrays — no shell interpolation.

@@ -88,7 +88,19 @@ use" section; this list is the reviewer-facing counterpart.
   navigation API is undocumented, so both call sites feature-detect every member
   and degrade — to a plain "open Settings → Community plugins" notice for the
   update checker, to a no-op for the video-settings reveal — when it is absent.
-  These are the only non-public API touches in `src`.
+
+- **Other non-public API touches, all feature-detected.** Each degrades instead
+  of throwing when the member is absent or reshaped:
+  `app.commands` (`src/views/command-runner.ts`) — the actions sidebar invokes a
+  note command's `editorCallback` directly because `executeCommandById` no-ops
+  editor commands while a sidebar holds focus; absent, it shows a "run it from
+  the command palette" notice.
+  `metadataCache.getBacklinksForFile` (`src/title/backlink-remediation.ts`) —
+  absent, backlink remediation after a title rename is a no-op.
+  `SuggestModal` `chooser.useSelectedItem` (`src/shared/scan-folder-picker-modal.ts`)
+  — routes Shift+Enter through the normal choose path; absent, Shift+Enter does
+  nothing and Enter still works.
+  Together with `app.setting` these are the only non-public API touches in `src`.
 
 ---
 

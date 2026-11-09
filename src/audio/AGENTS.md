@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-11-09
 ---
 
 # Audio Module
@@ -111,7 +111,7 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
 1. User triggers via UnifiedTranscriptionModal or NoteMediaModal (in transcription/)
    |
 2a. transcribeFileToActiveNote(file, timeRange?) -- single file to active note
-   |  Reads binary, clips audio via this.extractor (AudioClipper) if timeRange provided (desktop only); temp files unlinked in finally (index.ts:231-243)
+   |  Reads binary, clips audio via this.extractor (AudioClipper) if timeRange provided (desktop only); temp files unlinked in finally (index.ts:237-243)
    |  Calls transcribe(), builds callout with time-range label, appends to active note
    |
 2b. transcribeAndInsert(noteFile, embeds) -- batch from note scan
@@ -179,27 +179,27 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 
 ## Settings Keys
 
-All under `settings.audio` (interface `AudioSettings`, `settings.ts:177`; defaults `settings.ts:508`):
+All under `settings.audio` (interface `AudioSettings`, `settings.ts:191`; defaults `settings.ts:522`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `enabled` | boolean | `true` | Feature toggle for the audio module |
 | `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'gemini' \| 'local-whisper'` | `'whisper-api'` | Transcription backend (routed in `transcriber.ts:295`) |
-| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey` only when `ai.provider === 'openai'`, `transcriber.ts:312`) |
+| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey` only when `ai.provider === 'openai'`, `transcriber.ts:311-315`) |
 | `deepgramApiKey` | string | `''` | Deepgram API key (no fallback) |
-| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey` only when `ai.provider === 'gemini'`, `transcriber.ts:426`) |
+| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey` only when `ai.provider === 'gemini'`, `transcriber.ts:425-429`) |
 | `transcriptionModel` | string | `'whisper-1'` | Model for the active provider; resolved against `TRANSCRIPTION_MODEL_OPTIONS` (`transcription-models.ts`) |
 | `localWhisperPath` | string | `''` | Reserved for `local-whisper` CLI path (provider not implemented) |
 | `language` | string | `''` | Language hint; empty = auto-detect |
 | `autoFormatLyrics` | boolean | `true` | Auto-detect song transcripts and reformat as structured lyrics (#234) |
-| `postProcessing` | `PostProcessingSettings` | see below | AI transcript cleanup block (`settings.ts:169`) |
+| `postProcessing` | `PostProcessingSettings` | see below | AI transcript cleanup block (`settings.ts:183`) |
 
-`postProcessing` (`PostProcessingSettings`, `settings.ts:169`), consumed by `post-processor.ts`:
+`postProcessing` (`PostProcessingSettings`, `settings.ts:183`), consumed by `post-processor.ts`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `postProcessing.enabled` | boolean | `true` | Master switch; off returns the raw transcript unchanged |
-| `postProcessing.removeFiller` | boolean | `false` | Strip filler words / false starts (opt-in per vault, `settings.ts:523`; #465) |
+| `postProcessing.removeFiller` | boolean | `false` | Strip filler words / false starts (opt-in per vault, `settings.ts:537`; #465) |
 | `postProcessing.addStructure` | boolean | `true` | Add punctuation, paragraph breaks, headers |
 | `postProcessing.extractKeyPoints` | boolean | `false` | Prepend a "Key Points" summary section |
 | `postProcessing.customPrompt` | string | `''` | Extra instruction appended to the cleanup prompt |
@@ -209,7 +209,7 @@ Path exclusion: write paths gate on the centralized `settings.exclusions` (#307)
 ## Time-Range Clipping
 
 When `timeRange` is provided to `transcribeFileToActiveNote()`:
-1. Audio file written to `os.tmpdir()` (`synapse-clip-src-<ts>.mp3`)
+1. Audio file written to `os.tmpdir()` (`synapse-clip-src-<ts>-<randomToken()>.mp3`, index.ts:229; shared `randomToken` = CSPRNG hex, so the temp name is not guessable; the combine path names its inputs `synapse-combine-src-<ts>-<randomToken()>-<i>.<ext>`, index.ts:581)
 2. `this.extractor.clipAudio(tempPath, start, end)` (`AudioClipper`; ffmpeg, desktop only) clips it
 3. Clipped audio data passed to `transcribe()`
 4. Both temp files are unlinked in a `finally` (index.ts:237-243), so a failed write/clip/read never leaks vault audio into the OS temp dir

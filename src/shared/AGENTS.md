@@ -37,8 +37,8 @@ export { redactSecrets }                              // re-export of redact.ts 
 // cache read + coalescing but still refreshes the cache; only successful dispatches are cached.
 
 // safe-request.ts (#558; extracted from ai-client.ts, shared by AIClient and DecisionClient)
-class ApiRequestError extends Error { readonly status: number }   // safe-request.ts:9; message = `API error (<status>): <redactSecrets(detail)>`
-function safeRequest(options: RequestUrlParam, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<RequestUrlResponse>   // safe-request.ts:17; requestUrl({...options, throw:false}) raced against the timeout (120s); throws ApiRequestError on status >= 400; a requestUrl rejection (dropped connection) retries after NETWORK_RETRY_DELAYS_MS [1s, 3s], first waiting for activeDocument to be visible again; a RequestTimeoutError retries only if the page was hidden during the attempt; HTTP errors never retry here
+class ApiRequestError extends Error { readonly status: number }   // safe-request.ts:12; message = `API error (<status>): <redactSecrets(detail)>`
+function safeRequest(options: RequestUrlParam, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<RequestUrlResponse>   // safe-request.ts:32; requestUrl({...options, throw:false}) raced against the timeout (120s); throws ApiRequestError on status >= 400; a requestUrl rejection (dropped connection) retries after NETWORK_RETRY_DELAYS_MS [1s, 3s], first waiting for activeDocument to be visible again; a RequestTimeoutError retries only if the page was hidden during the attempt; HTTP errors never retry here
 
 // decision-client.ts (#558) — System 1 lane over TypeSafe's POST /v1/systemone; NOT an AIProvider
 const SYSTEM_ONE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'   // :9
@@ -121,11 +121,11 @@ class NotificationManager {
   success(message: string, duration?: number, action?: NoticeAction): void
   error(message: string): void   // persistent, copy-on-dismiss; redacts via redactSecrets
   notifyError(context: string, error: unknown): void   // error object + context label; routes through error()/redactSecrets
-  dispose(): void   // also inProgress.clear() (:180)
+  dispose(): void   // notifications.ts:183; also inProgress.clear() (notifications.ts:190)
 }
 
 // in-progress-registry.ts (#577)
-type InProgressKind = 'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem' | 'illustrate'   // :4; sanctioned duplicate of views ProposalKind (shared cannot import views); two-way guard views/types.ts:55-58
+type InProgressKind = 'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem' | 'illustrate'   // :4; sanctioned duplicate of views ProposalKind (shared cannot import views); two-way guard views/types.ts:56-59
 interface InProgressMeta { kind: InProgressKind; target?: string }   // :14; target = note path or folder label
 interface InProgressEntry { id: string; kind: InProgressKind; label: string; target?: string; current?: number; total?: number; startedAt: number; cancellable: boolean }   // :20
 type InProgressListener = (entries: readonly InProgressEntry[]) => void   // :31
@@ -297,7 +297,7 @@ function scanScopeLabel(target?: ScanTarget): string | undefined   // undefined 
 
 // scan-folder-picker-modal.ts (#589)
 interface ScanFolderSuggestion { folder: TFolder; recursive: boolean }
-class ScanFolderPickerModal extends SuggestModal<ScanFolderSuggestion> {   // row 2 = root top-level only; Shift+Enter = this folder only (via internal chooser.useSelectedItem)
+class ScanFolderPickerModal extends SuggestModal<ScanFolderSuggestion> {   // scan-folder-picker-modal.ts:19; row 2 = root top-level only; Shift+Enter = this folder only (via the undocumented SuggestModal internal chooser.useSelectedItem, optional-called at :30 — a no-op when the internal is absent)
   constructor(app: App, onChoose: (scope: ScanScope) => void)
 }
 // ROOT_LABEL = '/ (vault root)', ROOT_TOP_LEVEL_LABEL = '/ (vault root — top level only)': module exports only (not on barrel)
@@ -319,8 +319,9 @@ function sectionMatchesDefaults(settings: SynapseSettings, key: string): boolean
 function applyResetAll(current: SynapseSettings): SynapseSettings               // :193; fresh defaults, preserves settingsVersion/onboarding.hasSeenWelcome/ui.collapsedSections/updates.lastUpdateCheck+dismissedUpdateVersion
 
 // id-utils.ts
-function generateId(): string                    // timestamp(base36) + random(base36)
-function isValidCheckpointId(id: string): boolean // /^[a-z0-9]+$/
+function generateId(): string                    // id-utils.ts:8; timestamp(base36) + random(base36); Math.random, NOT unguessable
+function randomToken(bytes = 8): string          // id-utils.ts:16; hex of `bytes` CSPRNG bytes (window.crypto.getRandomValues) -> 2*bytes chars; suffix for temp file names in the shared OS temp dir
+function isValidCheckpointId(id: string): boolean // id-utils.ts:27; /^[a-z0-9]+$/
 
 // title-detector.ts
 function isUntitled(title: string): boolean       // matches Obsidian 'Untitled' / 'Untitled N' default (case-insensitive)
@@ -662,13 +663,13 @@ function scoreLyricsContent(content: string): number
 | `open-scan-folder-picker.test.ts` | Tests | Scan folder picker tests |
 | `scan-scope.ts` | `ScanScope`, `ScanTarget`, `toScanScope`, `scanScopeLabel` | Folder-scan scope model (#589); processing-source only, candidate/index lookups stay vault-wide via `getIncludedMarkdownFiles` |
 | `scan-scope.test.ts` | Tests | Scope normalization + labels |
-| `scan-folder-picker-modal.ts` | `ScanFolderPickerModal`, `ScanFolderSuggestion`, `ROOT_LABEL`, `ROOT_TOP_LEVEL_LABEL` | Scan picker with top-level-only root row + Shift+Enter non-recursive choice (#589) |
+| `scan-folder-picker-modal.ts` | `ScanFolderPickerModal`, `ScanFolderSuggestion`, `ROOT_LABEL`, `ROOT_TOP_LEVEL_LABEL` | Scan picker with top-level-only root row + Shift+Enter non-recursive choice (#589); Shift+Enter goes through the feature-detected `chooser.useSelectedItem` (`scan-folder-picker-modal.ts:30`), no-op when absent |
 | `scan-folder-picker-modal.test.ts` | Tests | Row order, scope returned per row/modifier, Shift+Enter registration |
-| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:158` (direct import; section reset), `settings-ui/global-sections.ts:574` (via barrel; reset all), `elaboration/index.ts:519` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:35` cites the settle-once pattern in a comment only, no import |
+| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:158` (direct import; section reset), `settings-ui/global-sections.ts:574` (via barrel; reset all), `elaboration/index.ts:523` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:17` cites the settle-once pattern in a comment only, no import |
 | `confirm-modal.test.ts` | Tests | ConfirmModal tests |
 | `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |
 | `settings-reset.test.ts` | Tests | Reset helper tests |
-| `id-utils.ts` | `generateId`, `isValidCheckpointId` | ID generation and validation for checkpoint paths |
+| `id-utils.ts` | `generateId`, `randomToken`, `isValidCheckpointId` | ID generation, CSPRNG temp-name token, and validation for checkpoint paths (barrel: `index.ts:189`) |
 | `checkpoint-types.ts` | `CheckpointModule`, `CheckpointStatus`, `CheckpointWorkItem`, `DeferredTask`, `Checkpoint` | Checkpoint data model types |
 | `checkpoint-manager.ts` | `CheckpointManager` | CRUD and lifecycle management for resumable operation checkpoints |
 | `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
@@ -707,7 +708,7 @@ function scoreLyricsContent(content: string): number
 | `review-action.test.ts` | Tests | reviewAction gate tests |
 | `hash-utils.ts` | `hashString`, `contentKey` | Browser-safe FNV-1a string hashing (no Node `crypto`); content-addressing only, NOT security. `hashString` -> 16-char hex; `contentKey` length-prefixes parts before hashing. Used by ai-client cache key, elaboration proposal dedup, title content keys |
 | `hash-utils.test.ts` | Tests | Hash + content-key tests |
-| `untrusted-content.ts` | `wrapUntrusted`, `UNTRUSTED_OPEN_TAG`, `UNTRUSTED_CLOSE_FENCE` | Structural prompt-injection defense: fences fetched external text (article/tweet/Reddit bodies, image analysis) in labeled delimiters with a data-not-instructions frame + anti-breakout sentinel scrubbing. Used by elaboration/proposer |
+| `untrusted-content.ts` | `wrapUntrusted`, `UNTRUSTED_OPEN_TAG`, `UNTRUSTED_CLOSE_FENCE` | Structural prompt-injection defense: fences fetched external text (article/tweet/Reddit bodies, image analysis) in labeled delimiters with a data-not-instructions frame + anti-breakout sentinel scrubbing. Used by elaboration/proposer, enrichment/index (tweet text), summarize/summarizer (all summarized content), illustrate/note-analyzer (note body) |
 | `untrusted-content.test.ts` | Tests | Fence/sanitization tests |
 | `insertion-point.ts` | `resolveInsertionPoint`, `applyInsertion`, `describeInsertion`, `scanBlocks`, `locateRegion`, `InsertionAnchor`, `InsertionStrategy`, `InsertionBlockType`, `ResolvedInsertion`, `RegionLocator`, `ResolveInsertionOptions`, `LocatedRegion`, `StructBlock` | Structure-aware, region/container-aware insertion determination (#213): scan the body into blocks (quotes carry inner structure), resolve an anchor to the END of its containing block, prefer after a heading's opening paragraph, optionally restrict to a produced region and land inside callouts with a prefix, apply with exactly one blank line each side, describe for review UIs. Resolve at proposal time for the preview, re-resolve at accept against the live note. Used by illustrate and `rem/skip-regions.ts` (`scanBlocks`); the seam for any proposal kind that places content mid-document |
 | `insertion-point.test.ts` | Tests | Block scanner (fences with blanks, loose lists, tables, callouts, math, quote children), section-lead vs heading-only, mid-paragraph fragment, never-inside-block, blank-line discipline, stale-line fallback, region by type/title in both header spellings (`[!synapse-summary]` and `[!summary|synapse-summary]` resolve to the same identity and label), miss-in-region, prefixed embed/nested callout/mermaid application, depth-2 prefixes, descriptions |
@@ -813,12 +814,12 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 - Status bar integration (shows active operation count)
 - In-progress registry (#577): `inProgress` lists running proposal-producing operations for the unified sidebar; opt-in per call via `startOperation(label, id, meta)` (cancellable rows) or `trackInProgress(label, meta)` (toast-less, non-cancellable rows)
 - Styling via `styles.css` classes (prefix `synapse-notice`), loaded/unloaded with the plugin
-- Secret redaction on every error path via `redactSecrets` — `error()`, `notifyError()`, and the operation `error()` `console.error` all route through `showErrorNotice`/`redactSecrets`. Source ref: `notifications.ts:L310` (operation-error console sink), `notifications.ts:L456` (`error()`), `notifications.ts:L544` (`notifyError()`)
+- Secret redaction on every error path via `redactSecrets` — `error()`, `notifyError()`, and the operation `error()` `console.error` all route through `showErrorNotice`/`redactSecrets`. Source ref: `notifications.ts:321` (operation-error console sink), `notifications.ts:467` (`error()`), `notifications.ts:555` (`notifyError()`)
 - `info()` and `success()` accept optional `action?: NoticeAction` 3rd param — renders an action button on the toast (floors duration to 8s, then auto-dismiss)
-- `infoSticky(message, action)` — duration-0 dismissible action toast that stays up until the user clicks the action or clicks the toast; used by `UpdateChecker` for the "update available" prompt. Source ref: `notifications.ts:L430`
+- `infoSticky(message, action)` — duration-0 dismissible action toast that stays up until the user clicks the action or clicks the toast; used by `UpdateChecker` for the "update available" prompt. Source ref: `notifications.ts:441`
 - `error(message)` — persistent (until clicked) error toast; clicking copies the redacted text to the clipboard. `notifyError(context, error)` wraps an error object + context label through the same sink
 - `OperationHandle.finish(message?, action?)` accepts optional `action?: NoticeAction` — completion toast includes a button that runs `action.onClick()` then hides the toast
-- `dispose()` — tears down every in-flight tracked operation (stops its `setInterval` + hides its notice, clears the map). Called from `main.ts` `onunload()` so disabling the plugin mid-operation never leaves an orphaned 400ms timer firing against a detached toast; also clears `inProgress`. Source ref: `notifications.ts:L173`
+- `dispose()` — tears down every in-flight tracked operation (stops its `setInterval` + hides its notice, clears the map). Called from `main.ts` `onunload()` so disabling the plugin mid-operation never leaves an orphaned 400ms timer firing against a detached toast; also clears `inProgress`. Source ref: `notifications.ts:183`
 - One-shot `info()`/`success()`/`error()` calls WITHOUT an action are equal-message throttled within `NOTICE_THROTTLE_MS` (3s) via private `isThrottled` (#396): a second identical `${level}:${message}` toast inside the window is dropped (prevents per-item loop floods, e.g. a per-image notice). Tracked-operation toasts, `confirm()`, action notices (`showActionNotice`/`infoSticky`), and `notifyError()` are exempt. `dispose()` also clears the `lastShown` dedup map
 
 ## Validation Rules
@@ -861,7 +862,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `withCacheReport` / `trackAiCache` / `transcriptCacheUse` / `mergeCacheUse` | audio/index, video/index, transcription/insert-url-transcript, summarize/index, tidy/index, elaboration/index, enrichment/index, deep-dive/index, organize/index, rem/index, title/index, image/index (#527 finish messages) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
-| `wrapUntrusted` | elaboration/proposer (fetched-link content + image-analysis prompt fencing) |
+| `wrapUntrusted` | elaboration/proposer (fetched-link content, related-notes context, image-analysis prompt fencing; `elaboration/proposer.ts:252,336,410`), enrichment/index (fetched tweet text, `enrichment/index.ts:724`), summarize/summarizer (summarized content, `summarize/summarizer.ts:33`), illustrate/note-analyzer (note body, `illustrate/note-analyzer.ts:114`) |
 | `findAvailableVaultPath` | video/index (same-day re-download), title/index (duplicate "iterate" resolution, #408) |
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
 | `voiceInstruction` | elaboration/proposer, deep-dive/note-generator, summarize/summarizer (#540) |
@@ -904,7 +905,8 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `ScanTarget` (type) | pipeline/types (`PipelineScanFn`), pipeline/synapse-runner, shared/file-utils, every pipeline module's scan method |
 | `blockquoteOriginal` | no consumers in `src/` (barrel-exported only) |
 | `withRetry` | tidy/index |
-| `generateId` | elaboration, enrichment, summarize, organize, deep-dive (proposal/run IDs) |
+| `generateId` | `index.ts` of elaboration, enrichment, summarize, organize, deep-dive, title, rem, illustrate, audio, video, image, tidy |
+| `randomToken` | clip/combine temp sources (`audio/index.ts:229`, `audio/index.ts:581`), yt-dlp/ffmpeg temp outputs (`video/audio-extractor.ts:206`, `video/audio-extractor.ts:311`, `video/audio-extractor.ts:333`, `video/audio-extractor.ts:351`, `video/audio-extractor.ts:375`), ffprobe temp copy (`transcription/duration-detector.ts:78`) |
 | `UpdateChecker` / `isNewerVersion` | main (instantiated with `UpdateCheckerDeps`; `maybeCheck()` fired from a delayed startup timer) |
 | `linkLoadError` | summarize/index, elaboration/proposer (shared external-link fetch-failure message) |
 | `fetchRedditContent` / `isRedditUrl` | summarize/index, elaboration/proposer (Reddit URL routing + fetch) |

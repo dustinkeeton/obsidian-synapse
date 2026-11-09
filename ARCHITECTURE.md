@@ -4,7 +4,7 @@
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
-The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (303 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `illustrate/` (#213) is the newest feature module, shipped in 1.3.0.
+The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (306 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `illustrate/` (#213) is the newest feature module, shipped in 1.3.0.
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -136,7 +136,7 @@ Both `shared/` and `commands/` are **base layers**: every feature may depend on 
 
 ```
 src/
-├── main.ts                 # Plugin entry — lifecycle glue only (303 lines, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, callback injection
+├── main.ts                 # Plugin entry — lifecycle glue only (306 lines, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, callback injection
 ├── settings.ts             # Type definitions, defaults, MODEL_OPTIONS + TRANSCRIPTION_MODEL_OPTIONS (#521) + SYSTEM_ONE_MODEL_OPTIONS (#558); type-only imports (ProposalKind, ExclusionRule, TitleDuplicateStrategy, IllustrateSettings, VoiceMode)
 ├── settings-ui/            # SynapseSettingTab — declarative SETTINGS_SECTIONS list (#506); cross-feature sections in global-sections.ts; voice card (voice-setting.ts, #540); System 1 rows (system-one-credentials.ts, #558); About support tiles from FUNDING_LINKS (funding.ts, #529)
 ├── onboarding/             # Pure first-run welcome logic (#89): planFirstRun, needsApiKey, runFirstRunOnboarding
@@ -150,7 +150,7 @@ src/
 │
 ├── checkpoints/            # Checkpoint recovery UX (#496)
 │   ├── checkpoint-recovery.ts # CheckpointRecoveryModule: startup prompt (3 s), manage-checkpoints command, resume/discard
-│   ├── types.ts            #   CheckpointResumeHandlers — per-module resume map injected by main.ts
+│   ├── types.ts            #   CheckpointRecoveryDeps + CheckpointResumeHandlers — per-module resume map injected by main.ts
 │   └── index.ts            #   Barrel export
 │
 ├── commands/               # Command registry (base layer; imports nothing in src/)
@@ -165,7 +165,7 @@ src/
 ├── pipeline/               # Fire Synapse: ordered multi-phase runner
 │   ├── synapse-runner.ts   #   Sequential phase executor (fire / fireOnFile)
 │   ├── post-op-hooks.ts    #   buildPostOpHook / buildAutoOrganizeHook — enrich → title check, deep-dive REM leg (#581), illustrate leg, auto-organize (#496)
-│   ├── types.ts            #   SYNAPSE_PIPELINE phase list + scan-fn contract
+│   ├── types.ts            #   SYNAPSE_PIPELINE phase list + scan-fn contract + post-op hook contracts (PostOpHookDeps, PostOpContext)
 │   └── index.ts            #   Barrel export
 │
 ├── intake/                 # Inbox watcher: auto-process dropped notes (#111)
@@ -201,12 +201,12 @@ src/
 │   └── index.ts            #   AudioModule orchestrator; clip temp files unlinked in a finally on every exit path
 │
 ├── video/                  # Video download + transcription
-│   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile (`--` before every URL positional, #501)
+│   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile (`--` before every URL positional, #501); temp outputs carry a random suffix
 │   ├── ffmpeg-availability.ts # createFfmpegAvailability — memoized ffmpeg probe (#496)
 │   ├── frame-extractor.ts  #   Placeholder — frame extraction is not implemented
 │   ├── note-scanner.ts     #   Find video URLs in note content (uses shared/url-detector)
 │   ├── settings-section.ts #   Video settings incl. captionsFirst + "Clear transcript cache" (#488)
-│   └── index.ts            #   VideoModule orchestrator (delegates to Audio)
+│   └── index.ts            #   VideoModule orchestrator (delegates to Audio); temp audio/video removed in a finally on every exit path
 │                           #   NOTE: url-detector.ts moved to shared/ (decycling, 2026-06-08)
 │
 ├── image/                  # Image OCR via multi-modal AI (vision models)
@@ -216,7 +216,7 @@ src/
 │   └── index.ts            #   ImageModule orchestrator (batch + checkpoint)
 │
 ├── transcription/          # Transcription UI (issue #20) + URL tier router (#184)
-│   ├── types.ts            #   Every router/tier/caption/duration contract (UrlTranscript, TranscriptStore, UrlTranscriptionStrategy, ProcessTranscript, YouTubeTranscript, DurationResult …)
+│   ├── types.ts            #   Every router/tier/caption/duration contract (UrlTranscript, TranscriptStore, UrlTranscriptionStrategy, ProcessTranscript, YouTubeTranscript, DurationResult …) + the dependency bundles and time-range modal/slider options
 │   ├── unified-modal.ts    #   File picker + URL input with duration + time-range prompt
 │   ├── note-media-modal.ts #   Selection modal for media in current note
 │   ├── time-range-slider.ts#   Dual-handle range slider (pure DOM component)
@@ -244,9 +244,10 @@ src/
 │   └── index.ts                # EnrichmentModule orchestrator
 │
 ├── summarize/              # URL + transcription summarization
-│   ├── summarizer.ts       #   AI summarization (bullets/paragraph/key-points)
+│   ├── summarizer.ts       #   AI summarization (bullets/paragraph/key-points); the content is fenced via wrapUntrusted and the prompt forbids obeying it or adding new links
 │   ├── content-fetcher.ts  #   HTTP fetch + HTML-to-text + JSON-LD extraction
 │   ├── note-scanner.ts     #   Find summarizable targets in notes
+│   ├── types.ts            #   SummarizeTarget, TranscribedMedia, TranscribeUrlFn / TranscribeAudioFn (the injected transcribe callbacks)
 │   └── index.ts            #   SummarizeModule orchestrator
 │
 ├── tidy/                   # Spelling + formatting correction
@@ -268,8 +269,8 @@ src/
 │   ├── quality-scorer.ts   #   Local heuristic quality scoring
 │   ├── syllabus-navigator.ts # Traversal ordering, syllabus index, navigation
 │   ├── deep-dive-store.ts  #   Proposal + run persistence
-│   ├── types.ts            #   Proposal/run/topic types + the SuggestDirectory injection contract (no organize import)
-│   └── index.ts            #   DeepDiveModule orchestrator; auto-organize nesting calls the injected suggestDirectory callback
+│   ├── types.ts            #   Proposal/run/topic types (incl. the saved resume queue, #595), TraversalNode / NavigationContext, + the SuggestDirectory injection contract (no organize import)
+│   └── index.ts            #   DeepDiveModule orchestrator; auto-organize nesting calls the injected suggestDirectory callback; an interrupted run resumes from its saved queue (#595); AI-chosen titles pass through safeNoteName
 │
 ├── illustrate/             # Insert Media (#213): licensed photos + opt-in Mermaid diagrams/charts (#549); opt-in module
 │   ├── note-analyzer.ts    #   One AI call -> validated spots (photo | diagram | chart); photo-only prompt when illustrate.mermaid is off
@@ -278,8 +279,8 @@ src/
 │   ├── license.ts          #   normalizeLicense / isLicenseAllowed; default allow-list CC0 · Public domain · CC BY · CC BY-SA
 │   ├── diagram.ts          #   validateMermaid (known first token, no fences/scripts, <= 4000 chars)
 │   ├── chart.ts            #   parseChartData / buildXyChart — xychart-beta from the note's own numbers only
-│   ├── inserter.ts         #   Photo / Mermaid block builders; only http(s) provider URLs are ever written
-│   ├── asset-writer.ts     #   requestUrl -> vault.createBinary in the attachment folder (15 MB cap)
+│   ├── inserter.ts         #   Photo / Mermaid block builders; only http(s) provider URLs are ever written, percent-encoded so they cannot close a markdown link; link text and attribution flattened to plain text
+│   ├── asset-writer.ts     #   requestUrl -> vault.createBinary in the attachment folder (15 MB cap); a non-image Content-Type is rejected
 │   ├── proposal-store.ts   #   JSON files in illustrate.proposalFolderPath
 │   ├── note-scanner.ts     #   Batch eligibility (>= 80 words, no existing illustrate callout)
 │   ├── settings-section.ts #   Providers, Mermaid toggle, license chips, runAfter toggles, empty-config helper
@@ -292,12 +293,12 @@ src/
 │   ├── content-key.ts      #   titleContentKey() — input-keyed dedup so a rejected title isn't re-proposed (#408)
 │   ├── backlink-remediation.ts # Snapshot inbound links before a rename, rewrite them after with display text preserved (#485)
 │   ├── settings-section.ts #   Settings UI: enabled toggle + duplicate-handling dropdown
-│   ├── types.ts            #   TitleProposal, trigger/status types, TitleDuplicateStrategy
+│   ├── types.ts            #   TitleProposal, trigger/status types, TitleDuplicateStrategy, TitleAcceptOutcome
 │   └── title-detector.ts   #   Re-exports isUntitled from ../shared (canonical home is shared/)
 │
 ├── shared/                 # Cross-cutting utilities (base layer)
 │   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); per-instance LRU response cache + in-flight coalescing (#397); onCacheHit signal (#527); re-exports redactSecrets
-│   ├── safe-request.ts     #   safeRequest + ApiRequestError — requestUrl with throw:false, timeout, redacted typed status error (#558; shared by both clients)
+│   ├── safe-request.ts     #   safeRequest + ApiRequestError — requestUrl with throw:false, timeout, redacted typed status error (#558; shared by both clients); retries a dropped connection once the app is back in the foreground (#595)
 │   ├── decision-client.ts  #   DecisionClient — System 1 lane over TypeSafe /v1/systemone (choice · score · noul), budget chunking, 429/529 retry (#558)
 │   ├── confidence-router.ts#   routeByConfidence / partitionByConfidence — act above the floor, generative fallback exactly once (#558)
 │   ├── redact.ts           #   redactSecrets() (strings) + redactError() (raw caught errors) — single source of truth for API-key/token redaction
@@ -308,7 +309,7 @@ src/
 │   ├── no-speech.ts        #   NoSpeechDetectedError + hasSpeechContent/isWorthPostProcessing — typed no-speech outcome (#524)
 │   ├── settings-merge.ts   #   deepMergeSettings — prototype-safe deep merge over DEFAULT_SETTINGS (#496)
 │   ├── data-folder-migration.ts # migrateDataFolder — one-time .auto-notes → .synapse rename (#496)
-│   ├── settings-migrations.ts # Version-stamped migration runner (#93): migrateSettings/readSettingsVersion/CURRENT_SETTINGS_VERSION (now 3)
+│   ├── settings-migrations.ts # Version-stamped migration runner (#93): migrateSettings/readSettingsVersion/CURRENT_SETTINGS_VERSION (now 4)
 │   ├── hash-utils.ts       #   hashString/contentKey — dependency-free input-keyed hashing for idempotency (#395)
 │   ├── untrusted-content.ts#   wrapUntrusted() — structural prompt-injection fence for fetched external content (#398)
 │   ├── review-action.ts    #   reviewAction() — centralized "Review" completion-toast gate (#366)
@@ -329,7 +330,7 @@ src/
 │   ├── url-detector.ts     #   YouTube/TikTok/Instagram URL parsing (moved here 2026-06-08)
 │   ├── checkpoint-manager.ts #  Checkpoint/resume for long-running operations
 │   ├── checkpoint-types.ts #   Checkpoint type definitions
-│   ├── id-utils.ts         #   ID generation and validation
+│   ├── id-utils.ts         #   ID generation and validation; randomToken() — CSPRNG hex suffix for OS-temp file names
 │   ├── notifications.ts    #   Centralized notifications: progress, cancellation, action buttons, dispose() teardown
 │   ├── in-progress-registry.ts # InProgressRegistry — running proposal-producing operations, owned by NotificationManager (#577)
 │   │                       #   every error sink routes through redactSecrets; equal-message throttle for one-shot toasts (#396)
@@ -365,7 +366,7 @@ src/
     ├── unified-proposal-view.ts  # Single sidebar for all proposal types + in-progress rows (#577) + checkpoints
     ├── synapse-actions-view.ts   # Registry-driven action buttons sidebar (mobile-friendly)
     ├── view-activation.ts        # activateUnifiedView / activateSynapseActionsView / refreshUnifiedView (#496) / watchInProgress (#577)
-    ├── command-runner.ts         # runRegisteredCommand — per-note commands invoke their editorCallback directly (#352)
+    ├── command-runner.ts         # runRegisteredCommand — per-note commands invoke their editorCallback directly (#352); shows a notice when Obsidian's undocumented app.commands is missing
     ├── proposal-styles.ts        # Semantic color tokens + card/badge class helpers
     ├── types.ts                  # UnifiedItem, UnifiedViewCallbacks
     └── index.ts                  # Barrel export
@@ -455,9 +456,7 @@ graph TD
     Shared -. DEFAULT_SETTINGS (settings-reset) .-> Main
 
     Elab --> Commands
-    Audio --> Commands
     Video --> Commands
-    Image --> Commands
     Enrich --> Commands
     Summ --> Commands
     Tidy --> Commands
@@ -475,12 +474,13 @@ graph TD
 
 Key constraints:
 - **Acyclic graph.** `shared` and `commands` are base layers depending on no feature module. The former `shared ⇄ video` cycle was removed on 2026-06-08 by moving `url-detector.ts` into `shared` — the edge is now one-directional `video → shared`.
-- **`settings` → `shared` is one sanctioned edge.** `settings.ts` imports the runtime value `CURRENT_SETTINGS_VERSION` from `shared/settings-migrations.ts` (#93), which depends only on `shared/exclusions.ts` and never on `../settings` — so `settings → settings-migrations → exclusions` stays acyclic. (`settings.ts` also type-only-imports `ProposalKind`, `ExclusionRule`, `TitleDuplicateStrategy`, all erased at compile time.)
+- **`settings` → `shared` is one sanctioned edge.** `settings.ts` imports the runtime value `CURRENT_SETTINGS_VERSION` from `shared/settings-migrations.ts` (#93), which depends only on `shared/exclusions.ts` and never on `../settings` — so `settings → settings-migrations → exclusions` stays acyclic. (`settings.ts` also type-only-imports `ProposalKind`, `ExclusionRule`, `TitleDuplicateStrategy`, `IllustrateSettings`, `IllustrateRunAfterKey`, and `VoiceMode`, all erased at compile time.)
 - **`shared` → `settings` is the mirror-image sanctioned edge.** `shared/settings-reset.ts:1` imports the runtime value `DEFAULT_SETTINGS` from `settings.ts` (the reset-to-defaults helpers). There is no cycle because `settings.ts` never reaches `settings-reset.ts` — its only path into `shared` is `settings-migrations.ts → exclusions.ts`. Several other `shared/` files import `SynapseSettings`/`AIProvider` as interfaces only (erased).
 - **`modules/registry.ts` is the one feature-module list** (#504). It imports every feature barrel and constructs each module with `ModuleDeps` first; per-entry `platform` predicates (video: `Platform.isDesktop`) replace `main.ts` special cases. Disabled modules are still constructed — only their `onload()` is skipped. A test asserts every `src/<feature>/index.ts` module class is constructed by the registry.
 - **`commands` imports nothing in `src/`.** `pipeline` imports `commands` (for flow gating) and `shared` but never the feature modules — `main.ts` injects them via `PipelineModuleMap` / `PostOpHookDeps`. `checkpoints` likewise reaches feature modules only through injected `CheckpointResumeHandlers`.
-- **`intake` imports only `obsidian` + `shared`.** All cross-module work routes through an injected `IntakeDeps` (notably `fireOnFile`).
-- **Video depends on Audio** — reuses the transcription pipeline (runtime edge `video → audio`).
+- **`intake` imports no feature module.** It imports `obsidian`, `shared`, and the `SynapseSettings` interface from `settings.ts` (erased at compile time). All cross-module work routes through an injected `IntakeDeps` (notably `fireOnFile`).
+- **Video depends on Audio** — reuses the transcription pipeline (runtime edge `video → audio`). It is one of five feature → feature runtime imports; the full list is in the table below.
+- **Audio and Image import no `commands/` code.** Their command registrar arrives through `ModuleDeps`. Audio does import one runtime value from `settings.ts`: `TRANSCRIPTION_MODEL_OPTIONS` (`audio/transcription-models.ts:1`).
 - **One type-only back-edge, no runtime cycle.** `shared/settings-section.ts:1` does `import type SynapsePlugin from '../main'`, erased at compile time. The former `audio → video` type edge is gone (2026-10-06 audit): `audio/types.ts:43` declares a structural `AudioClipper` (`clipAudio`, `concatAudio`, `checkDependencies`) that `video/AudioExtractor` satisfies; the registry hands audio an instance on desktop and `undefined` elsewhere (`modules/registry.ts:80`), and `video/ffmpeg-availability.ts:1` imports the type from audio instead.
 - **Transcription owns the URL tier router** (#184) — `CaptionStrategy` runs on every platform; `LocalExtractionStrategy` is appended only when `VideoModule` exists (desktop) and calls it through an injected `processUrl` delegate. Media decoding and AI calls stay in Audio, Video, and Image; the modals reach them via callbacks.
 - **Elaboration uses ImageAnalyzer** — analyzes embedded images during proposal generation. It takes `preprocessImage` from `shared/image-preprocess.ts`, so there is no elaboration → image edge; both it and `image/extractor.ts` pass the vision model per call (`AIRequestOptions.model`) and never write to `settings.ai.model`.
@@ -489,10 +489,25 @@ Key constraints:
 - **One router, one transcript store** (#488). Every URL path (unified modal, note-media batch, summarize, intake) shares a single `UrlTranscriptionRouter` built over `SynapsePlugin.transcriptCache`. Tier results are written through; later requests for the same canonical URL (+ time range) are served from the store unless `forceRefresh` is set — which also bypasses the AI response cache for post-processing (#527).
 - **No speech is a typed outcome** (#524). `NoSpeechDetectedError` (`shared/no-speech.ts`) is thrown at the transcriber seam and re-checked by `AudioModule`, the extraction tier, and the router. Write sites notify and write nothing; the transcript store never receives it; blank text never reaches an AI prompt.
 - **Shared utilities are imported via the `../shared` barrel** — never through a sibling feature module or an internal `shared/` file. Canonical homes (`url-detector`, `redact`, `encoding`) live in `shared/` and re-export elsewhere only for back-compat.
-- **Deep Dive reuses Organize by injection only.** `modules/registry.ts:111-116` wraps `OrganizeModule.suggestDirectory(text, aiOpts)` (`organize/index.ts:80`; `null` under the 0.6 score floor) in a lambda for `DeepDiveModule`'s `auto-organize` nesting mode. `deep-dive` has no `../organize` import, and organize precedes deep-dive in `MODULE_FACTORIES` for this reason; `ContentAnalyzer` and `DirectoryMatcher` are internal to organize.
-- **Views imports feature modules as types only** (including REM); its runtime imports are `fireAndForget` from `shared` and `FEATURE_ICONS` from `commands`.
-- **One shared `NoteOperationQueue`** (#483) arrives in every module via `ModuleDeps` and is used by audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive, and `transcription/insert-url-transcript`. A public entry point takes the note's slot exactly once and delegates to a queue-free private core; acquiring twice would deadlock.
-- **CheckpointManager is a singleton** — created in `main.ts` and delivered through `ModuleDeps`; modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem) keep it. `tidy`, `title`, and `intake` receive the bundle but do not use it; `transcription` is not a module.
+- **Deep Dive reuses Organize by injection only.** `modules/registry.ts:110-116` wraps `OrganizeModule.suggestDirectory(text, aiOpts)` (`organize/index.ts:81`; `null` under the 0.6 score floor) in a lambda for `DeepDiveModule`'s `auto-organize` nesting mode. `deep-dive` has no `../organize` import, and organize precedes deep-dive in `MODULE_FACTORIES` for this reason; `ContentAnalyzer` and `DirectoryMatcher` are internal to organize.
+- **Views imports feature modules as types only** (including REM and Illustrate). Its runtime imports are `fireAndForget` and `describeInsertion` from `shared`, `FEATURE_ICONS` and `REGISTRY_BY_ID` from `commands`, and `MarkdownView` from `obsidian`.
+- **One shared `NoteOperationQueue`** (#483) arrives in every module via `ModuleDeps` and is used by audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive, illustrate, single-note REM (#585), and `transcription/insert-url-transcript`. A public entry point takes the note's slot exactly once and delegates to a queue-free private core; acquiring twice would deadlock.
+- **CheckpointManager is a singleton** — created in `main.ts` and delivered through `ModuleDeps`; modules with resumable scans (elaboration, enrichment, audio, video, image, summarize, organize, deep-dive, rem, illustrate) keep it. `tidy`, `title`, and `intake` receive the bundle but do not use it; `transcription` is not a module.
+
+### Feature-to-feature imports (complete list)
+
+Every import from one feature folder into another, outside tests. `modules/`, `settings-ui/`, and `main.ts` are left out because they import every feature barrel by design.
+
+| From | To | Kind | What crosses |
+|------|----|------|--------------|
+| `video` | `audio` | Runtime + type | `AudioModule` (reuses the transcription pipeline); `TranscriptionResult`, `AudioClipper` |
+| `summarize` | `audio` | Runtime | `findAudioEmbeds` |
+| `transcription` | `audio` | Runtime + type | `AUDIO_EXTENSIONS`, `findAudioEmbeds` |
+| `transcription` | `video` | Runtime + type | `findVideoUrls` |
+| `transcription` | `image` | Runtime + type | `findImageEmbeds` |
+| `views` | elaboration, enrichment, organize, deep-dive, title, rem, illustrate | Type only | Proposal types (`views/types.ts:1-7`) |
+
+> **Note:** The `codebase-architecture` rule names only `video → audio` as a sanctioned feature → feature edge. The other four runtime rows are recorded here, not yet sanctioned there. All of them point one way, so the graph stays acyclic.
 
 ---
 
@@ -547,7 +562,7 @@ graph TB
 
 - **Settle-then-process.** A per-path debounce waits until the note stops changing, so notes aren't reprocessed mid-edit.
 - **Idempotency.** A `synapse-processed` frontmatter flag is stamped *before* any relocation, so the move's rename echo can't trigger reprocessing.
-- **Leaf of the graph.** Intake imports only `obsidian` + `shared`; the pipeline and URL transcription arrive via injected `IntakeDeps` (`fireOnFile`, `transcribeUrlToNote`).
+- **Leaf of the graph.** Intake imports only `obsidian`, `shared`, and the `SynapseSettings` interface; the pipeline and URL transcription arrive via injected `IntakeDeps` (`fireOnFile`, `transcribeUrlToNote`).
 - **Media branch.** `transcribeUrlToNote` (`transcription.appendUrlTranscript`, wired in `main.ts:74-78`) runs the URL tier router, appends the transcript block, then the full pipeline runs. It **rethrows on failure** so the note stays un-stamped and retriable — on mobile, a TikTok/Instagram URL has no tier, and a synced desktop vault's watcher finishes it. A **no-speech** result is different: it is final, so the note is stamped rather than re-downloaded on every catch-up (#524).
 - **Startup catch-up scan (#462).** Events never fire for notes that synced in while Obsidian was closed or whose earlier run threw. So `onload` arms a one-shot scan 7 s after layout is ready (after the 3 s checkpoint and 5 s update checks): un-stamped notes inside the intake folder are queued oldest-first, at most 10 per session, staggered 2 s apart so a backlog never bursts AI calls. Paths already pending are left alone. A note that keeps failing toasts once per session; repeats only log.
 - **Shared-capture adoption (#455, off by default).** Obsidian's mobile share receiver creates notes at the vault root. With `intake.adoptSharedCaptures` on, a newly created root-level note whose body is one bare media/article URL is moved into the intake folder and queued. Prose, multiple URLs, and unknown links are left where the user created them.
@@ -567,7 +582,7 @@ sequenceDiagram
     participant CR as checkpoints/ (recovery)
 
     O->>M: onload()
-    M->>M: loadSettings() (version-stamped migrateSettings replay → deepMergeSettings → stamp settingsVersion, #93; v1 excludeFolders→exclusions #307, v2 drop rem.semanticMatching, v3 whisperModel→transcriptionModel #521)
+    M->>M: loadSettings() (version-stamped migrateSettings replay → deepMergeSettings → stamp settingsVersion, #93; v1 excludeFolders→exclusions #307, v2 drop rem.semanticMatching, v3 whisperModel→transcriptionModel #521, v4 retired model ids → vendor replacements)
     M->>M: registerSynapseIcons() (brand S-Signal mark + feature glyphs, before any ribbon/setIcon use)
     M->>M: NotificationManager() (status bar on desktop only); migrateDataFolder() (.auto-notes -> .synapse)
     M->>M: addSettingTab()
@@ -628,7 +643,7 @@ A single `settings.exclusions` list controls which folders each feature may touc
 
 ```ts
 interface ExclusionRule { pattern: string; features: 'all' | FeatureId[] }
-// FeatureId is a closed 12-member union with an ALL_FEATURE_IDS exhaustiveness guard.
+// FeatureId is a closed 13-member union with an ALL_FEATURE_IDS exhaustiveness guard.
 ```
 
 - **First-match-wins.** `findMatchingRule(path, featureId, settings)` walks `exclusions` in order and returns the first rule that applies to the feature *and* matches the path; `isPathExcluded(...)` is the boolean wrapper.
@@ -670,7 +685,15 @@ Settings evolve through a version-stamped, append-only migration chain in `share
 
 - **One stamp, ordered replay.** A persisted `settingsVersion` records the schema version of `data.json`. On load, `migrateSettings(raw, from)` clones the raw object once and applies every migration whose `to > from` in ascending order, *before* the deep-merge over `DEFAULT_SETTINGS`. `main.loadSettings()` then stamps `settingsVersion = CURRENT_SETTINGS_VERSION` and saves once on upgrade.
 - **Pure & tested.** Each step is a pure `Record<string, unknown> → Record<string, unknown>` function; a drift-guard test asserts `CURRENT_SETTINGS_VERSION` equals the highest migration `to`.
-- **Current chain (v3):** `v1` folds legacy `excludeFolders` into `exclusions` (#307); `v2` drops the inert `rem.semanticMatching` flag left by the always-on REM change (#380); `v3` renames the Whisper-only `audio.whisperModel` to the provider-agnostic `audio.transcriptionModel` (#521), carrying the user's value across and never overwriting an existing `transcriptionModel`.
+- **Current chain (v4):**
+
+  | Step | What it does |
+  |------|--------------|
+  | `v1` | Folds legacy `excludeFolders` into `exclusions` (#307) |
+  | `v2` | Drops the inert `rem.semanticMatching` flag left by the always-on REM change (#380) |
+  | `v3` | Renames the Whisper-only `audio.whisperModel` to the provider-agnostic `audio.transcriptionModel` (#521), carrying the user's value across and never overwriting an existing `transcriptionModel` |
+  | `v4` | Repoints a saved model id the vendor has retired (`o3`, `o3-mini`, `o4-mini`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3.5-flash`) to its replacement, across `ai.model`, `audio.transcriptionModel`, `image.visionModel`, and `video.frameExtraction.visionModel` |
+
 - **Layering.** Lives in `shared/`, imports only `shared/exclusions.ts`, never `../settings` — so the sanctioned `settings → settings-migrations → exclusions` edge stays acyclic.
 
 ---
@@ -707,6 +730,7 @@ graph TB
 
 - Checkpoints are stored as JSON in `.synapse/checkpoints/`
 - Each module implements `resumeFromCheckpoint(checkpoint)` to continue work
+- **Deep dive resumes from a saved queue** (#595). The run file keeps the remaining generation tasks (`DeepDiveRun.pending`), so a run cut off by a dropped connection continues under the same checkpoint. A checkpoint from before this change, or one whose root note is gone, is discarded with a notice. Image OCR still discards its checkpoint and asks the user to re-run.
 - Users can also discard checkpoints (completed items are kept, remaining items abandoned)
 - The unified sidebar shows a banner for any incomplete checkpoints
 - **Recovery UX is its own module** (`checkpoints/`, #496): `CheckpointRecoveryModule` arms the 3 s startup "interrupted operations" prompt, registers `manage-checkpoints`, and backs the sidebar's Resume/Discard buttons. It reaches a feature module only through an injected `CheckpointResumeHandlers` map (on mobile the `video` entry reports "not available on mobile" instead).
@@ -841,7 +865,7 @@ URL detection (`shared/url-detector.ts`) recognizes:
 
 ## Cross-Module Communication
 
-All inter-module communication flows through nullable callback assignments made in `main.ts`. No event bus, no pub-sub. The hook functions themselves are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook`, `buildAutoOrganizeHook`, #496) from an injected `PostOpHookDeps` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`, `illustrate.illustrateNote`, and `remNote`, which runs `rem.remScanNote` inside the note's queue slot, #581); the URL-transcription and intake callbacks are attached by `modules/registry.ts` at construction (#504). Elaboration's hook fires after the whole body has been rewritten, so its `SourceContext.producedRegion` is `{ kind: 'whole-note' }` (#552).
+All inter-module communication flows through nullable callback assignments made in `main.ts`. No event bus, no pub-sub. The hook functions themselves are built by `pipeline/post-op-hooks.ts` (`buildPostOpHook`, `buildAutoOrganizeHook`, #496) from an injected `PostOpHookDeps` (`enrichment.enrich`, `title.checkTitle`, `organize.organizeNote`, `illustrate.illustrateNote`, and `remNote`, which runs `rem.remScanNote` as a post-op scan, #581/#585); the URL-transcription and intake callbacks are attached by `modules/registry.ts` at construction (#504). Elaboration's hook fires after the whole body has been rewritten, so its `SourceContext.producedRegion` is `{ kind: 'whole-note' }` (#552).
 
 > This diagram is the wiring-level detail behind the per-note cascade — subgraph **a** of the master command-pipeline overview in [`README.md` → How it all fits together](README.md#how-it-all-fits-together), which is the canonical birds-eye view. The setting names and defaults on the edges below match that diagram.
 
@@ -878,12 +902,12 @@ graph LR
     DD2["Deep Dive<br/>onOrganizeRequested"] -->|"deepDive.autoOrganizeOnAccept (default OFF)"| Org["Organize.organizeNote()"]
     Summ2["Summarize<br/>onOrganizeRequested"] -->|"summarize.autoOrganizeOnSummarize (default OFF)"| Org
 
-    ElabR["Elaboration"] & EnrichR["Enrichment"] & OrgR["Organize"] & DDR["Deep Dive"] & TitleR["Title"] -->|onViewRefreshNeeded| Refresh["main.refreshUnifiedView()"]
+    ElabR["Elaboration"] & EnrichR["Enrichment"] & OrgR["Organize"] & DDR["Deep Dive"] & TitleR["Title"] & RemR["REM"] & IllR["Illustrate"] -->|onViewRefreshNeeded| Refresh["views.refreshUnifiedView()"]
 ```
 
 > **Deep Dive caveat.** When global enrichment is on (`enrichment.autoEnrich` ON) but `deepDive.autoEnrichOnAccept` is OFF, accepting a deep-dive note wires *neither* the enrich nor the title callback — so the title check is effectively gated behind `deepDive.autoEnrichOnAccept` too. The standalone title-only fallback (each trigger → `Title.checkTitle()` with no enrich) is wired only when `enrichment.autoEnrich` is OFF.
 
-> **Deep-dive REM leg (#581).** Accepting a deep-dive note also REM-scans it when `rem.enabled` and `deepDive.autoRemOnAccept` (default ON) are both on at wiring time — independent of `autoEnrichOnAccept`. Deep-dive generation writes no wikilinks, so this scan is what links the new note to notes that already exist. It runs as an ordinary REM scan, not a post-op one (see #585): each accepted note can raise REM's own notices and "Review" toast.
+> **Deep-dive REM leg (#581).** Accepting a deep-dive note also REM-scans it when `rem.enabled` and `deepDive.autoRemOnAccept` (default ON) are both on at wiring time — independent of `autoEnrichOnAccept`. Deep-dive generation writes no wikilinks, so this scan is what links the new note to notes that already exist. It runs as a post-op scan (`{ postOp: true }`, #585), so it raises no info notices, result toast, auto-accept notices, or "Review" button of its own.
 
 > **Illustrate leg (#213).** The same `buildPostOpHook` chains `illustrate.illustrateNote(filePath, ctx)` after the enrich/title step when `illustrate.enabled` is on at wiring time and the source's `illustrate.runAfter.<key>` toggle (`elaboration`, `transcription` for audio/video/image, `summarize`, `enrichment`, `deepDive` — all default OFF) is on, read live at fire time. `ctx` is the `SourceContext` the action produced (its URLs, images, and the callout region it wrote), so the visual is sourced from that material first and placed inside that region.
 
@@ -896,7 +920,7 @@ Every feature that reads a note, calls the AI, and writes the result back goes t
 - **Path-keyed FIFO.** Operations on the same note run in submission order; different notes run independently. A failing operation releases its slot and cannot poison the chain.
 - **Acquire once.** Public entry points (`transcribeAndInsert`, `scanNote`, `enrich`, `acceptProposal`, …) take the slot and delegate to a queue-free private core. Nesting would self-deadlock, so writes to *other* notes made while holding a key (title backlink remediation, merge targets, deep-dive syllabus, organize summaries) stay unqueued.
 - **Post-op chains line up behind.** The automatic enrichment and title checks fired from inside a slot are never awaited, so they simply enqueue behind the primary write and read what it produced.
-- **One exception: the deep-dive REM scan.** REM's own entry points take no queue slot, so `main.ts` wraps the post-op scan in `noteQueue.run(path, …)` itself. It lines up behind the deep-dive accept that created the note (#581).
+- **Single-note REM takes the slot itself** (#585). `rem.remScanNote` runs inside `noteQueue.run(path, …)`, so the post-op scan after a deep-dive accept lines up behind the accept that created the note (#581). Folder REM scans and REM accept/undo stay unqueued.
 - **Visible only when it matters.** User-invoked work passes `onWait`, which updates its operation toast to "Waiting for another Synapse operation on <note>"; automatic follow-ups wait silently.
 - **Unqueued by design.** REM accept/undo and intake stamp/move/breadcrumb write inside atomic `vault.process` callbacks that re-derive from fresh content. REM accept re-checks every scan-time link position against the note as it is now, re-finds moved text, and drops what it cannot find (#575).
 
@@ -1108,8 +1132,10 @@ graph TB
     AIC -->|"'gemini'"| GEM["POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent<br/>Auth: x-goog-api-key · system -> system_instruction"]
     AIC -->|"'ollama'"| OLL["POST {ollamaEndpoint}/api/chat<br/>HTTPS required (HTTP localhost only)"]
 
-    AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout<br/>Error extraction · Secret redaction (shared/redact.ts)"]
+    AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout · dropped-connection retry (#595)<br/>Error extraction · Secret redaction (shared/redact.ts)"]
 ```
+
+**A dropped connection is retried, an HTTP error is not** (#595). `safeRequest` (`shared/safe-request.ts`) retries a transport failure up to twice (after 1 s, then 3 s), waiting first for Obsidian to return to the foreground — the case is iOS suspending the app mid-request. A timeout is retried only if the app was backgrounded during the attempt.
 
 ### System 1 Decision Lane (#558)
 
@@ -1146,7 +1172,7 @@ graph LR
 
 - **OpenAI** sends `max_completion_tokens` (never the deprecated `max_tokens`) and omits `temperature` for reasoning models — an inverted allowlist of the models that still accept sampling (`gpt-4o`, `gpt-4o-mini`); unknown IDs fail safe by omitting. This is what fixed the "Unsupported parameter: 'max_tokens'" error on o3/o3-mini/o4-mini.
 - **Anthropic** aliases resolve to bare current-generation IDs; `temperature` is sent only where the model accepts it; no `thinking` parameter is sent; a `stop_reason: "refusal"` is surfaced as a safety refusal rather than a generic error.
-- **Default model** for new installs is `gpt-5.6-sol` (existing vaults keep their saved selection).
+- **Default provider and model** for new installs are Anthropic and the `opus` alias (#597). Existing vaults keep their saved provider and model; only a retired model id is repointed, by settings migration v4.
 
 ### Multi-Modal Vision Support
 
@@ -1169,6 +1195,8 @@ Audio transcription uses provider-specific APIs over Obsidian `requestUrl` (not 
 - **Whisper**: OpenAI `/v1/audio/transcriptions` — manual `multipart/form-data` via `buildMultipartBody()` (sanitized headers; `requestUrl` has no `FormData`). Registry lists `whisper-1` (default — the only OpenAI model that returns segment timestamps; retires 2027-02-26) and `gpt-transcribe`; `response_format` is `verbose_json` for `whisper-1`, plain `json` otherwise
 - **Deepgram**: `/v1/listen` — raw `ArrayBuffer` body; sends an explicit `model` query parameter (default `nova-3-general`) instead of riding the vendor default
 - **Gemini**: `…:generateContent` — inline base64 audio (≤ 15 MB); instruction in `system_instruction` (prompt-injection hardening); asks for a `[NO_SPEECH]` sentinel on silent media (#524)
+
+**Key fallback is vendor-matched** (#597). With no dedicated Whisper or Gemini transcription key, the shared `ai.apiKey` is used only when `ai.provider` is that same vendor (`openai` for Whisper, `gemini` for Gemini) — an Anthropic key is never sent to OpenAI.
 
 ---
 
@@ -1197,8 +1225,8 @@ AI-generated content that lands beside the user's text uses Obsidian callouts fr
 
 ```
 SynapseSettings
-+-- settingsVersion -> Persisted schema version (#93); drives the migration runner, stamped to CURRENT_SETTINGS_VERSION (3) on save
-+-- ai              -> Provider, API key, model (default gpt-5.6-sol), temperature, max tokens,
++-- settingsVersion -> Persisted schema version (#93); drives the migration runner, stamped to CURRENT_SETTINGS_VERSION (4) on save
++-- ai              -> Provider (default anthropic), API key, model (default opus), temperature, max tokens,
 |                     cacheResponses (#397, opt-in; caching automatic at temperature 0),
 |                     voice (#540: neutral · match-note · first-person · custom; default neutral) + voiceCustom
 |   +-- systemOne   -> System 1 decision lane (#558): enabled (default OFF), apiKey (TypeSafe), model (jev-latest), confidenceFloor (0.6)
@@ -1221,7 +1249,7 @@ SynapseSettings
 +-- tidy            -> Snapshot folder path
 +-- organize        -> Proposal/snapshot folder paths, confidence threshold, exclude tags
 +-- deepDive        -> Max depth, quality threshold, max notes, output folder,
-|                     nesting mode, auto-enrich/organize on accept, exclude tags
+|                     nesting mode, auto-enrich/organize/REM on accept (autoRemOnAccept default on, #581), exclude tags
 +-- title           -> Enabled, proposal folder path, check after operations,
 |                     duplicateHandling (#408, 'iterate' | 'merge'; default resolution for filename collisions)
 +-- rem             -> Enabled, title-match weight (#380, no UI), semantic confidence
@@ -1260,24 +1288,45 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Multipart header hardening | Vault-/settings-derived field + file names sanitized (`sanitizeMultipartHeaderValue`: strip CR/LF, replace `"`/`\`) before `Content-Disposition` lines — blocks multipart/header injection (2026-06-11) | `audio/transcriber.ts` |
 | API key protection | `redactSecrets()` (strings) + `redactError()` (raw caught errors — Error `.stack`/`.message`) — **single source of truth** scrubbing keys from error messages/console on **every error path**; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts`, `credential-validator.ts`, all of `notifications.ts`; `redactError` at audio/index, rem/semantic-matcher, elaboration/image-analyzer + proposer, shared/image-preprocess, shared/fire-and-forget, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, `main.ts` lifecycle paths, and `update-checker.ts`; `redactSecrets` also at the credential Test chip `credential-field.ts` and the `update-checker.ts` fetch-fail log) |
 | Redaction enforcement (lint) | Custom type-aware ESLint rule `synapse/no-unredacted-console` (#418): every value reaching a `console.*` sink must be **statically string-like** — i.e. already rendered through `redactError`/`redactSecrets`, which return `string`. Flags `String()`/`JSON.stringify()` of non-strings and direct `.message`/`.stack` access as bypasses; fails closed if type info is unavailable; scoped to shipped `src` (tests/mocks excluded). Runs in CI via `npm run lint` | `scripts/eslint-rules/no-unredacted-console.mjs`, `eslint.config.mjs` |
-| Prompt-injection defense | `wrapUntrusted()` fences fetched untrusted content (article/tweet/Reddit, image analysis) in labeled delimiters + data-not-instructions frame + anti-breakout scrub — structural, not lexical (#398); Gemini audio instruction in `system_instruction` | `shared/untrusted-content.ts` (used by `elaboration/proposer.ts`), `audio/transcriber.ts` |
+| Prompt-injection defense | `wrapUntrusted()` fences fetched untrusted content (article/tweet/Reddit, image analysis) in labeled delimiters + data-not-instructions frame + anti-breakout scrub — structural, not lexical (#398). Since 2026-11-09 it also wraps everything summarize sends (with a system-prompt rule: never obey embedded instructions, never add links or image URLs not already present) and the tweet text enrichment fetches. Gemini audio instruction in `system_instruction` | `shared/untrusted-content.ts` (used by `elaboration/proposer.ts`, `summarize/summarizer.ts`, `enrichment/index.ts`, `illustrate/note-analyzer.ts`), `audio/transcriber.ts` |
 | Caption fetch hardening | YouTube caption URLs pass `sanitizeUrl` and go over Obsidian `requestUrl` with a 30 s per-request timeout. Since #501: caption tracks fetch only over `https:` from `youtube.com`/`googlevideo.com` with no embedded credentials; player JSON is bounded at 8 MiB and the track body at 16 MiB before `JSON.parse`; chapter titles and cue text are markdown-escaped at the render boundary; the video title is control-char-stripped and length-bounded. Any fetch/parse failure logs via `redactError` and falls through to the next tier | `transcription/youtube-captions.ts` |
 | yt-dlp argv hardening | Every yt-dlp invocation ends its option list with `--` before the URL positional — the download path since #501 and the duration probe since 2026-10-06 (`duration-detector.ts:139`); `dumpJson()` re-runs `sanitizeUrl()` at its own boundary; the dependency probe runs the configured tool path through `sanitizePath` before `which` (`audio-extractor.ts:585`) | `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
 | Related-notes fencing | Elaboration's backlink/outbound/tag context block is wrapped via `wrapUntrusted(_, 'related notes')`, so a linking note cannot forge a closing fence or smuggle instructions (#500) | `elaboration/proposer.ts` |
 | Dangling-link guard | AI-generated and fetched text is written through `stripUnresolvedLinks`, so no Synapse write creates a `[[link]]` to a note that doesn't exist; elaboration accept keeps the note's own and user-typed links (#581) | `shared/link-guard.ts` |
-| Outbound-URL scheme check | Illustrate writes only `http:`/`https:` provider URLs into a note (`httpUrlOrEmpty`); any other scheme degrades the link or remote embed to plain caption text (2026-10-06) | `illustrate/inserter.ts:6` |
+| Outbound-URL scheme check | Illustrate writes only `http:`/`https:` provider URLs into a note (`httpUrlOrEmpty`); any other scheme degrades the link or remote embed to plain caption text (2026-10-06). Since 2026-11-09 the URL's `( ) < >` and whitespace are percent-encoded so it cannot close a markdown `(url)`, and link text and attribution lose `[` `]` and line breaks | `illustrate/inserter.ts:6-19` |
+| Download type check | An Illustrate download whose `Content-Type` is present and not `image/*` is rejected, so only image bytes enter the vault (2026-11-09) | `illustrate/asset-writer.ts:46-50` |
 | Redirect pinning | A Reddit share page may only redirect the follow-up fetch to a Reddit URL, re-run through `sanitizeUrl` first (2026-10-06) | `shared/reddit-fetcher.ts:203-206` |
-| Temp-file cleanup | Clipped-audio source copy and ffmpeg output are unlinked in a `finally` on every exit path, so a failed clip never leaves vault audio in the OS temp dir (2026-10-06) | `audio/index.ts:230-242` |
+| Temp-file cleanup | Clipped-audio source copy and ffmpeg output are unlinked in a `finally` on every exit path, so a failed clip never leaves vault audio in the OS temp dir (2026-10-06). Since 2026-11-09 `VideoModule.processUrl` and `downloadVideoToVault` do the same for the extracted audio and the downloaded video | `audio/index.ts:237-243`, `video/index.ts:106-151`, `video/index.ts:329-346` |
+| Unguessable temp names | Every file Synapse creates in the OS temp dir is named `synapse-<kind>-<timestamp>-<random>`, the suffix from `randomToken()` (CSPRNG hex), not a timestamp alone (2026-11-09) | `shared/id-utils.ts:16`; `audio/index.ts`, `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
+| Safe deep-dive file names | AI-chosen topic titles pass through `safeNoteName`: path separators and reserved characters become `-`, leading dots are stripped (no `..` segment, no hidden file), empty becomes "Untitled" (2026-11-09) | `deep-dive/index.ts:690` |
+| Undocumented Obsidian APIs | Feature-detected, never assumed: `app.commands` (actions sidebar shows a "run it from the command palette" notice), `metadataCache.getBacklinksForFile` (no backlink rewrite), `SuggestModal` `chooser.useSelectedItem` (Shift+Enter does nothing) | `views/command-runner.ts:33-42`, `title/backlink-remediation.ts:45`, `shared/scan-folder-picker-modal.ts:30` |
 | Release workflow inputs | Tag/version strings pass through `env` with a strict `X.Y.Z` check — no expression interpolation into the shell (2026-10-06) | `.github/workflows/release.yml`, `.github/workflows/tag-on-version-bump.yml` |
 | Illustrate network surface | Off by default; sends an AI-proposed search query (never note text) to keyless Wikimedia Commons / Openverse; downloads only the accepted image (15 MB cap); the note is fenced via `wrapUntrusted` before analysis; charts use only numbers already in the note (#213) | `illustrate/providers/*`, `illustrate/asset-writer.ts`, `illustrate/note-analyzer.ts` |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
-| Credential validation | Live key probe is one minimal authenticated GET; result is **ephemeral** (never persisted) and routed through `redactSecrets` so an echoed key can't reach the status chip | `shared/credential-validator.ts`, `shared/provider-metadata.ts` |
+| Credential validation | Live key probe is one minimal authenticated GET (a POST for TypeSafe, which has no GET surface); result is **ephemeral** (never persisted) and routed through `redactSecrets` so an echoed key can't reach the status chip | `shared/credential-validator.ts`, `shared/provider-metadata.ts` |
 | Idempotent updates | `%% synapse-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
-| Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
+| Prototype pollution | `deepMergeSettings` skips `__proto__`, `constructor`, `prototype` keys | `shared/settings-merge.ts` |
 | Lifecycle hygiene | `NotificationManager.dispose()` tears down in-flight ellipsis timers + hides notices on unload (no orphaned `setInterval`) and clears the in-progress registry | `shared/notifications.ts`, `main.ts:onunload()` |
 
-**Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). The 2026-06-25 audit pass (v1.0.6) brought the per-operation error `console.error` under `redactSecrets`, so the single redaction source now guards **every** error sink in `notifications.ts`. The 2026-06-29 audit pass (v1.0.7) added `redactError()` so raw caught errors logged directly to the console get the same scrub (five direct error sinks routed through it); the idempotency bundle also landed a structural prompt-injection fence (`wrapUntrusted`, #398) for fetched external content. The 2026-07-02 audit pass (v1.0.10) completed the `redactError` rollout — the **remaining** direct error-log call sites (`main.ts` lifecycle paths, the update checker, the credential Test chip, the image-downscale fallback, and the two clipboard-copy catches) now route through the scrub — and rerouted the `title` module's back-compat re-export of `isUntitled` through the `../shared` barrel instead of the internal `shared/title-detector` file (barrel-import rule; the canonical home has been `shared/` since #387). The 2026-07-03 audit pass (v1.0.11) re-verified architecture and security as clean and made the redaction contract **regression-proof**: the custom `synapse/no-unredacted-console` lint rule (#418) now fails CI on any console sink that isn't statically string-like. Separately, the v1.0.11 store automated-review findings were triaged into a reviewer-facing `docs/automated-review-notes.md` (#454) — its one code fix replaced summarize's deprecated `querySelectorAll` usage with Obsidian's typed `containerEl.findAll()`. The 2026-09-14 audit pass (v1.0.13) re-verified architecture and security as clean with no source changes since 2026-08-17. The 1.1.0 cycle (2026-09-14/15) added the caption-path and yt-dlp argv hardening (#501) and fenced elaboration's related-notes context (#500); the 2026-09-17 docs pass re-verified the graph as acyclic after the `main.ts` refactor family (#496/#504). The 2026-10-06 audit pass (`chore/audit-2026-10-06`) re-verified the graph as acyclic after the module-boundary refactor (per-call `model`, `shared/image-preprocess`, injected `suggestDirectory`, `AudioClipper`) and closed five defense-in-depth gaps — the provider-URL scheme check, Reddit redirect pinning, `--` on the yt-dlp duration probe, `sanitizePath` on the dependency probe, and clipped-audio temp cleanup — plus the release-workflow input hygiene; none was exploitable on its own. `data.json` (live API keys) is gitignored and never committed.
+### Audit history
+
+No audit pass has found a critical or high vulnerability. `data.json` (live API keys) is gitignored and never committed.
+
+| Pass | Outcome |
+|------|---------|
+| 2026-11-09 (pre-release, whole codebase) | Fenced the two remaining places fetched text reached a prompt unfenced (summarize content, enrichment tweet text); made Illustrate's provider-supplied URL, link text, and attribution unable to forge markdown and rejected non-image downloads; gave OS-temp files random names and removed video temp files on every exit path; sanitized deep-dive file names; feature-detected the undocumented Obsidian APIs. Module type contracts moved into each module's `types.ts`. Graph re-verified acyclic |
+| 2026-10-06 (`chore/audit-2026-10-06`) | Graph re-verified acyclic after the module-boundary refactor (per-call `model`, `shared/image-preprocess`, injected `suggestDirectory`, `AudioClipper`). Five defense-in-depth closures — provider-URL scheme check, Reddit redirect pinning, `--` on the yt-dlp duration probe, `sanitizePath` on the dependency probe, clipped-audio temp cleanup — plus release-workflow input hygiene. None was exploitable on its own |
+| 2026-09-17 (docs pass) | Graph re-verified acyclic after the `main.ts` refactor family (#496/#504) |
+| 2026-09-14/15 (1.1.0 cycle) | Caption-path and yt-dlp argv hardening (#501); elaboration's related-notes context fenced (#500) |
+| 2026-09-14 (v1.0.13) | Architecture and security clean; no source changes since 2026-08-17 |
+| 2026-07-03 (v1.0.11) | Redaction contract made regression-proof: the `synapse/no-unredacted-console` lint rule (#418) fails CI on any console sink that isn't statically string-like. Store automated-review findings triaged into `docs/automated-review-notes.md` (#454); its one code fix replaced summarize's deprecated `querySelectorAll` with `containerEl.findAll()` |
+| 2026-07-02 (v1.0.10) | `redactError` rollout completed (`main.ts` lifecycle paths, update checker, credential Test chip, image-downscale fallback, two clipboard-copy catches); `title`'s `isUntitled` re-export routed through the `../shared` barrel |
+| 2026-06-29 (v1.0.7) | `redactError()` added so raw caught errors get the same scrub (five direct sinks); structural prompt-injection fence `wrapUntrusted` landed (#398) |
+| 2026-06-25 (v1.0.6) | Per-operation error `console.error` brought under `redactSecrets`, so one redaction source guards every error sink in `notifications.ts` |
+| 2026-06-20 | Architecture, security, and Obsidian-guideline compliance clean; one fix — in-flight notification ellipsis timers torn down on unload |
+| 2026-06-11 (re-audit) | Canonical secret redaction (Gemini `AIza` keys covered everywhere); multipart header-injection hardening |
+| 2026-06-08 (full audit) | No critical or high vulnerabilities |
 
 **Known posture / not-yet-enforced:**
 - `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths** — there is no active vault-boundary enforcement on writes today.
@@ -1291,12 +1340,12 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 2. `npm install` then `npm run dev` (watch mode)
 3. Module pattern: each feature in `src/<module>/` with `index.ts` exporting the module class
 4. Follow the `FeatureModule` contract (`shared/feature-module.ts`, #504): `constructor(deps: ModuleDeps, …moduleSpecificExtras)`, `onload()`, `onunload()`. `ModuleDeps` carries `plugin`, `getSettings`, `notifications`, `checkpointManager`, `registrar`, and `noteQueue`; extras (auto-accept getter, an `AudioClipper` for audio, organize's `suggestDirectory` for deep-dive, transcribe callbacks, `IntakeDeps`) follow positionally. Never reach for globals, and never write to `settings` at request time — a per-request choice like the vision model goes on the call (`AIRequestOptions.model`).
-   - **Needing something from another feature?** Either it belongs in `shared/` (as `preprocessImage` did), or the registry injects a narrow function (as `suggestDirectory` is), or you declare a structural interface the other side satisfies (as `AudioClipper` does). A feature → feature import is the last resort, and `video → audio` is the only one that exists.
+   - **Needing something from another feature?** Either it belongs in `shared/` (as `preprocessImage` did), or the registry injects a narrow function (as `suggestDirectory` is), or you declare a structural interface the other side satisfies (as `AudioClipper` does). A feature → feature import is the last resort; the few that exist are listed under "Feature-to-feature imports" above, and `video → audio` is the only one the architecture rule sanctions.
    - **Callouts**: write headers with `buildCallout`/`calloutHeaderLine` and match them with `calloutIdentity`/`isCalloutHeader`/`calloutHeaderSource` — never a literal `[!synapse-x]` string, because the written form is `[!<base>|synapse-x]` (#554).
    - **Mid-note insertion**: place blocks with `shared/insertion-point.ts` (`resolveInsertionPoint` + `applyInsertion`) rather than string-splicing, so you never split a paragraph, list, fence, or table (#213).
    - **Registering it**: add one entry to `MODULE_FACTORIES` in `modules/registry.ts` and an `enabled`-flagged section in `settings.ts`. `FeatureModules` is mapped over the settings keys, so a section without a registry entry is a compile error, and `registry.test.ts` fails if a `*Module` class is not constructed by the registry.
    - **Finish messages**: any operation that calls the AI passes `trackAiCache(use)` as its request options and finishes its toast through `withCacheReport(message, uses, unit)` (#527), so a cached transcript or AI response is always reported.
-5. Types go in `<module>/types.ts`, tests co-located as `<name>.test.ts`
+5. Types go in `<module>/types.ts` — including the dependency bundles and callback types other modules are handed (the 2026-11-09 audit moved the stragglers there) — tests co-located as `<name>.test.ts`
 6. All shared utilities imported from `../shared` (barrel export) — never from a sibling feature module or an internal `shared/` file. Where you only need a *type* from a higher layer, use `import type` (erased at compile time, no runtime cycle).
 7. Need a Node builtin (`fs`/`path`/`os`/`child_process`)? Go through `loadNodeModules()`/`assertDesktop()` only — never `require` at module top level (keeps the bundle mobile-loadable).
 8. Gate vault paths with `isPathExcluded(path, featureId, settings)` and tags with the shared `matchesExcludeTag` helper.
