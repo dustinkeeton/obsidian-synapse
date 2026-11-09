@@ -96,6 +96,7 @@ interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string |
 
 // notifications.ts
 function linkLoadError(source: string, reason: string): string   // standardized "Could not load content from {source}: {reason}" message
+function settleOnThrow<T>(op: OperationHandle, failure: string, fn: () => Promise<T>): Promise<T>   // :21; wraps a tracked op's whole lifetime (checkpoint setup/finalization included); a throw -> op.error(`${failure} -- msg`) (no-op once settled), then rethrows
 type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error'   // NOT re-exported via the barrel; module-local, used by signatures below
 interface NoticeAction {
   label: string
@@ -109,12 +110,12 @@ interface OperationHandle {
   readonly cancelled: boolean
 }
 class NotificationManager {
-  readonly inProgress: InProgressRegistry   // :160; fed by startOperation meta + trackInProgress; read by the unified sidebar (#577)
+  readonly inProgress: InProgressRegistry   // :170; fed by startOperation meta + trackInProgress; read by the unified sidebar (#577)
   setStatusBarEl(el: HTMLElement): void
-  startOperation(label: string, id?: string, meta?: InProgressMeta): OperationHandle   // :190; meta -> inProgress.begin({ cancellable: true }); no meta -> inProgress.end(opId); update()/progress() forward label/current/total; finish/error/cancel end the entry (completeOperation :576)
-  trackInProgress(label: string, meta: InProgressMeta): () => void   // :321; toast-less work, id `track-N`, cancellable: false; returns the end function (call in `finally`)
+  startOperation(label: string, id?: string, meta?: InProgressMeta): OperationHandle   // :200; meta -> inProgress.begin({ cancellable: true }); no meta -> inProgress.end(opId); update()/progress() forward label/current/total; finish/error/cancel end the entry (completeOperation, keyed on the TrackedOperation object); a handle superseded by a same-id restart never updates/ends the newer run's entry or map slot
+  trackInProgress(label: string, meta: InProgressMeta): () => void   // :332; toast-less work, id `track-N`, cancellable: false; returns the end function (call in `finally`)
   confirm(message: string, options?: { proceedLabel?: string; cancelLabel?: string; level?: NoticeLevel }): Promise<boolean>
-  cancelOperation(id: string): void   // :374; also reached from the sidebar via UnifiedViewCallbacks.onCancelInProgress
+  cancelOperation(id: string): void   // :385; also reached from the sidebar via UnifiedViewCallbacks.onCancelInProgress
   info(message: string, duration?: number, action?: NoticeAction): void
   infoSticky(message: string, action: NoticeAction): void   // duration 0, dismissible; used by UpdateChecker
   success(message: string, duration?: number, action?: NoticeAction): void
@@ -622,7 +623,7 @@ function scoreLyricsContent(content: string): number
 | `image-preprocess.ts` | `preprocessImage`, `PreprocessResult` | Auto-downscale/re-encode oversized image payloads before a vision call (moved from `image/preprocess.ts`); imports `base64EncodedLength` from `./encoding` and `redactError` from `./redact` directly (same-module internals) |
 | `image-preprocess.test.ts` | Tests | Pass-through, downscale and non-rasterizable (gif) cases |
 | `types.ts` | `ChatMessage`, `ContentBlock`, `TextContentBlock`, `ImageContentBlock` | Shared types including multi-modal content blocks |
-| `notifications.ts` | `NotificationManager`, `linkLoadError`, `OperationHandle`, `NoticeAction` (barrel); `NoticeLevel` (module-local, not re-exported) | Centralized notifications with cancellation, progress, confirmation snackbars, and action buttons. `dispose()` tears down all in-flight operations (called from `main.ts` `onunload()`). `info()`/`success()` accept optional `action?: NoticeAction`; `infoSticky()` shows a duration-0 dismissible action toast; `error()`/`notifyError()`/operation-error `console.error` all route through `redactSecrets` (single redaction source). One-shot `info()`/`success()`/`error()` (no action) are equal-message throttled within 3s (#396) to prevent per-item toast floods; tracked-operation, `confirm()`, action, and `notifyError()` toasts are exempt. `linkLoadError(source, reason)` builds the shared external-link failure message used by Elaborate + Summarize |
+| `notifications.ts` | `NotificationManager`, `linkLoadError`, `settleOnThrow`, `OperationHandle`, `NoticeAction` (barrel); `NoticeLevel` (module-local, not re-exported) | Centralized notifications with cancellation, progress, confirmation snackbars, and action buttons. `dispose()` tears down all in-flight operations (called from `main.ts` `onunload()`). `info()`/`success()` accept optional `action?: NoticeAction`; `infoSticky()` shows a duration-0 dismissible action toast; `error()`/`notifyError()`/operation-error `console.error` all route through `redactSecrets` (single redaction source). One-shot `info()`/`success()`/`error()` (no action) are equal-message throttled within 3s (#396) to prevent per-item toast floods; tracked-operation, `confirm()`, action, and `notifyError()` toasts are exempt. `linkLoadError(source, reason)` builds the shared external-link failure message used by Elaborate + Summarize |
 | `notifications.test.ts` | Tests | NotificationManager tests |
 | `in-progress-registry.ts` | `InProgressRegistry`, `InProgressEntry`, `InProgressKind`, `InProgressListener`, `InProgressMeta` (barrel `index.ts:61-62`) | Plugin-level registry of running proposal-producing operations (#577); owned by `NotificationManager.inProgress`; imports only `redact.ts` |
 | `in-progress-registry.test.ts` | Tests | InProgressRegistry + NotificationManager integration |

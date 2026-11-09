@@ -6,7 +6,7 @@ import {
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, redactError,
 	resolveInsertionPoint, applyInsertion, locateRegion, wordCount, parseCalloutHeader, CALLOUT_TYPES,
 	stripUnresolvedLinks,
-	scanScopeLabel, type ScanTarget,
+	scanScopeLabel, type ScanTarget, settleOnThrow,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
@@ -379,12 +379,12 @@ export class IllustrateModule implements FeatureModule {
 		});
 		await this.checkpointManager.addDeferredTask(checkpoint.id, { id: generateId(), type: 'refresh-sidebar-view', data: {} });
 		const genOp = this.notifications.startOperation('Generating illustration proposals', 'illustrate-vault-generate', { kind: 'illustrate', target: folderLabel ?? 'Whole vault' });
-		return this.runBatch(genOp, checkpoint.id, checkpointItems, 'Generating illustration proposals');
+		return settleOnThrow(genOp, 'Illustration generation failed', () => this.runBatch(genOp, checkpoint.id, checkpointItems, 'Generating illustration proposals'));
 	}
 
 	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
 		const op = this.notifications.startOperation('Resuming illustration scan', 'illustrate-resume', { kind: 'illustrate' });
-		await this.runBatch(op, checkpoint.id, checkpoint.remainingItems, 'Resuming illustration scan');
+		await settleOnThrow(op, 'Resume failed', () => this.runBatch(op, checkpoint.id, checkpoint.remainingItems, 'Resuming illustration scan'));
 	}
 
 	/** Shared batch core for scan and resume: one proposal per work item, checkpointed per item. */

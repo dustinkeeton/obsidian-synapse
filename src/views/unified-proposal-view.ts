@@ -97,7 +97,8 @@ export class UnifiedProposalView extends ItemView {
 
 	setCheckpoints(checkpoints: Checkpoint[]): void {
 		this.incompleteCheckpoints = checkpoints;
-		this.render();
+		// Checkpoints only render in list mode; re-rendering a review would discard its edits.
+		if (!this.isReviewing()) this.render();
 	}
 
 	setInProgress(entries: InProgressEntry[]): void {
@@ -114,6 +115,7 @@ export class UnifiedProposalView extends ItemView {
 
 	setItems(items: UnifiedItem[]): void {
 		this.items = items;
+		const wasReviewing = this.isReviewing();
 		// Exit review mode if the reviewed proposal is no longer pending
 		if (this.reviewingElaboration) {
 			const exists = items.some(
@@ -157,7 +159,19 @@ export class UnifiedProposalView extends ItemView {
 			);
 			if (!exists) this.reviewingIllustrate = null;
 		}
+		// A review whose proposal is still pending keeps its DOM (draft text, focus, selections).
+		if (wasReviewing && this.isReviewing()) return;
 		this.render();
+	}
+
+	private isReviewing(): boolean {
+		return this.reviewingElaboration !== null
+			|| this.reviewingEnrichment !== null
+			|| this.reviewingOrganize !== null
+			|| this.reviewingDeepDive !== null
+			|| this.reviewingTitle !== null
+			|| this.reviewingRem !== null
+			|| this.reviewingIllustrate !== null;
 	}
 
 	private render(): void {

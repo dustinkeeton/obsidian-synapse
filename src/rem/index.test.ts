@@ -9,6 +9,7 @@ import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeMo
 import type { Plugin, TFile } from 'obsidian';
 import type { CheckpointManager, NotificationManager, NoticeAction, Checkpoint } from '../shared';
 import { NoteOperationQueue } from '../shared/note-operation-queue';
+import { NotificationManager as RealNotificationManager } from '../shared/notifications';
 import type { CommandRegistrar } from '../commands';
 
 // The mock TFile (from __test-utils__) and obsidian's real TFile differ
@@ -746,6 +747,51 @@ describe('RemModule', () => {
 			expect(saveSpy).toHaveBeenCalledWith(
 				expect.objectContaining({ sourceNotePath: 'notes/B.md' })
 			);
+		});
+
+		describe('in-progress row lifetime (#577)', () => {
+			async function moduleWithRealNotifications(): Promise<{ module: RemModule; real: RealNotificationManager }> {
+				const real = new RealNotificationManager();
+				const module = new RemModule(makeModuleDeps({
+					plugin,
+					getSettings: () => settings,
+					notifications: real,
+					checkpointManager: checkpointManager as unknown as CheckpointManager,
+					registrar: registrar as unknown as CommandRegistrar,
+				}));
+				await module.onload();
+				return { module, real };
+			}
+
+			beforeEach(() => {
+				app.vault.getMarkdownFiles.mockReturnValue([mockFile('notes/A.md')]);
+				app.vault.read.mockResolvedValue('Foo content');
+				vi.spyOn(console, 'error').mockImplementation(() => {});
+			});
+
+			it('ends the row when checkpoint creation rejects', async () => {
+				checkpointManager.create.mockRejectedValueOnce(new Error('disk full'));
+				const { module, real } = await moduleWithRealNotifications();
+
+				await expect(module.remScanDirectory()).rejects.toThrow('disk full');
+				expect(real.inProgress.snapshot()).toEqual([]);
+			});
+
+			it('ends the row when the deferred-task write rejects', async () => {
+				checkpointManager.addDeferredTask.mockRejectedValueOnce(new Error('disk full'));
+				const { module, real } = await moduleWithRealNotifications();
+
+				await expect(module.remScanDirectory()).rejects.toThrow('disk full');
+				expect(real.inProgress.snapshot()).toEqual([]);
+			});
+
+			it('ends the row when checkpoint completion rejects', async () => {
+				checkpointManager.complete.mockRejectedValueOnce(new Error('disk full'));
+				const { module, real } = await moduleWithRealNotifications();
+
+				await expect(module.remScanDirectory()).rejects.toThrow('disk full');
+				expect(real.inProgress.snapshot()).toEqual([]);
+			});
 		});
 	});
 

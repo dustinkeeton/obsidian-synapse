@@ -17,6 +17,16 @@ export function linkLoadError(source: string, reason: string): string {
 	return `Could not load content from ${source}: ${reason}`;
 }
 
+/** Run an operation's whole tracked lifetime; a throw anywhere settles `op` as an error (a no-op once settled) and is rethrown. */
+export async function settleOnThrow<T>(op: OperationHandle, failure: string, fn: () => Promise<T>): Promise<T> {
+	try {
+		return await fn();
+	} catch (error) {
+		op.error(`${failure} -- ${error instanceof Error ? error.message : String(error)}`);
+		throw error;
+	}
+}
+
 /**
  * A single action button rendered on an actionable success/completion toast
  * (e.g. "Review"). `onClick` runs when the user presses the button; the toast
@@ -249,13 +259,14 @@ export class NotificationManager {
 		this.operations.set(opId, op);
 		this.updateStatusBar();
 
+		const isCurrent = () => this.operations.get(opId) === op;
 		const handle: OperationHandle = {
 			get cancelled() {
 				return op.state === 'cancelled';
 			},
 
 			update: (message: string) => {
-				if (op.state !== 'running') return;
+				if (op.state !== 'running' || !isCurrent()) return;
 				const base = stripTrailingDots(message);
 				op.message = base;
 				op.labelEl.textContent = `Synapse: ${base}`;
@@ -267,7 +278,7 @@ export class NotificationManager {
 			},
 
 			progress: (current: number, total: number, progressLabel?: string) => {
-				if (op.state !== 'running') return;
+				if (op.state !== 'running' || !isCurrent()) return;
 				const base = progressLabel
 					? `${stripTrailingDots(progressLabel)} (${current}/${total})`
 					: `${op.label} (${current}/${total})`;
@@ -289,7 +300,7 @@ export class NotificationManager {
 			finish: (message?: string, action?: NoticeAction) => {
 				if (op.state !== 'running') return;
 				this.completeOperation(
-					opId,
+					op,
 					'done',
 					message || `${op.label} complete`,
 					'success',
@@ -302,7 +313,7 @@ export class NotificationManager {
 				if (op.state !== 'running') return;
 				// Duration is ignored for errors (showErrorNotice forces persist);
 				// pass 0 to document the persist-until-dismissed intent.
-				this.completeOperation(opId, 'error', message, 'error', 0);
+				this.completeOperation(op, 'error', message, 'error', 0);
 				// Redact before the console sink too: the toast (via showErrorNotice)
 				// is already redacted, so logging the SAME message raw here would be
 				// the one spot a key echoed into an operation error could still leak.
@@ -374,7 +385,7 @@ export class NotificationManager {
 	cancelOperation(id: string): void {
 		const op = this.operations.get(id);
 		if (!op || op.state !== 'running') return;
-		this.completeOperation(id, 'cancelled', 'Operation cancelled', 'warning', 4000);
+		this.completeOperation(op, 'cancelled', 'Operation cancelled', 'warning', 4000);
 	}
 
 	/**
@@ -548,15 +559,13 @@ export class NotificationManager {
 	}
 
 	private completeOperation(
-		id: string,
+		op: TrackedOperation,
 		newState: TrackedOperation['state'],
 		message: string,
 		level: NoticeLevel,
 		duration: number,
 		action?: NoticeAction
 	): void {
-		const op = this.operations.get(id);
-		if (!op) return;
 		op.state = newState;
 		stopEllipsis(op.ellipsisInterval);
 		op.notice.hide();
@@ -572,8 +581,11 @@ export class NotificationManager {
 			const notice = new Notice(`Synapse: ${message}`, duration);
 			styleNotice(notice, level);
 		}
-		this.operations.delete(id);
-		this.inProgress.end(id);
+		// A handle superseded by a same-id restart must not end the newer run's entry.
+		if (this.operations.get(op.id) === op) {
+			this.operations.delete(op.id);
+			this.inProgress.end(op.id);
+		}
 		this.updateStatusBar();
 	}
 

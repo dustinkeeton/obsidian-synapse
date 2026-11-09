@@ -139,6 +139,41 @@ describe('NotificationManager in-progress tracking', () => {
 		expect(manager.inProgress.snapshot()).toEqual([]);
 	});
 
+	describe('a handle superseded by a same-id restart', () => {
+		const meta = { kind: 'elaboration' as const, target: 'notes/a.md' };
+
+		it.each([
+			['finish', (op: ReturnType<NotificationManager['startOperation']>) => op.finish('done')],
+			['error', (op: ReturnType<NotificationManager['startOperation']>) => op.error('failed')],
+		])('cannot end the newer run on %s', (_name, settle) => {
+			const first = manager.startOperation('Scanning a', 'scan-a', meta);
+			const second = manager.startOperation('Scanning a', 'scan-a', meta);
+			settle(first);
+			expect(manager.inProgress.snapshot()).toEqual([expect.objectContaining({ id: 'scan-a' })]);
+			second.finish('done');
+			expect(manager.inProgress.snapshot()).toEqual([]);
+		});
+
+		it('cannot mutate the newer run with progress or update', () => {
+			const first = manager.startOperation('Scanning a', 'scan-a', meta);
+			const second = manager.startOperation('Scanning a', 'scan-a', meta);
+			second.progress(1, 3);
+			first.progress(9, 9, 'Stale');
+			first.update('Stale');
+			expect(manager.inProgress.snapshot()[0]).toMatchObject({ current: 1, total: 3, label: 'Scanning a' });
+		});
+
+		it('keeps the newer run cancellable and running', () => {
+			const first = manager.startOperation('Scanning a', 'scan-a', meta);
+			const second = manager.startOperation('Scanning a', 'scan-a', meta);
+			first.finish('done');
+			expect(second.cancelled).toBe(false);
+			manager.cancelOperation('scan-a');
+			expect(second.cancelled).toBe(true);
+			expect(manager.inProgress.snapshot()).toEqual([]);
+		});
+	});
+
 	it('tracks toast-less work as non-cancellable until its end function runs', () => {
 		const end = manager.trackInProgress('Checking the title of note', { kind: 'title', target: 'note.md' });
 		expect(manager.inProgress.snapshot()).toEqual([

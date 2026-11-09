@@ -8,7 +8,7 @@ import {
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager,
 	NoteOperationQueue, generateId, ConfirmModal, splitRawFrontmatter,
 	fireAndForget, reviewAction, openScanFolderPicker, trackAiCache, withCacheReport,
-	stripUnresolvedLinks, wikilinkTargets,
+	stripUnresolvedLinks, wikilinkTargets, settleOnThrow,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { PlaceholderDetector } from './detector';
@@ -187,70 +187,72 @@ export class ElaborationModule implements FeatureModule {
 			'Resuming elaboration',
 			'vault-generate-resume', { kind: 'elaboration' }
 		);
-		const createdProposalIds: string[] = [];
-		const cacheUses: CacheUse[] = [];
-		let proposalCount = 0;
-		let autoAcceptedCount = 0;
+		return settleOnThrow(genOp, 'Resume failed', async () => {
+			const createdProposalIds: string[] = [];
+			const cacheUses: CacheUse[] = [];
+			let proposalCount = 0;
+			let autoAcceptedCount = 0;
 
-		try {
-			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
-				if (genOp.cancelled) break;
+			try {
+				for (let i = 0; i < checkpoint.remainingItems.length; i++) {
+					if (genOp.cancelled) break;
 
-				const item = checkpoint.remainingItems[i];
-				const notePath = item.payload.notePath as string;
+					const item = checkpoint.remainingItems[i];
+					const notePath = item.payload.notePath as string;
 
-				genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming elaboration');
+					genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming elaboration');
 
-				const file = this.plugin.app.vault.getAbstractFileByPath(notePath);
-				if (!(file instanceof TFile)) continue;
+					const file = this.plugin.app.vault.getAbstractFileByPath(notePath);
+					if (!(file instanceof TFile)) continue;
 
-				const result = await this.detector.detect(file);
-				if (!result) continue;
+					const result = await this.detector.detect(file);
+					if (!result) continue;
 
-				const outcome = await this.noteQueue.run(
-					result.notePath,
-					() => this.generateForBatch(result)
-				);
-				if (outcome.proposal) {
-					createdProposalIds.push(outcome.proposal.id);
-					cacheUses.push(outcome.cacheUse);
-					proposalCount++;
-					if (outcome.autoAccepted) autoAcceptedCount++;
+					const outcome = await this.noteQueue.run(
+						result.notePath,
+						() => this.generateForBatch(result)
+					);
+					if (outcome.proposal) {
+						createdProposalIds.push(outcome.proposal.id);
+						cacheUses.push(outcome.cacheUse);
+						proposalCount++;
+						if (outcome.autoAccepted) autoAcceptedCount++;
+					}
+
+					await this.checkpointManager.completeItem(checkpoint.id, item.id);
 				}
-
-				await this.checkpointManager.completeItem(checkpoint.id, item.id);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				genOp.error(`Resume failed -- ${msg}`);
+				await this.rejectProposalBatch(createdProposalIds);
+				await this.refreshView();
+				return;
 			}
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Resume failed -- ${msg}`);
-			await this.rejectProposalBatch(createdProposalIds);
-			await this.refreshView();
-			return;
-		}
 
-		if (genOp.cancelled) {
-			await this.checkpointManager.discard(checkpoint.id);
-			await this.rejectProposalBatch(createdProposalIds);
-			await this.refreshView();
-			return;
-		}
+			if (genOp.cancelled) {
+				await this.checkpointManager.discard(checkpoint.id);
+				await this.rejectProposalBatch(createdProposalIds);
+				await this.refreshView();
+				return;
+			}
 
-		const tasks = await this.checkpointManager.complete(checkpoint.id);
-		this.dispatchDeferredTasks(tasks);
-		genOp.finish(
-			withCacheReport(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'proposal'),
-			reviewAction({
-				generated: proposalCount > 0,
-				shouldAutoAccept: this.shouldAutoAccept,
-				openProposalView: this.onOpenProposalView,
-			})
-		);
-		if (autoAcceptedCount > 0) {
-			this.notifications.info(
-				`Auto-accepted ${autoAcceptedCount} elaboration proposal${autoAcceptedCount === 1 ? '' : 's'}`
+			const tasks = await this.checkpointManager.complete(checkpoint.id);
+			this.dispatchDeferredTasks(tasks);
+			genOp.finish(
+				withCacheReport(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'proposal'),
+				reviewAction({
+					generated: proposalCount > 0,
+					shouldAutoAccept: this.shouldAutoAccept,
+					openProposalView: this.onOpenProposalView,
+				})
 			);
-		}
-		await this.refreshView();
+			if (autoAcceptedCount > 0) {
+				this.notifications.info(
+					`Auto-accepted ${autoAcceptedCount} elaboration proposal${autoAcceptedCount === 1 ? '' : 's'}`
+				);
+			}
+			await this.refreshView();
+		});
 	}
 
 	/**
@@ -307,91 +309,93 @@ export class ElaborationModule implements FeatureModule {
 			'Generating proposals',
 			'vault-generate', { kind: 'elaboration', target: folderLabel ?? 'Whole vault' }
 		);
-		const createdProposalIds: string[] = [];
-		const cacheUses: CacheUse[] = [];
-		let proposalCount = 0;
-		let autoAcceptedCount = 0;
+		return settleOnThrow(genOp, 'Proposal generation failed', async () => {
+			const createdProposalIds: string[] = [];
+			const cacheUses: CacheUse[] = [];
+			let proposalCount = 0;
+			let autoAcceptedCount = 0;
 
-		// Create checkpoint for resumability
-		const checkpointItems: CheckpointWorkItem[] = detected.map((d, i) => ({
-			id: `elab-${i}-${d.notePath}`,
-			label: d.notePath,
-			payload: { notePath: d.notePath },
-		}));
-		const checkpoint = await this.checkpointManager.create({
-			module: 'elaboration',
-			operationLabel: `Elaboration: vault scan${folderLabel ? ` (${folderLabel})` : ''}`,
-			items: checkpointItems,
-		});
+			// Create checkpoint for resumability
+			const checkpointItems: CheckpointWorkItem[] = detected.map((d, i) => ({
+				id: `elab-${i}-${d.notePath}`,
+				label: d.notePath,
+				payload: { notePath: d.notePath },
+			}));
+			const checkpoint = await this.checkpointManager.create({
+				module: 'elaboration',
+				operationLabel: `Elaboration: vault scan${folderLabel ? ` (${folderLabel})` : ''}`,
+				items: checkpointItems,
+			});
 
-		// Register deferred task for sidebar refresh (I1)
-		await this.checkpointManager.addDeferredTask(checkpoint.id, {
-			id: generateId(),
-			type: 'refresh-sidebar-view',
-			data: {},
-		});
+			// Register deferred task for sidebar refresh (I1)
+			await this.checkpointManager.addDeferredTask(checkpoint.id, {
+				id: generateId(),
+				type: 'refresh-sidebar-view',
+				data: {},
+			});
 
-		try {
-			for (let i = 0; i < detected.length; i++) {
-				if (genOp.cancelled) break;
+			try {
+				for (let i = 0; i < detected.length; i++) {
+					if (genOp.cancelled) break;
 
-				genOp.progress(i + 1, detected.length, 'Generating proposals');
+					genOp.progress(i + 1, detected.length, 'Generating proposals');
 
-				const outcome = await this.noteQueue.run(
-					detected[i].notePath,
-					() => this.generateForBatch(detected[i])
-				);
-				if (outcome.proposal) {
-					createdProposalIds.push(outcome.proposal.id);
-					cacheUses.push(outcome.cacheUse);
-					proposalCount++;
-					if (outcome.autoAccepted) autoAcceptedCount++;
+					const outcome = await this.noteQueue.run(
+						detected[i].notePath,
+						() => this.generateForBatch(detected[i])
+					);
+					if (outcome.proposal) {
+						createdProposalIds.push(outcome.proposal.id);
+						cacheUses.push(outcome.cacheUse);
+						proposalCount++;
+						if (outcome.autoAccepted) autoAcceptedCount++;
+					}
+
+					// Save checkpoint progress
+					await this.checkpointManager.completeItem(
+						checkpoint.id,
+						checkpointItems[i].id
+					);
 				}
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				genOp.error(`Proposal generation failed -- ${msg}`);
+				// Auto-reject proposals created before the error
+				await this.rejectProposalBatch(createdProposalIds);
+				await this.refreshView();
+				return 0;
+			}
 
-				// Save checkpoint progress
-				await this.checkpointManager.completeItem(
-					checkpoint.id,
-					checkpointItems[i].id
+			if (genOp.cancelled) {
+				// Discard checkpoint on user cancellation (C3)
+				await this.checkpointManager.discard(checkpoint.id);
+				// Auto-reject all proposals created during this cancelled run
+				await this.rejectProposalBatch(createdProposalIds);
+				await this.refreshView();
+				return 0;
+			}
+
+			// Mark checkpoint completed and dispatch deferred tasks (I1)
+			const tasks = await this.checkpointManager.complete(checkpoint.id);
+			this.dispatchDeferredTasks(tasks);
+			// Review action only when something was generated AND elaboration
+			// auto-accept is off (#366) — the deep-dive rule, centralized.
+			genOp.finish(
+				withCacheReport(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'proposal'),
+				reviewAction({
+					generated: proposalCount > 0,
+					shouldAutoAccept: this.shouldAutoAccept,
+					openProposalView: this.onOpenProposalView,
+				})
+			);
+			if (autoAcceptedCount > 0) {
+				this.notifications.info(
+					`Auto-accepted ${autoAcceptedCount} elaboration proposal${autoAcceptedCount === 1 ? '' : 's'}`
 				);
 			}
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Proposal generation failed -- ${msg}`);
-			// Auto-reject proposals created before the error
-			await this.rejectProposalBatch(createdProposalIds);
 			await this.refreshView();
-			return 0;
-		}
-
-		if (genOp.cancelled) {
-			// Discard checkpoint on user cancellation (C3)
-			await this.checkpointManager.discard(checkpoint.id);
-			// Auto-reject all proposals created during this cancelled run
-			await this.rejectProposalBatch(createdProposalIds);
-			await this.refreshView();
-			return 0;
-		}
-
-		// Mark checkpoint completed and dispatch deferred tasks (I1)
-		const tasks = await this.checkpointManager.complete(checkpoint.id);
-		this.dispatchDeferredTasks(tasks);
-		// Review action only when something was generated AND elaboration
-		// auto-accept is off (#366) — the deep-dive rule, centralized.
-		genOp.finish(
-			withCacheReport(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'proposal'),
-			reviewAction({
-				generated: proposalCount > 0,
-				shouldAutoAccept: this.shouldAutoAccept,
-				openProposalView: this.onOpenProposalView,
-			})
-		);
-		if (autoAcceptedCount > 0) {
-			this.notifications.info(
-				`Auto-accepted ${autoAcceptedCount} elaboration proposal${autoAcceptedCount === 1 ? '' : 's'}`
-			);
-		}
-		await this.refreshView();
-		return proposalCount;
+			return proposalCount;
+		});
 	}
 
 	async scanNote(file: TFile, userInvoked = true): Promise<void> {
@@ -399,11 +403,11 @@ export class ElaborationModule implements FeatureModule {
 			`Scanning ${file.basename}`,
 			`scan-${file.path}`, { kind: 'elaboration', target: file.path }
 		);
-		await this.noteQueue.run(
+		await settleOnThrow(op, 'Elaboration failed', () => this.noteQueue.run(
 			file.path,
 			() => this.generateForNote(file, userInvoked, op),
 			{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
-		);
+		));
 	}
 
 	/** Detect + generate + save + auto-accept, already holding the note's queue slot (#483). */

@@ -56,7 +56,7 @@ export { validateCredentials } from './credential-validator';
 export type { ValidationResult, ValidationStatus, ValidateOptions } from './credential-validator';
 export { decorateCredentialField } from './credential-field';
 export type { CredentialFieldOptions, CredentialFieldHandle } from './credential-field';
-export { NotificationManager, linkLoadError } from './notifications';
+export { NotificationManager, linkLoadError, settleOnThrow } from './notifications';
 export type { OperationHandle, NoticeAction } from './notifications';
 export { InProgressRegistry } from './in-progress-registry';
 export type { InProgressEntry, InProgressKind, InProgressListener, InProgressMeta } from './in-progress-registry';

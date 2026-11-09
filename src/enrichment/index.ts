@@ -7,7 +7,7 @@ import {
 	getMarkdownFiles, NotificationManager, parseFrontmatter,
 	CheckpointManager, NoteOperationQueue, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
-	trackAiCache, withCacheReport,
+	trackAiCache, withCacheReport, settleOnThrow,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
@@ -133,80 +133,82 @@ export class EnrichmentModule implements FeatureModule {
 			'Resuming enrichment',
 			'enrichment-vault-resume', { kind: 'enrichment' }
 		);
-		const createdProposals: Array<{ id: string; notePath: string }> = [];
-		const cacheUses: CacheUse[] = [];
-		let proposalCount = 0;
+		return settleOnThrow(genOp, 'Resume failed', async () => {
+			const createdProposals: Array<{ id: string; notePath: string }> = [];
+			const cacheUses: CacheUse[] = [];
+			let proposalCount = 0;
 
-		try {
-			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
-				if (genOp.cancelled) break;
+			try {
+				for (let i = 0; i < checkpoint.remainingItems.length; i++) {
+					if (genOp.cancelled) break;
 
-				const item = checkpoint.remainingItems[i];
-				const filePath = item.payload.filePath as string;
+					const item = checkpoint.remainingItems[i];
+					const filePath = item.payload.filePath as string;
 
-				genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming enrichment');
+					genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming enrichment');
 
-				const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
-				if (!(file instanceof TFile)) continue;
-				if (this.isExcluded(file)) continue;
+					const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+					if (!(file instanceof TFile)) continue;
+					if (this.isExcluded(file)) continue;
 
-				const cacheUse: CacheUse = {};
-				const id = await this.noteQueue.run(
-					file.path,
-					() => this.enrichFile(file, 'manual', cacheUse)
-				);
-				cacheUses.push(cacheUse);
-				if (id) {
-					createdProposals.push({ id, notePath: file.path });
-					proposalCount++;
+					const cacheUse: CacheUse = {};
+					const id = await this.noteQueue.run(
+						file.path,
+						() => this.enrichFile(file, 'manual', cacheUse)
+					);
+					cacheUses.push(cacheUse);
+					if (id) {
+						createdProposals.push({ id, notePath: file.path });
+						proposalCount++;
+					}
+
+					await this.checkpointManager.completeItem(checkpoint.id, item.id);
 				}
-
-				await this.checkpointManager.completeItem(checkpoint.id, item.id);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				genOp.error(`Resume failed -- ${msg}`);
+				this.topicExtractor.clearPending();
+				await this.rejectProposalBatch(createdProposals.map(p => p.id));
+				await this.refreshView();
+				return;
 			}
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Resume failed -- ${msg}`);
-			this.topicExtractor.clearPending();
-			await this.rejectProposalBatch(createdProposals.map(p => p.id));
-			await this.refreshView();
-			return;
-		}
 
-		if (genOp.cancelled) {
-			await this.checkpointManager.discard(checkpoint.id);
-			this.topicExtractor.clearPending();
-			await this.rejectProposalBatch(createdProposals.map(p => p.id));
-			await this.refreshView();
-			return;
-		}
+			if (genOp.cancelled) {
+				await this.checkpointManager.discard(checkpoint.id);
+				this.topicExtractor.clearPending();
+				await this.rejectProposalBatch(createdProposals.map(p => p.id));
+				await this.refreshView();
+				return;
+			}
 
-		// Auto-accept (#228) the resumed proposals. Resume has no Phase 4 merge,
-		// so each stored proposal is final. Batch mode: one summary Notice.
-		let autoAcceptedCount = 0;
-		if (this.shouldAutoAccept()) {
-			for (const { id, notePath } of createdProposals) {
-				if (await this.noteQueue.run(notePath, () => this.maybeAutoAccept(id, true))) {
-					autoAcceptedCount++;
+			// Auto-accept (#228) the resumed proposals. Resume has no Phase 4 merge,
+			// so each stored proposal is final. Batch mode: one summary Notice.
+			let autoAcceptedCount = 0;
+			if (this.shouldAutoAccept()) {
+				for (const { id, notePath } of createdProposals) {
+					if (await this.noteQueue.run(notePath, () => this.maybeAutoAccept(id, true))) {
+						autoAcceptedCount++;
+					}
 				}
 			}
-		}
 
-		const tasks = await this.checkpointManager.complete(checkpoint.id);
-		this.dispatchDeferredTasks(tasks);
-		genOp.finish(
-			withCacheReport(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'note'),
-			reviewAction({
-				generated: proposalCount > 0,
-				shouldAutoAccept: this.shouldAutoAccept,
-				openProposalView: this.onOpenProposalView,
-			})
-		);
-		if (autoAcceptedCount > 0) {
-			this.notifications.info(
-				`Auto-accepted ${autoAcceptedCount} enrichment proposal${autoAcceptedCount === 1 ? '' : 's'}`
+			const tasks = await this.checkpointManager.complete(checkpoint.id);
+			this.dispatchDeferredTasks(tasks);
+			genOp.finish(
+				withCacheReport(`Resumed -- generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'note'),
+				reviewAction({
+					generated: proposalCount > 0,
+					shouldAutoAccept: this.shouldAutoAccept,
+					openProposalView: this.onOpenProposalView,
+				})
 			);
-		}
-		await this.refreshView();
+			if (autoAcceptedCount > 0) {
+				this.notifications.info(
+					`Auto-accepted ${autoAcceptedCount} enrichment proposal${autoAcceptedCount === 1 ? '' : 's'}`
+				);
+			}
+			await this.refreshView();
+		});
 	}
 
 	/**
@@ -278,127 +280,129 @@ export class EnrichmentModule implements FeatureModule {
 			'Generating enrichment proposals',
 			'enrichment-vault-generate', { kind: 'enrichment', target: folderLabel ?? 'Whole vault' }
 		);
-		// Track proposal IDs mapped to note paths for Phase 4 injection
-		const createdProposals: Array<{ id: string; notePath: string }> = [];
-		const cacheUses: CacheUse[] = [];
-		let proposalCount = 0;
+		return settleOnThrow(genOp, 'Enrichment generation failed', async () => {
+			// Track proposal IDs mapped to note paths for Phase 4 injection
+			const createdProposals: Array<{ id: string; notePath: string }> = [];
+			const cacheUses: CacheUse[] = [];
+			let proposalCount = 0;
 
-		// Create checkpoint for resumability
-		const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
-			id: `enrich-${i}-${f.path}`,
-			label: f.path,
-			payload: { filePath: f.path },
-		}));
-		const checkpoint = await this.checkpointManager.create({
-			module: 'enrichment',
-			operationLabel: `Enrichment: vault scan${folderLabel ? ` (${folderLabel})` : ''}`,
-			items: checkpointItems,
-		});
+			// Create checkpoint for resumability
+			const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
+				id: `enrich-${i}-${f.path}`,
+				label: f.path,
+				payload: { filePath: f.path },
+			}));
+			const checkpoint = await this.checkpointManager.create({
+				module: 'enrichment',
+				operationLabel: `Enrichment: vault scan${folderLabel ? ` (${folderLabel})` : ''}`,
+				items: checkpointItems,
+			});
 
-		// Register deferred task for sidebar refresh (I1)
-		await this.checkpointManager.addDeferredTask(checkpoint.id, {
-			id: generateId(),
-			type: 'refresh-sidebar-view',
-			data: {},
-		});
+			// Register deferred task for sidebar refresh (I1)
+			await this.checkpointManager.addDeferredTask(checkpoint.id, {
+				id: generateId(),
+				type: 'refresh-sidebar-view',
+				data: {},
+			});
 
-		try {
-			for (let i = 0; i < eligible.length; i++) {
-				if (genOp.cancelled) break;
+			try {
+				for (let i = 0; i < eligible.length; i++) {
+					if (genOp.cancelled) break;
 
-				genOp.progress(
-					i + 1,
-					eligible.length,
-					'Generating enrichment proposals'
-				);
-				const cacheUse: CacheUse = {};
-				const id = await this.noteQueue.run(
-					eligible[i].path,
-					() => this.enrichFile(eligible[i], 'manual', cacheUse)
-				);
-				cacheUses.push(cacheUse);
-				if (id) {
-					createdProposals.push({ id, notePath: eligible[i].path });
-					proposalCount++;
-				}
-
-				// Save checkpoint progress
-				await this.checkpointManager.completeItem(
-					checkpoint.id,
-					checkpointItems[i].id
-				);
-			}
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Enrichment generation failed -- ${msg}`);
-			this.topicExtractor.clearPending();
-			await this.rejectProposalBatch(createdProposals.map(p => p.id));
-			await this.refreshView();
-			return 0;
-		}
-
-		if (genOp.cancelled) {
-			// Discard checkpoint on user cancellation (C3)
-			await this.checkpointManager.discard(checkpoint.id);
-			this.topicExtractor.clearPending();
-			await this.rejectProposalBatch(createdProposals.map(p => p.id));
-			await this.refreshView();
-			return 0;
-		}
-
-		// -- Phase 4: Resolve cross-note new-note candidates --
-		// Only topics referenced by 2+ notes become new-note suggestions
-		const newNoteCandidates = this.topicExtractor.resolveNewNoteCandidates();
-
-		if (newNoteCandidates.size > 0) {
-			for (const { id, notePath } of createdProposals) {
-				const extras = newNoteCandidates.get(notePath);
-				if (!extras || extras.length === 0) continue;
-
-				const proposal = await this.store.load(id);
-				if (!proposal) continue;
-
-				// Merge new-note candidates into existing internal links
-				proposal.result.internalLinks =
-					this.linkResolver.mergeTopicCandidates(
-						extras,
-						proposal.result.internalLinks
+					genOp.progress(
+						i + 1,
+						eligible.length,
+						'Generating enrichment proposals'
 					);
-				await this.store.save(proposal);
-			}
-		}
+					const cacheUse: CacheUse = {};
+					const id = await this.noteQueue.run(
+						eligible[i].path,
+						() => this.enrichFile(eligible[i], 'manual', cacheUse)
+					);
+					cacheUses.push(cacheUse);
+					if (id) {
+						createdProposals.push({ id, notePath: eligible[i].path });
+						proposalCount++;
+					}
 
-		// Auto-accept (#228) AFTER Phase 4 so each accepted proposal includes
-		// the merged cross-note candidates. Batch mode: one summary Notice.
-		let autoAcceptedCount = 0;
-		if (this.shouldAutoAccept()) {
-			for (const { id, notePath } of createdProposals) {
-				if (await this.noteQueue.run(notePath, () => this.maybeAutoAccept(id, true))) {
-					autoAcceptedCount++;
+					// Save checkpoint progress
+					await this.checkpointManager.completeItem(
+						checkpoint.id,
+						checkpointItems[i].id
+					);
+				}
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				genOp.error(`Enrichment generation failed -- ${msg}`);
+				this.topicExtractor.clearPending();
+				await this.rejectProposalBatch(createdProposals.map(p => p.id));
+				await this.refreshView();
+				return 0;
+			}
+
+			if (genOp.cancelled) {
+				// Discard checkpoint on user cancellation (C3)
+				await this.checkpointManager.discard(checkpoint.id);
+				this.topicExtractor.clearPending();
+				await this.rejectProposalBatch(createdProposals.map(p => p.id));
+				await this.refreshView();
+				return 0;
+			}
+
+			// -- Phase 4: Resolve cross-note new-note candidates --
+			// Only topics referenced by 2+ notes become new-note suggestions
+			const newNoteCandidates = this.topicExtractor.resolveNewNoteCandidates();
+
+			if (newNoteCandidates.size > 0) {
+				for (const { id, notePath } of createdProposals) {
+					const extras = newNoteCandidates.get(notePath);
+					if (!extras || extras.length === 0) continue;
+
+					const proposal = await this.store.load(id);
+					if (!proposal) continue;
+
+					// Merge new-note candidates into existing internal links
+					proposal.result.internalLinks =
+						this.linkResolver.mergeTopicCandidates(
+							extras,
+							proposal.result.internalLinks
+						);
+					await this.store.save(proposal);
 				}
 			}
-		}
 
-		// Mark checkpoint completed and dispatch deferred tasks (I1)
-		const tasks = await this.checkpointManager.complete(checkpoint.id);
-		this.dispatchDeferredTasks(tasks);
-		// Review action only when something was generated AND enrichment
-		// auto-accept is off (#366) — the deep-dive rule, centralized.
-		genOp.finish(
-			withCacheReport(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'note'),
-			reviewAction({
-				generated: proposalCount > 0,
-				shouldAutoAccept: this.shouldAutoAccept,
-				openProposalView: this.onOpenProposalView,
-			})
-		);
-		if (autoAcceptedCount > 0) {
-			this.notifications.info(
-				`Auto-accepted ${autoAcceptedCount} enrichment proposal${autoAcceptedCount === 1 ? '' : 's'}`
+			// Auto-accept (#228) AFTER Phase 4 so each accepted proposal includes
+			// the merged cross-note candidates. Batch mode: one summary Notice.
+			let autoAcceptedCount = 0;
+			if (this.shouldAutoAccept()) {
+				for (const { id, notePath } of createdProposals) {
+					if (await this.noteQueue.run(notePath, () => this.maybeAutoAccept(id, true))) {
+						autoAcceptedCount++;
+					}
+				}
+			}
+
+			// Mark checkpoint completed and dispatch deferred tasks (I1)
+			const tasks = await this.checkpointManager.complete(checkpoint.id);
+			this.dispatchDeferredTasks(tasks);
+			// Review action only when something was generated AND enrichment
+			// auto-accept is off (#366) — the deep-dive rule, centralized.
+			genOp.finish(
+				withCacheReport(`Generated ${proposalCount} proposal${proposalCount === 1 ? '' : 's'}`, cacheUses, 'note'),
+				reviewAction({
+					generated: proposalCount > 0,
+					shouldAutoAccept: this.shouldAutoAccept,
+					openProposalView: this.onOpenProposalView,
+				})
 			);
-		}
-		await this.refreshView();
-		return proposalCount;
+			if (autoAcceptedCount > 0) {
+				this.notifications.info(
+					`Auto-accepted ${autoAcceptedCount} enrichment proposal${autoAcceptedCount === 1 ? '' : 's'}`
+				);
+			}
+			await this.refreshView();
+			return proposalCount;
+		});
 	}
 
 	/**
@@ -441,7 +445,7 @@ export class EnrichmentModule implements FeatureModule {
 			`enrich-${filePath}`, { kind: 'enrichment', target: filePath }
 		);
 
-		await this.noteQueue.run(file.path, () => this.runEnrichment(file, trigger, op, options));
+		await settleOnThrow(op, 'Enrichment failed', () => this.noteQueue.run(file.path, () => this.runEnrichment(file, trigger, op, options)));
 	}
 
 	/** One note's enrichment cycle, already holding that note's queue slot (#483). */

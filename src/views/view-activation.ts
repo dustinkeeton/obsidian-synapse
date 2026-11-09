@@ -62,8 +62,51 @@ async function ensureLoaded(leaf: WorkspaceLeaf): Promise<void> {
 	if (deferrable.isDeferred && typeof deferrable.loadIfDeferred === 'function') await deferrable.loadIfDeferred();
 }
 
-/** Push every pending proposal, incomplete checkpoint and running operation into each open unified view; no-op when none is open. */
-export async function refreshUnifiedView(workspace: Workspace, sources: UnifiedViewSources): Promise<void> {
+interface RefreshState {
+	running: Promise<void> | null;
+	rerun: boolean;
+	sources: UnifiedViewSources;
+}
+
+const refreshStates = new WeakMap<Workspace, RefreshState>();
+
+/**
+ * Push every pending proposal, incomplete checkpoint and running operation into each open unified view; no-op when none is open.
+ * Calls are serialized per workspace: a request made while one runs schedules a single rerun, and every caller resolves after it.
+ */
+export function refreshUnifiedView(workspace: Workspace, sources: UnifiedViewSources): Promise<void> {
+	let state = refreshStates.get(workspace);
+	if (!state) {
+		state = { running: null, rerun: false, sources };
+		refreshStates.set(workspace, state);
+	}
+	state.sources = sources;
+	if (state.running) {
+		state.rerun = true;
+		return state.running;
+	}
+	const current = state;
+	current.running = (async () => {
+		let failure: { error: unknown } | null = null;
+		try {
+			do {
+				current.rerun = false;
+				try {
+					await refreshOnce(workspace, current.sources);
+					failure = null;
+				} catch (error) {
+					failure = { error };
+				}
+			} while (current.rerun);
+		} finally {
+			current.running = null;
+		}
+		if (failure) throw failure.error;
+	})();
+	return current.running;
+}
+
+async function refreshOnce(workspace: Workspace, sources: UnifiedViewSources): Promise<void> {
 	const leaves = workspace.getLeavesOfType(UNIFIED_VIEW_TYPE);
 	if (leaves.length === 0) return;
 

@@ -20,8 +20,8 @@ class UnifiedProposalView extends ItemView {     // unified-proposal-view.ts:35
     callbacks: UnifiedViewCallbacks,
     notifications: NotificationManager,   // required 3rd arg; surfaces bulk-op errors
   )
-  setItems(items: UnifiedItem[]): void           // :115 replace list; exits stale review mode
-  setCheckpoints(checkpoints: Checkpoint[]): void // :98 banner data for interrupted ops
+  setItems(items: UnifiedItem[]): void           // :116 replace list; exits stale review mode; an open review whose proposal is still pending is NOT re-rendered (draft/focus kept)
+  setCheckpoints(checkpoints: Checkpoint[]): void // :98 banner data for interrupted ops; no render while a review is open
   setInProgress(entries: InProgressEntry[]): void // :103 id-set change -> full render(); same ids -> re-render rows only; stored but not rendered outside list mode (#577)
   getViewType(): string    // 'synapse-proposals'
   getDisplayText(): string // 'Synapse proposals'
@@ -106,9 +106,9 @@ interface UnifiedViewSources {
 function activateUnifiedView(workspace: Workspace, sources: UnifiedViewSources): Promise<void>
 // view-activation.ts:47
 function activateSynapseActionsView(workspace: Workspace): Promise<void>
-// view-activation.ts:66 — loads every deferred leaf, then takes ONE sources.inProgress() snapshot after all awaits (:85), then setItems/setCheckpoints/setInProgress on every open unified leaf (duck-typed; isUnifiedProposalView requires all three, :52-56); no-op when none open
+// view-activation.ts:77 — serialized per workspace (WeakMap state): a call during a run schedules ONE rerun and every caller resolves after the last run; each run loads every deferred leaf, then takes ONE sources.inProgress() snapshot after all awaits (:128), then setItems/setCheckpoints/setInProgress on every open unified leaf (duck-typed; isUnifiedProposalView requires all three, :52-56); no-op when none open
 function refreshUnifiedView(workspace: Workspace, sources: UnifiedViewSources): Promise<void>
-// view-activation.ts:100 — subscribes to the registry; id-set change -> fireAndForget(refreshUnifiedView, { background: true }); same ids (progress tick) -> setInProgress only; returns unsubscribe (#577)
+// view-activation.ts:143 — subscribes to the registry; id-set change -> fireAndForget(refreshUnifiedView, { background: true }); same ids (progress tick) -> setInProgress only; returns unsubscribe (#577)
 function watchInProgress(workspace: Workspace, sources: UnifiedViewSources, registry: InProgressRegistry): () => void
 
 // command-runner.ts:8 — active file iff extension === 'md' (survives the actions sidebar stealing focus)
@@ -125,7 +125,7 @@ function runRegisteredCommand(app: App, pluginId: string, id: string, notificati
 | `synapse-actions-view.ts` | `SynapseActionsView`, `SYNAPSE_ACTIONS_VIEW_TYPE`, `SynapseActionsCallbacks` | Registry-driven touch-friendly command palette sidebar |
 | `types.ts` | `PROPOSAL_KINDS`, `ProposalKind`, `UnifiedItem`, `UnifiedViewCallbacks` | View type defs; compile-time guards bind `PROPOSAL_KINDS` to `UnifiedItem['kind']` and `ProposalKind` to shared `InProgressKind` |
 | `proposal-styles.ts` | `SYNAPSE_COLOR_TOKENS`, `FEATURE_COLOR_TOKENS`, `cardClass`, `badgeClass`, `reviewPaneLabelClass`, `actionsGroupClass` | Semantic color tokens + BEM class helpers |
-| `view-activation.ts` | `activateUnifiedView`, `activateSynapseActionsView`, `refreshUnifiedView`, `watchInProgress`, `UnifiedViewSources` | Sidebar reveal/create (private `revealSidebarView`, `:29`) + unified-view data push + in-progress registry subscription (private `membershipKey`, `:116`) |
+| `view-activation.ts` | `activateUnifiedView`, `activateSynapseActionsView`, `refreshUnifiedView`, `watchInProgress`, `UnifiedViewSources` | Sidebar reveal/create (private `revealSidebarView`, `:29`) + unified-view data push + in-progress registry subscription (private `membershipKey`, `:159`; private `refreshOnce` = one source read + push) |
 | `command-runner.ts` | `activeMarkdownFile`, `runRegisteredCommand` | Actions-sidebar dispatch: direct `editorCallback` invocation for `context: 'note'` commands, Obsidian `executeCommandById` otherwise |
 | `index.ts` | barrel re-export of all the above | Public surface |
 | `*.test.ts` (5 files) | tests | `unified-proposal-view` (incl. describe `UnifiedProposalView elaboration rewrite copy (#552)`, `unified-proposal-view.test.ts:425`), `synapse-actions-view`, `proposal-styles`, `view-activation`, `command-runner` |
@@ -187,7 +187,7 @@ Sequential because organize accepts may move files. Mutually exclusive via `acce
 
 ## Data Flow
 
-Input: `refreshUnifiedView(workspace, sources)` (`view-activation.ts:66`) reads every `UnifiedViewSources` reader into `UnifiedItem[]` plus incomplete checkpoints and one in-progress snapshot, then calls `setItems()` / `setCheckpoints()` / `setInProgress()` on each open unified leaf. `watchInProgress` pushes registry changes between refreshes. The `UnifiedViewSources` instance is built in `main.ts:110-120` (seven `getPendingProposals()` readers + `checkpointManager.listIncomplete()` + `notifications.inProgress.snapshot()`).
+Input: `refreshUnifiedView(workspace, sources)` (`view-activation.ts:77`) reads every `UnifiedViewSources` reader into `UnifiedItem[]` plus incomplete checkpoints and one in-progress snapshot, then calls `setItems()` / `setCheckpoints()` / `setInProgress()` on each open unified leaf. `watchInProgress` pushes registry changes between refreshes. The `UnifiedViewSources` instance is built in `main.ts:110-120` (seven `getPendingProposals()` readers + `checkpointManager.listIncomplete()` + `notifications.inProgress.snapshot()`).
 
 Processing: view stores items, re-renders. User clicks invoke `UnifiedViewCallbacks` (proposal accept/reject) or `SynapseActionsCallbacks.runAction` (command dispatch via `runRegisteredCommand`). The view holds no proposal store and never touches `app`/vault for state — only `openNote()` opens files in the editor.
 
