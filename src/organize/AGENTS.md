@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-19
+last-updated: 2026-11-09
 ---
 
 # organize module
@@ -317,6 +317,17 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 | `settings.ai.systemOne` (top-level) | `SystemOneSettings` | `enabled: false` — gates `PlacementDecider`; its `confidenceFloor` is NOT used by organize |
 | `settings.autoAccept.organize` | `boolean` | `false` — the ONLY path by which a scan or single-note organize moves a note |
 | `settings.exclusions` | `ExclusionRule[]` | `[{pattern:'.synapse/**',features:'all'}, {pattern:'templates/**',features:'all'}]` |
+
+## In-Progress Rows (#577)
+
+`startOperation(label, id, { kind: 'organize', target? })` registers a cancellable unified-sidebar row (`NotificationManager.inProgress`). Target = `folderLabel ?? 'Whole vault'` for scans, note path for single notes. `organize-undo-run` (`index.ts:580`) passes no meta: no row.
+
+| Op id | Site | Target |
+|-------|------|--------|
+| `organize-resume` | `index.ts:135` | none |
+| `organize-<path>` | `index.ts:237` | note path |
+| `organize-scan` | `index.ts:295` | folder label |
+| `organize-generate` | `index.ts:338` | folder label |
 
 ## Dependencies
 

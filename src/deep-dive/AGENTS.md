@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-19
+last-updated: 2026-11-09
 ---
 
 # deep-dive module
@@ -242,6 +242,15 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 | `settings.ai.voice` / `settings.ai.voiceCustom` | `VoiceMode` / `string` | `'neutral'` / `''` |
 
 `NoteGenerator.generateContent` asks for plain prose with no `[[wikilinks]]` and a `tags`-only frontmatter (#581); the only deep-dive-written links are `parent:`, navigation and syllabus links to accepted notes. `NoteGenerator.generateContent` keeps the encyclopedic-tone rule and appends `voiceInstruction(settings.ai)` as the last rule, read per call (note-generator.ts:39, #540).
+
+## In-Progress Rows (#577)
+
+`startOperation(label, id, { kind: 'deep-dive', target })` registers a cancellable unified-sidebar row (`NotificationManager.inProgress`).
+
+| Op id | Site | Target |
+|-------|------|--------|
+| `deep-dive-scan-<path>` | `index.ts:282` | root note path |
+| `deep-dive-generate` | `index.ts:384` | root note path |
 
 ## Dependencies
 

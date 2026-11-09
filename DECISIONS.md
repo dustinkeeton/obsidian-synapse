@@ -6,6 +6,29 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-09: Running operations show in the review pane, from one shared registry (#577)
+
+**Context**: The review pane showed only finished proposals and interrupted-operation checkpoints. While a proposal-producing action ran, the only sign was its operation toast. If that toast was gone, hidden behind other notices, or the user was on mobile, nothing said a proposal was coming, so users re-triggered the action or assumed it had failed silently.
+
+**Decision**:
+- **An "In progress" section tops the review pane.** It sits above the checkpoint banner and lists each running elaboration, enrichment, organize, deep dive, title, REM, or illustrate operation: a kind chip, the label, the target (note path or folder), and live `current/total` progress when known.
+- **One registry, owned by notifications.** `InProgressRegistry` (`shared/in-progress-registry.ts`) lives on `NotificationManager.inProgress`. Finishing, failing, cancelling, or disposing an operation removes its row.
+- **Operations opt in per call.** `startOperation(label, id, { kind, target })` adds a cancellable row next to the toast. Toast-less work (title suggestions and checks, single-note REM, post-op illustrate) uses `trackInProgress(label, meta)`, which adds a row with no Cancel.
+- **Cancel uses the toast's path.** The row's Cancel button calls `NotificationManager.cancelOperation(id)`, the same call the toast makes.
+- **The pane watches the registry.** `watchInProgress` re-renders only the rows on a progress tick and runs one full refresh when an operation starts or ends, so a finished row is replaced by its proposals.
+
+**Alternatives considered**:
+- **Per-feature bookkeeping** (like the `inFlight` sets in illustrate and intake) — rejected; seven features would each track their own runs, with no single source of truth.
+
+**Rationale**: The pane is where proposals land, so it should also show what is about to land. Most of these paths already called `NotificationManager.startOperation()`, so hanging the registry off that object means a row starts, updates, and ends exactly when its toast does. Opt-in keeps direct-write actions (transcription inserts, tidy) and operations with no proposals (undoing an organize run) out of the list. The pane reads the registry when it opens, so opening it mid-operation still shows the run.
+
+**Impact**:
+- New `shared/in-progress-registry.ts`; `startOperation` takes an optional third `meta` argument, and `NotificationManager` gains `trackInProgress`.
+- The seven proposal modules pass `{ kind, target }`. Scans name their folder or "Whole vault"; resume runs carry no target.
+- `views/` gains `setInProgress`, `onCancelInProgress`, and `watchInProgress`. A compile-time guard keeps `InProgressKind` equal to the views' `ProposalKind`; the list is duplicated because `shared` cannot import `views`.
+
+---
+
 ## 2026-10-19: Top-level-only scans narrow the work list, not the candidates (#589)
 
 **Context**: Folder scans always included every subfolder. Users wanted to scan just the notes sitting directly in a folder — most often the vault root — without picking up everything below it.

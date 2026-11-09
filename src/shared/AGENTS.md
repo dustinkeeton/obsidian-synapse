@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-19
+last-updated: 2026-11-09
 ---
 
 # Shared Module
@@ -109,17 +109,35 @@ interface OperationHandle {
   readonly cancelled: boolean
 }
 class NotificationManager {
+  readonly inProgress: InProgressRegistry   // :160; fed by startOperation meta + trackInProgress; read by the unified sidebar (#577)
   setStatusBarEl(el: HTMLElement): void
-  startOperation(label: string, id?: string): OperationHandle
+  startOperation(label: string, id?: string, meta?: InProgressMeta): OperationHandle   // :190; meta -> inProgress.begin({ cancellable: true }); no meta -> inProgress.end(opId); update()/progress() forward label/current/total; finish/error/cancel end the entry (completeOperation :576)
+  trackInProgress(label: string, meta: InProgressMeta): () => void   // :321; toast-less work, id `track-N`, cancellable: false; returns the end function (call in `finally`)
   confirm(message: string, options?: { proceedLabel?: string; cancelLabel?: string; level?: NoticeLevel }): Promise<boolean>
-  cancelOperation(id: string): void
+  cancelOperation(id: string): void   // :374; also reached from the sidebar via UnifiedViewCallbacks.onCancelInProgress
   info(message: string, duration?: number, action?: NoticeAction): void
   infoSticky(message: string, action: NoticeAction): void   // duration 0, dismissible; used by UpdateChecker
   success(message: string, duration?: number, action?: NoticeAction): void
   error(message: string): void   // persistent, copy-on-dismiss; redacts via redactSecrets
   notifyError(context: string, error: unknown): void   // error object + context label; routes through error()/redactSecrets
-  dispose(): void
+  dispose(): void   // also inProgress.clear() (:180)
 }
+
+// in-progress-registry.ts (#577)
+type InProgressKind = 'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem' | 'illustrate'   // :4; sanctioned duplicate of views ProposalKind (shared cannot import views); two-way guard views/types.ts:55-58
+interface InProgressMeta { kind: InProgressKind; target?: string }   // :14; target = note path or folder label
+interface InProgressEntry { id: string; kind: InProgressKind; label: string; target?: string; current?: number; total?: number; startedAt: number; cancellable: boolean }   // :20
+type InProgressListener = (entries: readonly InProgressEntry[]) => void   // :31
+class InProgressRegistry {   // :34; Map in start order
+  begin(entry: Omit<InProgressEntry, 'startedAt'> & { startedAt?: number }): void   // re-begin of a live id moves it to the end; startedAt defaults to Date.now()
+  update(id: string, patch: Partial<Pick<InProgressEntry, 'label' | 'current' | 'total'>>): void   // unknown id = no-op
+  end(id: string): void   // emits only when an entry was removed
+  has(id: string): boolean
+  snapshot(): InProgressEntry[]   // shallow copies
+  subscribe(listener: InProgressListener): () => void
+  clear(): void   // emits only when non-empty
+}
+// every mutation emits a snapshot to each listener; a throwing listener is caught -> console.warn(redactError(err)) (:83)
 
 // update-checker.ts
 function isNewerVersion(latest: string, current: string): boolean   // strict semver gt; tolerant of leading 'v'; false on equal/older/malformed
@@ -606,6 +624,8 @@ function scoreLyricsContent(content: string): number
 | `types.ts` | `ChatMessage`, `ContentBlock`, `TextContentBlock`, `ImageContentBlock` | Shared types including multi-modal content blocks |
 | `notifications.ts` | `NotificationManager`, `linkLoadError`, `OperationHandle`, `NoticeAction` (barrel); `NoticeLevel` (module-local, not re-exported) | Centralized notifications with cancellation, progress, confirmation snackbars, and action buttons. `dispose()` tears down all in-flight operations (called from `main.ts` `onunload()`). `info()`/`success()` accept optional `action?: NoticeAction`; `infoSticky()` shows a duration-0 dismissible action toast; `error()`/`notifyError()`/operation-error `console.error` all route through `redactSecrets` (single redaction source). One-shot `info()`/`success()`/`error()` (no action) are equal-message throttled within 3s (#396) to prevent per-item toast floods; tracked-operation, `confirm()`, action, and `notifyError()` toasts are exempt. `linkLoadError(source, reason)` builds the shared external-link failure message used by Elaborate + Summarize |
 | `notifications.test.ts` | Tests | NotificationManager tests |
+| `in-progress-registry.ts` | `InProgressRegistry`, `InProgressEntry`, `InProgressKind`, `InProgressListener`, `InProgressMeta` (barrel `index.ts:61-62`) | Plugin-level registry of running proposal-producing operations (#577); owned by `NotificationManager.inProgress`; imports only `redact.ts` |
+| `in-progress-registry.test.ts` | Tests | InProgressRegistry + NotificationManager integration |
 | `update-checker.ts` | `UpdateChecker`, `isNewerVersion`, `UpdateCheckerDeps` | In-app "newer Synapse available" check (#365). Polls the plugin's own public GitHub Releases API at most once/24h (gated on `settings.updates.enableUpdateNotifications`), compares the latest tag to the running version, and shows a sticky notice via `notifications.infoSticky` whose button opens Settings → Community plugins. Fails silently (offline/non-200/malformed → logged `null`); the fetch-failure detail is logged through `redactSecrets` and the outer unexpected-error catch through `redactError`. Records the shown version so it never nags twice. `isNewerVersion` is pure semver gt |
 | `update-checker.test.ts` | Tests | UpdateChecker + isNewerVersion tests |
 | `file-utils.ts` | `ensureFolder`, `readNote`, `writeNote`, `getMarkdownFiles`, `getIncludedMarkdownFiles`, `wordCount`, `findAvailableVaultPath` | Vault file operations. `getIncludedMarkdownFiles` drops notes excluded by centralized exclusion rules for a given `FeatureId`. `findAvailableVaultPath` resolves a non-colliding vault path (Obsidian-style `-1`/`-2` suffix before the extension); used by video re-downloads + title duplicate "iterate" resolution (#408) |
@@ -694,7 +714,7 @@ function scoreLyricsContent(content: string): number
 | `extract-image-urls.test.ts` | Tests | `extractImageUrls` ordering/resolution/filters/cap; `fetchPageContentWithImages`; `fetchHtmlDocument` content type |
 | `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching`, `renameWhisperModelToTranscriptionModel`, `replaceRetiredModels`, `RETIRED_MODEL_REPLACEMENTS` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag; v3 renames `audio.whisperModel` -> `audio.transcriptionModel` (#521); v4 repoints retired model ids to vendor replacements |
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
-| `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:293`) |
+| `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:296`) |
 | `settings-merge.test.ts` | Tests | Merge semantics + pollution-key tests |
 | `voice.ts` | `voiceInstruction`, `VOICE_OPTIONS`, `VoiceMode`, `VoiceSettings` (+ rule constants for tests) | System-prompt voice fragment for prose-authoring call sites (#540). No imports |
 | `voice.test.ts` | Tests | Per-option output, custom trim + blank fallback, unknown-value fallback, verbatim exemption on every option |
@@ -790,13 +810,14 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 - Non-dismissible notices for running operations
 - Confirmation snackbars (Proceed/Cancel) returning `Promise<boolean>`
 - Status bar integration (shows active operation count)
+- In-progress registry (#577): `inProgress` lists running proposal-producing operations for the unified sidebar; opt-in per call via `startOperation(label, id, meta)` (cancellable rows) or `trackInProgress(label, meta)` (toast-less, non-cancellable rows)
 - Styling via `styles.css` classes (prefix `synapse-notice`), loaded/unloaded with the plugin
-- Secret redaction on every error path via `redactSecrets` — `error()`, `notifyError()`, and the operation `error()` `console.error` all route through `showErrorNotice`/`redactSecrets`. Source ref: `notifications.ts:L295` (operation-error console sink), `notifications.ts:L431` (`error()`), `notifications.ts:L519` (`notifyError()`)
+- Secret redaction on every error path via `redactSecrets` — `error()`, `notifyError()`, and the operation `error()` `console.error` all route through `showErrorNotice`/`redactSecrets`. Source ref: `notifications.ts:L310` (operation-error console sink), `notifications.ts:L456` (`error()`), `notifications.ts:L544` (`notifyError()`)
 - `info()` and `success()` accept optional `action?: NoticeAction` 3rd param — renders an action button on the toast (floors duration to 8s, then auto-dismiss)
-- `infoSticky(message, action)` — duration-0 dismissible action toast that stays up until the user clicks the action or clicks the toast; used by `UpdateChecker` for the "update available" prompt. Source ref: `notifications.ts:L405`
+- `infoSticky(message, action)` — duration-0 dismissible action toast that stays up until the user clicks the action or clicks the toast; used by `UpdateChecker` for the "update available" prompt. Source ref: `notifications.ts:L430`
 - `error(message)` — persistent (until clicked) error toast; clicking copies the redacted text to the clipboard. `notifyError(context, error)` wraps an error object + context label through the same sink
 - `OperationHandle.finish(message?, action?)` accepts optional `action?: NoticeAction` — completion toast includes a button that runs `action.onClick()` then hides the toast
-- `dispose()` — tears down every in-flight tracked operation (stops its `setInterval` + hides its notice, clears the map). Called from `main.ts` `onunload()` so disabling the plugin mid-operation never leaves an orphaned 400ms timer firing against a detached toast. Source ref: `notifications.ts:L170`
+- `dispose()` — tears down every in-flight tracked operation (stops its `setInterval` + hides its notice, clears the map). Called from `main.ts` `onunload()` so disabling the plugin mid-operation never leaves an orphaned 400ms timer firing against a detached toast; also clears `inProgress`. Source ref: `notifications.ts:L173`
 - One-shot `info()`/`success()`/`error()` calls WITHOUT an action are equal-message throttled within `NOTICE_THROTTLE_MS` (3s) via private `isThrottled` (#396): a second identical `${level}:${message}` toast inside the window is dropped (prevents per-item loop floods, e.g. a per-image notice). Tracked-operation toasts, `confirm()`, action notices (`showActionNotice`/`infoSticky`), and `notifyError()` are exempt. `dispose()` also clears the `lastShown` dedup map
 
 ## Validation Rules
@@ -835,7 +856,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 |---------|---------|
 | `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index, summarize/summarizer, organize/content-analyzer, deep-dive/topic-analyzer, deep-dive/note-generator, rem/semantic-matcher, title/title-suggester |
 | `redactSecrets` | ai-client (safeRequest error bodies + API-error wrap), credential-validator (probe error messages), credential-field (Test-button validation-catch chip message), update-checker (fetch-failure detail), notifications (`error`/`notifyError`/operation-error toast + console paths) |
-| `redactError` | main (settings-migration console sink only, `main.ts:289`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, shared/image-preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
+| `redactError` | main (settings-migration console sink only, `main.ts:292`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, shared/image-preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
 | `withCacheReport` / `trackAiCache` / `transcriptCacheUse` / `mergeCacheUse` | audio/index, video/index, transcription/insert-url-transcript, summarize/index, tidy/index, elaboration/index, enrichment/index, deep-dive/index, organize/index, rem/index, title/index, image/index (#527 finish messages) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
@@ -844,7 +865,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
 | `voiceInstruction` | elaboration/proposer, deep-dive/note-generator, summarize/summarizer (#540) |
 | `VOICE_OPTIONS` | settings-ui/voice-setting |
-| `deepMergeSettings` | main (`loadSettings`, `main.ts:293`: migrated raw record over `DEFAULT_SETTINGS`) |
+| `deepMergeSettings` | main (`loadSettings`, `main.ts:296`: migrated raw record over `DEFAULT_SETTINGS`) |
 | `migrateDataFolder` | main (`onload`, `main.ts:50`, right after `NotificationManager` construction) |
 | `extractGeminiResponseText` | ai-client (callGemini), audio/transcriber (Gemini provider) |
 | `arrayBufferToBase64` / `base64EncodedLength` | image/extractor, elaboration/image-analyzer, audio/transcriber (Gemini inline audio), shared/image-preprocess (`base64EncodedLength` only) |
