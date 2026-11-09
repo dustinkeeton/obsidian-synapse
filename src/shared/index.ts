@@ -58,6 +58,8 @@ export { decorateCredentialField } from './credential-field';
 export type { CredentialFieldOptions, CredentialFieldHandle } from './credential-field';
 export { NotificationManager, linkLoadError } from './notifications';
 export type { OperationHandle, NoticeAction } from './notifications';
+export { InProgressRegistry } from './in-progress-registry';
+export type { InProgressEntry, InProgressKind, InProgressListener, InProgressMeta } from './in-progress-registry';
 export { reviewAction } from './review-action';
 export type { ReviewActionOptions } from './review-action';
 export { UpdateChecker, isNewerVersion } from './update-checker';

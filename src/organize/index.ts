@@ -134,7 +134,7 @@ export class OrganizeModule implements FeatureModule {
 	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
 		const genOp = this.notifications.startOperation(
 			'Resuming organization',
-			'organize-resume'
+			'organize-resume', { kind: 'organize' }
 		);
 
 		const tally = emptyTally();
@@ -236,7 +236,7 @@ export class OrganizeModule implements FeatureModule {
 
 		const op = this.notifications.startOperation(
 			`Organizing ${file.basename}`,
-			`organize-${file.path}`
+			`organize-${file.path}`, { kind: 'organize', target: file.path }
 		);
 
 		const cacheUse: CacheUse = {};
@@ -294,7 +294,7 @@ export class OrganizeModule implements FeatureModule {
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for organization`,
-			'organize-scan'
+			'organize-scan', { kind: 'organize', target: folderLabel ?? 'Whole vault' }
 		);
 
 		let allFiles = getMarkdownFiles(this.plugin.app, target);
@@ -337,7 +337,7 @@ export class OrganizeModule implements FeatureModule {
 		// Phase 3: Analyze and organize (checkpointed)
 		const genOp = this.notifications.startOperation(
 			'Organizing notes',
-			'organize-generate'
+			'organize-generate', { kind: 'organize', target: folderLabel ?? 'Whole vault' }
 		);
 
 		const tally = emptyTally();

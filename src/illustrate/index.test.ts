@@ -41,6 +41,7 @@ function makeOp(cancelled = false) {
 interface MockNotifications {
 	info: Mock; success: Mock; notifyError: Mock; confirm: Mock;
 	startOperation: Mock<(label: string, id?: string) => ReturnType<typeof makeOp>>;
+	trackInProgress: Mock<(label: string, meta: unknown) => () => void>;
 }
 
 describe('IllustrateModule', () => {
@@ -63,6 +64,7 @@ describe('IllustrateModule', () => {
 		notifications = {
 			info: vi.fn(), success: vi.fn(), notifyError: vi.fn(), confirm: vi.fn().mockResolvedValue(true),
 			startOperation: vi.fn().mockReturnValue(op),
+			trackInProgress: vi.fn(() => () => {}),
 		};
 		checkpointManager = createMockCheckpointManager();
 		registrar = { register: vi.fn() };

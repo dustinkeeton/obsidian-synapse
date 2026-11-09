@@ -37,6 +37,7 @@ interface MockNotifications {
 	success: Mock<(message: string, duration?: number, action?: NoticeAction) => void>;
 	notifyError: Mock<(context: string, error: unknown) => void>;
 	startOperation: Mock<(label: string, id?: string) => ReturnType<typeof makeOp>>;
+	trackInProgress: Mock<(label: string, meta: unknown) => () => void>;
 }
 
 /** Spy-backed stand-in for the CommandRegistrar the module registers against. */
@@ -84,6 +85,7 @@ describe('RemModule', () => {
 			success: vi.fn(),
 			notifyError: vi.fn(),
 			startOperation: vi.fn().mockReturnValue(makeOp()),
+			trackInProgress: vi.fn(() => () => {}),
 		};
 		checkpointManager = createMockCheckpointManager();
 		registrar = { register: vi.fn() };
@@ -144,6 +146,28 @@ describe('RemModule', () => {
 			expect(notifications.info).toHaveBeenCalledWith(
 				'Skipped — "Archive/Old.md" is excluded by rule "Archive/**"'
 			);
+		});
+
+		it('tracks the scan in the in-progress registry and ends it when done (#577)', async () => {
+			const end = vi.fn();
+			notifications.trackInProgress.mockReturnValue(end);
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
+			app.vault.read.mockResolvedValue('mentions Foo');
+			scanSpy.mockReturnValue([candidate('Foo')]);
+			const module = await loadedModule();
+
+			await module.remScanNote('notes/A.md');
+			expect(notifications.trackInProgress).toHaveBeenCalledWith(expect.any(String), { kind: 'rem', target: 'notes/A.md' });
+			expect(end).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not track an excluded note (#577)', async () => {
+			settings.exclusions = [{ pattern: 'Archive/**', features: ['rem'] }];
+			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('Archive/Old.md'));
+			const module = await loadedModule();
+
+			await module.remScanNote('Archive/Old.md');
+			expect(notifications.trackInProgress).not.toHaveBeenCalled();
 		});
 
 		it('saves a proposal built from literal mention candidates', async () => {

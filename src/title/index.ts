@@ -138,6 +138,7 @@ export class TitleModule implements FeatureModule {
 		if (existing.some(p => p.contentKey === key && p.status !== 'accepted')) return;
 
 		const cacheUse: CacheUse = {};
+		const endTracking = this.notifications.trackInProgress(`Suggesting a title for ${file.basename}`, { kind: 'title', target: filePath });
 		try {
 			const { title, reasoning } = await this.suggester.suggestTitle(content, file.basename, trackAiCache(cacheUse));
 			if (!title || isUntitled(title)) return;
@@ -183,6 +184,8 @@ export class TitleModule implements FeatureModule {
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			console.warn(`[Synapse] Title suggestion failed for ${filePath}: ${msg}`);
+		} finally {
+			endTracking();
 		}
 	}
 
@@ -223,6 +226,7 @@ export class TitleModule implements FeatureModule {
 		if (existing.some(p => p.contentKey === key && p.status !== 'accepted')) return;
 
 		const cacheUse: CacheUse = {};
+		const endTracking = this.notifications.trackInProgress(`Checking the title of ${file.basename}`, { kind: 'title', target: filePath });
 		try {
 			const result = await this.suggester.checkTitleMismatch(content, file.basename, trackAiCache(cacheUse));
 			if (!result.isMismatch || !result.suggestedTitle) return;
@@ -266,6 +270,8 @@ export class TitleModule implements FeatureModule {
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			console.warn(`[Synapse] Title mismatch check failed for ${filePath}: ${msg}`);
+		} finally {
+			endTracking();
 		}
 	}
 

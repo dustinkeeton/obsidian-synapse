@@ -281,7 +281,7 @@ export class DeepDiveModule implements FeatureModule {
 		// Phase 1: Extract topics from root note
 		const scanOp = this.notifications.startOperation(
 			`Analyzing ${file.basename}`,
-			`deep-dive-scan-${file.path}`
+			`deep-dive-scan-${file.path}`, { kind: 'deep-dive', target: file.path }
 		);
 
 		let rootTopics: ExtractedTopic[];
@@ -381,7 +381,7 @@ export class DeepDiveModule implements FeatureModule {
 		const settings = this.getSettings().deepDive;
 		const pending = run.pending ?? { tasks: [], processedCount: 0 };
 		run.pending = pending;
-		const genOp = this.notifications.startOperation('Generating deep dive', 'deep-dive-generate');
+		const genOp = this.notifications.startOperation('Generating deep dive', 'deep-dive-generate', { kind: 'deep-dive', target: rootFile.path });
 		const sources = new Map<string, TaskSource>();
 		const cacheUses: CacheUse[] = [];
 		const stopPauseNotice = this.watchMobilePause();

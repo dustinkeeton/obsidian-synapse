@@ -5,6 +5,7 @@ import type { TitleProposal } from '../title';
 import type { Proposal } from '../elaboration';
 import { createEl, type StubEl } from '../__mocks__/obsidian';
 import type { WorkspaceLeaf } from 'obsidian';
+import type { InProgressEntry } from '../shared';
 
 /**
  * The private surface of {@link UnifiedProposalView} these tests reach into via
@@ -22,6 +23,10 @@ interface ViewInternals {
 	renderTitleReview(proposal: TitleProposal): void;
 	renderElaborationCard(container: StubEl, proposal: Proposal): void;
 	renderElaborationReview(proposal: Proposal): void;
+	setItems(items: UnifiedItem[]): void;
+	setInProgress(entries: InProgressEntry[]): void;
+	render(): void;
+	reviewingElaboration: Proposal | null;
 }
 
 // --- Helpers ----------------------------------------------------------------
@@ -50,6 +55,7 @@ function mockCallbacks(): UnifiedViewCallbacks {
 		onIllustrateReject: vi.fn().mockResolvedValue(undefined),
 		onCheckpointDiscard: vi.fn().mockResolvedValue(undefined),
 		onCheckpointResume: vi.fn().mockResolvedValue(undefined),
+		onCancelInProgress: vi.fn(),
 	};
 }
 
@@ -180,6 +186,7 @@ function stubEl(): StubEl {
 		textContent: '',
 		empty: vi.fn(),
 		addClass: vi.fn(),
+		toggleClass: vi.fn(),
 		addEventListener: vi.fn(),
 		closest: vi.fn().mockReturnValue(null),
 		createEl: vi.fn().mockImplementation(() => stubEl()),
@@ -444,5 +451,91 @@ describe('UnifiedProposalView elaboration rewrite copy (#552)', () => {
 		expect(textOf(view.contentEl)).not.toContain('Proposed additions');
 		const buttons = elsWithTag(view.contentEl, 'BUTTON').map((b) => b.textContent);
 		expect(buttons).toContain('Accept and replace');
+	});
+});
+
+describe('UnifiedProposalView in progress section (#577)', () => {
+	function entry(overrides: Partial<InProgressEntry> = {}): InProgressEntry {
+		return { id: 'op-1', kind: 'enrichment', label: 'Enriching note', target: 'notes/a.md', startedAt: 0, cancellable: true, ...overrides };
+	}
+
+	function setup() {
+		const callbacks = mockCallbacks();
+		const view = new UnifiedProposalView(mockLeaf(), callbacks, new NotificationManager()) as unknown as ViewInternals;
+		view.contentEl = createEl();
+		view.render();
+		return { view, callbacks };
+	}
+
+	const section = (view: ViewInternals) => elsWithClass(view.contentEl, 'synapse-in-progress')[0];
+
+	it('hides the section when nothing is running', () => {
+		const { view } = setup();
+		expect(section(view).className.split(/\s+/)).toContain('is-empty');
+		expect(elsWithClass(view.contentEl, 'synapse-in-progress-row')).toHaveLength(0);
+	});
+
+	it('renders a row per operation with kind chip, label and target', () => {
+		const { view } = setup();
+		view.setInProgress([entry(), entry({ id: 'op-2', kind: 'rem', label: 'REM scanning 4 notes', target: undefined })]);
+		const rows = elsWithClass(view.contentEl, 'synapse-in-progress-row');
+		expect(rows).toHaveLength(2);
+		expect(rows[0].className.split(/\s+/)).toContain('synapse-card--enrichment');
+		expect(elsWithClass(rows[0], 'synapse-badge--enrichment')[0].textContent).toBe('Enrichment');
+		expect(textOf(rows[0])).toContain('notes/a.md');
+		expect(elsWithClass(rows[1], 'synapse-in-progress-target')).toHaveLength(0);
+		expect(section(view).className.split(/\s+/)).not.toContain('is-empty');
+	});
+
+	it('shows the progress counter and updates it in place on a tick', () => {
+		const { view } = setup();
+		view.setInProgress([entry({ current: 1, total: 4 })]);
+		const before = section(view);
+		view.setInProgress([entry({ current: 3, total: 4 })]);
+		expect(section(view)).toBe(before);
+		expect(elsWithClass(view.contentEl, 'synapse-in-progress-count')[0].textContent).toBe('3/4');
+	});
+
+	it('cancels through the callback when the row Cancel is clicked', () => {
+		const { view, callbacks } = setup();
+		view.setInProgress([entry()]);
+		const cancel = elsWithClass(view.contentEl, 'synapse-in-progress-cancel')[0];
+		cancel.dispatchEvent({ type: 'click' });
+		expect(callbacks.onCancelInProgress).toHaveBeenCalledWith('op-1');
+	});
+
+	it('omits Cancel for non-cancellable work', () => {
+		const { view } = setup();
+		view.setInProgress([entry({ kind: 'title', cancellable: false })]);
+		expect(elsWithClass(view.contentEl, 'synapse-in-progress-cancel')).toHaveLength(0);
+	});
+
+	it('suppresses the empty-state message while an operation runs', () => {
+		const { view } = setup();
+		view.setInProgress([entry()]);
+		expect(elsWithClass(view.contentEl, 'synapse-empty')).toHaveLength(0);
+	});
+
+	it('hands the row off to the new proposal card without an empty state', () => {
+		const { view } = setup();
+		view.setInProgress([entry({ kind: 'elaboration' })]);
+		view.setItems([makeElaborationItem()]);
+		view.setInProgress([]);
+		expect(elsWithClass(view.contentEl, 'synapse-in-progress-row')).toHaveLength(0);
+		expect(elsWithClass(view.contentEl, 'synapse-card--elaboration')).toHaveLength(1);
+		expect(elsWithClass(view.contentEl, 'synapse-empty')).toHaveLength(0);
+	});
+
+	it('leaves an open review untouched and shows the rows on return to the list', () => {
+		const { view } = setup();
+		const item = makeElaborationItem();
+		view.setItems([item]);
+		view.reviewingElaboration = item.data as Proposal;
+		view.render();
+		view.setInProgress([entry()]);
+		expect(elsWithClass(view.contentEl, 'synapse-in-progress')).toHaveLength(0);
+		view.reviewingElaboration = null;
+		view.render();
+		expect(elsWithClass(view.contentEl, 'synapse-in-progress-row')).toHaveLength(1);
 	});
 });

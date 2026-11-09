@@ -28,6 +28,7 @@ describe('RemModule Review toast action (#366)', () => {
 		success: Mock<(message: string, duration?: number, action?: NoticeAction) => void>;
 		notifyError: ReturnType<typeof vi.fn>;
 		startOperation: ReturnType<typeof vi.fn>;
+		trackInProgress: ReturnType<typeof vi.fn>;
 	};
 	let sourceFile: TFile;
 
@@ -45,6 +46,7 @@ describe('RemModule Review toast action (#366)', () => {
 			success: vi.fn(),
 			notifyError: vi.fn(),
 			startOperation: vi.fn(() => ({ progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled: false })),
+			trackInProgress: vi.fn(() => () => {}),
 		};
 
 		vi.spyOn(RemStore.prototype, 'init').mockResolvedValue(undefined);

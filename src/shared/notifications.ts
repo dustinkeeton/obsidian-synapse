@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 import { redactSecrets, redactError } from './redact';
+import { InProgressRegistry, type InProgressMeta } from './in-progress-registry';
 
 export type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error';
 
@@ -155,6 +156,8 @@ export class NotificationManager {
 	 * Cleared in {@link dispose}.
 	 */
 	private lastShown = new Map<string, number>();
+	/** Running proposal-producing operations, fed by {@link startOperation} metadata and {@link trackInProgress}. */
+	readonly inProgress = new InProgressRegistry();
 
 	setStatusBarEl(el: HTMLElement): void {
 		this.statusBarEl = el;
@@ -174,6 +177,7 @@ export class NotificationManager {
 			op.notice.hide();
 		}
 		this.operations.clear();
+		this.inProgress.clear();
 		// Drop dedup timestamps too, so a re-enabled plugin starts with a clean
 		// throttle window rather than inheriting stale last-shown times (#396).
 		this.lastShown.clear();
@@ -183,7 +187,7 @@ export class NotificationManager {
 	 * Begin a tracked operation. Returns a handle for updating progress.
 	 * The notice is non-dismissible and includes a Cancel button.
 	 */
-	startOperation(label: string, id?: string): OperationHandle {
+	startOperation(label: string, id?: string, meta?: InProgressMeta): OperationHandle {
 		const opId = id ?? `op-${++this.idCounter}`;
 
 		// Clean up existing operation with same id
@@ -194,6 +198,11 @@ export class NotificationManager {
 		}
 
 		const baseLabel = stripTrailingDots(label);
+		if (meta) {
+			this.inProgress.begin({ id: opId, kind: meta.kind, label: baseLabel, target: meta.target, cancellable: true });
+		} else {
+			this.inProgress.end(opId);
+		}
 
 		// Create a persistent notice and take over its DOM
 		const notice = new Notice('', 0);
@@ -253,6 +262,7 @@ export class NotificationManager {
 				op.dotsEl.textContent = '.';
 				stopEllipsis(op.ellipsisInterval);
 				op.ellipsisInterval = startEllipsisOnEl(op.dotsEl);
+				this.inProgress.update(opId, { label: base });
 				this.updateStatusBar();
 			},
 
@@ -268,6 +278,11 @@ export class NotificationManager {
 				op.labelEl.textContent = `Synapse: ${base}`;
 				op.dotsEl.textContent = '';
 				styleNotice(op.notice, 'progress');
+				this.inProgress.update(opId, {
+					current,
+					total,
+					...(progressLabel ? { label: stripTrailingDots(progressLabel) } : {}),
+				});
 				this.updateStatusBar();
 			},
 
@@ -297,6 +312,16 @@ export class NotificationManager {
 		};
 
 		return handle;
+	}
+
+	/**
+	 * Register toast-less proposal work (e.g. a silent post-op check) in {@link inProgress}.
+	 * Returns the deregister function; call it in a `finally`.
+	 */
+	trackInProgress(label: string, meta: InProgressMeta): () => void {
+		const id = `track-${++this.idCounter}`;
+		this.inProgress.begin({ id, kind: meta.kind, label, target: meta.target, cancellable: false });
+		return () => this.inProgress.end(id);
 	}
 
 	/**
@@ -548,6 +573,7 @@ export class NotificationManager {
 			styleNotice(notice, level);
 		}
 		this.operations.delete(id);
+		this.inProgress.end(id);
 		this.updateStatusBar();
 	}
 

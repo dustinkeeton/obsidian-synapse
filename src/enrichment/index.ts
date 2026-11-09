@@ -131,7 +131,7 @@ export class EnrichmentModule implements FeatureModule {
 
 		const genOp = this.notifications.startOperation(
 			'Resuming enrichment',
-			'enrichment-vault-resume'
+			'enrichment-vault-resume', { kind: 'enrichment' }
 		);
 		const createdProposals: Array<{ id: string; notePath: string }> = [];
 		const cacheUses: CacheUse[] = [];
@@ -225,7 +225,7 @@ export class EnrichmentModule implements FeatureModule {
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for enrichment`,
-			'enrichment-vault-scan'
+			'enrichment-vault-scan', { kind: 'enrichment', target: folderLabel ?? 'Whole vault' }
 		);
 
 		let allFiles = getMarkdownFiles(this.plugin.app, target);
@@ -276,7 +276,7 @@ export class EnrichmentModule implements FeatureModule {
 
 		const genOp = this.notifications.startOperation(
 			'Generating enrichment proposals',
-			'enrichment-vault-generate'
+			'enrichment-vault-generate', { kind: 'enrichment', target: folderLabel ?? 'Whole vault' }
 		);
 		// Track proposal IDs mapped to note paths for Phase 4 injection
 		const createdProposals: Array<{ id: string; notePath: string }> = [];
@@ -438,7 +438,7 @@ export class EnrichmentModule implements FeatureModule {
 
 		const op = this.notifications.startOperation(
 			`Enriching ${file.basename}`,
-			`enrich-${filePath}`
+			`enrich-${filePath}`, { kind: 'enrichment', target: filePath }
 		);
 
 		await this.noteQueue.run(file.path, () => this.runEnrichment(file, trigger, op, options));

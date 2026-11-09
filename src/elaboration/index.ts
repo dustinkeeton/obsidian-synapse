@@ -185,7 +185,7 @@ export class ElaborationModule implements FeatureModule {
 	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
 		const genOp = this.notifications.startOperation(
 			'Resuming elaboration',
-			'vault-generate-resume'
+			'vault-generate-resume', { kind: 'elaboration' }
 		);
 		const createdProposalIds: string[] = [];
 		const cacheUses: CacheUse[] = [];
@@ -263,7 +263,7 @@ export class ElaborationModule implements FeatureModule {
 		const folderLabel = scanScopeLabel(target);
 		// --- Phase 1: Detection (lightweight, local-only) ---
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
-		const scanOp = this.notifications.startOperation(scopeLabel, 'vault-scan');
+		const scanOp = this.notifications.startOperation(scopeLabel, 'vault-scan', { kind: 'elaboration', target: folderLabel ?? 'Whole vault' });
 		let files = getMarkdownFiles(this.plugin.app, target);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) files = files.filter(f => f.path === onlyFile.path);
@@ -305,7 +305,7 @@ export class ElaborationModule implements FeatureModule {
 		// --- Phase 3: Proposal generation (heavy, cancellable, checkpointed) ---
 		const genOp = this.notifications.startOperation(
 			'Generating proposals',
-			'vault-generate'
+			'vault-generate', { kind: 'elaboration', target: folderLabel ?? 'Whole vault' }
 		);
 		const createdProposalIds: string[] = [];
 		const cacheUses: CacheUse[] = [];
@@ -397,7 +397,7 @@ export class ElaborationModule implements FeatureModule {
 	async scanNote(file: TFile, userInvoked = true): Promise<void> {
 		const op = this.notifications.startOperation(
 			`Scanning ${file.basename}`,
-			`scan-${file.path}`
+			`scan-${file.path}`, { kind: 'elaboration', target: file.path }
 		);
 		await this.noteQueue.run(
 			file.path,

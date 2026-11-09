@@ -6,14 +6,24 @@ import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
 import type { RemProposal } from '../rem';
 import type { IllustrateProposal } from '../illustrate';
-import type { Checkpoint, NotificationManager } from '../shared';
+import type { Checkpoint, InProgressEntry, NotificationManager } from '../shared';
 import { fireAndForget, describeInsertion } from '../shared';
-import type { UnifiedItem, UnifiedViewCallbacks } from './types';
+import type { ProposalKind, UnifiedItem, UnifiedViewCallbacks } from './types';
 import { badgeClass, cardClass, reviewPaneLabelClass } from './proposal-styles';
 
 export { type UnifiedItem, type UnifiedViewCallbacks } from './types';
 
 export const UNIFIED_VIEW_TYPE = 'synapse-proposals';
+
+const KIND_LABELS: Record<ProposalKind, string> = {
+	elaboration: 'Elaboration',
+	enrichment: 'Enrichment',
+	organize: 'Organize',
+	'deep-dive': 'Deep dive',
+	title: 'Title',
+	rem: 'REM',
+	illustrate: 'Illustrate',
+};
 
 /**
  * Single sidebar view that shows both elaboration and enrichment proposals.
@@ -25,6 +35,9 @@ export const UNIFIED_VIEW_TYPE = 'synapse-proposals';
 export class UnifiedProposalView extends ItemView {
 	private items: UnifiedItem[] = [];
 	private incompleteCheckpoints: Checkpoint[] = [];
+	private inProgress: InProgressEntry[] = [];
+	/** The list-mode In progress section; null outside list mode. */
+	private inProgressEl: HTMLElement | null = null;
 	private callbacks: UnifiedViewCallbacks;
 	private notifications: NotificationManager;
 
@@ -87,6 +100,18 @@ export class UnifiedProposalView extends ItemView {
 		this.render();
 	}
 
+	setInProgress(entries: InProgressEntry[]): void {
+		const membershipChanged = entries.length !== this.inProgress.length
+			|| entries.some((e, i) => e.id !== this.inProgress[i].id);
+		this.inProgress = entries;
+		if (!this.inProgressEl) return;
+		if (membershipChanged) {
+			this.render();
+		} else {
+			this.renderInProgressRows(this.inProgressEl);
+		}
+	}
+
 	setItems(items: UnifiedItem[]): void {
 		this.items = items;
 		// Exit review mode if the reviewed proposal is no longer pending
@@ -136,6 +161,7 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	private render(): void {
+		this.inProgressEl = null;
 		if (this.reviewingElaboration) {
 			this.renderElaborationReview(this.reviewingElaboration);
 		} else if (this.reviewingEnrichment) {
@@ -380,6 +406,7 @@ export class UnifiedProposalView extends ItemView {
 	/** Render a progress indicator for bulk accept/reject operations. */
 	private renderBulkProgress(verb: string, current: number, total: number): void {
 		const { contentEl } = this;
+		this.inProgressEl = null;
 		contentEl.empty();
 		contentEl.addClass('synapse-view-root');
 		contentEl.createEl('h3', { text: 'Pending proposals' });
@@ -403,12 +430,16 @@ export class UnifiedProposalView extends ItemView {
 		contentEl.addClass('synapse-view-root');
 		contentEl.createEl('h3', { text: 'Pending proposals' });
 
+		this.inProgressEl = contentEl.createDiv({ cls: 'synapse-in-progress' });
+		this.renderInProgressRows(this.inProgressEl);
+
 		// Render incomplete checkpoints banner
 		if (this.incompleteCheckpoints.length > 0) {
 			this.renderCheckpointBanner(contentEl);
 		}
 
 		if (this.items.length === 0 && this.incompleteCheckpoints.length === 0) {
+			if (this.inProgress.length > 0) return;
 			contentEl.createEl('p', {
 				text: 'No pending proposals. Scan your vault or enrich a note to get started.',
 				cls: 'synapse-empty',
@@ -1491,6 +1522,45 @@ export class UnifiedProposalView extends ItemView {
 	}
 
 	// ── Checkpoint Banner ─────────────────────────────────────
+
+	private renderInProgressRows(section: HTMLElement): void {
+		section.empty();
+		section.toggleClass('is-empty', this.inProgress.length === 0);
+		if (this.inProgress.length === 0) return;
+		section.createEl('div', { text: 'In progress', cls: 'synapse-in-progress-heading' });
+
+		for (const entry of this.inProgress) {
+			const row = section.createDiv({ cls: `synapse-in-progress-row ${cardClass(entry.kind)}` });
+			const info = row.createDiv({ cls: 'synapse-in-progress-info' });
+			info.createEl('span', {
+				text: KIND_LABELS[entry.kind],
+				cls: `synapse-badge ${badgeClass(entry.kind)}`,
+			});
+			info.createEl('strong', { text: entry.label, cls: 'synapse-in-progress-label' });
+			if (entry.target) {
+				info.createEl('small', { text: entry.target, cls: 'synapse-in-progress-target' });
+			}
+
+			const hasProgress = entry.current !== undefined && entry.total !== undefined && entry.total > 0;
+			if (hasProgress) {
+				const current = entry.current ?? 0;
+				const total = entry.total ?? 0;
+				info.createEl('small', { text: `${current}/${total}`, cls: 'synapse-in-progress-count' });
+				const track = row.createDiv({ cls: 'synapse-in-progress-track' });
+				const fill = track.createDiv({ cls: 'synapse-in-progress-fill' });
+				fill.setCssProps({ '--synapse-fill': `${Math.min(100, Math.round((current / total) * 100))}%` });
+			} else {
+				row.createDiv({ cls: 'synapse-in-progress-track is-indeterminate' })
+					.createDiv({ cls: 'synapse-in-progress-fill' });
+			}
+
+			if (entry.cancellable) {
+				const actions = row.createDiv({ cls: 'synapse-actions' });
+				const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'synapse-in-progress-cancel' });
+				cancelBtn.addEventListener('click', () => this.callbacks.onCancelInProgress(entry.id));
+			}
+		}
+	}
 
 	private renderCheckpointBanner(container: HTMLElement): void {
 		const section = container.createDiv({ cls: 'synapse-checkpoint-banner' });

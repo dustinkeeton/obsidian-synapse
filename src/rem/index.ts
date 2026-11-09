@@ -158,6 +158,16 @@ export class RemModule implements FeatureModule {
 			return null;
 		}
 
+		const endTracking = this.notifications.trackInProgress(`Finding links in ${tFile.basename}`, { kind: 'rem', target: filePath });
+		try {
+			return await this.scanIncludedNote(tFile, filePath, options);
+		} finally {
+			endTracking();
+		}
+	}
+
+	private async scanIncludedNote(tFile: TFile, filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null> {
+		const info = (message: string) => { if (!options?.postOp) this.notifications.info(message); };
 		const content = await this.plugin.app.vault.read(tFile);
 
 		const cacheUse: CacheUse = {};
@@ -217,7 +227,7 @@ export class RemModule implements FeatureModule {
 
 		const op = this.notifications.startOperation(
 			`REM scanning ${eligible.length} notes${scopeSuffix}`,
-			'rem-directory-scan'
+			'rem-directory-scan', { kind: 'rem', target: folderLabel ?? 'Whole vault' }
 		);
 
 		// Create checkpoint
@@ -309,7 +319,7 @@ export class RemModule implements FeatureModule {
 	async resumeFromCheckpoint(checkpoint: import('../shared').Checkpoint): Promise<void> {
 		const op = this.notifications.startOperation(
 			'Resuming REM scan',
-			'rem-resume'
+			'rem-resume', { kind: 'rem' }
 		);
 
 		const createdProposalIds: string[] = [];
