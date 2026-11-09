@@ -219,7 +219,7 @@ Registered via `registrar.register('check-dependencies', ...)` (index.ts:68); Ob
 | `video.captionsFirst` | `boolean` | `true` | Prefer the YouTube caption tier over download+transcribe (#184; `settings.ts:212`); consumed by `transcription/caption-strategy.ts` `canHandle`, toggle rendered at `settings-section.ts:173` |
 | `video.frameExtraction.enabled` | `boolean` | `false` | Frame extraction gate (unimplemented) |
 | `video.frameExtraction.intervalSeconds` | `number` | `30` | Seconds between extracted frames |
-| `video.frameExtraction.visionModel` | `string` | `'gpt-5.6-sol'` | Vision model for frame analysis |
+| `video.frameExtraction.visionModel` | `string` | `'opus'` | Vision model for frame analysis |
 | `video.frameExtraction.maxFrames` | `number` | `20` | Max frames to extract |
 
 Settings UI: `renderVideoSettings` (`settings-section.ts:152`) renders the accordion; `addPathSetting` attaches per-OS install-help panels (#382/#383) to the yt-dlp and ffmpeg path fields. Invoked only on desktop by `settings-tab.ts`.

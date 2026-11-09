@@ -122,13 +122,13 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }
    |  Routes by transcriptionProvider (all via requestUrl, 5min timeout, retry on connection/dns/offline only):
    |  'whisper-api' --> OpenAI /v1/audio/transcriptions
    |       Body: buildMultipartBody() manual multipart/form-data (requestUrl has no FormData)
-   |       Key: audio.whisperApiKey || ai.apiKey
+   |       Key: audio.whisperApiKey || (ai.provider === 'openai' ? ai.apiKey : '')
    |  'deepgram' --> Deepgram /v1/listen (raw ArrayBuffer body)
    |       Key: audio.deepgramApiKey
    |  'gemini' --> generativelanguage /v1beta/models/gemini-3.5-flash:generateContent
    |       Inline base64 audio (rejects > GEMINI_MAX_INLINE_AUDIO_BYTES = 15 MB)
    |       Instruction in system_instruction (prompt-injection hardening); text via extractGeminiResponseText()
-   |       Key: audio.geminiApiKey || ai.apiKey
+   |       Key: audio.geminiApiKey || (ai.provider === 'gemini' ? ai.apiKey : '')
    |  'local-whisper' --> throws (not implemented)
    |  No speech (#524) --> NoSpeechDetectedError, never a result:
    |       every provider: !hasSpeechContent(transcript)
@@ -185,9 +185,9 @@ All under `settings.audio` (interface `AudioSettings`, `settings.ts:177`; defaul
 |-----|------|---------|----------|
 | `enabled` | boolean | `true` | Feature toggle for the audio module |
 | `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'gemini' \| 'local-whisper'` | `'whisper-api'` | Transcription backend (routed in `transcriber.ts:295`) |
-| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey`, `transcriber.ts:314`) |
+| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey` only when `ai.provider === 'openai'`, `transcriber.ts:312`) |
 | `deepgramApiKey` | string | `''` | Deepgram API key (no fallback) |
-| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey`, `transcriber.ts:427`) |
+| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey` only when `ai.provider === 'gemini'`, `transcriber.ts:426`) |
 | `transcriptionModel` | string | `'whisper-1'` | Model for the active provider; resolved against `TRANSCRIPTION_MODEL_OPTIONS` (`transcription-models.ts`) |
 | `localWhisperPath` | string | `''` | Reserved for `local-whisper` CLI path (provider not implemented) |
 | `language` | string | `''` | Language hint; empty = auto-detect |

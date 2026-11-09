@@ -7,7 +7,10 @@ import {
 	foldExcludeFoldersIntoExclusions,
 	dropSemanticMatching,
 	renameWhisperModelToTranscriptionModel,
+	replaceRetiredModels,
+	RETIRED_MODEL_REPLACEMENTS,
 } from './settings-migrations';
+import { MODEL_OPTIONS, TRANSCRIPTION_MODEL_OPTIONS } from '../settings';
 import type { ExclusionRule } from './exclusions';
 
 describe('readSettingsVersion (#93)', () => {
@@ -227,6 +230,40 @@ describe('renameWhisperModelToTranscriptionModel — to:3 migration (#521)', () 
 		expect(() => renameWhisperModelToTranscriptionModel({})).not.toThrow();
 		expect(() => renameWhisperModelToTranscriptionModel({ audio: 'nope' })).not.toThrow();
 		expect(() => renameWhisperModelToTranscriptionModel({ audio: null })).not.toThrow();
+	});
+});
+
+describe('replaceRetiredModels — to:4 migration', () => {
+	it('repoints every saved model field holding a retired id', () => {
+		const out = replaceRetiredModels({
+			ai: { provider: 'openai', model: 'o4-mini' },
+			audio: { transcriptionProvider: 'gemini', transcriptionModel: 'gemini-3.5-flash' },
+			image: { visionModel: 'o3-mini' },
+			video: { frameExtraction: { visionModel: 'gemini-2.5-pro' } },
+		});
+		expect(out).toEqual({
+			ai: { provider: 'openai', model: 'gpt-5.6-terra' },
+			audio: { transcriptionProvider: 'gemini', transcriptionModel: 'gemini-3.6-flash' },
+			image: { visionModel: 'gpt-5.6-sol' },
+			video: { frameExtraction: { visionModel: 'gemini-3.8-flash' } },
+		});
+	});
+
+	it('leaves current ids, empty values and missing sections untouched', () => {
+		const raw = { ai: { model: 'gpt-4o' }, image: { visionModel: '' }, video: 'bogus' };
+		expect(replaceRetiredModels(structuredClone(raw))).toEqual(raw);
+		expect(replaceRetiredModels({})).toEqual({});
+	});
+
+	it('only maps to ids that are still offered', () => {
+		const offered = new Set([
+			...Object.values(MODEL_OPTIONS).flatMap((m) => Object.keys(m)),
+			...Object.values(TRANSCRIPTION_MODEL_OPTIONS).flatMap((m) => Object.keys(m)),
+		]);
+		for (const [retired, replacement] of Object.entries(RETIRED_MODEL_REPLACEMENTS)) {
+			expect(offered.has(retired)).toBe(false);
+			expect(offered.has(replacement)).toBe(true);
+		}
 	});
 });
 

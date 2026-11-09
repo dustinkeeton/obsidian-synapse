@@ -93,7 +93,7 @@ describe('resolveTranscriptionModel (#521)', () => {
 	});
 
 	it('resolves the incumbent Gemini pin by default', () => {
-		expect(resolveTranscriptionModel('gemini', undefined)).toBe('gemini-3.5-flash');
+		expect(resolveTranscriptionModel('gemini', undefined)).toBe('gemini-3.6-flash');
 	});
 
 	it('returns an empty string for a provider with no options', () => {

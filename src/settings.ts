@@ -21,39 +21,48 @@ export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
 /** Provider-specific model options. Dropdown values, not free text. */
 export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
-	// Verified against developers.openai.com/api/docs/models (2026-09-14).
+	// Verified against developers.openai.com/api/docs/models + /deprecations (2026-11-09).
+	// Retired IDs are remapped by the v4 settings migration.
 	openai: {
 		'gpt-6-astra': 'GPT-6 Astra',
+		'gpt-6.1-sol': 'GPT-6.1 Sol',
+		'gpt-6.1-terra': 'GPT-6.1 Terra',
+		'gpt-6-luna': 'GPT-6 Luna',
 		'gpt-5.6-sol': 'GPT-5.6 Sol',
 		'gpt-5.6-terra': 'GPT-5.6 Terra',
 		'gpt-5.6-luna': 'GPT-5.6 Luna',
-		'gpt-4o': 'GPT-4o',
-		'gpt-4o-mini': 'GPT-4o Mini',
-		'o3': 'o3',
-		'o3-mini': 'o3 Mini',
-		'o4-mini': 'o4 Mini',
+		'gpt-4o': 'GPT-4o (retires 2027-01-14)',
+		'gpt-4o-mini': 'GPT-4o Mini (retires 2027-01-14)',
 	},
 	// Short names resolved to API IDs by ANTHROPIC_MODEL_MAP, verified against
-	// docs.claude.com/en/docs/about-claude/models/overview (2026-09-14).
+	// docs.claude.com/en/docs/about-claude/models/overview (2026-11-09).
 	anthropic: {
 		'fable': 'Claude Fable',
 		'opus': 'Claude Opus',
 		'sonnet': 'Claude Sonnet',
 		'haiku': 'Claude Haiku',
 	},
-	// Stable Gemini model IDs verified against ai.google.dev/gemini-api/docs/models (2026-09-14).
+	// Stable Gemini model IDs verified against ai.google.dev/gemini-api/docs/models +
+	// /deprecations (2026-11-09). Retired IDs are remapped by the v4 settings migration.
 	gemini: {
+		'gemini-4-argon': 'Gemini 4 Argon',
 		'gemini-3.8-flash': 'Gemini 3.8 Flash',
-		'gemini-3.5-flash': 'Gemini 3.5 Flash',
-		'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
-		'gemini-2.5-pro': 'Gemini 2.5 Pro',
-		'gemini-2.5-flash': 'Gemini 2.5 Flash',
+		'gemini-3.6-flash': 'Gemini 3.6 Flash',
+		'gemini-3.5-flash-lite': 'Gemini 3.5 Flash Lite',
+		'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite (retires 2027-05-07)',
 	},
-	// Local model tags verified against ollama.com/library (2026-09-14).
+	// Local model tags verified against ollama.com/library (2026-11-09). Older tags
+	// stay listed: they run locally and never retire.
 	ollama: {
+		'gemma4': 'Gemma 4',
+		'qwen3.8': 'Qwen 3.8',
+		'qwen3.6': 'Qwen 3.6',
+		'qwen3.5': 'Qwen 3.5',
+		'gpt-oss': 'gpt-oss',
+		'llama4': 'Llama 4',
+		'phi4': 'Phi-4',
 		'llama3.2': 'Llama 3.2',
 		'llama3': 'Llama 3',
-		'gemma4': 'Gemma 4',
 		'gemma3': 'Gemma 3',
 		'gemma': 'Gemma',
 		'qwen3': 'Qwen 3',
@@ -72,7 +81,7 @@ export type TranscriptionProvider = 'whisper-api' | 'deepgram' | 'gemini' | 'loc
  */
 export const TRANSCRIPTION_MODEL_OPTIONS: Record<TranscriptionProvider, Record<string, string>> = {
 	// Verified against developers.openai.com/api/docs/guides/speech-to-text and
-	// developers.openai.com/api/docs/deprecations (2026-09-14). Trimmed to the
+	// developers.openai.com/api/docs/deprecations (2026-11-09). Trimmed to the
 	// surviving model plus whisper-1 — the gpt-4o-transcribe variants retire
 	// 2027-02-26 alongside it and are redundant with gpt-transcribe. whisper-1
 	// is kept only because it alone returns segment timestamps.
@@ -80,33 +89,38 @@ export const TRANSCRIPTION_MODEL_OPTIONS: Record<TranscriptionProvider, Record<s
 		'whisper-1': 'Whisper v1 (retires 2027-02-26)',
 		'gpt-transcribe': 'GPT Transcribe',
 	},
-	// Verified against developers.deepgram.com/docs/model (2026-09-14).
+	// Verified against developers.deepgram.com/docs/models-languages-overview (2026-11-09).
+	// Flux is streaming-only and is not offered for file transcription.
 	deepgram: {
 		'nova-3-general': 'Nova-3 General',
 		'nova-3-medical': 'Nova-3 Medical',
+		'nova-3-pharma': 'Nova-3 Pharma',
 		'nova-2-general': 'Nova-2 General',
 		'nova-2-meeting': 'Nova-2 Meeting',
 		'nova-2-phonecall': 'Nova-2 Phone Call',
 		'nova-2-finance': 'Nova-2 Finance',
 		'nova-2-medical': 'Nova-2 Medical',
-		'enhanced-general': 'Enhanced General',
-		'base-general': 'Base General',
+		'enhanced-general': 'Enhanced General (legacy)',
+		'base-general': 'Base General (legacy)',
 	},
 	// Audio-capable models for the generateContent endpoint this plugin calls,
 	// verified against ai.google.dev/gemini-api/docs/generate-content/audio
-	// (2026-09-14). gemini-3.5-transcribe is excluded: it requires the
+	// (2026-11-09). gemini-3.5-transcribe is excluded: it requires the
 	// Interactions API, a different request shape (see #521).
 	gemini: {
-		'gemini-3.5-flash': 'Gemini 3.5 Flash',
+		'gemini-3.6-flash': 'Gemini 3.6 Flash',
 		'gemini-3.8-flash': 'Gemini 3.8 Flash',
+		'gemini-3.5-flash-lite': 'Gemini 3.5 Flash Lite',
+		'gemini-4-argon': 'Gemini 4 Argon',
 	},
 	// No options: the local Whisper backend is an unimplemented stub.
 	'local-whisper': {},
 };
 
-/** Jev model ids verified against docs.typesafe.ai/models (2026-10-06). */
+/** Jev model ids verified against docs.typesafe.ai/models (2026-11-09). */
 export const SYSTEM_ONE_MODEL_OPTIONS: Record<string, string> = {
 	'jev-latest': 'Jev (latest)',
+	'jev-1.14.0': 'Jev 1.14.0',
 	'jev-1.13.0': 'Jev 1.13.0',
 	'jev-preview': 'Jev (preview)',
 };
@@ -470,10 +484,10 @@ export interface SynapseSettings {
 export const DEFAULT_SETTINGS: SynapseSettings = {
 	settingsVersion: CURRENT_SETTINGS_VERSION,
 	ai: {
-		provider: 'openai',
+		provider: 'anthropic',
 		apiKey: '',
 		ollamaEndpoint: 'http://localhost:11434',
-		model: 'gpt-5.6-sol',
+		model: 'opus',
 		maxTokens: 2048,
 		temperature: 0.7,
 		cacheResponses: false,
@@ -537,7 +551,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		frameExtraction: {
 			enabled: false,
 			intervalSeconds: 30,
-			visionModel: 'gpt-5.6-sol',
+			visionModel: 'opus',
 			maxFrames: 20,
 		},
 	},
