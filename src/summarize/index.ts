@@ -19,20 +19,9 @@ import { findSummarizeTargets, extractNoteProse } from './note-scanner';
 import { hasSummaryBelow } from './note-scanner';
 import { SummarizeSelectionModal } from './summarize-modal';
 import { Summarizer } from './summarizer';
-import { SummarizeTarget, TranscribedMedia } from './types';
+import type { SummarizeTarget, TranscribedMedia, TranscribeUrlFn, TranscribeAudioFn } from './types';
 
-export type { SummarizeTarget, TranscribedMedia } from './types';
-
-/** Transcribes a media URL through the tier router; injected by the module registry. */
-export type TranscribeUrlFn = (
-	url: string,
-	parentOp?: { update: (msg: string) => void }
-) => Promise<TranscribedMedia>;
-
-/** Transcribes an audio file via the AudioModule; injected by the module registry. */
-export type TranscribeAudioFn = (
-	file: TFile
-) => Promise<TranscribedMedia>;
+export type { SummarizeTarget, TranscribedMedia, TranscribeUrlFn, TranscribeAudioFn } from './types';
 
 const COMPREHENSIVE_SUMMARY_PROMPT =
 	'Provide a comprehensive summary of the following content. This summary will be a standalone reference note. ' +

@@ -94,7 +94,7 @@ const NOTICE_THROTTLE_MS = 3000;
 
 /** Get the underlying DOM element from a Notice */
 function getNoticeEl(notice: Notice): HTMLElement {
-	return (notice as unknown as { noticeEl: HTMLElement }).noticeEl;
+	return notice.noticeEl;
 }
 
 /** Apply level styling to a Notice's DOM element */

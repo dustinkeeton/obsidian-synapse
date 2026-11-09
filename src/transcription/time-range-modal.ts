@@ -2,28 +2,10 @@ import { App, Modal } from 'obsidian';
 import { validateTimeRange } from '../shared';
 import type { NotificationManager, TimeRange } from '../shared';
 import { TimeRangeSlider } from './time-range-slider';
+import type { TimeRangeChoice, TimeRangeModalOptions } from './types';
 
 /** CSS class prefix. */
 const CLS = 'synapse-time-range-modal';
-
-/** What the user decided in the {@link TimeRangeModal}. */
-export type TimeRangeChoice =
-	/** Transcribe only the selected range. */
-	| { kind: 'selection'; range: TimeRange }
-	/** Transcribe the whole file. */
-	| { kind: 'full' }
-	/** Dismissed (Escape / click-away / ✕) — do nothing. */
-	| { kind: 'cancelled' };
-
-export interface TimeRangeModalOptions {
-	/** Media title or filename to display. */
-	title: string;
-	/**
-	 * Total media duration in seconds. When undefined (duration detection
-	 * failed), the modal falls back to manual start/end time inputs.
-	 */
-	duration?: number;
-}
 
 /**
  * Modal asking the user what part of the media to transcribe — the follow-up

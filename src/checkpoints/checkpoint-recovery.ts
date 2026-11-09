@@ -1,19 +1,8 @@
 import { redactError } from '../shared';
-import type { CheckpointManager, NotificationManager } from '../shared';
-import type { CommandRegistrar } from '../commands';
-import type { CheckpointResumeHandlers } from './types';
+import type { CheckpointRecoveryDeps } from './types';
 
 /** Delay before the startup interrupted-operation check runs. */
 export const STARTUP_CHECK_DELAY_MS = 3000;
-
-export interface CheckpointRecoveryDeps {
-	checkpointManager: CheckpointManager;
-	notifications: NotificationManager;
-	registrar: CommandRegistrar;
-	resumeHandlers: CheckpointResumeHandlers;
-	/** Re-render the proposal sidebar after a resume/discard changes the checkpoint list. */
-	refreshView: () => Promise<void>;
-}
 
 /**
  * Checkpoint recovery UX: startup interrupted-operation prompt, the

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createEl, type StubEl } from '../__mocks__/obsidian';
-import { SynapseActionsView, SynapseActionsCallbacks } from './synapse-actions-view';
+import { SynapseActionsView } from './synapse-actions-view';
+import type { SynapseActionsCallbacks } from './types';
 import type { WorkspaceLeaf } from 'obsidian';
 import type { CommandDefinition } from '../commands';
 

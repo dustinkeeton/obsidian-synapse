@@ -1,21 +1,8 @@
 import { formatTimestamp } from './duration-detector';
+import type { TimeRangeSliderOptions } from './types';
 
 /** CSS class prefix for the time-range slider */
 const CLS = 'synapse-time-range';
-
-/**
- * Options for creating a TimeRangeSlider.
- */
-export interface TimeRangeSliderOptions {
-	/** Total media duration in seconds. */
-	duration: number;
-	/** Initial start position in seconds. Defaults to 0. */
-	initialStart?: number;
-	/** Initial end position in seconds. Defaults to duration. */
-	initialEnd?: number;
-	/** Callback fired whenever the selected range changes. */
-	onChange?: (start: number, end: number) => void;
-}
 
 /**
  * A dual-handle range slider for selecting a time range within a known duration.

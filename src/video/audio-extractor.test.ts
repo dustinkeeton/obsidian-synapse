@@ -33,7 +33,7 @@ describe('AudioExtractor.concatAudio', () => {
 		const ex = makeExtractor();
 		const out = await ex.concatAudio(['/a/one.mp3', '/b/two.wav', '/c/three.m4a']);
 
-		expect(out).toMatch(/synapse-combined-\d+\.mp3$/);
+		expect(out).toMatch(/synapse-combined-\d+-[0-9a-f]{16}\.mp3$/);
 		expect(execFileMock).toHaveBeenCalledTimes(1);
 
 		const [cmd, args] = execFileMock.mock.calls[0];
@@ -366,7 +366,7 @@ describe('AudioExtractor.extractFromUrl ffmpeg-location & fallback', () => {
 
 		const ex = makeExtractor();
 		const result = await ex.extractFromUrl('https://www.tiktok.com/@user/video/123');
-		expect(result.audioPath).toMatch(/synapse-audio-\d+\.mp3$/);
+		expect(result.audioPath).toMatch(/synapse-audio-\d+-[0-9a-f]{16}\.mp3$/);
 
 		const extract = extractCalls();
 		expect(extract).toHaveLength(2);

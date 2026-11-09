@@ -1,44 +1,5 @@
-import { DeepDiveProposal, DeepDiveRun } from './types';
+import type { DeepDiveProposal, DeepDiveRun, NavigationContext, TraversalNode } from './types';
 import { generateTreeDiagram, TreeNode, CALLOUT_TYPES, calloutHeaderLine, calloutHeaderSource } from '../shared';
-
-/**
- * A node in the depth-first traversal of accepted proposals.
- * Used to compute prev/next/up/root relationships.
- */
-export interface TraversalNode {
-	proposalId: string;
-	title: string;
-	proposedPath: string;
-	depth: number;
-	/** Index in the DFS order (0-based) */
-	index: number;
-	/** Parent proposal ID (null for root-level proposals) */
-	parentId: string | null;
-	/** Child proposal IDs that are accepted */
-	childIds: string[];
-}
-
-/**
- * Navigation context for a single accepted proposal.
- */
-export interface NavigationContext {
-	/** Root note title and path */
-	root: { title: string; path: string };
-	/** Parent proposal (null for depth-0 proposals) */
-	up: { title: string; path: string } | null;
-	/** Previous proposal in DFS order (null for first) */
-	prev: { title: string; path: string } | null;
-	/** Next proposal in DFS order (null for last) */
-	next: { title: string; path: string } | null;
-	/** 1-based position in the traversal */
-	position: number;
-	/** Total accepted proposals */
-	total: number;
-	/** Breadcrumb path from root: ["Machine Learning", "Neural Networks", "Backpropagation"] */
-	breadcrumbs: string[];
-	/** Title and path of the syllabus note */
-	syllabus: { title: string; path: string };
-}
 
 /**
  * Compute depth-first traversal order from accepted proposals in a run.

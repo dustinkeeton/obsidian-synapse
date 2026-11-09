@@ -5,21 +5,8 @@ import { findVideoUrls } from '../video';
 import type { VideoUrlEmbed } from '../video';
 import { findImageEmbeds } from '../image';
 import type { ImageEmbed } from '../image';
-import type { NotificationManager } from '../shared';
-import type { SynapseSettings } from '../settings';
 import { NoteMediaModal } from './note-media-modal';
-
-/** Wiring for {@link transcribeNoteMedia}, injected by main.ts. */
-export interface NoteMediaTranscriptionDeps {
-	app: App;
-	getSettings: () => SynapseSettings;
-	notifications: NotificationManager;
-	isFfmpegAvailable: () => Promise<boolean>;
-	onTranscribeAudio: (file: TFile, embeds: AudioEmbed[], combine: boolean) => Promise<void>;
-	/** Absent on mobile: video embeds are then never scanned or offered. */
-	onTranscribeVideo?: (file: TFile, embeds: VideoUrlEmbed[]) => Promise<void>;
-	onExtractImages: (file: TFile, embeds: ImageEmbed[]) => Promise<void>;
-}
+import type { NoteMediaTranscriptionDeps } from './types';
 
 /** Scan a note for audio/video/image embeds (per enabled feature) and open the note-media picker. */
 export async function transcribeNoteMedia(deps: NoteMediaTranscriptionDeps, file: TFile): Promise<void> {

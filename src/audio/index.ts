@@ -7,7 +7,7 @@ import {
 	CheckpointManager, NoteOperationQueue, generateId, formatTimeRange, loadNodeModules,
 	isPathExcluded, findMatchingRule, redactError,
 	NoSpeechDetectedError, hasSpeechContent, isNoSpeechError, noSpeechNotice, withCacheReport,
-	stripUnresolvedLinks,
+	stripUnresolvedLinks, randomToken,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
@@ -226,7 +226,7 @@ export class AudioModule implements FeatureModule {
 				// rather than relying solely on this.extractor being set.
 				const { os, path, fs } = loadNodeModules();
 
-				const tempPath = path.join(os.tmpdir(), `synapse-clip-src-${Date.now()}.mp3`);
+				const tempPath = path.join(os.tmpdir(), `synapse-clip-src-${Date.now()}-${randomToken()}.mp3`);
 				let clippedPath: string | null = null;
 				try {
 					await fs.promises.writeFile(tempPath, Buffer.from(data));
@@ -578,7 +578,7 @@ export class AudioModule implements FeatureModule {
 			for (let i = 0; i < files.length; i++) {
 				const bin = await this.plugin.app.vault.readBinary(files[i]);
 				const ext = files[i].extension || 'audio';
-				const tempPath = path.join(os.tmpdir(), `synapse-combine-src-${Date.now()}-${i}.${ext}`);
+				const tempPath = path.join(os.tmpdir(), `synapse-combine-src-${Date.now()}-${randomToken()}-${i}.${ext}`);
 				await fs.promises.writeFile(tempPath, Buffer.from(bin));
 				tempInputs.push(tempPath);
 			}

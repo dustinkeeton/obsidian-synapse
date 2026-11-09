@@ -42,6 +42,12 @@ export class AssetWriter {
 			timeout,
 		]);
 		if (response.status >= 400) throw new Error(`Image download failed (HTTP ${response.status})`);
+		// A provider- or page-supplied URL may answer with HTML or anything else; only image bytes enter the vault.
+		const headers: Record<string, string> = response.headers ?? {};
+		const contentType = headers['content-type'] ?? headers['Content-Type'] ?? '';
+		if (contentType && !/^image\//i.test(contentType.trim())) {
+			throw new Error('Image download returned a non-image response');
+		}
 		const data = response.arrayBuffer;
 		if (!data || data.byteLength === 0) throw new Error('Image download returned no data');
 		if (data.byteLength > MAX_ASSET_BYTES) throw new Error('Image exceeds the 15 MB download limit');

@@ -47,9 +47,10 @@ export type {
 	QualityScore,
 	DeepDiveProposalStatus,
 	DeepDiveRunStatus,
+	TraversalNode,
+	NavigationContext,
 } from './types';
 
-export type { TraversalNode, NavigationContext } from './syllabus-navigator';
 export {
 	computeTraversalOrder,
 	buildNavigationContext,
@@ -649,7 +650,7 @@ export class DeepDiveModule implements FeatureModule {
 			try {
 				const directory = await this.suggestDirectory(topicTitle, aiOpts);
 				if (directory) {
-					const safeName = topicTitle.replace(/[\\/:*?"<>|]/g, '-').trim();
+					const safeName = safeNoteName(topicTitle);
 					return normalizePath(`${directory}/${safeName}.md`);
 				}
 			} catch {
@@ -685,6 +686,11 @@ export class DeepDiveModule implements FeatureModule {
 	}
 }
 
+/** AI-chosen topic title as a file/folder name: no separators, and no leading dots (a `..` segment or a hidden file). */
+function safeNoteName(title: string): string {
+	return title.replace(/[\\/:*?"<>|]/g, '-').trim().replace(/^\.+/, '').trim() || 'Untitled';
+}
+
 /**
  * Exported for testing. Builds the proposed vault path for a deep-dive note.
  *
@@ -706,7 +712,7 @@ export function buildDeepDivePath(
 	settings: { noteOutputFolder: string; nestingMode?: DeepDiveNestingMode },
 	parentProposedPath?: string,
 ): string {
-	const safeName = topicTitle.replace(/[\\/:*?"<>|]/g, '-').trim();
+	const safeName = safeNoteName(topicTitle);
 	const mode = settings.nestingMode || 'nested';
 
 	// In nested mode with a parent, place children under a subfolder

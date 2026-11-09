@@ -73,6 +73,18 @@ describe('runRegisteredCommand', () => {
 		expect(callback).toHaveBeenCalledTimes(1);
 	});
 
+	it('degrades to a notice when the undocumented command registry is absent', () => {
+		const file = new TFile('a.md');
+		const app = { ...makeApp(file, [makeNoteView(file)]), commands: undefined };
+		const notifications = makeNotifications();
+
+		expect(() => run(app as unknown as ReturnType<typeof makeApp>, 'enrich-current-note', notifications)).not.toThrow();
+		expect(() => run(app as unknown as ReturnType<typeof makeApp>, 'review-proposals', notifications)).not.toThrow();
+
+		expect(notifications.info).toHaveBeenCalledTimes(2);
+		expect(notifications.info).toHaveBeenCalledWith('Could not run this action here. Run it from the command palette instead.');
+	});
+
 	it('refuses a note command with no active note', () => {
 		const editorCallback = vi.fn();
 		const app = makeApp(null, [], { 'synapse:enrich-current-note': { editorCallback } });

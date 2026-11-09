@@ -1,3 +1,5 @@
+import type { TFile } from 'obsidian';
+
 /** Transcript handed to summarize by the injected transcribers; structurally matches the router result. */
 export interface TranscribedMedia {
 	/** Video title / poster frame when the tier exposes them (#213, source images). */
@@ -21,3 +23,14 @@ export interface SummarizeTarget {
 	inEnrichmentSection?: boolean;  // found inside enrichment markers
 	linkTitle?: string;    // display text from markdown link (enrichment refs)
 }
+
+/** Transcribes a media URL through the tier router; injected by the module registry. */
+export type TranscribeUrlFn = (
+	url: string,
+	parentOp?: { update: (msg: string) => void }
+) => Promise<TranscribedMedia>;
+
+/** Transcribes an audio file via the AudioModule; injected by the module registry. */
+export type TranscribeAudioFn = (
+	file: TFile
+) => Promise<TranscribedMedia>;

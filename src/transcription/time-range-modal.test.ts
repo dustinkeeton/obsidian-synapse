@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TimeRangeModal } from './time-range-modal';
-import type { TimeRangeChoice } from './time-range-modal';
+import type { TimeRangeChoice } from './types';
 import { createEl, type StubEl } from '../__mocks__/obsidian';
 import type { NotificationManager } from '../shared';
 

@@ -29,12 +29,17 @@ export function runRegisteredCommand(
 	id: string,
 	notifications: NotificationManager
 ): void {
+	// `app.commands` is undocumented: feature-detect it and degrade to a notice.
 	const commands = (app as unknown as {
-		commands: {
-			commands: Record<string, Command | undefined>;
-			executeCommandById(id: string): boolean;
+		commands?: {
+			commands?: Record<string, Command | undefined>;
+			executeCommandById?: (id: string) => boolean;
 		};
 	}).commands;
+	if (!commands || typeof commands.executeCommandById !== 'function') {
+		notifications.info('Could not run this action here. Run it from the command palette instead.');
+		return;
+	}
 	const fullId = `${pluginId}:${id}`;
 	const entry = REGISTRY_BY_ID.get(id);
 
@@ -45,7 +50,7 @@ export function runRegisteredCommand(
 			return;
 		}
 		const view = markdownViewFor(app, file);
-		const handler = commands.commands[fullId]?.editorCallback;
+		const handler = commands.commands?.[fullId]?.editorCallback;
 		if (view && handler) {
 			// executeCommandById no-ops editorCallback commands while the sidebar holds focus (#352).
 			fireAndForget((async () => { await handler(view.editor, view); })(), entry.name, { notifications });

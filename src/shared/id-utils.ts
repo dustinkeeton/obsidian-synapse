@@ -12,6 +12,13 @@ export function generateId(): string {
 	);
 }
 
+/** Unguessable hex suffix for temp file names in the shared OS temp dir (CSPRNG, unlike {@link generateId}). */
+export function randomToken(bytes = 8): string {
+	const buffer = new Uint8Array(bytes);
+	window.crypto.getRandomValues(buffer);
+	return Array.from(buffer, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * Validate that a checkpoint ID is safe for use in file paths.
  * Rejects IDs containing path traversal characters or anything

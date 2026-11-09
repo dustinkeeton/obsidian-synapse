@@ -99,3 +99,42 @@ export interface DeepDivePendingWork {
 
 /** Existing-folder suggestion for a topic title from the organize engine; wired by the module registry so deep-dive never imports organize. */
 export type SuggestDirectory = (text: string, aiOpts?: AIRequestOptions) => Promise<string | null>;
+
+/**
+ * A node in the depth-first traversal of accepted proposals.
+ * Used to compute prev/next/up/root relationships.
+ */
+export interface TraversalNode {
+	proposalId: string;
+	title: string;
+	proposedPath: string;
+	depth: number;
+	/** Index in the DFS order (0-based) */
+	index: number;
+	/** Parent proposal ID (null for root-level proposals) */
+	parentId: string | null;
+	/** Child proposal IDs that are accepted */
+	childIds: string[];
+}
+
+/**
+ * Navigation context for a single accepted proposal.
+ */
+export interface NavigationContext {
+	/** Root note title and path */
+	root: { title: string; path: string };
+	/** Parent proposal (null for depth-0 proposals) */
+	up: { title: string; path: string } | null;
+	/** Previous proposal in DFS order (null for first) */
+	prev: { title: string; path: string } | null;
+	/** Next proposal in DFS order (null for last) */
+	next: { title: string; path: string } | null;
+	/** 1-based position in the traversal */
+	position: number;
+	/** Total accepted proposals */
+	total: number;
+	/** Breadcrumb path from root: ["Machine Learning", "Neural Networks", "Backpropagation"] */
+	breadcrumbs: string[];
+	/** Title and path of the syllabus note */
+	syllabus: { title: string; path: string };
+}

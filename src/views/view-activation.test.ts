@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { activateUnifiedView, activateSynapseActionsView, refreshUnifiedView, watchInProgress } from './view-activation';
 import { InProgressRegistry } from '../shared/in-progress-registry';
-import type { UnifiedViewSources } from './view-activation';
+import type { UnifiedViewSources } from './types';
 import { SYNAPSE_ACTIONS_VIEW_TYPE } from './synapse-actions-view';
 import type { Workspace, WorkspaceLeaf } from 'obsidian';
-import { UNIFIED_VIEW_TYPE, UnifiedProposalView, type UnifiedItem, type UnifiedViewCallbacks } from './unified-proposal-view';
+import { UNIFIED_VIEW_TYPE, UnifiedProposalView } from './unified-proposal-view';
+import type { UnifiedItem, UnifiedViewCallbacks } from './types';
 import { NotificationManager } from '../shared/notifications';
 import { createEl, type StubEl } from '../__mocks__/obsidian';
 

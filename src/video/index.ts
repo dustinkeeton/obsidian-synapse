@@ -96,56 +96,59 @@ export class VideoModule implements FeatureModule {
 			throw new Error(`Download/audio extraction failed: ${e instanceof Error ? e.message : String(e)}`);
 		}
 
-		// Download the actual video file into the vault
-		let videoVaultPath: string | undefined;
-		const settings = this.getSettings().video;
-		if (settings.downloadFolder) {
-			update('Saving video to vault...');
-			videoVaultPath = await this.downloadVideoToVault(validatedUrl, extraction.metadata);
-		}
-
-		update('Extracting audio...');
 		// Explicit desktop assertion: loadNodeModules throws off-desktop. VideoModule
 		// is only constructed on desktop, but assert at the filesystem entry point
 		// rather than relying solely on construction-time gating.
 		const { fs } = loadNodeModules();
 
 		let audioPath = extraction.audioPath;
-
-		// Clip audio to time range if specified
-		if (options?.timeRange) {
-			const { startSeconds, endSeconds } = options.timeRange;
-			if (extraction.metadata.duration && endSeconds > extraction.metadata.duration) {
-				throw new Error(
-					`End time (${endSeconds}s) exceeds video duration (${extraction.metadata.duration}s)`
-				);
-			}
-			update('Clipping audio to time range...');
-			const clippedPath = await this.extractor.clipAudio(audioPath, startSeconds, endSeconds);
-			// Clean up the original unclipped audio
-			try { await fs.promises.unlink(audioPath); } catch { /* ignore */ }
-			audioPath = clippedPath;
-		}
-
-		const audioData = await fs.promises.readFile(audioPath);
-
-		update('Transcribing...');
-		let result;
+		// The extracted audio lives in os.tmpdir(); remove it on every exit path.
 		try {
-			result = await this.audioModule.transcribe(
-				audioData.buffer,
-				extraction.metadata.title + '.mp3',
-				{ sourceName: extraction.metadata.title, update, bypassCache: options?.bypassCache }
-			);
-		} catch (e) {
-			// Typed no-speech outcome must reach the write sites unflattened (#524).
-			if (isNoSpeechError(e)) throw e;
-			throw new Error(`Transcription failed: ${e instanceof Error ? e.message : String(e)}`);
+			// Download the actual video file into the vault
+			let videoVaultPath: string | undefined;
+			const settings = this.getSettings().video;
+			if (settings.downloadFolder) {
+				update('Saving video to vault...');
+				videoVaultPath = await this.downloadVideoToVault(validatedUrl, extraction.metadata);
+			}
+
+			update('Extracting audio...');
+
+			// Clip audio to time range if specified
+			if (options?.timeRange) {
+				const { startSeconds, endSeconds } = options.timeRange;
+				if (extraction.metadata.duration && endSeconds > extraction.metadata.duration) {
+					throw new Error(
+						`End time (${endSeconds}s) exceeds video duration (${extraction.metadata.duration}s)`
+					);
+				}
+				update('Clipping audio to time range...');
+				const clippedPath = await this.extractor.clipAudio(audioPath, startSeconds, endSeconds);
+				// Clean up the original unclipped audio
+				try { await fs.promises.unlink(audioPath); } catch { /* ignore */ }
+				audioPath = clippedPath;
+			}
+
+			const audioData = await fs.promises.readFile(audioPath);
+
+			update('Transcribing...');
+			let result;
+			try {
+				result = await this.audioModule.transcribe(
+					audioData.buffer,
+					extraction.metadata.title + '.mp3',
+					{ sourceName: extraction.metadata.title, update, bypassCache: options?.bypassCache }
+				);
+			} catch (e) {
+				// Typed no-speech outcome must reach the write sites unflattened (#524).
+				if (isNoSpeechError(e)) throw e;
+				throw new Error(`Transcription failed: ${e instanceof Error ? e.message : String(e)}`);
+			}
+
+			return { ...result, videoVaultPath };
 		} finally {
 			try { await fs.promises.unlink(audioPath); } catch { /* ignore */ }
 		}
-
-		return { ...result, videoVaultPath };
 	}
 
 	/**
@@ -323,23 +326,24 @@ export class VideoModule implements FeatureModule {
 		// first-class vault citizen -- cached, indexed, and immediately visible
 		// to other plugins. createBinary() throws if the path is taken, so pick
 		// a non-colliding name first (same-day re-downloads share a name).
-		const videoData = await fs.promises.readFile(tempPath);
-		// Slice to the exact bytes: fs.readFile may return a Buffer backed by a
-		// shared pool whose underlying ArrayBuffer is larger than the file.
-		const data = videoData.buffer.slice(
-			videoData.byteOffset,
-			videoData.byteOffset + videoData.byteLength
-		);
-		const vaultPath = findAvailableVaultPath(
-			this.plugin.app,
-			normalizePath(`${settings.downloadFolder}/${fileName}`)
-		);
-		await this.plugin.app.vault.createBinary(vaultPath, data);
-
-		// Clean up temp video file
-		try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
-
-		return vaultPath;
+		try {
+			const videoData = await fs.promises.readFile(tempPath);
+			// Slice to the exact bytes: fs.readFile may return a Buffer backed by a
+			// shared pool whose underlying ArrayBuffer is larger than the file.
+			const data = videoData.buffer.slice(
+				videoData.byteOffset,
+				videoData.byteOffset + videoData.byteLength
+			);
+			const vaultPath = findAvailableVaultPath(
+				this.plugin.app,
+				normalizePath(`${settings.downloadFolder}/${fileName}`)
+			);
+			await this.plugin.app.vault.createBinary(vaultPath, data);
+			return vaultPath;
+		} finally {
+			// The download lands in os.tmpdir(); remove it on every exit path.
+			try { await fs.promises.unlink(tempPath); } catch { /* ignore */ }
+		}
 	}
 
 	private async checkDependencies(): Promise<void> {

@@ -5,7 +5,8 @@ import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal, TitleDuplicateStrategy } from '../title';
 import type { RemProposal } from '../rem';
 import type { IllustrateProposal } from '../illustrate';
-import type { InProgressKind } from '../shared';
+import type { Checkpoint, InProgressEntry, InProgressKind } from '../shared';
+import type { CommandDefinition } from '../commands';
 
 /**
  * The single source of truth for the set of proposal kinds Synapse generates.
@@ -87,4 +88,30 @@ export interface UnifiedViewCallbacks {
 	onCheckpointResume: (id: string) => Promise<void>;
 	// In progress: same cancel path as the operation toast's Cancel button.
 	onCancelInProgress: (id: string) => void;
+}
+
+/** Pending-proposal readers, one per proposal kind, plus the checkpoint banner and in-progress sources. */
+export interface UnifiedViewSources {
+	elaboration: () => Promise<Proposal[]>;
+	enrichment: () => Promise<EnrichmentProposal[]>;
+	organize: () => Promise<OrganizeProposal[]>;
+	'deep-dive': () => Promise<DeepDiveProposal[]>;
+	title: () => Promise<TitleProposal[]>;
+	rem: () => Promise<RemProposal[]>;
+	illustrate: () => Promise<IllustrateProposal[]>;
+	checkpoints: () => Promise<Checkpoint[]>;
+	inProgress: () => InProgressEntry[];
+}
+
+/**
+ * Host-provided behavior. The view never touches `app`/workspace directly (keeps
+ * it a pure renderer, like UnifiedProposalView) — main.ts wires these in.
+ */
+export interface SynapseActionsCallbacks {
+	/** The palette commands to show, in registry order (from `listPaletteActions`). */
+	getActions: () => CommandDefinition[];
+	/** Invoke a command by its registry id (main.ts runs it via `executeCommandById`). */
+	runAction: (id: string) => void;
+	/** Whether a markdown note is currently active (gates `context: 'note'` buttons). */
+	isNoteActive: () => boolean;
 }

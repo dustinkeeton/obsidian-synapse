@@ -53,6 +53,20 @@ describe('block builders', () => {
 		expect(block).not.toContain('javascript:');
 	});
 
+	it('percent-encodes URL characters that would close the markdown link or embed', () => {
+		const fileUrl = 'https://evil.example/a.png)[click](https://phish.example/x';
+		const block = buildPhotoBlock({ ...photoItem, candidate: { ...candidate, fileUrl } }, null);
+		expect(block).toContain('![A red panda](https://evil.example/a.png%29[click]%28https://phish.example/x)');
+		expect(attributionLine({ ...candidate, pageUrl: 'https://en.wikipedia.org/wiki/Panda_(genus)' }))
+			.toContain('(https://en.wikipedia.org/wiki/Panda_%28genus%29)');
+	});
+
+	it('strips link syntax and line breaks from the attribution text', () => {
+		const line = attributionLine({ ...candidate, attribution: 'Jane\n> [!danger] ![x](https://evil.example/beacon)' });
+		expect(line).not.toContain('\n');
+		expect(line).not.toContain('![x](');
+	});
+
 	it('builds a mermaid fence with a caption callout', () => {
 		const block = buildMermaidItemBlock({ id: 'd', kind: 'chart', anchor: 'x', caption: 'Counts', rationale: '', mermaid: 'xychart-beta' });
 		expect(block.startsWith('```mermaid\nxychart-beta\n```')).toBe(true);

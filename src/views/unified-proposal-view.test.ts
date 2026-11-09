@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { UnifiedProposalView, UnifiedItem, UnifiedViewCallbacks } from './unified-proposal-view';
+import { UnifiedProposalView } from './unified-proposal-view';
+import type { UnifiedItem, UnifiedViewCallbacks } from './types';
 import { NotificationManager } from '../shared/notifications';
 import type { TitleProposal } from '../title';
 import type { Proposal } from '../elaboration';

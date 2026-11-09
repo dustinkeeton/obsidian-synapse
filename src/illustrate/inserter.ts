@@ -2,18 +2,24 @@ import { buildCallout, CALLOUT_TYPES } from '../shared';
 import { mermaidBlock } from './diagram';
 import type { IllustrateItem, MediaCandidate } from './types';
 
-/** Provider-supplied URL, or '' unless it parses as http(s) — nothing else is written into a note. */
+/** Provider-supplied URL, or '' unless it parses as http(s); characters that could close a markdown `(url)` are percent-encoded. */
 export function httpUrlOrEmpty(url: string): string {
 	try {
 		const parsed = new URL(url);
-		return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : '';
+		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
 	} catch {
 		return '';
 	}
+	return url.replace(/[()<>\s]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
+}
+
+/** Provider/page-supplied text on one line with no link or embed syntax. */
+function plainText(text: string): string {
+	return text.replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function mdLink(text: string, url: string): string {
-	const safeText = text.replace(/[[\]]/g, '');
+	const safeText = plainText(text);
 	const safeUrl = httpUrlOrEmpty(url);
 	return safeUrl ? `[${safeText}](${safeUrl})` : safeText;
 }
@@ -21,7 +27,7 @@ function mdLink(text: string, url: string): string {
 export function attributionLine(candidate: MediaCandidate): string {
 	const source = mdLink(candidate.title, candidate.pageUrl);
 	const license = mdLink(candidate.license, candidate.licenseUrl);
-	return `Source: ${source} · License: ${license} · ${candidate.attribution}`;
+	return `Source: ${source} · License: ${license} · ${plainText(candidate.attribution)}`;
 }
 
 /** Embed (`![[vault path]]` or remote URL) plus the caption/attribution callout; `fallbackReason` notes a failed download. */

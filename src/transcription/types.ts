@@ -1,5 +1,12 @@
-import type { CachedTranscript, TimeRange, TranscriptCacheEntry } from '../shared';
-import type { TranscriptionResult } from '../audio';
+import type { App, TFile } from 'obsidian';
+import type {
+	CachedTranscript, NoteOperationQueue, NotificationManager, SourceContext, TimeRange, TranscriptCacheEntry,
+} from '../shared';
+import type { SynapseSettings } from '../settings';
+import type { AudioEmbed, TranscriptionResult } from '../audio';
+import type { VideoUrlEmbed } from '../video';
+import type { ImageEmbed } from '../image';
+import type { UrlTranscriptionRouter } from './url-transcription';
 
 export interface UrlTranscriptOptions {
 	/**
@@ -131,4 +138,74 @@ export interface VideoChapter {
 export interface DurationResult {
 	durationSeconds: number | undefined;
 	title: string;
+}
+
+/**
+ * Options for creating a TimeRangeSlider.
+ */
+export interface TimeRangeSliderOptions {
+	/** Total media duration in seconds. */
+	duration: number;
+	/** Initial start position in seconds. Defaults to 0. */
+	initialStart?: number;
+	/** Initial end position in seconds. Defaults to duration. */
+	initialEnd?: number;
+	/** Callback fired whenever the selected range changes. */
+	onChange?: (start: number, end: number) => void;
+}
+
+/** What the user decided in the {@link TimeRangeModal}. */
+export type TimeRangeChoice =
+	/** Transcribe only the selected range. */
+	| { kind: 'selection'; range: TimeRange }
+	/** Transcribe the whole file. */
+	| { kind: 'full' }
+	/** Dismissed (Escape / click-away / ✕) — do nothing. */
+	| { kind: 'cancelled' };
+
+export interface TimeRangeModalOptions {
+	/** Media title or filename to display. */
+	title: string;
+	/**
+	 * Total media duration in seconds. When undefined (duration detection
+	 * failed), the modal falls back to manual start/end time inputs.
+	 */
+	duration?: number;
+}
+
+/** Wiring for {@link insertUrlTranscript}, injected by main.ts. */
+export interface InsertUrlTranscriptDeps {
+	app: App;
+	getSettings: () => SynapseSettings;
+	notifications: NotificationManager;
+	router: UrlTranscriptionRouter;
+	/** Per-note operation queue (#483): the insert is serialized against every other AI operation on the active note. */
+	noteQueue: NoteOperationQueue;
+	/** Post-transcription hook (enrichment/title check), same contract as the module `onTranscriptionComplete` callbacks. */
+	onComplete?: (filePath: string, ctx?: SourceContext) => void;
+}
+
+/** Wiring for {@link openUnifiedTranscriptionModal}: the URL path reuses {@link InsertUrlTranscriptDeps}. */
+export interface UnifiedTranscriptionDeps extends InsertUrlTranscriptDeps {
+	onTranscribeFile: (file: TFile, timeRange?: TimeRange) => Promise<void>;
+}
+
+/** Wiring for {@link transcribeNoteMedia}, injected by main.ts. */
+export interface NoteMediaTranscriptionDeps {
+	app: App;
+	getSettings: () => SynapseSettings;
+	notifications: NotificationManager;
+	isFfmpegAvailable: () => Promise<boolean>;
+	onTranscribeAudio: (file: TFile, embeds: AudioEmbed[], combine: boolean) => Promise<void>;
+	/** Absent on mobile: video embeds are then never scanned or offered. */
+	onTranscribeVideo?: (file: TFile, embeds: VideoUrlEmbed[]) => Promise<void>;
+	onExtractImages: (file: TFile, embeds: ImageEmbed[]) => Promise<void>;
+}
+
+export interface UrlTranscriptionRouterDeps {
+	getSettings: () => SynapseSettings;
+	processTranscriptText: ProcessTranscript;
+	/** Desktop-only yt-dlp/ffmpeg tier; omit where VideoModule does not exist. */
+	extract?: LocalExtractionDelegate;
+	store: TranscriptStore;
 }

@@ -7,7 +7,7 @@ import {
 	getMarkdownFiles, NotificationManager, parseFrontmatter,
 	CheckpointManager, NoteOperationQueue, generateId, isTwitterUrl, fetchTweetContent, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
-	trackAiCache, withCacheReport, settleOnThrow,
+	trackAiCache, withCacheReport, settleOnThrow, wrapUntrusted,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
@@ -721,7 +721,7 @@ export class EnrichmentModule implements FeatureModule {
 		for (const url of twitterUrls) {
 			try {
 				const text = await fetchTweetContent(url, 500);
-				parts.push(text);
+				parts.push(wrapUntrusted(text, url));
 			} catch {
 				// Non-fatal — skip tweets that can't be fetched
 			}

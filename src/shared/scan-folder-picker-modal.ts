@@ -9,7 +9,7 @@ export interface ScanFolderSuggestion {
 
 /** Undocumented SuggestModal internal; used only to route Shift+Enter through the normal choose path. */
 interface SuggestChooser {
-	useSelectedItem(evt: KeyboardEvent): boolean;
+	useSelectedItem?: (evt: KeyboardEvent) => boolean;
 }
 
 export const ROOT_LABEL = '/ (vault root)';
@@ -27,7 +27,7 @@ export class ScanFolderPickerModal extends SuggestModal<ScanFolderSuggestion> {
 		]);
 		this.scope.register(['Shift'], 'Enter', (evt) => {
 			if (evt.isComposing) return;
-			(this as unknown as { chooser?: SuggestChooser }).chooser?.useSelectedItem(evt);
+			(this as unknown as { chooser?: SuggestChooser }).chooser?.useSelectedItem?.(evt);
 			return false;
 		});
 	}

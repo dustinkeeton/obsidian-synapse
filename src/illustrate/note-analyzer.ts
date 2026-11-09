@@ -47,14 +47,21 @@ export function buildSystemPrompt(mermaid: boolean): string {
 	return mermaid ? FULL_PROMPT : PHOTO_PROMPT;
 }
 
+/** Model-written caption as one line of text: it becomes a callout title, so no line breaks and no image embeds. */
+function singleLineCaption(caption: string): string {
+	return caption.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\s+/g, ' ').trim();
+}
+
 function pickSpot(value: unknown): IllustrateSpot | null {
 	if (!isRecord(value)) return null;
 	const { kind, anchor, caption, rationale } = value;
 	if (typeof anchor !== 'string' || anchor.trim() === '') return null;
-	if (typeof caption !== 'string' || caption.trim() === '') return null;
+	if (typeof caption !== 'string') return null;
+	const cleanCaption = singleLineCaption(caption);
+	if (cleanCaption === '') return null;
 	const base = {
 		anchor: anchor.trim(),
-		caption: caption.trim(),
+		caption: cleanCaption,
 		rationale: typeof rationale === 'string' ? rationale.trim() : '',
 	};
 	if (kind === 'photo') {
