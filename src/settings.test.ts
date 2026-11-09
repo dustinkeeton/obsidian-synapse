@@ -37,9 +37,10 @@ describe('autoAccept settings (#228)', () => {
 describe('Gemini provider settings (#251)', () => {
 	it('offers Gemini model options including flash and pro classes', () => {
 		const ids = Object.keys(MODEL_OPTIONS.gemini);
+		expect(ids).toContain('gemini-4-argon');
 		expect(ids).toContain('gemini-3.8-flash');
-		expect(ids).toContain('gemini-3.5-flash');
-		expect(ids).toContain('gemini-2.5-pro');
+		expect(ids).toContain('gemini-3.5-flash-lite');
+		expect(ids).not.toContain('gemini-2.5-pro');
 	});
 
 	it('keeps a non-empty model list for every AI provider', () => {
@@ -65,33 +66,31 @@ describe('Anthropic model options (#308, #519)', () => {
 		expect(MODEL_OPTIONS.anthropic.fable).toBe('Claude Fable');
 	});
 
-	it('keeps the default AI model inside the OpenAI option list', () => {
-		expect(Object.keys(MODEL_OPTIONS.openai)).toContain(DEFAULT_SETTINGS.ai.model);
+	it('defaults new installs to the Anthropic Opus alias', () => {
+		expect(DEFAULT_SETTINGS.ai.provider).toBe('anthropic');
+		expect(DEFAULT_SETTINGS.ai.model).toBe('opus');
+		expect(Object.keys(MODEL_OPTIONS[DEFAULT_SETTINGS.ai.provider])).toContain(DEFAULT_SETTINGS.ai.model);
 	});
 });
 
 describe('OpenAI model options (#519)', () => {
-	it('offers the current generation alongside the retained GPT-4o/o-series entries', () => {
+	it('offers the GPT-6 and GPT-5.6 generations plus the retiring GPT-4o entries', () => {
 		const ids = Object.keys(MODEL_OPTIONS.openai);
 		expect(ids).toEqual([
 			'gpt-6-astra',
+			'gpt-6.1-sol',
+			'gpt-6.1-terra',
+			'gpt-6-luna',
 			'gpt-5.6-sol',
 			'gpt-5.6-terra',
 			'gpt-5.6-luna',
 			'gpt-4o',
 			'gpt-4o-mini',
-			'o3',
-			'o3-mini',
-			'o4-mini',
 		]);
 	});
 
-	it('defaults both the AI model and the video vision model to a current vision-capable model', () => {
-		expect(DEFAULT_SETTINGS.ai.model).toBe('gpt-5.6-sol');
-		expect(DEFAULT_SETTINGS.video.frameExtraction.visionModel).toBe('gpt-5.6-sol');
-		expect(Object.keys(MODEL_OPTIONS.openai)).toContain(
-			DEFAULT_SETTINGS.video.frameExtraction.visionModel
-		);
+	it('defaults the video vision model to the default provider\'s model', () => {
+		expect(DEFAULT_SETTINGS.video.frameExtraction.visionModel).toBe(DEFAULT_SETTINGS.ai.model);
 	});
 
 	it('leaves the image vision model empty so it follows the AI model', () => {

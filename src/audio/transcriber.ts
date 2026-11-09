@@ -308,10 +308,11 @@ export class Transcriber {
 		}
 	}
 
-	/** Resolve the API key for Whisper: use dedicated whisperApiKey if set, otherwise fall back to shared AI key */
+	/** Dedicated whisperApiKey, else the shared AI key only when it is an OpenAI key; never another vendor's key. */
 	private getWhisperApiKey(): string {
 		const settings = this.getSettings();
-		return settings.audio.whisperApiKey || settings.ai.apiKey;
+		const shared = settings.ai.provider === 'openai' ? settings.ai.apiKey : '';
+		return settings.audio.whisperApiKey || shared;
 	}
 
 	private async transcribeWhisperAPI(
@@ -421,10 +422,11 @@ export class Transcriber {
 		};
 	}
 
-	/** Resolve the API key for Gemini: use dedicated geminiApiKey if set, otherwise fall back to shared AI key */
+	/** Dedicated geminiApiKey, else the shared AI key only when it is a Gemini key; never another vendor's key. */
 	private getGeminiApiKey(): string {
 		const settings = this.getSettings();
-		return settings.audio.geminiApiKey || settings.ai.apiKey;
+		const shared = settings.ai.provider === 'gemini' ? settings.ai.apiKey : '';
+		return settings.audio.geminiApiKey || shared;
 	}
 
 	private async transcribeGemini(

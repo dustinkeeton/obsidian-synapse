@@ -159,8 +159,18 @@ describe('Transcriber', () => {
 				.rejects.toThrow('No OpenAI API key configured for Whisper');
 		});
 
-		it('falls back to shared AI key when whisperApiKey is empty', async () => {
+		it('does not send a non-OpenAI shared key to Whisper', async () => {
 			settings.audio.whisperApiKey = '';
+			settings.ai.provider = 'anthropic';
+			settings.ai.apiKey = 'sk-ant-shared-key';
+			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
+				.rejects.toThrow('No OpenAI API key configured for Whisper');
+			expect(mockRequestUrl).not.toHaveBeenCalled();
+		});
+
+		it('falls back to shared AI key when whisperApiKey is empty and the AI provider is OpenAI', async () => {
+			settings.audio.whisperApiKey = '';
+			settings.ai.provider = 'openai';
 			settings.ai.apiKey = 'sk-shared-key';
 
 			mockRequestUrl.mockResolvedValue({
@@ -619,11 +629,21 @@ describe('Transcriber', () => {
 			await transcriber.transcribe(new ArrayBuffer(8), 'test.mp3');
 
 			const callArgs = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
-			expect(callArgs.url).toContain('/models/gemini-3.5-flash:generateContent');
+			expect(callArgs.url).toContain('/models/gemini-3.6-flash:generateContent');
 		});
 
-		it('falls back to shared AI key when geminiApiKey is empty', async () => {
+		it('does not send a non-Gemini shared key to Gemini', async () => {
 			settings.audio.geminiApiKey = '';
+			settings.ai.provider = 'openai';
+			settings.ai.apiKey = 'sk-shared-key';
+			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
+				.rejects.toThrow('No Gemini API key configured');
+			expect(mockRequestUrl).not.toHaveBeenCalled();
+		});
+
+		it('falls back to shared AI key when geminiApiKey is empty and the AI provider is Gemini', async () => {
+			settings.audio.geminiApiKey = '';
+			settings.ai.provider = 'gemini';
 			settings.ai.apiKey = 'AIza-shared-key';
 
 			mockRequestUrl.mockResolvedValue(geminiResponse('hello'));

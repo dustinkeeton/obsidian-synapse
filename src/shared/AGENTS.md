@@ -469,7 +469,7 @@ function stripTrackingParams(url: string): string   // drops utm_*, fbclid, gcli
 
 // settings-migrations.ts (#93: version-stamped settings migration runner)
 interface SettingsMigration { to: number; migrate: (raw: Record<string, unknown>) => Record<string, unknown> }
-const CURRENT_SETTINGS_VERSION: number                 // 2 (highest migration `to`; DEFAULT_SETTINGS stamps this)
+const CURRENT_SETTINGS_VERSION: number                 // 4 (highest migration `to`; DEFAULT_SETTINGS stamps this)
 const SETTINGS_MIGRATIONS: SettingsMigration[]         // ordered chain: v1 excludeFolders->exclusions (#307), v2 drop inert rem.semanticMatching
 function readSettingsVersion(raw: Record<string, unknown> | null | undefined): number   // 0 when absent/non-numeric
 function migrateSettings(raw: Record<string, unknown>, fromVersion: number): Record<string, unknown>   // clones, replays migrations with to > fromVersion
@@ -692,7 +692,7 @@ function scoreLyricsContent(content: string): number
 | `insertion-point.test.ts` | Tests | Block scanner (fences with blanks, loose lists, tables, callouts, math, quote children), section-lead vs heading-only, mid-paragraph fragment, never-inside-block, blank-line discipline, stale-line fallback, region by type/title in both header spellings (`[!synapse-summary]` and `[!summary|synapse-summary]` resolve to the same identity and label), miss-in-region, prefixed embed/nested callout/mermaid application, depth-2 prefixes, descriptions |
 | `source-context.ts` | `SourceImage`, `SourceContext` | Post-op source material types (#213): URLs and images an action acted on |
 | `extract-image-urls.test.ts` | Tests | `extractImageUrls` ordering/resolution/filters/cap; `fetchPageContentWithImages`; `fetchHtmlDocument` content type |
-| `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag |
+| `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching`, `renameWhisperModelToTranscriptionModel`, `replaceRetiredModels`, `RETIRED_MODEL_REPLACEMENTS` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag; v3 renames `audio.whisperModel` -> `audio.transcriptionModel` (#521); v4 repoints retired model ids to vendor replacements |
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
 | `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:293`) |
 | `settings-merge.test.ts` | Tests | Merge semantics + pollution-key tests |

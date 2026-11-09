@@ -22,7 +22,7 @@ import type { LegacyModuleExclusions } from './exclusions';
  * time a migration is appended to {@link SETTINGS_MIGRATIONS}; a drift-guard test
  * asserts it always equals the highest migration `to`.
  */
-export const CURRENT_SETTINGS_VERSION = 3;
+export const CURRENT_SETTINGS_VERSION = 4;
 
 /**
  * A single ordered migration. `to` is the schema version this step upgrades the
@@ -110,6 +110,50 @@ export function renameWhisperModelToTranscriptionModel(
 	return raw;
 }
 
+/** Vendor-retired model IDs and the replacement each vendor's deprecation notice names (2026-11-09). */
+export const RETIRED_MODEL_REPLACEMENTS: Record<string, string> = {
+	'o3': 'gpt-5.6-sol',
+	'o3-mini': 'gpt-5.6-sol',
+	'o4-mini': 'gpt-5.6-terra',
+	'gemini-2.5-pro': 'gemini-3.8-flash',
+	'gemini-2.5-flash': 'gemini-3.5-flash-lite',
+	'gemini-3.5-flash': 'gemini-3.6-flash',
+};
+
+const MODEL_FIELD_PATHS: string[][] = [
+	['ai', 'model'],
+	['audio', 'transcriptionModel'],
+	['image', 'visionModel'],
+	['video', 'frameExtraction', 'visionModel'],
+];
+
+/**
+ * v4 — repoint every saved model field holding a retired vendor ID to its
+ * replacement, so a stale value never reaches the API before the settings tab
+ * normalizes it. IDs are vendor-unique, so no provider check is needed.
+ * Tolerates missing or non-object parents; idempotent.
+ */
+export function replaceRetiredModels(
+	raw: Record<string, unknown>,
+): Record<string, unknown> {
+	for (const path of MODEL_FIELD_PATHS) {
+		let parent: unknown = raw;
+		for (const key of path.slice(0, -1)) {
+			parent = typeof parent === 'object' && parent !== null
+				? (parent as Record<string, unknown>)[key]
+				: undefined;
+		}
+		if (typeof parent !== 'object' || parent === null) continue;
+		const record = parent as Record<string, unknown>;
+		const leaf = path[path.length - 1];
+		const value = record[leaf];
+		if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(RETIRED_MODEL_REPLACEMENTS, value)) {
+			record[leaf] = RETIRED_MODEL_REPLACEMENTS[value];
+		}
+	}
+	return raw;
+}
+
 /**
  * The ordered migration chain, ascending by `to`. {@link migrateSettings}
  * applies, in order, every entry whose `to` exceeds the persisted version.
@@ -118,6 +162,7 @@ export const SETTINGS_MIGRATIONS: SettingsMigration[] = [
 	{ to: 1, migrate: foldExcludeFoldersIntoExclusions },
 	{ to: 2, migrate: dropSemanticMatching },
 	{ to: 3, migrate: renameWhisperModelToTranscriptionModel },
+	{ to: 4, migrate: replaceRetiredModels },
 ];
 
 /**

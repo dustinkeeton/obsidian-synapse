@@ -120,7 +120,7 @@ Sanctioned exceptions:
 
 ```
 onload()
-  |-- loadSettings()  (main.ts:280; #93 version-stamped migrations: readSettingsVersion(raw) -> migrateSettings(raw, from) replays every migration with to>from [v1 excludeFolders -> exclusions #307, v2 drop inert rem.semanticMatching, v3 audio.whisperModel -> audio.transcriptionModel #521] -> deepMergeSettings(DEFAULT_SETTINGS, migrated) (shared/settings-merge.ts; fills keys added without a migration, e.g. ai.voice / ai.voiceCustom / illustrate) -> stamp settingsVersion = CURRENT_SETTINGS_VERSION -> saveData once on upgrade)
+  |-- loadSettings()  (main.ts:280; #93 version-stamped migrations: readSettingsVersion(raw) -> migrateSettings(raw, from) replays every migration with to>from [v1 excludeFolders -> exclusions #307, v2 drop inert rem.semanticMatching, v3 audio.whisperModel -> audio.transcriptionModel #521, v4 retired model ids -> vendor replacements (RETIRED_MODEL_REPLACEMENTS) across ai.model / audio.transcriptionModel / image.visionModel / video.frameExtraction.visionModel] -> deepMergeSettings(DEFAULT_SETTINGS, migrated) (shared/settings-merge.ts; fills keys added without a migration, e.g. ai.voice / ai.voiceCustom / illustrate) -> stamp settingsVersion = CURRENT_SETTINGS_VERSION -> saveData once on upgrade)
   |-- registerSynapseIcons()  (brand-icons/; registers all synapse-* glyphs before any ribbon/setIcon/view use)
   |-- new NotificationManager(); migrateDataFolder(vault.adapter, notifications)  (shared/data-folder-migration.ts; .auto-notes -> .synapse, one-time; main.ts:49-50)
   |-- addSettingTab; status bar attached on desktop only
@@ -246,12 +246,12 @@ All AI-generated content uses Obsidian callouts written as `> [!<base>|<identity
 
 ```ts
 SynapseSettings {
-  settingsVersion: number                           // #93; persisted schema version, stamped to CURRENT_SETTINGS_VERSION (3, shared/settings-migrations.ts:25) on save; drives the migration runner
+  settingsVersion: number                           // #93; persisted schema version, stamped to CURRENT_SETTINGS_VERSION (4, shared/settings-migrations.ts:25) on save; drives the migration runner
   ai: AISettings {
-    provider: 'openai' | 'anthropic' | 'gemini' | 'ollama'   // AIProvider, default: 'openai'
+    provider: 'openai' | 'anthropic' | 'gemini' | 'ollama'   // AIProvider, default: 'anthropic' (new installs only; saved settings keep their provider)
     apiKey: string                                  // default: ''
     ollamaEndpoint: string                          // default: 'http://localhost:11434'
-    model: string                                   // default: 'gpt-5.6-sol' (dropdown values per provider in MODEL_OPTIONS)
+    model: string                                   // default: 'opus' (Anthropic alias -> claude-opus-5-5) (dropdown values per provider in MODEL_OPTIONS)
     maxTokens: number                               // default: 2048
     temperature: number                             // default: 0.7
     cacheResponses: boolean                         // default: false (#397; opt-in AI response cache; caching is automatic at temperature 0)
@@ -260,7 +260,7 @@ SynapseSettings {
     systemOne: SystemOneSettings {                  // #558; System 1 decision lane (TypeSafe Jev) — settings.ts:115, defaults settings.ts:482
       enabled: boolean                              // default: false (note text leaves the vault; opt-in)
       apiKey: string                                // default: '' (CredentialProvider 'typesafe'; Test button via a minimal POST probe)
-      model: string                                 // default: 'jev-latest' (dropdown over SYSTEM_ONE_MODEL_OPTIONS, settings.ts:108: jev-latest | jev-1.13.0 | jev-preview)
+      model: string                                 // default: 'jev-latest' (dropdown over SYSTEM_ONE_MODEL_OPTIONS, settings.ts:121: jev-latest | jev-1.14.0 | jev-1.13.0 | jev-preview)
       confidenceFloor: number                       // default: 0.6 (routing floor ONLY for seats without a feature-level threshold — the tag vocabulary and frontmatter-value seats; organize and REM use their own knobs)
     }
   }
@@ -286,9 +286,9 @@ SynapseSettings {
   audio: AudioSettings {
     enabled: boolean                                // default: true
     transcriptionProvider: 'whisper-api' | 'deepgram' | 'gemini' | 'local-whisper'  // default: 'whisper-api'
-    whisperApiKey: string                           // default: '' (fallback: ai.apiKey)
+    whisperApiKey: string                           // default: '' (fallback: ai.apiKey only when ai.provider is 'openai')
     deepgramApiKey: string                          // default: ''
-    geminiApiKey: string                            // default: '' (fallback: ai.apiKey)
+    geminiApiKey: string                            // default: '' (fallback: ai.apiKey only when ai.provider is 'gemini')
     transcriptionModel: string                      // default: 'whisper-1' (per-provider, TRANSCRIPTION_MODEL_OPTIONS)
     localWhisperPath: string                        // default: ''
     language: string                                // default: ''
@@ -312,7 +312,7 @@ SynapseSettings {
     frameExtraction: FrameExtractionSettings {
       enabled: boolean                              // default: false
       intervalSeconds: number                       // default: 30
-      visionModel: string                           // default: 'gpt-5.6-sol'
+      visionModel: string                           // default: 'opus'
       maxFrames: number                             // default: 20
     }
   }
@@ -450,11 +450,12 @@ per-module `excludeFolders` fields were removed; `main.loadSettings()` runs a on
 `buildMigratedExclusions()` migration for upgraders whose persisted data lacks an `exclusions` key.
 
 Provider model dropdowns: `MODEL_OPTIONS: Record<AIProvider, Record<id, label>>` in `src/settings.ts`.
-openai: gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-4o, gpt-4o-mini, o3, o3-mini,
-o4-mini. anthropic: fable, opus, sonnet, haiku (resolved to
-full IDs in `ai-client.ts`). gemini: gemini-3.8-flash, gemini-3.5-flash, gemini-3.1-flash-lite,
-gemini-2.5-pro, gemini-2.5-flash. ollama: llama3.2, llama3, gemma4, gemma3, gemma, qwen3, deepseek-r1,
-mistral, codellama.
+openai: gpt-6-astra, gpt-6.1-sol, gpt-6.1-terra, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna,
+gpt-4o, gpt-4o-mini. anthropic: fable, opus, sonnet, haiku (resolved to claude-fable-5-2 / claude-opus-5-5 /
+claude-sonnet-5-5 / claude-haiku-5-5 in `ai-client.ts`). gemini: gemini-4-argon, gemini-3.8-flash,
+gemini-3.6-flash, gemini-3.5-flash-lite, gemini-3.1-flash-lite. ollama: gemma4, qwen3.8, qwen3.6, qwen3.5,
+gpt-oss, llama4, phi4, llama3.2, llama3, gemma3, gemma, qwen3, deepseek-r1, mistral, codellama.
+Retired ids (o3, o3-mini, o4-mini, gemini-2.5-pro, gemini-2.5-flash, gemini-3.5-flash) are remapped by the v4 migration.
 
 `ProposalKind` (`src/views/types.ts`) is the single source of truth for `PROPOSAL_KINDS` and keys of `autoAccept`:
 `'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem' | 'illustrate'`. A compile-time guard asserts it

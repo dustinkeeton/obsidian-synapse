@@ -372,7 +372,7 @@ describe('AIClient — Anthropic provider', () => {
 		expect(call.headers?.['x-api-key']).toBe('anthropic-key-1234567890');
 		expect(call.headers?.['anthropic-version']).toBe('2023-06-01');
 		const body = lastRequestBody();
-		expect(body.model).toBe('claude-sonnet-5');
+		expect(body.model).toBe('claude-sonnet-5-5');
 		// system message is lifted out of messages into the top-level system field
 		expect(body.system).toBe('You are terse.');
 		expect(body.messages).toEqual([{ role: 'user', content: 'Hello' }]);
@@ -405,10 +405,10 @@ describe('AIClient — Anthropic provider', () => {
 	});
 
 	it.each([
-		['fable', 'claude-fable-5-1'],
-		['opus', 'claude-opus-5'],
-		['sonnet', 'claude-sonnet-5'],
-		['haiku', 'claude-haiku-4-5'],
+		['fable', 'claude-fable-5-2'],
+		['opus', 'claude-opus-5-5'],
+		['sonnet', 'claude-sonnet-5-5'],
+		['haiku', 'claude-haiku-5-5'],
 	])('resolves the %s alias to the bare %s model id', async (alias, modelId) => {
 		mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
 		settings.ai.model = alias;
@@ -418,7 +418,7 @@ describe('AIClient — Anthropic provider', () => {
 		expect(lastRequestBody().model).toBe(modelId);
 	});
 
-	it.each(['fable', 'opus', 'sonnet'])(
+	it.each(['fable', 'opus', 'sonnet', 'haiku'])(
 		'omits temperature for %s, which rejects sampling params',
 		async (alias) => {
 			mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
@@ -432,9 +432,9 @@ describe('AIClient — Anthropic provider', () => {
 		}
 	);
 
-	it('still sends temperature for haiku, which accepts sampling params', async () => {
+	it('still sends temperature for a pinned legacy id that accepts sampling params', async () => {
 		mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
-		settings.ai.model = 'haiku';
+		settings.ai.model = 'claude-haiku-4-5';
 
 		await client.chat([{ role: 'user', content: 'Hi' }]);
 
