@@ -11,6 +11,7 @@ export {
 	activateUnifiedView,
 	activateSynapseActionsView,
 	refreshUnifiedView,
+	watchInProgress,
 } from './view-activation';
 export type { UnifiedViewSources } from './view-activation';
 export { activeMarkdownFile, runRegisteredCommand } from './command-runner';

@@ -5,6 +5,7 @@ import type { DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal, TitleDuplicateStrategy } from '../title';
 import type { RemProposal } from '../rem';
 import type { IllustrateProposal } from '../illustrate';
+import type { InProgressKind } from '../shared';
 
 /**
  * The single source of truth for the set of proposal kinds Synapse generates.
@@ -50,6 +51,14 @@ const _unionCoversKinds: _AssertUnionCoversKinds = true;
 void _kindsCoverUnion;
 void _unionCoversKinds;
 
+// Compile-time guard: the shared in-progress registry tracks exactly the proposal kinds.
+type _AssertInProgressCoversKinds = ProposalKind extends InProgressKind ? true : never;
+type _AssertKindsCoverInProgress = InProgressKind extends ProposalKind ? true : never;
+const _inProgressCoversKinds: _AssertInProgressCoversKinds = true;
+const _kindsCoverInProgress: _AssertKindsCoverInProgress = true;
+void _inProgressCoversKinds;
+void _kindsCoverInProgress;
+
 export interface UnifiedViewCallbacks {
 	// Elaboration
 	onElaborationAccept: (id: string, editedContent: string) => Promise<void>;
@@ -76,4 +85,6 @@ export interface UnifiedViewCallbacks {
 	// Checkpoints
 	onCheckpointDiscard: (id: string) => Promise<void>;
 	onCheckpointResume: (id: string) => Promise<void>;
+	// In progress: same cancel path as the operation toast's Cancel button.
+	onCancelInProgress: (id: string) => void;
 }

@@ -54,7 +54,7 @@ function harness(notes: Record<string, string>, opts?: { autoAccept?: boolean })
 
 	const info = vi.fn();
 	const success = vi.fn();
-	const notifications = { info, success, notifyError: vi.fn(), startOperation: vi.fn() };
+	const notifications = { info, success, notifyError: vi.fn(), startOperation: vi.fn(), trackInProgress: vi.fn(() => () => {}) };
 
 	const mockPlugin = {
 		app: {

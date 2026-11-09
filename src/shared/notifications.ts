@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 import { redactSecrets, redactError } from './redact';
+import { InProgressRegistry, type InProgressMeta } from './in-progress-registry';
 
 export type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error';
 
@@ -14,6 +15,16 @@ export type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error';
  */
 export function linkLoadError(source: string, reason: string): string {
 	return `Could not load content from ${source}: ${reason}`;
+}
+
+/** Run an operation's whole tracked lifetime; a throw anywhere settles `op` as an error (a no-op once settled) and is rethrown. */
+export async function settleOnThrow<T>(op: OperationHandle, failure: string, fn: () => Promise<T>): Promise<T> {
+	try {
+		return await fn();
+	} catch (error) {
+		op.error(`${failure} -- ${error instanceof Error ? error.message : String(error)}`);
+		throw error;
+	}
 }
 
 /**
@@ -155,6 +166,8 @@ export class NotificationManager {
 	 * Cleared in {@link dispose}.
 	 */
 	private lastShown = new Map<string, number>();
+	/** Running proposal-producing operations, fed by {@link startOperation} metadata and {@link trackInProgress}. */
+	readonly inProgress = new InProgressRegistry();
 
 	setStatusBarEl(el: HTMLElement): void {
 		this.statusBarEl = el;
@@ -174,6 +187,7 @@ export class NotificationManager {
 			op.notice.hide();
 		}
 		this.operations.clear();
+		this.inProgress.clear();
 		// Drop dedup timestamps too, so a re-enabled plugin starts with a clean
 		// throttle window rather than inheriting stale last-shown times (#396).
 		this.lastShown.clear();
@@ -183,7 +197,7 @@ export class NotificationManager {
 	 * Begin a tracked operation. Returns a handle for updating progress.
 	 * The notice is non-dismissible and includes a Cancel button.
 	 */
-	startOperation(label: string, id?: string): OperationHandle {
+	startOperation(label: string, id?: string, meta?: InProgressMeta): OperationHandle {
 		const opId = id ?? `op-${++this.idCounter}`;
 
 		// Clean up existing operation with same id
@@ -194,6 +208,11 @@ export class NotificationManager {
 		}
 
 		const baseLabel = stripTrailingDots(label);
+		if (meta) {
+			this.inProgress.begin({ id: opId, kind: meta.kind, label: baseLabel, target: meta.target, cancellable: true });
+		} else {
+			this.inProgress.end(opId);
+		}
 
 		// Create a persistent notice and take over its DOM
 		const notice = new Notice('', 0);
@@ -240,24 +259,26 @@ export class NotificationManager {
 		this.operations.set(opId, op);
 		this.updateStatusBar();
 
+		const isCurrent = () => this.operations.get(opId) === op;
 		const handle: OperationHandle = {
 			get cancelled() {
 				return op.state === 'cancelled';
 			},
 
 			update: (message: string) => {
-				if (op.state !== 'running') return;
+				if (op.state !== 'running' || !isCurrent()) return;
 				const base = stripTrailingDots(message);
 				op.message = base;
 				op.labelEl.textContent = `Synapse: ${base}`;
 				op.dotsEl.textContent = '.';
 				stopEllipsis(op.ellipsisInterval);
 				op.ellipsisInterval = startEllipsisOnEl(op.dotsEl);
+				this.inProgress.update(opId, { label: base });
 				this.updateStatusBar();
 			},
 
 			progress: (current: number, total: number, progressLabel?: string) => {
-				if (op.state !== 'running') return;
+				if (op.state !== 'running' || !isCurrent()) return;
 				const base = progressLabel
 					? `${stripTrailingDots(progressLabel)} (${current}/${total})`
 					: `${op.label} (${current}/${total})`;
@@ -268,13 +289,18 @@ export class NotificationManager {
 				op.labelEl.textContent = `Synapse: ${base}`;
 				op.dotsEl.textContent = '';
 				styleNotice(op.notice, 'progress');
+				this.inProgress.update(opId, {
+					current,
+					total,
+					...(progressLabel ? { label: stripTrailingDots(progressLabel) } : {}),
+				});
 				this.updateStatusBar();
 			},
 
 			finish: (message?: string, action?: NoticeAction) => {
 				if (op.state !== 'running') return;
 				this.completeOperation(
-					opId,
+					op,
 					'done',
 					message || `${op.label} complete`,
 					'success',
@@ -287,7 +313,7 @@ export class NotificationManager {
 				if (op.state !== 'running') return;
 				// Duration is ignored for errors (showErrorNotice forces persist);
 				// pass 0 to document the persist-until-dismissed intent.
-				this.completeOperation(opId, 'error', message, 'error', 0);
+				this.completeOperation(op, 'error', message, 'error', 0);
 				// Redact before the console sink too: the toast (via showErrorNotice)
 				// is already redacted, so logging the SAME message raw here would be
 				// the one spot a key echoed into an operation error could still leak.
@@ -297,6 +323,16 @@ export class NotificationManager {
 		};
 
 		return handle;
+	}
+
+	/**
+	 * Register toast-less proposal work (e.g. a silent post-op check) in {@link inProgress}.
+	 * Returns the deregister function; call it in a `finally`.
+	 */
+	trackInProgress(label: string, meta: InProgressMeta): () => void {
+		const id = `track-${++this.idCounter}`;
+		this.inProgress.begin({ id, kind: meta.kind, label, target: meta.target, cancellable: false });
+		return () => this.inProgress.end(id);
 	}
 
 	/**
@@ -349,7 +385,7 @@ export class NotificationManager {
 	cancelOperation(id: string): void {
 		const op = this.operations.get(id);
 		if (!op || op.state !== 'running') return;
-		this.completeOperation(id, 'cancelled', 'Operation cancelled', 'warning', 4000);
+		this.completeOperation(op, 'cancelled', 'Operation cancelled', 'warning', 4000);
 	}
 
 	/**
@@ -523,15 +559,13 @@ export class NotificationManager {
 	}
 
 	private completeOperation(
-		id: string,
+		op: TrackedOperation,
 		newState: TrackedOperation['state'],
 		message: string,
 		level: NoticeLevel,
 		duration: number,
 		action?: NoticeAction
 	): void {
-		const op = this.operations.get(id);
-		if (!op) return;
 		op.state = newState;
 		stopEllipsis(op.ellipsisInterval);
 		op.notice.hide();
@@ -547,7 +581,11 @@ export class NotificationManager {
 			const notice = new Notice(`Synapse: ${message}`, duration);
 			styleNotice(notice, level);
 		}
-		this.operations.delete(id);
+		// A handle superseded by a same-id restart must not end the newer run's entry.
+		if (this.operations.get(op.id) === op) {
+			this.operations.delete(op.id);
+			this.inProgress.end(op.id);
+		}
 		this.updateStatusBar();
 	}
 

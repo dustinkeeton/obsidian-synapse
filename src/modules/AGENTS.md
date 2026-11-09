@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-11-09
 ---
 
 # Modules Registry
@@ -76,7 +76,7 @@ function unloadFeatureModules(modules: FeatureModules): void                    
 
 ## Wiring (main.ts)
 
-`main.ts:60-81` builds `ModuleDeps` and calls `constructFeatureModules`; the `ModuleWiring` closures resolve `SynapsePlugin.urlTranscription` / `synapseRunner`, which `main.ts:84-101` builds right after construction (they only run at operation time). `main.ts:178-182` assigns `onViewRefreshNeeded` / `onOpenProposalView` on every module exposing those slots, then `loadFeatureModules`; `onunload` (`main.ts:275`) calls `unloadFeatureModules`.
+`main.ts:60-81` builds `ModuleDeps` and calls `constructFeatureModules`; the `ModuleWiring` closures resolve `SynapsePlugin.urlTranscription` / `synapseRunner`, which `main.ts:84-101` builds right after construction (they only run at operation time). `main.ts:181-185` assigns `onViewRefreshNeeded` / `onOpenProposalView` on every module exposing those slots, then `loadFeatureModules`; `onunload` (`main.ts:278`) calls `unloadFeatureModules`.
 
 ## Dependencies
 

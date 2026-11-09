@@ -6,7 +6,7 @@ import {
 	writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 	trackAiCache, withCacheReport, ConfirmModal, sleep,
-	scanScopeLabel, type ScanTarget,
+	scanScopeLabel, type ScanTarget, settleOnThrow,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DecisionRequestOptions, DeferredTask, ModuleDeps, FeatureModule, OperationHandle } from '../shared';
 import type { MoveRecord } from '../shared';
@@ -134,59 +134,60 @@ export class OrganizeModule implements FeatureModule {
 	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
 		const genOp = this.notifications.startOperation(
 			'Resuming organization',
-			'organize-resume'
+			'organize-resume', { kind: 'organize' }
 		);
+		return settleOnThrow(genOp, 'Resume failed', async () => {
+			const tally = emptyTally();
+			const cacheUses: CacheUse[] = [];
+			// Coalesce new-directory proposals within this resumed run (#172).
+			const batchProposedDirs = new Map<string, string>();
 
-		const tally = emptyTally();
-		const cacheUses: CacheUse[] = [];
-		// Coalesce new-directory proposals within this resumed run (#172).
-		const batchProposedDirs = new Map<string, string>();
+			try {
+				for (let i = 0; i < checkpoint.remainingItems.length; i++) {
+					if (genOp.cancelled) break;
 
-		try {
-			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
-				if (genOp.cancelled) break;
+					const item = checkpoint.remainingItems[i];
+					const filePath = item.payload.filePath as string;
 
-				const item = checkpoint.remainingItems[i];
-				const filePath = item.payload.filePath as string;
+					genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming organization');
 
-				genOp.progress(i + 1, checkpoint.remainingItems.length, 'Resuming organization');
+					const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+					if (!(file instanceof TFile)) continue;
+					if (this.isExcluded(file)) continue;
 
-				const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
-				if (!(file instanceof TFile)) continue;
-				if (this.isExcluded(file)) continue;
+					try {
+						const originalPath = file.path;
+						const cacheUse: CacheUse = {};
+						const result = await this.noteQueue.run(
+							file.path,
+							() => this.organizeFile(file, checkpoint.id, true, batchProposedDirs, cacheUse)
+						);
+						cacheUses.push(cacheUse);
+						tallyResult(tally, result, originalPath);
+					} catch (error) {
+						tally.errors++;
+						const msg = error instanceof Error ? error.message : String(error);
+						console.warn(`[Synapse] Failed to organize ${file.path}: ${msg}`);
+					}
 
-				try {
-					const originalPath = file.path;
-					const cacheUse: CacheUse = {};
-					const result = await this.noteQueue.run(
-						file.path,
-						() => this.organizeFile(file, checkpoint.id, true, batchProposedDirs, cacheUse)
-					);
-					cacheUses.push(cacheUse);
-					tallyResult(tally, result, originalPath);
-				} catch (error) {
-					tally.errors++;
-					const msg = error instanceof Error ? error.message : String(error);
-					console.warn(`[Synapse] Failed to organize ${file.path}: ${msg}`);
+					await this.checkpointManager.completeItem(checkpoint.id, item.id);
 				}
-
-				await this.checkpointManager.completeItem(checkpoint.id, item.id);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				genOp.error(`Resume failed -- ${msg}`);
+				return;
 			}
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			genOp.error(`Resume failed -- ${msg}`);
-			return;
-		}
 
-		if (genOp.cancelled) {
-			await this.checkpointManager.discard(checkpoint.id);
-			return;
-		}
+			if (genOp.cancelled) {
+				await this.checkpointManager.discard(checkpoint.id);
+				return;
+			}
 
-		const tasks = await this.checkpointManager.complete(checkpoint.id);
-		this.dispatchDeferredTasks(tasks);
+			const tasks = await this.checkpointManager.complete(checkpoint.id);
+			this.dispatchDeferredTasks(tasks);
 
-		await this.reportRun(genOp, tally, cacheUses, 'Resumed -- ');
+			await this.reportRun(genOp, tally, cacheUses, 'Resumed -- ');
+		});
 	}
 
 	/** Finish notice, auto-accept summary note, and view refresh shared by scan and resume. */
@@ -236,7 +237,7 @@ export class OrganizeModule implements FeatureModule {
 
 		const op = this.notifications.startOperation(
 			`Organizing ${file.basename}`,
-			`organize-${file.path}`
+			`organize-${file.path}`, { kind: 'organize', target: file.path }
 		);
 
 		const cacheUse: CacheUse = {};
@@ -294,7 +295,7 @@ export class OrganizeModule implements FeatureModule {
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for organization`,
-			'organize-scan'
+			'organize-scan', { kind: 'organize', target: folderLabel ?? 'Whole vault' }
 		);
 
 		let allFiles = getMarkdownFiles(this.plugin.app, target);
@@ -337,75 +338,76 @@ export class OrganizeModule implements FeatureModule {
 		// Phase 3: Analyze and organize (checkpointed)
 		const genOp = this.notifications.startOperation(
 			'Organizing notes',
-			'organize-generate'
+			'organize-generate', { kind: 'organize', target: folderLabel ?? 'Whole vault' }
 		);
+		return settleOnThrow(genOp, 'Organization failed', async () => {
+			const tally = emptyTally();
+			const cacheUses: CacheUse[] = [];
+			// Coalesce new-directory proposals within this scan so variants like
+			// "model"/"models" resolve to a single folder (#172). Maps a canonical
+			// key to the representative directory chosen for it.
+			const batchProposedDirs = new Map<string, string>();
 
-		const tally = emptyTally();
-		const cacheUses: CacheUse[] = [];
-		// Coalesce new-directory proposals within this scan so variants like
-		// "model"/"models" resolve to a single folder (#172). Maps a canonical
-		// key to the representative directory chosen for it.
-		const batchProposedDirs = new Map<string, string>();
+			// Create checkpoint for resumability
+			const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
+				id: `org-${i}-${f.path}`,
+				label: f.path,
+				payload: { filePath: f.path },
+			}));
+			const checkpoint = await this.checkpointManager.create({
+				module: 'organize',
+				operationLabel: `Organize: directory scan${folderLabel ? ` (${folderLabel})` : ''}`,
+				items: checkpointItems,
+			});
 
-		// Create checkpoint for resumability
-		const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
-			id: `org-${i}-${f.path}`,
-			label: f.path,
-			payload: { filePath: f.path },
-		}));
-		const checkpoint = await this.checkpointManager.create({
-			module: 'organize',
-			operationLabel: `Organize: directory scan${folderLabel ? ` (${folderLabel})` : ''}`,
-			items: checkpointItems,
-		});
+			// Register deferred task for sidebar refresh (I1)
+			await this.checkpointManager.addDeferredTask(checkpoint.id, {
+				id: generateId(),
+				type: 'refresh-sidebar-view',
+				data: {},
+			});
 
-		// Register deferred task for sidebar refresh (I1)
-		await this.checkpointManager.addDeferredTask(checkpoint.id, {
-			id: generateId(),
-			type: 'refresh-sidebar-view',
-			data: {},
-		});
+			for (let i = 0; i < eligible.length; i++) {
+				if (genOp.cancelled) break;
 
-		for (let i = 0; i < eligible.length; i++) {
-			if (genOp.cancelled) break;
+				genOp.progress(i + 1, eligible.length, 'Organizing notes');
+				try {
+					const originalPath = eligible[i].path;
+					const cacheUse: CacheUse = {};
+					const result = await this.noteQueue.run(
+						eligible[i].path,
+						() => this.organizeFile(eligible[i], checkpoint.id, true, batchProposedDirs, cacheUse)
+					);
+					cacheUses.push(cacheUse);
+					tallyResult(tally, result, originalPath);
+				} catch (error) {
+					tally.errors++;
+					const msg = error instanceof Error ? error.message : String(error);
+					console.warn(`[Synapse] Failed to organize ${eligible[i].path}: ${msg}`);
+				}
 
-			genOp.progress(i + 1, eligible.length, 'Organizing notes');
-			try {
-				const originalPath = eligible[i].path;
-				const cacheUse: CacheUse = {};
-				const result = await this.noteQueue.run(
-					eligible[i].path,
-					() => this.organizeFile(eligible[i], checkpoint.id, true, batchProposedDirs, cacheUse)
+				// Save checkpoint progress
+				await this.checkpointManager.completeItem(
+					checkpoint.id,
+					checkpointItems[i].id
 				);
-				cacheUses.push(cacheUse);
-				tallyResult(tally, result, originalPath);
-			} catch (error) {
-				tally.errors++;
-				const msg = error instanceof Error ? error.message : String(error);
-				console.warn(`[Synapse] Failed to organize ${eligible[i].path}: ${msg}`);
 			}
 
-			// Save checkpoint progress
-			await this.checkpointManager.completeItem(
-				checkpoint.id,
-				checkpointItems[i].id
-			);
-		}
+			if (genOp.cancelled) {
+				// Discard checkpoint on user cancellation (C3)
+				await this.checkpointManager.discard(checkpoint.id);
+				this.notifications.info('Organization cancelled');
+				return tally.proposals;
+			}
 
-		if (genOp.cancelled) {
-			// Discard checkpoint on user cancellation (C3)
-			await this.checkpointManager.discard(checkpoint.id);
-			this.notifications.info('Organization cancelled');
+			// Mark checkpoint completed and dispatch deferred tasks (I1)
+			const tasks = await this.checkpointManager.complete(checkpoint.id);
+			this.dispatchDeferredTasks(tasks);
+
+			await this.reportRun(genOp, tally, cacheUses);
+
 			return tally.proposals;
-		}
-
-		// Mark checkpoint completed and dispatch deferred tasks (I1)
-		const tasks = await this.checkpointManager.complete(checkpoint.id);
-		this.dispatchDeferredTasks(tasks);
-
-		await this.reportRun(genOp, tally, cacheUses);
-
-		return tally.proposals;
+		});
 	}
 
 	/**

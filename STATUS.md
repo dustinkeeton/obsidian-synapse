@@ -1,8 +1,8 @@
 # Project Status
 
-**Last updated**: 2026-10-19
+**Last updated**: 2026-11-09
 **Version**: 1.4.1 (released 2026-10-09)
-**Health**: Green — `tsc` clean, **2985/2985 tests passing (216 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
+**Health**: Green — `tsc` clean, **3061/3061 tests passing (221 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
@@ -14,7 +14,8 @@
 - **1.4.1 (2026-10-09) — REM accept checks the note first (#575)**: accepting REM links re-checks each scan-time position against the note as it is now. A moved link is re-found at the nearest whole-word match outside code, links, frontmatter, and summary callouts; one that cannot be found is skipped with a "Skipped N link(s)" notice. If nothing applies, the note is untouched and the proposal stays pending.
 - **Unreleased on main — no links to missing notes (#581)**: every write of AI-generated or fetched text turns `[[links]]` to notes that don't exist into plain text (elaboration accept keeps the note's own and user-typed links). Deep-dive writes plain prose and, with **Auto-REM on accept** (`deepDive.autoRemOnAccept`, default on), REM-scans each accepted note to link it to existing notes.
 - **Unreleased on main — one image per note (#583)**: Illustrate places each image at most once per note (the best-fitting spot keeps it), drops source images with zero word overlap with the query, and accept skips a photo whose remote URL is already in the note.
-- **In review (PR #591) — top-level-only folder scans (#589)**: the scan picker's second row scans the vault root's top level only, and Shift+Enter or Shift+click scans any folder without its subfolders. Enter on open still scans the whole vault. Only the notes processed narrow; link and related-note lookups stay vault-wide.
+- **Shipped (PR #591) — top-level-only folder scans (#589)**: the scan picker's second row scans the vault root's top level only, and Shift+Enter or Shift+click scans any folder without its subfolders. Enter on open still scans the whole vault. Only the notes processed narrow; link and related-note lookups stay vault-wide.
+- **In review (PR #598) — running work shows in the review pane (#577)**: an **In progress** section at the top of the unified sidebar lists each running proposal-producing operation (elaboration, enrichment, organize, deep dive, title, REM, illustrate) with its kind, target, and live progress. Toast-backed runs get a **Cancel** button that works like the toast's; toast-less runs (title checks, single-note REM, post-op illustrate) show without one.
 - **Fire Synapse pipeline** runs elaboration → summarize → enrichment → REM → illustrate → tidy → organize; the **intake folder** auto-feeds it. All proposals land in one **unified proposal sidebar**; a **Synapse actions sidebar** (#289) gives touch-friendly buttons.
 
 ## Module Status (20 modules; the five thin folders above are omitted)
@@ -39,8 +40,8 @@
 | intake | `src/intake/` | Watch folder (#111); media-URL transcription (#112); shared-capture adoption (#455); startup catch-up scan (#462) | Working |
 | pipeline | `src/pipeline/` | Fire Synapse runner + post-op hook builders (enrich → title check, deep-dive REM leg #581, illustrate leg, auto-organize) | Working |
 | commands | `src/commands/` | Command registry + registrar + drift audit | Working |
-| shared | `src/shared/` | Scan scope + scan picker (recursive or top-level-only, #589), AIClient (+ cache/coalescing, `onCacheHit`, per-call `model`), `NoteOperationQueue`, `TranscriptCache`, callout registry with native bases (#554), insertion-point placement (#213), prose reduction (#544), build info (#542), image preprocessing, no-speech outcome, `ModuleDeps` contract, validation, checkpoints, redaction, settings migrations (v3), unresolved-wikilink guard (#581) | Working (base layer) |
-| views | `src/views/` | Unified proposal sidebar (seven proposal kinds) + Synapse actions sidebar; direct `editorCallback` dispatch (#352) | Working |
+| shared | `src/shared/` | Scan scope + scan picker (recursive or top-level-only, #589), in-progress operation registry (#577), AIClient (+ cache/coalescing, `onCacheHit`, per-call `model`), `NoteOperationQueue`, `TranscriptCache`, callout registry with native bases (#554), insertion-point placement (#213), prose reduction (#544), build info (#542), image preprocessing, no-speech outcome, `ModuleDeps` contract, validation, checkpoints, redaction, settings migrations (v3), unresolved-wikilink guard (#581) | Working (base layer) |
+| views | `src/views/` | Unified proposal sidebar (seven proposal kinds, plus an In progress section fed by `NotificationManager.inProgress`, #577) + Synapse actions sidebar; direct `editorCallback` dispatch (#352) | Working |
 
 ## Current Focus
 
@@ -94,5 +95,5 @@
 |---------|---------|
 | `npm run dev` | esbuild watch (development; stamps the dev-build banner, #542) |
 | `npm run build` | `tsc -noEmit -skipLibCheck` + esbuild production bundle |
-| `npm test` | Vitest — **2985/2985 passing** (216 files) |
+| `npm test` | Vitest — **3061/3061 passing** (221 files) |
 | `npm run lint` | ESLint — `obsidianmd/*` store-review mirror + `synapse/no-unredacted-console` (#418) |

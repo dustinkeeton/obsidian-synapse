@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-11-09
 ---
 
 # title module
@@ -120,6 +120,7 @@ proposeUntitled(file, filePath, options?)  [private, holds the note's queue slot
   --> key = titleContentKey(filePath, content, basename, 'untitled', settings)
   --> loadForNote(filePath); skip if any pending proposal exists
   --> skip if existing proposal has same contentKey and status !== 'accepted'  [reject-loop dedup #408]
+  --> endTracking = notifications.trackInProgress('Suggesting a title for <basename>', { kind: 'title', target: filePath })  [#577; non-cancellable sidebar row; endTracking() in finally]
   --> TitleSuggester.suggestTitle(content, basename, trackAiCache(cacheUse))  [AI]
   --> return if suggested title empty or itself isUntitled()
   --> build proposal {trigger:'untitled', contentKey:key}
@@ -138,6 +139,7 @@ proposeFromMismatch(file, filePath, options?)  [private, holds the note's queue 
   --> readNote(); return if content empty/whitespace
   --> key = titleContentKey(..., 'content-mismatch', settings)
   --> loadForNote; skip if pending; skip if same contentKey and status !== 'accepted'
+  --> endTracking = notifications.trackInProgress('Checking the title of <basename>', { kind: 'title', target: filePath })  [#577; non-cancellable sidebar row; endTracking() in finally]
   --> TitleSuggester.checkTitleMismatch(content, basename, trackAiCache(cacheUse))  [AI]
   --> return unless result.isMismatch && result.suggestedTitle
   --> build proposal {trigger:'content-mismatch', contentKey:key}; flag conflictsWith
@@ -243,7 +245,7 @@ Out: consumed by `main.ts` (TitleModule, checkTitle), `views/` (TitleProposal, T
 - `contentKey` is computed from inputs BEFORE the AI call (temperature>0 output would otherwise vary every run).
 - Auto-accept for title RENAMES (or MERGES) the file; the notice reflects the REAL outcome (suffixed name / merge target), not the originally proposed title (#408).
 - Renames use `vault.rename` (NOT `fileManager.renameFile`) on purpose: Obsidian's automatic link update would rewrite the visible prose of referencing notes. Instead every resolving accept branch snapshots inbound links first (`collectInboundLinks`, feature-detected `metadataCache.getBacklinksForFile` — no-op if absent) and rewrites them afterwards with display text preserved byte-for-byte; embeds retarget without an alias (#485). Merge retargets links from the trashed source title to the surviving note.
-- `checkTitle` is silent: no notifications until a proposal is confirmed or auto-accepted. The Review toast is gated through `reviewAction()` and suppressed for `postOp` invocations (#366) and when auto-accept is on.
+- `checkTitle` is silent: no notifications until a proposal is confirmed or auto-accepted. The Review toast is gated through `reviewAction()` and suppressed for `postOp` invocations (#366) and when auto-accept is on. The only surface during the AI call is a non-cancellable unified-sidebar in-progress row (`trackInProgress`, `index.ts:141`, `:229`; #577).
 - `checkMismatch` skips notes that are already untitled (let `checkUntitled` handle those).
 - Both check methods skip if any pending proposal already exists for the note.
 

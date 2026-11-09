@@ -11,6 +11,7 @@ interface MockNotifications {
 	info: Mock<(message: string, duration?: number, action?: NoticeAction) => void>;
 	success: Mock<(message: string, duration?: number, action?: NoticeAction) => void>;
 	notifyError: Mock<(context: string, error: unknown) => void>;
+	trackInProgress: Mock<(label: string, meta: unknown) => () => void>;
 }
 
 // Stub the title suggester so checkUntitled produces a deterministic proposal
@@ -70,7 +71,7 @@ describe('TitleModule Review toast action (#340)', () => {
 	beforeEach(() => {
 		adapter = createMemoryAdapter();
 		settings = structuredClone(DEFAULT_SETTINGS);
-		notifications = { info: vi.fn(), success: vi.fn(), notifyError: vi.fn() };
+		notifications = { info: vi.fn(), success: vi.fn(), notifyError: vi.fn(), trackInProgress: vi.fn(() => () => {}) };
 		untitledFile = makeUntitledFile();
 
 		mockPlugin = {
@@ -125,6 +126,18 @@ describe('TitleModule Review toast action (#340)', () => {
 
 		// Nothing was renamed (proposal left pending for review).
 		expect(mockPlugin.app.vault.rename).not.toHaveBeenCalled();
+	});
+
+	it('tracks the suggestion in the in-progress registry until it settles (#577)', async () => {
+		const end = vi.fn();
+		notifications.trackInProgress.mockReturnValue(end);
+		const mod = build(() => false);
+		await mod.onload();
+
+		await mod.checkUntitled('Inbox/Untitled.md');
+
+		expect(notifications.trackInProgress).toHaveBeenCalledWith(expect.any(String), { kind: 'title', target: 'Inbox/Untitled.md' });
+		expect(end).toHaveBeenCalledTimes(1);
 	});
 
 	it('does NOT emit the Review toast when auto-accept is on', async () => {

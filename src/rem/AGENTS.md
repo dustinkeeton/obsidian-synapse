@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-19
+last-updated: 2026-11-09
 ---
 
 # REM Module
@@ -103,8 +103,9 @@ interface RemSettings {
 ## Data Flow
 
 ```
-remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private scanNote core
+remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private scanNote core (index.ts:142)
   --> isExcluded? (isPathExcluded 'rem' + enrichment.excludeTags)
+  --> notifications.trackInProgress('Finding links in <basename>', { kind: 'rem', target: filePath }) (#577; non-cancellable sidebar row, ended in finally) -> private scanIncludedNote (index.ts:169)
   --> gatherCandidates(file, content, cacheUse):
         MentionScanner.scan(...) literal candidates, down-weighted by titleMatchWeight
         SemanticMatcher.match(..., trackAiCache(cacheUse)) always-on, filtered by confidenceThreshold   (#527)
@@ -125,7 +126,7 @@ remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private sca
 
 remScanDirectory(target?, skipConfirmation?, onlyFile?)
   --> getMarkdownFiles(app, target) filtered by isExcluded
-  --> startOperation('REM scanning N notes' | 'REM scanning N notes in <scanScopeLabel(target)>' (non-recursive))
+  --> startOperation('REM scanning N notes' | 'REM scanning N notes in <scanScopeLabel(target)>' (non-recursive), 'rem-directory-scan', { kind: 'rem', target: folderLabel ?? 'Whole vault' })   // #577 in-progress row
   --> CheckpointManager.create(module: 'rem', operationLabel: 'REM scan: <scanScopeLabel(target) | vault>', items)
   --> addDeferredTask('refresh-sidebar-view')
   --> for each file: gatherCandidates(file, content, cacheUse) (literal down-weighted + always-on semantic, merged/re-ranked), push cacheUse, save proposal, maybeAutoAccept(batch=true)
@@ -171,7 +172,7 @@ WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This
 
 | Caller | Wiring | Gate |
 |--------|--------|------|
-| deep-dive accept (`deepDive.onNoteAccepted`) | `PostOpHookDeps.remNote` = `rem.remScanNote(filePath, { postOp: true })` (`main.ts:192`); leg in `pipeline/post-op-hooks.ts:70-73`, dispatched via `fireAndForget` | wire time: `rem.enabled && deepDive.autoRemOnAccept` |
+| deep-dive accept (`deepDive.onNoteAccepted`) | `PostOpHookDeps.remNote` = `rem.remScanNote(filePath, { postOp: true })` (`main.ts:195`); leg in `pipeline/post-op-hooks.ts:70-73`, dispatched via `fireAndForget` | wire time: `rem.enabled && deepDive.autoRemOnAccept` |
 
 - `remScanNote` takes the note's `NoteOperationQueue` slot itself (#585), so the leg enqueues behind the deep-dive accept that holds the same `proposedPath` key. `remScanDirectory` / `resumeFromCheckpoint` stay unqueued.
 - `{ postOp: true }` suppresses the file-not-found, exclusion, lane-skip and no-mentions notices and the "Found N linkable mentions" toast; a pending proposal surfaces only via `refreshView()`. `autoAccept.rem` still applies, silently: `maybeAutoAccept(proposal, postOp)` skips the "Auto-accepted REM links" and "Inserted N wikilinks" notices.
@@ -181,12 +182,12 @@ WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This
 
 `remScanDirectory` and `resumeFromCheckpoint` use `CheckpointManager` with module `'rem'`. Items tracked as `rem-{index}-{path}`. On error or cancel, all proposals created in the run are batch-rejected via `rejectProposalBatch()`.
 
-Resume re-checks exclusion rules silently (a path may have been excluded after checkpoint creation). Resume runs the same `gatherCandidates` pipeline as a fresh scan (literal + always-on semantic), so resumed items also get content-relevant links (#380).
+Resume re-checks exclusion rules silently (a path may have been excluded after checkpoint creation). Resume runs the same `gatherCandidates` pipeline as a fresh scan (literal + always-on semantic), so resumed items also get content-relevant links (#380). Resume opens `startOperation('Resuming REM scan', 'rem-resume', { kind: 'rem' })` (`index.ts:319-323`), so it shows as a cancellable in-progress sidebar row (#577).
 
 ## Exclusion Rules
 
 ```ts
-// index.ts:L512-518
+// index.ts:535-541
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (
@@ -223,7 +224,7 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 | Import | From |
 |--------|------|
 | `generateId`, `getMarkdownFiles`, `openScanFolderPicker`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `redactError`, `reviewAction`, `trackAiCache`, `withCacheReport`, `scanScopeLabel`, `toScanScope`, `ScanTarget` (type) | `../shared` (index.ts:8) |
-| `NotificationManager`, `CheckpointManager`, `ModuleDeps`, `FeatureModule`, `NoteOperationQueue`, `CacheUse`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` (inline `import('../shared')`, index.ts:309) | `../shared` (type-only, index.ts:5-6) |
+| `NotificationManager`, `CheckpointManager`, `ModuleDeps`, `FeatureModule`, `NoteOperationQueue`, `CacheUse`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` (inline `import('../shared')`, index.ts:319) | `../shared` (type-only, index.ts:5-6) |
 | `CommandRegistrar` | `../commands` (type-only) |
 | `SynapseSettings`, `RemSettings` | `../settings` (type-only) |
 | `MentionScanner` | `./mention-scanner` |

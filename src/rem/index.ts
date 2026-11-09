@@ -5,7 +5,7 @@ import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule, NoteOperationQueue } from '../shared';
 import type { CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport, type ScanTarget, scanScopeLabel, toScanScope } from '../shared';
+import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport, settleOnThrow, type ScanTarget, scanScopeLabel, toScanScope } from '../shared';
 import { MentionScanner } from './mention-scanner';
 import { withoutSkipRegions } from './skip-regions';
 import { RemLaneError, SemanticMatcher } from './semantic-matcher';
@@ -158,6 +158,16 @@ export class RemModule implements FeatureModule {
 			return null;
 		}
 
+		const endTracking = this.notifications.trackInProgress(`Finding links in ${tFile.basename}`, { kind: 'rem', target: filePath });
+		try {
+			return await this.scanIncludedNote(tFile, filePath, options);
+		} finally {
+			endTracking();
+		}
+	}
+
+	private async scanIncludedNote(tFile: TFile, filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null> {
+		const info = (message: string) => { if (!options?.postOp) this.notifications.info(message); };
 		const content = await this.plugin.app.vault.read(tFile);
 
 		const cacheUse: CacheUse = {};
@@ -217,90 +227,91 @@ export class RemModule implements FeatureModule {
 
 		const op = this.notifications.startOperation(
 			`REM scanning ${eligible.length} notes${scopeSuffix}`,
-			'rem-directory-scan'
+			'rem-directory-scan', { kind: 'rem', target: folderLabel ?? 'Whole vault' }
 		);
+		return settleOnThrow(op, 'REM scan failed', async () => {
+			// Create checkpoint
+			const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
+				id: `rem-${i}-${f.path}`,
+				label: f.path,
+				payload: { filePath: f.path },
+			}));
 
-		// Create checkpoint
-		const checkpointItems: CheckpointWorkItem[] = eligible.map((f, i) => ({
-			id: `rem-${i}-${f.path}`,
-			label: f.path,
-			payload: { filePath: f.path },
-		}));
+			const checkpoint = await this.checkpointManager.create({
+				module: 'rem',
+				operationLabel: `REM scan: ${folderLabel || 'vault'}`,
+				items: checkpointItems,
+				metadata: {},
+			});
 
-		const checkpoint = await this.checkpointManager.create({
-			module: 'rem',
-			operationLabel: `REM scan: ${folderLabel || 'vault'}`,
-			items: checkpointItems,
-			metadata: {},
-		});
+			await this.checkpointManager.addDeferredTask(checkpoint.id, {
+				id: generateId(),
+				type: 'refresh-sidebar-view',
+				data: {},
+			});
 
-		await this.checkpointManager.addDeferredTask(checkpoint.id, {
-			id: generateId(),
-			type: 'refresh-sidebar-view',
-			data: {},
-		});
+			let created = 0;
+			let laneSkipped = 0;
+			let autoAcceptedCount = 0;
+			const createdProposalIds: string[] = [];
+			const cacheUses: CacheUse[] = [];
 
-		let created = 0;
-		let laneSkipped = 0;
-		let autoAcceptedCount = 0;
-		const createdProposalIds: string[] = [];
-		const cacheUses: CacheUse[] = [];
+			try {
+				for (let i = 0; i < eligible.length; i++) {
+					if (op.cancelled) break;
 
-		try {
-			for (let i = 0; i < eligible.length; i++) {
-				if (op.cancelled) break;
+					const file = eligible[i];
+					op.progress(i + 1, eligible.length, `Scanning ${file.basename}`);
 
-				const file = eligible[i];
-				op.progress(i + 1, eligible.length, `Scanning ${file.basename}`);
+					const content = await this.plugin.app.vault.read(file);
+					const cacheUse: CacheUse = {};
+					const allCandidates = await this.gatherCandidates(file, content, cacheUse);
+					cacheUses.push(cacheUse);
+					if (allCandidates === null) laneSkipped++;
 
-				const content = await this.plugin.app.vault.read(file);
-				const cacheUse: CacheUse = {};
-				const allCandidates = await this.gatherCandidates(file, content, cacheUse);
-				cacheUses.push(cacheUse);
-				if (allCandidates === null) laneSkipped++;
+					if (allCandidates && allCandidates.length > 0) {
+						const proposal = this.buildProposal(file.path, allCandidates);
+						await this.store.save(proposal);
+						created++;
+						createdProposalIds.push(proposal.id);
+						if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
+					}
 
-				if (allCandidates && allCandidates.length > 0) {
-					const proposal = this.buildProposal(file.path, allCandidates);
-					await this.store.save(proposal);
-					created++;
-					createdProposalIds.push(proposal.id);
-					if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
+					await this.checkpointManager.completeItem(checkpoint.id, checkpointItems[i].id);
 				}
-
-				await this.checkpointManager.completeItem(checkpoint.id, checkpointItems[i].id);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				op.error(`REM scan failed -- ${msg}`);
+				await this.rejectProposalBatch(createdProposalIds);
+				return 0;
 			}
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			op.error(`REM scan failed -- ${msg}`);
-			await this.rejectProposalBatch(createdProposalIds);
-			return 0;
-		}
 
-		if (op.cancelled) {
-			await this.checkpointManager.discard(checkpoint.id);
-			await this.rejectProposalBatch(createdProposalIds);
-			op.finish('REM scan cancelled');
-		} else {
-			const tasks = await this.checkpointManager.complete(checkpoint.id);
-			this.dispatchDeferredTasks(tasks);
-			// Review action only when something was generated AND REM auto-accept
-			// is off (#366) — the deep-dive rule, centralized.
-			op.finish(
-				withCacheReport(`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions${laneSkipNote(laneSkipped)}`, cacheUses, 'note'),
-				reviewAction({
-					generated: created > 0,
-					shouldAutoAccept: this.shouldAutoAccept,
-					openProposalView: this.onOpenProposalView,
-				})
-			);
-			if (autoAcceptedCount > 0) {
-				this.notifications.info(
-					`Auto-accepted REM links in ${autoAcceptedCount} note${autoAcceptedCount === 1 ? '' : 's'}`
+			if (op.cancelled) {
+				await this.checkpointManager.discard(checkpoint.id);
+				await this.rejectProposalBatch(createdProposalIds);
+				op.finish('REM scan cancelled');
+			} else {
+				const tasks = await this.checkpointManager.complete(checkpoint.id);
+				this.dispatchDeferredTasks(tasks);
+				// Review action only when something was generated AND REM auto-accept
+				// is off (#366) — the deep-dive rule, centralized.
+				op.finish(
+					withCacheReport(`REM scan complete -- ${created} note${created === 1 ? '' : 's'} with linkable mentions${laneSkipNote(laneSkipped)}`, cacheUses, 'note'),
+					reviewAction({
+						generated: created > 0,
+						shouldAutoAccept: this.shouldAutoAccept,
+						openProposalView: this.onOpenProposalView,
+					})
 				);
+				if (autoAcceptedCount > 0) {
+					this.notifications.info(
+						`Auto-accepted REM links in ${autoAcceptedCount} note${autoAcceptedCount === 1 ? '' : 's'}`
+					);
+				}
 			}
-		}
 
-		return created;
+			return created;
+		});
 	}
 
 	/**
@@ -309,81 +320,82 @@ export class RemModule implements FeatureModule {
 	async resumeFromCheckpoint(checkpoint: import('../shared').Checkpoint): Promise<void> {
 		const op = this.notifications.startOperation(
 			'Resuming REM scan',
-			'rem-resume'
+			'rem-resume', { kind: 'rem' }
 		);
+		return settleOnThrow(op, 'Resume failed', async () => {
+			const createdProposalIds: string[] = [];
+			const cacheUses: CacheUse[] = [];
+			let laneSkipped = 0;
+			let autoAcceptedCount = 0;
 
-		const createdProposalIds: string[] = [];
-		const cacheUses: CacheUse[] = [];
-		let laneSkipped = 0;
-		let autoAcceptedCount = 0;
+			try {
+				for (let i = 0; i < checkpoint.remainingItems.length; i++) {
+					if (op.cancelled) break;
 
-		try {
-			for (let i = 0; i < checkpoint.remainingItems.length; i++) {
-				if (op.cancelled) break;
+					const item = checkpoint.remainingItems[i];
+					op.progress(i + 1, checkpoint.remainingItems.length, 'Resuming');
 
-				const item = checkpoint.remainingItems[i];
-				op.progress(i + 1, checkpoint.remainingItems.length, 'Resuming');
+					const filePath = item.payload.filePath as string;
+					const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 
-				const filePath = item.payload.filePath as string;
-				const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+					if (!(file instanceof TFile)) {
+						await this.checkpointManager.completeItem(checkpoint.id, item.id);
+						continue;
+					}
 
-				if (!(file instanceof TFile)) {
+					// Re-check exclusions on resume (#307): a path may have been added
+					// to the exclusion list after the checkpoint was created. Silent —
+					// resume is a batch continuation, mirroring organize's resume.
+					if (this.isExcluded(file)) {
+						await this.checkpointManager.completeItem(checkpoint.id, item.id);
+						continue;
+					}
+
+					const content = await this.plugin.app.vault.read(file);
+					const cacheUse: CacheUse = {};
+					const candidates = await this.gatherCandidates(file, content, cacheUse);
+					cacheUses.push(cacheUse);
+					if (candidates === null) laneSkipped++;
+
+					if (candidates && candidates.length > 0) {
+						const proposal = this.buildProposal(filePath, candidates);
+						await this.store.save(proposal);
+						createdProposalIds.push(proposal.id);
+						if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
+					}
+
 					await this.checkpointManager.completeItem(checkpoint.id, item.id);
-					continue;
 				}
-
-				// Re-check exclusions on resume (#307): a path may have been added
-				// to the exclusion list after the checkpoint was created. Silent —
-				// resume is a batch continuation, mirroring organize's resume.
-				if (this.isExcluded(file)) {
-					await this.checkpointManager.completeItem(checkpoint.id, item.id);
-					continue;
-				}
-
-				const content = await this.plugin.app.vault.read(file);
-				const cacheUse: CacheUse = {};
-				const candidates = await this.gatherCandidates(file, content, cacheUse);
-				cacheUses.push(cacheUse);
-				if (candidates === null) laneSkipped++;
-
-				if (candidates && candidates.length > 0) {
-					const proposal = this.buildProposal(filePath, candidates);
-					await this.store.save(proposal);
-					createdProposalIds.push(proposal.id);
-					if (await this.maybeAutoAccept(proposal, true)) autoAcceptedCount++;
-				}
-
-				await this.checkpointManager.completeItem(checkpoint.id, item.id);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				op.error(`Resume failed -- ${msg}`);
+				await this.rejectProposalBatch(createdProposalIds);
+				return;
 			}
-		} catch (error) {
-			const msg = error instanceof Error ? error.message : String(error);
-			op.error(`Resume failed -- ${msg}`);
-			await this.rejectProposalBatch(createdProposalIds);
-			return;
-		}
 
-		if (op.cancelled) {
-			await this.checkpointManager.discard(checkpoint.id);
-			await this.rejectProposalBatch(createdProposalIds);
-		} else {
-			const tasks = await this.checkpointManager.complete(checkpoint.id);
-			this.dispatchDeferredTasks(tasks);
-			op.finish(
-				withCacheReport(`Resumed -- generated ${createdProposalIds.length} proposals${laneSkipNote(laneSkipped)}`, cacheUses, 'note'),
-				reviewAction({
-					generated: createdProposalIds.length > 0,
-					shouldAutoAccept: this.shouldAutoAccept,
-					openProposalView: this.onOpenProposalView,
-				})
-			);
-			if (autoAcceptedCount > 0) {
-				this.notifications.info(
-					`Auto-accepted REM links in ${autoAcceptedCount} note${autoAcceptedCount === 1 ? '' : 's'}`
+			if (op.cancelled) {
+				await this.checkpointManager.discard(checkpoint.id);
+				await this.rejectProposalBatch(createdProposalIds);
+			} else {
+				const tasks = await this.checkpointManager.complete(checkpoint.id);
+				this.dispatchDeferredTasks(tasks);
+				op.finish(
+					withCacheReport(`Resumed -- generated ${createdProposalIds.length} proposals${laneSkipNote(laneSkipped)}`, cacheUses, 'note'),
+					reviewAction({
+						generated: createdProposalIds.length > 0,
+						shouldAutoAccept: this.shouldAutoAccept,
+						openProposalView: this.onOpenProposalView,
+					})
 				);
+				if (autoAcceptedCount > 0) {
+					this.notifications.info(
+						`Auto-accepted REM links in ${autoAcceptedCount} note${autoAcceptedCount === 1 ? '' : 's'}`
+					);
+				}
 			}
-		}
 
-		await this.refreshView();
+			await this.refreshView();
+		});
 	}
 
 	/**

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-19
+last-updated: 2026-11-09
 ---
 
 # Enrichment Module
@@ -190,6 +190,17 @@ Registered in `EnrichmentModule.onload` via `registrar.register(id, condition, c
 | `scan-vault-enrichment` | Scan folder for enrichment | `callback` | `openScanFolderPicker` → `scanVault(scope)` |
 | `undo-enrichment` | Undo last enrichment on current note | `editorCallback` | `undoLastEnrichment(ctx.file.path)` (registry status: disabled) |
 
+## In-Progress Rows (#577)
+
+`startOperation(label, id, { kind: 'enrichment', target? })` registers a cancellable unified-sidebar row (`NotificationManager.inProgress`). Target = `folderLabel ?? 'Whole vault'` for scans, note path for single notes.
+
+| Op id | Site | Target |
+|-------|------|--------|
+| `enrichment-vault-resume` | `index.ts:132` | none |
+| `enrichment-vault-scan` | `index.ts:226` | folder label |
+| `enrichment-vault-generate` | `index.ts:277` | folder label |
+| `enrich-<path>` | `index.ts:439` | note path |
+
 ## Dependencies
 
 In (consumed by this module):
@@ -200,7 +211,7 @@ In (consumed by this module):
 
 Out (consumed by other modules):
 - `src/modules/registry.ts`: constructs `new EnrichmentModule(deps, autoAccept(deps, 'enrichment'))` (`modules/registry.ts:92`)
-- `src/main.ts`: wires `onViewRefreshNeeded`, `onOpenProposalView`; calls `scanVault()` (`main.ts:95`), `getPendingProposals()` (`main.ts:112`), `resumeFromCheckpoint()` (`main.ts:126`), `acceptSelectedFromView()` / `rejectFromView()` (`main.ts:149-150`), `enrich(path, trigger, { postOp: true })` via `PostOpHookDeps.enrich` (`main.ts:188`); assigns `onEnrichmentApplied = buildPostOpHook(postOpDeps, 'enrichment')` (`main.ts:199`; illustrate leg only, fired from `enrichment/index.ts:647-650` with `sourceUrls` + `producedRegion: { kind: 'whole-note' }`)
+- `src/main.ts`: wires `onViewRefreshNeeded`, `onOpenProposalView`; calls `scanVault()` (`main.ts:95`), `getPendingProposals()` (`main.ts:112`), `resumeFromCheckpoint()` (`main.ts:127`), `acceptSelectedFromView()` / `rejectFromView()` (`main.ts:150-151`), `enrich(path, trigger, { postOp: true })` via `PostOpHookDeps.enrich` (`main.ts:191`); assigns `onEnrichmentApplied = buildPostOpHook(postOpDeps, 'enrichment')` (`main.ts:202`; illustrate leg only, fired from `enrichment/index.ts:647-650` with `sourceUrls` + `producedRegion: { kind: 'whole-note' }`)
 
 No feature-module dependencies (enrichment does not import from elaboration, transcription, etc.).
 

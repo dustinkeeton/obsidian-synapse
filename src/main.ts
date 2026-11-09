@@ -20,7 +20,7 @@ import { createUrlTranscriptionRouter, appendUrlTranscript, transcribeNoteMedia,
 import type { UrlTranscriptionRouter } from './transcription';
 import {
 	UNIFIED_VIEW_TYPE, UnifiedProposalView, SYNAPSE_ACTIONS_VIEW_TYPE, SynapseActionsView,
-	activateUnifiedView, activateSynapseActionsView, refreshUnifiedView, activeMarkdownFile, runRegisteredCommand,
+	activateUnifiedView, activateSynapseActionsView, refreshUnifiedView, watchInProgress, activeMarkdownFile, runRegisteredCommand,
 } from './views';
 import type { UnifiedViewSources } from './views';
 import { registerSynapseIcons } from './brand-icons';
@@ -116,6 +116,7 @@ export default class SynapsePlugin extends Plugin {
 			rem: () => rem.getPendingProposals(),
 			illustrate: () => illustrate.getPendingProposals(),
 			checkpoints: () => this.checkpointManager.listIncomplete(),
+			inProgress: () => this.notifications.inProgress.snapshot(),
 		};
 		const refreshView = () => refreshUnifiedView(this.app.workspace, viewSources);
 		const openProposalView = () =>
@@ -161,7 +162,9 @@ export default class SynapsePlugin extends Plugin {
 			onIllustrateReject: (id) => illustrate.rejectProposal(id),
 			onCheckpointDiscard: (id) => this.checkpoints.discard(id),
 			onCheckpointResume: (id) => this.checkpoints.resume(id),
+			onCancelInProgress: (id) => this.notifications.cancelOperation(id),
 		}, this.notifications));
+		this.register(watchInProgress(this.app.workspace, viewSources, this.notifications.inProgress));
 
 		// Registry-driven actions sidebar (#289); the factory runs post-onload, so getRegistered() is complete.
 		this.registerView(SYNAPSE_ACTIONS_VIEW_TYPE, (leaf) => new SynapseActionsView(leaf, {

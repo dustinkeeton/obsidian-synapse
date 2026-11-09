@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Last updated**: 2026-10-19 · **Version**: 1.4.1
+**Last updated**: 2026-11-09 · **Version**: 1.4.1
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
@@ -16,7 +16,7 @@ The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, che
 - **Callouts are native types with a Synapse tag** (#554). Every AI block is written as `> [!<base>|synapse-<identity>]` — `[!quote|synapse-transcription]`, `[!summary|synapse-summary]`, `[!info|synapse-enrichment]` — so the user's theme styles it and Synapse only adds an icon. The old bare `[!synapse-x]` spelling is still read, never written, and never bulk-migrated.
 - **`commands/`** is a developer-level master switch for every command, sitting *above* user settings. It also depends on nothing else in `src/`.
 - **`pipeline/`** runs features in order; **`intake/`** decides what to feed the pipeline. Neither imports a feature module directly — `main.ts` injects the features into them. This is what keeps the dependency graph acyclic.
-- **`views/`** holds the two sidebars: the **unified proposal view** (review/accept every proposal type) and the **Synapse actions view** (registry-driven, touch-friendly buttons so mobile users reach any command without the palette).
+- **`views/`** holds the two sidebars: the **unified proposal view** (review/accept every proposal type, with an **In progress** section listing the operations still producing proposals, #577) and the **Synapse actions view** (registry-driven, touch-friendly buttons so mobile users reach any command without the palette).
 - **`transcription/`** holds the transcription modals and the **URL tier router** (#184): YouTube captions over plain HTTP first, desktop yt-dlp/ffmpeg second. It reaches `audio` and `video` only through callbacks injected by `main.ts`. Every URL path shares one router built over a **persistent transcript cache** (`shared/transcript-cache.ts`, #488), so a URL is transcribed once and reused by the modal, summarize, and intake.
 - **`checkpoints/`** owns the checkpoint *recovery* UX (#496) — the delayed startup "interrupted operations" prompt, the `manage-checkpoints` command, and the sidebar's resume/discard buttons. Persistence stays in `shared/checkpoint-manager.ts`; resume reaches a feature module only through an injected handler map.
 - **No links to missing notes** (#581). Every write of AI-generated or fetched text passes through `stripUnresolvedLinks` (`shared/link-guard.ts`), which turns a `[[link]]` to a note that doesn't exist into plain text (alias kept as the visible text). Embeds and code are left alone, and an elaboration accept keeps links already in the note and links the user typed during review.
@@ -102,6 +102,7 @@ graph TB
     Features --> CkptMgr
     Shared --> AI
     Shared -.->|ai.systemOne.enabled| S1
+    Shared -.->|running operations, #577| Sidebar
     Audio --> TransAPI
     Video --> Tools
     Video --> Audio
@@ -330,6 +331,7 @@ src/
 │   ├── checkpoint-types.ts #   Checkpoint type definitions
 │   ├── id-utils.ts         #   ID generation and validation
 │   ├── notifications.ts    #   Centralized notifications: progress, cancellation, action buttons, dispose() teardown
+│   ├── in-progress-registry.ts # InProgressRegistry — running proposal-producing operations, owned by NotificationManager (#577)
 │   │                       #   every error sink routes through redactSecrets; equal-message throttle for one-shot toasts (#396)
 │   ├── fire-and-forget.ts  #   fireAndForget() — rejection handling for un-awaited promises; sinks route through redactError
 │   ├── update-checker.ts   #   UpdateChecker/isNewerVersion — once/24h GitHub Releases poll, sticky notice (#365)
@@ -360,9 +362,9 @@ src/
 │   └── index.ts            #   Barrel export
 │
 └── views/                  # UI components
-    ├── unified-proposal-view.ts  # Single sidebar for all proposal types + checkpoints
+    ├── unified-proposal-view.ts  # Single sidebar for all proposal types + in-progress rows (#577) + checkpoints
     ├── synapse-actions-view.ts   # Registry-driven action buttons sidebar (mobile-friendly)
-    ├── view-activation.ts        # activateUnifiedView / activateSynapseActionsView / refreshUnifiedView (#496)
+    ├── view-activation.ts        # activateUnifiedView / activateSynapseActionsView / refreshUnifiedView (#496) / watchInProgress (#577)
     ├── command-runner.ts         # runRegisteredCommand — per-note commands invoke their editorCallback directly (#352)
     ├── proposal-styles.ts        # Semantic color tokens + card/badge class helpers
     ├── types.ts                  # UnifiedItem, UnifiedViewCallbacks
@@ -934,6 +936,24 @@ Tidy, Summarize, and Image do NOT use proposals — they apply changes immediate
 - **No marker in the note (#552).** Elaboration writes nothing to say "already elaborated" — no callout, no HTML comment, no frontmatter field. The content key alone decides; a rewritten body has a new key, so the note can be elaborated again.
 - **Centralized Review toast (#366).** A completion toast shows its "Review" button only when something was generated, auto-accept is off for that kind, and the run is not an automatic post-op side effect — decided in one shared `reviewAction()` gate so all seven flows behave consistently.
 
+### In Progress Section (#577)
+
+**The review pane shows work that is still running, not just finished proposals.** An **In progress** section sits at the top of the unified sidebar, above the checkpoint banner, and is hidden when nothing runs.
+
+| Row part | What it shows |
+|----------|---------------|
+| Kind chip | Which feature is running — same labels and colors as proposal cards |
+| Label + target | The operation's toast text, plus the note path or folder ("Whole vault" for a whole-vault scan; none for a resume) |
+| Progress | `current/total` with a filling bar when the total is known, otherwise an indeterminate track |
+| Cancel | Only on toast-backed rows; calls `NotificationManager.cancelOperation(id)`, the same path as the toast's Cancel |
+
+How it is wired:
+
+- **One registry.** `InProgressRegistry` (`shared/in-progress-registry.ts`) is owned by `NotificationManager.inProgress`. It holds entries in start order and notifies subscribers on every change.
+- **Opt-in per call.** An operation joins by passing `{ kind, target }` to `startOperation(label, id, meta)` (cancellable row; finish, error, or cancel removes it). Work with no toast — title suggestions and checks, single-note REM, post-op illustrate — calls `trackInProgress(label, meta)` and ends the row in a `finally`. Operations that pass no meta, such as undoing an organize run, never appear.
+- **The pane follows the registry.** `refreshUnifiedView` takes one registry snapshot alongside proposals and checkpoints, so opening the pane mid-run shows what is running. `watchInProgress` (registered in `main.ts`) handles changes between refreshes: a progress tick re-renders only the rows, and a start or finish runs one full refresh, so a finished row gives way to its new proposals in the same render.
+- **Kinds stay in sync.** `InProgressKind` repeats the seven `ProposalKind` values because `shared` cannot import `views`; a two-way compile-time guard in `views/types.ts` keeps them equal.
+
 ### Deep Dive: Cascade Rejection
 
 Rejecting a parent automatically rejects all descendants:
@@ -1255,7 +1275,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Credential validation | Live key probe is one minimal authenticated GET; result is **ephemeral** (never persisted) and routed through `redactSecrets` so an echoed key can't reach the status chip | `shared/credential-validator.ts`, `shared/provider-metadata.ts` |
 | Idempotent updates | `%% synapse-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
 | Prototype pollution | `deepMerge` skips `__proto__`, `constructor`, `prototype` keys | `main.ts` |
-| Lifecycle hygiene | `NotificationManager.dispose()` tears down in-flight ellipsis timers + hides notices on unload (no orphaned `setInterval`) | `shared/notifications.ts`, `main.ts:onunload()` |
+| Lifecycle hygiene | `NotificationManager.dispose()` tears down in-flight ellipsis timers + hides notices on unload (no orphaned `setInterval`) and clears the in-progress registry | `shared/notifications.ts`, `main.ts:onunload()` |
 
 **Audit status:** The full audit (2026-06-08) found no critical or high vulnerabilities. The 2026-06-11 re-audit added two defense-in-depth hardenings — canonical secret redaction (now covering Gemini `AIza` keys everywhere) and multipart header-injection hardening. The 2026-06-20 audit pass re-verified architecture, security, and Obsidian-guideline compliance as clean; its one fix was a lifecycle leak (in-flight notification ellipsis timers now torn down on unload). The 2026-06-25 audit pass (v1.0.6) brought the per-operation error `console.error` under `redactSecrets`, so the single redaction source now guards **every** error sink in `notifications.ts`. The 2026-06-29 audit pass (v1.0.7) added `redactError()` so raw caught errors logged directly to the console get the same scrub (five direct error sinks routed through it); the idempotency bundle also landed a structural prompt-injection fence (`wrapUntrusted`, #398) for fetched external content. The 2026-07-02 audit pass (v1.0.10) completed the `redactError` rollout — the **remaining** direct error-log call sites (`main.ts` lifecycle paths, the update checker, the credential Test chip, the image-downscale fallback, and the two clipboard-copy catches) now route through the scrub — and rerouted the `title` module's back-compat re-export of `isUntitled` through the `../shared` barrel instead of the internal `shared/title-detector` file (barrel-import rule; the canonical home has been `shared/` since #387). The 2026-07-03 audit pass (v1.0.11) re-verified architecture and security as clean and made the redaction contract **regression-proof**: the custom `synapse/no-unredacted-console` lint rule (#418) now fails CI on any console sink that isn't statically string-like. Separately, the v1.0.11 store automated-review findings were triaged into a reviewer-facing `docs/automated-review-notes.md` (#454) — its one code fix replaced summarize's deprecated `querySelectorAll` usage with Obsidian's typed `containerEl.findAll()`. The 2026-09-14 audit pass (v1.0.13) re-verified architecture and security as clean with no source changes since 2026-08-17. The 1.1.0 cycle (2026-09-14/15) added the caption-path and yt-dlp argv hardening (#501) and fenced elaboration's related-notes context (#500); the 2026-09-17 docs pass re-verified the graph as acyclic after the `main.ts` refactor family (#496/#504). The 2026-10-06 audit pass (`chore/audit-2026-10-06`) re-verified the graph as acyclic after the module-boundary refactor (per-call `model`, `shared/image-preprocess`, injected `suggestDirectory`, `AudioClipper`) and closed five defense-in-depth gaps — the provider-URL scheme check, Reddit redirect pinning, `--` on the yt-dlp duration probe, `sanitizePath` on the dependency probe, and clipped-audio temp cleanup — plus the release-workflow input hygiene; none was exploitable on its own. `data.json` (live API keys) is gitignored and never committed.
 

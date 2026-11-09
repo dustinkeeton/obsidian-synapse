@@ -50,6 +50,7 @@ describe('RemModule cache reporting (#527)', () => {
 			success,
 			notifyError: vi.fn(),
 			startOperation: vi.fn(() => ({ progress: vi.fn(), update: vi.fn(), finish, error: vi.fn(), cancelled: false })),
+			trackInProgress: vi.fn(() => () => {}),
 		};
 
 		vi.spyOn(RemStore.prototype, 'init').mockResolvedValue(undefined);

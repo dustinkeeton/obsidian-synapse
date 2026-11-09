@@ -170,7 +170,7 @@ describe('relocations into existing folders are proposals', () => {
 
 		expect(count).toBe(0);
 		expect(savedProposals()).toEqual([]);
-		expect(notifications.startOperation).toHaveBeenCalledWith('Scanning vault root (top level) for organization', 'organize-scan');
+		expect(notifications.startOperation).toHaveBeenCalledWith('Scanning vault root (top level) for organization', 'organize-scan', { kind: 'organize', target: 'vault root (top level)' });
 	});
 
 	it('a scan with auto-accept on moves the note, stamps the snapshot with the checkpoint id, and writes one summary', async () => {

@@ -41,6 +41,7 @@ function makeOp(cancelled = false) {
 interface MockNotifications {
 	info: Mock; success: Mock; notifyError: Mock; confirm: Mock;
 	startOperation: Mock<(label: string, id?: string) => ReturnType<typeof makeOp>>;
+	trackInProgress: Mock<(label: string, meta: unknown) => () => void>;
 }
 
 describe('IllustrateModule', () => {
@@ -63,6 +64,7 @@ describe('IllustrateModule', () => {
 		notifications = {
 			info: vi.fn(), success: vi.fn(), notifyError: vi.fn(), confirm: vi.fn().mockResolvedValue(true),
 			startOperation: vi.fn().mockReturnValue(op),
+			trackInProgress: vi.fn(() => () => {}),
 		};
 		checkpointManager = createMockCheckpointManager();
 		registrar = { register: vi.fn() };
@@ -514,5 +516,27 @@ describe('IllustrateModule', () => {
 		});
 		expect(checkpointManager.completeItem).toHaveBeenCalledWith('cp1', 'w1');
 		expect(checkpointManager.complete).toHaveBeenCalledWith('cp1');
+	});
+
+	it('settles the resume operation when checkpoint completion rejects (#577)', async () => {
+		app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
+		vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([]);
+		checkpointManager.complete.mockRejectedValueOnce(new Error('disk full'));
+		await expect(module.resumeFromCheckpoint({
+			id: 'cp1', module: 'illustrate', operationLabel: 'x', status: 'active', createdAt: '', updatedAt: '',
+			completedItems: [], deferredTasks: [], metadata: {},
+			remainingItems: [{ id: 'w1', label: 'notes/a.md', payload: { filePath: 'notes/a.md' } }],
+		})).rejects.toThrow('disk full');
+		expect(op.error).toHaveBeenCalledWith('Resume failed -- disk full');
+	});
+
+	it('settles the generate operation when checkpoint completion rejects after a scan (#577)', async () => {
+		const files = [mockFile('notes/a.md')];
+		app.vault.getMarkdownFiles.mockReturnValue(files);
+		app.vault.getAbstractFileByPath.mockReturnValue(files[0]);
+		vi.spyOn(NoteAnalyzer.prototype, 'analyze').mockResolvedValue([]);
+		checkpointManager.complete.mockRejectedValueOnce(new Error('disk full'));
+		await expect(module.scanVault('notes', true)).rejects.toThrow('disk full');
+		expect(op.error).toHaveBeenCalledWith('Illustration generation failed -- disk full');
 	});
 });

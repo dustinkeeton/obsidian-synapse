@@ -6,7 +6,7 @@ import {
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, redactError,
 	resolveInsertionPoint, applyInsertion, locateRegion, wordCount, parseCalloutHeader, CALLOUT_TYPES,
 	stripUnresolvedLinks,
-	scanScopeLabel, type ScanTarget,
+	scanScopeLabel, type ScanTarget, settleOnThrow,
 } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
@@ -262,7 +262,7 @@ export class IllustrateModule implements FeatureModule {
 			this.notifications.info(NOTHING_ENABLED_MESSAGE);
 			return;
 		}
-		const op = this.notifications.startOperation(`Illustrating ${file.basename}`, `illustrate-${filePath}`);
+		const op = this.notifications.startOperation(`Illustrating ${file.basename}`, `illustrate-${filePath}`, { kind: 'illustrate', target: filePath });
 		this.openverse.resetRun();
 		const cacheUse: CacheUse = {};
 		try {
@@ -302,6 +302,15 @@ export class IllustrateModule implements FeatureModule {
 			console.debug(`[Synapse] Illustrate: skipped ${file.path} (a proposal is already pending)`);
 			return;
 		}
+		const endTracking = this.notifications.trackInProgress(`Illustrating ${file.basename}`, { kind: 'illustrate', target: file.path });
+		try {
+			await this.buildFromContext(file, ctx, settings);
+		} finally {
+			endTracking();
+		}
+	}
+
+	private async buildFromContext(file: TFile, ctx: SourceContext, settings: SynapseSettings['illustrate']): Promise<void> {
 		let images = ctx.sourceImages ?? [];
 		const urls = (ctx.sourceUrls ?? []).filter((url) => /^https?:\/\//i.test(url));
 		if (settings.fetchLinkedPages && urls.length > 0 && images.length < MIN_SOURCE_IMAGES) {
@@ -329,7 +338,7 @@ export class IllustrateModule implements FeatureModule {
 			return 0;
 		}
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
-		const scanOp = this.notifications.startOperation(`${scopeLabel} for notes to illustrate`, 'illustrate-vault-scan');
+		const scanOp = this.notifications.startOperation(`${scopeLabel} for notes to illustrate`, 'illustrate-vault-scan', { kind: 'illustrate', target: folderLabel ?? 'Whole vault' });
 		let allFiles = getMarkdownFiles(this.plugin.app, target);
 		if (onlyFile) allFiles = allFiles.filter((f) => f.path === onlyFile.path);
 		const eligible: TFile[] = [];
@@ -369,13 +378,13 @@ export class IllustrateModule implements FeatureModule {
 			items: checkpointItems,
 		});
 		await this.checkpointManager.addDeferredTask(checkpoint.id, { id: generateId(), type: 'refresh-sidebar-view', data: {} });
-		const genOp = this.notifications.startOperation('Generating illustration proposals', 'illustrate-vault-generate');
-		return this.runBatch(genOp, checkpoint.id, checkpointItems, 'Generating illustration proposals');
+		const genOp = this.notifications.startOperation('Generating illustration proposals', 'illustrate-vault-generate', { kind: 'illustrate', target: folderLabel ?? 'Whole vault' });
+		return settleOnThrow(genOp, 'Illustration generation failed', () => this.runBatch(genOp, checkpoint.id, checkpointItems, 'Generating illustration proposals'));
 	}
 
 	async resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> {
-		const op = this.notifications.startOperation('Resuming illustration scan', 'illustrate-resume');
-		await this.runBatch(op, checkpoint.id, checkpoint.remainingItems, 'Resuming illustration scan');
+		const op = this.notifications.startOperation('Resuming illustration scan', 'illustrate-resume', { kind: 'illustrate' });
+		await settleOnThrow(op, 'Resume failed', () => this.runBatch(op, checkpoint.id, checkpoint.remainingItems, 'Resuming illustration scan'));
 	}
 
 	/** Shared batch core for scan and resume: one proposal per work item, checkpointed per item. */
