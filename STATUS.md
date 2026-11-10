@@ -2,7 +2,7 @@
 
 **Last updated**: 2026-11-09
 **Version**: 1.4.1 (released 2026-10-09)
-**Health**: Green — `tsc` clean, **3079/3079 tests passing (221 files)**, lint clean, dependency graph acyclic, no critical/high security findings.
+**Health**: Green — **3146/3146 tests passing (221 files)**; `tsc`, lint, build, `version-bump --check`, and `check-top-level-requires` clean; `npm audit` reports 0 vulnerabilities; dependency graph acyclic; no critical/high security findings.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
@@ -25,7 +25,7 @@
 
 ## Current Focus
 
-- **Pre-release audit of the whole codebase (2026-11-09, branch `release-codebase-audit`)** — closed the defense-in-depth gaps listed under Security Posture, moved each module's shared type contracts into its `types.ts`, and regrounded the machine docs and these human docs. The interactive system diagram (`docs/diagrams/synapse-system.html`) now lists every feature → feature import.
+- **Pre-release audit of the whole codebase (2026-11-09, branch `release-codebase-audit`)** — closed the defense-in-depth gaps listed under Security Posture, moved each module's shared type contracts into its `types.ts`, and regrounded the machine docs and these human docs. A follow-up round the same day closed what the audit left open: four dead files removed (the frame-extractor placeholder and three unregistered legacy review surfaces), the note scanners moved to `shared/` so `video → audio` is the only feature → feature runtime import (the re-rendered system diagram, `docs/diagrams/synapse-system.html`, says so), CI actions pinned to commit SHAs, and dev-dependency advisories cleared.
 - **Open follow-ups**: live before/after cost measurement of the System 1 lane on a real vault; run auto-enrich once after a note's operation chain (#536); feature flags for unreleased work on main (#545); self-hosted extraction tier for non-YouTube URLs on mobile (#181, ADR 001 accepted; #182 override + connectivity status); holistic UX review (#465); operation-toast cancel progress (#269).
 
 ## Module Status (20 modules; the five thin folders above are omitted)
@@ -56,23 +56,23 @@
 ## Security Posture
 
 - **No critical or high vulnerabilities**; API keys live in gitignored `data.json` and never reach the repo.
-- **Fetched content is fenced** against prompt injection (`wrapUntrusted`, #398). The 2026-11-09 audit closed the last two unfenced paths: everything summarize sends to the model, and the tweet text enrichment fetches.
-- **Provider text cannot forge markdown** (2026-11-09): Illustrate percent-encodes `( ) < >` and whitespace in the `http(s)` URLs it writes, flattens link text and attribution to plain text, and rejects a download that is not an image.
+- **Fetched content is fenced** against prompt injection (`wrapUntrusted`, #398). The 2026-11-09 audit closed the last two unfenced paths: everything summarize sends to the model, and the tweet text enrichment fetches. Audio post-processing also fences the transcript as text to edit, not instructions.
+- **Illustrate distrusts what providers send** (2026-11-09): it percent-encodes `( ) < >` and whitespace in the `http(s)` URLs it writes, flattens link text and attribution to plain text, rejects a download that is not an image, and refuses to download from or fetch a loopback, private-network, link-local, or unqualified host (`sanitizePublicUrl`, a hostname check).
+- **Stored paths are re-checked before use** (2026-11-09): deep-dive accept, organize accept, and organize undo validate the path saved in a proposal or snapshot (`assertVaultRelativePath`); title accept rejects a stored title that is a path.
 - **Temp files are unguessable and always removed** (2026-11-09): OS-temp names carry a random (CSPRNG) suffix; video download and transcription unlink their temp audio/video on every exit path, as audio clipping already did.
 - **Undocumented Obsidian APIs are feature-detected** (`app.commands`, `getBacklinksForFile`, the picker's `useSelectedItem`); each degrades instead of throwing.
-- **Redaction is lint-enforced** (#418): `synapse/no-unredacted-console` fails CI on any console sink that is not already a redacted string.
+- **Redaction is lint-enforced** (#418): `synapse/no-unredacted-console` fails CI on any console sink that is not already a redacted string. **CI actions are pinned** to commit SHAs.
 - **Subprocesses** use `execFile` with argument arrays, an allowlisted env, and `--` before every URL. **Node access** is behind `assertDesktop()`/`loadNodeModules()` so `isDesktopOnly: false` stays mobile-safe.
 - **Every outbound request has a timeout** (AI and System 1 decisions 2 min; captions, fetchers, Illustrate 30 s; credential probes and update check 10 s).
 - **Opt-in network features**: the System 1 lane sends note text to TypeSafe; Illustrate sends an AI-proposed search query, never note text. Both are off by default.
-- **Accepted risk**: `sanitizeUrl` permits arbitrary hosts (author-supplied URLs in the user's own vault). **Not yet wired**: `ensureWithinVault` is not enforced on write paths.
+- **Accepted risk**: links the user wrote into a note (fetched by summarize and elaboration) may point at any host, local ones included. **Not yet wired**: `ensureWithinVault` is not enforced on write paths.
 
 ## Known Gaps & Blockers
 
 | Item | Severity | Notes |
 |------|----------|-------|
 | Non-YouTube URLs on mobile | Medium | TikTok/Instagram need yt-dlp; on mobile the note stays un-stamped for desktop sync until the self-hosted tier (#181, ADR 001) ships |
-| Not implemented: local Whisper, local video files, frame extraction | Medium | `local-whisper` hidden from the dropdown and throws; "coming soon" command; `FrameExtractor` placeholder |
-| Four unsanctioned feature → feature imports | Low | `summarize → audio` and `transcription → audio / video / image` are runtime imports the architecture rule does not name (it names only `video → audio`); all one-directional, graph acyclic |
+| Not implemented: local Whisper, local video files, frame extraction | Medium | `local-whisper` hidden from the dropdown and throws; "coming soon" command; the `video.frameExtraction` settings exist but no feature reads them |
 | No-speech edge cases (#524) | Low | Detection is heuristic beyond `whisper-1` (only its `verbose_json` carries `no_speech_prob`); a silent intake video gets a second notice when summarize retries the same URL |
 | Legacy `[!synapse-*]` callouts are never migrated | Low | Read by the dual-format matcher and rewritten only when a feature touches the note (#554) |
 | Ribbon icons always visible; image checkpoint resume is a no-op | Low | No `removeRibbonIcon` API; image resume discards + asks to re-run |
@@ -82,7 +82,7 @@
 
 | Dependency | Required for | Status |
 |------------|--------------|--------|
-| youtube.com (HTTP) | YouTube caption tier — no install needed | Works on every platform |
+| youtube.com (HTTPS) | YouTube caption tier — no install needed | Works on every platform |
 | yt-dlp, ffmpeg / ffprobe | Video download, audio extraction, duration, clipping | User-installed; PATH auto-resolved (desktop only) |
 | OpenAI / Anthropic / Gemini API keys | Chat models (incl. vision); Whisper + Gemini audio transcription | User-configured |
 | Deepgram API key | Deepgram transcription (optional) | User-configured |
@@ -95,5 +95,5 @@
 |---------|---------|
 | `npm run dev` | esbuild watch (development; stamps the dev-build banner, #542) |
 | `npm run build` | `tsc -noEmit -skipLibCheck` + esbuild production bundle |
-| `npm test` | Vitest — **3079/3079 passing** (221 files) |
+| `npm test` | Vitest — **3146/3146 passing** (221 files) |
 | `npm run lint` | ESLint — `obsidianmd/*` store-review mirror + `synapse/no-unredacted-console` (#418) |

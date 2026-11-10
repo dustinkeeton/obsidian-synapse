@@ -30,17 +30,17 @@ sanctioned layer — `src/shared/node-loader.ts` — never a top-level import:
 - **Temp-file filesystem I/O, cleaned up in `finally`.** All scratch media
   (downloaded video, extracted/clipped/combined audio, probe inputs) is written
   under `os.tmpdir()` only — never inside the vault — and removed on both success
-  and failure. See the temp paths at `src/video/audio-extractor.ts:174` and the
-  cleanup at `src/audio/index.ts:464` (`finally { … fs.promises.unlink … }`) and
-  `src/transcription/duration-detector.ts:107`. All *vault* file access elsewhere
+  and failure. See the temp paths at `src/video/audio-extractor.ts:206` and the
+  cleanup at `src/audio/index.ts:237` (`finally { … fs.promises.unlink … }`) and
+  `src/transcription/duration-detector.ts:99`. All *vault* file access elsewhere
   goes through the Obsidian Vault API.
 
 - **Subprocess execution is `execFile`-only.** Tools are spawned with `execFile`
-  and an explicit **argument array** (`src/video/audio-extractor.ts:436`,
-  `src/transcription/duration-detector.ts:94` and `:145`) — never a shell command
+  and an explicit **argument array** (`src/video/audio-extractor.ts:514`,
+  `src/transcription/duration-detector.ts:86` and `:137`) — never a shell command
   string, and never `shell: true`. There is no shell interpolation of URLs, paths,
   or titles. URLs and paths are sanitized first via `sanitizeUrl`
-  (`src/shared/validation.ts:10`) / `sanitizePath` (`src/shared/validation.ts:50`),
+  (`src/shared/validation.ts:10`) / `sanitizePath` (`src/shared/validation.ts:100`),
   and the binaries that run are exactly the `yt-dlp path` / `ffmpeg path` set in
   settings.
 
@@ -52,7 +52,7 @@ sanctioned layer — `src/shared/node-loader.ts` — never a top-level import:
 
 - **Clipboard is write-only.** Synapse never *reads* the clipboard. The only
   clipboard calls are `navigator.clipboard.writeText`: copying a redacted error
-  string on error-toast dismiss (`src/shared/notifications.ts:505`) and copying an
+  string on error-toast dismiss (`src/shared/notifications.ts:541`) and copying an
   install command from the video settings (`src/video/settings-section.ts:70`).
 
 - **No system-identity reads.** No `os.hostname()`, `os.userInfo()`, or
@@ -74,14 +74,14 @@ use" section; this list is the reviewer-facing counterpart.
   (`src/shared/node-loader.ts:1`–`17`) and the inline disable justification at
   `:67`.
 
-- **`:has()` CSS selectors (`styles.css:502`–`519`, `:588`–`592`).** Obsidian
+- **`:has()` CSS selectors (`styles.css:600`–`616`, `:687`–`688`).** Obsidian
   places the plugin's `synapse-notice*` classes on the **inner** `.notice-message`
   element, not the outer `.notice` (mechanism from #361). Each toast rule therefore
   needs a `.notice:has(.synapse-notice…)` branch to style the real `.notice`
   container at (0,2,0) specificity — beating core padding/background without
   `!important`. The selectors scope to a handful of `.notice` elements, not a broad
   document match, so the invalidation cost is negligible. Removing them regresses
-  toast styling. Rationale in full at `styles.css:490`–`501`.
+  toast styling. Rationale in full at `styles.css:587`–`598`.
 
 - **`app.setting.open()` / `app.setting.openTabById()`
   (`src/shared/update-checker.ts`, `src/summarize/index.ts`).** The settings
@@ -111,7 +111,7 @@ use" section; this list is the reviewer-facing counterpart.
   `os.userInfo()`, or `os.networkInterfaces()` call. The sole `os.*` usage is
   `os.tmpdir()` (temp scratch paths). Every `hostname` occurrence in `src` is
   `URL.hostname` — localhost/loopback checks for AI endpoints (e.g.
-  `src/shared/ai-client.ts:552`, `src/shared/provider-metadata.ts:65`) and platform
+  `src/shared/ai-client.ts:578`, `src/shared/provider-metadata.ts:68`) and platform
   host matching, not machine identity. Environment access is the narrowed
   `shellEnv()` allowlist (§1), never a bulk `process.env` read for fingerprinting.
 

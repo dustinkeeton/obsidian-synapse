@@ -32,7 +32,7 @@ interface MediaProvider {
 class WikimediaProvider implements MediaProvider                     // keyless Commons API, file namespace, 1024px scaled URL
 class OpenverseProvider implements MediaProvider                     // keyless /v1/images/; resetRun() + OPENVERSE_MAX_QUERIES_PER_RUN = 10
 class SourceProvider implements MediaProvider                        // id 'source'; built per call from ctx.sourceImages; ranked by alt/title token overlap (imageRelevance), zero-overlap images dropped; license 'Source page', licenseUrl = pageUrl
-fetchLinkedPageImages(urls: string[], { maxPages, maxImages? }): Promise<SourceImage[]>   // linked-pages.ts: fetchHtmlDocument + extractImageUrls per page; skips non-HTML / non-http(s); per-URL failures debug-logged; cap 12
+fetchLinkedPageImages(urls: string[], { maxPages, maxImages? }): Promise<SourceImage[]>   // linked-pages.ts: sanitizePublicUrl (linked-pages.ts:21) -> fetchHtmlDocument + extractImageUrls per page; skips non-HTML, non-http(s) and local / private-network hosts; per-URL failures debug-logged; cap 12
 
 // license.ts
 normalizeLicense(raw: string): LicenseName | null                    // Commons short names + Openverse codes -> 'CC BY-SA' etc.
@@ -103,12 +103,12 @@ interface IllustrateSettings {
 | `providers/wikimedia.ts` | `WikimediaProvider`, `parseCommonsPage` | Commons search via `requestUrl` (30 s timeout) |
 | `providers/openverse.ts` | `OpenverseProvider`, `parseOpenverseResult`, `OPENVERSE_MAX_QUERIES_PER_RUN` | Openverse search, per-run cap, 30 s timeout |
 | `providers/source.ts` | `SourceProvider`, `imageRelevance`, `toSourceCandidate` | Acted-on material's own images as candidates (#213) |
-| `linked-pages.ts` | `fetchLinkedPageImages`, `MAX_LINKED_PAGE_IMAGES` | Opt-in linked-page image pooling for chained runs |
+| `linked-pages.ts` | `fetchLinkedPageImages`, `MAX_LINKED_PAGE_IMAGES` | Opt-in linked-page image pooling for chained runs; each URL passes `sanitizePublicUrl` (linked-pages.ts:21), a rejected URL is skipped without a fetch |
 | `license.ts` | `normalizeLicense`, `isLicenseAllowed`, `LICENSE_NAMES`, `DEFAULT_LICENSE_FILTER` | License normalization + allow-list |
 | `diagram.ts` | `validateMermaid`, `mermaidBlock` | Mermaid gate for AI diagrams and built charts |
 | `chart.ts` | `parseChartData`, `buildXyChart` | Note-data-only `xychart-beta` |
-| `inserter.ts` | `httpUrlOrEmpty(url)` (inserter.ts:6), `buildPhotoBlock(item, vaultPath, fallbackReason?)`, `buildMermaidItemBlock`, `attributionLine` | Block builders (placement lives in `shared/insertion-point.ts`); only `http:`/`https:` provider URLs are written — `mdLink` and the remote `![caption](url)` embed degrade to plain caption text for any other scheme; `httpUrlOrEmpty` also percent-encodes `( ) < >` and whitespace so a URL cannot close a markdown `(url)` (inserter.ts:13); link text and the attribution string pass through private `plainText` (inserter.ts:17: strips `[` `]`, collapses whitespace to one line); a failed download appends `(download failed; remote embed: <reason>)` to the callout |
-| `asset-writer.ts` | `AssetWriter`, `attachmentFileName` | `requestUrl` -> `arrayBuffer` -> `vault.createBinary` at `fileManager.getAvailablePathForAttachment` (15 MB cap, 30 s timeout); a response whose `Content-Type` header is present and not `image/*` is rejected with `Image download returned a non-image response` (asset-writer.ts:46-50), a missing header is accepted |
+| `inserter.ts` | `httpUrlOrEmpty(url)` (inserter.ts:6), `buildPhotoBlock(item, vaultPath, fallbackReason?)`, `buildMermaidItemBlock`, `attributionLine` | Block builders (placement lives in `shared/insertion-point.ts`); only `http:`/`https:` provider URLs on a public host (`isPrivateHost`) are written — `mdLink` and the remote `![caption](url)` embed degrade to plain caption text for any other scheme; `httpUrlOrEmpty` also percent-encodes `( ) < >` and whitespace so a URL cannot close a markdown `(url)` (inserter.ts:13); link text and the attribution string pass through private `plainText` (inserter.ts:17: strips `[` `]`, collapses whitespace to one line); a failed download appends `(download failed; remote embed: <reason>)` to the callout |
+| `asset-writer.ts` | `AssetWriter`, `attachmentFileName` | `sanitizePublicUrl(candidate.fileUrl)` (asset-writer.ts:36; a local / private-network host throws before any request) -> `requestUrl` -> `arrayBuffer` -> `vault.createBinary` at `fileManager.getAvailablePathForAttachment` (15 MB cap, 30 s timeout); a response whose `Content-Type` header is present and not `image/*` is rejected with `Image download returned a non-image response` (asset-writer.ts:46-50), a missing header is accepted |
 | `proposal-store.ts` | `IllustrateStore` | JSON files in `illustrate.proposalFolderPath` |
 | `note-scanner.ts` | `isEligibleNote`, `hasIllustrations`, `MIN_WORDS_TO_ILLUSTRATE` | Batch eligibility (>= 80 words, no existing illustrate callout) |
 | `settings-section.ts` | `renderIllustrateSettings`, `ILLUSTRATE_FEATURE_TOOLTIP` | Accordion; license chips are raw DOM checkboxes; `.synapse-illustrate-empty-config` helper shows while no provider and Mermaid are on |
@@ -152,7 +152,7 @@ acceptProposal(id, itemIds)
 
 | Import | From |
 |--------|------|
-| `AIClient`, `wrapUntrusted`, `parseJson`, `isRecord`, `stripCodeFences`, `sanitizeUrl`, `buildCallout`, `CALLOUT_TYPES.illustrate`, `parseFrontmatter`, `resolveInsertionPoint`, `applyInsertion`, `fetchHtmlDocument`, `extractImageUrls`, `SourceContext`/`SourceImage`, `wordCount`, `readJsonFile`, `ensureFolder`, exclusions, cache-notice, `reviewAction`, `redactError`, `fireAndForget`, `openScanFolderPicker`, `stripUnresolvedLinks`, `scanScopeLabel`, `ScanTarget` (type) | `../shared` |
+| `AIClient`, `wrapUntrusted`, `parseJson`, `isRecord`, `stripCodeFences`, `sanitizePublicUrl`, `buildCallout`, `CALLOUT_TYPES.illustrate`, `parseFrontmatter`, `resolveInsertionPoint`, `applyInsertion`, `fetchHtmlDocument`, `extractImageUrls`, `SourceContext`/`SourceImage`, `wordCount`, `readJsonFile`, `ensureFolder`, exclusions, cache-notice, `reviewAction`, `redactError`, `fireAndForget`, `openScanFolderPicker`, `stripUnresolvedLinks`, `scanScopeLabel`, `ScanTarget` (type) | `../shared` |
 | `imageRelevance` (also `SourceProvider`) | `./providers/source` (index.ts:20; scores spot fit for `dedupePhotos`) |
 | `CommandRegistrar` (type) | `../commands` |
 | `requestUrl`, `TFile`, `Plugin`, `normalizePath`, `Setting` | `obsidian` |

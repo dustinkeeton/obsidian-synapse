@@ -22,13 +22,13 @@ class DeepDiveModule {
   getPendingProposals(): Promise<DeepDiveProposal[]>                          // index.ts:128
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>                 // index.ts:133
   acceptProposal(id: string, options?: { silent?: boolean }): Promise<void>   // index.ts:158
-  rejectProposal(id: string): Promise<void>                                   // index.ts:242
+  rejectProposal(id: string): Promise<void>                                   // index.ts:243
 }
 
 // types.ts:101 — NOT barrel-exported (index.ts:43-52 exports only the proposal/run/topic and navigator types); the registry passes an inline lambda
 type SuggestDirectory = (text: string, aiOpts?: AIRequestOptions) => Promise<string | null>
 
-function buildDeepDivePath(               // index.ts:709; file name = private safeNoteName(topicTitle) (index.ts:690)
+function buildDeepDivePath(               // index.ts:710; file name = private safeNoteName(topicTitle) (index.ts:691)
   topicTitle: string,
   rootFile: TFile,
   settings: { noteOutputFolder: string; nestingMode?: DeepDiveNestingMode },
@@ -63,16 +63,16 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 
 - Key choice: `proposal.proposedPath` is the note the accept CREATES — also what `onNoteAccepted` (enrichment, REM) and `onOrganizeRequested` then target, so those follow-ups enqueue behind the accept instead of racing it.
 - `applyAccept` (index.ts:168) re-loads the proposal so the double-accept guard (`status !== 'pending'`, index.ts:173) is evaluated UNDER the slot, not against a pre-wait snapshot.
-- `updateRunNavigation` (index.ts:568) rewrites the syllabus note (index.ts:595; trashed instead when the run has no accepted note, index.ts:586) and every accepted note in the run (index.ts:607, index.ts:613). Those are OTHER notes and stay UNQUEUED — acquiring a second key while holding one is the lock-ordering case the contract forbids.
-- `maybeAutoAcceptRun` (index.ts:221) loops over distinct proposals calling the PUBLIC `acceptProposal` (index.ts:227); each iteration takes a DIFFERENT key sequentially — not a nested acquisition. This is deliberately UNLIKE organize, whose `maybeAutoAccept` must call the private `applyAccept` because it runs inside a slot its caller already holds (`organize/AGENTS.md`). Do not "harmonize" the two: pointing deep-dive at `applyAccept` would skip a needed acquisition, and pointing organize at `acceptProposal` would self-deadlock.
-- `rejectProposal` (index.ts:242) is unqueued: no note of its own, and its `updateRunNavigation(proposal.runId)` refresh only touches the same other-note writes as above.
+- `updateRunNavigation` (index.ts:569) rewrites the syllabus note (index.ts:596; trashed instead when the run has no accepted note, index.ts:587) and every accepted note in the run (index.ts:608, index.ts:614). Those are OTHER notes and stay UNQUEUED — acquiring a second key while holding one is the lock-ordering case the contract forbids.
+- `maybeAutoAcceptRun` (index.ts:222) loops over distinct proposals calling the PUBLIC `acceptProposal` (index.ts:228); each iteration takes a DIFFERENT key sequentially — not a nested acquisition. This is deliberately UNLIKE organize, whose `maybeAutoAccept` must call the private `applyAccept` because it runs inside a slot its caller already holds (`organize/AGENTS.md`). Do not "harmonize" the two: pointing deep-dive at `applyAccept` would skip a needed acquisition, and pointing organize at `acceptProposal` would self-deadlock.
+- `rejectProposal` (index.ts:243) is unqueued: no note of its own, and its `updateRunNavigation(proposal.runId)` refresh only touches the same other-note writes as above.
 - The generation loop (`deepDive`) is unqueued — it writes proposals to the store, not to vault notes; nothing exists at `proposedPath` until an accept.
 
 ## Internal File Map
 
 | File | Class/Function | Role |
 |------|---------------|------|
-| `index.ts` | `DeepDiveModule` (index.ts:65), `buildDeepDivePath` (index.ts:709) | Module entry point and public API |
+| `index.ts` | `DeepDiveModule` (index.ts:65), `buildDeepDivePath` (index.ts:710) | Module entry point and public API |
 | `topic-analyzer.ts` | `TopicAnalyzer` (topic-analyzer.ts:11) | AI topic extraction; matches titles against included vault notes. `extractTopics(content, noteTitle, ancestorTopics, aiOpts?)` — `aiOpts` reaches `complete()` (#527) |
 | `note-generator.ts` | `NoteGenerator` (note-generator.ts:9) | AI content generation for a topic given parent title+content. `generateContent(topic, sourceTitle, sourceContent, aiOpts?)` — `aiOpts` reaches `complete()` (#527) |
 | `quality-scorer.ts` | `scoreQuality` (quality-scorer.ts:30) | Local heuristic scoring: topic count, word count, genericity, overlap, depth decay |
@@ -86,7 +86,7 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 
 ## Dependency on `organize` module
 
-`deep-dive` has NO `../organize` import. In `auto-organize` nesting mode, `buildAutoOrganizedPath` (index.ts:642) calls the injected `this.suggestDirectory(topicTitle, aiOpts)` (the proposal's `aiOpts`, #527) when it is non-null; a non-null directory becomes `normalizePath(`${directory}/${safeName}.md`)` with `safeName = safeNoteName(topicTitle)` (index.ts:653), otherwise (null result, thrown error, or no callback wired) it falls back to `buildDeepDivePath` (nested mode, index.ts:660). The topic-extraction + directory-scoring + 0.6 score floor live on the organize side (`OrganizeModule.suggestDirectory`, `organize/index.ts:81`); the registry wires the two (`modules/registry.ts:110-116`).
+`deep-dive` has NO `../organize` import. In `auto-organize` nesting mode, `buildAutoOrganizedPath` (index.ts:643) calls the injected `this.suggestDirectory(topicTitle, aiOpts)` (the proposal's `aiOpts`, #527) when it is non-null; a non-null directory becomes `normalizePath(`${directory}/${safeName}.md`)` with `safeName = safeNoteName(topicTitle)` (index.ts:654), otherwise (null result, thrown error, or no callback wired) it falls back to `buildDeepDivePath` (nested mode, index.ts:661). The topic-extraction + directory-scoring + 0.6 score floor live on the organize side (`OrganizeModule.suggestDirectory`, `organize/index.ts:81`); the registry wires the two (`modules/registry.ts:110-116`).
 
 ## Data Flow
 
@@ -132,6 +132,7 @@ acceptProposal(id, options?)                            [public, index.ts:158]
   --> noteQueue.run(proposal.proposedPath, () => applyAccept(id, options))   [#483]
         applyAccept(id, options?)                       [queue-free core, index.ts:168]
           --> re-load proposal (double-accept guard evaluated UNDER the slot)
+          --> assertVaultRelativePath(proposal.proposedPath)   [index.ts:176; throws before the status update]
           --> DeepDiveStore.updateProposalStatus('accepted')
           --> stripUnresolvedLinks(proposedContent, metadataCache, proposedPath)   [#581; unaccepted parent -> plain text]
           --> updateRunNavigation(runId, proposedPath, content)
@@ -142,7 +143,7 @@ acceptProposal(id, options?)                            [public, index.ts:158]
           --> onNoteAccepted?.(proposedPath)  [post-op chain: enrichment, REM if deepDive.autoRemOnAccept (#581); enqueues behind this accept]
           --> onOrganizeRequested?.(file)  [triggers organize if deepDive.autoOrganizeOnAccept]
 
-rejectProposal(id)                                      [unqueued, index.ts:242]
+rejectProposal(id)                                      [unqueued, index.ts:243]
   --> DeepDiveStore.cascadeReject(id)  [rejects children too]
   --> updateRunNavigation(runId)  [refresh remaining notes]
 ```
@@ -249,12 +250,12 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 | Op id | Site | Target |
 |-------|------|--------|
-| `deep-dive-scan-<path>` | `index.ts:283` | root note path |
-| `deep-dive-generate` | `index.ts:385` | root note path |
+| `deep-dive-scan-<path>` | `index.ts:284` | root note path |
+| `deep-dive-generate` | `index.ts:386` | root note path |
 
 ## Dependencies
 
-In: `shared/` (NotificationManager, readNote, writeNote, wordCount, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, stripUnresolvedLinks, CacheUse, AIRequestOptions, ModuleDeps, FeatureModule, Checkpoint, CheckpointWorkItem, DeferredTask, SourceContext, extractUrls — see `index.ts:2-12`), `settings.ts` (SynapseSettings, DeepDiveNestingMode, `index.ts:4`), `commands/` (CommandRegistrar, `index.ts:5`). No feature-module import: organize's folder suggestion arrives as the constructor's `SuggestDirectory` callback.
+In: `shared/` (NotificationManager, readNote, writeNote, wordCount, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, stripUnresolvedLinks, assertVaultRelativePath, CacheUse, AIRequestOptions, ModuleDeps, FeatureModule, Checkpoint, CheckpointWorkItem, DeferredTask, SourceContext, extractUrls — see `index.ts:2-12`), `settings.ts` (SynapseSettings, DeepDiveNestingMode, `index.ts:4`), `commands/` (CommandRegistrar, `index.ts:5`). No feature-module import: organize's folder suggestion arrives as the constructor's `SuggestDirectory` callback.
 
 Out: Nothing consumed by other feature modules. `modules/registry.ts:110-116` constructs the module with `built.organize.suggestDirectory` wrapped in a lambda.
 
@@ -262,23 +263,25 @@ Out: Nothing consumed by other feature modules. `modules/registry.ts:110-116` co
 
 | Condition | Handling (index.ts) |
 |-----------|---------------------|
-| Note excluded by rule or excludeTag | `isExcluded` true -> info Notice naming the matched rule pattern; abort before any AI call (index.ts:265) |
-| Empty/unreadable note | info Notice "Could not read note content"; abort (index.ts:278) |
-| Topic extraction throws (Phase 1) | `scanOp.error(...)`; abort, no run created (index.ts:294) |
-| Zero topics found / all already in vault | `scanOp.finish(withCacheReport('No topics found', [scanUse]))` or info Notice; abort (index.ts:299) |
-| Depth modal dismissed / user declines confirm | info Notice "Deep dive cancelled"; abort (index.ts:318, index.ts:329) |
-| Child topic extraction throws (per-node) | caught; `childTopics = []`, score from content alone, recursion stops for that branch (index.ts:415) |
-| User cancels mid-generation (`genOp.cancelled`) | run.status='cancelled', `checkpointManager.discard`, info Notice; partial proposals stay saved (index.ts:476-483) |
+| Note excluded by rule or excludeTag | `isExcluded` true -> info Notice naming the matched rule pattern; abort before any AI call (index.ts:266) |
+| Empty/unreadable note | info Notice "Could not read note content"; abort (index.ts:279) |
+| Topic extraction throws (Phase 1) | `scanOp.error(...)`; abort, no run created (index.ts:295) |
+| Zero topics found / all already in vault | `scanOp.finish(withCacheReport('No topics found', [scanUse]))` or info Notice; abort (index.ts:300) |
+| Depth modal dismissed / user declines confirm | info Notice "Deep dive cancelled"; abort (index.ts:319, index.ts:330) |
+| Child topic extraction throws (per-node) | caught; `childTopics = []`, score from content alone, recursion stops for that branch (index.ts:416) |
+| User cancels mid-generation (`genOp.cancelled`) | run.status='cancelled', `checkpointManager.discard`, info Notice; partial proposals stay saved (index.ts:477-484) |
 | Generation loop throws (e.g. iOS backgrounding drops the connection after `safeRequest`'s retries) | run stays `in-progress` with `run.pending`, checkpoint kept active, `genOp.error('Deep dive interrupted -- ...')`; resume via `resumeFromCheckpoint` |
 | `acceptProposal` on missing proposal | info Notice "Proposal not found"; no-op BEFORE taking the queue slot (index.ts:160-162) |
 | `applyAccept` on non-pending proposal | silent no-op (double-accept guard, re-checked under the slot) (index.ts:173) |
-| `applyAccept` write failure | `notifyError`, then rethrows `Accept proposal failed: <msg>`; the `noteQueue.run` rejection propagates to the caller and still releases the slot (index.ts:207-208) |
-| auto-organize callback unwired, returns null, or throws (incl. organize's < 0.6 score floor) | caught; falls back to `buildDeepDivePath` (nested) (index.ts:649-660) |
+| `applyAccept` on a stored `proposedPath` that is empty, absolute, or has a `..` segment or null byte | `assertVaultRelativePath` throws (index.ts:176) before the status update and any write; proposal stays `pending`; same `notifyError` + rethrow as a write failure |
+| `applyAccept` write failure | `notifyError`, then rethrows `Accept proposal failed: <msg>`; the `noteQueue.run` rejection propagates to the caller and still releases the slot (index.ts:208-209) |
+| auto-organize callback unwired, returns null, or throws (incl. organize's < 0.6 score floor) | caught; falls back to `buildDeepDivePath` (nested) (index.ts:650-661) |
 
 ## Invariants / Gotchas
 
 - The double-acceptance guard lives in `applyAccept`, not `acceptProposal`: the proposal is re-loaded inside the queue slot and the call no-ops if `proposal.status !== 'pending'`, so a pre-wait snapshot can never authorize a second note creation (index.ts:173).
-- File/folder names from AI topic titles go through the private `safeNoteName` (index.ts:690): path separators and `: * ? " < > |` become `-`, leading dots are stripped (no `..` segment, no hidden file), empty result -> `'Untitled'`. Both path builders use it (index.ts:653, index.ts:715).
+- File/folder names from AI topic titles go through the private `safeNoteName` (index.ts:691): path separators and `: * ? " < > |` become `-`, leading dots are stripped (no `..` segment, no hidden file), empty result -> `'Untitled'`. Both path builders use it (index.ts:654, index.ts:716).
+- Stored paths are re-validated at accept: `applyAccept` runs `assertVaultRelativePath(proposal.proposedPath)` (index.ts:176) on the path read back from the proposal JSON before it writes.
 - `rejectProposal` cascades to all child proposals (`DeepDiveStore.cascadeReject`).
 - Checkpoint item IDs use the stable format `'topic-<title>'` (C2) so completed items survive restart.
 - Resume state lives in `DeepDiveRun.pending` (`types.ts`), not checkpoint metadata; tasks reference the parent proposal by id instead of copying its content.

@@ -8,10 +8,10 @@ Transcribes audio files from the vault using configurable providers (Whisper API
 
 ## Public API
 
-Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTranscriptionCredentials`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioClipper`, `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry` (`index.ts:20-21`). `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
+Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTranscriptionCredentials`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioClipper`, `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry` (`index.ts:19-21`). `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` and `AudioEmbed` are declared in `shared/audio-embeds.ts` and only re-exported here (`index.ts:19-20`). `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
 
 ```ts
-// types.ts:43 — structural ffmpeg surface; video's AudioExtractor satisfies it, so audio never imports video
+// types.ts:36 — structural ffmpeg surface; video's AudioExtractor satisfies it, so audio never imports video
 interface AudioClipper {
   clipAudio(inputPath: string, startSeconds: number, endSeconds: number): Promise<string>
   concatAudio(inputPaths: string[]): Promise<string>
@@ -34,7 +34,7 @@ class AudioModule {
 
 function renderAudioSettings(ctx: SettingsSectionContext): void   // settings UI; from settings-section.ts
 function renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext): void   // re-exported on the barrel (#332/#335); from transcription-credentials.ts; settings-tab.ts imports it via `./audio`
-function findAudioEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): AudioEmbed[]
+function findAudioEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): AudioEmbed[]   // re-export of shared/audio-embeds.ts:13
 
 // transcriber.ts (module-internal: imported directly, NOT via the barrel)
 function buildMultipartBody(
@@ -47,7 +47,7 @@ class Transcriber {
   transcribe(audioData: ArrayBuffer, fileName: string): Promise<TranscriptionResult>   // routes by audio.transcriptionProvider; throws NoSpeechDetectedError for a speechless transcript (#524)
 }
 
-const AUDIO_EXTENSIONS: RegExp   // /\.(mp3|wav|m4a|ogg|flac|webm|aac)$/i
+const AUDIO_EXTENSIONS: RegExp   // re-export of shared/audio-embeds.ts:10; /\.(mp3|wav|m4a|ogg|flac|webm|aac)$/i
 const AUDIO_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:mp3|wav|m4a|ogg|flac|webm|aac))\]\]/gi
 
 interface TranscriptionResult {
@@ -77,33 +77,31 @@ class PostProcessor {
 interface TranscriptSegment { body: string; context: string }   // bodies concatenate back to the input exactly; context = word-aligned tail of the previous body
 function segmentTranscript(text: string, maxChars: number, overlapChars: number): TranscriptSegment[]   // paragraph -> line -> sentence -> word boundaries, then hard cut
 function trimRepeatedContext(output: string, context: string): string   // drops a verbatim repeat of context from the start of a rewritten section
-interface AudioEmbed { fileName: string; file: TFile; line: number }
+interface AudioEmbed { fileName: string; file: TFile; line: number }   // re-export of shared/audio-embeds.ts:4
 ```
 
 ## File Inventory
 
 | File | Class/Export | Purpose |
 |------|-------------|---------|
-| `types.ts` | `TranscriptionResult`, `TimestampEntry`, `TranscribeOptions`, `AudioEmbed` | Types |
+| `types.ts` | `TranscriptionResult`, `TimestampEntry`, `TranscribeOptions`, `AudioClipper` | Types |
 | `transcriber.ts` | `Transcriber`, `buildMultipartBody`, `GEMINI_MAX_INLINE_AUDIO_BYTES` | Provider-routed transcription (Whisper, Deepgram, Gemini, local stub) over `requestUrl`; manual multipart with sanitized headers (internal `sanitizeMultipartHeaderValue`, `geminiMimeType`); Gemini text via shared `extractGeminiResponseText` |
 | `transcriber.test.ts` | Tests | Transcriber + multipart + provider routing tests |
 | `transcription-models.test.ts` | Tests | `TRANSCRIPTION_MODEL_OPTIONS` registry shape, `transcriptionModelOptions` / `hasTranscriptionModelOptions`, `resolveTranscriptionModel`, `whisperResponseFormat` (#521) |
 | `transcription-credentials.test.ts` | Tests | `renderTranscriptionCredentials` provider dropdown + per-provider key fields |
 | `settings-section.test.ts` | Tests | `renderAudioSettings` section rendering |
-| `post-processor.ts` | `PostProcessor`, `PostProcessOptions`, `PostProcessorDeps` | AI transcript cleanup via `AIClient`; transcripts over `ai.maxTokens` run in sections (#467) |
+| `post-processor.ts` | `PostProcessor`, `PostProcessOptions`, `PostProcessorDeps` | AI transcript cleanup via `AIClient`; transcripts over `ai.maxTokens` run in sections (#467); every transcript span enters the prompt through `wrapUntrusted` (post-processor.ts:61,129,131,151) |
 | `no-speech.test.ts` | Tests | `AudioModule` no-speech paths (#524): zero AI calls, note untouched, notices, batch/combined partial results |
 | `post-processor.test.ts` | Tests | Blank/short-input guard (#524), single-call path, sectioning, overlap trim, raw fallback, progress, key points, inter-call delay |
 | `transcript-segmenter.ts` | `segmentTranscript`, `trimRepeatedContext`, `TranscriptSegment` | Pure boundary-aware splitter used by `PostProcessor` |
 | `transcript-segmenter.test.ts` | Tests | Boundary selection, budget, round-trip, overlap context |
 | `settings-section.ts` | `renderAudioSettings` | Audio settings UI section |
 | `transcription-credentials.ts` | `renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext)` | Transcription-provider dropdown + per-provider API-key fields rendered into the AI Configuration section (#332/#335). Re-exported from `index.ts` (the module's public API) so `settings-tab.ts` wires it through the `./audio` barrel rather than deep-importing this file. Imports `PROVIDER_METADATA`/`decorateCredentialField` and types `CredentialProvider`/`CredentialFieldHandle`/`SettingsSectionContext` via the `../shared` barrel (no deep `../shared/<file>` imports) |
-| `note-scanner.ts` | `findAudioEmbeds`, `hasTranscriptionBelow`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` | Scan note content for audio embeds |
-| `note-scanner.test.ts` | Tests | Note scanner tests |
 | `cache-report.test.ts` | Tests | `AudioModule` response-cache reporting (#527): `aiCached` flag + finish wording, fresh-transcript bypass |
 | `combine-transcription.test.ts` | Tests | `AudioModule.transcribeAndInsertCombined` (#214): ffmpeg concat vs per-file merge, <2-embed fallback |
 | `lyrics-reformat.test.ts` | Tests | `AudioModule.transcribe` lyrics schema reformatting (#234) |
 | `process-transcript-text.test.ts` | Tests | `AudioModule.processTranscriptText` caption-tier seam (#184) |
-| `index.ts` | `AudioModule` (+ `renderAudioSettings`, `renderTranscriptionCredentials`, note-scanner & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307); serializes every note-mutating insert through the shared `NoteOperationQueue` (internal `queued`, `insertFileTranscription`, `insertTranscriptions`, `insertCombinedTranscription`, #483); schema-reformat failures log through shared `redactError` |
+| `index.ts` | `AudioModule` (+ `renderAudioSettings`, `renderTranscriptionCredentials`, `shared/audio-embeds` & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307); serializes every note-mutating insert through the shared `NoteOperationQueue` (internal `queued`, `insertFileTranscription`, `insertTranscriptions`, `insertCombinedTranscription`, #483); schema-reformat failures log through shared `redactError` |
 
 ## Data Flow
 
@@ -171,10 +169,10 @@ Every public insert path acquires the target note's slot on the shared `NoteOper
 
 ## Note Scanning
 
-`findAudioEmbeds(content, sourcePath, metadataCache)` in `note-scanner.ts:8`:
+`findAudioEmbeds(content, sourcePath, metadataCache)` lives in `shared/audio-embeds.ts:13` (moved out of this module so `summarize` needs no `audio` import); the barrel re-exports it:
 - Regex `AUDIO_EMBED_REGEX`: `![[*.mp3|wav|m4a|ogg|flac|webm|aac]]`
 - Resolves files via `metadataCache.getFirstLinkpathDest()`; only `TFile` matches passing `AUDIO_EXTENSIONS` are kept
-- Skips embeds already transcribed via `hasTranscriptionBelow` (`note-scanner.ts:38`): scans lines `embedLine+1..+3` for the legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout `Lyrics of X` (#234); callout headers match either spelling via `isCalloutHeader` (#554)
+- Skips embeds already transcribed via `hasTranscriptionBelow` (`shared/audio-embeds.ts:43`): scans lines `embedLine+1..+3` for the legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout `Lyrics of X` (#234); callout headers match either spelling via `isCalloutHeader` (#554)
 - Returns `AudioEmbed[]` with file references and line numbers
 
 ## Settings Keys
@@ -228,11 +226,13 @@ parameter. Field values strip CR/LF to ` ` so they cannot start a new part. This
 injection from filenames like `x"\r\nContent-Disposition: ...`. The binary file payload is appended raw and
 never interpreted as text.
 
+Post-processing prompt fencing: `PostProcessor` wraps the whole transcript (post-processor.ts:61), the section's preceding context (post-processor.ts:129), the section body (post-processor.ts:131) and the key-points input (post-processor.ts:151) in `wrapUntrusted` (`shared/untrusted-content.ts`); `SYSTEM_PROMPT` (post-processor.ts:14-17) states the fenced text is the text to edit, never instructions to follow.
+
 ## Video Module Integration
 
 `AudioModule.transcribe()` is called by `VideoModule.processUrl()` (video passes extracted audio as `ArrayBuffer` with `sourceName` set to the video title) — a runtime `video → audio` edge.
 
-`audio` imports nothing from `video`. The clip/concat/dependency-check surface the constructor's `extractor?` param needs is the structural `AudioClipper` interface (`types.ts:43`); `video/AudioExtractor` satisfies it and the registry passes one on desktop. The reverse direction exists: `video/ffmpeg-availability.ts:1` does `import type { AudioClipper } from '../audio'`.
+`audio` imports nothing from `video`. The clip/concat/dependency-check surface the constructor's `extractor?` param needs is the structural `AudioClipper` interface (`types.ts:36`); `video/AudioExtractor` satisfies it and the registry passes one on desktop. The reverse direction exists: `video/ffmpeg-availability.ts:1` does `import type { AudioClipper } from '../audio'`.
 
 ## Commands
 

@@ -105,7 +105,6 @@ Note: `TagVocabularyEntry`, `EnrichmentSettings`, and `EnrichmentWeightSettings`
 | `prompt-builder.ts` | `PromptBuilder` | AI prompts for external link suggestions; frontmatter suggestions with a System 1 `choice` per lane key first when `ai.systemOne` is on (#563) |
 | `enrichment-store.ts` | `EnrichmentStore` | CRUD for enrichment proposal JSON files in the enrichment folder |
 | `enrichment-applier.ts` | `EnrichmentApplier` | Applies/undoes accepted enrichments to note content non-destructively via `vault.process` |
-| `enrichment-modal.ts` | `EnrichmentDetailModal` | Per-item toggle modal for reviewing a single proposal |
 | `settings-section.ts` | `renderEnrichmentSettings` | Settings UI accordion for the enrichment feature (#243) |
 | `*.test.ts` | Co-located Vitest suites | `vault-analyzer`, `weight-calculator`, `metadata-classifier`, `topic-extractor`, `link-resolver`, `prompt-builder`, `enrichment-store`, `enrichment-applier`, `settings-section`, `auto-accept` (#228), `review-toast` (#366), `cache-report` (#527: single-enrich hit/miss, no-enrichment hit, vault-scan aggregate hit/miss), `metadata-classifier.system-one` (#558: toggle off = zero lane calls + identical output, per-category choice shape, uncertain-only fallback, vocabulary guard, probabilities floor, transport/401 fallback), `prompt-builder.system-one` (#563: toggle off = zero lane calls + identical prompt/output, per-key choice shape + 254 cap, confident = no `complete()`, `<new-value>`/no-values keys restricted prompt, sub-floor, list-key merge, vault-value guard, transport fallback) |
 
@@ -166,10 +165,6 @@ class EnrichmentApplier {
   constructor(app: App, getSettings: () => SynapseSettings)
   apply(proposal: EnrichmentProposal, accepted: AcceptedItems): Promise<void>
   undo(proposal: EnrichmentProposal): Promise<void>
-}
-// enrichment-modal.ts
-class EnrichmentDetailModal extends Modal {
-  constructor(app: App, proposal: EnrichmentProposal, callbacks: { onAccept: (accepted: AcceptedItems) => void; onReject: () => void })
 }
 // settings-section.ts
 function renderEnrichmentSettings(ctx: SettingsSectionContext): void
@@ -253,7 +248,7 @@ scanVault(target?, skipConfirmation?, onlyFile?)
 ```
 
 ```
-User review (UnifiedProposalView / EnrichmentDetailModal):
+User review (UnifiedProposalView):
   Accept Selected → acceptSelectedFromView(id, accepted)
                     → noteQueue.run(proposal.sourceNotePath, acceptSelected) (#483, silent)
                     → EnrichmentApplier.apply(proposal, accepted)

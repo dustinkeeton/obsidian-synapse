@@ -418,7 +418,7 @@
       "title": "Acyclic by injection",
       "items": [
         "pipeline/, intake/, checkpoints/ never import a feature; shared/ and commands/ import none",
-        "Feature → feature runtime imports: video → audio, summarize → audio, transcription → audio · video · image"
+        "Only feature → feature runtime import: video → audio; the audio, video and image note scanners live in shared/"
       ]
     },
     {

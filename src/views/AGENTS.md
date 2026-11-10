@@ -130,7 +130,7 @@ function runRegisteredCommand(app: App, pluginId: string, id: string, notificati
 | `index.ts` | barrel re-export of all the above | Public surface |
 | `*.test.ts` (5 files) | tests | `unified-proposal-view` (incl. describe `UnifiedProposalView elaboration rewrite copy (#552)`, `unified-proposal-view.test.ts:426`), `synapse-actions-view`, `proposal-styles`, `view-activation`, `command-runner` |
 
-No legacy views exist in this directory; only the two registered `ItemView`s above. A legacy `ProposalReviewView` still lives in `src/elaboration/proposal-view.ts` (outside this module) and is not registered.
+Only the two registered `ItemView`s above exist; no other view class exists in `src/`.
 
 ## View Registry
 
@@ -165,7 +165,7 @@ No legacy views exist in this directory; only the two registered `ItemView`s abo
 
 `render()` (`unified-proposal-view.ts:175`) dispatches on whichever `reviewing*` field is set (elaboration, enrichment, organize, deep-dive, title, rem, illustrate), else list mode.
 
-1. In progress section (`renderInProgressRows` `:1538`, #577): `.synapse-in-progress` div created first in list mode (`:445`), above the checkpoint banner; hidden via `is-empty` when no entries. One row per `InProgressEntry`: kind badge (`KIND_LABELS`), label, optional target, `current/total` + determinate fill when `total > 0`, else indeterminate track; Cancel button only when `cancellable` -> `onCancelInProgress(entry.id)`. List-mode empty-state text is suppressed while any entry runs (`:454`). Styles `styles.css:1288-1366`.
+1. In progress section (`renderInProgressRows` `:1538`, #577): `.synapse-in-progress` div created first in list mode (`:445`), above the checkpoint banner; hidden via `is-empty` when no entries. One row per `InProgressEntry`: kind badge (`KIND_LABELS`), label, optional target, `current/total` + determinate fill when `total > 0`, else indeterminate track; Cancel button only when `cancellable` -> `onCancelInProgress(entry.id)`. List-mode empty-state text is suppressed while any entry runs (`:454`). Styles `styles.css:1246-1324`.
 2. Checkpoint banner (`renderCheckpointBanner` `:1577`): one card per incomplete checkpoint with operation label, done/total progress bar, Resume/Discard. Progress fills (`.synapse-checkpoint-fill`, `:1599`; `.synapse-accept-all-fill`, `:433`) set the `--synapse-fill` custom property via `setCssProps`, and `styles.css` reads it as `width: var(--synapse-fill, 0%)` — no inline `style.width`.
 3. List mode (`renderList` `:439`): pending proposals grouped by `data.sourceNotePath`; Accept all / Reject all bar shown when 2+ pending; each card has a badge, summary, preview, and Review/Accept/Reject. Elaboration card (`renderElaborationCard` `:528`, #552): preview text is prefixed `Replaces the note's content with: ` (`:543`); accept button reads `Accept and replace` (`:555`) and sends `proposal.proposedAdditions` to `onElaborationAccept` (`:558`). Organize card (`:631`): headline `organizeTargetLabel(proposal)` (`:642`) = `Move to <dir>` when `proposalKind === 'move'`, else `New folder <dir>` (`:1647-1651`); `Decided by the System 1 lane` line when `proposal.lane === 'system-one'` (`:645-646`). REM card (`:1207`): `Semantic links decided by the System 1 lane` when `proposal.lane === 'system-one'` (`:1230-1231`). Illustrate card (`renderIllustrateCard` `:1393`): summary `N visual(s) | <counts per kind>` (`illustrateSummary` `:1384`), preview = first 3 captions; `Accept all` sends every item id to `onIllustrateAcceptSelected`.
 4. Elaboration review (`renderElaborationReview` `:672`, #552): editable textarea labelled `Proposed rewrite (accepting replaces the note's content; frontmatter is kept)` (`:702`); `Accept and replace` (`:711`) sends the edited full body to `onElaborationAccept(id, textarea.value)` (`:715`).
@@ -237,12 +237,12 @@ Activation entry points: ribbon `synapse` and every module's `onOpenProposalView
 
 | Import | From | Kind |
 |--------|------|------|
-| `Proposal` | `../elaboration` | type only |
-| `AcceptedItems`, `EnrichmentProposal` | `../enrichment` | type only |
-| `OrganizeProposal` | `../organize` | type only |
-| `DeepDiveProposal` | `../deep-dive` | type only |
-| `TitleProposal`, `TitleDuplicateStrategy` | `../title` | type only |
-| `RemProposal` | `../rem` | type only |
+| `Proposal` | `../elaboration` | type only (`types.ts:1`, `unified-proposal-view.ts:2`, `view-activation.ts:4`) |
+| `AcceptedItems`, `EnrichmentProposal` | `../enrichment` | type only (`types.ts:2`, `unified-proposal-view.ts:3`; `EnrichmentProposal` alone `view-activation.ts:5`) |
+| `OrganizeProposal` | `../organize` | type only (`types.ts:3`, `unified-proposal-view.ts:4`, `view-activation.ts:6`) |
+| `DeepDiveProposal` | `../deep-dive` | type only (`types.ts:4`, `unified-proposal-view.ts:5`, `view-activation.ts:7`) |
+| `TitleProposal`, `TitleDuplicateStrategy` | `../title` | type only (`types.ts:5`; `TitleProposal` alone `unified-proposal-view.ts:6`, `view-activation.ts:8`) |
+| `RemProposal` | `../rem` | type only (`types.ts:6`, `unified-proposal-view.ts:7`, `view-activation.ts:9`) |
 | `IllustrateProposal` | `../illustrate` | type only (`types.ts:7`, `unified-proposal-view.ts:8`, `view-activation.ts:10`) |
 | `Checkpoint`, `NotificationManager`, `InProgressKind`, `InProgressEntry`, `InProgressRegistry` | `../shared` | type only (`Checkpoint` + `InProgressEntry` + `InProgressKind` `types.ts:8`; `Checkpoint` + `InProgressEntry` + `InProgressRegistry` `view-activation.ts:3`; `Checkpoint` + `InProgressEntry` + `NotificationManager` `unified-proposal-view.ts:9`; `NotificationManager` `command-runner.ts:5`) |
 | `fireAndForget` | `../shared` | runtime value (`unified-proposal-view.ts:10`, `view-activation.ts:2`, `command-runner.ts:4`) |

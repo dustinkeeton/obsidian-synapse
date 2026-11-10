@@ -269,14 +269,14 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 | `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContentWithImages`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks`, `buildMediaEmbedLines`, `stripUnresolvedLinks`, `wikilinkTargets`, `scanScopeLabel`, `ScanTarget` (type) | `../shared` (index.ts) |
 | `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks`, `isCalloutHeader`, `calloutHeaderSource` | `../shared` (note-scanner.ts) |
 | `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:12) |
-| `findAudioEmbeds` | `../audio` |
+| `findAudioEmbeds` | `../shared` (index.ts:15; declared in `shared/audio-embeds.ts`) |
 | `CommandRegistrar` | `../commands` |
 | `SynapseSettings` | `../settings` |
 | `wrapUntrusted`, `voiceInstruction`, `sanitizeAIResponse`, `AIClient`, `AIRequestOptions` (type) | `../shared` (summarizer.ts:1-2) |
 | `isEffectivelyEmptyProse` | `../shared` (index.ts `collectTargets`, #544) |
 | `findSummarizeTargets`, `extractNoteProse`, `hasSummaryBelow`, `SummarizeTarget`, `TranscribedMedia`, `TranscribeUrlFn`, `TranscribeAudioFn`, `SummarizeSelectionModal`, `Summarizer` | local (`./note-scanner`, `./types`, `./summarize-modal`, `./summarizer`) |
 
-NO static import of `../video`. Video transcription is callback-only (`TranscribeUrlFn`).
+NO static import of `../audio` or `../video`. Video transcription is callback-only (`TranscribeUrlFn`).
 
 ## Downloaded Media Invariant (#561)
 

@@ -11,7 +11,7 @@ Transcription UI (unified modal, note-media modal, time-range modal, duration de
 Re-exported from the `index.ts` barrel (`index.ts:1-40`). Every exported type of the module — router/tier data types (`UrlTranscriptOptions`, `TranscriptStore`, `UrlTranscript`, `UrlTranscriptionStrategy`, `ProcessedTranscript`, `ProcessTranscriptOptions`, `ProcessTranscript`, `LocalExtractionDelegate`, `YouTubeTranscript`, `CaptionCue`, `VideoChapter`, `DurationResult`), UI option types (`TimeRangeSliderOptions`, `TimeRangeChoice`, `TimeRangeModalOptions`) and wiring deps (`InsertUrlTranscriptDeps`, `UnifiedTranscriptionDeps`, `NoteMediaTranscriptionDeps`, `UrlTranscriptionRouterDeps`) — is declared in `types.ts` and re-exported via `index.ts:19-36` (except `ProcessTranscriptOptions`, `CaptionCue`, `VideoChapter`, which stay module-internal). `NodeDeps` (`duration-detector.ts:38`) is not barrel-exported; it is only the type of the optional `deps?` param.
 
 ```ts
-// unified-modal.ts:13
+// unified-modal.ts:12
 class UnifiedTranscriptionModal extends Modal {
   constructor(
     app: App,
@@ -25,7 +25,7 @@ class UnifiedTranscriptionModal extends Modal {
   )
 }
 
-// note-media-modal.ts:7
+// note-media-modal.ts:5
 class NoteMediaModal extends Modal {
   constructor(
     app: App,
@@ -49,14 +49,14 @@ class TimeRangeSlider {
   get end(): number
   constructor(parentEl: HTMLElement, options: TimeRangeSliderOptions)
 }
-interface TimeRangeSliderOptions {                                  // types.ts:146
+interface TimeRangeSliderOptions {                                  // types.ts:144
   duration: number
   initialStart?: number
   initialEnd?: number
   onChange?: (start: number, end: number) => void
 }
 
-// types.ts:158 / :166; class time-range-modal.ts:21 (#464; replaced the former toast prompt)
+// types.ts:156 / :164; class time-range-modal.ts:21 (#464; replaced the former toast prompt)
 type TimeRangeChoice =
   | { kind: 'selection'; range: TimeRange }
   | { kind: 'full' }
@@ -70,7 +70,7 @@ class TimeRangeModal extends Modal {
   openAndChoose(): Promise<TimeRangeChoice>   // time-range-modal.ts:61; settles exactly once
 }
 
-// duration-detector.ts:56 / :120 / :173 / :167; DurationResult = types.ts:138
+// duration-detector.ts:56 / :120 / :173 / :167; DurationResult = types.ts:136
 function detectLocalFileDuration(
   file: TFile,
   readBinary: (file: TFile) => Promise<ArrayBuffer>,
@@ -84,16 +84,16 @@ interface DurationResult { durationSeconds: number | undefined; title: string }
 type NodeDeps = NodeModules        // injection seam for tests (not barrel-exported)
 
 // url-transcription.ts — ordered-tier router for URL transcription (#184); its contracts live in types.ts
-interface UrlTranscriptOptions {                                   // types.ts:11
+interface UrlTranscriptOptions {                                   // types.ts:9
   timeRange?: TimeRange                 // set range forces the extraction tier (captions cannot clip); part of the store key
   update?: (message: string) => void
   forceRefresh?: boolean                // skip the transcript store, re-run the tiers, and dispatch their AI post-processing fresh (#488, #527)
 }
-interface TranscriptStore {                                        // types.ts:24; read/write slice of shared `TranscriptCache` (#488)
+interface TranscriptStore {                                        // types.ts:22; read/write slice of shared `TranscriptCache` (#488)
   get(url: string, timeRange?: TimeRange): Promise<TranscriptCacheEntry | null>
   put(url: string, transcript: CachedTranscript, timeRange?: TimeRange): Promise<void>
 }
-interface UrlTranscript {                                          // types.ts:29
+interface UrlTranscript {                                          // types.ts:27
   text: string                          // post-processed when available, else raw
   raw: string
   source: 'captions' | 'local-extraction'
@@ -106,7 +106,7 @@ interface UrlTranscript {                                          // types.ts:2
   cached?: boolean                      // true when served from the transcript store (#488)
   aiCached?: boolean                    // #527; fresh transcript whose AI post-processing replayed a cached response; never stored
 }
-interface UrlTranscriptionStrategy {                              // types.ts:54
+interface UrlTranscriptionStrategy {                              // types.ts:52
   readonly id: string
   canHandle(url: string, opts: UrlTranscriptOptions): boolean   // cheap gate: platform/url/settings only, no network
   transcribe(url: string, opts: UrlTranscriptOptions): Promise<UrlTranscript | null>   // null = fall through to next tier
@@ -123,26 +123,26 @@ class UrlTranscriptionRouter {                                    // url-transcr
 function buildUrlTranscriptBlock(result: UrlTranscript, url: string, embedInNote: boolean, timeRange?: TimeRange): string   // url-transcription.ts:115; embed lines come from shared `buildMediaEmbedLines` (#561)
 
 // caption-strategy.ts — tier 1: YouTube captions over HTTP (free, mobile-capable)
-interface ProcessedTranscript { text: string; reformatted?: boolean; schemaId?: string; aiCached?: boolean }   // types.ts:71
-interface ProcessTranscriptOptions { update?: (message: string) => void; bypassCache?: boolean }   // types.ts:78; not barrel-exported; bypassCache = opts.forceRefresh (#527)
-type ProcessTranscript = (raw: string, opts?: ProcessTranscriptOptions) => Promise<ProcessedTranscript>   // types.ts:83; opts.update carries "Post-processing (n/total)" (#467)
+interface ProcessedTranscript { text: string; reformatted?: boolean; schemaId?: string; aiCached?: boolean }   // types.ts:69
+interface ProcessTranscriptOptions { update?: (message: string) => void; bypassCache?: boolean }   // types.ts:76; not barrel-exported; bypassCache = opts.forceRefresh (#527)
+type ProcessTranscript = (raw: string, opts?: ProcessTranscriptOptions) => Promise<ProcessedTranscript>   // types.ts:81; opts.update carries "Post-processing (n/total)" (#467)
 class CaptionStrategy implements UrlTranscriptionStrategy {                                // caption-strategy.ts:17
   readonly id = 'captions'
   constructor(getSettings: () => SynapseSettings, postProcess: ProcessTranscript)          // postProcess = AudioModule.processTranscriptText (injected)
 }
 
 // local-extraction-strategy.ts — tier 2: desktop yt-dlp/ffmpeg
-type LocalExtractionDelegate = (url: string, opts: UrlTranscriptOptions) => Promise<TranscriptionResult & { videoVaultPath?: string }>   // types.ts:91; TranscriptionResult is `import type`-d from ../audio (types.ts:6)
+type LocalExtractionDelegate = (url: string, opts: UrlTranscriptOptions) => Promise<TranscriptionResult & { videoVaultPath?: string }>   // types.ts:89; TranscriptionResult is `import type`-d from ../audio (types.ts:6)
 class LocalExtractionStrategy implements UrlTranscriptionStrategy {                        // local-extraction-strategy.ts:12
   readonly id = 'local-extraction'
   constructor(delegate: LocalExtractionDelegate)                  // delegate wraps VideoModule.processUrl, wired in main.ts
 }
 
 // youtube-captions.ts
-interface YouTubeTranscript { text: string; language: string; auto: boolean; title?: string; thumbnailUrl?: string; structured: boolean }   // types.ts:96
+interface YouTubeTranscript { text: string; language: string; auto: boolean; title?: string; thumbnailUrl?: string; structured: boolean }   // types.ts:94
 function fetchYouTubeTranscript(url: string, preferredLanguages: string[]): Promise<YouTubeTranscript | null>          // youtube-captions.ts:89
 
-// types.ts:177; functions insert-url-transcript.ts:14 / :77
+// types.ts:175; functions insert-url-transcript.ts:14 / :77
 interface InsertUrlTranscriptDeps {
   app: App
   getSettings: () => SynapseSettings
@@ -159,7 +159,7 @@ function appendUrlTranscript(
   file: TFile
 ): Promise<void>
 
-// types.ts:205; factory create-url-router.ts:7 — composes [CaptionStrategy, LocalExtractionStrategy?] over the store
+// types.ts:203; factory create-url-router.ts:7 — composes [CaptionStrategy, LocalExtractionStrategy?] over the store
 interface UrlTranscriptionRouterDeps {
   getSettings: () => SynapseSettings
   processTranscriptText: ProcessTranscript
@@ -168,13 +168,13 @@ interface UrlTranscriptionRouterDeps {
 }
 function createUrlTranscriptionRouter(deps: UrlTranscriptionRouterDeps): UrlTranscriptionRouter
 
-// types.ts:189; function open-unified-modal.ts:8 — opens UnifiedTranscriptionModal; URLs go through insertUrlTranscript(deps, ...)
+// types.ts:187; function open-unified-modal.ts:8 — opens UnifiedTranscriptionModal; URLs go through insertUrlTranscript(deps, ...)
 interface UnifiedTranscriptionDeps extends InsertUrlTranscriptDeps {
   onTranscribeFile: (file: TFile, timeRange?: TimeRange) => Promise<void>
 }
 function openUnifiedTranscriptionModal(deps: UnifiedTranscriptionDeps): void
 
-// types.ts:194; function note-media-transcription.ts:12 — scans a note's embeds per enabled feature, opens NoteMediaModal
+// types.ts:192; function note-media-transcription.ts:8 — scans a note's embeds per enabled feature, opens NoteMediaModal
 interface NoteMediaTranscriptionDeps {
   app: App
   getSettings: () => SynapseSettings
@@ -195,7 +195,7 @@ function transcribeNoteMedia(deps: NoteMediaTranscriptionDeps, file: TFile): Pro
 | `note-media-modal.ts` | `NoteMediaModal` | Selection modal for media found in current note; audio/video/image toggles; combine-audio option |
 | `time-range-slider.ts` | `TimeRangeSlider` | Dual-handle range slider (pure DOM, no Obsidian deps beyond createEl) |
 | `time-range-modal.ts` | `TimeRangeModal` | First-class modal asking what to transcribe: slider (known duration) or manual inputs (unknown); settle-once, dismiss = cancelled (#464) |
-| `types.ts` | `UrlTranscriptOptions`, `TranscriptStore`, `UrlTranscript`, `UrlTranscriptionStrategy`, `ProcessedTranscript`, `ProcessTranscriptOptions`, `ProcessTranscript`, `LocalExtractionDelegate`, `YouTubeTranscript`, `CaptionCue`, `VideoChapter`, `DurationResult`, `TimeRangeSliderOptions`, `TimeRangeChoice`, `TimeRangeModalOptions`, `InsertUrlTranscriptDeps`, `UnifiedTranscriptionDeps`, `NoteMediaTranscriptionDeps`, `UrlTranscriptionRouterDeps` | Every exported transcription type in one file; the runtime files import from it. Only `import type` edges out (`types.ts:1-9`): `obsidian` (`App`, `TFile`), `../shared` (`CachedTranscript`, `NoteOperationQueue`, `NotificationManager`, `SourceContext`, `TimeRange`, `TranscriptCacheEntry`), `../settings` (`SynapseSettings`), `../audio` (`AudioEmbed`, `TranscriptionResult`), `../video` (`VideoUrlEmbed`), `../image` (`ImageEmbed`), `./url-transcription` (`UrlTranscriptionRouter`; `url-transcription.ts:6` type-imports back from `./types` — an intra-module type-only cycle, erased at compile time) |
+| `types.ts` | `UrlTranscriptOptions`, `TranscriptStore`, `UrlTranscript`, `UrlTranscriptionStrategy`, `ProcessedTranscript`, `ProcessTranscriptOptions`, `ProcessTranscript`, `LocalExtractionDelegate`, `YouTubeTranscript`, `CaptionCue`, `VideoChapter`, `DurationResult`, `TimeRangeSliderOptions`, `TimeRangeChoice`, `TimeRangeModalOptions`, `InsertUrlTranscriptDeps`, `UnifiedTranscriptionDeps`, `NoteMediaTranscriptionDeps`, `UrlTranscriptionRouterDeps` | Every exported transcription type in one file; the runtime files import from it. Only `import type` edges out (`types.ts:1-7`): `obsidian` (`App`, `TFile`), `../shared` (`AudioEmbed`, `CachedTranscript`, `ImageEmbed`, `NoteOperationQueue`, `NotificationManager`, `SourceContext`, `TimeRange`, `TranscriptCacheEntry`, `VideoUrlEmbed`), `../settings` (`SynapseSettings`), `../audio` (`TranscriptionResult`), `./url-transcription` (`UrlTranscriptionRouter`; `url-transcription.ts:6` type-imports back from `./types` — an intra-module type-only cycle, erased at compile time) |
 | `duration-detector.ts` | `detectLocalFileDuration`, `detectUrlDuration`, `formatTimestamp`, `MIN_SLIDER_DURATION`, `NodeDeps` | Duration detection via ffprobe (local) and yt-dlp (URL); desktop-only, mobile returns undefined |
 | `url-transcription.ts` | `UrlTranscriptionRouter`, `NoTranscriptionPathError`, `buildUrlTranscriptBlock` | Tier router fronted by the transcript store (#488) + shared note-block builder (embed + collapsed transcription/lyrics callout) |
 | `caption-strategy.ts` | `CaptionStrategy` | Tier 1: YouTube captions; post-processing through the injected audio pipeline |
@@ -211,15 +211,15 @@ function transcribeNoteMedia(deps: NoteMediaTranscriptionDeps, file: TFile): Pro
 ## UnifiedTranscriptionModal
 
 Single modal combining audio file selection and video URL input (`unified-modal.ts`):
-- Local-file section rendered only when `enabledModules.audio || enabledModules.video` (`unified-modal.ts:38`)
+- Local-file section rendered only when `enabledModules.audio || enabledModules.video` (`unified-modal.ts:37`)
 - Dropdown lists all audio files in vault (filtered by `AUDIO_EXTENSIONS`, honors audio path exclusions via `isPathExcluded(path, 'audio', settings)`, #323)
-- URL section rendered when `enabledModules.video` on every platform (`unified-modal.ts:76`; no desktop gate since #184)
+- URL section rendered when `enabledModules.video` on every platform (`unified-modal.ts:75`; no desktop gate since #184)
 - URL text field with platform detection badge (`detectPlatform`); unknown non-empty input shows "Unsupported URL"
 - "Fetch a fresh transcript" toggle (`Setting.addToggle`, default off) sets `forceRefresh`, forwarded as the third `onTranscribeUrl` argument on both platforms (#488)
 - File selection and URL input are mutually exclusive (setting one clears the other)
-- On submit (`handleTranscribe`, `unified-modal.ts:129`): rejects a URL that fails `detectPlatform` via `notifications.info` (`:134`); empty input prompts to select a file or enter a URL
-  - Mobile (`!Platform.isDesktop`): transcribes the full file/URL with no duration step (`unified-modal.ts:144`, `:165`)
-  - Desktop: duration detection (ffprobe for files, yt-dlp for URLs) → `chooseTimeRange` (`unified-modal.ts:186`)
+- On submit (`handleTranscribe`, `unified-modal.ts:128`): rejects a URL that fails `detectPlatform` via `notifications.info` (`:134`); empty input prompts to select a file or enter a URL
+  - Mobile (`!Platform.isDesktop`): transcribes the full file/URL with no duration step (`unified-modal.ts:143`, `:165`)
+  - Desktop: duration detection (ffprobe for files, yt-dlp for URLs) → `chooseTimeRange` (`unified-modal.ts:185`)
     - Duration defined but < `MIN_SLIDER_DURATION` (10s): full file, no prompt
     - Otherwise `TimeRangeModal.openAndChoose()`: `selection` → `TimeRange`; `full` → `undefined`; `cancelled` → return without calling any callback
 - Callbacks receive `timeRange?: TimeRange` (undefined = full file)
@@ -234,11 +234,11 @@ Selection modal for media embedded in the current note (`note-media-modal.ts`):
 - "Select all" / "Select none" buttons
 - "Combine audio" toggle (#214): shown for 2+ audio embeds; with ffmpeg concatenates audio before transcribing (single API call); without ffmpeg merges text transcriptions
   - `ffmpegAvailable` param controls the toggle description text only; actual concat logic is in `AudioModule`
-  - `combine` is passed true only when the toggle is on AND 2+ audio files are actually selected (`note-media-modal.ts:111`)
+  - `combine` is passed true only when the toggle is on AND 2+ audio files are actually selected (`note-media-modal.ts:109`)
   - `onTranscribeAudio` receives `combine: boolean` as second arg; caller decides behavior
 - "Process selected" dispatches to separate audio/video/image callbacks
 
-Opened by `transcribeNoteMedia` (`note-media-transcription.ts:12`) via command `synapse:transcribe-note-media` (`editorCallback`, `main.ts:235-250`; scans `ctx.file`'s embeds, `notifications.info('No media found in this note')` when none, `note-media-transcription.ts:27-30`). Video embeds are collected only when `settings.video.enabled && deps.onTranscribeVideo` (`note-media-transcription.ts:20`); `main.ts:246` passes `onTranscribeVideo` only when `VideoModule` exists (desktop), so on mobile the modal's `onTranscribeVideo` is an unreachable no-op (`note-media-transcription.ts:44`).
+Opened by `transcribeNoteMedia` (`note-media-transcription.ts:8`) via command `synapse:transcribe-note-media` (`editorCallback`, `main.ts:235-250`; scans `ctx.file`'s embeds, `notifications.info('No media found in this note')` when none, `note-media-transcription.ts:23-26`). Video embeds are collected only when `settings.video.enabled && deps.onTranscribeVideo` (`note-media-transcription.ts:16`); `main.ts:246` passes `onTranscribeVideo` only when `VideoModule` exists (desktop), so on mobile the modal's `onTranscribeVideo` is an unreachable no-op (`note-media-transcription.ts:40`).
 
 ## Duration Detection
 
@@ -308,7 +308,7 @@ UnifiedTranscriptionModal (openUnifiedTranscriptionModal, open-unified-modal.ts:
   onTranscribeUrl(url, timeRange?, forceRefresh?) --> insertUrlTranscript(deps, url, timeRange, forceRefresh)
                                            (deps.onComplete = audio.onTranscriptionComplete)
 
-NoteMediaModal (transcribeNoteMedia, note-media-transcription.ts:12; deps built main.ts:238-248;
+NoteMediaModal (transcribeNoteMedia, note-media-transcription.ts:8; deps built main.ts:238-248;
                 embeds from findAudioEmbeds / findVideoUrls / findImageEmbeds, each gated by <feature>.enabled)
   onTranscribeAudio(embeds, combine) --> deps.onTranscribeAudio(file, embeds, combine)
                                            (= combine ? AudioModule.transcribeAndInsertCombined : AudioModule.transcribeAndInsert)
@@ -330,15 +330,11 @@ In (type-only where noted):
 
 | Import | From | File | Type-only |
 |--------|------|------|-----------|
-| `AUDIO_EXTENSIONS` | `../audio` | `unified-modal.ts:3` | no |
-| `findAudioEmbeds` | `../audio` | `note-media-transcription.ts:2` | no |
-| `AudioEmbed` | `../audio` | `note-media-modal.ts:2`, `note-media-transcription.ts:3`, `types.ts:6` | yes |
-| `TranscriptionResult` | `../audio` | `types.ts:6` | yes |
-| `findVideoUrls` | `../video` | `note-media-transcription.ts:4` | no (the ONLY runtime `../video` import) |
-| `VideoUrlEmbed` | `../video` | `note-media-modal.ts:3`, `note-media-transcription.ts:5`, `types.ts:7` | yes |
-| `findImageEmbeds` | `../image` | `note-media-transcription.ts:6` | no |
-| `ImageEmbed` | `../image` | `note-media-modal.ts:4`, `note-media-transcription.ts:7`, `types.ts:8` | yes |
-| `detectPlatform`, `isSupportedUrl`, `redactError`, `sanitizeUrl`, `isRecord`, `parseJson` | `../shared` | `unified-modal.ts:4`, `caption-strategy.ts:1`, `local-extraction-strategy.ts:2`, `youtube-captions.ts:3` | no |
+| `TranscriptionResult` | `../audio` | `types.ts:6` | yes (the ONLY feature-module import in non-test code) |
+| `AUDIO_EXTENSIONS` | `../shared` | `unified-modal.ts:3` | no |
+| `findAudioEmbeds`, `findVideoUrls`, `findImageEmbeds` | `../shared` | `note-media-transcription.ts:2` | no |
+| `AudioEmbed`, `VideoUrlEmbed`, `ImageEmbed` | `../shared` | `note-media-modal.ts:2`, `note-media-transcription.ts:3`, `types.ts:2-4` | yes |
+| `detectPlatform`, `isSupportedUrl`, `redactError`, `sanitizeUrl`, `isRecord`, `parseJson` | `../shared` | `unified-modal.ts:3`, `caption-strategy.ts:1`, `local-extraction-strategy.ts:2`, `youtube-captions.ts:3` | no |
 | `buildCallout`, `buildMediaEmbedLines`, `calloutForTranscriptionResult`, `formatTimeRange` | `../shared` | `url-transcription.ts:2-4` | no |
 | `NoSpeechDetectedError`, `hasSpeechContent`, `isNoSpeechError`, `noSpeechNotice` | `../shared` | `url-transcription.ts`, `caption-strategy.ts`, `local-extraction-strategy.ts`, `insert-url-transcript.ts` | no |
 | `findMatchingRule`, `isPathExcluded`, `validateTimeRange`, `loadNodeModules`, `shellEnv`, `randomToken` | `../shared` | `insert-url-transcript.ts`, `unified-modal.ts`, `time-range-modal.ts`, `duration-detector.ts` | no |
@@ -369,7 +365,7 @@ Out: consumed by `main.ts` only (`createUrlTranscriptionRouter`, `openUnifiedTra
 - Tier order is the array order handed to `UrlTranscriptionRouter`; a strategy returning `null` falls through; only a real failure throws; all tiers declining raises `NoTranscriptionPathError`
 - The transcript store is consulted BEFORE any tier and written AFTER a tier succeeds, never on failure; `forceRefresh` is the only bypass, always overwrites the entry (#488), and also sets `bypassCache` on the tier's AI post-processing so a re-fetched transcript is never re-cleaned from a replayed AI response (#527). A store hit still honors `timeRange` because the range is part of the key
 - A set `timeRange` forces the extraction tier (`CaptionStrategy.canHandle` returns false), so desktop clipping never routes through captions
-- `detectPlatform` is imported from `../shared` everywhere (`unified-modal.ts:4` included); the `video` barrel no longer re-exports it. `note-media-modal.ts:2-4` imports `AudioEmbed` / `VideoUrlEmbed` / `ImageEmbed` as `import type`, so the only runtime feature edges are the three note-scanner functions in `note-media-transcription.ts:2-6` and `AUDIO_EXTENSIONS` in `unified-modal.ts:3`
+- `detectPlatform` is imported from `../shared` everywhere (`unified-modal.ts:3` included); the `video` barrel no longer re-exports it. No runtime feature-module import: the three note scanners (`note-media-transcription.ts:2`), `AUDIO_EXTENSIONS` (`unified-modal.ts:3`) and the embed types resolve from `../shared`; the one remaining feature edge is `import type { TranscriptionResult }` from `../audio` (`types.ts:6`)
 - Both modals take an injected `NotificationManager` and route all user-facing messages through `notifications.info(...)`; `UnifiedTranscriptionModal.notifications` is the 5th constructor param, `NoteMediaModal.notifications` the 6th (before `ffmpegAvailable`)
 - Duration detection is desktop-only; mobile always receives `durationSeconds: undefined` and the modal skips the time-range step entirely
 - `TimeRangeModal` dismissal is `cancelled` (do nothing), never a default action; the "Transcribe selection" button with an untouched full-range slider settles `full` (`undefined` range downstream)

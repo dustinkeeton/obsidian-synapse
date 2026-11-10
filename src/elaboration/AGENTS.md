@@ -89,8 +89,6 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
 | `proposal-store.ts` | `ProposalStore` | CRUD for proposal JSON in `elaboration.proposalFolderPath` (default `.synapse/proposals`); `loadByNote` for dedup lookups |
 | `image-analyzer.ts` | `ImageAnalyzer`, `ImageAnalysis`, `MAX_IMAGES_PER_NOTE` | Multi-modal image analysis for proposal context |
 | `settings-section.ts` | `renderElaborationSettings` | Settings accordion renderer |
-| `proposal-view.ts` | `ProposalReviewView`, `PROPOSAL_VIEW_TYPE` | Legacy sidebar view (not registered by `main.ts`); copy says accept replaces the note |
-| `proposal-modal.ts` | `ProposalDetailModal` | Legacy proposal-edit modal; copy says accept replaces the note |
 | `rewrite-accept.test.ts` | Tests | #552 accept path: body rewrite with/without frontmatter (byte-identical block, no spurious `---`), no callout/marker in output, echoed-frontmatter drop, stale-body guard (confirm / cancel / silent skip / batch count), new key after a rewrite, legacy `insertionPoint: 'append'` files still load |
 | `auto-accept.test.ts` | Tests | Auto-accept behavior |
 | `scan-note.test.ts` | Tests | `scanNote` integration |
@@ -309,7 +307,6 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 | `AIClient`, `sanitizeAIResponse`, `stripCodeFences`, `isTwitterUrl`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `fetchArticleContent`, `linkLoadError`, `NotificationManager`, `isGenericTitle`, `hashString`, `contentKey`, `wrapUntrusted`, `redactError`, `isPathExcluded`, `findUrls`, `isEffectivelyEmptyProse`, `splitRawFrontmatter` | `../shared` | proposer.ts |
 | `AIClient`, `arrayBufferToBase64`, `NotificationManager`, `preprocessImage`, `redactError` (+ types `AIRequestOptions`, `ContentBlock`) | `../shared` | image-analyzer.ts:2-3 |
 | `ensureFolder`, `isRecord`, `readJsonFile` | `../shared` | proposal-store.ts |
-| `fireAndForget` | `../shared` | proposal-view.ts |
 | type `SettingsSectionContext` | `../shared` | settings-section.ts |
 | `CommandRegistrar`, `isInFlow` | `../commands` | index.ts |
 
@@ -329,6 +326,6 @@ No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny lo
 - `scanNote(userInvoked=true)` bypasses the stub gate: a synthetic `user-requested` reason is created so the proposer always runs, except where the dedup guard (`duplicate`/`cap`) or the anti-fabrication guards apply.
 - `ImageAnalyzer` imports `preprocessImage` from the `../shared` barrel (image-analyzer.ts:2); this module has no `../image` import.
 - `onOpenProposalView` is the third wired callback (#340) alongside `onProposalAccepted` and `onViewRefreshNeeded`; the operation toast's "Review" action is centralized in `reviewAction(...)` (#366) and only appears when a proposal stays pending after any auto-accept.
-- The unified sidebar view (`src/views/unified-proposal-view.ts`) is the registered review surface; only the legacy `proposal-view.ts` / `proposal-modal.ts` copy was changed for #552.
+- The unified sidebar view (`src/views/unified-proposal-view.ts`) is the only review surface; the legacy `proposal-view.ts` / `proposal-modal.ts` were removed.
 - `ImageAnalyzer.analyzeImage` selects the vision model via `AIRequestOptions.model` on the single `chat()` call (image-analyzer.ts:150); no settings mutation, so concurrent callers cannot observe it.
 - `onunload` (index.ts:112-115) clears `scanInterval` and nulls the field, so a later `onload` cannot double-clear a stale handle.

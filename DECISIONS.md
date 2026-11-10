@@ -24,7 +24,17 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 | Deep-dive file names | AI-chosen titles pass through `safeNoteName`: reserved characters become `-`, leading dots are stripped, empty becomes "Untitled" | `deep-dive/index.ts:690` |
 | Undocumented Obsidian APIs | `app.commands` and the picker's `chooser.useSelectedItem` are feature-detected and degrade (a "run it from the command palette" notice; Shift+Enter does nothing) | `views/command-runner.ts:33-42`, `shared/scan-folder-picker-modal.ts:30` |
 
-**Alternatives considered**: None recorded per item — each is the smallest check at an existing seam, reusing what already stood (`wrapUntrusted`, `httpUrlOrEmpty`, the `finally` cleanup audio clipping already had).
+A follow-up round the same day closed the items the first pass left open:
+
+| Boundary | What the check does | Where |
+|----------|---------------------|-------|
+| Hosts Illustrate fetches from | A download or a linked-page fetch is refused when the host is loopback, private-network, link-local, or unqualified (`sanitizePublicUrl` → `isPrivateHost`). The download fails; a linked page is skipped | `shared/validation.ts`; `illustrate/asset-writer.ts:36`, `illustrate/linked-pages.ts:21` |
+| Transcript text sent to audio post-processing | Wrapped in the untrusted-content fence — whole transcript, each section, and the preceding-context excerpt; the system prompt says the fenced text is text to edit, never instructions to follow | `audio/post-processor.ts` |
+| Paths stored in proposals and snapshots | Re-validated when read back, before any write or rename (`assertVaultRelativePath`: not empty, not absolute, no `..` segment, no null byte): deep-dive accept, organize accept, organize undo for one note and for a whole run | `shared/validation.ts`; `deep-dive/index.ts:176`, `organize/index.ts:440,539,598` |
+| Titles stored in title proposals | Accept rejects a stored title that contains a path separator or is only dots, and marks the proposal rejected | `title/index.ts:362` |
+| Third-party GitHub Actions | Referenced by full commit SHA, version in a trailing comment, so a moved tag cannot change what CI or a release runs | `.github/workflows/ci.yml`, `release.yml`, `tag-on-version-bump.yml` |
+
+**Alternatives considered**: None recorded per item — each is the smallest check at an existing seam, reusing what already stood (`wrapUntrusted`, `httpUrlOrEmpty`, the `finally` cleanup audio clipping already had). For the host check: applying it to every fetch — rejected. A link the user wrote into their own note may point at a local address on purpose, so summarize and elaboration keep the plain `sanitizeUrl`; only URLs that arrive from a provider or a fetched page get the public-host rule.
 
 **Rationale**: The same reasoning as the 2026-10-06 pass: a check is cheapest, and hardest to bypass, where the value enters. Summarize was the largest consumer of fetched text still splicing it into a prompt unfenced.
 
@@ -32,6 +42,8 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 - A summary of a page that tells the model to add a tracking image or a link no longer gets one.
 - `shared` gains `randomToken`; `enrichment`, `summarize`, `illustrate`, `video`, `audio`, `deep-dive`, `views`, and `transcription/duration-detector.ts` change at the sites above, with tests.
 - `docs/automated-review-notes.md` now lists all four non-public Obsidian API touches and how each degrades.
+- The host check reads the hostname only; it cannot see where DNS or a redirect lands.
+- Dev-dependency advisories are cleared: vitest 4.1.12, plus `overrides` for `moment` and — scoped to three eslint packages — `minimatch`. `npm audit` reports 0 vulnerabilities. Synapse still ships no npm runtime dependency.
 
 ---
 
@@ -50,13 +62,19 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 | `title` | `TitleAcceptOutcome` |
 | `transcription` | The dependency bundles (`InsertUrlTranscriptDeps`, `UrlTranscriptionRouterDeps`, `NoteMediaTranscriptionDeps`, `UnifiedTranscriptionDeps`) and the time-range modal and slider options |
 
-The pass also recorded the **complete list of feature → feature imports** in the machine docs. Besides the sanctioned `video → audio`, four runtime imports exist: `summarize → audio` and `transcription → audio`, `video`, `image`.
+The pass also recorded the **complete list of feature → feature imports** in the machine docs, and removed the four runtime ones the architecture rule does not name (`summarize → audio` and `transcription → audio`, `video`, `image`). All four existed only to reach a note scanner, so the scanners moved to `shared/` (`audio-embeds.ts`, `video-urls.ts`, `image-embeds.ts`) and the `audio`, `video`, and `image` barrels re-export the same names. The only runtime feature → feature import left is the sanctioned `video → audio`.
 
-**Alternatives considered**: None recorded for the type moves. The four extra edges were documented rather than removed in this pass.
+The follow-up round also deleted code nothing reached:
 
-**Rationale**: A reader wiring one module to another should find the contract in one predictable file, without opening the implementation. Writing the import edges down, including the ones the rule does not name, keeps the docs honest about the graph that actually ships.
+- **Four dead files** — `video/frame-extractor.ts` (a placeholder class that threw), and three review surfaces the unified sidebar had replaced and nothing registered: `elaboration/proposal-view.ts`, `elaboration/proposal-modal.ts`, `enrichment/enrichment-modal.ts`. Frame extraction is still not implemented; the `video.frameExtraction` settings remain, unread by any feature.
+- **Four unused modal CSS rules** in `styles.css`, which only those surfaces used.
+- **The embedded-video height cap is now overridable.** It applied to every `<video>` in a note view at normal specificity; it is now limited to vault video embeds at zero specificity (`:where(...) :where(.video-embed) > video`), so any theme or snippet wins.
 
-**Impact**: Import paths inside six modules; barrels export the same names. `audio` and `image` are confirmed to import nothing from `commands/` — their registrar arrives through `ModuleDeps`. The graph is still acyclic. Open question: sanction the four edges in the architecture rule, or inject them.
+**Alternatives considered**: None recorded for the type moves. For the four extra edges: sanctioning them in the architecture rule, or injecting the scanners through the registry — rejected; the scanners are pure functions over note text with no feature state, so `shared/` is their natural home.
+
+**Rationale**: A reader wiring one module to another should find the contract in one predictable file, without opening the implementation. Writing the import edges down keeps the docs honest about the graph that actually ships, and moving the scanners makes that graph match the rule.
+
+**Impact**: Import paths inside six modules; barrels export the same names. The interactive system diagram (`docs/diagrams/synapse-system.html`) was re-rendered to show the single runtime edge. New `shared/audio-embeds.ts`, `shared/video-urls.ts`, `shared/image-embeds.ts` (+ their tests, moved from the `audio`, `video`, and `image` `note-scanner` files). `audio` and `image` are confirmed to import nothing from `commands/` — their registrar arrives through `ModuleDeps`. The graph is still acyclic; the remaining feature → feature edges besides `video → audio` are type-only (`transcription → audio` for `TranscriptionResult`, and `views` for proposal types).
 
 ---
 
@@ -364,7 +382,7 @@ The pass also recorded the **complete list of feature → feature imports** in t
 - **`AIRequestOptions.model`** (`shared/ai-client.ts:33`) is a per-call override. `chat()` resolves `opts.model || ai.model`, keys the response cache on the resolved model (so a vision-model call never replays a default-model response), and threads it through `dispatch` to every provider. `image/extractor.ts:46` and `elaboration/image-analyzer.ts:150` pass `settings.image.visionModel || settings.ai.model` on the call; nothing mutates settings.
 - **`image/preprocess.ts` becomes `shared/image-preprocess.ts`** (`preprocessImage`, `PreprocessResult`), so both consumers reach it through the `shared` barrel and the elaboration → image edge is gone. The `image` barrel no longer re-exports `preprocessImage` or `arrayBufferToBase64`.
 - **Deep-dive receives `OrganizeModule.suggestDirectory`** (`organize/index.ts:68`; returns the top directory when its score is at least `SUGGEST_DIRECTORY_MIN_SCORE = 0.6`, else `null`) as a registry-injected `SuggestDirectory` callback (`deep-dive/types.ts:85`, `modules/registry.ts:111-116`). Organize precedes deep-dive in `MODULE_FACTORIES` for this reason. `ContentAnalyzer` and `DirectoryMatcher` are now internal to organize.
-- **`audio` declares a structural `AudioClipper`** (`audio/types.ts:43`: `clipAudio`, `concatAudio`, `checkDependencies`) that `video/AudioExtractor` satisfies. The registry hands audio an `AudioExtractor` instance on desktop and `undefined` elsewhere (`modules/registry.ts:80`); `audio` imports nothing from `video`. `video/ffmpeg-availability.ts:1` does `import type { AudioClipper }` from audio instead.
+- **`audio` declares a structural `AudioClipper`** (`audio/types.ts:36`: `clipAudio`, `concatAudio`, `checkDependencies`) that `video/AudioExtractor` satisfies. The registry hands audio an `AudioExtractor` instance on desktop and `undefined` elsewhere (`modules/registry.ts:80`); `audio` imports nothing from `video`. `video/ffmpeg-availability.ts:1` does `import type { AudioClipper }` from audio instead.
 - **`transcription/types.ts` holds every router/tier/caption/duration contract**; the `video` barrel stops re-exporting `detectPlatform`/`isSupportedUrl` (import them from `shared`), and interface imports become `import type`.
 
 **Alternatives considered**:
@@ -414,7 +432,7 @@ The pass also recorded the **complete list of feature → feature imports** in t
 
 **Rationale**: A transcription *is* a quote and a summary *is* a summary; writing them as those base types gives users their theme's styling and removes a stylesheet that fought it.
 
-**Impact**: `shared/callouts.ts`, `shared/insertion-point.ts`, `summarize/note-scanner.ts`, `video/note-scanner.ts`, `audio/note-scanner.ts`, `image/note-scanner.ts`, `illustrate/note-scanner.ts`, `illustrate/index.ts`, `enrichment/enrichment-applier.ts`, `deep-dive/syllabus-navigator.ts`, `styles.css` (+ tests, including every spelling combination of the summarize skip guard so a legacy transcription is never summarized twice). PR #555.
+**Impact**: `shared/callouts.ts`, `shared/insertion-point.ts`, `summarize/note-scanner.ts`, `shared/video-urls.ts`, `shared/audio-embeds.ts`, `shared/image-embeds.ts`, `illustrate/note-scanner.ts`, `illustrate/index.ts`, `enrichment/enrichment-applier.ts`, `deep-dive/syllabus-navigator.ts`, `styles.css` (+ tests, including every spelling combination of the summarize skip guard so a legacy transcription is never summarized twice). PR #555.
 
 ---
 
@@ -2171,8 +2189,8 @@ When summarizing outside the enrichment section, insert a blockquote summary inl
 **Decision**: Establish a formal git workflow:
 - **Protected main**: never push directly; all changes via pull requests
 - **Feature branches**: `feat/`, `fix/`, `refactor/`, `chore/` prefixes
-- **Bot identity**: all git operations use `bot@wafflenet.io` / `bot` (never personal identities)
-- **Co-authored commits**: `Co-Authored-By: Claude <bot@wafflenet.io>` trailer
+- **Bot identity**: all git operations use the project bot identity (never personal identities)
+- **Co-authored commits**: a `Co-Authored-By` trailer naming the project bot identity
 - **Pre-flight checklist**: type-check, test, build before pushing
 - **Worktrees**: for parallel work on conflicting files
 

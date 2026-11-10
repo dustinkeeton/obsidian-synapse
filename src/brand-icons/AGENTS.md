@@ -35,7 +35,7 @@ function registerSynapseIcons(): void
 | `synapse-illustrate` | 59 | `commands/icons.ts:35` `FEATURE_ICONS.illustrate`; glyph asset `assets/brand/glyphs/synapse-illustrate.svg` |
 | `synapse-video` | 60 | `commands/icons.ts` `FEATURE_ICONS.video` |
 
-The `synapse-illustrate` callout identity (`shared/callouts.ts:21`) shares the name only; its callout icon is `lucide-image` (`styles.css:146-149`), not this glyph.
+The `synapse-illustrate` callout identity (`shared/callouts.ts:21`) shares the name only; its callout icon is `lucide-image` (`styles.css:144-148`), not this glyph.
 
 ## File Inventory
 

@@ -8,6 +8,7 @@ Cross-cutting base layer used by all feature modules: AI client, System 1 decisi
 
 Canonical homes (re-exported elsewhere for back-compat — import from the `shared` barrel, never an internal file):
 - `url-detector.ts` (`detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult`) — moved here from `src/video/` to break the former shared⇄video import cycle; the `video` barrel no longer re-exports the functions (only `Platform` via `video/types.ts:3`), so every consumer imports from `shared`.
+- `video-urls.ts` (`findVideoUrls`, `VideoUrlEmbed`) and `image-embeds.ts` (`findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `ImageEmbed`) — moved here from `src/video/note-scanner.ts` / `src/image/note-scanner.ts` so `transcription` scans a note without a runtime `video` / `image` import; both barrels re-export the same names.
 - `redact.ts` (`redactSecrets`, `redactError`) — single source of truth for API-key/token redaction; `ai-client.ts` re-exports `redactSecrets` (only). `redactSecrets` is consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts` (Test-button validation-catch message), `update-checker.ts` (fetch-failure detail), and `notifications.ts` (operation-error + notifyError paths). `redactError(value)` renders a caught error to a redacted, log-safe string (prefers `.stack`, falls back to `name: message`, then `redactSecrets`); it is the one sanctioned way to log a raw error, routed through by every raw-error console sink (`main.ts` settings-migration catch, `shared/data-folder-migration.ts`, `onboarding/onboarding.ts` first-run catch, `checkpoints/checkpoint-recovery.ts`, `update-checker.ts` unexpected-error catch, `transcript-cache.ts`, audio, intake, rem/semantic-matcher, elaboration/image-analyzer, elaboration/proposer, shared/image-preprocess, transcription/caption-strategy + youtube-captions, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, shared/fire-and-forget). Previously `ai-client` and the former `api-utils.notifyError` each kept inline copies that drifted (the `notifyError` copy lacked the Google `AIza` pattern). The console-sink contract is lint-enforced (#418) by the custom type-aware rule `synapse/no-unredacted-console` (`scripts/eslint-rules/no-unredacted-console.mjs`, scoped in `eslint.config.mjs` to shipped `src/**/*.ts`, excluding tests/mocks/test-utils): every value reaching `console.*` must be statically string-like or routed through `redactError`/`redactSecrets`.
 - `encoding.ts` (`arrayBufferToBase64`, `base64EncodedLength`) — base64 helpers shared by audio + image + elaboration; nothing re-exports them any more (the former `image/preprocess.ts` back-compat re-export is gone).
 - `image-preprocess.ts` (`preprocessImage`, `PreprocessResult`) — moved here from `image/preprocess.ts` so `elaboration/image-analyzer.ts` and `image/extractor.ts` both reach it without a cross-feature import; barrel `index.ts:50-51`.
@@ -172,7 +173,10 @@ function describeNetworkError(error: unknown, resource: string): string | null  
 
 // validation.ts
 function sanitizeUrl(url: string): string
+function isPrivateHost(hostname: string): boolean          // true for loopback, private-network, link-local, multicast, reserved and unqualified hosts (IPv4, IPv6 incl. embedded-IPv4 forms, localhost / .local / .internal, bare decimal / hex); hostname check only — no DNS or redirect resolution
+function sanitizePublicUrl(url: string): string            // sanitizeUrl + throws 'URL targets a local or private-network address' when isPrivateHost(hostname); for URLs taken from fetched pages or providers
 function sanitizePath(filePath: string): string
+function assertVaultRelativePath(path: string): string    // returns path; throws when empty, absolute (leading / or drive letter), a `..` segment, or a null byte; for paths read back from stored plugin data
 function ensureWithinVault(filePath: string, vaultBasePath: string): string  // EXISTS but not yet wired into write paths
 function sanitizeAIResponse(text: string): string
 function stripCodeFences(text: string): string
@@ -265,6 +269,22 @@ function isCalloutHeader(line: string, type: CalloutType): boolean              
 function hasCallout(content: string, type: CalloutType): boolean                            // any line of content is a `type` header
 function buildCallout(type: CalloutType, title: string, body: string, collapsed?: boolean): string
 function calloutForTranscriptionResult(result: { reformatted?: boolean; schemaId?: string }): { type: CalloutType; verb: string }
+
+// audio-embeds.ts — audio-embed scan shared by audio, summarize, transcription
+interface AudioEmbed { fileName: string; file: TFile; line: number }
+const AUDIO_EXTENSIONS: RegExp   // /\.(mp3|wav|m4a|ogg|flac|webm|aac)$/i
+const AUDIO_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:mp3|wav|m4a|ogg|flac|webm|aac))\]\]/gi
+function findAudioEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): AudioEmbed[]   // skips embeds already transcribed
+
+// video-urls.ts — video-URL scan shared by video, transcription
+interface VideoUrlEmbed { url: string; platform: Platform; line: number }   // video-urls.ts:6
+function findVideoUrls(content: string): VideoUrlEmbed[]                     // video-urls.ts:12; skips blockquote lines, twitter, URLs already transcribed
+
+// image-embeds.ts — image-embed scan shared by image, transcription
+interface ImageEmbed { fileName: string; file: TFile; line: number }   // image-embeds.ts:4
+const IMAGE_EXTENSIONS: RegExp   // /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i
+const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi
+function findImageEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): ImageEmbed[]   // image-embeds.ts:13; skips embeds already OCR'd
 
 // media-embed.ts (#561) — the only `![[file]]` writer for media downloaded into the vault
 function mediaEmbedFor(videoVaultPath: string): string | undefined                                                  // file name only; undefined for a folder-only path
@@ -634,7 +654,7 @@ function scoreLyricsContent(content: string): number
 | `file-utils.test.ts` | Tests | `getMarkdownFiles` recursive/non-recursive scope, `getIncludedMarkdownFiles` exclusion filtering, `findAvailableVaultPath` suffixing |
 | `api-utils.ts` | `withRetry`, `sleep`, `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError` | Retry with exponential backoff + per-error `shouldRetry` gate, network-error classification/disclosure. `notifyError` no longer lives here — error display moved to `NotificationManager` |
 | `api-utils.test.ts` | Tests | `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError`, `withRetry` |
-| `validation.ts` | `sanitizeUrl`, `sanitizePath`, `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
+| `validation.ts` | `sanitizeUrl`, `sanitizePublicUrl`, `isPrivateHost`, `sanitizePath`, `assertVaultRelativePath` (the three new ones re-exported on the barrel's last line, `index.ts:233`), `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
 | `validation.test.ts` | Tests | Validation tests |
 | `url-detector.ts` | `detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult` | Regex platform detection (moved here from video/) |
 | `url-detector.test.ts` | Tests | URL detection tests (moved here from video/) |
@@ -650,6 +670,12 @@ function scoreLyricsContent(content: string): number
 | `frontmatter-utils.test.ts` | Tests | Frontmatter tests; `splitRawFrontmatter` describe (`:127`): byte-for-byte raw block, no-frontmatter case, mid-document `---` not matched, body boundary agrees with `parseFrontmatter`, block without trailing newline |
 | `callouts.ts` | `CALLOUT_TYPES`, `CALLOUT_BASES`, `buildCallout`, `calloutHeaderToken`, `calloutHeaderLine`, `calloutIdentity`, `calloutHeaderSource`, `parseCalloutHeader`, `isCalloutHeader`, `hasCallout`, `calloutForTranscriptionResult`, `ENRICHMENT_START`, `ENRICHMENT_END`, `CalloutType`, `CalloutBase` | Unified callout registry, builder and matcher for AI content (#554). Callouts are written `> [!<base>|<identity>]` (`CALLOUT_BASES` picks the base; `calloutHeaderLine` is the only header writer); readers accept that form and the legacy bare `> [!synapse-*]` through `calloutIdentity` / `isCalloutHeader` / `calloutHeaderSource`. `calloutForTranscriptionResult` selects callout type and verb based on `schemaId` |
 | `callouts.test.ts` | Tests | Every type has a base; header token/line; identity + matcher for both spellings (nested prefix, fold marker, base-only `[!summary]` rejected); `calloutHeaderSource` fragment; `buildCallout` round-trips through the matcher |
+| `audio-embeds.ts` | `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `AudioEmbed` (barrel, `index.ts:227-228`); `hasTranscriptionBelow` (module-only) | Audio-embed scan over note content: `![[*.mp3\|wav\|m4a\|ogg\|flac\|webm\|aac]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout. Imports `./callouts` only. Re-exported by the `audio` barrel; used by summarize/index, transcription/ (direct from `shared`) |
+| `audio-embeds.test.ts` | Tests | Embed detection, already-transcribed skip (legacy, callout), line numbers, unresolved files; `hasTranscriptionBelow` incl. the lyrics callout |
+| `video-urls.ts` | `findVideoUrls`, `VideoUrlEmbed` (barrel, `index.ts:229-230`); `hasTranscriptionBelow` (module-only) | Video-URL scan over note content via `findUrls` + `detectPlatform`: skips blockquote lines, undetected and `twitter` URLs, and a URL whose next 3 lines carry a legacy `**Transcription of X**` or a `synapse-transcription` callout. Imports `./callouts`, `./url-classifier`, `./url-detector`. Re-exported by the `video` barrel; used by video/index (type), transcription/ |
+| `video-urls.test.ts` | Tests | Moved from `video/note-scanner.test.ts`: URL detection per platform, markdown links, twitter skip, already-transcribed skip, line numbers; `hasTranscriptionBelow` |
+| `image-embeds.ts` | `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `ImageEmbed` (barrel, `index.ts:231-232`); `hasExtractionBelow` (module-only) | Image-embed scan over note content: `![[*.png\|jpg\|jpeg\|gif\|webp\|bmp\|tiff]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**OCR of X**` or a `synapse-ocr` callout. Imports `./callouts` only. Re-exported by the `image` barrel; used by image/index (type), transcription/ |
+| `image-embeds.test.ts` | Tests | Moved from `image/note-scanner.test.ts`: embed detection, already-extracted skip, line numbers, unresolved files |
 | `media-embed.ts` | `mediaEmbedFor`, `buildMediaEmbedLines` | Downloaded-media embed lines (#561): one builder for the `![[file]]` + blank line every write site puts above a transcription/summary callout; gated on `video.embedInNote`, dedupes against the note content when given. No imports. Used by `transcription/url-transcription.ts`, `video/index.ts`, `summarize/index.ts` |
 | `media-embed.test.ts` | Tests | File-name-only link, folder-only path, on/off, no download, already-embedded, different file embedded |
 | `link-guard.ts` | `stripUnresolvedLinks`, `wikilinkTargets`, `linkResolves`, `LinkResolver`, `StripLinksOptions` | Unresolved-wikilink guard (#581). No imports. Used by deep-dive, elaboration, summarize, enrichment, intake, illustrate, audio, video, image, transcription |
@@ -708,7 +734,7 @@ function scoreLyricsContent(content: string): number
 | `review-action.test.ts` | Tests | reviewAction gate tests |
 | `hash-utils.ts` | `hashString`, `contentKey` | Browser-safe FNV-1a string hashing (no Node `crypto`); content-addressing only, NOT security. `hashString` -> 16-char hex; `contentKey` length-prefixes parts before hashing. Used by ai-client cache key, elaboration proposal dedup, title content keys |
 | `hash-utils.test.ts` | Tests | Hash + content-key tests |
-| `untrusted-content.ts` | `wrapUntrusted`, `UNTRUSTED_OPEN_TAG`, `UNTRUSTED_CLOSE_FENCE` | Structural prompt-injection defense: fences fetched external text (article/tweet/Reddit bodies, image analysis) in labeled delimiters with a data-not-instructions frame + anti-breakout sentinel scrubbing. Used by elaboration/proposer, enrichment/index (tweet text), summarize/summarizer (all summarized content), illustrate/note-analyzer (note body) |
+| `untrusted-content.ts` | `wrapUntrusted`, `UNTRUSTED_OPEN_TAG`, `UNTRUSTED_CLOSE_FENCE` | Structural prompt-injection defense: fences fetched external text (article/tweet/Reddit bodies, image analysis) in labeled delimiters with a data-not-instructions frame + anti-breakout sentinel scrubbing. Used by elaboration/proposer, enrichment/index (tweet text), summarize/summarizer (all summarized content), illustrate/note-analyzer (note body), audio/post-processor (transcript text) |
 | `untrusted-content.test.ts` | Tests | Fence/sanitization tests |
 | `insertion-point.ts` | `resolveInsertionPoint`, `applyInsertion`, `describeInsertion`, `scanBlocks`, `locateRegion`, `InsertionAnchor`, `InsertionStrategy`, `InsertionBlockType`, `ResolvedInsertion`, `RegionLocator`, `ResolveInsertionOptions`, `LocatedRegion`, `StructBlock` | Structure-aware, region/container-aware insertion determination (#213): scan the body into blocks (quotes carry inner structure), resolve an anchor to the END of its containing block, prefer after a heading's opening paragraph, optionally restrict to a produced region and land inside callouts with a prefix, apply with exactly one blank line each side, describe for review UIs. Resolve at proposal time for the preview, re-resolve at accept against the live note. Used by illustrate and `rem/skip-regions.ts` (`scanBlocks`); the seam for any proposal kind that places content mid-document |
 | `insertion-point.test.ts` | Tests | Block scanner (fences with blanks, loose lists, tables, callouts, math, quote children), section-lead vs heading-only, mid-paragraph fragment, never-inside-block, blank-line discipline, stale-line fallback, region by type/title in both header spellings (`[!synapse-summary]` and `[!summary|synapse-summary]` resolve to the same identity and label), miss-in-region, prefixed embed/nested callout/mermaid application, depth-2 prefixes, descriptions |
@@ -827,7 +853,9 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 | Function | Rejects |
 |----------|---------|
 | `sanitizeUrl` | null bytes, non-HTTP(S), shell metacharacters |
+| `sanitizePublicUrl` | everything `sanitizeUrl` rejects, plus a hostname for which `isPrivateHost` is true (loopback, private-network, link-local, multicast, reserved, unqualified) |
 | `sanitizePath` | empty, null bytes, `..` traversal, shell metacharacters |
+| `assertVaultRelativePath` | empty, null bytes, absolute (leading `/` or drive letter), any `..` segment |
 | `ensureWithinVault` | paths resolving outside vault base (helper EXISTS but is not yet wired into write paths — no active write-boundary enforcement) |
 | `sanitizeAIResponse` | script tags, event handlers, javascript/data/vbscript URIs, iframe/embed/object |
 | `blockquoteOriginal` | (transforms) wraps body in blockquote, preserves frontmatter |
@@ -862,7 +890,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `withCacheReport` / `trackAiCache` / `transcriptCacheUse` / `mergeCacheUse` | audio/index, video/index, transcription/insert-url-transcript, summarize/index, tidy/index, elaboration/index, enrichment/index, deep-dive/index, organize/index, rem/index, title/index, image/index (#527 finish messages) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
-| `wrapUntrusted` | elaboration/proposer (fetched-link content, related-notes context, image-analysis prompt fencing; `elaboration/proposer.ts:252,336,410`), enrichment/index (fetched tweet text, `enrichment/index.ts:724`), summarize/summarizer (summarized content, `summarize/summarizer.ts:33`), illustrate/note-analyzer (note body, `illustrate/note-analyzer.ts:114`) |
+| `wrapUntrusted` | elaboration/proposer (fetched-link content, related-notes context, image-analysis prompt fencing; `elaboration/proposer.ts:252,336,410`), enrichment/index (fetched tweet text, `enrichment/index.ts:724`), summarize/summarizer (summarized content, `summarize/summarizer.ts:33`), illustrate/note-analyzer (note body, `illustrate/note-analyzer.ts:121`), audio/post-processor (whole transcript, preceding context, section body, key-points input; `audio/post-processor.ts:61,129,131,151`) |
 | `findAvailableVaultPath` | video/index (same-day re-download), title/index (duplicate "iterate" resolution, #408) |
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
 | `voiceInstruction` | elaboration/proposer, deep-dive/note-generator, summarize/summarizer (#540) |
@@ -879,6 +907,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:56`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via `ModuleDeps`), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
 | `classifyUrl` / `extractUrls` | intake (URL routing), elaboration/index, enrichment/index, deep-dive/index, illustrate/index (source URLs) |
+| `findAudioEmbeds` / `AUDIO_EXTENSIONS` / `AUDIO_EMBED_REGEX` / `AudioEmbed` | summarize/index (`collectTargets`), audio/index (barrel re-export + `AudioEmbed` params), transcription/ (via the `audio` barrel) |
 | `findUrls` / `findMarkdownLinks` | summarize/note-scanner, summarize/index, video/note-scanner, elaboration/proposer, enrichment/index (the only URL matchers; no local `URL_REGEX`, #543) |
 | `isEffectivelyEmptyProse` | summarize/index (`collectTargets` note-content gate), elaboration/proposer (`isLinkDominated`) (#544) |
 | `detectPlatform` / `isSupportedUrl` | video/index (`detectPlatform`), transcription/ (unified-modal, caption-strategy, local-extraction-strategy, youtube-captions), summarize (platform gating) — no barrel re-exports them |
@@ -889,7 +918,9 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `getIncludedMarkdownFiles` | candidate/index enumerations (tag indexes, title maps, link/mention targets) |
 | `fetchTweetContent` | summarize/index, elaboration/proposer, enrichment/index |
 | `isTwitterUrl` | elaboration/proposer, enrichment/index |
-| `sanitizeUrl` | video/index, video/audio-extractor |
+| `sanitizeUrl` | video/index, video/audio-extractor, transcription/duration-detector, transcription/youtube-captions; in-layer: content-fetcher (`fetchHtmlDocument`, `content-fetcher.ts:42`), tweet-fetcher, reddit-fetcher, url-classifier |
+| `sanitizePublicUrl` | illustrate/asset-writer (`illustrate/asset-writer.ts:36`), illustrate/linked-pages (`illustrate/linked-pages.ts:21`) |
+| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:176`), organize/index (`organize/index.ts:440,539,598`) |
 | `sanitizePath` | video/audio-extractor |
 | `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, image/index, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `parseFrontmatter` | enrichment/index, enrichment/enrichment-applier, tidy/index |

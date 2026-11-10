@@ -20,7 +20,7 @@ class ImageModule {
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void> // notify + discard (no mid-batch resume)
 }
 
-// re-exported from ./note-scanner (index.ts:13)
+// re-exported from ../shared (index.ts:12; canonical home: shared/image-embeds.ts)
 function findImageEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): ImageEmbed[]
 const IMAGE_EXTENSIONS: RegExp   // /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i
 const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi
@@ -31,9 +31,8 @@ const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|
 // re-exported from ./settings-section (index.ts:243)
 function renderImageSettings(ctx: SettingsSectionContext): void
 
-// re-exported types from ./types (index.ts:14)
-interface ImageEmbed { fileName: string; file: TFile; line: number }
-interface OCRResult  { text: string; sourceName?: string }
+interface ImageEmbed { fileName: string; file: TFile; line: number }   // shared/image-embeds.ts:4; re-exported via index.ts:13
+interface OCRResult  { text: string; sourceName?: string }           // types.ts:1; re-exported via index.ts:14
 ```
 
 ## File-level exports (NOT in the index.ts barrel)
@@ -45,8 +44,6 @@ class ImageExtractor {
   extract(imageData: ArrayBuffer, fileName: string, aiOpts?: AIRequestOptions): Promise<OCRResult>   // extractor.ts:16; chat() gets { ...aiOpts, model: image.visionModel || ai.model } (extractor.ts:46, #527)
 }
 
-// note-scanner.ts:38 — exported from note-scanner.ts only
-function hasExtractionBelow(lines: string[], embedLine: number, fileName: string): boolean
 ```
 
 Private members of `ImageModule` (index.ts), documented because they define the queue contract (#483):
@@ -61,12 +58,11 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
 
 | File | Export | Purpose |
 |------|--------|---------|
-| `types.ts` | `ImageEmbed`, `OCRResult` | Type definitions |
+| `types.ts` | `OCRResult` | Type definitions |
 | `extractor.ts` | `ImageExtractor` | Multi-modal OCR via `AIClient.chat()` with `ContentBlock[]`; passes the vision model per call via `AIRequestOptions.model`; downscales via `shared` `preprocessImage` |
-| `note-scanner.ts` | `findImageEmbeds`, `hasExtractionBelow`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX` | Scan note text for image embeds; skip embeds already OCR'd |
 | `settings-section.ts` | `renderImageSettings` | Settings accordion renderer (registered in `src/settings-ui/settings-tab.ts:42`) |
 | `index.ts` | `ImageModule` + barrel re-exports | Orchestrator, public extraction methods, checkpoint management, per-note queue serialization (private `queued`, `insertFileExtraction`, `insertExtractions`, #483) |
-| `extractor.test.ts`, `note-scanner.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests (`preprocess.test.ts` moved to `shared/image-preprocess.test.ts`) |
+| `extractor.test.ts`, `index.test.ts`, `settings-section.test.ts` | Tests | Co-located unit tests (`preprocess.test.ts` moved to `shared/image-preprocess.test.ts`, `note-scanner.test.ts` to `shared/image-embeds.test.ts`) |
 | `cache-report.test.ts` | Tests | #527 finish wording: single-OCR hit/miss, batch aggregate hit/miss |
 
 ## Data Flow
@@ -108,10 +104,10 @@ Output callout (collapsed):
 
 ## Note Scanning
 
-`findImageEmbeds(content, sourcePath, metadataCache)` (note-scanner.ts:8):
+`findImageEmbeds(content, sourcePath, metadataCache)` lives in `shared/image-embeds.ts:13` (moved out of this module so `transcription` scans without importing `image`; this barrel re-exports it):
 - Matches `IMAGE_EMBED_REGEX` per line; resolves files via `metadataCache.getFirstLinkpathDest()`.
 - Includes only `TFile` results whose name passes `IMAGE_EXTENSIONS`.
-- Skips embeds with an existing OCR marker in the 3 lines below (`hasExtractionBelow`), matching both the legacy `**OCR of <name>**` and the `synapse-ocr` callout (either spelling, `isCalloutHeader`, #554) forms.
+- Skips embeds with an existing OCR marker in the 3 lines below (`hasExtractionBelow`, `shared/image-embeds.ts:43`, not barrel-exported), matching both the legacy `**OCR of <name>**` and the `synapse-ocr` callout (either spelling, `isCalloutHeader`, #554) forms.
 - Returns `ImageEmbed[]` with `fileName`, `file`, and zero-based `line`.
 
 ## Vision Model Override
@@ -158,15 +154,15 @@ All cross-module imports resolve through the `../shared` barrel, never an intern
 |--------|------|
 | `AIClient`, `ContentBlock`, `NotificationManager`, `AIRequestOptions`, `arrayBufferToBase64`, `preprocessImage` | `shared` (extractor.ts:1-2) |
 | `trackAiCache`, `withCacheReport`, `CacheUse` | `shared` (index.ts, #527) |
-| `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `sanitizeAIResponse`, `generateId` | `shared` (index.ts); `isCalloutHeader` (note-scanner.ts) |
+| `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `sanitizeAIResponse`, `generateId` | `shared` (index.ts) |
 | `CheckpointManager`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask` | `shared` (index.ts) |
 | `NoteOperationQueue`, `OperationHandle` | `shared` (index.ts) |
 | `isPathExcluded`, `findMatchingRule` | `shared` (index.ts) |
 | `SettingsSectionContext` | `shared` (settings-section.ts) |
 
 Consumed by:
-- `transcription/note-media-modal.ts` (`import type { ImageEmbed }`) and `transcription/note-media-transcription.ts` (`findImageEmbeds` runtime, `ImageEmbed` type); the modal path invokes `ImageModule.extractAndInsert()`.
-- No other feature imports this barrel; `elaboration/image-analyzer.ts` takes `preprocessImage` from `shared`.
+- `modules/registry.ts` (`ImageModule`) and `settings-ui/` (`renderImageSettings`); `main.ts` wires `ImageModule.extractAndInsert()` into the note-media modal path.
+- No feature imports this barrel: `transcription` takes `findImageEmbeds` / `ImageEmbed` from `shared`; `elaboration/image-analyzer.ts` takes `preprocessImage` from `shared`.
 
 ## Supported Image Formats
 

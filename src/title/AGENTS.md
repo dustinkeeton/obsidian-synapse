@@ -155,6 +155,7 @@ applyAccept(id, options?)  [private, holds the source note's queue slot]  -> Tit
   --> store.load(id) AGAIN (guard evaluated under the slot, not on a pre-wait snapshot)
   --> guard: { status:'skipped' } if proposal.status !== 'pending'
   --> if source note no longer a TFile: info notice, updateStatus 'rejected', refreshView, { status:'skipped' }
+  --> if stored proposedTitle contains / \ or a null byte, or is empty / only dots after trim (index.ts:363): info notice, updateStatus 'rejected', refreshView, { status:'skipped' }
   --> targetPath = computeTargetPath(file, proposedTitle); collision = a different file occupies targetPath  [live recheck #408]
   --> snapshot inbound links: collectInboundLinks(app, file) BEFORE any rename/merge (#485)
   --> no collision: vault.rename(file, targetPath), remediateBacklinks, accepted, announce --> { status:'renamed', path }
@@ -257,6 +258,7 @@ Out: constructed by `modules/registry.ts:14` (TitleModule); `main.ts:192` wires 
 | Note content empty/whitespace | Silent return; no proposal generated |
 | Suggested title empty or itself `isUntitled()` | Silent return; no proposal saved (`checkUntitled`) |
 | `acceptProposal`: source note missing | `notifications.info('Source note no longer exists')`; proposal marked `rejected`; returns `{ status: 'skipped' }` |
+| `acceptProposal`: stored `proposedTitle` contains `/`, `\`, a null byte, or is empty / only dots after trim (index.ts:363) | `notifications.info('Proposed title is not a valid note name')`; proposal marked `rejected`; returns `{ status: 'skipped' }`; no rename |
 | `acceptProposal`: live collision, no resolution (plain manual accept) | `notifications.info('"<title>" already exists — choose Add suffix or Merge')`; proposal stays pending; returns `{ status: 'conflict' }` |
 | `acceptProposal`: merge target is not a TFile | `notifications.info('Nothing to merge into — renamed instead')`; plain rename; returns `{ status: 'renamed' }` |
 | `acceptProposal`: `vault.rename`/`vault.process` throws | `notifications.notifyError('Failed to rename note', error)`; rethrows `Error('Rename failed: <msg>')` |

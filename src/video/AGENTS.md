@@ -6,7 +6,7 @@ last-updated: 2026-11-09
 
 Downloads videos from YouTube/TikTok/Instagram via yt-dlp, extracts audio with ffmpeg, delegates transcription to AudioModule, and optionally saves the video file into the vault. Desktop-only: VideoModule is constructed only when `Platform.isDesktop` (it may be null off-desktop).
 
-URL platform detection lives in `src/shared/url-detector.ts` (moved out of this module to break the shared/video cycle). The barrel no longer re-exports `detectPlatform`, `isSupportedUrl`, or `UrlDetectionResult` — import them from `shared`. `types.ts:3` still re-exports the `Platform` union (used by `VideoUrlEmbed`/`VideoMetadata`).
+URL platform detection lives in `src/shared/url-detector.ts` (moved out of this module to break the shared/video cycle). The barrel no longer re-exports `detectPlatform`, `isSupportedUrl`, or `UrlDetectionResult` — import them from `shared`. `types.ts:3` still re-exports the `Platform` union (used by `VideoSource`).
 
 ## Public API
 
@@ -50,8 +50,10 @@ function createFfmpegAvailability(extractor: AudioClipper | undefined): () => Pr
 // Re-exported from ../shared via types.ts:3 (canonical home: shared/url-detector.ts)
 type Platform = 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown'
 
+// Re-exported from ../shared (index.ts:28; canonical home: shared/video-urls.ts:12)
+function findVideoUrls(content: string): VideoUrlEmbed[]
+
 // Owned by this module
-function findVideoUrls(content: string): VideoUrlEmbed[]   // re-exported via index.ts:28
 function renderVideoSettings(ctx: SettingsSectionContext): void  // re-exported via index.ts:382
 
 // Types (re-exported index.ts:17-25)
@@ -63,7 +65,7 @@ interface VideoProcessOptions {
   timeRange?: TimeRange
   bypassCache?: boolean          // types.ts:24; forwarded to AudioModule.transcribe as TranscribeOptions.bypassCache (index.ts:140, #527)
 }
-interface RoutedUrlTranscript {  // types.ts:54; structurally compatible with transcription's UrlTranscript, declared here to avoid a video -> transcription import
+interface RoutedUrlTranscript {  // types.ts:48; structurally compatible with transcription's UrlTranscript, declared here to avoid a video -> transcription import
   text: string
   videoVaultPath?: string
   reformatted?: boolean
@@ -71,7 +73,7 @@ interface RoutedUrlTranscript {  // types.ts:54; structurally compatible with tr
   cached?: boolean               // served from the transcript store (#488)
   aiCached?: boolean             // fresh transcript whose AI post-processing replayed a cached response (#527)
 }
-type RoutedUrlTranscriber = (url: string, parentOp?: { update: (message: string) => void }) => Promise<RoutedUrlTranscript>  // types.ts:69; throws when no tier can handle the URL
+type RoutedUrlTranscriber = (url: string, parentOp?: { update: (message: string) => void }) => Promise<RoutedUrlTranscript>  // types.ts:63; throws when no tier can handle the URL
 interface ExtractionResult { audioPath: string; metadata: VideoMetadata }
 interface VideoMetadata {
   title: string
@@ -82,7 +84,7 @@ interface VideoMetadata {
   platform?: string
   url?: string
 }
-interface VideoUrlEmbed { url: string; platform: Platform; line: number }
+interface VideoUrlEmbed { url: string; platform: Platform; line: number }   // shared/video-urls.ts:6; re-exported via index.ts:25
 interface VideoSource {
   type: 'url' | 'file'
   platform?: Platform
@@ -107,25 +109,17 @@ class DependencyMissingError extends Error {   // audio-extractor.ts:77
   readonly tool: 'yt-dlp' | 'ffmpeg'
 }
 class AudioCodecReadError extends Error {}     // audio-extractor.ts:57; ffprobe could not read the audio codec
-function hasTranscriptionBelow(lines: string[], embedLine: number, url: string): boolean  // note-scanner.ts:31
-class FrameExtractor {                          // frame-extractor.ts:6 — placeholder, throws on use
-  constructor(getSettings: () => SynapseSettings)
-  extractFrames(videoPath: string): Promise<string[]>
-}
 ```
 
 ## File Inventory
 
 | File | Class/Export | Purpose |
 |------|-------------|---------|
-| `types.ts` | `VideoProcessOptions`, `ExtractionResult`, `VideoMetadata`, `VideoUrlEmbed`, `VideoSource`, `RoutedUrlTranscript`, `RoutedUrlTranscriber`, re-export `Platform` (types.ts:3) | Type definitions |
-| `note-scanner.ts` | `findVideoUrls`, `hasTranscriptionBelow` | Scan note content for video URLs |
-| `note-scanner.test.ts` | Tests | Note scanner unit tests |
+| `types.ts` | `VideoProcessOptions`, `ExtractionResult`, `VideoMetadata`, `VideoSource`, `RoutedUrlTranscript`, `RoutedUrlTranscriber`, re-export `Platform` (types.ts:3) | Type definitions |
 | `audio-extractor.ts` | `AudioExtractor`, `DependencyMissingError`, `AudioCodecReadError` | yt-dlp/ffmpeg via `execFile` (no shell); URL download, file extract, clip, concat, dependency check, no-audio detection |
 | `audio-extractor.test.ts` | Tests | AudioExtractor unit tests |
 | `ffmpeg-availability.ts` | `createFfmpegAvailability` | Memoized ffmpeg probe factory; consumed by `main.ts:216` as `NoteMediaTranscriptionDeps.isFfmpegAvailable` (combine-audio gate in `NoteMediaModal`) |
 | `ffmpeg-availability.test.ts` | Tests | Memoization, no-extractor false, probe-failure false |
-| `frame-extractor.ts` | `FrameExtractor` | Placeholder; `extractFrames` throws unless disabled (unimplemented) |
 | `settings-section.ts` | `renderVideoSettings` | Video settings accordion renderer for settings-tab.ts |
 | `settings-section.test.ts` | Tests | Settings section tests |
 | `mobile-safety.test.ts` | Tests | Desktop-only guard tests |
@@ -193,14 +187,14 @@ class FrameExtractor {                          // frame-extractor.ts:6 — plac
 
 ## Note Scanning
 
-`findVideoUrls(content)` in `note-scanner.ts:6`:
+`findVideoUrls(content)` lives in `shared/video-urls.ts:12` (moved out of this module so `transcription` scans without importing `video`; this barrel re-exports it):
 - URLs per line via shared `findUrls` (paren-aware, #543); no local regex
 - Skips blockquote lines (`>` prefix — transcription output, not user content)
 - Skips undetected URLs and `detected.platform === 'twitter'`
 - Skips URLs with an existing transcription callout within 3 lines below
 - Returns `VideoUrlEmbed[]` with line numbers
 
-`hasTranscriptionBelow(lines, embedLine, url)` (`note-scanner.ts:31`) matches the legacy `**Transcription of ...**` and the `synapse-transcription` callout (either spelling, `isCalloutHeader`, #554) formats.
+`hasTranscriptionBelow(lines, embedLine, url)` (`shared/video-urls.ts:39`, not barrel-exported) matches the legacy `**Transcription of ...**` and the `synapse-transcription` callout (either spelling, `isCalloutHeader`, #554) formats.
 
 ## Commands Registered
 
@@ -221,10 +215,10 @@ Registered via `registrar.register('check-dependencies', ...)` (index.ts:68); Ob
 | `video.downloadFolder` | `string` | `'Media'` | Vault folder to save downloaded videos (empty = do not save) |
 | `video.embedInNote` | `boolean` | `true` | Add `![[video.mp4]]` embed to note when a video is saved |
 | `video.captionsFirst` | `boolean` | `true` | Prefer the YouTube caption tier over download+transcribe (#184; `settings.ts:226`); consumed by `transcription/caption-strategy.ts` `canHandle`, toggle rendered at `settings-section.ts:173` |
-| `video.frameExtraction.enabled` | `boolean` | `false` | Frame extraction gate (unimplemented) |
-| `video.frameExtraction.intervalSeconds` | `number` | `30` | Seconds between extracted frames |
-| `video.frameExtraction.visionModel` | `string` | `'opus'` | Vision model for frame analysis |
-| `video.frameExtraction.maxFrames` | `number` | `20` | Max frames to extract |
+| `video.frameExtraction.enabled` | `boolean` | `false` | Declared only (`settings.ts:206-211`, defaults `settings.ts:551`); no read site in `src/video/` — no frame extractor exists |
+| `video.frameExtraction.intervalSeconds` | `number` | `30` | Declared only; no read site |
+| `video.frameExtraction.visionModel` | `string` | `'opus'` | Declared only; touched solely by the v4 retired-model migration (`shared/settings-migrations.ts:127`) |
+| `video.frameExtraction.maxFrames` | `number` | `20` | Declared only; no read site |
 
 Settings UI: `renderVideoSettings` (`settings-section.ts:152`) renders the accordion; `addPathSetting` attaches per-OS install-help panels (#382/#383) to the yt-dlp and ffmpeg path fields. Invoked only on desktop by `settings-tab.ts`.
 
@@ -242,18 +236,16 @@ Settings UI: `renderVideoSettings` (`settings-section.ts:152`) renders the accor
 In:
 - `../audio` — `AudioModule` (runtime value edge: reuses the transcription pipeline), `TranscriptionResult` (type)
 - `../commands` — `CommandRegistrar`
-- `../shared` — `NoteOperationQueue` (#483), `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `buildMediaEmbedLines`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findAvailableVaultPath`, `isNoSpeechError`, `noSpeechNotice`, `transcriptCacheUse`, `withCacheReport` (index.ts:6-11); type-only `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule` (index.ts:12); `TimeRange` (types.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES`, `isCalloutHeader`, `findUrls` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
-- `../settings` — `SynapseSettings`, `VideoSettings`, `FrameExtractionSettings` (types)
+- `../shared` — `NoteOperationQueue` (#483), `ensureFolder`, `NotificationManager`, `sanitizeUrl`, `buildCallout`, `buildMediaEmbedLines`, `calloutForTranscriptionResult`, `CheckpointManager`, `generateId`, `detectPlatform`, `loadNodeModules`, `isPathExcluded`, `findAvailableVaultPath`, `isNoSpeechError`, `noSpeechNotice`, `transcriptCacheUse`, `withCacheReport` (index.ts:6-11); type-only `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `OperationHandle`, `ModuleDeps`, `FeatureModule`, `VideoUrlEmbed` (index.ts:12); `TimeRange` (types.ts); `sanitizePath`, `describeNetworkError`, `isRecord`, `parseJson`, `shellEnv`, `NodeModules` (audio-extractor.ts); `CALLOUT_TYPES`, `isCalloutHeader`, `findUrls` (note-scanner.ts); `SettingsSectionContext`, `NotificationManager` (settings-section.ts)
+- `../settings` — `SynapseSettings` (`index.ts:3`, `audio-extractor.ts:1`)
 
 - `../audio` (ffmpeg-availability.ts:1) — `AudioClipper` (type-only)
 
 Out (consumed by):
-- `src/transcription/note-media-modal.ts` — `import type { VideoUrlEmbed }`
-- `src/transcription/note-media-transcription.ts` — `findVideoUrls` (runtime), `VideoUrlEmbed` (type)
 - `src/modules/registry.ts:6` — `VideoModule`, `AudioExtractor` (constructs the extractor handed to `AudioModule` as its `AudioClipper`)
 - `src/main.ts` — `createFfmpegAvailability(audio.extractor)`
 
-VideoModule → AudioModule is the one documented cross-feature runtime dependency; `audio` has no edge back to `video` (it declares the structural `AudioClipper` interface instead, `audio/types.ts:43`). `transcription/unified-modal.ts` now takes `detectPlatform` from `shared`, not from this barrel.
+VideoModule → AudioModule is the one documented cross-feature runtime dependency; `audio` has no edge back to `video` (it declares the structural `AudioClipper` interface instead, `audio/types.ts:36`). `transcription` takes `detectPlatform`, `findVideoUrls` and `VideoUrlEmbed` from `shared`, not from this barrel; no non-test file outside `modules/`, `settings-ui/` and `main.ts` imports `../video`.
 
 ## Error States
 
@@ -273,7 +265,7 @@ VideoModule → AudioModule is the one documented cross-feature runtime dependen
 
 - Batch transcript blocks pass through `stripUnresolvedLinks` before insertion (index.ts:286); `![[downloaded video]]` embeds are untouched (#581).
 - Desktop-only: `loadNodeModules()` throws `DesktopOnlyError` off-desktop; VideoModule is constructed only when the registry entry's `platform: () => Platform.isDesktop` predicate passes (`modules/registry.ts`) and may be null. AudioExtractor also asserts desktop at first fs/subprocess access.
-- `FrameExtractor` (`frame-extractor.ts`) is a placeholder: `extractFrames` returns `[]` when disabled, otherwise throws "not yet implemented".
+- No frame extraction exists: the `video.frameExtraction.*` settings and `VideoProcessOptions.extractFrames` (`types.ts:19`) are declared with no read site.
 - `AudioExtractor.concatAudio` re-encodes via the ffmpeg concat filter (handles mixed mp3/wav/m4a/ogg/flac/webm/aac).
 - `--ffmpeg-location` is emitted only when `ffmpegPath` is a concrete path (contains `/` or `\`); a bare name relies on PATH discovery.
 - `downloadVideoToVault` uses `vault.createBinary()` (not the adapter API); collision-safe naming is delegated to `findAvailableVaultPath` (shared) on a `normalizePath`-ed target, appending `-1`, `-2`, ... before the extension.

@@ -196,23 +196,19 @@ src/
 │   ├── transcript-segmenter.ts # Pure splitter: paragraph → line → sentence → word boundaries, word-aligned overlap (#467)
 │   ├── transcription-models.ts # Resolve audio.transcriptionModel against the active provider's registry (#521)
 │   ├── transcription-credentials.ts # Provider + model dropdowns + key fields rendered inside AI Configuration
-│   ├── note-scanner.ts     #   Find audio embeds in note content
-│   ├── types.ts            #   AudioClipper — structural clip/concat/checkDependencies surface that video's AudioExtractor satisfies (audio never imports video); AudioEmbed, TranscribeOptions, TranscriptionResult
+│   ├── types.ts            #   AudioClipper — structural clip/concat/checkDependencies surface that video's AudioExtractor satisfies (audio never imports video); TranscribeOptions, TranscriptionResult
 │   └── index.ts            #   AudioModule orchestrator; clip temp files unlinked in a finally on every exit path
 │
 ├── video/                  # Video download + transcription
 │   ├── audio-extractor.ts  #   yt-dlp + ffmpeg via execFile (`--` before every URL positional, #501); temp outputs carry a random suffix
 │   ├── ffmpeg-availability.ts # createFfmpegAvailability — memoized ffmpeg probe (#496)
-│   ├── frame-extractor.ts  #   Placeholder — frame extraction is not implemented
-│   ├── note-scanner.ts     #   Find video URLs in note content (uses shared/url-detector)
 │   ├── settings-section.ts #   Video settings incl. captionsFirst + "Clear transcript cache" (#488)
 │   └── index.ts            #   VideoModule orchestrator (delegates to Audio); temp audio/video removed in a finally on every exit path
-│                           #   NOTE: url-detector.ts moved to shared/ (decycling, 2026-06-08)
+│                           #   NOTE: url-detector.ts moved to shared/ (decycling, 2026-06-08); the video-URL scanner moved to shared/video-urls.ts (2026-11-09)
 │
 ├── image/                  # Image OCR via multi-modal AI (vision models)
 │   ├── extractor.ts        #   ImageExtractor (base64 + ContentBlock[] -> AI vision); vision model passed per call via AIRequestOptions.model; downscale via shared/image-preprocess
-│   ├── note-scanner.ts     #   Find image embeds (![[*.png]]) in note content
-│   ├── types.ts            #   ImageEmbed, OCRResult
+│   ├── types.ts            #   OCRResult (the image-embed scanner + ImageEmbed moved to shared/image-embeds.ts, 2026-11-09)
 │   └── index.ts            #   ImageModule orchestrator (batch + checkpoint)
 │
 ├── transcription/          # Transcription UI (issue #20) + URL tier router (#184)
@@ -324,6 +320,9 @@ src/
 │   ├── link-guard.ts       #   stripUnresolvedLinks() — unresolved [[links]] become plain text on every AI/fetched write; keeps embeds, code, and kept linkpaths (#581)
 │   ├── source-context.ts   #   SourceContext / SourceImage — the material a completed action processed, handed to post-op legs (#213)
 │   ├── voice.ts            #   voiceInstruction() — the one narrative-voice fragment for elaboration, deep dive, and summarize prompts; verbatim material exempt (#540)
+│   ├── audio-embeds.ts     #   findAudioEmbeds() — find audio embeds in note content (skips already-transcribed ones); AUDIO_EXTENSIONS, AudioEmbed; re-exported by the audio barrel
+│   ├── video-urls.ts       #   findVideoUrls() — find video URLs in note content (skips already-transcribed ones); VideoUrlEmbed; re-exported by the video barrel
+│   ├── image-embeds.ts     #   findImageEmbeds() — find image embeds in note content (skips already-extracted ones); IMAGE_EXTENSIONS, ImageEmbed; re-exported by the image barrel
 │   ├── media-embed.ts      #   buildMediaEmbedLines() — one embed builder for every action that downloads media into the vault (#561)
 │   ├── prose-reduction.ts  #   reduceToProse / isEffectivelyEmptyProse — "is there real prose here?" shared by elaboration and summarize (#544)
 │   ├── build-info.ts       #   BUILD_INFO stamped by esbuild on every (re)build; drives the dev-build banner in settings (#542)
@@ -479,13 +478,13 @@ Key constraints:
 - **`modules/registry.ts` is the one feature-module list** (#504). It imports every feature barrel and constructs each module with `ModuleDeps` first; per-entry `platform` predicates (video: `Platform.isDesktop`) replace `main.ts` special cases. Disabled modules are still constructed — only their `onload()` is skipped. A test asserts every `src/<feature>/index.ts` module class is constructed by the registry.
 - **`commands` imports nothing in `src/`.** `pipeline` imports `commands` (for flow gating) and `shared` but never the feature modules — `main.ts` injects them via `PipelineModuleMap` / `PostOpHookDeps`. `checkpoints` likewise reaches feature modules only through injected `CheckpointResumeHandlers`.
 - **`intake` imports no feature module.** It imports `obsidian`, `shared`, and the `SynapseSettings` interface from `settings.ts` (erased at compile time). All cross-module work routes through an injected `IntakeDeps` (notably `fireOnFile`).
-- **Video depends on Audio** — reuses the transcription pipeline (runtime edge `video → audio`). It is one of five feature → feature runtime imports; the full list is in the table below.
+- **Video depends on Audio** — reuses the transcription pipeline (runtime edge `video → audio`). It is the only feature → feature runtime import; the full list of edges is in the table below.
 - **Audio and Image import no `commands/` code.** Their command registrar arrives through `ModuleDeps`. Audio does import one runtime value from `settings.ts`: `TRANSCRIPTION_MODEL_OPTIONS` (`audio/transcription-models.ts:1`).
-- **One type-only back-edge, no runtime cycle.** `shared/settings-section.ts:1` does `import type SynapsePlugin from '../main'`, erased at compile time. The former `audio → video` type edge is gone (2026-10-06 audit): `audio/types.ts:43` declares a structural `AudioClipper` (`clipAudio`, `concatAudio`, `checkDependencies`) that `video/AudioExtractor` satisfies; the registry hands audio an instance on desktop and `undefined` elsewhere (`modules/registry.ts:80`), and `video/ffmpeg-availability.ts:1` imports the type from audio instead.
+- **One type-only back-edge, no runtime cycle.** `shared/settings-section.ts:1` does `import type SynapsePlugin from '../main'`, erased at compile time. The former `audio → video` type edge is gone (2026-10-06 audit): `audio/types.ts:36` declares a structural `AudioClipper` (`clipAudio`, `concatAudio`, `checkDependencies`) that `video/AudioExtractor` satisfies; the registry hands audio an instance on desktop and `undefined` elsewhere (`modules/registry.ts:80`), and `video/ffmpeg-availability.ts:1` imports the type from audio instead.
 - **Transcription owns the URL tier router** (#184) — `CaptionStrategy` runs on every platform; `LocalExtractionStrategy` is appended only when `VideoModule` exists (desktop) and calls it through an injected `processUrl` delegate. Media decoding and AI calls stay in Audio, Video, and Image; the modals reach them via callbacks.
 - **Elaboration uses ImageAnalyzer** — analyzes embedded images during proposal generation. It takes `preprocessImage` from `shared/image-preprocess.ts`, so there is no elaboration → image edge; both it and `image/extractor.ts` pass the vision model per call (`AIRequestOptions.model`) and never write to `settings.ai.model`.
 - **Illustrate imports nothing from another feature.** `shared/` (AIClient, `wrapUntrusted`, insertion points, callouts) plus a type-only `commands/` import; Wikimedia Commons and Openverse are reached through `requestUrl` only, so the module is mobile-safe.
-- **Summarize and Intake receive URL transcription by injection only** — the registry hands summarize (and `video.urlTranscriber`) a callback that delegates to `UrlTranscriptionRouter.transcribe`, and intake gets `transcribeUrlToNote`; neither has a static import of `video` or `transcription`. URL-platform helpers resolve from `shared`; summarize also calls `audio.findAudioEmbeds`. A router-supported media URL is only ever transcribed, never page-fetched, and a failed transcription inserts no summary (#488).
+- **Summarize and Intake receive URL transcription by injection only** — the registry hands summarize (and `video.urlTranscriber`) a callback that delegates to `UrlTranscriptionRouter.transcribe`, and intake gets `transcribeUrlToNote`; neither has a static import of `audio`, `video` or `transcription`. URL-platform helpers and the audio-embed scanner (`findAudioEmbeds`, `shared/audio-embeds.ts`) resolve from `shared`. A router-supported media URL is only ever transcribed, never page-fetched, and a failed transcription inserts no summary (#488).
 - **One router, one transcript store** (#488). Every URL path (unified modal, note-media batch, summarize, intake) shares a single `UrlTranscriptionRouter` built over `SynapsePlugin.transcriptCache`. Tier results are written through; later requests for the same canonical URL (+ time range) are served from the store unless `forceRefresh` is set — which also bypasses the AI response cache for post-processing (#527).
 - **No speech is a typed outcome** (#524). `NoSpeechDetectedError` (`shared/no-speech.ts`) is thrown at the transcriber seam and re-checked by `AudioModule`, the extraction tier, and the router. Write sites notify and write nothing; the transcript store never receives it; blank text never reaches an AI prompt.
 - **Shared utilities are imported via the `../shared` barrel** — never through a sibling feature module or an internal `shared/` file. Canonical homes (`url-detector`, `redact`, `encoding`) live in `shared/` and re-export elsewhere only for back-compat.
@@ -501,13 +500,10 @@ Every import from one feature folder into another, outside tests. `modules/`, `s
 | From | To | Kind | What crosses |
 |------|----|------|--------------|
 | `video` | `audio` | Runtime + type | `AudioModule` (reuses the transcription pipeline); `TranscriptionResult`, `AudioClipper` |
-| `summarize` | `audio` | Runtime | `findAudioEmbeds` |
-| `transcription` | `audio` | Runtime + type | `AUDIO_EXTENSIONS`, `findAudioEmbeds` |
-| `transcription` | `video` | Runtime + type | `findVideoUrls` |
-| `transcription` | `image` | Runtime + type | `findImageEmbeds` |
+| `transcription` | `audio` | Type only | `TranscriptionResult` (`transcription/types.ts:6`) |
 | `views` | elaboration, enrichment, organize, deep-dive, title, rem, illustrate | Type only | Proposal types (`views/types.ts:1-7`) |
 
-> **Note:** The `codebase-architecture` rule names only `video → audio` as a sanctioned feature → feature edge. The other four runtime rows are recorded here, not yet sanctioned there. All of them point one way, so the graph stays acyclic.
+> **Note:** `video → audio` is the only runtime row, and the one feature → feature edge the `codebase-architecture` rule sanctions. Every other row is type-only and erased at compile time. The note scanners `transcription` needs (`findAudioEmbeds`, `findVideoUrls`, `findImageEmbeds`) live in `shared/`.
 
 ---
 
@@ -1217,7 +1213,7 @@ AI-generated content that lands beside the user's text uses Obsidian callouts fr
 | illustrate | `synapse-illustrate` | `note` | `[!note\|synapse-illustrate]` | Caption + source/license/attribution under an inserted photo or Mermaid block (#213) |
 | verse / chorus | `synapse-verse` / `synapse-chorus` | `note` | — | Registered only; the lyrics schema prompt emits plain `[!verse]` / `[!chorus]` |
 
-`styles.css:115-160` layers the Synapse icon through `.callout[data-callout="<base>"][data-callout-metadata~="synapse-*"]` and keeps the bare selectors as the legacy fallback.
+`styles.css:114-159` layers the Synapse icon through `.callout[data-callout="<base>"][data-callout-metadata~="synapse-*"]` and keeps the bare selectors as the legacy fallback.
 
 ---
 
@@ -1280,7 +1276,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 
 | Layer | Protection | Location |
 |-------|-----------|----------|
-| Input validation | `sanitizeUrl()`, `sanitizePath()` | `shared/validation.ts` |
+| Input validation | `sanitizeUrl()`, `sanitizePath()`; `sanitizePublicUrl()` and `assertVaultRelativePath()` (both below) | `shared/validation.ts` |
 | Output sanitization | `sanitizeAIResponse()` strips scripts, event handlers, dangerous URIs | `shared/validation.ts` |
 | Subprocess security | `execFile` with argument arrays (no shell); narrowed allowlist env via `shellEnv()` | `video/audio-extractor.ts`, `transcription/duration-detector.ts`, `shared/node-loader.ts` |
 | Desktop gating | `assertDesktop()`/`loadNodeModules()` — Node builtins resolve only on desktop, behind one guarded site; keeps `isDesktopOnly: false` mobile-safe | `shared/node-loader.ts` |
@@ -1288,19 +1284,22 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Multipart header hardening | Vault-/settings-derived field + file names sanitized (`sanitizeMultipartHeaderValue`: strip CR/LF, replace `"`/`\`) before `Content-Disposition` lines — blocks multipart/header injection (2026-06-11) | `audio/transcriber.ts` |
 | API key protection | `redactSecrets()` (strings) + `redactError()` (raw caught errors — Error `.stack`/`.message`) — **single source of truth** scrubbing keys from error messages/console on **every error path**; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts`, `credential-validator.ts`, all of `notifications.ts`; `redactError` at audio/index, rem/semantic-matcher, elaboration/image-analyzer + proposer, shared/image-preprocess, shared/fire-and-forget, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, `main.ts` lifecycle paths, and `update-checker.ts`; `redactSecrets` also at the credential Test chip `credential-field.ts` and the `update-checker.ts` fetch-fail log) |
 | Redaction enforcement (lint) | Custom type-aware ESLint rule `synapse/no-unredacted-console` (#418): every value reaching a `console.*` sink must be **statically string-like** — i.e. already rendered through `redactError`/`redactSecrets`, which return `string`. Flags `String()`/`JSON.stringify()` of non-strings and direct `.message`/`.stack` access as bypasses; fails closed if type info is unavailable; scoped to shipped `src` (tests/mocks excluded). Runs in CI via `npm run lint` | `scripts/eslint-rules/no-unredacted-console.mjs`, `eslint.config.mjs` |
-| Prompt-injection defense | `wrapUntrusted()` fences fetched untrusted content (article/tweet/Reddit, image analysis) in labeled delimiters + data-not-instructions frame + anti-breakout scrub — structural, not lexical (#398). Since 2026-11-09 it also wraps everything summarize sends (with a system-prompt rule: never obey embedded instructions, never add links or image URLs not already present) and the tweet text enrichment fetches. Gemini audio instruction in `system_instruction` | `shared/untrusted-content.ts` (used by `elaboration/proposer.ts`, `summarize/summarizer.ts`, `enrichment/index.ts`, `illustrate/note-analyzer.ts`), `audio/transcriber.ts` |
+| Prompt-injection defense | `wrapUntrusted()` fences fetched untrusted content (article/tweet/Reddit, image analysis) in labeled delimiters + data-not-instructions frame + anti-breakout scrub — structural, not lexical (#398). Since 2026-11-09 it also wraps everything summarize sends (with a system-prompt rule: never obey embedded instructions, never add links or image URLs not already present) and the tweet text enrichment fetches, and audio post-processing fences the transcript (whole, per section, and the preceding-context excerpt) under a system prompt that calls it text to edit, never instructions to follow. Gemini audio instruction in `system_instruction` | `shared/untrusted-content.ts` (used by `elaboration/proposer.ts`, `summarize/summarizer.ts`, `enrichment/index.ts`, `illustrate/note-analyzer.ts`, `audio/post-processor.ts`), `audio/transcriber.ts` |
 | Caption fetch hardening | YouTube caption URLs pass `sanitizeUrl` and go over Obsidian `requestUrl` with a 30 s per-request timeout. Since #501: caption tracks fetch only over `https:` from `youtube.com`/`googlevideo.com` with no embedded credentials; player JSON is bounded at 8 MiB and the track body at 16 MiB before `JSON.parse`; chapter titles and cue text are markdown-escaped at the render boundary; the video title is control-char-stripped and length-bounded. Any fetch/parse failure logs via `redactError` and falls through to the next tier | `transcription/youtube-captions.ts` |
 | yt-dlp argv hardening | Every yt-dlp invocation ends its option list with `--` before the URL positional — the download path since #501 and the duration probe since 2026-10-06 (`duration-detector.ts:139`); `dumpJson()` re-runs `sanitizeUrl()` at its own boundary; the dependency probe runs the configured tool path through `sanitizePath` before `which` (`audio-extractor.ts:585`) | `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
 | Related-notes fencing | Elaboration's backlink/outbound/tag context block is wrapped via `wrapUntrusted(_, 'related notes')`, so a linking note cannot forge a closing fence or smuggle instructions (#500) | `elaboration/proposer.ts` |
 | Dangling-link guard | AI-generated and fetched text is written through `stripUnresolvedLinks`, so no Synapse write creates a `[[link]]` to a note that doesn't exist; elaboration accept keeps the note's own and user-typed links (#581) | `shared/link-guard.ts` |
-| Outbound-URL scheme check | Illustrate writes only `http:`/`https:` provider URLs into a note (`httpUrlOrEmpty`); any other scheme degrades the link or remote embed to plain caption text (2026-10-06). Since 2026-11-09 the URL's `( ) < >` and whitespace are percent-encoded so it cannot close a markdown `(url)`, and link text and attribution lose `[` `]` and line breaks | `illustrate/inserter.ts:6-19` |
+| Outbound-URL scheme check | Illustrate writes only `http:`/`https:` provider URLs into a note (`httpUrlOrEmpty`); any other scheme degrades the link or remote embed to plain caption text (2026-10-06). A local or private-network host degrades the same way (2026-11-09). Since 2026-11-09 the URL's `( ) < >` and whitespace are percent-encoded so it cannot close a markdown `(url)`, and link text and attribution lose `[` `]` and line breaks | `illustrate/inserter.ts:6-19` |
 | Download type check | An Illustrate download whose `Content-Type` is present and not `image/*` is rejected, so only image bytes enter the vault (2026-11-09) | `illustrate/asset-writer.ts:46-50` |
+| Public-host check | Illustrate refuses a download or a linked-page fetch whose host is loopback, private-network, link-local, or unqualified (`sanitizePublicUrl` → `isPrivateHost`): the download fails, the linked page is skipped. It checks the hostname only, so it cannot see where DNS or a redirect lands. Links the user wrote into a note, fetched by summarize and elaboration, still allow local addresses by design (2026-11-09) | `shared/validation.ts`; `illustrate/asset-writer.ts:36`, `illustrate/linked-pages.ts:21` |
+| Stored-path re-validation | A path read back from a stored proposal or snapshot is checked before it is written or renamed to (`assertVaultRelativePath`: not empty, not absolute, no `..` segment, no null byte) — deep-dive accept, organize accept, organize undo (single note and whole run, which lists a bad path as skipped). Title accept rejects a stored title that contains a path separator or is only dots (2026-11-09) | `shared/validation.ts`; `deep-dive/index.ts:176`, `organize/index.ts:440,539,598`, `title/index.ts:362` |
 | Redirect pinning | A Reddit share page may only redirect the follow-up fetch to a Reddit URL, re-run through `sanitizeUrl` first (2026-10-06) | `shared/reddit-fetcher.ts:203-206` |
 | Temp-file cleanup | Clipped-audio source copy and ffmpeg output are unlinked in a `finally` on every exit path, so a failed clip never leaves vault audio in the OS temp dir (2026-10-06). Since 2026-11-09 `VideoModule.processUrl` and `downloadVideoToVault` do the same for the extracted audio and the downloaded video | `audio/index.ts:237-243`, `video/index.ts:106-151`, `video/index.ts:329-346` |
 | Unguessable temp names | Every file Synapse creates in the OS temp dir is named `synapse-<kind>-<timestamp>-<random>`, the suffix from `randomToken()` (CSPRNG hex), not a timestamp alone (2026-11-09) | `shared/id-utils.ts:16`; `audio/index.ts`, `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
 | Safe deep-dive file names | AI-chosen topic titles pass through `safeNoteName`: path separators and reserved characters become `-`, leading dots are stripped (no `..` segment, no hidden file), empty becomes "Untitled" (2026-11-09) | `deep-dive/index.ts:690` |
 | Undocumented Obsidian APIs | Feature-detected, never assumed: `app.commands` (actions sidebar shows a "run it from the command palette" notice), `metadataCache.getBacklinksForFile` (no backlink rewrite), `SuggestModal` `chooser.useSelectedItem` (Shift+Enter does nothing) | `views/command-runner.ts:33-42`, `title/backlink-remediation.ts:45`, `shared/scan-folder-picker-modal.ts:30` |
 | Release workflow inputs | Tag/version strings pass through `env` with a strict `X.Y.Z` check — no expression interpolation into the shell (2026-10-06) | `.github/workflows/release.yml`, `.github/workflows/tag-on-version-bump.yml` |
+| Pinned CI actions | Every third-party GitHub Action is referenced by full commit SHA, with the version in a trailing comment, so a moved tag cannot change what CI or a release runs (2026-11-09) | `.github/workflows/ci.yml`, `release.yml`, `tag-on-version-bump.yml` |
 | Illustrate network surface | Off by default; sends an AI-proposed search query (never note text) to keyless Wikimedia Commons / Openverse; downloads only the accepted image (15 MB cap); the note is fenced via `wrapUntrusted` before analysis; charts use only numbers already in the note (#213) | `illustrate/providers/*`, `illustrate/asset-writer.ts`, `illustrate/note-analyzer.ts` |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
 | Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
@@ -1315,7 +1314,7 @@ No audit pass has found a critical or high vulnerability. `data.json` (live API 
 
 | Pass | Outcome |
 |------|---------|
-| 2026-11-09 (pre-release, whole codebase) | Fenced the two remaining places fetched text reached a prompt unfenced (summarize content, enrichment tweet text); made Illustrate's provider-supplied URL, link text, and attribution unable to forge markdown and rejected non-image downloads; gave OS-temp files random names and removed video temp files on every exit path; sanitized deep-dive file names; feature-detected the undocumented Obsidian APIs. Module type contracts moved into each module's `types.ts`. Graph re-verified acyclic |
+| 2026-11-09 (pre-release, whole codebase) | Fenced the two remaining places fetched text reached a prompt unfenced (summarize content, enrichment tweet text); made Illustrate's provider-supplied URL, link text, and attribution unable to forge markdown and rejected non-image downloads; gave OS-temp files random names and removed video temp files on every exit path; sanitized deep-dive file names; feature-detected the undocumented Obsidian APIs. Module type contracts moved into each module's `types.ts`. **Follow-up round, same day:** Illustrate refuses local and private-network hosts; audio post-processing fences the transcript; stored proposal and snapshot paths are re-validated before use; CI actions are pinned to commit SHAs; dev-dependency advisories cleared (`npm audit` reports 0 vulnerabilities); four dead files removed and the note scanners moved to `shared/`, leaving `video → audio` as the only runtime feature → feature import. Graph re-verified acyclic |
 | 2026-10-06 (`chore/audit-2026-10-06`) | Graph re-verified acyclic after the module-boundary refactor (per-call `model`, `shared/image-preprocess`, injected `suggestDirectory`, `AudioClipper`). Five defense-in-depth closures — provider-URL scheme check, Reddit redirect pinning, `--` on the yt-dlp duration probe, `sanitizePath` on the dependency probe, clipped-audio temp cleanup — plus release-workflow input hygiene. None was exploitable on its own |
 | 2026-09-17 (docs pass) | Graph re-verified acyclic after the `main.ts` refactor family (#496/#504) |
 | 2026-09-14/15 (1.1.0 cycle) | Caption-path and yt-dlp argv hardening (#501); elaboration's related-notes context fenced (#500) |
@@ -1329,8 +1328,8 @@ No audit pass has found a critical or high vulnerability. `data.json` (live API 
 | 2026-06-08 (full audit) | No critical or high vulnerabilities |
 
 **Known posture / not-yet-enforced:**
-- `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths** — there is no active vault-boundary enforcement on writes today.
-- `sanitizeUrl` permits arbitrary hosts (an SSRF surface on user-supplied URLs). This is an **accepted risk**: URLs are author-supplied within the user's own vault.
+- `ensureWithinVault()` exists in `shared/validation.ts` but is **not yet wired into write paths**. Paths read back from stored proposals and snapshots are checked by `assertVaultRelativePath` (see the table); other write paths have no vault-boundary check.
+- `sanitizeUrl` permits arbitrary hosts, local ones included, for links the user wrote into a note (summarize, elaboration). This is an **accepted risk**: those URLs are author-supplied within the user's own vault. URLs that come from a provider or a fetched page (Illustrate) go through `sanitizePublicUrl` instead.
 
 ---
 
