@@ -43,25 +43,37 @@ export function sanitizeUrl(url: string): string {
 }
 
 const PRIVATE_IPV4 = [
-	/^0\./, /^10\./, /^127\./, /^169\.254\./, /^192\.168\./,
+	/^0\./, /^10\./, /^127\./, /^169\.254\./, /^192\.168\./, /^192\.0\.0\./, /^198\.1[89]\./,
 	/^172\.(1[6-9]|2\d|3[01])\./, /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
+	/^(22[4-9]|2[3-5]\d)\./,
 ];
 
-/** True for loopback, private-network, link-local and unqualified hostnames. */
+// IPv6 forms that carry an IPv4 address in their last 32 bits: IPv4-compatible, IPv4-mapped, IPv4-translated, NAT64.
+const EMBEDDED_IPV4 = /^(?:::ffff:0:|::ffff:|64:ff9b::|::)([0-9a-f.:]+)$/;
+
+function embeddedIpv4(host: string): string | null {
+	const tail = EMBEDDED_IPV4.exec(host)?.[1];
+	if (!tail) return null;
+	if (/^\d+(\.\d+){3}$/.test(tail)) return tail;
+	const words = tail.split(':').map(w => parseInt(w, 16));
+	if (words.length > 2 || words.some(Number.isNaN)) return null;
+	const [high, low] = words.length === 2 ? words : [0, words[0]];
+	return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+}
+
+/**
+ * True for loopback, private-network, link-local, multicast, reserved and unqualified hostnames.
+ * A hostname check only: it cannot see where DNS or an HTTP redirect finally lands.
+ */
 export function isPrivateHost(hostname: string): boolean {
 	const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
 	if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return true;
 	if (host.endsWith('.local') || host.endsWith('.internal')) return true;
 	if (host.includes(':')) {
 		if (host === '::' || host === '::1') return true;
-		if (/^f[cd]/.test(host) || /^fe[89ab]/.test(host)) return true;
-		const mapped = /^::ffff:(.+)$/.exec(host);
-		if (!mapped) return false;
-		const tail = mapped[1];
-		if (tail.includes('.')) return isPrivateHost(tail);
-		const words = tail.split(':').map(w => parseInt(w, 16));
-		if (words.length !== 2 || words.some(Number.isNaN)) return true;
-		return isPrivateHost(`${words[0] >> 8}.${words[0] & 255}.${words[1] >> 8}.${words[1] & 255}`);
+		if (/^f[cdf]/.test(host) || /^fe[89ab]/.test(host)) return true;
+		const embedded = embeddedIpv4(host);
+		return embedded !== null && isPrivateHost(embedded);
 	}
 	if (/^\d+(\.\d+){3}$/.test(host)) return PRIVATE_IPV4.some(re => re.test(host));
 	if (/^(0x[0-9a-f]+|\d+)$/.test(host)) return true;

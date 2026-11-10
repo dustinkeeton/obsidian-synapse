@@ -53,6 +53,13 @@ describe('block builders', () => {
 		expect(block).not.toContain('javascript:');
 	});
 
+	it('refuses a private-network remote embed and falls back to the caption text', () => {
+		const item = { ...photoItem, candidate: { ...candidate, fileUrl: 'http://192.168.1.10/cam.jpg' } };
+		const block = buildPhotoBlock(item, null);
+		expect(block.startsWith('A red panda\n')).toBe(true);
+		expect(block).not.toContain('192.168.1.10');
+	});
+
 	it('percent-encodes URL characters that would close the markdown link or embed', () => {
 		const fileUrl = 'https://evil.example/a.png)[click](https://phish.example/x';
 		const block = buildPhotoBlock({ ...photoItem, candidate: { ...candidate, fileUrl } }, null);

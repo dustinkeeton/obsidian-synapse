@@ -1,12 +1,13 @@
-import { buildCallout, CALLOUT_TYPES } from '../shared';
+import { buildCallout, CALLOUT_TYPES, isPrivateHost } from '../shared';
 import { mermaidBlock } from './diagram';
 import type { IllustrateItem, MediaCandidate } from './types';
 
-/** Provider-supplied URL, or '' unless it parses as http(s); characters that could close a markdown `(url)` are percent-encoded. */
+/** Provider-supplied URL, or '' unless it parses as http(s) on a public host; characters that could close a markdown `(url)` are percent-encoded. */
 export function httpUrlOrEmpty(url: string): string {
 	try {
 		const parsed = new URL(url);
 		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+		if (isPrivateHost(parsed.hostname)) return '';
 	} catch {
 		return '';
 	}
