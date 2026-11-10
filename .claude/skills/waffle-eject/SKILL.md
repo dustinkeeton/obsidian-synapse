@@ -30,7 +30,7 @@ running:
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 eject <skills/NAME | agents/NAME | files/PATH>
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 eject <skills/NAME | agents/NAME | files/PATH>
 ```
 
 ## After it runs

@@ -103,10 +103,11 @@ const BULLET = /^[-*+]\s/;
 /** Split added lines into entries: each top-level bullet with its continuation lines; lines before the first bullet are a lead-in. */
 const entries = (lines) => lines.reduce((out, l) => (BULLET.test(l) || !out.length ? out.push([l]) : out.at(-1).push(l), out), []);
 const body = (e) => e.slice(0, e.findLastIndex((l) => l.trim() !== '') + 1).join('\n');
-const same = (a, b) => BULLET.test(a[0]) && body(a) === body(b);
+const same = (a, b) => body(a) !== '' && body(a) === body(b);
+const lead = (e) => e !== undefined && !BULLET.test(e[0]) && body(e) !== '';
 const fuller = (a, b) => (b.length > a.length ? b : a);
 
-/** Walk the base; after each base line emit main's inserted entries, then integ's, keeping a whole entry both start or end with once. */
+/** Walk the base; after each base line emit main's inserted entries, then integ's, keeping a whole entry or lead-in both start or end with once. */
 function merge({ lines, main, integ }) {
   const at = (hunks, i) => hunks.filter((h) => h.at === i).flatMap((h) => h.lines);
   const both = (i) => {
@@ -122,6 +123,13 @@ function merge({ lines, main, integ }) {
     while (s < n - p && same(me[me.length - 1 - s], ge[ge.length - 1 - s])) s++;
     const mm = me.slice(p, me.length - s);
     const gm = ge.slice(p, ge.length - s);
+    const first = lead(gm[0]) && gm[0].find((l) => l.trim() !== '');
+    const shared = lead(mm[0]) && first && mm[0].some((l) => l.trim() !== '' && gm[0].some((g) => g.trimEnd() === l.trimEnd()));
+    if (first && (mm.some((e) => BULLET.test(e[0])) || shared)) throw new Hold(`integ adds ${JSON.stringify(first)} before its first bullet, after main's added lines`);
+    const ml = mm.flat();
+    const shallow = (l) => /^ ?\S/.test(l);
+    const escapes = ml.some((l, k) => k > 0 && ml[k - 1].trim() === '' && shallow(l)) || (ml.at(-1)?.trim() === '' && shallow(first));
+    if (first && escapes) throw new Hold(`integ adds ${JSON.stringify(first)} before its first bullet, where main's lead-in leaves the entry above`);
     const dup = mm.find((e) => BULLET.test(e[0]) && gm.some((f) => f[0] === e[0]));
     if (dup !== undefined) throw new Hold(`main and integ both add ${JSON.stringify(dup[0])} at the same point, among different entries`);
     const head = me.slice(0, p).map((e, k) => fuller(e, ge[k]));

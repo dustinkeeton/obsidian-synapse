@@ -62,7 +62,7 @@ Declining the gate leaves GitHub untouched — nothing filed, nothing uploaded; 
 ### 1. Collect the diagnostics
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 report
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 report
 ```
 
 It prints a collapsed `<details>` block and exits 0 **even when doctor is red** — a red doctor is
@@ -78,7 +78,7 @@ output; use what the user already has, or `doctor`.
 
 ### 2. Resolve the target repo
 
-The toolkit this repo runs is `github:dustinkeeton/wafflestack#v0.19.0`. Take the `OWNER/REPO` inside a
+The toolkit this repo runs is `github:dustinkeeton/wafflestack#v0.20.0`. Take the `OWNER/REPO` inside a
 `github:OWNER/REPO[#ref]` spec — that is where the report goes, so a fork's consumer reports to
 the fork. If the spec is not `github:`-shaped (a local checkout path), use the lock's
 `toolkit.source` from the diagnostics block (`source github:OWNER/REPO`); if that is null too, fall

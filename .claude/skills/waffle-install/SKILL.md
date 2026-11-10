@@ -31,7 +31,7 @@ item you are unsure of, run **`/waffle-setup`** first to confirm the exact ref.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 install <refs…> [--force] [--gitignore]
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 install <refs…> [--force] [--gitignore]
 ```
 
 ## Interpret the result

@@ -26,7 +26,7 @@ agents-dir the cross-tool `.agents/skills/` copy renders the source unchanged, a
 ## See the current state
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 toggle
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 toggle
 ```
 
 Without a TTY (which is how you, the agent, run it) this prints a table — one row per rendered
@@ -40,11 +40,11 @@ is already in the state they want. In a human's terminal the same command opens 
 Pass the skills from `$ARGUMENTS` as flags — repeatable, and either flag skips the picker:
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 toggle --disable audit --disable delegate
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 toggle --disable audit --disable delegate
 ```
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 toggle --enable audit
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 toggle --enable audit
 ```
 
 The CLI writes the block to the **committed** `.waffle/waffle.yaml` (never the local overlay —
