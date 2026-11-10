@@ -40,7 +40,7 @@ jobs:
       - name: Render missing wafflestack resources
         id: waffle-render
         env:
-          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.19.0'
+          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.20.0'
         run: |
           set -euo pipefail
           fail() { echo "::error title=waffle-render::$*"; exit 1; }
@@ -74,7 +74,7 @@ jobs:
             NPM_CONFIG_USERCONFIG="$scratch/.npmrc" NPM_CONFIG_GLOBALCONFIG="$scratch/.npmrc" npx --yes "$@" --cwd "$ws" 2> "$err" && rc=0 || rc=$?
             cat "$err" >&2
             # A release older than --untrusted-config rejects the flag as a ref (#789).
-            [ "$rc" = 0 ] || ! grep -q 'takes no refs' "$err" || fail "toolkit $1 predates render --untrusted-config; move the lock to a newer release (wafflestack upgrade) or commit the render."
+            [ "$rc" = 0 ] || ! grep -q 'takes no refs' "$err" || fail "toolkit ${pin:-$1} predates render --untrusted-config, first shipped in v0.19.0; $fix."
             exit "$rc"
           )
           if [ "$(lc "$base")" = "$(lc "github:${GITHUB_REPOSITORY}")" ]; then
@@ -86,6 +86,8 @@ jobs:
               tip="$(git ls-remote -- "$url" | awk -v r="${want:-HEAD}" '$2 == r || $2 == "refs/heads/" r {h = $1} $2 == "refs/tags/" r {t = $1} $2 == "refs/tags/" r "^{}" {p = $1} END {print (p != "" ? p : t != "" ? t : h)}')"
             fi
             [[ "$tip" =~ ^[0-9a-f]{40}$ ]] || fail "the trusted ref ${want:-HEAD} was not found on $base."
+            pin="${want:-HEAD}"
+            fix="move doctor.toolkitRef's #ref to v0.19.0 or later, or drop the #ref"
             npx_render "${base}#${tip}" render --allow-unreleased --untrusted-config
             from="${base}#${tip} (the toolkit's own repo, at its trusted ref, not the PR head)"
           elif [ "$status" = release ]; then
@@ -94,6 +96,8 @@ jobs:
             tagged="$(git ls-remote --tags -- "$url" | awk -v t="refs/tags/$ref" '$2 == t {q = $1} $2 == t "^{}" {p = $1} END {print (p != "" ? p : q)}')"
             [[ "$tagged" =~ ^[0-9a-f]{40}$ ]] || fail "release tag $ref was not found on $base."
             [ "$commit" = - ] || { [[ "$commit" =~ ^[0-9a-f]{7,40}$ ]] && [[ "$tagged" == "$commit"* ]]; } || fail "the lock pins commit $commit, but $base tag $ref is $tagged."
+            pin="$ref"
+            fix="run wafflestack upgrade to v0.19.0 or later and commit the lock, or commit the render"
             npx_render "${base}#${tagged}" render --untrusted-config
             from="${base}#${ref}"
           else
@@ -308,7 +312,7 @@ jobs:
       - name: Render missing wafflestack resources
         id: waffle-render
         env:
-          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.19.0'
+          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.20.0'
         run: |
           set -euo pipefail
           fail() { echo "::error title=waffle-render::$*"; exit 1; }
@@ -342,7 +346,7 @@ jobs:
             NPM_CONFIG_USERCONFIG="$scratch/.npmrc" NPM_CONFIG_GLOBALCONFIG="$scratch/.npmrc" npx --yes "$@" --cwd "$ws" 2> "$err" && rc=0 || rc=$?
             cat "$err" >&2
             # A release older than --untrusted-config rejects the flag as a ref (#789).
-            [ "$rc" = 0 ] || ! grep -q 'takes no refs' "$err" || fail "toolkit $1 predates render --untrusted-config; move the lock to a newer release (wafflestack upgrade) or commit the render."
+            [ "$rc" = 0 ] || ! grep -q 'takes no refs' "$err" || fail "toolkit ${pin:-$1} predates render --untrusted-config, first shipped in v0.19.0; $fix."
             exit "$rc"
           )
           if [ "$(lc "$base")" = "$(lc "github:${GITHUB_REPOSITORY}")" ]; then
@@ -354,6 +358,8 @@ jobs:
               tip="$(git ls-remote -- "$url" | awk -v r="${want:-HEAD}" '$2 == r || $2 == "refs/heads/" r {h = $1} $2 == "refs/tags/" r {t = $1} $2 == "refs/tags/" r "^{}" {p = $1} END {print (p != "" ? p : t != "" ? t : h)}')"
             fi
             [[ "$tip" =~ ^[0-9a-f]{40}$ ]] || fail "the trusted ref ${want:-HEAD} was not found on $base."
+            pin="${want:-HEAD}"
+            fix="move doctor.toolkitRef's #ref to v0.19.0 or later, or drop the #ref"
             npx_render "${base}#${tip}" render --allow-unreleased --untrusted-config
             from="${base}#${tip} (the toolkit's own repo, at its trusted ref, not the PR head)"
           elif [ "$status" = release ]; then
@@ -362,6 +368,8 @@ jobs:
             tagged="$(git ls-remote --tags -- "$url" | awk -v t="refs/tags/$ref" '$2 == t {q = $1} $2 == t "^{}" {p = $1} END {print (p != "" ? p : q)}')"
             [[ "$tagged" =~ ^[0-9a-f]{40}$ ]] || fail "release tag $ref was not found on $base."
             [ "$commit" = - ] || { [[ "$commit" =~ ^[0-9a-f]{7,40}$ ]] && [[ "$tagged" == "$commit"* ]]; } || fail "the lock pins commit $commit, but $base tag $ref is $tagged."
+            pin="$ref"
+            fix="run wafflestack upgrade to v0.19.0 or later and commit the lock, or commit the render"
             npx_render "${base}#${tagged}" render --untrusted-config
             from="${base}#${ref}"
           else

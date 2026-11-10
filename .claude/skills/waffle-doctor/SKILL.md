@@ -16,7 +16,7 @@ build locally.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 doctor
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 doctor
 ```
 
 Pass `--allow-missing` through when `$ARGUMENTS` asks (or when diagnosing a repo that
@@ -38,7 +38,7 @@ touched. Reach for it when you suspect a change was made to `.waffle/waffle.yaml
 `.waffle/extensions/`, or `stacks/**` and never applied:
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 doctor --verify-render
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 doctor --verify-render
 ```
 
 It also composes with `--allow-missing` to give a repo that commits **only** the lock a real
@@ -79,7 +79,7 @@ gate — nothing is on disk to compare, so the render is reproduced and checked 
   *not* mean the render is current — only that the tree matches the lock. Add `--verify-render`
   to also confirm both still match the config.
 - **version-skew note** — doctor mentions when the lock was written by a different toolkit
-  version than the one that just ran. That is informational. Since #469 `github:dustinkeeton/wafflestack#v0.19.0`
+  version than the one that just ran. That is informational. Since #469 `github:dustinkeeton/wafflestack#v0.20.0`
   defaults to the release that rendered your lock, so the two agree unless you overrode the key
   (to a fork, an older tag, or an unpinned ref) or the rendered skill is itself stale — re-render
   with **`/waffle-render`** to bring them back together, or run **`/waffle-upgrade`** to move

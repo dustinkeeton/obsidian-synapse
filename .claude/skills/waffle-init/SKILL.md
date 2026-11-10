@@ -17,7 +17,7 @@ section instead. Safe to re-run.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 init
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 init
 ```
 
 Pass `--gitignore` through if `$ARGUMENTS` asks for it — that also appends the
@@ -26,7 +26,7 @@ stack-independent baseline to `.gitignore`: `.waffle/waffle.local.yaml`,
 yet, since no stack is chosen; `install --gitignore` adds it later):
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 init --gitignore
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 init --gitignore
 ```
 
 ## After it runs
