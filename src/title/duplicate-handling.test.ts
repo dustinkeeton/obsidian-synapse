@@ -300,4 +300,19 @@ describe('TitleModule duplicate handling (#408)', () => {
 		expect(h.renameSpy.mock.calls[0][1]).toBe(TARGET);
 		expect(Notice.instances.some(n => n.message?.includes('Nothing to merge into'))).toBe(true);
 	});
+
+	it('rejects a stored proposal whose title is a path', async () => {
+		const h = harness({ [SOURCE]: BODY });
+		await h.mod.onload();
+		await h.mod.checkUntitled(SOURCE);
+		const p = await firstPending(h.mod);
+		const [path, raw] = [...h.adapter._files.entries()].find(([, value]) => value.includes(p.id))!;
+		h.adapter._files.set(path, JSON.stringify({ ...JSON.parse(raw), proposedTitle: '../../outside/Note' }));
+
+		const outcome = await h.mod.acceptProposal(p.id);
+
+		expect(outcome).toEqual({ status: 'skipped' });
+		expect(h.renameSpy).not.toHaveBeenCalled();
+		expect(await h.mod.getPendingProposals()).toHaveLength(0);
+	});
 });

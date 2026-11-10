@@ -62,6 +62,12 @@ describe('AssetWriter.download', () => {
 		expect(vi.mocked(app.vault.createBinary)).not.toHaveBeenCalled();
 	});
 
+	it.each(['http://localhost:8080/x.png', 'http://192.168.1.10/x.png', 'http://169.254.169.254/latest'])(
+		'rejects the private address %s before any request', async (fileUrl) => {
+			await expect(new AssetWriter(app).download({ ...candidate, fileUrl }, note)).rejects.toThrow('private-network');
+			expect(requestUrl).not.toHaveBeenCalled();
+		});
+
 	it('rejects non-HTTP URLs before any request', async () => {
 		await expect(new AssetWriter(app).download({ ...candidate, fileUrl: 'file:///etc/passwd' }, note)).rejects.toThrow();
 		expect(requestUrl).not.toHaveBeenCalled();

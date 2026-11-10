@@ -1,6 +1,11 @@
 import { TFile, MetadataCache } from 'obsidian';
-import { CALLOUT_TYPES, isCalloutHeader } from '../shared';
-import { AudioEmbed } from './types';
+import { CALLOUT_TYPES, isCalloutHeader } from './callouts';
+
+export interface AudioEmbed {
+	fileName: string;
+	file: TFile;
+	line: number;
+}
 
 export const AUDIO_EXTENSIONS = /\.(mp3|wav|m4a|ogg|flac|webm|aac)$/i;
 export const AUDIO_EMBED_REGEX = /!\[\[([^\]]+\.(?:mp3|wav|m4a|ogg|flac|webm|aac))\]\]/gi;

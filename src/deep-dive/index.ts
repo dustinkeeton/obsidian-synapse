@@ -7,7 +7,7 @@ import {
 	NotificationManager, readNote, writeNote, wordCount,
 	CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport,
-	stripUnresolvedLinks,
+	stripUnresolvedLinks, assertVaultRelativePath,
 } from '../shared';
 import type { AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { DeepDiveStore } from './deep-dive-store';
@@ -173,6 +173,7 @@ export class DeepDiveModule implements FeatureModule {
 		if (proposal.status !== 'pending') return;
 
 		try {
+			assertVaultRelativePath(proposal.proposedPath);
 			await this.store.updateProposalStatus(id, 'accepted');
 
 			// Links resolve at write time: a rejected or not-yet-accepted parent becomes plain text (#581).

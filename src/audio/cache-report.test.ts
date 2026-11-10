@@ -15,7 +15,7 @@ import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/m
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
 import { AIClient, NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
-import type { AudioEmbed } from './types';
+import type { AudioEmbed } from '../shared';
 import { DEFAULT_SETTINGS } from '../settings';
 
 type Dispatcher = { dispatch: (messages: unknown) => Promise<string> };

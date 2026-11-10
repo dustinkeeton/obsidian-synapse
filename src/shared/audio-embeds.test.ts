@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { findAudioEmbeds, hasTranscriptionBelow } from './note-scanner';
+import { findAudioEmbeds, hasTranscriptionBelow } from './audio-embeds';
 import { TFile, MetadataCache } from 'obsidian';
 
 function mockMetadataCache(files: Record<string, TFile>): MetadataCache {

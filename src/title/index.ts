@@ -360,6 +360,13 @@ export class TitleModule implements FeatureModule {
 			return { status: 'skipped' };
 		}
 
+		if (/[\\/\0]/.test(proposal.proposedTitle) || /^\.*$/.test(proposal.proposedTitle.trim())) {
+			this.notifications.info('Proposed title is not a valid note name');
+			await this.store.updateStatus(id, 'rejected');
+			await this.refreshView();
+			return { status: 'skipped' };
+		}
+
 		const targetPath = this.computeTargetPath(file, proposal.proposedTitle);
 		const existing = this.plugin.app.vault.getAbstractFileByPath(targetPath);
 		const collision = !!existing && existing.path !== file.path;

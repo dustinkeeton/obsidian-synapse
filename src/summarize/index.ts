@@ -12,7 +12,7 @@ import {
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { OperationHandle } from '../shared';
 import { isSupportedUrl, detectPlatform, isEffectivelyEmptyProse } from '../shared';
-import { findAudioEmbeds } from '../audio';
+import { findAudioEmbeds } from '../shared';
 import { fetchPageContentWithImages, fetchTweetContent, isRedditUrl, fetchRedditContent, linkLoadError } from '../shared';
 import type { SourceContext, SourceImage } from '../shared';
 import { findSummarizeTargets, extractNoteProse } from './note-scanner';

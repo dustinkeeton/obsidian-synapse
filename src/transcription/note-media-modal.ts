@@ -1,7 +1,5 @@
 import { App, Modal, Setting } from 'obsidian';
-import type { AudioEmbed } from '../audio';
-import type { VideoUrlEmbed } from '../video';
-import type { ImageEmbed } from '../image';
+import type { AudioEmbed, VideoUrlEmbed, ImageEmbed } from '../shared';
 import type { NotificationManager } from '../shared';
 
 export class NoteMediaModal extends Modal {

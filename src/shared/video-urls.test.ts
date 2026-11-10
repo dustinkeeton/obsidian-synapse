@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findVideoUrls, hasTranscriptionBelow } from './note-scanner';
+import { findVideoUrls, hasTranscriptionBelow } from './video-urls';
 
 describe('findVideoUrls', () => {
 	it('finds a bare YouTube URL', () => {

@@ -9,9 +9,9 @@ import {
 	isPathExcluded, findAvailableVaultPath, isNoSpeechError, noSpeechNotice,
 	transcriptCacheUse, withCacheReport, stripUnresolvedLinks,
 } from '../shared';
-import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule, VideoUrlEmbed } from '../shared';
 import { AudioExtractor, DependencyMissingError } from './audio-extractor';
-import { VideoMetadata, VideoProcessOptions, VideoUrlEmbed } from './types';
+import { VideoMetadata, VideoProcessOptions } from './types';
 import type { RoutedUrlTranscriber, RoutedUrlTranscript } from './types';
 
 export type {
@@ -21,11 +21,11 @@ export type {
 	VideoMetadata,
 	VideoProcessOptions,
 	VideoSource,
-	VideoUrlEmbed,
 } from './types';
+export type { VideoUrlEmbed } from '../shared';
 export { AudioExtractor } from './audio-extractor';
 export { createFfmpegAvailability } from './ffmpeg-availability';
-export { findVideoUrls } from './note-scanner';
+export { findVideoUrls } from '../shared';
 
 export class VideoModule implements FeatureModule {
 	private plugin: Plugin;

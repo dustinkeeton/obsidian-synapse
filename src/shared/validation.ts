@@ -42,6 +42,44 @@ export function sanitizeUrl(url: string): string {
 	return url;
 }
 
+const PRIVATE_IPV4 = [
+	/^0\./, /^10\./, /^127\./, /^169\.254\./, /^192\.168\./,
+	/^172\.(1[6-9]|2\d|3[01])\./, /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
+];
+
+/** True for loopback, private-network, link-local and unqualified hostnames. */
+export function isPrivateHost(hostname: string): boolean {
+	const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+	if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return true;
+	if (host.endsWith('.local') || host.endsWith('.internal')) return true;
+	if (host.includes(':')) {
+		if (host === '::' || host === '::1') return true;
+		if (/^f[cd]/.test(host) || /^fe[89ab]/.test(host)) return true;
+		const mapped = /^::ffff:(.+)$/.exec(host);
+		if (!mapped) return false;
+		const tail = mapped[1];
+		if (tail.includes('.')) return isPrivateHost(tail);
+		const words = tail.split(':').map(w => parseInt(w, 16));
+		if (words.length !== 2 || words.some(Number.isNaN)) return true;
+		return isPrivateHost(`${words[0] >> 8}.${words[0] & 255}.${words[1] >> 8}.${words[1] & 255}`);
+	}
+	if (/^\d+(\.\d+){3}$/.test(host)) return PRIVATE_IPV4.some(re => re.test(host));
+	if (/^(0x[0-9a-f]+|\d+)$/.test(host)) return true;
+	return !host.includes('.');
+}
+
+/**
+ * {@link sanitizeUrl} plus a public-host requirement, for URLs taken from fetched pages or providers.
+ * @throws Error if the URL is invalid or targets a local or private-network host.
+ */
+export function sanitizePublicUrl(url: string): string {
+	const validated = sanitizeUrl(url);
+	if (isPrivateHost(new URL(validated).hostname)) {
+		throw new Error('URL targets a local or private-network address');
+	}
+	return validated;
+}
+
 /**
  * Validates and sanitizes a file path.
  * Rejects paths with null bytes, path traversal, or shell metacharacters.
@@ -71,6 +109,23 @@ export function sanitizePath(filePath: string): string {
 	}
 
 	return filePath;
+}
+
+/**
+ * Validates a vault-relative path read back from stored plugin data before it is written or renamed to.
+ * @throws Error if the path is empty, absolute, or contains a `..` segment or null byte.
+ */
+export function assertVaultRelativePath(path: string): string {
+	if (typeof path !== 'string' || path.trim().length === 0) throw new Error('Stored path is empty');
+	if (path.includes('\0')) throw new Error('Stored path contains null bytes');
+	const normalized = path.replace(/\\/g, '/');
+	if (normalized.startsWith('/') || /^[a-zA-Z]:/.test(normalized)) {
+		throw new Error('Stored path must be relative to the vault');
+	}
+	if (normalized.split('/').some(segment => segment === '..')) {
+		throw new Error('Stored path must stay inside the vault');
+	}
+	return path;
 }
 
 /**

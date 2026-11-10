@@ -1,5 +1,13 @@
-import { CALLOUT_TYPES, detectPlatform, findUrls, isCalloutHeader } from '../shared';
-import { VideoUrlEmbed } from './types';
+import { CALLOUT_TYPES, isCalloutHeader } from './callouts';
+import { findUrls } from './url-classifier';
+import { detectPlatform } from './url-detector';
+import type { Platform } from './url-detector';
+
+export interface VideoUrlEmbed {
+	url: string;
+	platform: Platform;
+	line: number;
+}
 
 export function findVideoUrls(content: string): VideoUrlEmbed[] {
 	const embeds: VideoUrlEmbed[] = [];

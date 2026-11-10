@@ -1,6 +1,6 @@
 import { requestUrl } from 'obsidian';
 import type { App, TFile } from 'obsidian';
-import { sanitizeUrl } from '../shared';
+import { sanitizePublicUrl } from '../shared';
 import type { MediaCandidate } from './types';
 
 const DOWNLOAD_TIMEOUT_MS = 30_000;
@@ -33,7 +33,7 @@ export class AssetWriter {
 
 	/** Download the candidate into the vault's attachment folder for `note`; returns the created file. */
 	async download(candidate: MediaCandidate, note: TFile): Promise<TFile> {
-		const url = sanitizeUrl(candidate.fileUrl);
+		const url = sanitizePublicUrl(candidate.fileUrl);
 		const timeout = new Promise<never>((_, reject) =>
 			window.setTimeout(() => reject(new Error('Image download timed out')), DOWNLOAD_TIMEOUT_MS)
 		);

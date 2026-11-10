@@ -10,15 +10,15 @@ import {
 	stripUnresolvedLinks, randomToken,
 } from '../shared';
 import type {
-	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
+	AudioEmbed, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
 } from '../shared';
-import { AudioEmbed } from './types';
 import { PostProcessor, type PostProcessOptions } from './post-processor';
 import { Transcriber, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 import type { AudioClipper, TranscribeOptions, TranscriptionResult } from './types';
 
-export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from './note-scanner';
-export type { AudioClipper, AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
+export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from '../shared';
+export type { AudioEmbed } from '../shared';
+export type { AudioClipper, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
 
 export class AudioModule implements FeatureModule {
 	/** Approximate Whisper file-size limit (~25 MB) used to warn before a combined transcription. */

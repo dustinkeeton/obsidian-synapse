@@ -131,4 +131,14 @@ describe('deep dive accept writes no unresolved links (#581)', () => {
 		expect(syllabus).toContain('[[Kept]]');
 		expect(syllabus).not.toContain('Dropped');
 	});
+
+	it('refuses a stored proposal whose path leaves the vault', async () => {
+		const tampered = { ...proposal('p1', 'Leaf', 'Body'), proposedPath: 'Deep Dives/../../outside/Leaf.md' };
+		const mod = await build([tampered]);
+
+		await expect(mod.acceptProposal('p1')).rejects.toThrow('must stay inside the vault');
+
+		expect(env.vault.create).not.toHaveBeenCalled();
+		expect(env.files.has(tampered.proposedPath)).toBe(false);
+	});
 });

@@ -58,10 +58,9 @@ body {
  * Cap the height of embedded videos so portrait-oriented content
  * (TikTok, Instagram Reels, phone recordings) does not dominate the note.
  * Landscape videos are unaffected because they hit width constraints first.
+ * Limited to vault video embeds at zero specificity so any theme or snippet wins.
  */
-.markdown-preview-view video,
-.markdown-reading-view video,
-.markdown-source-view video {
+:where(.markdown-preview-view, .markdown-reading-view, .markdown-source-view) :where(.video-embed) > video {
   max-height: 50vh;
   width: auto;
 }
@@ -158,35 +157,6 @@ body {
 .callout[data-callout="synapse-summary"] { --callout-color: var(--callout-summary); }
 .callout[data-callout="synapse-transcription"] { --callout-color: var(--callout-quote); }
 .callout[data-callout="synapse-enrichment"] { --callout-color: var(--callout-info); }
-/* ── Modal action buttons ── */
-
-.synapse-modal-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
-
-/* ── Modal type accents (#342) ──
- * A type-colored underline beneath the modal title ties each detail modal to
- * its action type, matching the sidebar card/badge for that type. */
-.synapse-elaboration-detail h2 {
-  border-bottom: 2px solid var(--synapse-color-elaboration);
-  padding-bottom: 6px;
-}
-.synapse-enrichment-detail h2 {
-  border-bottom: 2px solid var(--synapse-color-enrichment);
-  padding-bottom: 6px;
-}
-
-/* ── Proposal editor textarea ── */
-
-.synapse-proposal-editor {
-  width: 100%;
-  font-family: var(--font-monospace, monospace);
-  max-height: 60vh;
-  resize: vertical;
-}
 
 /* ── Settings voice card (#540) ──
  * One card: header row on top, custom-instruction panel below a divider. Iris tint is the only fixed color. */
@@ -609,18 +579,6 @@ input[type='range'].synapse-time-range-input:focus-visible::-moz-range-thumb {
 
   .synapse-accordion-header {
     padding: 12px 4px;
-  }
-
-  .synapse-proposal-editor {
-    max-height: 40vh;
-  }
-
-  .synapse-modal-actions {
-    flex-direction: column;
-  }
-
-  .synapse-modal-actions button {
-    width: 100%;
   }
 }
 

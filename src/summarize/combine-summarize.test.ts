@@ -8,7 +8,7 @@ import { SummarizeTarget } from './types';
 import type { Plugin } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
-import type { AudioEmbed } from '../audio';
+import type { AudioEmbed } from '../shared';
 
 /** Typed shape of the hand-built plugin stub the module consumes. */
 interface MockPlugin {
@@ -62,11 +62,6 @@ vi.mock('./note-scanner', async (importOriginal) => {
 const mockFindAudioEmbeds = vi
 	.fn<(content: string, sourcePath: string, metadataCache: unknown) => AudioEmbed[]>()
 	.mockReturnValue([]);
-vi.mock('../audio', () => ({
-	findAudioEmbeds: (content: string, sourcePath: string, metadataCache: unknown) =>
-		mockFindAudioEmbeds(content, sourcePath, metadataCache),
-}));
-
 vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/link-guard')>('../shared/link-guard')),
 	// Use the REAL content-schema registry so auto-format detection runs as in
@@ -78,6 +73,8 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
 	...(await vi.importActual<typeof import('../shared/media-embed')>('../shared/media-embed')),
 	FolderPickerModal: vi.fn(),
+	findAudioEmbeds: (content: string, sourcePath: string, metadataCache: unknown) =>
+		mockFindAudioEmbeds(content, sourcePath, metadataCache),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
 	...(await vi.importActual<typeof import('../shared/callouts')>('../shared/callouts')),

@@ -1,4 +1,4 @@
-import { extractImageUrls, fetchHtmlDocument, redactError, sanitizeUrl } from '../shared';
+import { extractImageUrls, fetchHtmlDocument, redactError, sanitizePublicUrl } from '../shared';
 import type { SourceImage } from '../shared';
 
 export const MAX_LINKED_PAGE_IMAGES = 12;
@@ -18,7 +18,7 @@ export async function fetchLinkedPageImages(urls: string[], opts: LinkedPageOpti
 		if (fetched >= opts.maxPages || images.length >= maxImages) break;
 		let url: string;
 		try {
-			url = sanitizeUrl(raw);
+			url = sanitizePublicUrl(raw);
 		} catch {
 			continue;
 		}

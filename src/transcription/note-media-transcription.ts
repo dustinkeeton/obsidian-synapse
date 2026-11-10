@@ -1,10 +1,6 @@
 import type { App, TFile } from 'obsidian';
-import { findAudioEmbeds } from '../audio';
-import type { AudioEmbed } from '../audio';
-import { findVideoUrls } from '../video';
-import type { VideoUrlEmbed } from '../video';
-import { findImageEmbeds } from '../image';
-import type { ImageEmbed } from '../image';
+import { findAudioEmbeds, findVideoUrls, findImageEmbeds } from '../shared';
+import type { AudioEmbed, VideoUrlEmbed, ImageEmbed } from '../shared';
 import { NoteMediaModal } from './note-media-modal';
 import type { NoteMediaTranscriptionDeps } from './types';
 

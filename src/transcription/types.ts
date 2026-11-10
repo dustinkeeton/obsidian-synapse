@@ -1,11 +1,9 @@
 import type { App, TFile } from 'obsidian';
 import type {
-	CachedTranscript, NoteOperationQueue, NotificationManager, SourceContext, TimeRange, TranscriptCacheEntry,
+	AudioEmbed, CachedTranscript, ImageEmbed, NoteOperationQueue, NotificationManager, SourceContext, TimeRange, TranscriptCacheEntry, VideoUrlEmbed,
 } from '../shared';
 import type { SynapseSettings } from '../settings';
-import type { AudioEmbed, TranscriptionResult } from '../audio';
-import type { VideoUrlEmbed } from '../video';
-import type { ImageEmbed } from '../image';
+import type { TranscriptionResult } from '../audio';
 import type { UrlTranscriptionRouter } from './url-transcription';
 
 export interface UrlTranscriptOptions {

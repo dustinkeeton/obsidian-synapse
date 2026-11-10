@@ -224,3 +224,10 @@ export type {
 } from './checkpoint-types';
 export { BUILD_INFO, PRODUCTION_BUILD, parseBuildInfo, formatBuiltAt, describeDevBuild } from './build-info';
 export type { BuildInfo } from './build-info';
+export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from './audio-embeds';
+export type { AudioEmbed } from './audio-embeds';
+export { findVideoUrls } from './video-urls';
+export type { VideoUrlEmbed } from './video-urls';
+export { findImageEmbeds, IMAGE_EXTENSIONS, IMAGE_EMBED_REGEX } from './image-embeds';
+export type { ImageEmbed } from './image-embeds';
+export { sanitizePublicUrl, isPrivateHost, assertVaultRelativePath } from './validation';
