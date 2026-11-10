@@ -11,8 +11,6 @@ import { fireAndForget, describeInsertion } from '../shared';
 import type { ProposalKind, UnifiedItem, UnifiedViewCallbacks } from './types';
 import { badgeClass, cardClass, reviewPaneLabelClass } from './proposal-styles';
 
-export { type UnifiedItem, type UnifiedViewCallbacks } from './types';
-
 export const UNIFIED_VIEW_TYPE = 'synapse-proposals';
 
 const KIND_LABELS: Record<ProposalKind, string> = {

@@ -1,9 +1,7 @@
 export { UnifiedTranscriptionModal } from './unified-modal';
 export { NoteMediaModal } from './note-media-modal';
 export { TimeRangeSlider } from './time-range-slider';
-export type { TimeRangeSliderOptions } from './time-range-slider';
 export { TimeRangeModal } from './time-range-modal';
-export type { TimeRangeChoice, TimeRangeModalOptions } from './time-range-modal';
 export {
 	detectLocalFileDuration,
 	detectUrlDuration,
@@ -28,12 +26,15 @@ export type {
 	UrlTranscriptOptions,
 	UrlTranscriptionStrategy,
 	YouTubeTranscript,
+	TimeRangeSliderOptions,
+	TimeRangeChoice,
+	TimeRangeModalOptions,
+	InsertUrlTranscriptDeps,
+	NoteMediaTranscriptionDeps,
+	UnifiedTranscriptionDeps,
+	UrlTranscriptionRouterDeps,
 } from './types';
 export { insertUrlTranscript, appendUrlTranscript } from './insert-url-transcript';
-export type { InsertUrlTranscriptDeps } from './insert-url-transcript';
 export { transcribeNoteMedia } from './note-media-transcription';
-export type { NoteMediaTranscriptionDeps } from './note-media-transcription';
 export { openUnifiedTranscriptionModal } from './open-unified-modal';
-export type { UnifiedTranscriptionDeps } from './open-unified-modal';
 export { createUrlTranscriptionRouter } from './create-url-router';
-export type { UrlTranscriptionRouterDeps } from './create-url-router';

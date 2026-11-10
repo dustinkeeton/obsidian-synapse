@@ -11,23 +11,10 @@ import { collectInboundLinks, rewriteContent, InboundLinkRef } from './backlink-
 import { TitleSuggester } from './title-suggester';
 import { isUntitled } from './title-detector';
 import { titleContentKey } from './content-key';
-import { TitleProposal, TitleDuplicateStrategy } from './types';
+import type { TitleProposal, TitleDuplicateStrategy, TitleAcceptOutcome } from './types';
 
-export type { TitleProposal, TitleProposalTrigger, TitleProposalStatus, TitleDuplicateStrategy } from './types';
+export type { TitleProposal, TitleProposalTrigger, TitleProposalStatus, TitleDuplicateStrategy, TitleAcceptOutcome } from './types';
 export { isUntitled } from './title-detector';
-
-/**
- * What {@link TitleModule.acceptProposal} did, so auto-accept can announce the
- * REAL outcome — the suffixed name for `iterate`, or "merged into …" for
- * `merge` — instead of always echoing the originally proposed title (#408).
- * `conflict` means a plain accept hit a live collision and surfaced the choice
- * without changing anything; `skipped` means nothing was eligible.
- */
-export type TitleAcceptOutcome =
-	| { status: 'renamed'; path: string }
-	| { status: 'merged'; into: string }
-	| { status: 'conflict'; target: string }
-	| { status: 'skipped' };
 
 export class TitleModule implements FeatureModule {
 	private plugin: Plugin;
@@ -368,6 +355,13 @@ export class TitleModule implements FeatureModule {
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!(file instanceof TFile)) {
 			this.notifications.info('Source note no longer exists');
+			await this.store.updateStatus(id, 'rejected');
+			await this.refreshView();
+			return { status: 'skipped' };
+		}
+
+		if (/[\\/\0]/.test(proposal.proposedTitle) || /^\.*$/.test(proposal.proposedTitle.trim())) {
+			this.notifications.info('Proposed title is not a valid note name');
 			await this.store.updateStatus(id, 'rejected');
 			await this.refreshView();
 			return { status: 'skipped' };

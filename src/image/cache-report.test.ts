@@ -5,7 +5,7 @@ import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeMo
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
 import { AIClient, NoteOperationQueue } from '../shared';
 import type { AIRequestOptions, ChatMessage } from '../shared';
-import type { ImageEmbed } from './types';
+import type { ImageEmbed } from '../shared';
 
 const mockFile = (path: string): ObsidianTFile => rawFile(path) as unknown as ObsidianTFile;
 

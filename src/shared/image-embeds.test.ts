@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { findImageEmbeds, hasExtractionBelow } from './note-scanner';
+import { findImageEmbeds, hasExtractionBelow } from './image-embeds';
 import { TFile, MetadataCache } from 'obsidian';
 
 function mockMetadataCache(files: Record<string, TFile>): MetadataCache {

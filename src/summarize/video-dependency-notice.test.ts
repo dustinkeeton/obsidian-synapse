@@ -55,10 +55,6 @@ vi.mock('./note-scanner', () => ({
 	hasSummaryBelow: vi.fn().mockReturnValue(false),
 }));
 
-vi.mock('../audio', () => ({
-	findAudioEmbeds: vi.fn().mockReturnValue([]),
-}));
-
 vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/link-guard')>('../shared/link-guard')),
 	...(await vi.importActual<typeof import('../shared/content-schemas')>('../shared/content-schemas')),
@@ -68,6 +64,7 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
 	...(await vi.importActual<typeof import('../shared/media-embed')>('../shared/media-embed')),
 	FolderPickerModal: vi.fn(),
+	findAudioEmbeds: vi.fn().mockReturnValue([]),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
 	buildCallout: vi.fn((_t: string, _title: string, content: string) => `> ${content}`),

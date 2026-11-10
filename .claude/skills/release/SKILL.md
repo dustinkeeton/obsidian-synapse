@@ -67,10 +67,12 @@ node esbuild.config.mjs production
 ### 3. Compute the new version and branch
 
 Read the current version from `manifest.json`, apply the bump level to get
-`NEW_VERSION`, then branch from `main`:
+`NEW_VERSION`, then branch from `main`. Every git command below runs under
+the repository's configured project bot identity: check `git config user.email`
+first and stop if it is unset or a personal address.
 
 ```sh
-git -c user.email=bot@wafflenet.io -c user.name=bot checkout -b chore/release-NEW_VERSION
+git checkout -b chore/release-NEW_VERSION
 ```
 
 ### 4. Run the bump script
@@ -134,13 +136,12 @@ Writing rules — match the voice of the existing entries:
 ### 6. Commit — release files only, by explicit path
 
 ```sh
-git -c user.email=bot@wafflenet.io -c user.name=bot add \
+git add \
   manifest.json package.json versions.json src/__mocks__/obsidian.ts CHANGELOG.md
 
-git -c user.email=bot@wafflenet.io -c user.name=bot commit -m "$(cat <<'EOF'
+git commit -m "$(cat <<'EOF'
 chore: release NEW_VERSION
 
-Co-Authored-By: Claude <bot@wafflenet.io>
 EOF
 )"
 ```
@@ -150,7 +151,7 @@ EOF
 Push over the HTTPS remote (SSH to github.com times out in this environment):
 
 ```sh
-git -c user.email=bot@wafflenet.io -c user.name=bot push -u origin chore/release-NEW_VERSION
+git push -u origin chore/release-NEW_VERSION
 
 gh pr create --base main --title "chore: release NEW_VERSION" --body "$(cat <<'EOF'
 ## Summary
@@ -169,7 +170,6 @@ gh pr create --base main --title "chore: release NEW_VERSION" --body "$(cat <<'E
 Merging to `main` auto-tags `NEW_VERSION` and publishes the GitHub Release
 (see docs/RELEASING.md).
 
-Co-Authored-By: Claude <bot@wafflenet.io>
 EOF
 )"
 ```

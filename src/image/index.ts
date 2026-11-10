@@ -6,12 +6,12 @@ import {
 	CheckpointManager, NoteOperationQueue, generateId, isPathExcluded, findMatchingRule,
 	trackAiCache, withCacheReport, stripUnresolvedLinks,
 } from '../shared';
-import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
-import { ImageEmbed } from './types';
+import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule, ImageEmbed } from '../shared';
 import { ImageExtractor } from './extractor';
 
-export { findImageEmbeds, IMAGE_EXTENSIONS, IMAGE_EMBED_REGEX } from './note-scanner';
-export type { ImageEmbed, OCRResult } from './types';
+export { findImageEmbeds, IMAGE_EXTENSIONS, IMAGE_EMBED_REGEX } from '../shared';
+export type { ImageEmbed } from '../shared';
+export type { OCRResult } from './types';
 
 export class ImageModule implements FeatureModule {
 	private plugin: Plugin;

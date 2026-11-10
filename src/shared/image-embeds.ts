@@ -1,6 +1,11 @@
 import { TFile, MetadataCache } from 'obsidian';
-import { CALLOUT_TYPES, isCalloutHeader } from '../shared';
-import { ImageEmbed } from './types';
+import { CALLOUT_TYPES, isCalloutHeader } from './callouts';
+
+export interface ImageEmbed {
+	fileName: string;
+	file: TFile;
+	line: number;
+}
 
 export const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i;
 export const IMAGE_EMBED_REGEX = /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi;

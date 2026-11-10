@@ -7,18 +7,18 @@ import {
 	CheckpointManager, NoteOperationQueue, generateId, formatTimeRange, loadNodeModules,
 	isPathExcluded, findMatchingRule, redactError,
 	NoSpeechDetectedError, hasSpeechContent, isNoSpeechError, noSpeechNotice, withCacheReport,
-	stripUnresolvedLinks,
+	stripUnresolvedLinks, randomToken,
 } from '../shared';
 import type {
-	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
+	AudioEmbed, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, TimeRange, ModuleDeps, FeatureModule,
 } from '../shared';
-import { AudioEmbed } from './types';
 import { PostProcessor, type PostProcessOptions } from './post-processor';
 import { Transcriber, GEMINI_MAX_INLINE_AUDIO_BYTES } from './transcriber';
 import type { AudioClipper, TranscribeOptions, TranscriptionResult } from './types';
 
-export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from './note-scanner';
-export type { AudioClipper, AudioEmbed, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
+export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from '../shared';
+export type { AudioEmbed } from '../shared';
+export type { AudioClipper, TranscribeOptions, TranscriptionResult, TimestampEntry } from './types';
 
 export class AudioModule implements FeatureModule {
 	/** Approximate Whisper file-size limit (~25 MB) used to warn before a combined transcription. */
@@ -226,7 +226,7 @@ export class AudioModule implements FeatureModule {
 				// rather than relying solely on this.extractor being set.
 				const { os, path, fs } = loadNodeModules();
 
-				const tempPath = path.join(os.tmpdir(), `synapse-clip-src-${Date.now()}.mp3`);
+				const tempPath = path.join(os.tmpdir(), `synapse-clip-src-${Date.now()}-${randomToken()}.mp3`);
 				let clippedPath: string | null = null;
 				try {
 					await fs.promises.writeFile(tempPath, Buffer.from(data));
@@ -578,7 +578,7 @@ export class AudioModule implements FeatureModule {
 			for (let i = 0; i < files.length; i++) {
 				const bin = await this.plugin.app.vault.readBinary(files[i]);
 				const ext = files[i].extension || 'audio';
-				const tempPath = path.join(os.tmpdir(), `synapse-combine-src-${Date.now()}-${i}.${ext}`);
+				const tempPath = path.join(os.tmpdir(), `synapse-combine-src-${Date.now()}-${randomToken()}-${i}.${ext}`);
 				await fs.promises.writeFile(tempPath, Buffer.from(bin));
 				tempInputs.push(tempPath);
 			}

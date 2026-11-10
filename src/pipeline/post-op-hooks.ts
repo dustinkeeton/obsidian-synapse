@@ -1,20 +1,7 @@
 import type { TFile } from 'obsidian';
 import { fireAndForget } from '../shared';
-import type { NotificationManager } from '../shared';
-import type { SynapseSettings, IllustrateRunAfterKey } from '../settings';
-import type { PostOpContext, PostOpHook, PostOpSource, PostOpTrigger, AutoOrganizeTrigger } from './types';
-
-export interface PostOpHookDeps {
-	getSettings: () => SynapseSettings;
-	notifications: NotificationManager;
-	enrich: (filePath: string, trigger: PostOpTrigger) => Promise<void>;
-	checkTitle: (filePath: string) => Promise<void>;
-	organizeNote: (file: TFile) => Promise<unknown>;
-	/** Illustrate the note from the material the action processed (#213); gated live by `illustrate.runAfter`. */
-	illustrateNote: (filePath: string, ctx?: PostOpContext) => Promise<void>;
-	/** REM-scan one note; links only to notes that exist (#581). */
-	remNote: (filePath: string) => Promise<unknown>;
-}
+import type { IllustrateRunAfterKey } from '../settings';
+import type { PostOpHook, PostOpHookDeps, PostOpSource, PostOpTrigger, AutoOrganizeTrigger } from './types';
 
 /** Enrichment trigger recorded on the proposal for each post-op source; enrichment never re-enriches itself. */
 const TRIGGER_BY_SOURCE: Record<Exclude<PostOpSource, 'enrichment'>, PostOpTrigger> = {

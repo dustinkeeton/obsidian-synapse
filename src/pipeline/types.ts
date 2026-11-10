@@ -1,5 +1,6 @@
 import type { TFile } from 'obsidian';
-import type { ScanTarget, SourceContext } from '../shared';
+import type { NotificationManager, ScanTarget, SourceContext } from '../shared';
+import type { SynapseSettings } from '../settings';
 
 /**
  * Scan function contract that each pipeline module must satisfy.
@@ -62,3 +63,15 @@ export type PostOpContext = SourceContext;
 export type PostOpHook = (filePath: string, ctx?: PostOpContext) => void;
 
 export type AutoOrganizeTrigger = 'deep-dive' | 'summarize';
+
+export interface PostOpHookDeps {
+	getSettings: () => SynapseSettings;
+	notifications: NotificationManager;
+	enrich: (filePath: string, trigger: PostOpTrigger) => Promise<void>;
+	checkTitle: (filePath: string) => Promise<void>;
+	organizeNote: (file: TFile) => Promise<unknown>;
+	/** Illustrate the note from the material the action processed (#213); gated live by `illustrate.runAfter`. */
+	illustrateNote: (filePath: string, ctx?: PostOpContext) => Promise<void>;
+	/** REM-scan one note; links only to notes that exist (#581). */
+	remNote: (filePath: string) => Promise<unknown>;
+}

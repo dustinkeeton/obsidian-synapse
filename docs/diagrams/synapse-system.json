@@ -418,7 +418,7 @@
       "title": "Acyclic by injection",
       "items": [
         "pipeline/, intake/, checkpoints/ never import a feature; shared/ and commands/ import none",
-        "video → audio is the one cross-feature runtime edge"
+        "Only feature → feature runtime import: video → audio; the audio, video and image note scanners live in shared/"
       ]
     },
     {

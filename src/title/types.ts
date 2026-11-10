@@ -37,3 +37,16 @@ export interface TitleProposal {
 	 */
 	conflictsWith?: string;
 }
+
+/**
+ * What {@link TitleModule.acceptProposal} did, so auto-accept can announce the
+ * REAL outcome — the suffixed name for `iterate`, or "merged into …" for
+ * `merge` — instead of always echoing the originally proposed title (#408).
+ * `conflict` means a plain accept hit a live collision and surfaced the choice
+ * without changing anything; `skipped` means nothing was eligible.
+ */
+export type TitleAcceptOutcome =
+	| { status: 'renamed'; path: string }
+	| { status: 'merged'; into: string }
+	| { status: 'conflict'; target: string }
+	| { status: 'skipped' };

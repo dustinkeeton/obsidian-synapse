@@ -10,9 +10,8 @@ import {
 	renderSyllabusContent,
 	injectNavigationBlock,
 	buildTreeFromNodes,
-	TraversalNode,
 } from './syllabus-navigator';
-import { DeepDiveProposal, DeepDiveRun } from './types';
+import type { DeepDiveProposal, DeepDiveRun, TraversalNode } from './types';
 
 // ── Test factories ──
 

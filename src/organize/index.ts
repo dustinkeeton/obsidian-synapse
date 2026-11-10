@@ -6,7 +6,7 @@ import {
 	writeNote, generateOrganizeSummary, CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 	trackAiCache, withCacheReport, ConfirmModal, sleep,
-	scanScopeLabel, type ScanTarget, settleOnThrow,
+	scanScopeLabel, type ScanTarget, settleOnThrow, assertVaultRelativePath,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DecisionRequestOptions, DeferredTask, ModuleDeps, FeatureModule, OperationHandle } from '../shared';
 import type { MoveRecord } from '../shared';
@@ -437,7 +437,7 @@ export class OrganizeModule implements FeatureModule {
 		if (proposal.status !== 'pending') return;
 
 		try {
-			// Create the new directory
+			assertVaultRelativePath(proposal.proposedDirectory);
 			await ensureFolder(this.plugin.app, proposal.proposedDirectory);
 
 			// Callers that already hold the live TFile pass it so the rename mutates their instance.
@@ -536,6 +536,7 @@ export class OrganizeModule implements FeatureModule {
 		}
 
 		try {
+			assertVaultRelativePath(snapshot.originalPath);
 			await this.noteQueue.run(file.path, async () => {
 				// Ensure original parent folder still exists
 				const originalParent = snapshot.originalPath.substring(
@@ -591,6 +592,12 @@ export class OrganizeModule implements FeatureModule {
 			const file = this.plugin.app.vault.getAbstractFileByPath(snapshot.currentPath);
 			if (!(file instanceof TFile)) {
 				skipped.push({ path: snapshot.currentPath, reason: `note not found; it belonged at ${snapshot.originalPath}` });
+				continue;
+			}
+			try {
+				assertVaultRelativePath(snapshot.originalPath);
+			} catch {
+				skipped.push({ path: snapshot.currentPath, reason: 'the recorded original path is not a valid vault path' });
 				continue;
 			}
 			if (this.plugin.app.vault.getAbstractFileByPath(snapshot.originalPath)) {

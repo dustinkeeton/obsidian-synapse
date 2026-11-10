@@ -102,6 +102,17 @@ describe('ScanFolderPickerModal', () => {
 		expect(result).toBe(false);
 	});
 
+	it('Shift+Enter handler is a no-op when the chooser internal is missing or reshaped', () => {
+		const { modal } = setup();
+		const register = modal.scope.register as unknown as ReturnType<typeof vi.fn>;
+		const handler = register.mock.calls[0][2] as (evt: KeyboardEvent) => unknown;
+
+		(modal as unknown as { chooser: unknown }).chooser = undefined;
+		expect(handler(shiftEnter)).toBe(false);
+		(modal as unknown as { chooser: unknown }).chooser = {};
+		expect(handler(shiftEnter)).toBe(false);
+	});
+
 	it('labels both root rows distinctly', () => {
 		const { modal } = setup();
 		const [all, topLevel] = modal.getSuggestions('');

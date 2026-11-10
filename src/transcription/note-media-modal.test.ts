@@ -26,8 +26,7 @@ vi.mock('obsidian', async (importOriginal) => {
 import { NoteMediaModal } from './note-media-modal';
 import { TFile, createEl } from '../__mocks__/obsidian';
 import type { App, TFile as ObsidianTFile } from 'obsidian';
-import type { AudioEmbed } from '../audio';
-import type { NotificationManager } from '../shared';
+import type { AudioEmbed, NotificationManager } from '../shared';
 
 const COMBINE_LABEL = 'Combine all selected audio into one transcription';
 

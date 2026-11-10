@@ -10,20 +10,7 @@ import type { RemProposal } from '../rem';
 import type { IllustrateProposal } from '../illustrate';
 import { UNIFIED_VIEW_TYPE, UnifiedProposalView } from './unified-proposal-view';
 import { SYNAPSE_ACTIONS_VIEW_TYPE } from './synapse-actions-view';
-import type { UnifiedItem } from './types';
-
-/** Pending-proposal readers, one per proposal kind, plus the checkpoint banner and in-progress sources. */
-export interface UnifiedViewSources {
-	elaboration: () => Promise<Proposal[]>;
-	enrichment: () => Promise<EnrichmentProposal[]>;
-	organize: () => Promise<OrganizeProposal[]>;
-	'deep-dive': () => Promise<DeepDiveProposal[]>;
-	title: () => Promise<TitleProposal[]>;
-	rem: () => Promise<RemProposal[]>;
-	illustrate: () => Promise<IllustrateProposal[]>;
-	checkpoints: () => Promise<Checkpoint[]>;
-	inProgress: () => InProgressEntry[];
-}
+import type { UnifiedItem, UnifiedViewSources } from './types';
 
 /** Reveal (creating in the right sidebar if needed) the single leaf of `viewType`; returns it, or null when no right leaf exists. */
 async function revealSidebarView(workspace: Workspace, viewType: string, label: string) {

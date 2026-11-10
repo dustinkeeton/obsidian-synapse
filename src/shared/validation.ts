@@ -42,6 +42,56 @@ export function sanitizeUrl(url: string): string {
 	return url;
 }
 
+const PRIVATE_IPV4 = [
+	/^0\./, /^10\./, /^127\./, /^169\.254\./, /^192\.168\./, /^192\.0\.0\./, /^198\.1[89]\./,
+	/^172\.(1[6-9]|2\d|3[01])\./, /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
+	/^(22[4-9]|2[3-5]\d)\./,
+];
+
+// IPv6 forms that carry an IPv4 address in their last 32 bits: IPv4-compatible, IPv4-mapped, IPv4-translated, NAT64.
+const EMBEDDED_IPV4 = /^(?:::ffff:0:|::ffff:|64:ff9b::|::)([0-9a-f.:]+)$/;
+
+function embeddedIpv4(host: string): string | null {
+	const tail = EMBEDDED_IPV4.exec(host)?.[1];
+	if (!tail) return null;
+	if (/^\d+(\.\d+){3}$/.test(tail)) return tail;
+	const words = tail.split(':').map(w => parseInt(w, 16));
+	if (words.length > 2 || words.some(Number.isNaN)) return null;
+	const [high, low] = words.length === 2 ? words : [0, words[0]];
+	return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+}
+
+/**
+ * True for loopback, private-network, link-local, multicast, reserved and unqualified hostnames.
+ * A hostname check only: it cannot see where DNS or an HTTP redirect finally lands.
+ */
+export function isPrivateHost(hostname: string): boolean {
+	const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+	if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return true;
+	if (host.endsWith('.local') || host.endsWith('.internal')) return true;
+	if (host.includes(':')) {
+		if (host === '::' || host === '::1') return true;
+		if (/^f[cdf]/.test(host) || /^fe[89ab]/.test(host)) return true;
+		const embedded = embeddedIpv4(host);
+		return embedded !== null && isPrivateHost(embedded);
+	}
+	if (/^\d+(\.\d+){3}$/.test(host)) return PRIVATE_IPV4.some(re => re.test(host));
+	if (/^(0x[0-9a-f]+|\d+)$/.test(host)) return true;
+	return !host.includes('.');
+}
+
+/**
+ * {@link sanitizeUrl} plus a public-host requirement, for URLs taken from fetched pages or providers.
+ * @throws Error if the URL is invalid or targets a local or private-network host.
+ */
+export function sanitizePublicUrl(url: string): string {
+	const validated = sanitizeUrl(url);
+	if (isPrivateHost(new URL(validated).hostname)) {
+		throw new Error('URL targets a local or private-network address');
+	}
+	return validated;
+}
+
 /**
  * Validates and sanitizes a file path.
  * Rejects paths with null bytes, path traversal, or shell metacharacters.
@@ -71,6 +121,23 @@ export function sanitizePath(filePath: string): string {
 	}
 
 	return filePath;
+}
+
+/**
+ * Validates a vault-relative path read back from stored plugin data before it is written or renamed to.
+ * @throws Error if the path is empty, absolute, or contains a `..` segment or null byte.
+ */
+export function assertVaultRelativePath(path: string): string {
+	if (typeof path !== 'string' || path.trim().length === 0) throw new Error('Stored path is empty');
+	if (path.includes('\0')) throw new Error('Stored path contains null bytes');
+	const normalized = path.replace(/\\/g, '/');
+	if (normalized.startsWith('/') || /^[a-zA-Z]:/.test(normalized)) {
+		throw new Error('Stored path must be relative to the vault');
+	}
+	if (normalized.split('/').some(segment => segment === '..')) {
+		throw new Error('Stored path must stay inside the vault');
+	}
+	return path;
 }
 
 /**

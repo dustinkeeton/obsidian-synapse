@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CheckpointRecoveryModule, STARTUP_CHECK_DELAY_MS } from './checkpoint-recovery';
-import type { CheckpointRecoveryDeps } from './checkpoint-recovery';
+import type { CheckpointRecoveryDeps } from './types';
 import type { Checkpoint, CheckpointManager, NotificationManager } from '../shared';
 import type { CommandRegistrar } from '../commands';
 

@@ -18,8 +18,8 @@ import type { IllustrateProposal, MediaCandidate } from './types';
 const mockFile = (path: string): TFile => rawFile(path) as unknown as TFile;
 
 const candidate: MediaCandidate = {
-	provider: 'wikimedia', title: 'Red panda.jpg', fileUrl: 'https://upload.wikimedia.org/rp.jpg', thumbnailUrl: 'https://t/rp.jpg',
-	pageUrl: 'https://commons.wikimedia.org/wiki/File:Red_panda.jpg', license: 'CC BY-SA', licenseUrl: 'https://cc/by-sa', attribution: 'Jane',
+	provider: 'wikimedia', title: 'Red panda.jpg', fileUrl: 'https://upload.wikimedia.org/rp.jpg', thumbnailUrl: 'https://t.example/rp.jpg',
+	pageUrl: 'https://commons.wikimedia.org/wiki/File:Red_panda.jpg', license: 'CC BY-SA', licenseUrl: 'https://cc.example/by-sa', attribution: 'Jane',
 };
 
 function proposal(): IllustrateProposal {
@@ -98,7 +98,7 @@ describe('IllustrateModule', () => {
 			vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/red-panda.jpg'));
 			await module.acceptProposal('prop1', ['i-photo', 'i-diagram']);
 			const written = (await app.vault.process.mock.results[0].value) as string;
-			expect(written).toContain('## Habitat\nForests.\n\n![[attachments/red-panda.jpg]]\n\n> [!note|synapse-illustrate] A red panda\n> Source: [Red panda.jpg](https://commons.wikimedia.org/wiki/File:Red_panda.jpg) · License: [CC BY-SA](https://cc/by-sa) · Jane\n\n## Lifecycle');
+			expect(written).toContain('## Habitat\nForests.\n\n![[attachments/red-panda.jpg]]\n\n> [!note|synapse-illustrate] A red panda\n> Source: [Red panda.jpg](https://commons.wikimedia.org/wiki/File:Red_panda.jpg) · License: [CC BY-SA](https://cc.example/by-sa) · Jane\n\n## Lifecycle');
 			expect(written).toContain('## Lifecycle\nBirth to death.\n\n```mermaid\nflowchart TD\nA --> B\n```');
 			expect(IllustrateStore.prototype.updateStatus).toHaveBeenCalledWith('prop1', 'accepted', ['i-photo', 'i-diagram']);
 			expect(notifications.success).toHaveBeenCalledWith('Inserted 2 visuals');
@@ -284,7 +284,7 @@ describe('IllustrateModule', () => {
 
 	describe('one placement per image (#583)', () => {
 		const wings = { url: 'https://example.com/wings.jpg', alt: 'Red panda in a tree', pageUrl: 'https://example.com/pandas' };
-		const ovCandidate: MediaCandidate = { ...candidate, provider: 'openverse', title: 'Panda.jpg', fileUrl: 'https://ov/p.jpg', pageUrl: 'https://ov/p' };
+		const ovCandidate: MediaCandidate = { ...candidate, provider: 'openverse', title: 'Panda.jpg', fileUrl: 'https://ov.example/p.jpg', pageUrl: 'https://ov.example/p' };
 
 		beforeEach(() => {
 			settings.illustrate.licenseFilter.push('Source page');

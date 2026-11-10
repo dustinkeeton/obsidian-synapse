@@ -2,7 +2,7 @@ import { Platform, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import {
 	sanitizePath, sanitizeUrl, isRecord, parseJson,
-	loadNodeModules, shellEnv, type NodeModules,
+	loadNodeModules, shellEnv, randomToken, type NodeModules,
 } from '../shared';
 import type { DurationResult } from './types';
 
@@ -75,7 +75,7 @@ export async function detectLocalFileDuration(
 		// characters before interpolating it into a filesystem temp path so a
 		// crafted basename can never escape os.tmpdir().
 		const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, '_');
-		const tempPath = path.join(os.tmpdir(), `synapse-probe-${Date.now()}-${safeName}`);
+		const tempPath = path.join(os.tmpdir(), `synapse-probe-${Date.now()}-${randomToken()}-${safeName}`);
 		await fs.promises.writeFile(tempPath, Buffer.from(data));
 
 		const ffmpegPath = sanitizePath(getSettings().video.ffmpegPath);

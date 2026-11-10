@@ -172,7 +172,7 @@ WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This
 
 | Caller | Wiring | Gate |
 |--------|--------|------|
-| deep-dive accept (`deepDive.onNoteAccepted`) | `PostOpHookDeps.remNote` = `rem.remScanNote(filePath, { postOp: true })` (`main.ts:195`); leg in `pipeline/post-op-hooks.ts:70-73`, dispatched via `fireAndForget` | wire time: `rem.enabled && deepDive.autoRemOnAccept` |
+| deep-dive accept (`deepDive.onNoteAccepted`) | `PostOpHookDeps.remNote` = `rem.remScanNote(filePath, { postOp: true })` (`main.ts:195`); leg in `pipeline/post-op-hooks.ts:57-60`, dispatched via `fireAndForget` | wire time: `rem.enabled && deepDive.autoRemOnAccept` |
 
 - `remScanNote` takes the note's `NoteOperationQueue` slot itself (#585), so the leg enqueues behind the deep-dive accept that holds the same `proposedPath` key. `remScanDirectory` / `resumeFromCheckpoint` stay unqueued.
 - `{ postOp: true }` suppresses the file-not-found, exclusion, lane-skip and no-mentions notices and the "Found N linkable mentions" toast; a pending proposal surfaces only via `refreshView()`. `autoAccept.rem` still applies, silently: `maybeAutoAccept(proposal, postOp)` skips the "Auto-accepted REM links" and "Inserted N wikilinks" notices.
@@ -182,12 +182,12 @@ WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This
 
 `remScanDirectory` and `resumeFromCheckpoint` use `CheckpointManager` with module `'rem'`. Items tracked as `rem-{index}-{path}`. On error or cancel, all proposals created in the run are batch-rejected via `rejectProposalBatch()`.
 
-Resume re-checks exclusion rules silently (a path may have been excluded after checkpoint creation). Resume runs the same `gatherCandidates` pipeline as a fresh scan (literal + always-on semantic), so resumed items also get content-relevant links (#380). Resume opens `startOperation('Resuming REM scan', 'rem-resume', { kind: 'rem' })` (`index.ts:319-323`), so it shows as a cancellable in-progress sidebar row (#577).
+Resume re-checks exclusion rules silently (a path may have been excluded after checkpoint creation). Resume runs the same `gatherCandidates` pipeline as a fresh scan (literal + always-on semantic), so resumed items also get content-relevant links (#380). Resume opens `startOperation('Resuming REM scan', 'rem-resume', { kind: 'rem' })` (`index.ts:320-324`), so it shows as a cancellable in-progress sidebar row (#577).
 
 ## Exclusion Rules
 
 ```ts
-// index.ts:535-541
+// index.ts:537-543
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (
@@ -206,7 +206,7 @@ Single-note command (`rem-current-note`) names the matched rule in the Notice. D
 
 All under `settings.rem` (`RemSettings`):
 
-Interface `settings.ts:303`; defaults `settings.ts:618-624`.
+Interface `settings.ts:317`; defaults `settings.ts:632-638`.
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -223,8 +223,8 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 
 | Import | From |
 |--------|------|
-| `generateId`, `getMarkdownFiles`, `openScanFolderPicker`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `redactError`, `reviewAction`, `trackAiCache`, `withCacheReport`, `scanScopeLabel`, `toScanScope`, `ScanTarget` (type) | `../shared` (index.ts:8) |
-| `NotificationManager`, `CheckpointManager`, `ModuleDeps`, `FeatureModule`, `NoteOperationQueue`, `CacheUse`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` (inline `import('../shared')`, index.ts:319) | `../shared` (type-only, index.ts:5-6) |
+| `generateId`, `getMarkdownFiles`, `openScanFolderPicker`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `redactError`, `reviewAction`, `trackAiCache`, `withCacheReport`, `settleOnThrow`, `scanScopeLabel`, `toScanScope`, `ScanTarget` (type) | `../shared` (index.ts:8) |
+| `NotificationManager`, `CheckpointManager`, `ModuleDeps`, `FeatureModule`, `NoteOperationQueue`, `CacheUse`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` (inline `import('../shared')`, index.ts:320) | `../shared` (type-only, index.ts:5-6) |
 | `CommandRegistrar` | `../commands` (type-only) |
 | `SynapseSettings`, `RemSettings` | `../settings` (type-only) |
 | `MentionScanner` | `./mention-scanner` |

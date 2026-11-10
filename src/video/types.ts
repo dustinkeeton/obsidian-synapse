@@ -39,12 +39,6 @@ export interface VideoMetadata {
 	url?: string;
 }
 
-export interface VideoUrlEmbed {
-	url: string;
-	platform: Platform;
-	line: number;
-}
-
 /**
  * Result of the tier-routed URL transcriber injected by main.ts —
  * structurally compatible with `UrlTranscript` from `src/transcription`

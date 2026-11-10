@@ -25,7 +25,7 @@ import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
 import type { AudioClipper } from './types';
-import type { AudioEmbed } from './types';
+import type { AudioEmbed } from '../shared';
 import type { SynapseSettings } from '../settings';
 
 /** Typed shape of the hand-built plugin stub the module consumes. */

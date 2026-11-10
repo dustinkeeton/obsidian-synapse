@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-11-09
 ---
 
 # Intake Module
@@ -97,7 +97,7 @@ startup catch-up scan (#462), armed by onload via workspace.onLayoutReady + CATC
         markProcessedAndMaybeMove (index.ts:514) --> optional writeCaptureBreadcrumb (index.ts:608)
 ```
 
-`transcribeUrlToNote` implementation is `appendUrlTranscript` (`src/transcription/insert-url-transcript.ts:89`), wired at `main.ts:72-79`: `UrlTranscriptionRouter.transcribe(url)` → `buildUrlTranscriptBlock(result, url, video.embedInNote)` → `vault.process` append under operation toast `intake-url-<path>`; on error the toast reports and the error is rethrown so the note stays un-stamped. No speech (#524) resolves instead: notice, nothing appended, note stamped (final, not retriable).
+`transcribeUrlToNote` implementation is `appendUrlTranscript` (`src/transcription/insert-url-transcript.ts:77`), wired at `main.ts:72-79`: `UrlTranscriptionRouter.transcribe(url)` → `buildUrlTranscriptBlock(result, url, video.embedInNote)` → `vault.process` append under operation toast `intake-url-<path>`; on error the toast reports and the error is rethrown so the note stays un-stamped. No speech (#524) resolves instead: notice, nothing appended, note stamped (final, not retriable).
 
 ## Startup Catch-up Scan (#462)
 
@@ -123,7 +123,7 @@ Off by default (`intake.adoptSharedCaptures`). Targets Obsidian's mobile share r
 - Idempotency: a note carrying `synapse-processed` (boolean `true` or string `'true'`) is never reprocessed; this also suppresses the modify echo from the flag-stamp write.
 - In-flight guard: paths being flushed are tracked in `inFlight` (keyed on originalPath) so the stamp/move rename echo does not re-enter `flush`.
 - Path exclusion: `isPathExcluded(file.path, 'intake', settings)` is checked before scheduling; excluded notes are silently skipped (#307).
-- Primary mover is organize (last pipeline phase inside `fireOnFile`), which relocates a note only under `autoAccept.organize`; otherwise it leaves a pending move / new-directory proposal. `moveWhenDone` is a FALLBACK mover (index.ts:514), applied only when organize left the note inside the intake folder (pending proposal / no-op).
+- Primary mover is organize (last pipeline phase inside `fireOnFile`), which relocates a note only under `autoAccept.organize`; otherwise it leaves a pending move / new-directory proposal. `moveWhenDone` is a FALLBACK mover (index.ts:530-537), applied only when organize left the note inside the intake folder (pending proposal / no-op).
 - Stamp-before-move: the processed flag is written before any relocation (`stampProcessed`, index.ts:560) so idempotency survives the move's rename echo.
 - `moveNote` (index.ts:573) uses `fileManager.renameFile` so inbound links stay intact and `ensureFolder` to create the destination.
 - Unqueued by design: stamp/move/breadcrumb writes run after every pipeline phase has released the note's `NoteOperationQueue` slot; `vault.process` callbacks re-derive from fresh content.
@@ -136,7 +136,7 @@ Collision policy (#227, `resolveBreadcrumbPath`, index.ts:654): two distinct not
 
 ## Configuration
 
-All under `settings.intake` (`IntakeSettings`, `settings.ts:330`; defaults `DEFAULT_SETTINGS.intake`, `settings.ts:639`):
+All under `settings.intake` (`IntakeSettings`, `settings.ts:344`; defaults `DEFAULT_SETTINGS.intake`, `settings.ts:653`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|

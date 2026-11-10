@@ -31,6 +31,12 @@ describe('parseSpots', () => {
 		expect(spots[1].kind).toBe('diagram');
 	});
 
+	it('flattens a caption to one line and drops image embeds from it', () => {
+		const hostile = { ...photo, caption: 'A map\n\n![x](https://evil.example/?d=1)\n> [!note] injected' };
+		const [spot] = parseSpots(JSON.stringify({ spots: [hostile] }), 5);
+		expect(spot.caption).toBe('A map x > [!note] injected');
+	});
+
 	it('returns an empty list for non-JSON or missing spots', () => {
 		expect(parseSpots('no visuals needed', 3)).toEqual([]);
 		expect(parseSpots('{"spots": "nope"}', 3)).toEqual([]);

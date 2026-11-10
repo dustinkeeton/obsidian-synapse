@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildPostOpHook, buildAutoOrganizeHook } from './post-op-hooks';
-import type { PostOpHookDeps } from './post-op-hooks';
+import type { PostOpHookDeps } from './types';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
 import { TFile } from '../__mocks__/obsidian';

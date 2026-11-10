@@ -6,6 +6,78 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-09: Pre-release audit — every remaining trust boundary gets its own check
+
+**Context**: Security pass of the pre-release audit of the whole codebase (branch `release-codebase-audit`). Each item was a place where text or a file from outside the vault was trusted a step further than the code around it already allowed.
+
+**Decision**: Close each gap where the value enters, as a check rather than a redesign.
+
+| Boundary | What the check does | Where |
+|----------|---------------------|-------|
+| Content sent to the summarizer | Wrapped in the untrusted-content fence; the system prompt adds a rule: never obey instructions inside it, never add links or image URLs it does not already contain | `summarize/summarizer.ts:14-15,33` |
+| Tweet text fetched during enrichment | Wrapped in the same fence before it joins the prompt | `enrichment/index.ts:724` |
+| Illustrate provider URLs | Still `http:`/`https:` only; now `( ) < >` and whitespace are percent-encoded so a URL cannot close a markdown `(url)` | `illustrate/inserter.ts:6-15` |
+| Illustrate link text and attribution | Flattened to one line with `[` `]` removed, so provider text cannot write a link or an embed | `illustrate/inserter.ts:17` |
+| Illustrate downloads | A response whose `Content-Type` is present and not `image/*` is rejected | `illustrate/asset-writer.ts:46-50` |
+| OS-temp file names | Every name carries a random suffix from `randomToken()` (CSPRNG hex), not a timestamp alone | `shared/id-utils.ts:16` |
+| Video temp files | The extracted audio and the downloaded video are unlinked in a `finally` on every exit path | `video/index.ts:106-151`, `:329-346` |
+| Deep-dive file names | AI-chosen titles pass through `safeNoteName`: reserved characters become `-`, leading dots are stripped, empty becomes "Untitled" | `deep-dive/index.ts:690` |
+| Undocumented Obsidian APIs | `app.commands` and the picker's `chooser.useSelectedItem` are feature-detected and degrade (a "run it from the command palette" notice; Shift+Enter does nothing) | `views/command-runner.ts:33-42`, `shared/scan-folder-picker-modal.ts:30` |
+
+A follow-up round the same day closed the items the first pass left open:
+
+| Boundary | What the check does | Where |
+|----------|---------------------|-------|
+| Hosts Illustrate fetches from | A download or a linked-page fetch is refused when the host is loopback, private-network, link-local, or unqualified (`sanitizePublicUrl` → `isPrivateHost`). The download fails; a linked page is skipped | `shared/validation.ts`; `illustrate/asset-writer.ts:36`, `illustrate/linked-pages.ts:21` |
+| Transcript text sent to audio post-processing | Wrapped in the untrusted-content fence — whole transcript, each section, and the preceding-context excerpt; the system prompt says the fenced text is text to edit, never instructions to follow | `audio/post-processor.ts` |
+| Paths stored in proposals and snapshots | Re-validated when read back, before any write or rename (`assertVaultRelativePath`: not empty, not absolute, no `..` segment, no null byte): deep-dive accept, organize accept, organize undo for one note and for a whole run | `shared/validation.ts`; `deep-dive/index.ts:176`, `organize/index.ts:440,539,598` |
+| Titles stored in title proposals | Accept rejects a stored title that contains a path separator or is only dots, and marks the proposal rejected | `title/index.ts:362` |
+| Third-party GitHub Actions | Referenced by full commit SHA, version in a trailing comment, so a moved tag cannot change what CI or a release runs | `.github/workflows/ci.yml`, `release.yml`, `tag-on-version-bump.yml` |
+
+**Alternatives considered**: None recorded per item — each is the smallest check at an existing seam, reusing what already stood (`wrapUntrusted`, `httpUrlOrEmpty`, the `finally` cleanup audio clipping already had). For the host check: applying it to every fetch — rejected. A link the user wrote into their own note may point at a local address on purpose, so summarize and elaboration keep the plain `sanitizeUrl`; only URLs that arrive from a provider or a fetched page get the public-host rule.
+
+**Rationale**: The same reasoning as the 2026-10-06 pass: a check is cheapest, and hardest to bypass, where the value enters. Summarize was the largest consumer of fetched text still splicing it into a prompt unfenced.
+
+**Impact**:
+- A summary of a page that tells the model to add a tracking image or a link no longer gets one.
+- `shared` gains `randomToken`; `enrichment`, `summarize`, `illustrate`, `video`, `audio`, `deep-dive`, `views`, and `transcription/duration-detector.ts` change at the sites above, with tests.
+- `docs/automated-review-notes.md` now lists all four non-public Obsidian API touches and how each degrades.
+- The host check reads the hostname only; it cannot see where DNS or a redirect lands.
+- Dev-dependency advisories are cleared: vitest 4.1.12, plus `overrides` for `moment` and — scoped to three eslint packages — `minimatch`. `npm audit` reports 0 vulnerabilities. Synapse still ships no npm runtime dependency.
+
+---
+
+## 2026-11-09: Pre-release audit — a module's shared contracts live in its `types.ts`
+
+**Context**: Architecture pass of the same audit. The convention is that a module's types live in `<module>/types.ts`, but several types that *other* modules are handed — dependency bundles, callback signatures, outcome unions — were declared next to their implementation.
+
+**Decision**: Move them. No behavior changes.
+
+| Module | Moved into `types.ts` |
+|--------|-----------------------|
+| `checkpoints` | `CheckpointRecoveryDeps` |
+| `pipeline` | `PostOpHookDeps` |
+| `deep-dive` | `TraversalNode`, `NavigationContext` |
+| `summarize` | `TranscribeUrlFn`, `TranscribeAudioFn` |
+| `title` | `TitleAcceptOutcome` |
+| `transcription` | The dependency bundles (`InsertUrlTranscriptDeps`, `UrlTranscriptionRouterDeps`, `NoteMediaTranscriptionDeps`, `UnifiedTranscriptionDeps`) and the time-range modal and slider options |
+
+The pass also recorded the **complete list of feature → feature imports** in the machine docs, and removed the four runtime ones the architecture rule does not name (`summarize → audio` and `transcription → audio`, `video`, `image`). All four existed only to reach a note scanner, so the scanners moved to `shared/` (`audio-embeds.ts`, `video-urls.ts`, `image-embeds.ts`) and the `audio`, `video`, and `image` barrels re-export the same names. The only runtime feature → feature import left is the sanctioned `video → audio`.
+
+The follow-up round also deleted code nothing reached:
+
+- **Four dead files** — `video/frame-extractor.ts` (a placeholder class that threw), and three review surfaces the unified sidebar had replaced and nothing registered: `elaboration/proposal-view.ts`, `elaboration/proposal-modal.ts`, `enrichment/enrichment-modal.ts`. Frame extraction is still not implemented; the `video.frameExtraction` settings remain, unread by any feature.
+- **Four unused modal CSS rules** in `styles.css`, which only those surfaces used.
+- **The embedded-video height cap is now overridable.** It applied to every `<video>` in a note view at normal specificity; it is now limited to vault video embeds at zero specificity (`:where(...) :where(.video-embed) > video`), so any theme or snippet wins.
+
+**Alternatives considered**: None recorded for the type moves. For the four extra edges: sanctioning them in the architecture rule, or injecting the scanners through the registry — rejected; the scanners are pure functions over note text with no feature state, so `shared/` is their natural home.
+
+**Rationale**: A reader wiring one module to another should find the contract in one predictable file, without opening the implementation. Writing the import edges down keeps the docs honest about the graph that actually ships, and moving the scanners makes that graph match the rule.
+
+**Impact**: Import paths inside six modules; barrels export the same names. The interactive system diagram (`docs/diagrams/synapse-system.html`) was re-rendered to show the single runtime edge. New `shared/audio-embeds.ts`, `shared/video-urls.ts`, `shared/image-embeds.ts` (+ their tests, moved from the `audio`, `video`, and `image` `note-scanner` files). `audio` and `image` are confirmed to import nothing from `commands/` — their registrar arrives through `ModuleDeps`. The graph is still acyclic; the remaining feature → feature edges besides `video → audio` are type-only (`transcription → audio` for `TranscriptionResult`, and `views` for proposal types).
+
+---
+
 ## 2026-11-09: Running operations show in the review pane, from one shared registry (#577)
 
 **Context**: The review pane showed only finished proposals and interrupted-operation checkpoints. While a proposal-producing action ran, the only sign was its operation toast. If that toast was gone, hidden behind other notices, or the user was on mobile, nothing said a proposal was coming, so users re-triggered the action or assumed it had failed silently.
@@ -26,6 +98,43 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 - New `shared/in-progress-registry.ts`; `startOperation` takes an optional third `meta` argument, and `NotificationManager` gains `trackInProgress`.
 - The seven proposal modules pass `{ kind, target }`. Scans name their folder or "Whole vault"; resume runs carry no target.
 - `views/` gains `setInProgress`, `onCancelInProgress`, and `watchInProgress`. A compile-time guard keeps `InProgressKind` equal to the views' `ProposalKind`; the list is duplicated because `shared` cannot import `views`.
+
+---
+
+## 2026-11-09: Model lists follow the vendors; a retired saved model is repointed, never left to fail (#597)
+
+**Context**: Vendors retire model ids. A vault whose saved model had been retired would send a request the provider rejects, and the dropdowns offered models that no longer existed.
+
+**Decision**:
+- **Lists re-verified against vendor docs (2026-11-09).** OpenAI, Gemini, Ollama, Deepgram, and Jev option lists drop retired ids. Anthropic aliases resolve to `claude-fable-5-2`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`.
+- **Settings migration v4 repoints retired ids.** `o3`, `o3-mini`, `o4-mini`, `gemini-2.5-pro`, `gemini-2.5-flash`, and `gemini-3.5-flash` map to their vendor-named replacement (`RETIRED_MODEL_REPLACEMENTS`) in `ai.model`, `audio.transcriptionModel`, `image.visionModel`, and `video.frameExtraction.visionModel`.
+- **New installs default to Anthropic and the `opus` alias.** Saved settings keep their provider.
+- **The shared AI key is vendor-matched.** Whisper and Gemini transcription fall back to `ai.apiKey` only when `ai.provider` is `openai` or `gemini` respectively.
+
+**Alternatives considered**: None recorded.
+
+**Rationale**: A migration fixes the saved value once, so an upgrade never surfaces as a failed request. Matching the key to the vendor stops a key for one provider being sent to another now that the default provider is not OpenAI.
+
+**Impact**: `settings.ts` (`MODEL_OPTIONS`, `TRANSCRIPTION_MODEL_OPTIONS`, defaults), `shared/settings-migrations.ts` (`CURRENT_SETTINGS_VERSION` is 4), `shared/ai-client.ts`, `audio/transcriber.ts`. This supersedes the `gpt-5.6-sol` default from the 2026-09-14 entry below.
+
+---
+
+## 2026-11-08: A deep dive survives a dropped connection — the queue is saved, the request is retried (#595)
+
+**Context**: A deep dive makes many AI calls in a row. When the connection dropped mid-run — typically iOS suspending Obsidian in the background — the run failed, and its checkpoint could only be discarded: resume told the user to start over.
+
+**Decision**:
+- **The remaining queue is saved with the run.** `DeepDiveRun.pending` holds the generation tasks still to do. A run whose loop throws stays in progress and its checkpoint stays active.
+- **Resume continues the same run.** `resumeFromCheckpoint` reloads the run and carries on under the same checkpoint. A checkpoint from before this change, or one whose root note is gone, is discarded with a notice.
+- **Dropped requests are retried in `safeRequest`.** A transport failure is retried up to twice (after 1 s, then 3 s), once Obsidian is back in the foreground. A timeout is retried only if the app was backgrounded during the attempt. HTTP errors are never retried there.
+- **Mobile users are told.** On mobile, a run that was paused in the background shows "Deep dive paused while Obsidian was in the background — resuming".
+
+**Alternatives considered**:
+- **Keep resume state in the checkpoint's metadata** — not chosen; it lives on the run, and each task points at its parent proposal by id instead of copying its content.
+
+**Rationale**: The work already done is saved as proposals, so the only thing lost on a failure was the list of what remained. Saving that list makes resume real. Retrying at the shared request layer helps every AI and System 1 call, not just deep dive.
+
+**Impact**: `deep-dive/index.ts`, `deep-dive/types.ts`, `shared/safe-request.ts` (+ tests). Image OCR is now the only module whose checkpoint resume still asks for a re-run.
 
 ---
 
@@ -60,7 +169,7 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 **Rationale**: Without the scan, the plain-prose change would leave every accepted deep-dive note with no links at all. Matching the sibling default keeps the post-accept behavior predictable.
 
-**Impact**: New REM leg in `pipeline/post-op-hooks.ts`; `main.ts` wraps the scan in the note's queue slot so it waits behind the accept. Existing vaults pick up the default through the defaults merge, with no migration. Known gap (#585): the leg isn't marked post-op, so each accepted note can raise its own REM notices and "Review" toast.
+**Impact**: New REM leg in `pipeline/post-op-hooks.ts`; `main.ts` wraps the scan in the note's queue slot so it waits behind the accept. Existing vaults pick up the default through the defaults merge, with no migration. The leg was first shipped unmarked, so each accepted note raised its own REM notices and "Review" toast; #585 fixed that — the scan now runs as a post-op (`{ postOp: true }`), takes the note's queue slot itself, and stays silent.
 
 ---
 
@@ -273,7 +382,7 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 - **`AIRequestOptions.model`** (`shared/ai-client.ts:33`) is a per-call override. `chat()` resolves `opts.model || ai.model`, keys the response cache on the resolved model (so a vision-model call never replays a default-model response), and threads it through `dispatch` to every provider. `image/extractor.ts:46` and `elaboration/image-analyzer.ts:150` pass `settings.image.visionModel || settings.ai.model` on the call; nothing mutates settings.
 - **`image/preprocess.ts` becomes `shared/image-preprocess.ts`** (`preprocessImage`, `PreprocessResult`), so both consumers reach it through the `shared` barrel and the elaboration → image edge is gone. The `image` barrel no longer re-exports `preprocessImage` or `arrayBufferToBase64`.
 - **Deep-dive receives `OrganizeModule.suggestDirectory`** (`organize/index.ts:68`; returns the top directory when its score is at least `SUGGEST_DIRECTORY_MIN_SCORE = 0.6`, else `null`) as a registry-injected `SuggestDirectory` callback (`deep-dive/types.ts:85`, `modules/registry.ts:111-116`). Organize precedes deep-dive in `MODULE_FACTORIES` for this reason. `ContentAnalyzer` and `DirectoryMatcher` are now internal to organize.
-- **`audio` declares a structural `AudioClipper`** (`audio/types.ts:43`: `clipAudio`, `concatAudio`, `checkDependencies`) that `video/AudioExtractor` satisfies. The registry hands audio an `AudioExtractor` instance on desktop and `undefined` elsewhere (`modules/registry.ts:80`); `audio` imports nothing from `video`. `video/ffmpeg-availability.ts:1` does `import type { AudioClipper }` from audio instead.
+- **`audio` declares a structural `AudioClipper`** (`audio/types.ts:36`: `clipAudio`, `concatAudio`, `checkDependencies`) that `video/AudioExtractor` satisfies. The registry hands audio an `AudioExtractor` instance on desktop and `undefined` elsewhere (`modules/registry.ts:80`); `audio` imports nothing from `video`. `video/ffmpeg-availability.ts:1` does `import type { AudioClipper }` from audio instead.
 - **`transcription/types.ts` holds every router/tier/caption/duration contract**; the `video` barrel stops re-exporting `detectPlatform`/`isSupportedUrl` (import them from `shared`), and interface imports become `import type`.
 
 **Alternatives considered**:
@@ -323,7 +432,7 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 **Rationale**: A transcription *is* a quote and a summary *is* a summary; writing them as those base types gives users their theme's styling and removes a stylesheet that fought it.
 
-**Impact**: `shared/callouts.ts`, `shared/insertion-point.ts`, `summarize/note-scanner.ts`, `video/note-scanner.ts`, `audio/note-scanner.ts`, `image/note-scanner.ts`, `illustrate/note-scanner.ts`, `illustrate/index.ts`, `enrichment/enrichment-applier.ts`, `deep-dive/syllabus-navigator.ts`, `styles.css` (+ tests, including every spelling combination of the summarize skip guard so a legacy transcription is never summarized twice). PR #555.
+**Impact**: `shared/callouts.ts`, `shared/insertion-point.ts`, `summarize/note-scanner.ts`, `shared/video-urls.ts`, `shared/audio-embeds.ts`, `shared/image-embeds.ts`, `illustrate/note-scanner.ts`, `illustrate/index.ts`, `enrichment/enrichment-applier.ts`, `deep-dive/syllabus-navigator.ts`, `styles.css` (+ tests, including every spelling combination of the summarize skip guard so a legacy transcription is never summarized twice). PR #555.
 
 ---
 
@@ -2080,8 +2189,8 @@ When summarizing outside the enrichment section, insert a blockquote summary inl
 **Decision**: Establish a formal git workflow:
 - **Protected main**: never push directly; all changes via pull requests
 - **Feature branches**: `feat/`, `fix/`, `refactor/`, `chore/` prefixes
-- **Bot identity**: all git operations use `bot@wafflenet.io` / `bot` (never personal identities)
-- **Co-authored commits**: `Co-Authored-By: Claude <bot@wafflenet.io>` trailer
+- **Bot identity**: all git operations use the project bot identity (never personal identities)
+- **Co-authored commits**: a `Co-Authored-By` trailer naming the project bot identity
 - **Pre-flight checklist**: type-check, test, build before pushing
 - **Worktrees**: for parallel work on conflicting files
 

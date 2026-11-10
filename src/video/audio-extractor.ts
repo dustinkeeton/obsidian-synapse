@@ -2,7 +2,7 @@ import { SynapseSettings } from '../settings';
 import { ExtractionResult, VideoMetadata } from './types';
 import {
 	sanitizePath, sanitizeUrl, describeNetworkError, isRecord, parseJson,
-	loadNodeModules, shellEnv, type NodeModules,
+	loadNodeModules, shellEnv, randomToken, type NodeModules,
 } from '../shared';
 
 /**
@@ -203,7 +203,7 @@ export class AudioExtractor {
 		const sanitizedUrl = sanitizeUrl(url);
 		const settings = this.getSettings().video;
 		// Use OS temp dir for absolute path — yt-dlp needs a real filesystem path
-		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-audio-${Date.now()}.mp3`);
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-audio-${Date.now()}-${randomToken()}.mp3`);
 
 		// Fetch metadata once and reuse it for both the returned VideoMetadata and
 		// the proactive no-audio/slideshow check, avoiding a second network call.
@@ -308,7 +308,7 @@ export class AudioExtractor {
 	async extractFromFile(filePath: string): Promise<ExtractionResult> {
 		const sanitizedPath = sanitizePath(filePath);
 		const settings = this.getSettings().video;
-		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-audio-${Date.now()}.mp3`);
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-audio-${Date.now()}-${randomToken()}.mp3`);
 
 		await this.runCommand(sanitizePath(settings.ffmpegPath), [
 			'-i', sanitizedPath,
@@ -330,7 +330,7 @@ export class AudioExtractor {
 	async downloadVideo(url: string): Promise<string> {
 		const sanitizedUrl = sanitizeUrl(url);
 		const settings = this.getSettings().video;
-		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-video-${Date.now()}.mp4`);
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-video-${Date.now()}-${randomToken()}.mp4`);
 
 		await this.runCommand(sanitizePath(settings.ytDlpPath), [
 			'-f', 'mp4/best',
@@ -348,7 +348,7 @@ export class AudioExtractor {
 	 */
 	async clipAudio(inputPath: string, startSeconds: number, endSeconds: number): Promise<string> {
 		const settings = this.getSettings().video;
-		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-clipped-${Date.now()}.mp3`);
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-clipped-${Date.now()}-${randomToken()}.mp3`);
 		await this.runCommand(sanitizePath(settings.ffmpegPath), [
 			'-i', sanitizePath(inputPath),
 			'-ss', String(startSeconds),
@@ -372,7 +372,7 @@ export class AudioExtractor {
 			throw new Error('concatAudio requires at least one input file');
 		}
 		const settings = this.getSettings().video;
-		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-combined-${Date.now()}.mp3`);
+		const outputPath = this.node.path.join(this.node.os.tmpdir(), `synapse-combined-${Date.now()}-${randomToken()}.mp3`);
 
 		// Build: -i in1 -i in2 ... -filter_complex "[0:a][1:a]...concat=n=N:v=0:a=1[out]" -map "[out]" -acodec libmp3lame out
 		const args: string[] = [];

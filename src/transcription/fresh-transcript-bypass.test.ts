@@ -7,7 +7,7 @@ import { AIClient, NoteOperationQueue } from '../shared';
 import type { NotificationManager, TranscriptCacheEntry } from '../shared';
 import { createUrlTranscriptionRouter } from './create-url-router';
 import { insertUrlTranscript } from './insert-url-transcript';
-import type { InsertUrlTranscriptDeps } from './insert-url-transcript';
+import type { InsertUrlTranscriptDeps } from './types';
 import type { TranscriptStore } from './types';
 import * as youtubeCaptions from './youtube-captions';
 

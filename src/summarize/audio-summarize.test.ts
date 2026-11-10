@@ -8,7 +8,7 @@ import type { Mock } from 'vitest';
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { NotificationManager, CheckpointManager } from '../shared';
-import type { AudioEmbed } from '../audio';
+import type { AudioEmbed } from '../shared';
 
 /** The slice of an Obsidian Command the tests read back off addCommand. */
 interface MockCommand {
@@ -60,15 +60,9 @@ vi.mock('../video', () => ({
 	isSupportedUrl: vi.fn().mockReturnValue(false),
 }));
 
-// Mock the audio module — findAudioEmbeds returns controlled results
 const mockFindAudioEmbeds = vi
 	.fn<(content: string, sourcePath: string, metadataCache: unknown) => AudioEmbed[]>()
 	.mockReturnValue([]);
-vi.mock('../audio', () => ({
-	findAudioEmbeds: (content: string, sourcePath: string, metadataCache: unknown) =>
-		mockFindAudioEmbeds(content, sourcePath, metadataCache),
-}));
-
 // Mock the shared module. Content fetchers are stubbed here (they moved from
 // ./content-fetcher into ../shared) to avoid real network calls.
 vi.mock('../shared', async () => ({
@@ -83,6 +77,8 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/media-embed')>('../shared/media-embed')),
 	...(await vi.importActual<typeof import('../shared/url-classifier')>('../shared/url-classifier')),
 	FolderPickerModal: vi.fn(),
+	findAudioEmbeds: (content: string, sourcePath: string, metadataCache: unknown) =>
+		mockFindAudioEmbeds(content, sourcePath, metadataCache),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),
 	NotificationManager: vi.fn(),
 	...(await vi.importActual<typeof import('../shared/callouts')>('../shared/callouts')),

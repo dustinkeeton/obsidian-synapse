@@ -21,6 +21,16 @@ describe('fetchLinkedPageImages', () => {
 		expect(images[1].pageUrl).toBe('https://a.test/2');
 	});
 
+	it('never requests a local or private-network page', async () => {
+		vi.mocked(requestUrl).mockResolvedValueOnce(page(1) as never);
+		const images = await fetchLinkedPageImages(
+			['http://localhost:3000/', 'http://10.0.0.5/wiki', 'http://router.local/', 'https://a.test/1'],
+			{ maxPages: 3 },
+		);
+		expect(requestUrl).toHaveBeenCalledTimes(1);
+		expect(images.map((i) => i.pageUrl)).toEqual(['https://a.test/1']);
+	});
+
 	it('skips non-HTML responses and failed fetches without aborting', async () => {
 		vi.mocked(requestUrl)
 			.mockResolvedValueOnce({ status: 200, text: '%PDF', headers: { 'content-type': 'application/pdf' } } as never)

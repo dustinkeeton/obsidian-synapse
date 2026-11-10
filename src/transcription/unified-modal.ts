@@ -1,7 +1,6 @@
 import { App, Modal, Platform, Setting, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AUDIO_EXTENSIONS } from '../audio';
-import { detectPlatform, isPathExcluded } from '../shared';
+import { AUDIO_EXTENSIONS, detectPlatform, isPathExcluded } from '../shared';
 import type { TimeRange, NotificationManager } from '../shared';
 import {
 	detectLocalFileDuration,

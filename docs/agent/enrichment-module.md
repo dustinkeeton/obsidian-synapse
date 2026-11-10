@@ -28,7 +28,6 @@ src/enrichment/
   prompt-builder.ts        # PromptBuilder — external link + frontmatter prompts
   enrichment-store.ts      # EnrichmentStore — proposal JSON persistence
   enrichment-applier.ts    # EnrichmentApplier — apply/undo via vault.process
-  enrichment-modal.ts      # EnrichmentDetailModal — per-item toggle modal
   settings-section.ts      # renderEnrichmentSettings — settings accordion (#243)
   *.test.ts                # co-located Vitest suites
 ```

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+	assertVaultRelativePath,
+	isPrivateHost,
+	sanitizePublicUrl,
 	blockquoteOriginal, ensureWithinVault, stripCodeFences,
 	parseTimestamp, validateTimeRange, formatTimeRange, sanitizeUrl,
 } from './validation';
@@ -329,5 +332,55 @@ describe('stripCodeFences', () => {
 	it('handles empty content inside fences', () => {
 		const input = '```\n```';
 		expect(stripCodeFences(input)).toBe('');
+	});
+});
+
+describe('isPrivateHost', () => {
+	it.each([
+		'localhost', 'app.localhost', 'printer.local', 'db.internal', 'intranet',
+		'127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.1',
+		'169.254.169.254', '100.64.0.1', '0.0.0.0',
+		'[::1]', '::', 'fd00::1', 'fe80::1', '::ffff:10.0.0.1', '::ffff:7f00:1',
+		'::a00:1', '::127.0.0.1', '64:ff9b::a00:1', '::ffff:0:c0a8:101', 'ff02::1',
+		'224.0.0.1', '240.0.0.1', '255.255.255.255', '198.18.0.1', '192.0.0.8',
+	])('treats %s as private', (host) => {
+		expect(isPrivateHost(host)).toBe(true);
+	});
+
+	it.each([
+		'example.com', 'upload.wikimedia.org', '8.8.8.8', '172.32.0.1', '100.128.0.1',
+		'2606:4700::1111', '::ffff:8.8.8.8', '64:ff9b::808:808', '::808:808', '223.255.255.1',
+	])('treats %s as public', (host) => {
+		expect(isPrivateHost(host)).toBe(false);
+	});
+});
+
+describe('sanitizePublicUrl', () => {
+	it('returns a public URL unchanged', () => {
+		expect(sanitizePublicUrl('https://example.com/a.png')).toBe('https://example.com/a.png');
+	});
+
+	it.each([
+		'http://localhost:8080/admin', 'http://192.168.0.1/', 'http://[::1]/', 'http://2130706433/',
+	])('rejects %s', (url) => {
+		expect(() => sanitizePublicUrl(url)).toThrow('local or private-network');
+	});
+
+	it('still applies sanitizeUrl', () => {
+		expect(() => sanitizePublicUrl('ftp://example.com/x')).toThrow('Only HTTP and HTTPS');
+	});
+});
+
+describe('assertVaultRelativePath', () => {
+	it.each(['Notes/Topic.md', 'Deep Dives/A/B.md', 'file..name.md', '.synapse/x.json'])('accepts %s', (path) => {
+		expect(assertVaultRelativePath(path)).toBe(path);
+	});
+
+	it.each([
+		['', 'empty'], ['   ', 'empty'], ['../outside.md', 'inside the vault'], ['Notes/../../x.md', 'inside the vault'],
+		['Notes\\..\\x.md', 'inside the vault'], ['/etc/passwd', 'relative to the vault'], ['C:\\Users\\x.md', 'relative to the vault'],
+		['a\0b.md', 'null bytes'],
+	])('rejects %j', (path, message) => {
+		expect(() => assertVaultRelativePath(path)).toThrow(message);
 	});
 });

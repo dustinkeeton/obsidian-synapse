@@ -208,4 +208,16 @@ describe('relocations into existing folders are proposals', () => {
 		expect(typeof savedSnapshots()[0].runId).toBe('string');
 		expect(notifications.success).toHaveBeenCalledWith('Moved to Media');
 	});
+
+	it('refuses a stored proposal whose folder leaves the vault', async () => {
+		await mod.organizeNote(note);
+		const [path, raw] = [...adapterFiles.entries()].find(([key]) => key.startsWith(settings.organize.proposalFolderPath))!;
+		adapterFiles.set(path, JSON.stringify({ ...JSON.parse(raw), proposedDirectory: '../outside' }));
+		const [proposal] = savedProposals();
+
+		await expect(mod.acceptProposal(proposal.id as string)).rejects.toThrow('must stay inside the vault');
+
+		expect(renameSpy).not.toHaveBeenCalled();
+		expect(createFolderSpy).not.toHaveBeenCalled();
+	});
 });

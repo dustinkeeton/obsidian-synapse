@@ -186,7 +186,7 @@ export {
 	scoreLyricsContent,
 } from './content-schemas';
 export type { ContentSchema, PipelineStage, SchemaMode } from './content-schemas';
-export { generateId, isValidCheckpointId } from './id-utils';
+export { generateId, isValidCheckpointId, randomToken } from './id-utils';
 export { hashString, contentKey } from './hash-utils';
 export { wrapUntrusted, UNTRUSTED_OPEN_TAG, UNTRUSTED_CLOSE_FENCE } from './untrusted-content';
 export { resolveInsertionPoint, applyInsertion, describeInsertion, locateRegion, scanBlocks } from './insertion-point';
@@ -224,3 +224,10 @@ export type {
 } from './checkpoint-types';
 export { BUILD_INFO, PRODUCTION_BUILD, parseBuildInfo, formatBuiltAt, describeDevBuild } from './build-info';
 export type { BuildInfo } from './build-info';
+export { findAudioEmbeds, AUDIO_EXTENSIONS, AUDIO_EMBED_REGEX } from './audio-embeds';
+export type { AudioEmbed } from './audio-embeds';
+export { findVideoUrls } from './video-urls';
+export type { VideoUrlEmbed } from './video-urls';
+export { findImageEmbeds, IMAGE_EXTENSIONS, IMAGE_EMBED_REGEX } from './image-embeds';
+export type { ImageEmbed } from './image-embeds';
+export { sanitizePublicUrl, isPrivateHost, assertVaultRelativePath } from './validation';

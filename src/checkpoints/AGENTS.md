@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-09
+last-updated: 2026-11-09
 ---
 
 # Checkpoints Module
@@ -11,10 +11,10 @@ Checkpoint recovery UX (#496): the delayed startup "interrupted operations" prom
 Exported from `index.ts`:
 
 ```ts
-// checkpoint-recovery.ts:7
+// checkpoint-recovery.ts:5
 const STARTUP_CHECK_DELAY_MS = 3000
 
-// checkpoint-recovery.ts:9
+// types.ts:9
 interface CheckpointRecoveryDeps {
   checkpointManager: CheckpointManager
   notifications: NotificationManager
@@ -23,7 +23,7 @@ interface CheckpointRecoveryDeps {
   refreshView: () => Promise<void>           // re-render the proposal sidebar after resume/discard
 }
 
-// checkpoint-recovery.ts:24
+// checkpoint-recovery.ts:13
 class CheckpointRecoveryModule {
   constructor(deps: CheckpointRecoveryDeps)
   onload(): void                              // registers manage-checkpoints; arms checkForIncomplete after STARTUP_CHECK_DELAY_MS
@@ -34,7 +34,7 @@ class CheckpointRecoveryModule {
   manage(): Promise<void>                     // per checkpoint: Resume | More options -> Discard | Keep
 }
 
-// types.ts:3 / :6
+// types.ts:4 / :7
 type CheckpointResumeHandler = (checkpoint: Checkpoint) => Promise<void>
 type CheckpointResumeHandlers = Partial<Record<CheckpointModule, CheckpointResumeHandler>>
 ```
@@ -44,8 +44,8 @@ type CheckpointResumeHandlers = Partial<Record<CheckpointModule, CheckpointResum
 | File | Exports | Purpose |
 |------|---------|---------|
 | `index.ts` | `CheckpointRecoveryModule`, `STARTUP_CHECK_DELAY_MS`, `CheckpointRecoveryDeps`, `CheckpointResumeHandler`, `CheckpointResumeHandlers` | Barrel |
-| `checkpoint-recovery.ts` | `CheckpointRecoveryModule`, `STARTUP_CHECK_DELAY_MS`, `CheckpointRecoveryDeps` | Recovery flows |
-| `types.ts` | `CheckpointResumeHandler`, `CheckpointResumeHandlers` | Handler map type |
+| `checkpoint-recovery.ts` | `CheckpointRecoveryModule`, `STARTUP_CHECK_DELAY_MS` | Recovery flows |
+| `types.ts` | `CheckpointResumeHandler`, `CheckpointResumeHandlers`, `CheckpointRecoveryDeps` | Handler map type + module deps |
 | `checkpoint-recovery.test.ts` | Tests | |
 
 ## Wiring (main.ts)
@@ -57,6 +57,6 @@ type CheckpointResumeHandlers = Partial<Record<CheckpointModule, CheckpointResum
 | Import | From | File |
 |--------|------|------|
 | `redactError` | `../shared` | `checkpoint-recovery.ts:1` |
-| `CheckpointManager`, `NotificationManager` (types) | `../shared` | `checkpoint-recovery.ts:2` |
-| `CommandRegistrar` (type) | `../commands` | `checkpoint-recovery.ts:3` |
-| `Checkpoint`, `CheckpointModule` (types) | `../shared` | `types.ts:1` |
+| `Checkpoint`, `CheckpointManager`, `CheckpointModule`, `NotificationManager` (types) | `../shared` | `types.ts:1` |
+| `CommandRegistrar` (type) | `../commands` | `types.ts:2` |
+| `CheckpointRecoveryDeps` (type) | `./types` | `checkpoint-recovery.ts:2` |

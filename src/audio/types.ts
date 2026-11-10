@@ -1,4 +1,3 @@
-import { TFile } from 'obsidian';
 import { TimeRange } from '../shared';
 
 export interface TranscriptionResult {
@@ -31,12 +30,6 @@ export interface TranscribeOptions {
 	update?: (message: string) => void;
 	/** Dispatch every AI pass on this transcript fresh instead of replaying a cached response (#527). */
 	bypassCache?: boolean;
-}
-
-export interface AudioEmbed {
-	fileName: string;
-	file: TFile;
-	line: number;
 }
 
 /** ffmpeg-backed clip/concat surface audio borrows from video's `AudioExtractor` (desktop only); structural so audio never imports video. */

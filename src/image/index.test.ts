@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock, type MockInstance } from 'vitest';
 import { ImageModule } from './index';
 import { ImageExtractor } from './extractor';
-import { ImageEmbed, OCRResult } from './types';
+import type { ImageEmbed } from '../shared';
+import { OCRResult } from './types';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin, TFile as ObsidianTFile } from 'obsidian';

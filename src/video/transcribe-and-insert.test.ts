@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vite
 import { TFile } from '../__mocks__/obsidian';
 import { VideoModule } from './index';
 import { NoSpeechDetectedError, NoteOperationQueue } from '../shared';
-import type { VideoUrlEmbed } from './types';
+import type { VideoUrlEmbed } from '../shared';
 import { createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 
 /**

@@ -1,20 +1,8 @@
 import type { App, TFile } from 'obsidian';
 import { findMatchingRule, isNoSpeechError, noSpeechNotice, transcriptCacheUse, withCacheReport, calloutForTranscriptionResult, formatTimeRange, stripUnresolvedLinks } from '../shared';
-import type { NoteOperationQueue, NotificationManager, TimeRange, SourceContext } from '../shared';
-import type { SynapseSettings } from '../settings';
-import { buildUrlTranscriptBlock, UrlTranscriptionRouter } from './url-transcription';
-
-/** Wiring for {@link insertUrlTranscript}, injected by main.ts. */
-export interface InsertUrlTranscriptDeps {
-	app: App;
-	getSettings: () => SynapseSettings;
-	notifications: NotificationManager;
-	router: UrlTranscriptionRouter;
-	/** Per-note operation queue (#483): the insert is serialized against every other AI operation on the active note. */
-	noteQueue: NoteOperationQueue;
-	/** Post-transcription hook (enrichment/title check), same contract as the module `onTranscriptionComplete` callbacks. */
-	onComplete?: (filePath: string, ctx?: SourceContext) => void;
-}
+import type { TimeRange } from '../shared';
+import { buildUrlTranscriptBlock } from './url-transcription';
+import type { InsertUrlTranscriptDeps } from './types';
 
 /**
  * Transcribe a media URL through the tier router and append the transcript to

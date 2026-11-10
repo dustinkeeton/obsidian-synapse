@@ -2,6 +2,7 @@ import { ItemView, WorkspaceLeaf, setIcon } from 'obsidian';
 import type { CommandDefinition, FeatureKey } from '../commands';
 import { FEATURE_ICONS } from '../commands';
 import { actionsGroupClass } from './proposal-styles';
+import type { SynapseActionsCallbacks } from './types';
 
 export const SYNAPSE_ACTIONS_VIEW_TYPE = 'synapse-actions';
 
@@ -21,19 +22,6 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
 	illustrate: 'Illustrate',
 	video: 'Video',
 };
-
-/**
- * Host-provided behavior. The view never touches `app`/workspace directly (keeps
- * it a pure renderer, like UnifiedProposalView) — main.ts wires these in.
- */
-export interface SynapseActionsCallbacks {
-	/** The palette commands to show, in registry order (from `listPaletteActions`). */
-	getActions: () => CommandDefinition[];
-	/** Invoke a command by its registry id (main.ts runs it via `executeCommandById`). */
-	runAction: (id: string) => void;
-	/** Whether a markdown note is currently active (gates `context: 'note'` buttons). */
-	isNoteActive: () => boolean;
-}
 
 /**
  * "Synapse actions" sidebar: a touch-friendly panel of buttons for the active

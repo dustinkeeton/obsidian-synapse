@@ -23,7 +23,7 @@ Scans your vault for stub notes (short content, TODO markers, empty sections) an
 Transcribes audio files embedded in your notes using the OpenAI Whisper API, Deepgram, or Google Gemini. Includes AI post-processing to remove filler words, add structure, and extract key points.
 
 ### Video Transcription
-Transcribes YouTube, TikTok, and Instagram videos. YouTube videos are transcribed caption-first: the caption track is fetched over plain HTTP -- free, near-instant, no external tools -- and works **on mobile** as well as desktop. Videos without captions, plus TikTok and Instagram, fall back to the desktop pipeline, which downloads the video with yt-dlp, extracts the audio with ffmpeg, and feeds it through the audio transcription pipeline. Share a video link into the intake folder on your phone and a synced desktop vault will even finish the ones mobile can't (see [docs/intake-folder.md](docs/intake-folder.md)).
+Transcribes YouTube, TikTok, and Instagram videos. YouTube videos are transcribed caption-first: the caption track is fetched with plain HTTPS requests -- free, near-instant, no external tools -- and works **on mobile** as well as desktop. Videos without captions, plus TikTok and Instagram, fall back to the desktop pipeline, which downloads the video with yt-dlp, extracts the audio with ffmpeg, and feeds it through the audio transcription pipeline. Share a video link into the intake folder on your phone and a synced desktop vault will even finish the ones mobile can't (see [docs/intake-folder.md](docs/intake-folder.md)).
 
 ### Image OCR
 Extracts text from images embedded in your notes using your AI provider's vision model, and inserts it into the note. Oversized images are downscaled before they are sent. Runs through **Transcribe current note** alongside audio and video.
@@ -181,7 +181,7 @@ These are the only services Synapse contacts, what each one is used for, and wha
 - **System 1 decisions send note text to TypeSafe.** The **System 1 decisions** toggle under **Settings > Synapse > AI configuration** is off by default. Turned on, the note you act on and the options it chooses among go to TypeSafe's Jev model. Exclusion rules still apply, and Jev can only pick options your vault already has.
 - **Content you link is fetched from third-party sites.** When a note references a tweet or a web page and you run elaboration, enrichment, or summarize, Synapse requests that URL to read its content -- from Twitter/X (falling back to the fxtwitter and vxtwitter mirrors), from Reddit (the post's public Atom feed), or from the site itself. To avoid this, don't run those features on notes whose links you would rather not request, or turn the feature off in settings.
 - **Illustrate searches open-license image libraries.** Illustrate is off by default. When you run it, Synapse sends a short search query -- proposed by the AI for the note's topic, never the note text -- to Wikimedia Commons and Openverse (both on once Illustrate is enabled), and downloads only the image you accept into your vault. With **Fetch linked pages for images** on (off by default), it also requests pages your note links to, looking for images. Disable either provider under **Settings > Synapse > Illustrate** to stop contacting it.
-- **YouTube captions are fetched over plain HTTP.** Caption-first transcription requests the video's public watch page and caption track from `www.youtube.com` (no account, no download). Only when captions are unavailable — or for other platforms — does the flow fall to the desktop extraction pipeline below.
+- **YouTube captions are fetched with plain HTTPS requests.** Caption-first transcription requests the video's public watch page and caption track from `www.youtube.com` (no account, no download). Only when captions are unavailable — or for other platforms — does the flow fall to the desktop extraction pipeline below.
 - **Video transcription downloads the video (extraction fallback).** On desktop, the fallback invokes `yt-dlp` to download the source from YouTube, TikTok, or another platform, then extracts and transcribes the audio locally.
 - **Audio and video transcription use privileged desktop access.** To work with `yt-dlp`, `ffmpeg`, and `ffprobe`, the desktop build reaches outside the vault in two ways, both gated to desktop only (mobile never runs this code):
   - **Direct filesystem access.** Synapse writes scratch files -- downloaded media, extracted audio, clipped or concatenated segments -- to your operating system's temp directory (`os.tmpdir()`), never inside your vault. These temp files are removed when the operation finishes, on both success and failure. The finished video, if you opt to keep it, is the only artifact saved into the vault (in your configured download folder).
@@ -283,10 +283,10 @@ Open **Settings > Synapse** to configure the plugin. All features can be individ
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| AI provider | OpenAI, Anthropic, Google Gemini, or Ollama (local) | OpenAI |
+| AI provider | OpenAI, Anthropic, Google Gemini, or Ollama (local) | Anthropic |
 | API key | Your API key for the selected provider | -- |
 | Ollama endpoint | URL for local Ollama server (shown when Ollama selected) | `http://localhost:11434` |
-| Model | AI model for the selected provider | GPT-5.6 Sol |
+| Model | AI model for the selected provider | Claude Opus |
 | Temperature | Controls randomness (0 = deterministic, 1 = creative) | 0.7 |
 | Max tokens | Maximum tokens in AI responses (256-8192) | 2048 |
 | Cache identical AI responses | Reuse the previous result for an identical request at any temperature (always on at temperature 0); "Regenerate" bypasses it | Off |
