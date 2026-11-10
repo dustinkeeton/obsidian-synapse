@@ -5,6 +5,37 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-11-09
+
+### Added
+
+- The proposal review sidebar now shows work that is still running. An **In progress** section at the top lists each running action with its note or folder and its progress, and a **Cancel** button stops it, the same as cancelling from the toast. When an action finishes, its row is replaced by the proposals it produced
+- Folder scans can cover only the top level of a folder. In the folder picker, press Shift+Enter (or Shift+click) on a folder to scan just the notes directly inside it, or pick the new **vault root — top level only** row. Pressing Enter still scans the folder and everything beneath it. Scan messages name the scope when it is top-level only
+- Deep dive can run REM on each note you accept, so new notes link to notes that already exist in your vault. The **Auto-REM on accept** setting is on by default and only applies when REM is enabled
+- Model lists are up to date for every provider, including the newest Claude, GPT, Gemini, and Ollama models
+
+### Changed
+
+- New installs default to Anthropic with Claude Opus. Existing settings keep their provider
+- If your saved model has been retired by its vendor, Synapse moves you to its supported replacement the next time it loads
+- Deep dive notes no longer contain links written by the AI. Links come from the note's parent, navigation, and syllabus, and from REM
+- The height limit on embedded videos now applies only to video files embedded from your vault, and any theme or CSS snippet can override it
+
+### Fixed
+
+- Synapse no longer writes links to notes that do not exist. Any such link in generated or fetched text is written as plain text instead, across transcription, OCR, summaries, elaboration, deep dive, enrichment, and illustrations
+- A deep dive interrupted by a dropped connection can be resumed from **Manage interrupted operations** and continues with the next topic. Dropped network requests are retried, and on mobile Synapse waits for Obsidian to return to the foreground first
+- Illustrate no longer uses the same image for more than one spot in a note, and accepting a proposal no longer downloads or inserts an image the note already has
+- The REM scan that runs after accepting a deep dive note no longer stacks a notice per note. Its proposals still appear in the review sidebar
+- Buttons in the Synapse actions sidebar show a notice instead of failing when Obsidian cannot run the command from there
+
+### Security
+
+- Web pages, posts, and transcripts are now treated strictly as material to work on, never as instructions, when Synapse summarizes them or cleans up a transcript. A page can no longer steer a summary into adding links or images of its own
+- Illustrate only fetches and embeds images from public web addresses, rejects downloads that are not images, and writes captions, links, and attribution so they cannot add other content to your note
+- Proposals and undo records read back from the `.synapse` folder are checked before use, so a tampered file cannot move or create notes outside your vault
+- Temporary audio and video files get unpredictable names and are removed even when transcription fails partway
+
 ## [1.4.1] - 2026-10-09
 
 ### Fixed
