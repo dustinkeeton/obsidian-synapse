@@ -5,13 +5,14 @@ automation already writes. A review round is two halves, and each has a canonica
 
 | Half | Who writes it | Canonical source (the enforcement point) |
 |---|---|---|
-| **Findings** — what is wrong with this PR | `adversarial-review` / `qa`, or a human reviewer | `.claude/skills/adversarial-review/SKILL.md` (§ "Rank findings by honest severity") |
-| **Verdicts** — what the author will do about each finding | `pr-response`, or the PR author | `.claude/skills/pr-response/SKILL.md` (§ "Score each finding — rubric v3") |
+| **Findings** — what is wrong with this PR | `adversarial-review` / `qa`, or a human reviewer | the `adversarial-review` skill (§ "Rank findings by honest severity") |
+| **Verdicts** — what the author will do about each finding | `pr-response`, or the PR author | the `pr-response` skill (§ "Score each finding — rubric v3") |
 
 **The skills are canonical; this file is a convenience.** The scoring anchors, the composite
 thresholds, and the override rules live in the skills and are deliberately *not* restated here — one
 source of truth, so a copy in `.github/` can never drift out from under the automation. When the two
-disagree, the skill wins. Read the skill before you score.
+disagree, the skill wins. Read the skill before you score. The skills are named, not linked: a
+rendered skill is not always committed, so a link into one can 404 on GitHub.
 
 ---
 

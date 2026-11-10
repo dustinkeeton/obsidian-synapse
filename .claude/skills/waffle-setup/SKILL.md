@@ -19,7 +19,7 @@ so a re-run curates an update pass.
 ## Run it
 
 ```bash
-npx --yes github:dustinkeeton/wafflestack#v0.19.0 setup
+npx --yes github:dustinkeeton/wafflestack#v0.20.0 setup
 ```
 
 Pass `--gitignore` through if `$ARGUMENTS` asks for it — it appends the stack-independent
