@@ -16,7 +16,6 @@
     "docs-system",
     "github-workflow",
     "code-quality",
-    "obsidian-dev",
     "orchestration",
     "wafflestack"
   ],
@@ -25,6 +24,24 @@
     "agents/security-engineer",
     "files/.claude/workflows/audit-stage-1.js",
     "files/.claude/workflows/audit-stage-2.js"
+  ],
+  "sources": [
+    {
+      "name": "synapse-obsidian-dev",
+      "source": "./.waffle/stacks/synapse-obsidian-dev",
+      "sourceType": "path",
+      "ref": null,
+      "commit": null,
+      "files": [
+        ".agents/agents/plugin-architect.md",
+        ".agents/skills/electron-security-audit/SKILL.md",
+        ".agents/skills/obsidian-plugin-dev/SKILL.md",
+        ".claude/agents/plugin-architect.md",
+        ".claude/skills/electron-security-audit/SKILL.md",
+        ".claude/skills/obsidian-plugin-dev/SKILL.md",
+        ".codex/agents/plugin-architect.toml"
+      ]
+    }
   ],
   "files": {
     ".agents/agents/docs-agent.md": "ca6c2e49d72195f68eac36c37949177113dc2cabade7ed124fac469c230ff726",
@@ -162,7 +179,7 @@
     ".waffle/CHEATSHEET.md": "0ae319cad1581a7e5bd30d4d9c4c4e41e447d47f3b9808615f82165c91364fb3",
     ".waffle/team.html": "ed002be82a44715a98dbfeaafc83e16fb7128f65cc1c37e0aaccec958faeef53",
     ".waffle/TEAM.md": "34cf3337fa8c8e9f62b83645f7578337e9870ab8977901a3168980bdc5fb6cda",
-    ".waffle/waffle.reference.yaml": "d82339a881e10624a3f956c0ab32c2e5056465db09216092eac899f33cef43f7"
+    ".waffle/waffle.reference.yaml": "da9f68907c883942f0b4e3f8d24e7b896be336d6871a0ab1eb04c63cfdab4517"
   },
   "settings": {
     ".claude/settings.json#/enabledPlugins/waffle-view@wafflestack": true,

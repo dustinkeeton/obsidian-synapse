@@ -16,7 +16,8 @@ stacks:
   - docs-system
   - github-workflow
   - code-quality
-  - obsidian-dev
+  # Project-owned copy of the toolkit's former obsidian-dev stack (from v0.20.0).
+  - { name: synapse-obsidian-dev, source: ./.waffle/stacks/synapse-obsidian-dev }
   - orchestration
   - wafflestack
 # Per-item pulls from the engineering-team bundle: Synapse needs the general
