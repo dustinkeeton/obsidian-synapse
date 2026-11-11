@@ -1,0 +1,40 @@
+name: synapse-obsidian-dev
+description: >-
+  Obsidian plugin development — a plugin-architect domain agent plus reference
+  skills: obsidian-plugin-dev (API patterns, manifest configuration, settings,
+  and the esbuild pipeline) and electron-security-audit (the desktop-app
+  threat model: secret detection, command injection into shelled-out tools,
+  vault-boundary file safety, .gitignore enforcement).
+agents: [plugin-architect]
+skills: [obsidian-plugin-dev, electron-security-audit]
+config:
+  project.name:
+    required: true
+    description: Bare project name, e.g. "Synapse". Used in "the <name> plugin" phrasing.
+  plugin.id:
+    required: true
+    description: Plugin id as it appears in manifest.json (lowercase, no spaces).
+  plugin.name:
+    required: true
+    description: Human-readable plugin display name.
+  plugin.description:
+    required: true
+    description: One-line plugin description for manifest.json.
+  plugin.author:
+    required: true
+    description: Plugin author name for manifest.json.
+  plugin.classPrefix:
+    required: true
+    description: PascalCase class-name prefix, e.g. Acme → AcmePlugin / AcmeSettingTab.
+  security.skillGitignore:
+    required: true
+    description: Sensitive paths the project must gitignore, formatted as an inline-code list, e.g. "`.env`, `data.json`, `.synapse/`".
+  security.dataDir:
+    required: true
+    description: Project data/proposal directory that file paths must resolve within, formatted as inline code, e.g. "`.synapse/`".
+  security.externalTools:
+    required: true
+    description: External processes the project shells out to, e.g. "yt-dlp, ffmpeg".
+  security.mediaFetchTool:
+    required: true
+    description: Primary external tool that receives user-provided URLs, e.g. "yt-dlp".
