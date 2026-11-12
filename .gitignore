@@ -62,3 +62,6 @@ docs/reviews/
 .waffle/team.html
 .waffle/avatars/
 .waffle/waffle.reference.yaml
+
+# T3 Code project icon, written into the checkout by the creative studio; not part of the project
+t3-project-icon.*
