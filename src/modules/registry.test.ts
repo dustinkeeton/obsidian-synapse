@@ -120,4 +120,16 @@ describe('module registry', () => {
 			['DeepDiveModule', 'ElaborationModule', 'EnrichmentModule', 'IllustrateModule', 'OrganizeModule', 'RemModule', 'TitleModule']
 		);
 	});
+
+	it('reads pending proposals from every proposal module that was never loaded (#605)', async () => {
+		const { modules } = build();
+		const readers = listFeatureModules(modules).filter(
+			(m): m is typeof m & { getPendingProposals: () => Promise<unknown[]> } =>
+				typeof (m as { getPendingProposals?: unknown }).getPendingProposals === 'function'
+		);
+		expect(readers.map((m) => m.constructor.name).sort()).toEqual(
+			['DeepDiveModule', 'ElaborationModule', 'EnrichmentModule', 'IllustrateModule', 'OrganizeModule', 'RemModule', 'TitleModule']
+		);
+		for (const module of readers) await expect(module.getPendingProposals()).resolves.toEqual([]);
+	});
 });

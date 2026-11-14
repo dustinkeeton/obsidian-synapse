@@ -32,10 +32,10 @@ export class RemModule implements FeatureModule {
 	private checkpointManager: CheckpointManager;
 	private registrar: CommandRegistrar;
 	private noteQueue: NoteOperationQueue;
-	private store!: RemStore;
-	private scanner!: MentionScanner;
-	private semanticMatcher!: SemanticMatcher;
-	private applier!: RemApplier;
+	private store: RemStore;
+	private scanner: MentionScanner;
+	private semanticMatcher: SemanticMatcher;
+	private applier: RemApplier;
 
 	/** Optional callback to refresh the unified proposal view. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
@@ -58,14 +58,13 @@ export class RemModule implements FeatureModule {
 		this.registrar = deps.registrar;
 		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
-	}
-
-	async onload(): Promise<void> {
 		this.store = new RemStore(this.plugin.app, this.getSettings);
 		this.scanner = new MentionScanner(this.plugin.app, this.getSettings);
 		this.semanticMatcher = new SemanticMatcher(this.plugin.app, this.getSettings);
 		this.applier = new RemApplier();
+	}
 
+	async onload(): Promise<void> {
 		await this.store.init();
 
 		// Command: scan current note
