@@ -3,6 +3,7 @@ import { SynapseSettings } from '../settings';
 import { getIncludedMarkdownFiles } from '../shared';
 import { InternalLinkCandidate, WeightConfig } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
+import { withoutSelfLinks } from './self-link';
 import { computeProximityWeight } from './weight-calculator';
 
 /**
@@ -155,7 +156,8 @@ export class LinkResolver {
 	 */
 	mergeTopicCandidates(
 		topicCandidates: InternalLinkCandidate[],
-		graphCandidates: InternalLinkCandidate[]
+		graphCandidates: InternalLinkCandidate[],
+		sourcePath: string
 	): InternalLinkCandidate[] {
 		const merged = new Map<string, InternalLinkCandidate>();
 
@@ -179,7 +181,7 @@ export class LinkResolver {
 			}
 		}
 
-		const results = [...merged.values()];
+		const results = withoutSelfLinks([...merged.values()], this.app, sourcePath);
 		results.sort((a, b) => b.relevanceScore - a.relevanceScore);
 		return results;
 	}

@@ -41,8 +41,8 @@ Re-exported syllabus navigator functions:
 ```ts
 function computeTraversalOrder(proposals: DeepDiveProposal[], run: DeepDiveRun): TraversalNode[]
 function buildNavigationContext(proposalId: string, nodes: TraversalNode[], run: DeepDiveRun, syllabusPath: string): NavigationContext | null
-function renderNavigationBlock(ctx: NavigationContext): string
-function renderSyllabusContent(nodes: TraversalNode[], run: DeepDiveRun): string
+function renderNavigationBlock(ctx: NavigationContext, linkpathFor: LinkpathFor): string
+function renderSyllabusContent(nodes: TraversalNode[], run: DeepDiveRun, linkpathFor: LinkpathFor): string
 function buildTreeFromNodes(nodes: TraversalNode[], rootTitle: string): TreeNode
 function syllabusTitle(rootNotePath: string): string
 function syllabusPath(rootNotePath: string, noteOutputFolder: string): string
@@ -74,7 +74,7 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 |------|---------------|------|
 | `index.ts` | `DeepDiveModule` (index.ts:65), `buildDeepDivePath` (index.ts:710) | Module entry point and public API |
 | `topic-analyzer.ts` | `TopicAnalyzer` (topic-analyzer.ts:11) | AI topic extraction; matches titles against included vault notes. `extractTopics(content, noteTitle, ancestorTopics, aiOpts?)` — `aiOpts` reaches `complete()` (#527) |
-| `note-generator.ts` | `NoteGenerator` (note-generator.ts:9) | AI content generation for a topic given parent title+content. `generateContent(topic, sourceTitle, sourceContent, aiOpts?)` — `aiOpts` reaches `complete()` (#527) |
+| `note-generator.ts` | `NoteGenerator` (note-generator.ts:10; `constructor(getSettings, linkpathFor: LinkpathFor)`) | AI content generation for a topic given parent title+content. `generateContent(topic, sourceTitle, sourcePath, sourceContent, aiOpts?)` — `aiOpts` reaches `complete()` (#527); `sourcePath` is the target of the injected `parent:` link, written via `wikiLink` with `\` and `"` escaped for the quoted YAML value (#607) |
 | `quality-scorer.ts` | `scoreQuality` (quality-scorer.ts:30) | Local heuristic scoring: topic count, word count, genericity, overlap, depth decay |
 | `syllabus-navigator.ts` | navigation utilities (syllabus-navigator.ts:11 onward) | Traversal ordering, syllabus index, prev/next navigation blocks; its `TraversalNode` / `NavigationContext` types are imported from `types.ts` |
 | `deep-dive-store.ts` | `DeepDiveStore` (deep-dive-store.ts:36) | JSON persistence for proposals and runs |
@@ -82,7 +82,7 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 | `settings-section.ts` | `renderDeepDiveSettings` (settings-section.ts:12) | Settings UI renderer (accordion key `deepDive`) |
 | `types.ts` | -- | All deep-dive types, incl. the `SuggestDirectory` injection contract (types.ts:101; imports `AIRequestOptions` type from `../shared`) and the navigator's `TraversalNode` (types.ts:107) / `NavigationContext` (types.ts:123) |
 
-`syllabus-navigator.ts` also exports `wikiLink` (syllabus-navigator.ts:68) and `buildBreadcrumbs` (syllabus-navigator.ts:76); these are internal helpers and are NOT re-exported through `index.ts`.
+`syllabus-navigator.ts` also exports `wikiLink` (syllabus-navigator.ts:66) and `buildBreadcrumbs` (syllabus-navigator.ts:76); these are internal helpers and are NOT re-exported through `index.ts`. `wikiLink(path, linkpathFor)` writes `[[linkpath|Note]]` (`[[Note]]` when the linkpath is the basename). `DeepDiveModule` passes `shared` `linkpathFor(app, path)`: bare while the basename is unique (so a moved note keeps resolving), folder-qualified once another note shares it, so nav, syllabus and `parent:` links resolve to their own run when basenames collide across runs (#607); a qualified path holding `#` `^` `|` `[` `]` falls back to the bare basename; `injectNavigationBlock` matches the nav callout by header, so bare-link blocks from older runs are replaced the same way.
 
 ## Dependency on `organize` module
 
@@ -107,7 +107,7 @@ deepDive(file)  [private, called by command]
     --> watchMobilePause(): Platform.isMobile only; hidden -> visible during the loop -> info 'Deep dive paused while Obsidian was in the background — resuming' (listener removed in finally)
     for each task in run.pending.tasks (source = root note, or parent proposal via parentProposalId; rejected/missing parent -> task skipped):
       --> aiOpts = trackAiCache(cacheUse)   [one CacheUse per proposal, #527]
-      --> NoteGenerator.generateContent(topic, parentTitle, parentContent, aiOpts)  [AI]
+      --> NoteGenerator.generateContent(topic, parentTitle, parentPath, parentContent, aiOpts)  [AI]
       --> buildProposedPath(title, rootFile, parentProposedPath, aiOpts)   [auto-organize mode only: AI]
       --> if depth < maxDepth: TopicAnalyzer.extractTopics(childContent, ..., aiOpts)  [AI]
       --> scoreQuality({title, childTopics, wordCount, depth, ancestors})
@@ -242,7 +242,7 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 | `settings.exclusions` | `ExclusionRule[]` | see `settings.ts` defaults |
 | `settings.ai.voice` / `settings.ai.voiceCustom` | `VoiceMode` / `string` | `'neutral'` / `''` |
 
-`NoteGenerator.generateContent` asks for plain prose with no `[[wikilinks]]` and a `tags`-only frontmatter (#581); the only deep-dive-written links are `parent:`, navigation and syllabus links to accepted notes. `NoteGenerator.generateContent` keeps the encyclopedic-tone rule and appends `voiceInstruction(settings.ai)` as the last rule, read per call (note-generator.ts:39, #540).
+`NoteGenerator.generateContent` asks for plain prose with no `[[wikilinks]]` and a `tags`-only frontmatter (#581); the only deep-dive-written links are `parent:`, navigation and syllabus links to accepted notes. `NoteGenerator.generateContent` keeps the encyclopedic-tone rule and appends `voiceInstruction(settings.ai)` as the last rule, read per call (note-generator.ts:42, #540).
 
 ## In-Progress Rows (#577)
 

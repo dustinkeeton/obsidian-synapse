@@ -94,6 +94,19 @@ describe('TopicExtractor', () => {
 		expect(results).toHaveLength(0);
 	});
 
+	it('never returns a topic matching the note own title (#609)', async () => {
+		const app = makeMockApp([
+			{ basename: 'Music Arrangement', path: 'sound/Music Arrangement.md' },
+			{ basename: 'Harmony', path: 'sound/Harmony.md' },
+		]);
+		mockComplete.mockResolvedValue('["Music Arrangement", "Harmony"]');
+
+		const extractor = new TopicExtractor(app, makeMockAnalyzer(), makeSettings());
+		const results = await extractor.extractTopics('Content', 'sound/Music Arrangement.md', []);
+
+		expect(results.map((r) => r.targetPath)).toEqual(['sound/Harmony.md']);
+	});
+
 	it('respects suggestNewNotes=false — unmatched topics are not accumulated', async () => {
 		const app = makeMockApp([]);
 		mockComplete.mockResolvedValue('["Brand New Topic"]');
