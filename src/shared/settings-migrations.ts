@@ -196,8 +196,8 @@ const TRANSCRIPTION_KEY_VENDORS: [string, string][] = [
 
 /**
  * v7 — move the transcription keys into the shared per-vendor keys. A vendor
- * that is the default provider fills `ai.apiKey` only when it is empty; an
- * existing key always wins. Tolerates missing sections; idempotent.
+ * that is the default provider fills `ai.apiKey` when it is empty; a different
+ * key is kept in `providerKeys` so it is never lost. Tolerates missing sections; idempotent.
  */
 export function moveTranscriptionKeys(
 	raw: Record<string, unknown>,
@@ -213,9 +213,9 @@ export function moveTranscriptionKeys(
 		const value = audioRecord[field];
 		delete audioRecord[field];
 		if (typeof value !== 'string' || value === '') continue;
-		if (ai.provider === vendor) {
-			if (!ai.apiKey) ai.apiKey = value;
-		} else if (!keys[vendor]) {
+		if (ai.provider === vendor && !ai.apiKey) {
+			ai.apiKey = value;
+		} else if (value !== ai.apiKey && !keys[vendor]) {
 			keys[vendor] = value;
 		}
 	}

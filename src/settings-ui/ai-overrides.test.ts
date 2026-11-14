@@ -52,7 +52,7 @@ describe('withOverride', () => {
 });
 
 describe('effortChoiceOptions', () => {
-	it.each([['gemini', 'gemini-4-argon'], ['anthropic', 'opus'], ['ollama', 'qwen3.6']] as const)(
+	it.each([['gemini', 'gemini-4-argon'], ['anthropic', 'opus'], ['ollama', 'gpt-oss']] as const)(
 		'offers the same five steps for %s %s',
 		(provider, model) => {
 			expect(effortChoiceOptions(provider, model)).toEqual({
@@ -64,6 +64,10 @@ describe('effortChoiceOptions', () => {
 			});
 		}
 	);
+
+	it('offers only Default and Low for an on/off thinking model', () => {
+		expect(effortChoiceOptions('ollama', 'qwen3.6')).toEqual({ '': 'Default', low: 'Low' });
+	});
 
 	it('returns undefined for a model without an effort parameter', () => {
 		expect(effortChoiceOptions('ollama', 'llama3')).toBeUndefined();

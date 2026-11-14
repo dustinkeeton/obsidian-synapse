@@ -1,6 +1,6 @@
 import { EFFORT_OPTIONS } from '../settings';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './safe-request';
-import type { AIFeatureId, AIModelOverride, AIProvider, EffortLevel, EffortWireMap, KeyedProvider, SynapseSettings, TranscriptionProvider } from '../settings';
+import type { AIFeatureId, AISettings, AIModelOverride, AIProvider, EffortLevel, EffortWireMap, KeyedProvider, SynapseSettings, TranscriptionProvider } from '../settings';
 
 /**
  * Anthropic requires `max_tokens`; other providers get no cap. Non-streaming requests
@@ -11,12 +11,15 @@ export function anthropicMaxTokens(effort: EffortLevel | undefined): number {
 	return effort === 'high' || effort === 'max' ? 21333 : 16384;
 }
 
-/** High and Max can run up to Anthropic's 10-minute non-streaming limit; the rest keep the 2-minute default. */
+/** A reasoning request can run up to Anthropic's 10-minute non-streaming limit. */
 export const LONG_AI_REQUEST_TIMEOUT_MS = 600_000;
 
-/** Client-side timeout for one chat request, keyed on effort rather than model. */
-export function aiRequestTimeoutMs(effort: EffortLevel | undefined): number {
-	return effort === 'high' || effort === 'max' ? LONG_AI_REQUEST_TIMEOUT_MS : DEFAULT_REQUEST_TIMEOUT_MS;
+/**
+ * Client-side timeout for one chat request. A model that reasons gets the long timeout unless
+ * the user chose Low; Default counts as reasoning because vendors default to high effort.
+ */
+export function aiRequestTimeoutMs(provider: AIProvider, model: string, effort: EffortLevel | undefined): number {
+	return hasEffortControl(provider, model) && effort !== 'low' ? LONG_AI_REQUEST_TIMEOUT_MS : DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
 /** Every effort step, lowest first. */
@@ -56,9 +59,15 @@ export function hasEffortControl(provider: AIProvider, model: string): boolean {
 	return effortMap(provider, model) !== undefined;
 }
 
-/** `effort` when `model` has an effort control, else `undefined` (Default). */
+/** Every step that sends something for `model`; empty when it takes no effort parameter. */
+export function effortStepsFor(provider: AIProvider, model: string): EffortLevel[] {
+	const map = effortMap(provider, model);
+	return map ? EFFORT_LEVELS.filter(level => map[level] !== undefined) : [];
+}
+
+/** `effort` when it sends something for `model`, else `undefined` (Default). */
 export function effortFor(provider: AIProvider, model: string, effort: EffortLevel | '' | undefined): EffortLevel | undefined {
-	return effort && hasEffortControl(provider, model) ? effort : undefined;
+	return effort && effortMap(provider, model)?.[effort] !== undefined ? effort : undefined;
 }
 
 /** The value to send for `effort` on `model`; `undefined` means omit the field. */
@@ -122,4 +131,18 @@ export function extraProviders(settings: SynapseSettings): (KeyedProvider | 'oll
 	const transcription = transcriptionKeyProvider(settings.audio.transcriptionProvider);
 	if (transcription && transcription !== settings.ai.provider) used.add(transcription);
 	return [...used];
+}
+
+/**
+ * Change the default provider and swap keys so each vendor keeps its own: the old default's
+ * key moves into `providerKeys`, and the new default's saved key becomes `apiKey`.
+ */
+export function switchDefaultProvider(ai: AISettings, provider: AIProvider): void {
+	const keys = { ...ai.providerKeys };
+	const previous = ai.provider;
+	if (previous !== 'ollama' && ai.apiKey) keys[previous] = ai.apiKey;
+	ai.apiKey = provider === 'ollama' ? '' : (keys[provider] ?? '');
+	if (provider !== 'ollama') delete keys[provider];
+	ai.providerKeys = keys;
+	ai.provider = provider;
 }

@@ -9,6 +9,7 @@ import {
 	PROVIDER_METADATA,
 	aiProviderToCredential,
 	effortFor,
+	switchDefaultProvider,
 	decorateCredentialField,
 	ConfirmModal,
 	applyResetAll,
@@ -94,7 +95,7 @@ export function renderAiConfiguration(ctx: SettingsSectionContext): void {
 				.setValue(plugin.settings.ai.provider)
 				.onChange(async (value) => {
 					const provider = value as AIProvider;
-					plugin.settings.ai.provider = provider;
+					switchDefaultProvider(plugin.settings.ai, provider);
 					const models = MODEL_OPTIONS[provider];
 					plugin.settings.ai.model = Object.keys(models)[0];
 					await plugin.saveSettings();

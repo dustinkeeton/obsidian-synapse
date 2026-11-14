@@ -43,13 +43,18 @@ describe('titleContentKey', () => {
 		expect(a).not.toBe(b);
 	});
 
-	it('changes when AI provider/model/effort change', () => {
+	it('changes when AI provider or model change', () => {
 		const base = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings());
 
 		const provider = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings((s) => { s.ai.provider = 'gemini'; }));
 		const model = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings((s) => { s.ai.model = 'different-model'; }));
-		const effort = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings((s) => { s.ai.model = 'opus'; s.ai.effort = 'high'; }));
 
-		expect(new Set([base, provider, model, effort]).size).toBe(4);
+		expect(new Set([base, provider, model]).size).toBe(3);
+	});
+
+	it('ignores effort, so a reject still holds after an effort change', () => {
+		const base = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings());
+		const high = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings((s) => { s.ai.effort = 'high'; }));
+		expect(high).toBe(base);
 	});
 });

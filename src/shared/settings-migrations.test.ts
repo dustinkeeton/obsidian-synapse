@@ -326,6 +326,8 @@ describe('moveTranscriptionKeys — to:7 migration', () => {
 		expect(moveTranscriptionKeys({ ai: { provider: 'openai', apiKey: '' }, audio: { whisperApiKey: 'sk-w' } }).ai)
 			.toEqual({ provider: 'openai', apiKey: 'sk-w', providerKeys: {} });
 		expect(moveTranscriptionKeys({ ai: { provider: 'openai', apiKey: 'sk-main' }, audio: { whisperApiKey: 'sk-w' } }).ai)
+			.toEqual({ provider: 'openai', apiKey: 'sk-main', providerKeys: { openai: 'sk-w' } });
+		expect(moveTranscriptionKeys({ ai: { provider: 'openai', apiKey: 'sk-main' }, audio: { whisperApiKey: 'sk-main' } }).ai)
 			.toEqual({ provider: 'openai', apiKey: 'sk-main', providerKeys: {} });
 	});
 

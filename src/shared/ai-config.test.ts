@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { SynapseSettings } from '../settings';
-import { aiRequestTimeoutMs, anthropicMaxTokens, apiKeyForProvider, effortFor, effortWireValue, extraProviders, hasEffortControl, resolveAIConfig, transcriptionKeyProvider, visionModelOverride } from './ai-config';
+import { aiRequestTimeoutMs, anthropicMaxTokens, apiKeyForProvider, effortFor, effortStepsFor, switchDefaultProvider, effortWireValue, extraProviders, hasEffortControl, resolveAIConfig, transcriptionKeyProvider, visionModelOverride } from './ai-config';
 
 function makeSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
 	const settings = structuredClone(DEFAULT_SETTINGS);
@@ -157,11 +157,54 @@ describe('effort resolution', () => {
 		expect(anthropicMaxTokens('max')).toBe(21333);
 	});
 
-	it('waits 10 minutes at High and Max and 2 minutes otherwise', () => {
-		expect(aiRequestTimeoutMs(undefined)).toBe(120_000);
-		expect(aiRequestTimeoutMs('low')).toBe(120_000);
-		expect(aiRequestTimeoutMs('medium')).toBe(120_000);
-		expect(aiRequestTimeoutMs('high')).toBe(600_000);
-		expect(aiRequestTimeoutMs('max')).toBe(600_000);
+	it('gives a reasoning model 10 minutes, including at Default, and 2 minutes at Low', () => {
+		expect(aiRequestTimeoutMs('anthropic', 'opus', undefined)).toBe(600_000);
+		expect(aiRequestTimeoutMs('anthropic', 'opus', 'medium')).toBe(600_000);
+		expect(aiRequestTimeoutMs('anthropic', 'opus', 'max')).toBe(600_000);
+		expect(aiRequestTimeoutMs('anthropic', 'opus', 'low')).toBe(120_000);
+		expect(aiRequestTimeoutMs('ollama', 'qwen3.8', undefined)).toBe(600_000);
+		expect(aiRequestTimeoutMs('ollama', 'qwen3.8', 'low')).toBe(120_000);
+	});
+
+	it('keeps 2 minutes for a model with no effort control', () => {
+		expect(aiRequestTimeoutMs('ollama', 'llama3.2', undefined)).toBe(120_000);
+	});
+
+	it('lists only the steps that send something', () => {
+		expect(effortStepsFor('anthropic', 'opus')).toEqual(['low', 'medium', 'high', 'max']);
+		expect(effortStepsFor('ollama', 'qwen3.8')).toEqual(['low']);
+		expect(effortStepsFor('ollama', 'llama3.2')).toEqual([]);
+		expect(effortFor('ollama', 'qwen3.8', 'high')).toBeUndefined();
+		expect(effortFor('ollama', 'qwen3.8', 'low')).toBe('low');
+	});
+});
+
+describe('switchDefaultProvider', () => {
+	it('swaps keys so each vendor keeps its own for chat and transcription', () => {
+		const s = makeSettings((x) => { x.ai.providerKeys = { openai: 'openai-key' }; });
+
+		switchDefaultProvider(s.ai, 'openai');
+
+		expect(s.ai.provider).toBe('openai');
+		expect(resolveAIConfig(s).apiKey).toBe('openai-key');
+		expect(apiKeyForProvider(s, 'openai')).toBe('openai-key');
+		expect(apiKeyForProvider(s, 'anthropic')).toBe('default-key');
+		expect(s.ai.providerKeys).toEqual({ anthropic: 'default-key' });
+	});
+
+	it('leaves the main key blank when the new default has no saved key', () => {
+		const s = makeSettings();
+		switchDefaultProvider(s.ai, 'gemini');
+		expect(s.ai.apiKey).toBe('');
+		expect(apiKeyForProvider(s, 'anthropic')).toBe('default-key');
+	});
+
+	it('keeps keys when switching to and from Ollama', () => {
+		const s = makeSettings();
+		switchDefaultProvider(s.ai, 'ollama');
+		expect(s.ai.apiKey).toBe('');
+		switchDefaultProvider(s.ai, 'anthropic');
+		expect(s.ai.apiKey).toBe('default-key');
+		expect(s.ai.providerKeys).toEqual({});
 	});
 });

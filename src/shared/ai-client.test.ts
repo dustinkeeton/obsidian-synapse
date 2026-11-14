@@ -468,8 +468,8 @@ describe('AIClient — Anthropic provider', () => {
 
 	it.each([
 		['high', 600_000],
-		['max', 600_000],
-		['medium', 120_000],
+		['medium', 600_000],
+		['low', 120_000],
 	] as const)('times out a %s-effort request after %i ms', async (effort, ms) => {
 		vi.useFakeTimers();
 		try {
@@ -488,10 +488,10 @@ describe('AIClient — Anthropic provider', () => {
 		}
 	});
 
-	it('throws on stop_reason max_tokens instead of returning partial text', async () => {
+	it.each(['max_tokens', 'model_context_window_exceeded'])('throws on stop_reason %s instead of returning partial text', async (stopReason) => {
 		mockRequestUrl.mockResolvedValue({
 			status: 200,
-			json: { content: [{ type: 'text', text: 'partial' }], stop_reason: 'max_tokens' },
+			json: { content: [{ type: 'text', text: 'partial' }], stop_reason: stopReason },
 			text: '',
 			headers: {},
 		});

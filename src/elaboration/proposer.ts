@@ -23,14 +23,13 @@ export function proposalContentKey(
 	reasons: DetectionReason[],
 	settings: SynapseSettings
 ): string {
-	const { provider, model, effort } = resolveAIConfig(settings, 'elaboration');
+	const { provider, model } = resolveAIConfig(settings, 'elaboration');
 	return contentKey([
 		normalizePath(notePath),
 		hashString(content),
 		JSON.stringify([...reasons].sort((a, b) => a.type.localeCompare(b.type))),
 		provider,
 		model,
-		effort ?? '',
 	]);
 }
 

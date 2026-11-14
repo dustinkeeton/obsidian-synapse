@@ -81,7 +81,7 @@ function titleContentKey(
 ): string
 ```
 
-Keys over INPUTS: `normalizePath(notePath)`, `hashString(content)`, `currentTitle`, `trigger`, the resolved title provider + model + effort (`resolveAIConfig(settings, 'title')`). Mirrors `proposalContentKey` in `elaboration/proposer.ts`. Keying on inputs (not the model's output) makes re-scanning an unchanged note idempotent so the reject-loop dedup guard holds despite model sampling.
+Keys over INPUTS: `normalizePath(notePath)`, `hashString(content)`, `currentTitle`, `trigger`, the resolved title provider + model, not effort (`resolveAIConfig(settings, 'title')`). Mirrors `proposalContentKey` in `elaboration/proposer.ts`. Keying on inputs (not the model's output) makes re-scanning an unchanged note idempotent so the reject-loop dedup guard holds despite model sampling.
 
 ## renderTitleSettings (`settings-section.ts`)
 

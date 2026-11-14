@@ -24,7 +24,7 @@ export function titleContentKey(
 	trigger: TitleProposalTrigger,
 	settings: SynapseSettings,
 ): string {
-	const { provider, model, effort } = resolveAIConfig(settings, 'title');
+	const { provider, model } = resolveAIConfig(settings, 'title');
 	return contentKey([
 		normalizePath(notePath),
 		hashString(content),
@@ -32,6 +32,5 @@ export function titleContentKey(
 		trigger,
 		provider,
 		model,
-		effort ?? '',
 	]);
 }

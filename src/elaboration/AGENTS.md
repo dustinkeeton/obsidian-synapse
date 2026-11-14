@@ -209,7 +209,7 @@ guardProposal(detection: DetectionResult): Promise<
 >
 ```
 
-- key: `proposalContentKey(notePath, cachedRead(full content), reasons, settings)` (proposer.ts:20) -- `contentKey([...])` hash over `normalizePath(notePath)`, `hashString(content)`, the type-sorted detection reasons, and the resolved elaboration provider/model/effort. Keyed on inputs (not the model output) so model sampling stays deterministic across runs.
+- key: `proposalContentKey(notePath, cachedRead(full content), reasons, settings)` (proposer.ts:20) -- `contentKey([...])` hash over `normalizePath(notePath)`, `hashString(content)`, the type-sorted detection reasons, and the resolved elaboration provider/model (not effort). Keyed on inputs (not the model output) so model sampling stays deterministic across runs.
 - `duplicate`: a pending OR accepted proposal already shares the key -> skip. A `rejected` proposal with the same key does NOT block (the user may retry a declined suggestion).
 - `cap`: pending proposals for the note already >= `proposal.maxProposalsPerNote` -> skip.
 - On skip the caller completes the checkpoint item (or finishes the scanNote op honestly) without saving; on pass the key is forwarded to `generate(detection, key)` so the proposal's `id` and `contentKey` both equal it.

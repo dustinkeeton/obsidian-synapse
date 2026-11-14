@@ -4,9 +4,8 @@ import type { AIFeatureId, AIModelOverride, AIProvider, EffortLevel, KeyedProvid
 import { renderTranscriptionSetting } from '../audio';
 import {
 	AI_FEATURE_IDS,
-	EFFORT_LEVELS,
 	effortFor,
-	hasEffortControl,
+	effortStepsFor,
 	PROVIDER_METADATA,
 	aiOverrideFor,
 	decorateCredentialField,
@@ -54,9 +53,10 @@ export const DEFAULT_CHOICE = '';
 
 /** Effort dropdown options for a model, or `undefined` when it takes no effort parameter. */
 export function effortChoiceOptions(provider: AIProvider, model: string): Record<string, string> | undefined {
-	if (!hasEffortControl(provider, model)) return undefined;
+	const steps = effortStepsFor(provider, model);
+	if (steps.length === 0) return undefined;
 	const options: Record<string, string> = { [DEFAULT_CHOICE]: 'Default' };
-	for (const level of EFFORT_LEVELS) options[level] = EFFORT_LABELS[level];
+	for (const level of steps) options[level] = EFFORT_LABELS[level];
 	return options;
 }
 

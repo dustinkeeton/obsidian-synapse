@@ -218,7 +218,9 @@ export function extractAnthropicResponseText(json: unknown): string {
 			`Anthropic declined this request (safety refusal, not a network or API-key failure)${reason ? `: ${reason}` : ''}`
 		);
 	}
-	if (response?.stop_reason === 'max_tokens') throw truncated('Anthropic');
+	if (response?.stop_reason === 'max_tokens' || response?.stop_reason === 'model_context_window_exceeded') {
+		throw truncated('Anthropic');
+	}
 	const blocks = response?.content;
 	if (Array.isArray(blocks)) {
 		const text = blocks
@@ -465,7 +467,7 @@ export class AIClient {
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify(body),
-		}, aiRequestTimeoutMs(cfg.effort));
+		}, aiRequestTimeoutMs(cfg.provider, cfg.model, cfg.effort));
 		return extractOpenAIResponseText(response.json);
 	}
 
@@ -506,7 +508,7 @@ export class AIClient {
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify(body),
-			}, aiRequestTimeoutMs(cfg.effort));
+			}, aiRequestTimeoutMs(cfg.provider, cfg.model, cfg.effort));
 		} catch (err) {
 			throw withAnthropicErrorHint(err, model);
 		}
@@ -550,7 +552,7 @@ export class AIClient {
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify(body),
-		}, aiRequestTimeoutMs(cfg.effort));
+		}, aiRequestTimeoutMs(cfg.provider, cfg.model, cfg.effort));
 		return extractGeminiResponseText(response.json);
 	}
 
@@ -585,7 +587,7 @@ export class AIClient {
 				stream: false,
 				...(think !== undefined ? { think } : {}),
 			}),
-		}, aiRequestTimeoutMs(cfg.effort));
+		}, aiRequestTimeoutMs(cfg.provider, cfg.model, cfg.effort));
 		return extractOllamaResponseText(response.json);
 	}
 }
