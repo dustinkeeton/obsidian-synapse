@@ -1,5 +1,5 @@
 import { Platform, Plugin, TFile, normalizePath } from 'obsidian';
-import { extractUrls } from '../shared';
+import { extractUrls, linkpathFor } from '../shared';
 import type { SourceContext } from '../shared';
 import { SynapseSettings, DeepDiveNestingMode } from '../settings';
 import { CommandRegistrar } from '../commands';
@@ -100,7 +100,7 @@ export class DeepDiveModule implements FeatureModule {
 		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
 		this.analyzer = new TopicAnalyzer(plugin.app, getSettings);
-		this.generator = new NoteGenerator(getSettings);
+		this.generator = new NoteGenerator(getSettings, (path) => linkpathFor(plugin.app, path));
 		this.store = new DeepDiveStore(plugin.app, getSettings);
 		this.suggestDirectory = suggestDirectory ?? null;
 	}
@@ -592,7 +592,7 @@ export class DeepDiveModule implements FeatureModule {
 		const sPath = syllabusPath(run.rootNotePath, this.getSettings().deepDive.noteOutputFolder);
 
 		// Write or update the syllabus index note
-		const syllabusContent = renderSyllabusContent(nodes, run);
+		const syllabusContent = renderSyllabusContent(nodes, run, (path) => linkpathFor(this.plugin.app, path));
 		await writeNote(this.plugin.app, sPath, syllabusContent);
 
 		// Update navigation in each accepted note
@@ -600,7 +600,7 @@ export class DeepDiveModule implements FeatureModule {
 			const ctx = buildNavigationContext(node.proposalId, nodes, run, sPath);
 			if (!ctx) continue;
 
-			const navBlock = renderNavigationBlock(ctx);
+			const navBlock = renderNavigationBlock(ctx, (path) => linkpathFor(this.plugin.app, path));
 
 			if (newNotePath && node.proposedPath === newNotePath && newNoteContent) {
 				// This is the newly accepted note -- inject nav into its content and write

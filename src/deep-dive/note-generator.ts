@@ -1,6 +1,6 @@
 import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse, stripCodeFences, voiceInstruction } from '../shared';
-import type { AIRequestOptions } from '../shared';
+import type { AIRequestOptions, LinkpathFor } from '../shared';
 import { ExtractedTopic } from './types';
 import { wikiLink } from './syllabus-navigator';
 
@@ -10,7 +10,7 @@ import { wikiLink } from './syllabus-navigator';
 export class NoteGenerator {
 	private aiClient: AIClient;
 
-	constructor(private getSettings: () => SynapseSettings) {
+	constructor(private getSettings: () => SynapseSettings, private linkpathFor: LinkpathFor) {
 		this.aiClient = new AIClient(getSettings);
 	}
 
@@ -57,7 +57,7 @@ ${sourceContent.slice(0, 2000)}`;
 	}
 
 	private cleanContent(content: string, sourcePath: string): string {
-		const parentLink = wikiLink(sourcePath);
+		const parentLink = wikiLink(sourcePath, this.linkpathFor).replace(/[\\"]/g, '\\$&');
 		let cleaned = content.trim();
 
 		// If AI added an H1 title, remove it (Obsidian uses filename)

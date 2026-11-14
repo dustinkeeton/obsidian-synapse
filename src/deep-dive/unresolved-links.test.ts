@@ -30,6 +30,7 @@ function createVault() {
 		adapterFiles,
 		vault: {
 			getAbstractFileByPath: vi.fn((p: string) => (files.has(p) ? new TFile(p) : null)),
+			getMarkdownFiles: vi.fn(() => [...files.keys()].map((p) => new TFile(p))),
 			read: vi.fn(async (f: TFile) => files.get(f.path) ?? ''),
 			create: vi.fn(async (p: string, c: string) => { files.set(p, c); return new TFile(p); }),
 			process: vi.fn(async (f: TFile, fn: (d: string) => string) => { files.set(f.path, fn(files.get(f.path) ?? '')); }),
@@ -131,7 +132,7 @@ describe('deep dive accept writes no unresolved links (#581)', () => {
 			expect(unresolvedIn(content), path).toEqual([]);
 		}
 		const syllabus = [...env.files.entries()].find(([p]) => p.includes('Deep Dive -- Root'))![1];
-		expect(syllabus).toContain('[[Deep Dives/Root/Kept|Kept]]');
+		expect(syllabus).toContain('[[Kept]]');
 		expect(syllabus).not.toContain('Dropped');
 	});
 

@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NoteGenerator } from './note-generator';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { ExtractedTopic } from './types';
+import type { LinkpathFor } from '../shared';
+
+const bare: LinkpathFor = (path) => path.replace(/\.md$/, '').split('/').pop() ?? path;
+const qualified: LinkpathFor = (path) => path.replace(/\.md$/, '');
 
 const mockComplete = vi
 	.fn<(prompt: string, systemPrompt?: string, opts?: unknown) => Promise<string>>()
@@ -21,7 +25,7 @@ describe('NoteGenerator — image embed preservation', () => {
 		mockComplete.mockResolvedValue('---\ntags: [topic]\n---\n\n## Overview\n\nGenerated content.');
 
 		const settings = structuredClone(DEFAULT_SETTINGS);
-		generator = new NoteGenerator(() => settings);
+		generator = new NoteGenerator(() => settings, bare);
 	});
 
 	afterEach(() => {
@@ -100,7 +104,7 @@ describe('NoteGenerator — voice setting (#540)', () => {
 
 	it('keeps the encyclopedic rule and appends the neutral voice fragment by default', async () => {
 		const settings = structuredClone(DEFAULT_SETTINGS);
-		await new NoteGenerator(() => settings).generateContent(topic, 'Parent', 'notes/Parent.md', 'Source');
+		await new NoteGenerator(() => settings, bare).generateContent(topic, 'Parent', 'notes/Parent.md', 'Source');
 
 		const [, systemPrompt] = mockComplete.mock.calls[0];
 		expect(systemPrompt).toContain('Write in an encyclopedic, informative tone');
@@ -110,7 +114,7 @@ describe('NoteGenerator — voice setting (#540)', () => {
 
 	it('picks up a voice change on the next call without rebuilding the generator', async () => {
 		const settings: SynapseSettings = structuredClone(DEFAULT_SETTINGS);
-		const generator = new NoteGenerator(() => settings);
+		const generator = new NoteGenerator(() => settings, bare);
 		await generator.generateContent(topic, 'Parent', 'notes/Parent.md', 'Source');
 		settings.ai.voice = 'match-note';
 		await generator.generateContent(topic, 'Parent', 'notes/Parent.md', 'Source');
@@ -128,7 +132,7 @@ describe('NoteGenerator — parent link (#607)', () => {
 
 	it('path-qualifies the parent link when injecting into existing frontmatter', async () => {
 		mockComplete.mockResolvedValue('---\ntags: [topic]\n---\n\nBody.');
-		const out = await new NoteGenerator(() => structuredClone(DEFAULT_SETTINGS))
+		const out = await new NoteGenerator(() => structuredClone(DEFAULT_SETTINGS), qualified)
 			.generateContent(topic, 'Untitled', 'Projects/Alpha/Untitled.md', 'Source');
 
 		expect(out).toContain('parent: "[[Projects/Alpha/Untitled|Untitled]]"');
@@ -136,9 +140,17 @@ describe('NoteGenerator — parent link (#607)', () => {
 
 	it('path-qualifies the parent link when adding frontmatter', async () => {
 		mockComplete.mockResolvedValue('Body.');
-		const out = await new NoteGenerator(() => structuredClone(DEFAULT_SETTINGS))
+		const out = await new NoteGenerator(() => structuredClone(DEFAULT_SETTINGS), qualified)
 			.generateContent(topic, 'Untitled', 'Projects/Beta/Untitled.md', 'Source');
 
 		expect(out.startsWith('---\nparent: "[[Projects/Beta/Untitled|Untitled]]"\n---\n')).toBe(true);
+	});
+
+	it('escapes a double quote in the parent link so the YAML value stays quoted', async () => {
+		mockComplete.mockResolvedValue('Body.');
+		const out = await new NoteGenerator(() => structuredClone(DEFAULT_SETTINGS), qualified)
+			.generateContent(topic, 'Untitled', 'The "Best" Notes/Untitled.md', 'Source');
+
+		expect(out).toContain('parent: "[[The \\"Best\\" Notes/Untitled|Untitled]]"');
 	});
 });

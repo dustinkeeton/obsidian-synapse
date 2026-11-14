@@ -12,6 +12,17 @@ import {
 	buildTreeFromNodes,
 } from './syllabus-navigator';
 import type { DeepDiveProposal, DeepDiveRun, TraversalNode } from './types';
+import type { App } from 'obsidian';
+import { linkpathFor } from '../shared';
+import type { LinkpathFor } from '../shared';
+
+const bare: LinkpathFor = (path) => path.replace(/\.md$/, '').split('/').pop() ?? path;
+
+function vaultOf(paths: string[]): LinkpathFor {
+	const files = paths.map((path) => ({ path, basename: path.replace(/^.*\//, '').replace(/\.md$/, '') }));
+	const app = { vault: { getMarkdownFiles: () => files } } as unknown as App;
+	return (path) => linkpathFor(app, path);
+}
 
 // ── Test factories ──
 
@@ -135,16 +146,30 @@ function buildTestTree() {
 // ── Tests ──
 
 describe('wikiLink', () => {
-	it('path-qualifies a nested path with the basename as display text', () => {
-		expect(wikiLink('Deep Dives/Machine Learning/Neural Networks.md')).toBe('[[Deep Dives/Machine Learning/Neural Networks|Neural Networks]]');
+	it('extracts basename from a full path', () => {
+		expect(wikiLink('Deep Dives/Machine Learning/Neural Networks.md', bare)).toBe('[[Neural Networks]]');
 	});
 
 	it('handles root-level paths', () => {
-		expect(wikiLink('Machine Learning.md')).toBe('[[Machine Learning]]');
+		expect(wikiLink('Machine Learning.md', bare)).toBe('[[Machine Learning]]');
 	});
 
 	it('handles paths without .md extension', () => {
-		expect(wikiLink('notes/Topic')).toBe('[[notes/Topic|Topic]]');
+		expect(wikiLink('notes/Topic', bare)).toBe('[[Topic]]');
+	});
+
+	it('path-qualifies a basename another note shares, displaying the basename', () => {
+		const resolve = vaultOf(['Projects/Alpha/Untitled.md', 'Projects/Beta/Untitled.md']);
+		expect(wikiLink('Projects/Alpha/Untitled.md', resolve)).toBe('[[Projects/Alpha/Untitled|Untitled]]');
+	});
+
+	it('keeps a unique basename bare so the link survives a move', () => {
+		expect(wikiLink('Deep Dives/Untitled/Design.md', vaultOf(['Deep Dives/Untitled/Design.md', 'Other.md']))).toBe('[[Design]]');
+	});
+
+	it('falls back to the bare basename when the qualified path holds link syntax', () => {
+		const resolve = vaultOf(['C# Notes/Untitled.md', 'Projects/Untitled.md']);
+		expect(wikiLink('C# Notes/Untitled.md', resolve)).toBe('[[Untitled]]');
 	});
 });
 
@@ -338,22 +363,22 @@ describe('renderNavigationBlock', () => {
 		const { proposals, run } = buildTestTree();
 		const nodes = computeTraversalOrder(proposals, run);
 		const ctx = buildNavigationContext('p2', nodes, run, 'Deep Dives/Machine Learning/Deep Dive -- Machine Learning.md')!;
-		const block = renderNavigationBlock(ctx);
+		const block = renderNavigationBlock(ctx, bare);
 
 		expect(block).toContain('> [!note|synapse-nav] Deep Dive Navigation');
 		expect(block).toContain('Machine Learning > Neural Networks > Backpropagation');
-		expect(block).toContain('**Root:** [[notes/Machine Learning|Machine Learning]]');
-		expect(block).toContain('**Up:** [[Deep Dives/Machine Learning/Neural Networks|Neural Networks]]');
-		expect(block).toContain('**Prev:** [[Deep Dives/Machine Learning/Neural Networks|Neural Networks]]');
-		expect(block).toContain('**Next:** [[Deep Dives/Machine Learning/Neural Networks/Activation Functions|Activation Functions]]');
-		expect(block).toContain('*Part 2 of 6 in [[Deep Dives/Machine Learning/Deep Dive -- Machine Learning|Deep Dive -- Machine Learning]]*');
+		expect(block).toContain('**Root:** [[Machine Learning]]');
+		expect(block).toContain('**Up:** [[Neural Networks]]');
+		expect(block).toContain('**Prev:** [[Neural Networks]]');
+		expect(block).toContain('**Next:** [[Activation Functions]]');
+		expect(block).toContain('*Part 2 of 6 in [[Deep Dive -- Machine Learning]]*');
 	});
 
 	it('omits Up link for root-level proposals', () => {
 		const { proposals, run } = buildTestTree();
 		const nodes = computeTraversalOrder(proposals, run);
 		const ctx = buildNavigationContext('p1', nodes, run, 'Deep Dives/Machine Learning/Deep Dive -- Machine Learning.md')!;
-		const block = renderNavigationBlock(ctx);
+		const block = renderNavigationBlock(ctx, bare);
 
 		expect(block).not.toContain('**Up:**');
 	});
@@ -362,7 +387,7 @@ describe('renderNavigationBlock', () => {
 		const { proposals, run } = buildTestTree();
 		const nodes = computeTraversalOrder(proposals, run);
 		const ctx = buildNavigationContext('p1', nodes, run, 'Deep Dives/Machine Learning/Deep Dive -- Machine Learning.md')!;
-		const block = renderNavigationBlock(ctx);
+		const block = renderNavigationBlock(ctx, bare);
 
 		expect(block).not.toContain('**Prev:**');
 		expect(block).toContain('**Next:**');
@@ -372,7 +397,7 @@ describe('renderNavigationBlock', () => {
 		const { proposals, run } = buildTestTree();
 		const nodes = computeTraversalOrder(proposals, run);
 		const ctx = buildNavigationContext('p6', nodes, run, 'Deep Dives/Machine Learning/Deep Dive -- Machine Learning.md')!;
-		const block = renderNavigationBlock(ctx);
+		const block = renderNavigationBlock(ctx, bare);
 
 		expect(block).toContain('**Prev:**');
 		expect(block).not.toContain('**Next:**');
@@ -409,11 +434,12 @@ describe('duplicate root basenames across runs', () => {
 	}
 
 	it('links every nav and syllabus entry to its own run', () => {
-		for (const folder of ['Projects/Alpha', 'Projects/Beta']) {
-			const { proposals, run, sPath } = runRootedAt(folder, folder);
+		const runs = ['Projects/Alpha', 'Projects/Beta'].map((folder) => ({ folder, ...runRootedAt(folder, folder) }));
+		const resolve = vaultOf(runs.flatMap(({ proposals, run, sPath }) => [run.rootNotePath, sPath, ...proposals.map((p) => p.proposedPath)]));
+		for (const { folder, proposals, run, sPath } of runs) {
 			const nodes = computeTraversalOrder(proposals, run);
-			const block = renderNavigationBlock(buildNavigationContext(`${folder}-b`, nodes, run, sPath)!);
-			const syllabus = renderSyllabusContent(nodes, run);
+			const block = renderNavigationBlock(buildNavigationContext(`${folder}-b`, nodes, run, sPath)!, resolve);
+			const syllabus = renderSyllabusContent(nodes, run, resolve);
 
 			expect(block).toContain(`**Root:** [[${folder}/Untitled|Untitled]]`);
 			expect(block).toContain(`**Up:** [[${folder}/Deep Dives/Untitled/Design|Design]]`);
@@ -455,22 +481,22 @@ describe('renderSyllabusContent', () => {
 	it('renders a complete syllabus with numbered outline and topic map', () => {
 		const { proposals, run } = buildTestTree();
 		const nodes = computeTraversalOrder(proposals, run);
-		const content = renderSyllabusContent(nodes, run);
+		const content = renderSyllabusContent(nodes, run, bare);
 
 		expect(content).toContain('# Deep Dive: Machine Learning');
 		expect(content).toContain('## Topics');
-		expect(content).toContain('1. [[Deep Dives/Machine Learning/Neural Networks|Neural Networks]]');
-		expect(content).toContain('   1. [[Deep Dives/Machine Learning/Neural Networks/Backpropagation|Backpropagation]]');
-		expect(content).toContain('   2. [[Deep Dives/Machine Learning/Neural Networks/Activation Functions|Activation Functions]]');
-		expect(content).toContain('2. [[Deep Dives/Machine Learning/Gradient Descent|Gradient Descent]]');
-		expect(content).toContain('   1. [[Deep Dives/Machine Learning/Gradient Descent/Learning Rate Schedules|Learning Rate Schedules]]');
-		expect(content).toContain('3. [[Deep Dives/Machine Learning/Regularization Techniques|Regularization Techniques]]');
+		expect(content).toContain('1. [[Neural Networks]]');
+		expect(content).toContain('   1. [[Backpropagation]]');
+		expect(content).toContain('   2. [[Activation Functions]]');
+		expect(content).toContain('2. [[Gradient Descent]]');
+		expect(content).toContain('   1. [[Learning Rate Schedules]]');
+		expect(content).toContain('3. [[Regularization Techniques]]');
 		expect(content).toContain('## Topic Map');
 		expect(content).toContain('```mermaid');
 		expect(content).toContain('graph TD');
 		expect(content).toContain('["Machine Learning"]');
 		expect(content).toContain('["Neural Networks"]');
-		expect(content).toContain('*Generated from [[notes/Machine Learning|Machine Learning]] -- 6 notes across 2 depths*');
+		expect(content).toContain('*Generated from [[Machine Learning]] -- 6 notes across 2 depths*');
 	});
 
 	it('renders correctly with partial acceptance', () => {
@@ -481,14 +507,14 @@ describe('renderSyllabusContent', () => {
 		proposals[4].status = 'rejected';
 
 		const nodes = computeTraversalOrder(proposals, run);
-		const content = renderSyllabusContent(nodes, run);
+		const content = renderSyllabusContent(nodes, run, bare);
 
-		expect(content).toContain('1. [[Deep Dives/Machine Learning/Neural Networks|Neural Networks]]');
-		expect(content).toContain('   1. [[Deep Dives/Machine Learning/Neural Networks/Activation Functions|Activation Functions]]');
-		expect(content).toContain('2. [[Deep Dives/Machine Learning/Regularization Techniques|Regularization Techniques]]');
+		expect(content).toContain('1. [[Neural Networks]]');
+		expect(content).toContain('   1. [[Activation Functions]]');
+		expect(content).toContain('2. [[Regularization Techniques]]');
 		// Rejected topics should not appear in the Topics outline
-		expect(content).not.toContain('|Backpropagation]]');
-		expect(content).not.toContain('|Gradient Descent]]');
+		expect(content).not.toContain('[[Backpropagation]]');
+		expect(content).not.toContain('[[Gradient Descent]]');
 		expect(content).toContain('-- 3 notes across 2 depths');
 	});
 
@@ -504,9 +530,9 @@ describe('renderSyllabusContent', () => {
 		];
 		const run = makeRun({ proposalIds: ['p1'] });
 		const nodes = computeTraversalOrder(proposals, run);
-		const content = renderSyllabusContent(nodes, run);
+		const content = renderSyllabusContent(nodes, run, bare);
 
-		expect(content).toContain('1. [[Deep Dives/Root/Topic A|Topic A]]');
+		expect(content).toContain('1. [[Topic A]]');
 		expect(content).toContain('## Topic Map');
 		expect(content).toContain('-- 1 note across 1 depth');
 	});
@@ -515,7 +541,7 @@ describe('renderSyllabusContent', () => {
 		const { proposals, run } = buildTestTree();
 		for (const p of proposals) p.status = 'rejected';
 		const nodes = computeTraversalOrder(proposals, run);
-		const content = renderSyllabusContent(nodes, run);
+		const content = renderSyllabusContent(nodes, run, bare);
 
 		expect(content).not.toContain('## Topic Map');
 		expect(content).not.toContain('```mermaid');
