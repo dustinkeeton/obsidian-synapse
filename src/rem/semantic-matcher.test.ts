@@ -85,6 +85,44 @@ describe('SemanticMatcher', () => {
 		expect(result[0].occurrences[0]).toMatchObject({ lineNumber: 0, startOffset: 20 });
 	});
 
+	it('drops concept occurrences inside Synapse callouts (#608)', async () => {
+		const source = mockFile('notes/Source.md');
+		const target = mockFile('notes/Pipelines.md');
+		app.vault.getMarkdownFiles.mockReturnValue([source, target]);
+		completeSpy.mockResolvedValue(JSON.stringify([{ title: 'Pipelines', matchedConcept: 'pipeline', confidence: 0.9 }]));
+		const content = [
+			'> [!note|synapse-nav] Deep Dive Navigation',
+			'> Production pipeline',
+			'',
+			'> [!info|synapse-enrichment] Related Notes',
+			'> pipeline',
+			'',
+			'> [!synapse-enrichment] References',
+			'> - Pixar - pipeline overview',
+			'',
+			'The pipeline matters.',
+		].join('\n');
+
+		const result = await makeMatcher().match(source, content, new Set(), 10);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].occurrences.map((o) => o.lineNumber)).toEqual([9]);
+	});
+
+	it('never offers a same-named note as a target (#608)', async () => {
+		const source = mockFile('Deep Dives/Animation/Pipeline.md');
+		const twin = mockFile('Deep Dives/Pipeline.md');
+		const other = mockFile('notes/Storyboards.md');
+		app.vault.getMarkdownFiles.mockReturnValue([source, twin, other]);
+		completeSpy.mockResolvedValue('[]');
+
+		await makeMatcher().match(source, 'pipeline and storyboards', new Set(), 10);
+
+		const userPrompt = completeSpy.mock.calls[0][0];
+		expect(userPrompt).toContain('Storyboards');
+		expect(userPrompt).not.toMatch(/^Pipeline$/m);
+	});
+
 	it('strips ```json code fences before parsing', async () => {
 		const source = mockFile('notes/Source.md');
 		const target = mockFile('notes/Topic.md');

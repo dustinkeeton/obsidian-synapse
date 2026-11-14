@@ -37,7 +37,7 @@ export class MentionScanner {
 	 * @returns Array of link candidates, sorted by number of occurrences (descending)
 	 */
 	scan(sourceFile: TFile, content: string, maxLinks: number): RemLinkCandidate[] {
-		const lookup = this.buildLookupTable(sourceFile.path);
+		const lookup = this.buildLookupTable(sourceFile);
 		if (lookup.length === 0) return [];
 
 		const skipRegions = buildSkipRegions(content);
@@ -84,13 +84,14 @@ export class MentionScanner {
 	 * Build a lookup table of all vault note titles and aliases,
 	 * sorted by term length descending (longest-match-first).
 	 */
-	private buildLookupTable(sourceFilePath: string): LookupEntry[] {
+	private buildLookupTable(sourceFile: TFile): LookupEntry[] {
+		const sourceName = sourceFile.basename.toLowerCase();
 		const entries: LookupEntry[] = [];
 		const files = getIncludedMarkdownFiles(this.app, 'rem', this.getSettings());
 
 		for (const file of files) {
-			// Skip self-references
-			if (file.path === sourceFilePath) continue;
+			// A same-named note would be written as [[name]], which resolves ambiguously back to the source.
+			if (file.path === sourceFile.path || file.basename.toLowerCase() === sourceName) continue;
 
 			const displayName = file.basename;
 

@@ -23,8 +23,25 @@ describe('buildSkipRegions', () => {
 		expect(buildSkipRegions(content)).toEqual([{ start, end }]);
 	});
 
-	it('does not cover other callouts', () => {
-		const content = '> [!info|synapse-enrichment] Related\n> networks';
+	it.each([
+		['deep-dive nav', '> [!note|synapse-nav] Deep Dive Navigation\n> Animation > Production pipeline'],
+		['legacy deep-dive nav', '> [!synapse-nav] Deep Dive Navigation\n> Animation > Production pipeline'],
+		['enrichment related notes', '> [!info|synapse-enrichment] Related Notes\n> - [[Storyboards]]'],
+		['legacy enrichment related notes', '> [!synapse-enrichment] Related Notes\n> - [[Storyboards]]'],
+		['enrichment references', '> [!info|synapse-enrichment] References\n> - [Pixar](https://pixar.com) - production pipeline overview'],
+		['legacy enrichment references', '> [!synapse-enrichment] References\n> - [Pixar](https://pixar.com) - production pipeline overview'],
+		['deep-dive', '> [!note|synapse-deep-dive] Deep dive\n> production pipeline'],
+	])('covers a %s callout, header included', (_label, callout) => {
+		const content = `${callout}\n\nafter`;
+		const regions = buildSkipRegions(content);
+
+		expect(isInSkipRegion(0, callout.length, regions)).toBe(true);
+		expect(regions.some(r => r.start === 0 && r.end === callout.length)).toBe(true);
+		expect(isInSkipRegion(content.indexOf('after'), content.length, regions)).toBe(false);
+	});
+
+	it('does not cover a non-Synapse callout', () => {
+		const content = '> [!info] Related\n> networks';
 
 		expect(buildSkipRegions(content)).toEqual([]);
 	});

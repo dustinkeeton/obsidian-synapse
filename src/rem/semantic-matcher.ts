@@ -3,6 +3,7 @@ import type { SynapseSettings } from '../settings';
 import type { RemLinkCandidate, RemOccurrence } from './types';
 import { AIClient, DecisionClient, MAX_CHOICE_OPTIONS, choice, isRecord, parseJson, getIncludedMarkdownFiles, redactError, score } from '../shared';
 import type { ChoiceQuestion, DecisionRequestOptions, ScoreAnswer, ScoreQuestion } from '../shared';
+import { buildSkipRegions, isInSkipRegion, lineStartOffsets } from './skip-regions';
 
 /** One conceptual match the AI is expected to return, after validation. */
 interface SemanticMatch {
@@ -36,6 +37,8 @@ const MIN_ANCHOR_CHARS = 3;
 // Brackets, pipes, and backticks would break the inserted [[target|anchor]] alias.
 const UNSAFE_ANCHOR = /[[\]|`]/;
 const WIKILINK = /\[\[([^\]|#^]+)/g;
+// A `.` between two word characters (Y14.5, B4.1, v1.2) never ends a sentence.
+const SENTENCE = /(?:[\p{L}\p{N}_]\.(?=[\p{L}\p{N}_])|[^.!?])+[.!?]*/gu;
 
 /** 0-1 relevance from a score distribution: the probability the title is strongly related. */
 export function relevanceFromScore(answer: ScoreAnswer): number {
@@ -50,9 +53,11 @@ export class RemLaneError extends Error {
 	}
 }
 
-/** Sentences of `content` usable as link anchors, outside frontmatter and code fences, deduplicated, capped at `limit`. */
+/** Sentences of `content` usable as link anchors, outside frontmatter, code fences and skip regions, deduplicated, capped at `limit`. */
 export function anchorSentences(content: string, limit = MAX_CHOICE_OPTIONS - 1): AnchorSentence[] {
 	const lines = content.split('\n');
+	const lineStarts = lineStartOffsets(lines);
+	const skipRegions = buildSkipRegions(content);
 	const sentences: AnchorSentence[] = [];
 	const seen = new Set<string>();
 	let start = 0;
@@ -69,14 +74,14 @@ export function anchorSentences(content: string, limit = MAX_CHOICE_OPTIONS - 1)
 		}
 		if (inFence) continue;
 		const prefix = /^\s*(?:(?:#{1,6}|[-*+]|\d+[.)]|>)\s+(?:\[.\]\s+)?)*/.exec(lineText)?.[0].length ?? 0;
-		const sentencePattern = /[^.!?]+[.!?]*/g;
 		const body = lineText.slice(prefix);
-		let match: RegExpExecArray | null;
-		while ((match = sentencePattern.exec(body)) !== null) {
+		for (const match of body.matchAll(SENTENCE)) {
 			const text = match[0].trim();
 			if (text.length < MIN_ANCHOR_CHARS || UNSAFE_ANCHOR.test(text) || seen.has(text)) continue;
-			seen.add(text);
 			const startOffset = prefix + match.index + match[0].indexOf(text);
+			const absStart = lineStarts[lineNumber] + startOffset;
+			if (isInSkipRegion(absStart, absStart + text.length, skipRegions)) continue;
+			seen.add(text);
 			sentences.push({ text, lineNumber, lineText, startOffset, endOffset: startOffset + text.length });
 			if (sentences.length >= limit) return sentences;
 		}
@@ -127,8 +132,10 @@ export class SemanticMatcher {
 	): Promise<RemLinkCandidate[]> {
 		const linked = this.linkedTargets(sourceFile, content);
 		const allTitles: NoteTitle[] = [];
+		const sourceName = sourceFile.basename.toLowerCase();
 		for (const file of getIncludedMarkdownFiles(this.app, 'rem', this.getSettings())) {
-			if (file.path === sourceFile.path) continue;
+			// A same-named note would be written as [[name]], which resolves ambiguously back to the source.
+			if (file.path === sourceFile.path || file.basename.toLowerCase() === sourceName) continue;
 			if (existingMatches.has(file.path)) continue;
 			if (linked.paths.has(file.path) || linked.names.has(file.basename.toLowerCase()) || linked.names.has(file.path.replace(/\.md$/, '').toLowerCase())) continue;
 			allTitles.push({ path: file.path, title: file.basename, folder: file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '' });
@@ -242,13 +249,16 @@ export class SemanticMatcher {
 
 		const candidates: RemLinkCandidate[] = [];
 		const lines = content.split('\n');
+		const lineStarts = lineStartOffsets(lines);
+		const skipRegions = buildSkipRegions(content);
 
 		for (const item of parsed) {
 			const target = noteTitles.find(n => n.title === item.title);
 			if (!target) continue;
 			if (item.confidence < threshold) continue;
 
-			const occurrences = this.findConcept(item.matchedConcept, lines);
+			const occurrences = this.findConcept(item.matchedConcept, lines)
+				.filter(o => !isInSkipRegion(lineStarts[o.lineNumber] + o.startOffset, lineStarts[o.lineNumber] + o.endOffset, skipRegions));
 			if (occurrences.length === 0) continue;
 
 			candidates.push({
