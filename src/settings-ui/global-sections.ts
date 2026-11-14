@@ -98,6 +98,7 @@ export function renderAiConfiguration(ctx: SettingsSectionContext): void {
 					switchDefaultProvider(plugin.settings.ai, provider);
 					const models = MODEL_OPTIONS[provider];
 					plugin.settings.ai.model = Object.keys(models)[0];
+					plugin.settings.ai.effort = effortFor(provider, plugin.settings.ai.model, plugin.settings.ai.effort) ?? '';
 					await plugin.saveSettings();
 					ctx.rerender();
 				})

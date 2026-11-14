@@ -135,13 +135,15 @@ export function extraProviders(settings: SynapseSettings): (KeyedProvider | 'oll
 
 /**
  * Change the default provider and swap keys so each vendor keeps its own: the old default's
- * key moves into `providerKeys`, and the new default's saved key becomes `apiKey`.
+ * key moves into `providerKeys`, and the new default's saved key becomes `apiKey`. A key left
+ * in `apiKey` while Ollama was the default has no known vendor, so it stays until replaced.
  */
 export function switchDefaultProvider(ai: AISettings, provider: AIProvider): void {
 	const keys = { ...ai.providerKeys };
 	const previous = ai.provider;
 	if (previous !== 'ollama' && ai.apiKey) keys[previous] = ai.apiKey;
-	ai.apiKey = provider === 'ollama' ? '' : (keys[provider] ?? '');
+	const unowned = previous === 'ollama' ? ai.apiKey : '';
+	ai.apiKey = provider === 'ollama' ? unowned : (keys[provider] ?? unowned);
 	if (provider !== 'ollama') delete keys[provider];
 	ai.providerKeys = keys;
 	ai.provider = provider;

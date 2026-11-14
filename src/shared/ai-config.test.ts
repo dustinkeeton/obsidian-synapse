@@ -199,6 +199,12 @@ describe('switchDefaultProvider', () => {
 		expect(apiKeyForProvider(s, 'anthropic')).toBe('default-key');
 	});
 
+	it('keeps a key left in apiKey while Ollama was the default', () => {
+		const s = makeSettings((x) => { x.ai.provider = 'ollama'; x.ai.apiKey = 'old-key'; });
+		switchDefaultProvider(s.ai, 'anthropic');
+		expect(s.ai.apiKey).toBe('old-key');
+	});
+
 	it('keeps keys when switching to and from Ollama', () => {
 		const s = makeSettings();
 		switchDefaultProvider(s.ai, 'ollama');
