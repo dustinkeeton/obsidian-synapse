@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { RemApplier } from './rem-applier';
+import type { LinkpathFor } from '../shared';
 import type { RemLinkCandidate, RemOccurrence } from './types';
+
+const bare: LinkpathFor = (path) => path.replace(/\.md$/, '').split('/').pop() ?? path;
 
 function occ(lineNumber: number, lineText: string, startOffset: number, endOffset: number): RemOccurrence {
 	return { lineNumber, lineText, startOffset, endOffset };
@@ -8,7 +11,7 @@ function occ(lineNumber: number, lineText: string, startOffset: number, endOffse
 
 function candidate(overrides: Partial<RemLinkCandidate> = {}): RemLinkCandidate {
 	return {
-		targetPath: 'notes/Target.md',
+		targetPath: `${overrides.targetDisplayName ?? 'Target'}.md`,
 		targetDisplayName: 'Target',
 		matchedText: 'Target',
 		matchType: 'title',
@@ -19,7 +22,24 @@ function candidate(overrides: Partial<RemLinkCandidate> = {}): RemLinkCandidate 
 }
 
 describe('RemApplier', () => {
-	const applier = new RemApplier();
+	const applier = new RemApplier(bare);
+
+	it('writes the linkpath the resolver qualifies for a colliding basename', () => {
+		const content = 'the pipeline matters';
+		const c = candidate({ targetPath: 'Deep Dives/Pipeline.md', targetDisplayName: 'Pipeline', matchedText: 'pipeline', occurrences: [occ(0, content, 4, 12)] });
+		const qualified = new RemApplier((path) => path.replace(/\.md$/, ''));
+		expect(qualified.apply(content, [c]).content).toBe('the [[Deep Dives/Pipeline|pipeline]] matters');
+	});
+
+	it('drops a candidate the resolver cannot link unambiguously', () => {
+		const content = 'Delegates and Events';
+		const unsafe = candidate({ targetPath: 'C# Notes/Delegates.md', targetDisplayName: 'Delegates', matchedText: 'Delegates', occurrences: [occ(0, content, 0, 9)] });
+		const fine = candidate({ targetPath: 'Events.md', targetDisplayName: 'Events', matchedText: 'Events', occurrences: [occ(0, content, 14, 20)] });
+		const result = new RemApplier((path) => (path.startsWith('C#') ? null : bare(path))).apply(content, [unsafe, fine]);
+		expect(result.content).toBe('Delegates and [[Events]]');
+		expect(result.dropped).toBe(1);
+		expect(result.appliedCandidates).toEqual([fine]);
+	});
 
 	it('returns content unchanged when there are no candidates', () => {
 		const content = 'Just some text\nover two lines';
@@ -55,7 +75,6 @@ describe('RemApplier', () => {
 			targetDisplayName: 'Target',
 			occurrences: [occ(0, content, 4, 10)],
 		});
-		// matchedText differs in case but is considered equal → bare link, keeping display name casing
 		expect(applier.apply(content, [c]).content).toBe('the [[Target]] note');
 	});
 
@@ -83,7 +102,6 @@ describe('RemApplier', () => {
 			targetDisplayName: 'Beta',
 			occurrences: [occ(1, lines[1], 4, 8)],
 		});
-		// matchedText equals displayName case-insensitively → bare links
 		expect(applier.apply(content, [a, b]).content).toBe('[[Alpha]] here\nand [[Beta]] there');
 	});
 

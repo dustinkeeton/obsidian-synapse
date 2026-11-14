@@ -1,3 +1,4 @@
+import type { LinkpathFor } from '../shared';
 import type { RemLinkCandidate, RemOccurrence } from './types';
 import { buildSkipRegions, isInSkipRegion, isWordBoundary, lineStartOffsets } from './skip-regions';
 
@@ -6,7 +7,7 @@ export interface RemApplyResult {
 	content: string;
 	/** Occurrences spliced into the content. */
 	applied: number;
-	/** Occurrences that no longer matched the content and could not be re-located. */
+	/** Occurrences that could not be re-located, or whose target has no unambiguous link. */
 	dropped: number;
 	/** Candidates with at least one applied occurrence. */
 	appliedCandidates: RemLinkCandidate[];
@@ -20,13 +21,16 @@ interface Span {
 
 /**
  * Applies accepted wikilink insertions to note content.
- * Replaces matched text with `[[target|matchedText]]` (or `[[target]]`
- * if the matched text equals the display name).
+ * Replaces matched text with `[[linkpath|matchedText]]` (or `[[linkpath]]` when the
+ * matched text equals it); `linkpathFor` qualifies the target only when its basename
+ * collides, and a candidate it cannot link unambiguously is dropped.
  *
  * Scan-time offsets are validated against the content being written; an occurrence
  * whose text moved is re-located, and one that cannot be found is dropped.
  */
 export class RemApplier {
+	constructor(private readonly linkpathFor: LinkpathFor) {}
+
 	/**
 	 * Apply accepted link candidates to the note content.
 	 *
@@ -41,21 +45,27 @@ export class RemApplier {
 		const claimed: Span[] = [];
 		const replacements: Array<Span & { replacement: string }> = [];
 		const appliedCandidates = new Set<RemLinkCandidate>();
-		const stale: Array<{ candidate: RemLinkCandidate; occ: RemOccurrence }> = [];
+		const stale: Array<{ candidate: RemLinkCandidate; linkpath: string; occ: RemOccurrence }> = [];
+		const linkpaths = new Map<RemLinkCandidate, string>();
 		let dropped = 0;
+		for (const candidate of candidates) {
+			const linkpath = this.linkpathFor(candidate.targetPath);
+			if (linkpath === null) dropped += candidate.occurrences.length;
+			else linkpaths.set(candidate, linkpath);
+		}
 
 		const isFree = (span: Span) => !claimed.some(c =>
 			c.lineNumber === span.lineNumber && span.startOffset < c.endOffset && c.startOffset < span.endOffset);
 		const isLinkable = (lineNumber: number, start: number, end: number) =>
 			!isInSkipRegion(lineStarts[lineNumber] + start, lineStarts[lineNumber] + end, skipRegions);
-		const claim = (candidate: RemLinkCandidate, span: Span) => {
+		const claim = (candidate: RemLinkCandidate, linkpath: string, span: Span) => {
 			claimed.push(span);
-			replacements.push({ ...span, replacement: this.buildWikilink(candidate) });
+			replacements.push({ ...span, replacement: this.buildWikilink(candidate, linkpath) });
 			appliedCandidates.add(candidate);
 		};
 
 		// Exact positions first so a re-located occurrence can never steal a still-valid span.
-		for (const candidate of candidates) {
+		for (const [candidate, linkpath] of linkpaths) {
 			const needle = candidate.matchedText.toLowerCase();
 			for (const occ of candidate.occurrences) {
 				const line = lines[occ.lineNumber];
@@ -65,14 +75,14 @@ export class RemApplier {
 					&& line.slice(occ.startOffset, occ.endOffset).toLowerCase() === needle
 					&& (line === occ.lineText || isWordBoundary(line, occ.startOffset, occ.endOffset))
 					&& isLinkable(occ.lineNumber, occ.startOffset, occ.endOffset);
-				if (valid && isFree(span)) claim(candidate, span);
-				else stale.push({ candidate, occ });
+				if (valid && isFree(span)) claim(candidate, linkpath, span);
+				else stale.push({ candidate, linkpath, occ });
 			}
 		}
 
-		for (const { candidate, occ } of stale) {
+		for (const { candidate, linkpath, occ } of stale) {
 			const span = this.relocate(lines, candidate.matchedText.toLowerCase(), occ, s => isFree(s) && isLinkable(s.lineNumber, s.startOffset, s.endOffset));
-			if (span) claim(candidate, span);
+			if (span) claim(candidate, linkpath, span);
 			else dropped++;
 		}
 
@@ -111,15 +121,8 @@ export class RemApplier {
 		return best?.span ?? null;
 	}
 
-	/**
-	 * Build the wikilink string for a candidate.
-	 * Uses `[[displayName]]` when the matched text equals the display name,
-	 * otherwise uses `[[displayName|matchedText]]` to preserve the original phrasing.
-	 */
-	private buildWikilink(candidate: RemLinkCandidate): string {
-		if (candidate.matchedText.toLowerCase() === candidate.targetDisplayName.toLowerCase()) {
-			return `[[${candidate.targetDisplayName}]]`;
-		}
-		return `[[${candidate.targetDisplayName}|${candidate.matchedText}]]`;
+	private buildWikilink(candidate: RemLinkCandidate, linkpath: string): string {
+		if (linkpath.toLowerCase() === candidate.matchedText.toLowerCase()) return `[[${linkpath}]]`;
+		return `[[${linkpath}|${candidate.matchedText}]]`;
 	}
 }

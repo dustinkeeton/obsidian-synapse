@@ -15,7 +15,7 @@ export interface SkipRegion {
  * - Existing wikilinks
  * - Image/file embeds
  * - Markdown links
- * - Synapse summary callouts (regenerated AI output)
+ * - Synapse-identity callouts (summary, enrichment, deep-dive nav, and every other `CALLOUT_TYPES` identity, either header spelling)
  */
 export function buildSkipRegions(content: string): SkipRegion[] {
 	const regions: SkipRegion[] = [];
@@ -53,7 +53,7 @@ export function buildSkipRegions(content: string): SkipRegion[] {
 		regions.push({ start: match.index, end: match.index + match[0].length });
 	}
 
-	regions.push(...summaryCalloutRegions(content));
+	regions.push(...synapseCalloutRegions(content));
 
 	// Sort by start position
 	regions.sort((a, b) => a.start - b.start);
@@ -61,13 +61,19 @@ export function buildSkipRegions(content: string): SkipRegion[] {
 	return regions;
 }
 
-function summaryCalloutRegions(content: string): SkipRegion[] {
+/** Synapse-generated metadata; transcription, OCR, lyrics and elaboration callouts hold the note's own content and stay linkable. */
+const SYNAPSE_IDENTITIES: ReadonlySet<string> = new Set([
+	CALLOUT_TYPES.summary, CALLOUT_TYPES.nav, CALLOUT_TYPES.enrichment, CALLOUT_TYPES.illustrate, CALLOUT_TYPES.deepDive,
+]);
+
+function synapseCalloutRegions(content: string): SkipRegion[] {
 	const lines = content.split('\n');
 	const lineStarts = lineStartOffsets(lines);
 	const regions: SkipRegion[] = [];
 	for (const block of scanBlocks(lines)) {
 		if (block.type !== 'quote') continue;
-		if (parseCalloutHeader(lines[block.start])?.identity !== CALLOUT_TYPES.summary) continue;
+		const identity = parseCalloutHeader(lines[block.start])?.identity;
+		if (identity === undefined || !SYNAPSE_IDENTITIES.has(identity)) continue;
 		regions.push({ start: lineStarts[block.start], end: lineStarts[block.end] + lines[block.end].length });
 	}
 	return regions;

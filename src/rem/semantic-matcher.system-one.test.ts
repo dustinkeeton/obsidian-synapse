@@ -72,6 +72,26 @@ describe('anchorSentences', () => {
 		expect(second.lineText.slice(second.startOffset, second.endOffset)).toBe('Second point!');
 	});
 
+	it('keeps a sentence whole across a decimal between word characters (#608)', () => {
+		const content = 'ASME Y14.5 requires datums every year. B4.1 covers fits in v1.2 tables.';
+		const sentences = anchorSentences(content);
+		expect(sentences.map((s) => s.text)).toEqual(['ASME Y14.5 requires datums every year.', 'B4.1 covers fits in v1.2 tables.']);
+		expect(content.slice(sentences[0].startOffset, sentences[0].endOffset)).toBe('ASME Y14.5 requires datums every year.');
+	});
+
+	it('offers no sentence inside a Synapse callout, new or legacy header (#608)', () => {
+		const content = [
+			'> [!note|synapse-nav] Deep Dive Navigation',
+			'> Animation > Production pipeline.',
+			'',
+			'> [!synapse-enrichment] References',
+			'> - Pixar - production pipeline overview.',
+			'',
+			'Body sentence here.',
+		].join('\n');
+		expect(anchorSentences(content).map((s) => s.text)).toEqual(['Body sentence here.']);
+	});
+
 	it('deduplicates repeated sentences and caps the count', () => {
 		expect(anchorSentences('Same one.\nSame one.\nAnother.').map((s) => s.text)).toEqual(['Same one.', 'Another.']);
 		expect(anchorSentences('A one. B two. C three.', 2)).toHaveLength(2);

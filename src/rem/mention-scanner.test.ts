@@ -359,4 +359,44 @@ describe('MentionScanner', () => {
 			expect(results[0].targetDisplayName).toBe('Résumé');
 		});
 	});
+
+	describe('Synapse callouts and self-targets (#608)', () => {
+		const source = makeFile('Deep Dives/Animation/2D Animation Production.md');
+
+		beforeEach(() => {
+			const files = [
+				source,
+				makeFile('Deep Dives/2D Animation Production.md'),
+				makeFile('Deep Dives/Untitled.md'),
+				makeFile('Pipeline.md'),
+				makeFile('Notes.md'),
+			];
+			scanner = new MentionScanner(makeApp(files), noExclusions);
+		});
+
+		it.each([
+			['nav', '> [!note|synapse-nav] Deep Dive Navigation\n> Animation > 2D Animation Production pipeline'],
+			['legacy nav', '> [!synapse-nav] Deep Dive Navigation\n> Animation > 2D Animation Production pipeline'],
+			['enrichment related notes', '> [!info|synapse-enrichment] Related Notes\n> - pipeline'],
+			['legacy enrichment related notes', '> [!synapse-enrichment] Related Notes\n> - pipeline'],
+			['enrichment references', '> [!info|synapse-enrichment] References\n> - [Pixar](https://pixar.com) - pipeline overview'],
+			['legacy enrichment references', '> [!synapse-enrichment] References\n> - [Pixar](https://pixar.com) - pipeline overview'],
+		])('produces no candidate inside a %s callout', (_label, callout) => {
+			expect(scanner.scan(source, callout, 20)).toEqual([]);
+		});
+
+		it('still links the same text in the body', () => {
+			const content = '> [!note|synapse-nav] Deep Dive Navigation\n> pipeline\n\nThe pipeline matters.';
+			const results = scanner.scan(source, content, 20);
+
+			expect(results.map(r => r.targetPath)).toEqual(['Pipeline.md']);
+			expect(results[0].occurrences.map(o => o.lineNumber)).toEqual([3]);
+		});
+
+		it('never targets the source note or an Untitled note, but offers a same-named note', () => {
+			const results = scanner.scan(source, '2D Animation Production covers the untitled pipeline.', 20);
+
+			expect(results.map(r => r.targetPath).sort()).toEqual(['Deep Dives/2D Animation Production.md', 'Pipeline.md']);
+		});
+	});
 });
