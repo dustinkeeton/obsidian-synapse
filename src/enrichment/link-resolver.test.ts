@@ -22,7 +22,11 @@ function makeSettings(overrides?: Partial<typeof DEFAULT_SETTINGS.enrichment>) {
 	});
 }
 
-function makeMockApp(files: Array<{ path: string }> = []) {
+function makeMockApp(
+	files: Array<{ path: string }> = [],
+	resolve: (linkpath: string, source: string) => { path: string } | null = () => null,
+	frontmatter: Record<string, unknown> | null = null
+) {
 	const LocalTFile = class {};
 	const fileInstances = files.map((f) => {
 		const inst = Object.create(LocalTFile.prototype) as { path: string };
@@ -41,6 +45,8 @@ function makeMockApp(files: Array<{ path: string }> = []) {
 				const basename = file.path.replace(/.*\//, '').replace(/\.md$/, '');
 				return basename;
 			},
+			getFirstLinkpathDest: resolve,
+			getFileCache: () => (frontmatter ? { frontmatter } : null),
 		},
 		_TFile: LocalTFile,
 	} as unknown as App;
@@ -64,6 +70,8 @@ function makeMockAnalyzer(opts: {
 
 // ── mergeTopicCandidates ──
 
+const SOURCE = 'sound/Music Arrangement.md';
+
 describe('LinkResolver.mergeTopicCandidates', () => {
 	it('returns topic-only candidates when no graph overlap', () => {
 		const app = makeMockApp();
@@ -76,7 +84,7 @@ describe('LinkResolver.mergeTopicCandidates', () => {
 			{ targetPath: 'B.md', displayText: 'B', relevanceScore: 0.2, reason: '2-hop' },
 		];
 
-		const result = resolver.mergeTopicCandidates(topics, graph);
+		const result = resolver.mergeTopicCandidates(topics, graph, SOURCE);
 		expect(result).toHaveLength(2);
 		expect(result[0].targetPath).toBe('A.md');
 		expect(result[0].relevanceScore).toBe(0.8);
@@ -94,7 +102,7 @@ describe('LinkResolver.mergeTopicCandidates', () => {
 			{ targetPath: 'A.md', displayText: 'A', relevanceScore: 0.3, reason: '2-hop' },
 		];
 
-		const result = resolver.mergeTopicCandidates(topics, graph);
+		const result = resolver.mergeTopicCandidates(topics, graph, SOURCE);
 		expect(result).toHaveLength(1);
 		// topic score + graph * 0.2 = 0.7 + 0.3*0.2 = 0.76
 		expect(result[0].relevanceScore).toBeCloseTo(0.76);
@@ -113,7 +121,7 @@ describe('LinkResolver.mergeTopicCandidates', () => {
 			{ targetPath: 'Nearby.md', displayText: 'Nearby', relevanceScore: 0.25, reason: 'folder' },
 		];
 
-		const result = resolver.mergeTopicCandidates(topics, graph);
+		const result = resolver.mergeTopicCandidates(topics, graph, SOURCE);
 		expect(result[0].targetPath).toBe('Topic.md');
 		expect(result[0].relevanceScore).toBeGreaterThan(result[1].relevanceScore);
 	});
@@ -122,13 +130,13 @@ describe('LinkResolver.mergeTopicCandidates', () => {
 		const app = makeMockApp();
 		const resolver = new LinkResolver(app, makeMockAnalyzer(), makeSettings());
 
-		expect(resolver.mergeTopicCandidates([], [])).toEqual([]);
+		expect(resolver.mergeTopicCandidates([], [], SOURCE)).toEqual([]);
 		expect(resolver.mergeTopicCandidates([], [
 			{ targetPath: 'A.md', displayText: 'A', relevanceScore: 0.3, reason: 'graph' },
-		])).toHaveLength(1);
+		], SOURCE)).toHaveLength(1);
 		expect(resolver.mergeTopicCandidates([
 			{ targetPath: 'A.md', displayText: 'A', relevanceScore: 0.7, reason: 'topic' },
-		], [])).toHaveLength(1);
+		], [], SOURCE)).toHaveLength(1);
 	});
 
 	it('sorts results by relevance descending', () => {
@@ -141,10 +149,53 @@ describe('LinkResolver.mergeTopicCandidates', () => {
 			{ targetPath: 'Mid.md', displayText: 'Mid', relevanceScore: 0.6, reason: 'topic' },
 		];
 
-		const result = resolver.mergeTopicCandidates(topics, []);
+		const result = resolver.mergeTopicCandidates(topics, [], SOURCE);
 		expect(result[0].targetPath).toBe('High.md');
 		expect(result[1].targetPath).toBe('Mid.md');
 		expect(result[2].targetPath).toBe('Low.md');
+	});
+
+	it('drops a topic whose target path is the source note', () => {
+		const resolver = new LinkResolver(makeMockApp(), makeMockAnalyzer(), makeSettings());
+		const result = resolver.mergeTopicCandidates([
+			{ targetPath: SOURCE, displayText: 'Music Arrangement', relevanceScore: 0.9, reason: 'AI-identified topic' },
+			{ targetPath: 'sound/Harmony.md', displayText: 'Harmony', relevanceScore: 0.8, reason: 'AI-identified topic' },
+		], [], SOURCE);
+		expect(result.map((r) => r.targetPath)).toEqual(['sound/Harmony.md']);
+	});
+
+	it('drops a topic that resolves to the source note by basename', () => {
+		const app = makeMockApp([], (lp) => (lp.toLowerCase() === 'music arrangement' ? { path: SOURCE } : null));
+		const resolver = new LinkResolver(app, makeMockAnalyzer(), makeSettings());
+		const result = resolver.mergeTopicCandidates([
+			{ targetPath: 'Music arrangement.md', displayText: 'Music arrangement', relevanceScore: 0.5, reason: 'AI-identified topic (2 notes reference this)' },
+		], [
+			{ targetPath: 'sound/Mixing.md', displayText: 'Mixing', relevanceScore: 0.3, reason: 'nearby folder' },
+		], SOURCE);
+		expect(result.map((r) => r.targetPath)).toEqual(['sound/Mixing.md']);
+	});
+
+	it('drops a basename match even when the cache cannot resolve it', () => {
+		const resolver = new LinkResolver(makeMockApp(), makeMockAnalyzer(), makeSettings());
+		const result = resolver.mergeTopicCandidates([
+			{ targetPath: 'Music Arrangement.md', displayText: 'Music Arrangement', relevanceScore: 0.5, reason: 'AI-identified topic' },
+		], [], SOURCE);
+		expect(result).toEqual([]);
+	});
+
+	it('drops a topic matching one of the source note aliases', () => {
+		const app = {
+			vault: { getAbstractFileByPath: (p: string) => (p === SOURCE ? mockFile(SOURCE) : null) },
+			metadataCache: {
+				getFirstLinkpathDest: () => null,
+				getFileCache: () => ({ frontmatter: { aliases: ['Arranging'] } }),
+			},
+		} as unknown as App;
+		const resolver = new LinkResolver(app, makeMockAnalyzer(), makeSettings());
+		const result = resolver.mergeTopicCandidates([
+			{ targetPath: 'Arranging.md', displayText: 'arranging', relevanceScore: 0.5, reason: 'AI-identified topic' },
+		], [], SOURCE);
+		expect(result).toEqual([]);
 	});
 });
 
