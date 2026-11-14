@@ -5,6 +5,7 @@ import {
 	ENRICHMENT_START, ENRICHMENT_END, asStringArray, linkResolves, stripUnresolvedLinks,
 } from '../shared';
 import { EnrichmentProposal, AcceptedItems } from './types';
+import { isSelfLink } from './self-link';
 
 /**
  * Applies accepted enrichments to a note non-destructively.
@@ -89,6 +90,7 @@ export class EnrichmentApplier {
 		const acceptedLinkPaths = new Set(accepted.internalLinks);
 		const internalLinks = proposal.result.internalLinks.filter(l =>
 			acceptedLinkPaths.has(l.targetPath) &&
+			!isSelfLink(l, this.app, path) &&
 			linkResolves(this.linkText(l.displayText), this.app.metadataCache, path)
 		);
 

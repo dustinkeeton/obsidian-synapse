@@ -83,6 +83,26 @@ describe('EnrichmentApplier', () => {
 			expect(app.metadataCache.getFirstLinkpathDest).toHaveBeenCalledWith('Real', 'notes/Test.md');
 		});
 
+		it('never writes a Related Notes entry that resolves to the note itself (#609)', async () => {
+			app.metadataCache.getFirstLinkpathDest.mockImplementation((lp: string) =>
+				lp === 'Test' ? mockFile('notes/Test.md') : mockFile(`${lp}.md`));
+			const proposal = makeProposal({
+				result: {
+					...emptyResult(),
+					internalLinks: [
+						{ targetPath: 'Test.md', displayText: 'Test', reason: 'AI-identified topic', relevanceScore: 1 },
+						{ targetPath: 'Other.md', displayText: 'Other', reason: 'o', relevanceScore: 1 },
+					],
+				},
+			});
+			const accepted: AcceptedItems = { ...emptyAccepted(), internalLinks: ['Test.md', 'Other.md'] };
+
+			const result = await runApply('# Note\n', proposal, accepted);
+
+			expect(result).toContain('[[Other]]');
+			expect(result).not.toContain('[[Test]]');
+		});
+
 		it('unlinks missing-note wikilinks in suggested frontmatter values', async () => {
 			resolveOnly('Real');
 			const proposal = makeProposal({
