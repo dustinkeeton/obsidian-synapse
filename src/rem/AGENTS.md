@@ -84,14 +84,14 @@ interface RemSettings {
 | `mention-scanner.ts` | `MentionScanner` | Phase 1: literal title/alias mention scanning |
 | `semantic-matcher.ts` | `SemanticMatcher`, `RELEVANCE_LEVELS`, `relevanceFromScore`, `anchorSentences`, `RemLaneError`, `NO_ANCHOR` | Phase 2: semantic matching; lane-only (`score` + anchor `choice`) when `ai.systemOne` is on, one generative prompt otherwise (#558, #566) |
 | `overlaps.ts` | `withoutOverlaps` | Drops occurrences overlapping a higher-ranked candidate's, then candidates left with none |
-| `rem-applier.ts` | `RemApplier`, `RemApplyResult` | Inserts path-qualified `[[folder/Target|text]]` links (bare `[[Target]]` only for a vault-root note whose name equals the text, #608) for accepted candidates after validating each occurrence against the fresh content (re-locate nearest whole-word non-skipped match, else drop; #575) |
-| `skip-regions.ts` | `SkipRegion`, `buildSkipRegions`, `isInSkipRegion`, `isWordBoundary`, `lineStartOffsets`, `withoutSkipRegions` | Unlinkable ranges (frontmatter, code, wikilinks/embeds, md links, every Synapse-identity callout block in `CALLOUT_TYPES` incl. nav + enrichment, `[!base|synapse-*]` and legacy `[!synapse-*]` headers, #608) shared by scanner, applier, `anchorSentences`, the generative concept filter, and `withoutSkipRegions` |
+| `rem-applier.ts` | `RemApplier`, `RemApplyResult` | Inserts `[[linkpath|text]]` links (`[[linkpath]]` when the text equals it) with `linkpath` from the injected `LinkpathFor` (`RemModule` passes `shared` `linkpathFor`: bare basename while unique, so a moved target keeps resolving; folder-qualified when another note or the source shares it; a candidate whose qualified path holds `#` `^` `|` `[` `]` is dropped, #608) for accepted candidates after validating each occurrence against the fresh content (re-locate nearest whole-word non-skipped match, else drop; #575) |
+| `skip-regions.ts` | `SkipRegion`, `buildSkipRegions`, `isInSkipRegion`, `isWordBoundary`, `lineStartOffsets`, `withoutSkipRegions` | Unlinkable ranges (frontmatter, code, wikilinks/embeds, md links, Synapse-generated metadata callout blocks: summary, nav, enrichment, illustrate, deep-dive; transcription, OCR, lyrics and legacy elaboration callouts hold note content and stay linkable; `[!base|synapse-*]` and legacy `[!synapse-*]` headers, #608) shared by scanner, applier, `anchorSentences`, the generative concept filter, and `withoutSkipRegions` |
 | `rem-store.ts` | `RemStore` | Proposal persistence under `rem.remFolderPath` |
 | `settings-section.ts` | `renderRemSettings` | REM settings UI section |
 | `mention-scanner.test.ts` | Tests | MentionScanner tests incl. no candidate inside nav/enrichment callouts and no source or `Untitled` target, a same-named note still offered (#608) |
 | `auto-accept.test.ts` | Tests | Auto-accept behavior tests (#228) |
-| `rem-applier.test.ts` | Tests | RemApplier tests incl. stale-offset re-locate/drop/dedupe (#575) |
-| `skip-regions.test.ts` | Tests | Skip regions incl. Synapse callouts (summary, nav, enrichment related/references, both header spellings; #608), `withoutSkipRegions` |
+| `rem-applier.test.ts` | Tests | RemApplier tests incl. stale-offset re-locate/drop/dedupe (#575), resolver-qualified and dropped-unsafe targets (#608) |
+| `skip-regions.test.ts` | Tests | Skip regions incl. Synapse metadata callouts (summary, nav, enrichment related/references, deep-dive, both header spellings) and linkable content callouts (transcription, OCR, lyrics, elaboration; #608), `withoutSkipRegions` |
 | `semantic-matcher.test.ts` | Tests | SemanticMatcher generative-path tests |
 | `semantic-matcher.system-one.test.ts` | Tests | #558/#566: strongly-related mapping, `anchorSentences`, lane off = zero lane calls + anchor required, lane on = score with folder + anchor choice + zero `complete()`, `<none>` drop, related-only mass rejected, 529 -> `RemLaneError`, already-linked targets excluded |
 | `overlaps.test.ts` | Tests | `withoutOverlaps` |
@@ -109,11 +109,11 @@ remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private sca
   --> gatherCandidates(file, content, cacheUse):
         MentionScanner.scan(...) literal candidates (lookup excludes the source and `isUntitled` names, #608), down-weighted by titleMatchWeight
         SemanticMatcher.match(..., trackAiCache(cacheUse)) always-on, filtered by confidenceThreshold   (#527)
-          titles = included notes minus self and `isUntitled` names (#608), literal matches, and every [[wikilink]] target already in the note (linkedTargets, semantic-matcher.ts:328; getFirstLinkpathDest + link text)
-          lane on (matchOnLane, :154) — zero complete() calls (#566):
+          titles = included notes minus self and `isUntitled` names (#608), literal matches, and every [[wikilink]] target already in the note (linkedTargets, semantic-matcher.ts:327; getFirstLinkpathDest + link text)
+          lane on (matchOnLane, :153) — zero complete() calls (#566):
             anchorSentences(content[0:4000]) (:57; frontmatter/code fences/list markers/skip regions skipped, a `.` between word characters never ends a sentence (Y14.5, #608), sentences with [ ] | ` dropped, deduped, <= MAX_CHOICE_OPTIONS-1); none -> []
-            one score per title over RELEVANCE_LEVELS (:26) with its folder in the question; relevance = P(strongly related) only (relevanceFromScore, :41)
-            titles >= confidenceThreshold, top maxLinks by relevance -> one choice per survivor over s0..sN + '<none>' (locateAnchors, :291); '<none>' -> dropped
+            one score per title over RELEVANCE_LEVELS (:27) with its folder in the question; relevance = P(strongly related) only (relevanceFromScore, :44)
+            titles >= confidenceThreshold, top maxLinks by relevance -> one choice per survivor over s0..sN + '<none>' (locateAnchors, :300); '<none>' -> dropped
             candidate.matchedText = chosen sentence, one occurrence at its span, confidence = relevance, lane 'system-one'; aiOpts.onSystemOne() after the lane answered
             any lane error -> RemLaneError (no generative fallback)
           lane off (matchGenerative): one complete() over the title list; concept occurrences inside skip regions dropped, concept with zero occurrences -> dropped; lane 'system-two'
@@ -176,7 +176,7 @@ WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This
 
 - `remScanNote` takes the note's `NoteOperationQueue` slot itself (#585), so the leg enqueues behind the deep-dive accept that holds the same `proposedPath` key. `remScanDirectory` / `resumeFromCheckpoint` stay unqueued.
 - `{ postOp: true }` suppresses the file-not-found, exclusion, lane-skip and no-mentions notices and the "Found N linkable mentions" toast; a pending proposal surfaces only via `refreshView()`. `autoAccept.rem` still applies, silently: `maybeAutoAccept(proposal, postOp)` skips the "Auto-accepted REM links" and "Inserted N wikilinks" notices.
-- Links only to existing notes: semantic candidates whose `title` is not an included vault note are dropped (`semantic-matcher.ts:256-257`); literal candidates come from vault titles (`MentionScanner`). Covered by `semantic-matcher.test.ts` "only ever inserts links that resolve to existing notes (#581)".
+- Links only to existing notes: semantic candidates whose `title` is not an included vault note are dropped (`semantic-matcher.ts:255-256`); literal candidates come from vault titles (`MentionScanner`). Covered by `semantic-matcher.test.ts` "only ever inserts links that resolve to existing notes (#581)".
 
 ## Checkpoint Behavior
 
@@ -234,4 +234,4 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 | `RemApplier`, `RemApplyResult` | `./rem-applier` |
 | `RemStore` | `./rem-store` |
 
-Internal-file shared imports: `semantic-matcher.ts` imports `AIClient`, `DecisionClient`, `score`, `choice`, `MAX_CHOICE_OPTIONS` (#558, #566), `ChoiceQuestion`/`DecisionRequestOptions`/`ScoreAnswer`/`ScoreQuestion` (types; `match(..., aiOpts?)` forwards `aiOpts` to `decide()` and `complete()`, #527), `isRecord`, `parseJson`, `getIncludedMarkdownFiles`, `isUntitled`, `redactError` from `../shared`, plus `buildSkipRegions`, `isInSkipRegion`, `lineStartOffsets` from `./skip-regions` (#608). `RemLaneError` renders its cause through `redactError`, and `index.ts` logs the skip through it. Its AI-call failure sink routes `console.warn` through `redactError` (redaction single-source-of-truth); the JSON-parse failure path logs a static message with no error payload. `rem-store.ts` imports `ensureFolder`, `isRecord`, `readJsonFile`; `settings-section.ts` imports `addEnhancedSlider`, `SettingsSectionContext`; `skip-regions.ts` imports `scanBlocks`, `parseCalloutHeader`, `CALLOUT_TYPES`.
+Internal-file shared imports: `semantic-matcher.ts` imports `AIClient`, `DecisionClient`, `score`, `choice`, `MAX_CHOICE_OPTIONS` (#558, #566), `ChoiceQuestion`/`DecisionRequestOptions`/`ScoreAnswer`/`ScoreQuestion` (types; `match(..., aiOpts?)` forwards `aiOpts` to `decide()` and `complete()`, #527), `isRecord`, `parseJson`, `getIncludedMarkdownFiles`, `isUntitled`, `redactError` from `../shared`, plus `buildSkipRegions`, `isInSkipRegion`, `lineStartOffsets` from `./skip-regions` (#608). `RemLaneError` renders its cause through `redactError`, and `index.ts` logs the skip through it. Its AI-call failure sink routes `console.warn` through `redactError` (redaction single-source-of-truth); the JSON-parse failure path logs a static message with no error payload. `rem-store.ts` imports `ensureFolder`, `isRecord`, `readJsonFile`; `settings-section.ts` imports `addEnhancedSlider`, `SettingsSectionContext`; `skip-regions.ts` imports `scanBlocks`, `parseCalloutHeader`, `CALLOUT_TYPES`. `rem-applier.ts` imports the `LinkpathFor` type; `index.ts` builds the applier over `linkpathFor`.

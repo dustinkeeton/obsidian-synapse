@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { SemanticMatcher } from './semantic-matcher';
-import { AIClient, stripUnresolvedLinks } from '../shared';
+import { AIClient, linkpathFor, stripUnresolvedLinks } from '../shared';
 import { RemApplier } from './rem-applier';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile } from '../__test-utils__/mock-factories';
@@ -131,7 +131,7 @@ describe('SemanticMatcher', () => {
 		const content = 'The production pipeline has stages.';
 
 		const candidates = await makeMatcher().match(source, content, new Set(), 10);
-		const { content: linked } = new RemApplier().apply(content, candidates);
+		const { content: linked } = new RemApplier((path) => linkpathFor(app as unknown as App, path)).apply(content, candidates);
 
 		expect(linked).toBe('The [[Deep Dives/Pipeline|production pipeline]] has stages.');
 	});
@@ -185,10 +185,10 @@ describe('SemanticMatcher', () => {
 		const content = 'A real thing and an imagined thing.';
 
 		const candidates = await makeMatcher().match(source, content, new Set(), 10);
-		const { content: linked } = new RemApplier().apply(content, candidates);
+		const { content: linked } = new RemApplier((path) => linkpathFor(app as unknown as App, path)).apply(content, candidates);
 
 		const resolver = { getFirstLinkpathDest: (lp: string) => vaultFiles.find((f) => f.path === `${lp}.md` || f.basename === lp) ?? null };
-		expect(linked).toContain('[[notes/Real|real thing]]');
+		expect(linked).toContain('[[Real|real thing]]');
 		expect(stripUnresolvedLinks(linked, resolver, source.path)).toBe(linked);
 	});
 

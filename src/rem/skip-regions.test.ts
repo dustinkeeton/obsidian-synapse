@@ -40,6 +40,15 @@ describe('buildSkipRegions', () => {
 		expect(isInSkipRegion(content.indexOf('after'), content.length, regions)).toBe(false);
 	});
 
+	it.each([
+		['transcription', '> [!quote|synapse-transcription] Transcription\n> production pipeline'],
+		['OCR', '> [!quote|synapse-ocr] Extracted text\n> production pipeline'],
+		['lyrics', '> [!quote|synapse-lyrics] Lyrics\n> production pipeline'],
+		['legacy elaboration', '> [!synapse-elaboration] Elaboration\n> production pipeline'],
+	])('leaves a %s callout linkable, since it holds the note content', (_label, callout) => {
+		expect(buildSkipRegions(callout)).toEqual([]);
+	});
+
 	it('does not cover a non-Synapse callout', () => {
 		const content = '> [!info] Related\n> networks';
 

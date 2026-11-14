@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { RemApplier } from './rem-applier';
+import type { LinkpathFor } from '../shared';
 import type { RemLinkCandidate, RemOccurrence } from './types';
+
+const bare: LinkpathFor = (path) => path.replace(/\.md$/, '').split('/').pop() ?? path;
 
 function occ(lineNumber: number, lineText: string, startOffset: number, endOffset: number): RemOccurrence {
 	return { lineNumber, lineText, startOffset, endOffset };
@@ -19,7 +22,24 @@ function candidate(overrides: Partial<RemLinkCandidate> = {}): RemLinkCandidate 
 }
 
 describe('RemApplier', () => {
-	const applier = new RemApplier();
+	const applier = new RemApplier(bare);
+
+	it('writes the linkpath the resolver qualifies for a colliding basename', () => {
+		const content = 'the pipeline matters';
+		const c = candidate({ targetPath: 'Deep Dives/Pipeline.md', targetDisplayName: 'Pipeline', matchedText: 'pipeline', occurrences: [occ(0, content, 4, 12)] });
+		const qualified = new RemApplier((path) => path.replace(/\.md$/, ''));
+		expect(qualified.apply(content, [c]).content).toBe('the [[Deep Dives/Pipeline|pipeline]] matters');
+	});
+
+	it('drops a candidate the resolver cannot link unambiguously', () => {
+		const content = 'Delegates and Events';
+		const unsafe = candidate({ targetPath: 'C# Notes/Delegates.md', targetDisplayName: 'Delegates', matchedText: 'Delegates', occurrences: [occ(0, content, 0, 9)] });
+		const fine = candidate({ targetPath: 'Events.md', targetDisplayName: 'Events', matchedText: 'Events', occurrences: [occ(0, content, 14, 20)] });
+		const result = new RemApplier((path) => (path.startsWith('C#') ? null : bare(path))).apply(content, [unsafe, fine]);
+		expect(result.content).toBe('Delegates and [[Events]]');
+		expect(result.dropped).toBe(1);
+		expect(result.appliedCandidates).toEqual([fine]);
+	});
 
 	it('returns content unchanged when there are no candidates', () => {
 		const content = 'Just some text\nover two lines';
@@ -82,7 +102,7 @@ describe('RemApplier', () => {
 			targetDisplayName: 'Beta',
 			occurrences: [occ(1, lines[1], 4, 8)],
 		});
-		expect(applier.apply(content, [a, b]).content).toBe('[[Alpha]] here\nand [[notes/Beta|beta]] there');
+		expect(applier.apply(content, [a, b]).content).toBe('[[Alpha]] here\nand [[Beta]] there');
 	});
 
 	it('drops an out-of-range occurrence whose text is nowhere in the content', () => {
@@ -121,7 +141,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [google([occ(0, scanned, 11, 17)])]);
 
-			expect(result.content).toBe('# Title\n\nNew intro line\nI searched [[notes/Google|google]] today');
+			expect(result.content).toBe('# Title\n\nNew intro line\nI searched [[Google]] today');
 			expect(result).toMatchObject({ applied: 1, dropped: 0 });
 		});
 
@@ -131,7 +151,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [google([occ(0, scanned, 11, 17)])]);
 
-			expect(result.content).toBe('Yesterday I searched [[notes/Google|google]] today');
+			expect(result.content).toBe('Yesterday I searched [[Google]] today');
 		});
 
 		it('drops an occurrence whose text was removed and leaves the content intact', () => {
@@ -155,7 +175,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [google([occ(0, scanned, 9, 15)])]);
 
-			expect(result.content).toBe(fresh.replace('Notes on google', 'Notes on [[notes/Google|google]]'));
+			expect(result.content).toBe(fresh.replace('Notes on google', 'Notes on [[Google]]'));
 			expect(result.content).not.toContain('lele');
 		});
 
@@ -182,7 +202,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [google([occ(0, scanned, 0, 6), occ(0, scanned, 11, 17)])]);
 
-			expect(result.content).toBe('only [[notes/Google|google]] now');
+			expect(result.content).toBe('only [[Google]] now');
 			expect(result).toMatchObject({ applied: 1, dropped: 1 });
 		});
 
@@ -192,7 +212,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [c]);
 
-			expect(result.content).toBe('x [[notes/Google|google]]\n[[notes/Google|google]] y');
+			expect(result.content).toBe('x [[Google]]\n[[Google]] y');
 		});
 	});
 });

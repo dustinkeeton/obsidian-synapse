@@ -61,7 +61,10 @@ export function buildSkipRegions(content: string): SkipRegion[] {
 	return regions;
 }
 
-const SYNAPSE_IDENTITIES: ReadonlySet<string> = new Set(Object.values(CALLOUT_TYPES));
+/** Synapse-generated metadata; transcription, OCR, lyrics and elaboration callouts hold the note's own content and stay linkable. */
+const SYNAPSE_IDENTITIES: ReadonlySet<string> = new Set([
+	CALLOUT_TYPES.summary, CALLOUT_TYPES.nav, CALLOUT_TYPES.enrichment, CALLOUT_TYPES.illustrate, CALLOUT_TYPES.deepDive,
+]);
 
 function synapseCalloutRegions(content: string): SkipRegion[] {
 	const lines = content.split('\n');

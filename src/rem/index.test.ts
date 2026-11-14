@@ -474,8 +474,8 @@ describe('RemModule', () => {
 			await module.acceptProposal('p1', ['Foo', 'Bar']);
 
 			const written = (await app.vault.process.mock.results[0].value) as unknown as string;
-			expect(written).toContain('[[notes/Foo|Foo]]');
-			expect(written).toContain('[[notes/Bar|Bar]]');
+			expect(written).toContain('[[Foo]]');
+			expect(written).toContain('[[Bar]]');
 			expect(updateStatusSpy).toHaveBeenCalledWith('p1', 'accepted', ['Foo', 'Bar'], 'Foo line\nBar line');
 			expect(notifications.success).toHaveBeenCalled();
 		});
@@ -525,7 +525,7 @@ describe('RemModule', () => {
 			await module.acceptProposal('p1', ['Foo', 'Bar']);
 
 			const written = (await app.vault.process.mock.results[0].value) as unknown as string;
-			expect(written).toBe('> [!summary|synapse-summary] Summary\n> recap\n\n[[notes/Foo|Foo]] line\n[[notes/Bar|Bar]] line');
+			expect(written).toBe('> [!summary|synapse-summary] Summary\n> recap\n\n[[Foo]] line\n[[Bar]] line');
 			expect(updateStatusSpy).toHaveBeenCalledWith('p1', 'accepted', ['Foo', 'Bar'], expect.any(String));
 		});
 
