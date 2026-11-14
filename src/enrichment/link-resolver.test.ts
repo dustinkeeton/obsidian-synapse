@@ -197,6 +197,21 @@ describe('LinkResolver.mergeTopicCandidates', () => {
 		], [], SOURCE);
 		expect(result).toEqual([]);
 	});
+
+	it('keeps a topic whose linkpath resolves to another note even when it equals a source alias', () => {
+		const app = {
+			vault: { getAbstractFileByPath: (p: string) => (p === SOURCE ? mockFile(SOURCE) : null) },
+			metadataCache: {
+				getFirstLinkpathDest: (lp: string) => (lp === 'Arranging' ? { path: 'sound/Arranging.md' } : null),
+				getFileCache: () => ({ frontmatter: { aliases: ['Arranging'] } }),
+			},
+		} as unknown as App;
+		const resolver = new LinkResolver(app, makeMockAnalyzer(), makeSettings());
+		const result = resolver.mergeTopicCandidates([
+			{ targetPath: 'sound/Arranging.md', displayText: 'Arranging', relevanceScore: 0.5, reason: 'AI-identified topic' },
+		], [], SOURCE);
+		expect(result.map((r) => r.targetPath)).toEqual(['sound/Arranging.md']);
+	});
 });
 
 // ── findInternalLinks ──

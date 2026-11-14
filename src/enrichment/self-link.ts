@@ -18,7 +18,7 @@ function sourceAliases(app: App, sourcePath: string): Set<string> {
 	return new Set(list.map((a) => a.trim().toLowerCase()).filter(Boolean));
 }
 
-/** True when `candidate` points back at `sourcePath` by path, resolved linkpath, basename, or alias. */
+/** True when `candidate` points back at `sourcePath` by path or resolved linkpath; basename and alias only decide an unresolved link. */
 export function isSelfLink(
 	candidate: Pick<InternalLinkCandidate, 'targetPath' | 'displayText'>,
 	app: App,
@@ -27,7 +27,8 @@ export function isSelfLink(
 	if (candidate.targetPath === sourcePath) return true;
 	const linkpath = linkpathOf(candidate.displayText);
 	if (!linkpath) return false;
-	if (app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath)?.path === sourcePath) return true;
+	const dest = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
+	if (dest) return dest.path === sourcePath;
 	const lower = linkpath.toLowerCase();
 	if (lower === basenameOf(sourcePath).toLowerCase()) return true;
 	return sourceAliases(app, sourcePath).has(lower);

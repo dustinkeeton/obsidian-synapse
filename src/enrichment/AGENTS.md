@@ -102,7 +102,7 @@ Note: `TagVocabularyEntry`, `EnrichmentSettings`, and `EnrichmentWeightSettings`
 | `metadata-classifier.ts` | `MetadataClassifier` | Tag classification against the user-defined vocabulary: System 1 `choice` per category when `ai.systemOne` is on, generative prompt for the rest (#558); rejects hallucinated tags |
 | `topic-extractor.ts` | `TopicExtractor` | AI topic extraction; matched topics (never the source note itself, #609) → `InternalLinkCandidate`; unmatched topics accumulated for multi-note resolution |
 | `link-resolver.ts` | `LinkResolver` | Graph-based internal link candidates (link hops, shared tags, folder proximity); merges with topic candidates and drops self-links (#609) |
-| `self-link.ts` | `isSelfLink`, `withoutSelfLinks` | Self-link predicate over path / resolved linkpath / basename / alias; used by `mergeTopicCandidates` and `EnrichmentApplier.apply` (#609) |
+| `self-link.ts` | `isSelfLink`, `withoutSelfLinks` | Self-link predicate over path / resolved linkpath (basename / alias only for an unresolved linkpath); used by `mergeTopicCandidates` and `EnrichmentApplier.apply` (#609) |
 | `prompt-builder.ts` | `PromptBuilder` | AI prompts for external link suggestions; frontmatter suggestions with a System 1 `choice` per lane key first when `ai.systemOne` is on (#563) |
 | `enrichment-store.ts` | `EnrichmentStore` | CRUD for enrichment proposal JSON files in the enrichment folder |
 | `enrichment-applier.ts` | `EnrichmentApplier` | Applies/undoes accepted enrichments to note content non-destructively via `vault.process` |
@@ -144,8 +144,8 @@ class LinkResolver {
   mergeTopicCandidates(topicCandidates: InternalLinkCandidate[], graphCandidates: InternalLinkCandidate[], sourcePath: string): InternalLinkCandidate[]   // drops self-links via withoutSelfLinks (#609)
 }
 // self-link.ts (#609)
-function isSelfLink(candidate: Pick<InternalLinkCandidate, 'targetPath' | 'displayText'>, app: App, sourcePath: string): boolean   // :22; targetPath === source, getFirstLinkpathDest(linkpath)?.path === source, linkpath === source basename, or a source frontmatter alias (case-insensitive)
-function withoutSelfLinks<T>(candidates: T[], app: App, sourcePath: string): T[]   // :37
+function isSelfLink(candidate: Pick<InternalLinkCandidate, 'targetPath' | 'displayText'>, app: App, sourcePath: string): boolean   // :22; targetPath === source, or getFirstLinkpathDest(linkpath)?.path === source; only when the linkpath does not resolve: linkpath === source basename or a source frontmatter alias (case-insensitive)
+function withoutSelfLinks<T>(candidates: T[], app: App, sourcePath: string): T[]   // :38
 // prompt-builder.ts
 class PromptBuilder {
   constructor(getSettings: () => SynapseSettings)
