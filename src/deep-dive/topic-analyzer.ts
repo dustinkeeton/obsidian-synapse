@@ -15,7 +15,7 @@ export class TopicAnalyzer {
 		private app: App,
 		private getSettings: () => SynapseSettings
 	) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'deep-dive');
 	}
 
 	/**

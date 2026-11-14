@@ -1,5 +1,5 @@
 import { normalizePath } from 'obsidian';
-import { contentKey, hashString } from '../shared';
+import { contentKey, hashString, resolveAIConfig } from '../shared';
 import { SynapseSettings } from '../settings';
 import { TitleProposalTrigger } from './types';
 
@@ -9,7 +9,7 @@ import { TitleProposalTrigger } from './types';
  *
  * Keying on the *inputs* (note path + content hash + current title + trigger +
  * the AI settings that shape the request) rather than the model's *output* is
- * what makes re-scanning an unchanged note idempotent: temperature > 0 sampling
+ * what makes re-scanning an unchanged note idempotent: model sampling
  * would otherwise yield a different proposed title — and thus a different key —
  * every run, defeating the reject-loop guard.
  *
@@ -24,14 +24,14 @@ export function titleContentKey(
 	trigger: TitleProposalTrigger,
 	settings: SynapseSettings,
 ): string {
+	const { provider, model, effort } = resolveAIConfig(settings, 'title');
 	return contentKey([
 		normalizePath(notePath),
 		hashString(content),
 		currentTitle,
 		trigger,
-		settings.ai.provider,
-		settings.ai.model,
-		String(settings.ai.temperature),
-		String(settings.ai.maxTokens),
+		provider,
+		model,
+		effort ?? '',
 	]);
 }

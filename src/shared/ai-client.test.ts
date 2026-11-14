@@ -29,6 +29,9 @@ interface ParsedRequestBody {
 	max_tokens?: number;
 	max_completion_tokens?: number;
 	temperature?: number;
+	reasoning_effort?: string;
+	output_config?: unknown;
+	think?: string | boolean;
 	stream?: boolean;
 	system?: string;
 	system_instruction?: unknown;
@@ -71,8 +74,6 @@ describe('AIClient — Gemini provider', () => {
 			s.ai.provider = 'gemini';
 			s.ai.model = 'gemini-3.5-flash';
 			s.ai.apiKey = 'AIzaSyTestKey1234567890123456789012345';
-			s.ai.maxTokens = 1024;
-			s.ai.temperature = 0.3;
 		});
 		client = new AIClient(() => settings);
 		mockRequestUrl.mockReset();
@@ -98,13 +99,37 @@ describe('AIClient — Gemini provider', () => {
 		expect(result).toBe('hi there');
 	});
 
-	it('maps maxTokens and temperature into generationConfig', async () => {
+	it('sends no generationConfig without an effort', async () => {
 		mockRequestUrl.mockResolvedValue(geminiResponse('ok'));
+		settings.ai.model = 'gemini-3.6-flash';
 
 		await client.complete('Hello');
 
-		const body = lastRequestBody();
-		expect(body.generationConfig).toEqual({ maxOutputTokens: 1024, temperature: 0.3 });
+		expect(lastRequestBody().generationConfig).toBeUndefined();
+	});
+
+	it.each([['low', 'LOW'], ['medium', 'MEDIUM'], ['high', 'HIGH'], ['max', 'HIGH']] as const)(
+		'maps effort %s to thinkingLevel %s',
+		async (effort, level) => {
+			mockRequestUrl.mockResolvedValue(geminiResponse('ok'));
+			settings.ai.model = 'gemini-4-argon';
+			settings.ai.effort = effort;
+
+			await client.complete('Hello');
+
+			expect(lastRequestBody().generationConfig).toEqual({ thinkingConfig: { thinkingLevel: level } });
+		}
+	);
+
+	it.each(['MAX_TOKENS', 'CONTINUATION'])('throws instead of returning partial text on %s', async (finishReason) => {
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			json: { candidates: [{ content: { role: 'model', parts: [{ text: 'half a rep' }] }, finishReason }] },
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.complete('Hello')).rejects.toThrow(/output limit/);
 	});
 
 	it('routes the system message into system_instruction (Gemini has no system role)', async () => {
@@ -201,8 +226,8 @@ describe('AIClient — Gemini provider', () => {
 
 		const err = (await client.complete('Hello').catch((e: unknown) => e)) as Error;
 		expect(err).toBeInstanceOf(Error);
-		expect(err.message).toContain('MAX_TOKENS');
-		expect(err.message).toMatch(/max tokens/i);
+		expect(err.message).toMatch(/output limit/);
+		expect(err.message).not.toMatch(/max tokens/i);
 	});
 
 	it('reports the finish reason when a candidate is stopped without parts for other reasons', async () => {
@@ -271,10 +296,8 @@ describe('AIClient — OpenAI provider', () => {
 	beforeEach(() => {
 		settings = makeSettings((s) => {
 			s.ai.provider = 'openai';
-			s.ai.model = 'gpt-4o';
+			s.ai.model = 'gpt-6-astra';
 			s.ai.apiKey = 'sk-test123456789012345';
-			s.ai.maxTokens = 512;
-			s.ai.temperature = 0.5;
 		});
 		client = new AIClient(() => settings);
 		mockRequestUrl.mockReset();
@@ -292,12 +315,13 @@ describe('AIClient — OpenAI provider', () => {
 		expect(call.method).toBe('POST');
 		expect(call.headers?.['Authorization']).toBe('Bearer sk-test123456789012345');
 		const body = lastRequestBody();
-		expect(body.model).toBe('gpt-4o');
-		expect(body.max_completion_tokens).toBe(512);
+		expect(body.model).toBe('gpt-6-astra');
+		expect(body).not.toHaveProperty('max_completion_tokens');
 		expect(body).not.toHaveProperty('max_tokens');
-		expect(body.temperature).toBe(0.5);
-		// system prompt is preserved as a system-role message for OpenAI
-		expect(body.messages[0]).toEqual({ role: 'system', content: 'Be brief.' });
+		expect(body).not.toHaveProperty('temperature');
+		expect(body).not.toHaveProperty('reasoning_effort');
+		// reasoning models take instructions as the developer role
+		expect(body.messages[0]).toEqual({ role: 'developer', content: 'Be brief.' });
 		expect(body.messages[1]).toEqual({ role: 'user', content: 'Hi' });
 		expect(result).toBe('hello');
 	});
@@ -318,29 +342,29 @@ describe('AIClient — OpenAI provider', () => {
 		]);
 	});
 
-	it.each(['gpt-6-astra', 'gpt-5.6-sol', 'o3', 'o3-mini', 'o4-mini'])(
-		'omits temperature for %s, a reasoning model that rejects sampling params',
-		async (model) => {
-			mockRequestUrl.mockResolvedValue(openAIResponse('ok'));
-			settings.ai.model = model;
-
-			await client.chat([{ role: 'user', content: 'Hi' }]);
-
-			const body = lastRequestBody();
-			expect(body.model).toBe(model);
-			expect(body.temperature).toBeUndefined();
-			expect(body.max_completion_tokens).toBe(512);
-			expect(body).not.toHaveProperty('max_tokens');
-		}
-	);
-
-	it('still sends temperature for gpt-4o-mini, which accepts sampling params', async () => {
+	it.each(['low', 'medium', 'high', 'max'] as const)('sends reasoning_effort %s unchanged', async (effort) => {
 		mockRequestUrl.mockResolvedValue(openAIResponse('ok'));
-		settings.ai.model = 'gpt-4o-mini';
+		settings.ai.model = 'gpt-6-luna';
+		settings.ai.effort = effort;
 
 		await client.chat([{ role: 'user', content: 'Hi' }]);
 
-		expect(lastRequestBody().temperature).toBe(0.5);
+		expect(lastRequestBody().reasoning_effort).toBe(effort);
+	});
+
+	it('throws on finish_reason length and caches nothing', async () => {
+		settings.ai.cacheResponses = true;
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			json: { choices: [{ message: { content: 'cut' }, finish_reason: 'length' }] },
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.complete('Hi')).rejects.toThrow(/output limit/);
+		mockRequestUrl.mockResolvedValue(openAIResponse('whole'));
+		await expect(client.complete('Hi')).resolves.toBe('whole');
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
 	});
 });
 
@@ -353,8 +377,6 @@ describe('AIClient — Anthropic provider', () => {
 			s.ai.provider = 'anthropic';
 			s.ai.model = 'sonnet';
 			s.ai.apiKey = 'anthropic-key-1234567890';
-			s.ai.maxTokens = 2048;
-			s.ai.temperature = 0.2;
 		});
 		client = new AIClient(() => settings);
 		mockRequestUrl.mockReset();
@@ -370,7 +392,7 @@ describe('AIClient — Anthropic provider', () => {
 		const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 		expect(call.url).toBe('https://api.anthropic.com/v1/messages');
 		expect(call.headers?.['x-api-key']).toBe('anthropic-key-1234567890');
-		expect(call.headers?.['anthropic-version']).toBe('2023-06-01');
+		expect(call.headers?.['anthropic-version']).toBe('2026-10-21');
 		const body = lastRequestBody();
 		expect(body.model).toBe('claude-sonnet-5-5');
 		// system message is lifted out of messages into the top-level system field
@@ -418,27 +440,63 @@ describe('AIClient — Anthropic provider', () => {
 		expect(lastRequestBody().model).toBe(modelId);
 	});
 
-	it.each(['fable', 'opus', 'sonnet', 'haiku'])(
-		'omits temperature for %s, which rejects sampling params',
-		async (alias) => {
-			mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
-			settings.ai.model = alias;
-
-			await client.chat([{ role: 'user', content: 'Hi' }]);
-
-			const body = lastRequestBody();
-			expect(body.temperature).toBeUndefined();
-			expect(body.max_tokens).toBe(2048);
-		}
-	);
-
-	it('still sends temperature for a pinned legacy id that accepts sampling params', async () => {
+	it('sends the default output cap and no sampling params or effort by default', async () => {
 		mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
-		settings.ai.model = 'claude-haiku-4-5';
 
 		await client.chat([{ role: 'user', content: 'Hi' }]);
 
-		expect(lastRequestBody().temperature).toBe(0.2);
+		const body = lastRequestBody();
+		expect(body.max_tokens).toBe(16384);
+		expect(body).not.toHaveProperty('temperature');
+		expect(body).not.toHaveProperty('top_p');
+		expect(body).not.toHaveProperty('top_k');
+		expect(body).not.toHaveProperty('output_config');
+	});
+
+	it.each([['low', 16384], ['medium', 16384], ['high', 21333], ['max', 21333]] as const)(
+		'sends effort %s in output_config with max_tokens %i',
+		async (effort, cap) => {
+			mockRequestUrl.mockResolvedValue(anthropicResponse('hi'));
+			settings.ai.effort = effort;
+
+			await client.chat([{ role: 'user', content: 'Hi' }]);
+
+			expect(lastRequestBody().output_config).toEqual({ effort });
+			expect(lastRequestBody().max_tokens).toBe(cap);
+		}
+	);
+
+	it.each([
+		['high', 600_000],
+		['max', 600_000],
+		['medium', 120_000],
+	] as const)('times out a %s-effort request after %i ms', async (effort, ms) => {
+		vi.useFakeTimers();
+		try {
+			mockRequestUrl.mockReturnValue(new Promise(() => undefined));
+			settings.ai.effort = effort;
+
+			let settled = false;
+			const pending = client.chat([{ role: 'user', content: 'Hi' }]).catch((e: unknown) => { settled = true; return e; });
+			await vi.advanceTimersByTimeAsync(ms - 1_000);
+			expect(settled).toBe(false);
+			await vi.advanceTimersByTimeAsync(2_000);
+
+			expect(((await pending) as Error).message).toContain('timed out');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('throws on stop_reason max_tokens instead of returning partial text', async () => {
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			json: { content: [{ type: 'text', text: 'partial' }], stop_reason: 'max_tokens' },
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.chat([{ role: 'user', content: 'Hi' }])).rejects.toThrow(/output limit/);
 	});
 
 	it('never sends a thinking parameter', async () => {
@@ -547,6 +605,42 @@ describe('AIClient — Ollama provider', () => {
 		});
 	});
 
+	it('sends no think field by default', async () => {
+		mockRequestUrl.mockResolvedValue(ollamaResponse('ok'));
+		settings.ai.model = 'gpt-oss';
+
+		await client.complete('Hi');
+
+		expect(lastRequestBody()).not.toHaveProperty('think');
+	});
+
+	it.each([
+		['gpt-oss', 'low', 'low'],
+		['gpt-oss', 'max', 'high'],
+		['qwen3.6', 'low', false],
+		['qwen3.6', 'high', undefined],
+		['llama3', 'low', undefined],
+	] as const)('maps %s effort %s to think %s', async (model, effort, think) => {
+		mockRequestUrl.mockResolvedValue(ollamaResponse('ok'));
+		settings.ai.model = model;
+		settings.ai.effort = effort;
+
+		await client.complete('Hi');
+
+		expect(lastRequestBody().think).toBe(think);
+	});
+
+	it('throws on done_reason length', async () => {
+		mockRequestUrl.mockResolvedValue({
+			status: 200,
+			json: { message: { content: 'partial' }, done_reason: 'length' },
+			text: '',
+			headers: {},
+		});
+
+		await expect(client.complete('Hi')).rejects.toThrow(/output limit/);
+	});
+
 	it('rejects an unparseable endpoint URL without making a request', async () => {
 		settings.ai.ollamaEndpoint = 'not a url';
 		await expect(client.complete('Hi')).rejects.toThrow(/Invalid Ollama endpoint/);
@@ -576,7 +670,7 @@ describe('AIClient — shared error handling and routing', () => {
 	beforeEach(() => {
 		settings = makeSettings((s) => {
 			s.ai.provider = 'openai';
-			s.ai.model = 'gpt-4o';
+			s.ai.model = 'gpt-6-astra';
 			s.ai.apiKey = 'sk-test';
 		});
 		client = new AIClient(() => settings);
@@ -625,12 +719,8 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 	beforeEach(() => {
 		settings = makeSettings((s) => {
 			s.ai.provider = 'openai';
-			s.ai.model = 'gpt-4o';
+			s.ai.model = 'gpt-6-astra';
 			s.ai.apiKey = 'sk-test123456789012345';
-			s.ai.maxTokens = 512;
-			// Per-case temperature/cacheResponses are set inside each test so the
-			// caching gate is exercised explicitly.
-			s.ai.temperature = 0;
 			s.ai.cacheResponses = false;
 		});
 		client = new AIClient(() => settings);
@@ -642,8 +732,7 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 	afterEach(() => vi.restoreAllMocks());
 
 	it('coalesces two concurrent identical requests into a single dispatch', async () => {
-		// Caching OFF (temp > 0, flag off) so this isolates in-flight coalescing.
-		settings.ai.temperature = 0.7;
+		// Caching OFF so this isolates in-flight coalescing.
 		settings.ai.cacheResponses = false;
 		mockRequestUrl.mockResolvedValue(openAIResponse('shared answer'));
 
@@ -657,8 +746,8 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 		expect(r2).toBe('shared answer');
 	});
 
-	it('serves a second identical request from cache at temperature 0', async () => {
-		settings.ai.temperature = 0;
+	it('serves a second identical request from cache when caching is on', async () => {
+		settings.ai.cacheResponses = true;
 		mockRequestUrl.mockResolvedValue(openAIResponse('Paris'));
 
 		const first = await client.chat(QUESTION);
@@ -669,8 +758,7 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 		expect(second).toBe('Paris');
 	});
 
-	it('does not cache when temperature > 0 and cacheResponses is false', async () => {
-		settings.ai.temperature = 0.7;
+	it('does not cache when cacheResponses is false', async () => {
 		settings.ai.cacheResponses = false;
 		mockRequestUrl.mockResolvedValue(openAIResponse('fresh'));
 
@@ -680,22 +768,9 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
 	});
 
-	it('caches at temperature > 0 once cacheResponses is opted in', async () => {
-		settings.ai.temperature = 0.7;
-		settings.ai.cacheResponses = true;
-		mockRequestUrl.mockResolvedValue(openAIResponse('memoized'));
-
-		const first = await client.chat(QUESTION);
-		const second = await client.chat(QUESTION);
-
-		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
-		expect(first).toBe('memoized');
-		expect(second).toBe('memoized');
-	});
-
 	it('never caches a rejected dispatch — a later identical call retries and can succeed', async () => {
-		// Caching ON (temp 0) to prove the rejection specifically is not cached.
-		settings.ai.temperature = 0;
+		// Caching ON to prove the rejection specifically is not cached.
+		settings.ai.cacheResponses = true;
 		mockRequestUrl
 			.mockResolvedValueOnce({
 				status: 500,
@@ -713,7 +788,7 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 	});
 
 	it('bypasses the cache on a refresh and updates it with the fresh result', async () => {
-		settings.ai.temperature = 0; // caching ON
+		settings.ai.cacheResponses = true;
 		mockRequestUrl
 			.mockResolvedValueOnce(openAIResponse('v1'))
 			.mockResolvedValue(openAIResponse('v2'));
@@ -734,7 +809,7 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 	});
 
 	it('calls onCacheHit only for a cache replay, through chat and complete (#527)', async () => {
-		settings.ai.temperature = 0;
+		settings.ai.cacheResponses = true;
 		mockRequestUrl.mockResolvedValue(openAIResponse('Paris'));
 		const onCacheHit = vi.fn();
 
@@ -752,12 +827,12 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 
 	it('does not call onCacheHit for a bypass, an uncacheable request, or a coalesced join (#527)', async () => {
 		const onCacheHit = vi.fn();
-		settings.ai.temperature = 0;
+		settings.ai.cacheResponses = true;
 		mockRequestUrl.mockResolvedValue(openAIResponse('Paris'));
 		await client.chat(QUESTION);
 		await client.chat(QUESTION, { bypassCache: true, onCacheHit });
 
-		settings.ai.temperature = 0.7;
+		settings.ai.cacheResponses = false;
 		await client.chat(QUESTION, { onCacheHit });
 		await Promise.all([client.chat(QUESTION, { onCacheHit }), client.chat(QUESTION, { onCacheHit })]);
 
@@ -765,7 +840,7 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 	});
 
 	it('keys the cache on the system prompt, so switching voice never replays a stale result (#540)', async () => {
-		settings.ai.temperature = 0;
+		settings.ai.cacheResponses = true;
 		mockRequestUrl
 			.mockResolvedValueOnce(openAIResponse('neutral answer'))
 			.mockResolvedValueOnce(openAIResponse('first-person answer'));
@@ -778,5 +853,60 @@ describe('AIClient — idempotency: in-flight coalescing and response cache', ()
 		expect(neutral).toBe('neutral answer');
 		expect(firstPerson).toBe('first-person answer');
 		expect(neutralAgain).toBe('neutral answer');
+	});
+});
+
+describe('AIClient — per-feature overrides', () => {
+	beforeEach(() => {
+		mockRequestUrl.mockReset();
+	});
+
+	it('routes an overridden feature to its own provider, model and key', async () => {
+		const settings = makeSettings((s) => {
+			s.ai.provider = 'anthropic';
+			s.ai.apiKey = 'sk-ant-default';
+			s.ai.providerKeys = { gemini: 'AIzaFeatureKey' };
+			s.ai.overrides = { 'deep-dive': { provider: 'gemini', model: 'gemini-3.8-flash' } };
+		});
+		mockRequestUrl.mockResolvedValue(geminiResponse('ok'));
+
+		await new AIClient(() => settings, 'deep-dive').complete('hi');
+
+		const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+		expect(call.url).toContain('/models/gemini-3.8-flash:generateContent');
+		expect(call.headers?.['x-goog-api-key']).toBe('AIzaFeatureKey');
+	});
+
+	it('uses the default provider for a feature without an override', async () => {
+		const settings = makeSettings((s) => {
+			s.ai.provider = 'anthropic';
+			s.ai.model = 'haiku';
+			s.ai.apiKey = 'sk-ant-default';
+			s.ai.overrides = { 'deep-dive': { provider: 'gemini', model: 'gemini-3.8-flash' } };
+		});
+		mockRequestUrl.mockResolvedValue({ status: 200, json: { content: [{ type: 'text', text: 'ok' }] }, text: '', headers: {} });
+
+		await new AIClient(() => settings, 'tidy').complete('hi');
+
+		const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+		expect(call.url).toBe('https://api.anthropic.com/v1/messages');
+		expect(call.headers?.['x-api-key']).toBe('sk-ant-default');
+		expect(lastRequestBody().model).toBe('claude-haiku-5-5');
+	});
+
+	it('does not replay a cached default-provider response for an overridden feature', async () => {
+		const settings = makeSettings((s) => {
+			s.ai.provider = 'gemini';
+			s.ai.model = 'gemini-3.6-flash';
+			s.ai.cacheResponses = true;
+		});
+		mockRequestUrl.mockResolvedValue(geminiResponse('ok'));
+		const client = new AIClient(() => settings, 'summarize');
+
+		await client.complete('same');
+		settings.ai.overrides = { summarize: { provider: 'gemini', model: 'gemini-4-argon' } };
+		await client.complete('same');
+
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
 	});
 });

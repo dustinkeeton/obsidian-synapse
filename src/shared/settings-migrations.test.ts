@@ -8,6 +8,9 @@ import {
 	dropSemanticMatching,
 	renameWhisperModelToTranscriptionModel,
 	replaceRetiredModels,
+	dropSamplingSettings,
+	moveTranscriptionKeys,
+	normalizeEfforts,
 	RETIRED_MODEL_REPLACEMENTS,
 } from './settings-migrations';
 import { MODEL_OPTIONS, TRANSCRIPTION_MODEL_OPTIONS } from '../settings';
@@ -250,7 +253,7 @@ describe('replaceRetiredModels — to:4 migration', () => {
 	});
 
 	it('leaves current ids, empty values and missing sections untouched', () => {
-		const raw = { ai: { model: 'gpt-4o' }, image: { visionModel: '' }, video: 'bogus' };
+		const raw = { ai: { model: 'gpt-6-luna' }, image: { visionModel: '' }, video: 'bogus' };
 		expect(replaceRetiredModels(structuredClone(raw))).toEqual(raw);
 		expect(replaceRetiredModels({})).toEqual({});
 	});
@@ -277,5 +280,107 @@ describe('settings-migration drift guard (#93)', () => {
 	it('orders the migrations ascending by `to`', () => {
 		const tos = SETTINGS_MIGRATIONS.map((m) => m.to);
 		expect(tos).toEqual([...tos].sort((a, b) => a - b));
+	});
+});
+
+describe('retired GPT-4o models — to:6 migration', () => {
+	it('repoints gpt-4o and gpt-4o-mini for a user already on v5', () => {
+		const raw = { settingsVersion: 5, ai: { model: 'gpt-4o' }, image: { visionModel: 'gpt-4o-mini' } };
+		const out = migrateSettings(raw, 5);
+		expect(out.ai).toEqual({ model: 'gpt-6-luna' });
+		expect(out.image).toEqual({ visionModel: 'gpt-6-luna' });
+	});
+});
+
+describe('dropSamplingSettings — to:5 migration', () => {
+	it('removes temperature and maxTokens', () => {
+		const out = dropSamplingSettings({ ai: { temperature: 0.7, maxTokens: 2048, cacheResponses: false } });
+		expect(out.ai).toEqual({ cacheResponses: false });
+	});
+
+	it('keeps caching on for a user who was on temperature 0', () => {
+		const out = dropSamplingSettings({ ai: { temperature: 0, maxTokens: 2048, cacheResponses: false } });
+		expect(out.ai).toEqual({ cacheResponses: true });
+	});
+
+	it('tolerates a missing ai object and is idempotent', () => {
+		expect(dropSamplingSettings({})).toEqual({});
+		const once = dropSamplingSettings({ ai: { temperature: 0 } });
+		expect(dropSamplingSettings(structuredClone(once))).toEqual(once);
+	});
+});
+
+describe('moveTranscriptionKeys — to:7 migration', () => {
+	it('moves each transcription key into the shared vendor keys', () => {
+		const raw = {
+			ai: { provider: 'anthropic', apiKey: 'sk-ant' },
+			audio: { whisperApiKey: 'sk-oa', geminiApiKey: 'AIza', deepgramApiKey: 'dg', language: 'en' },
+		};
+		expect(moveTranscriptionKeys(raw)).toEqual({
+			ai: { provider: 'anthropic', apiKey: 'sk-ant', providerKeys: { openai: 'sk-oa', gemini: 'AIza', deepgram: 'dg' } },
+			audio: { language: 'en' },
+		});
+	});
+
+	it('fills the main key for the default vendor only when it is empty', () => {
+		expect(moveTranscriptionKeys({ ai: { provider: 'openai', apiKey: '' }, audio: { whisperApiKey: 'sk-w' } }).ai)
+			.toEqual({ provider: 'openai', apiKey: 'sk-w', providerKeys: {} });
+		expect(moveTranscriptionKeys({ ai: { provider: 'openai', apiKey: 'sk-main' }, audio: { whisperApiKey: 'sk-w' } }).ai)
+			.toEqual({ provider: 'openai', apiKey: 'sk-main', providerKeys: {} });
+	});
+
+	it('never overwrites an existing per-vendor key', () => {
+		const raw = { ai: { provider: 'anthropic', providerKeys: { gemini: 'AIza-kept' } }, audio: { geminiApiKey: 'AIza-old' } };
+		expect(moveTranscriptionKeys(raw).ai).toEqual({ provider: 'anthropic', providerKeys: { gemini: 'AIza-kept' } });
+	});
+
+	it('tolerates a missing audio section and is idempotent', () => {
+		expect(moveTranscriptionKeys({})).toEqual({});
+		const once = moveTranscriptionKeys({ ai: {}, audio: { deepgramApiKey: 'dg' } });
+		expect(moveTranscriptionKeys(structuredClone(once))).toEqual(once);
+	});
+});
+
+describe('normalizeEfforts — to:8 migration', () => {
+	it('maps none and minimal to low and xhigh to high, for the default and every override', () => {
+		const raw = {
+			ai: {
+				effort: 'xhigh',
+				overrides: {
+					tidy: { provider: 'openai', model: 'gpt-6-luna', effort: 'none' },
+					rem: { provider: 'gemini', model: 'gemini-3.6-flash', effort: 'minimal' },
+					title: { provider: 'anthropic', model: 'haiku', effort: 'max' },
+					summarize: { provider: 'anthropic', model: 'opus' },
+				},
+			},
+		};
+		expect(normalizeEfforts(raw)).toEqual({
+			ai: {
+				effort: 'high',
+				overrides: {
+					tidy: { provider: 'openai', model: 'gpt-6-luna', effort: 'low' },
+					rem: { provider: 'gemini', model: 'gemini-3.6-flash', effort: 'low' },
+					title: { provider: 'anthropic', model: 'haiku', effort: 'max' },
+					summarize: { provider: 'anthropic', model: 'opus' },
+				},
+			},
+		});
+	});
+
+	it('leaves Default and missing sections alone', () => {
+		expect(normalizeEfforts({ ai: { effort: '' } })).toEqual({ ai: { effort: '' } });
+		expect(normalizeEfforts({})).toEqual({});
+	});
+});
+
+describe('retired Gemini 3.1 Flash Lite', () => {
+	it('moves to 3.5 Flash Lite in the default model and in overrides', () => {
+		const raw = {
+			ai: { model: 'gemini-3.1-flash-lite', overrides: { tidy: { provider: 'gemini', model: 'gemini-3.1-flash-lite' } } },
+		};
+		expect(replaceRetiredModels(raw).ai).toEqual({
+			model: 'gemini-3.5-flash-lite',
+			overrides: { tidy: { provider: 'gemini', model: 'gemini-3.5-flash-lite' } },
+		});
 	});
 });

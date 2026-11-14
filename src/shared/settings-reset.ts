@@ -46,10 +46,10 @@ function restoreGroup<K extends keyof SynapseSettings>(
  * wholesale. Three keys are special:
  *  - `general` — a cross-cutting section that owns only `ui.autoFoldProperties`
  *    and `updates.enableUpdateNotifications` (not the whole `ui`/`updates` group).
- *  - `ai` — restores the `ai` group plus the six audio credential/provider fields
+ *  - `ai` — restores the `ai` group plus the three transcription provider fields
  *    that render under AI configuration.
  *  - `audio` — restores ONLY the four audio behavior fields, preserving the
- *    credential/provider fields owned by AI configuration.
+ *    transcription provider fields owned by AI configuration.
  *
  * Does NOT touch `ui.collapsedSections[key]`: a section's collapse state is UI
  * bookkeeping, not a user setting.
@@ -64,18 +64,14 @@ export function applySectionReset(settings: SynapseSettings, key: string): void 
 			return;
 		case 'ai':
 			settings.ai = structuredClone(DEFAULT_SETTINGS.ai);
-			// The six audio credential/provider fields render under AI configuration,
-			// so restore them here alongside `ai`. All string primitives (or a string
-			// literal union) — direct copy is safe, no clone needed.
+			// The transcription provider fields render under AI configuration,
+			// so restore them here alongside `ai` (its keys live in `ai.providerKeys`).
 			settings.audio.transcriptionProvider = DEFAULT_SETTINGS.audio.transcriptionProvider;
-			settings.audio.whisperApiKey = DEFAULT_SETTINGS.audio.whisperApiKey;
-			settings.audio.deepgramApiKey = DEFAULT_SETTINGS.audio.deepgramApiKey;
-			settings.audio.geminiApiKey = DEFAULT_SETTINGS.audio.geminiApiKey;
 			settings.audio.transcriptionModel = DEFAULT_SETTINGS.audio.transcriptionModel;
 			settings.audio.localWhisperPath = DEFAULT_SETTINGS.audio.localWhisperPath;
 			return;
 		case 'audio':
-			// Behavior fields only — leave the credential/provider fields (owned by
+			// Behavior fields only — leave the transcription provider fields (owned by
 			// AI configuration) exactly as the user left them.
 			settings.audio.enabled = DEFAULT_SETTINGS.audio.enabled;
 			settings.audio.language = DEFAULT_SETTINGS.audio.language;
@@ -131,7 +127,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
  *
  * MUST mirror {@link applySectionReset} field-for-field, including the special
  * cases: `general` compares its two cross-cutting fields; `ai` compares the `ai`
- * group PLUS the six audio credential/provider fields it restores; `audio`
+ * group PLUS the three transcription provider fields it restores; `audio`
  * compares only its four behavior fields. The dangerous direction is a false
  * "matches" (button disabled while a reset would still change something), so
  * every field the reset touches is compared here.
@@ -155,9 +151,6 @@ export function sectionMatchesDefaults(
 				deepEqual(settings.ai, DEFAULT_SETTINGS.ai) &&
 				settings.audio.transcriptionProvider ===
 					DEFAULT_SETTINGS.audio.transcriptionProvider &&
-				settings.audio.whisperApiKey === DEFAULT_SETTINGS.audio.whisperApiKey &&
-				settings.audio.deepgramApiKey === DEFAULT_SETTINGS.audio.deepgramApiKey &&
-				settings.audio.geminiApiKey === DEFAULT_SETTINGS.audio.geminiApiKey &&
 				settings.audio.transcriptionModel === DEFAULT_SETTINGS.audio.transcriptionModel &&
 				settings.audio.localWhisperPath === DEFAULT_SETTINGS.audio.localWhisperPath
 			);

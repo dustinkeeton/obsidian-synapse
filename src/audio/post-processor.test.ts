@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { PostProcessor } from './post-processor';
+import type { PostProcessorDeps } from './post-processor';
 import { AIClient } from '../shared';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 
@@ -9,10 +10,13 @@ function makeSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
 	return s;
 }
 
-// maxTokens 100 → whole-transcript budget 400 chars, section budget 240 chars, overlap 24 chars.
+// Token budget 100 → whole-transcript budget 400 chars, section budget 240 chars, overlap 24 chars.
+function longPP(getSettings: () => SynapseSettings, deps: PostProcessorDeps = {}): PostProcessor {
+	return new PostProcessor(getSettings, { tokenBudget: 100, ...deps });
+}
+
 function longSettings(mutate?: (s: SynapseSettings) => void): SynapseSettings {
 	return makeSettings((s) => {
-		s.ai.maxTokens = 100;
 		s.audio.postProcessing.enabled = true;
 		s.audio.postProcessing.addStructure = true;
 		s.audio.postProcessing.extractKeyPoints = false;
@@ -67,7 +71,7 @@ describe('PostProcessor', () => {
 	it.each(['', '   ', '\n\t', '[Music]', 'Thank you.'])(
 		'makes no AI call and returns the input for transcript %j (#524)',
 		async (raw) => {
-			const pp = new PostProcessor(() => longSettings((s) => {
+			const pp = longPP(() => longSettings((s) => {
 				s.audio.postProcessing.extractKeyPoints = true;
 			}), { delayMs: 0 });
 
@@ -81,7 +85,7 @@ describe('PostProcessor', () => {
 	it('post-processes a transcript that fits the output-token budget in a single call', async () => {
 		const update = vi.fn();
 		const notify = vi.fn();
-		const pp = new PostProcessor(() => longSettings(), { notify, delayMs: 0 });
+		const pp = longPP(() => longSettings(), { notify, delayMs: 0 });
 
 		const result = await pp.process('short transcript', { update });
 
@@ -94,7 +98,7 @@ describe('PostProcessor', () => {
 
 	it('propagates a failure of the single-call path', async () => {
 		completeSpy.mockRejectedValue(new Error('no AI key'));
-		const pp = new PostProcessor(() => longSettings());
+		const pp = longPP(() => longSettings());
 
 		await expect(pp.process('short transcript')).rejects.toThrow('no AI key');
 	});
@@ -150,7 +154,7 @@ describe('PostProcessor', () => {
 			const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 			const paragraphs = ['one', 'two', 'three', 'four', 'five'].map(paragraph);
 			completeSpy.mockImplementation(async () => `section ${completeSpy.mock.calls.length}`);
-			const pp = new PostProcessor(() => longSettings(), { delayMs: 0 });
+			const pp = longPP(() => longSettings(), { delayMs: 0 });
 
 			const result = await pp.process(paragraphs.join('\n\n'));
 
@@ -166,7 +170,7 @@ describe('PostProcessor', () => {
 			completeSpy
 				.mockResolvedValueOnce('Clean one.')
 				.mockResolvedValueOnce('tail one. Clean two.');
-			const pp = new PostProcessor(() => longSettings(), { delayMs: 0 });
+			const pp = longPP(() => longSettings(), { delayMs: 0 });
 
 			const result = await pp.process([paragraph('one'), paragraph('two')].join('\n\n'));
 
@@ -184,7 +188,7 @@ describe('PostProcessor', () => {
 				.mockRejectedValueOnce(new Error('timeout'))
 				.mockResolvedValueOnce('Clean three.');
 			const notify = vi.fn();
-			const pp = new PostProcessor(() => longSettings(), { notify, delayMs: 0 });
+			const pp = longPP(() => longSettings(), { notify, delayMs: 0 });
 			const paragraphs = [paragraph('one'), paragraph('two'), paragraph('three')];
 
 			const result = await pp.process(paragraphs.join('\n\n'));
@@ -201,7 +205,7 @@ describe('PostProcessor', () => {
 				.mockResolvedValueOnce('   ')
 				.mockResolvedValueOnce('y'.repeat(400));
 			const notify = vi.fn();
-			const pp = new PostProcessor(() => longSettings(), { notify, delayMs: 0 });
+			const pp = longPP(() => longSettings(), { notify, delayMs: 0 });
 			const paragraphs = [paragraph('one'), paragraph('two'), paragraph('three')];
 
 			const result = await pp.process(paragraphs.join('\n\n'));
@@ -212,7 +216,7 @@ describe('PostProcessor', () => {
 
 		it('does not notify when every section succeeds', async () => {
 			const notify = vi.fn();
-			const pp = new PostProcessor(() => longSettings(), { notify, delayMs: 0 });
+			const pp = longPP(() => longSettings(), { notify, delayMs: 0 });
 
 			await pp.process([paragraph('one'), paragraph('two')].join('\n\n'));
 
@@ -221,7 +225,7 @@ describe('PostProcessor', () => {
 
 		it('reports progress for each section in order', async () => {
 			const update = vi.fn<(message: string) => void>();
-			const pp = new PostProcessor(() => longSettings(), { delayMs: 0 });
+			const pp = longPP(() => longSettings(), { delayMs: 0 });
 
 			await pp.process([paragraph('one'), paragraph('two'), paragraph('three')].join('\n\n'), { update });
 
@@ -233,7 +237,7 @@ describe('PostProcessor', () => {
 		});
 
 		it('keeps every section within the output budget', async () => {
-			const pp = new PostProcessor(() => longSettings(), { delayMs: 0 });
+			const pp = longPP(() => longSettings(), { delayMs: 0 });
 
 			await pp.process('word '.repeat(300));
 
@@ -254,7 +258,7 @@ describe('PostProcessor', () => {
 			const settings = longSettings((s) => {
 				s.audio.postProcessing.extractKeyPoints = true;
 			});
-			const pp = new PostProcessor(() => settings, { delayMs: 0 });
+			const pp = longPP(() => settings, { delayMs: 0 });
 
 			const result = await pp.process([paragraph('one'), paragraph('two')].join('\n\n'), { update });
 
@@ -278,7 +282,7 @@ describe('PostProcessor', () => {
 			const settings = longSettings((s) => {
 				s.audio.postProcessing.extractKeyPoints = true;
 			});
-			const pp = new PostProcessor(() => settings, { notify, delayMs: 0 });
+			const pp = longPP(() => settings, { notify, delayMs: 0 });
 
 			const result = await pp.process([paragraph('one'), paragraph('two')].join('\n\n'));
 
@@ -290,7 +294,7 @@ describe('PostProcessor', () => {
 			const settings = longSettings((s) => {
 				s.audio.postProcessing.customPrompt = 'Use British spelling';
 			});
-			const pp = new PostProcessor(() => settings, { delayMs: 0 });
+			const pp = longPP(() => settings, { delayMs: 0 });
 
 			await pp.process([paragraph('one'), paragraph('two'), paragraph('three')].join('\n\n'));
 
@@ -303,7 +307,7 @@ describe('PostProcessor', () => {
 		it('waits the inter-call delay between sections', async () => {
 			vi.useFakeTimers();
 			try {
-				const pp = new PostProcessor(() => longSettings());
+				const pp = longPP(() => longSettings());
 				const pending = pp.process([paragraph('one'), paragraph('two'), paragraph('three')].join('\n\n'));
 
 				await vi.advanceTimersByTimeAsync(0);
@@ -333,7 +337,7 @@ describe('PostProcessor response-cache reporting (#527)', () => {
 	afterEach(() => vi.restoreAllMocks());
 
 	it('reports nothing on a fresh run and a replay on an identical second run', async () => {
-		const pp = new PostProcessor(() => longSettings((s) => { s.ai.temperature = 0; }), { delayMs: 0 });
+		const pp = longPP(() => longSettings((s) => { s.ai.cacheResponses = true; }), { delayMs: 0 });
 		const onCacheHit = vi.fn();
 
 		await pp.process('short transcript', { onCacheHit });
@@ -348,7 +352,7 @@ describe('PostProcessor response-cache reporting (#527)', () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const transcript = ['one', 'two', 'three'].map(paragraph).join('\n\n');
 		dispatchSpy.mockResolvedValueOnce('s1').mockRejectedValueOnce(new Error('boom')).mockResolvedValue('s3');
-		const pp = new PostProcessor(() => longSettings((s) => { s.ai.temperature = 0; }), { delayMs: 0 });
+		const pp = longPP(() => longSettings((s) => { s.ai.cacheResponses = true; }), { delayMs: 0 });
 		await pp.process(transcript);
 		const onCacheHit = vi.fn();
 
@@ -359,8 +363,7 @@ describe('PostProcessor response-cache reporting (#527)', () => {
 	});
 
 	it('never reports when responses are not cacheable', async () => {
-		const pp = new PostProcessor(() => longSettings((s) => {
-			s.ai.temperature = 0.7;
+		const pp = longPP(() => longSettings((s) => {
 			s.ai.cacheResponses = false;
 		}), { delayMs: 0 });
 		const onCacheHit = vi.fn();

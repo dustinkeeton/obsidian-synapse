@@ -54,7 +54,7 @@ describe('AudioModule response-cache reporting (#527)', () => {
 			},
 		};
 		const settings = structuredClone(DEFAULT_SETTINGS);
-		settings.ai.temperature = 0;
+		settings.ai.cacheResponses = true;
 		settings.audio.postProcessing.enabled = true;
 		settings.audio.postProcessing.addStructure = true;
 		module = new AudioModule(

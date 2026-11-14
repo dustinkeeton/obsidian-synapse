@@ -22,7 +22,7 @@ import type { LegacyModuleExclusions } from './exclusions';
  * time a migration is appended to {@link SETTINGS_MIGRATIONS}; a drift-guard test
  * asserts it always equals the highest migration `to`.
  */
-export const CURRENT_SETTINGS_VERSION = 4;
+export const CURRENT_SETTINGS_VERSION = 8;
 
 /**
  * A single ordered migration. `to` is the schema version this step upgrades the
@@ -110,7 +110,7 @@ export function renameWhisperModelToTranscriptionModel(
 	return raw;
 }
 
-/** Vendor-retired model IDs and the replacement each vendor's deprecation notice names (2026-11-09). */
+/** Vendor-retired model IDs and the replacement each vendor's deprecation notice names (checked 2026-11-13). */
 export const RETIRED_MODEL_REPLACEMENTS: Record<string, string> = {
 	'o3': 'gpt-5.6-sol',
 	'o3-mini': 'gpt-5.6-sol',
@@ -118,6 +118,9 @@ export const RETIRED_MODEL_REPLACEMENTS: Record<string, string> = {
 	'gemini-2.5-pro': 'gemini-3.8-flash',
 	'gemini-2.5-flash': 'gemini-3.5-flash-lite',
 	'gemini-3.5-flash': 'gemini-3.6-flash',
+	'gpt-4o': 'gpt-6-luna',
+	'gpt-4o-mini': 'gpt-6-luna',
+	'gemini-3.1-flash-lite': 'gemini-3.5-flash-lite',
 };
 
 const MODEL_FIELD_PATHS: string[][] = [
@@ -126,6 +129,15 @@ const MODEL_FIELD_PATHS: string[][] = [
 	['image', 'visionModel'],
 	['video', 'frameExtraction', 'visionModel'],
 ];
+
+/** The `ai.overrides` entries of a raw settings object, skipping malformed ones. */
+function rawOverrides(raw: Record<string, unknown>): Record<string, unknown>[] {
+	const ai = raw.ai;
+	if (typeof ai !== 'object' || ai === null) return [];
+	const overrides = (ai as Record<string, unknown>).overrides;
+	if (typeof overrides !== 'object' || overrides === null) return [];
+	return Object.values(overrides).filter((o): o is Record<string, unknown> => typeof o === 'object' && o !== null);
+}
 
 /**
  * v4 — repoint every saved model field holding a retired vendor ID to its
@@ -136,6 +148,12 @@ const MODEL_FIELD_PATHS: string[][] = [
 export function replaceRetiredModels(
 	raw: Record<string, unknown>,
 ): Record<string, unknown> {
+	for (const override of rawOverrides(raw)) {
+		const model = override.model;
+		if (typeof model === 'string' && Object.prototype.hasOwnProperty.call(RETIRED_MODEL_REPLACEMENTS, model)) {
+			override.model = RETIRED_MODEL_REPLACEMENTS[model];
+		}
+	}
 	for (const path of MODEL_FIELD_PATHS) {
 		let parent: unknown = raw;
 		for (const key of path.slice(0, -1)) {
@@ -155,6 +173,78 @@ export function replaceRetiredModels(
 }
 
 /**
+ * v5 — drop the retired `ai.temperature` and `ai.maxTokens` (#596). A user on
+ * temperature 0 had caching on automatically, so they get `cacheResponses: true`.
+ */
+export function dropSamplingSettings(
+	raw: Record<string, unknown>,
+): Record<string, unknown> {
+	const ai = raw.ai;
+	if (typeof ai !== 'object' || ai === null) return raw;
+	const record = ai as Record<string, unknown>;
+	if (record.temperature === 0) record.cacheResponses = true;
+	delete record.temperature;
+	delete record.maxTokens;
+	return raw;
+}
+
+const TRANSCRIPTION_KEY_VENDORS: [string, string][] = [
+	['whisperApiKey', 'openai'],
+	['geminiApiKey', 'gemini'],
+	['deepgramApiKey', 'deepgram'],
+];
+
+/**
+ * v7 — move the transcription keys into the shared per-vendor keys. A vendor
+ * that is the default provider fills `ai.apiKey` only when it is empty; an
+ * existing key always wins. Tolerates missing sections; idempotent.
+ */
+export function moveTranscriptionKeys(
+	raw: Record<string, unknown>,
+): Record<string, unknown> {
+	const audio = raw.audio;
+	if (typeof audio !== 'object' || audio === null) return raw;
+	const audioRecord = audio as Record<string, unknown>;
+	if (typeof raw.ai !== 'object' || raw.ai === null) raw.ai = {};
+	const ai = raw.ai as Record<string, unknown>;
+	if (typeof ai.providerKeys !== 'object' || ai.providerKeys === null) ai.providerKeys = {};
+	const keys = ai.providerKeys as Record<string, unknown>;
+	for (const [field, vendor] of TRANSCRIPTION_KEY_VENDORS) {
+		const value = audioRecord[field];
+		delete audioRecord[field];
+		if (typeof value !== 'string' || value === '') continue;
+		if (ai.provider === vendor) {
+			if (!ai.apiKey) ai.apiKey = value;
+		} else if (!keys[vendor]) {
+			keys[vendor] = value;
+		}
+	}
+	return raw;
+}
+
+/** Retired effort levels and the step each becomes; never a higher step than the user chose. */
+export const RETIRED_EFFORT_REPLACEMENTS: Record<string, string> = {
+	none: 'low',
+	minimal: 'low',
+	xhigh: 'high',
+};
+
+/** v8 — map the retired effort levels onto Default / Low / Medium / High / Max, for the default and every override. */
+export function normalizeEfforts(
+	raw: Record<string, unknown>,
+): Record<string, unknown> {
+	const ai = raw.ai;
+	if (typeof ai !== 'object' || ai === null) return raw;
+	for (const holder of [ai as Record<string, unknown>, ...rawOverrides(raw)]) {
+		const effort = holder.effort;
+		if (typeof effort === 'string' && Object.prototype.hasOwnProperty.call(RETIRED_EFFORT_REPLACEMENTS, effort)) {
+			holder.effort = RETIRED_EFFORT_REPLACEMENTS[effort];
+		}
+	}
+	return raw;
+}
+
+/**
  * The ordered migration chain, ascending by `to`. {@link migrateSettings}
  * applies, in order, every entry whose `to` exceeds the persisted version.
  */
@@ -163,6 +253,11 @@ export const SETTINGS_MIGRATIONS: SettingsMigration[] = [
 	{ to: 2, migrate: dropSemanticMatching },
 	{ to: 3, migrate: renameWhisperModelToTranscriptionModel },
 	{ to: 4, migrate: replaceRetiredModels },
+	{ to: 5, migrate: dropSamplingSettings },
+	// v6 replays the retired-model remap for the IDs added since v4 (gpt-4o, gpt-4o-mini, gemini-3.1-flash-lite).
+	{ to: 6, migrate: replaceRetiredModels },
+	{ to: 7, migrate: moveTranscriptionKeys },
+	{ to: 8, migrate: normalizeEfforts },
 ];
 
 /**

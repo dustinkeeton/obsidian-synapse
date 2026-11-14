@@ -3,7 +3,7 @@
 import type { ProposalKind } from './views/types';
 // Type-only import of the exclusion model (centralized in shared/exclusions.ts).
 // Erased at compile time; the DEFAULT_SETTINGS values below are plain literals.
-import type { ExclusionRule } from './shared/exclusions';
+import type { ExclusionRule, FeatureId } from './shared/exclusions';
 // Type-only import. title/types.ts has no imports, so this never forms a cycle.
 import type { TitleDuplicateStrategy } from './title/types';
 // Type-only import, erased at compile time, so its shared/ type imports never form a runtime cycle.
@@ -22,7 +22,7 @@ export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 /** Provider-specific model options. Dropdown values, not free text. */
 export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
 	// Verified against developers.openai.com/api/docs/models + /deprecations (2026-11-09).
-	// Retired IDs are remapped by the v4 settings migration.
+	// Retired IDs are remapped by the v4 and v6 settings migrations.
 	openai: {
 		'gpt-6-astra': 'GPT-6 Astra',
 		'gpt-6.1-sol': 'GPT-6.1 Sol',
@@ -31,8 +31,6 @@ export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
 		'gpt-5.6-sol': 'GPT-5.6 Sol',
 		'gpt-5.6-terra': 'GPT-5.6 Terra',
 		'gpt-5.6-luna': 'GPT-5.6 Luna',
-		'gpt-4o': 'GPT-4o (retires 2027-01-14)',
-		'gpt-4o-mini': 'GPT-4o Mini (retires 2027-01-14)',
 	},
 	// Short names resolved to API IDs by ANTHROPIC_MODEL_MAP, verified against
 	// docs.claude.com/en/docs/about-claude/models/overview (2026-11-09).
@@ -43,36 +41,81 @@ export const MODEL_OPTIONS: Record<AIProvider, Record<string, string>> = {
 		'haiku': 'Claude Haiku',
 	},
 	// Stable Gemini model IDs verified against ai.google.dev/gemini-api/docs/models +
-	// /deprecations (2026-11-09). Retired IDs are remapped by the v4 settings migration.
+	// /deprecations (2026-11-09). Retired IDs are remapped by the v4 and v6 settings migrations.
 	gemini: {
 		'gemini-4-argon': 'Gemini 4 Argon',
 		'gemini-3.8-flash': 'Gemini 3.8 Flash',
 		'gemini-3.6-flash': 'Gemini 3.6 Flash',
 		'gemini-3.5-flash-lite': 'Gemini 3.5 Flash Lite',
-		'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite (retires 2027-05-07)',
 	},
-	// Local model tags verified against ollama.com/library (2026-11-09). Older tags
-	// stay listed: they run locally and never retire.
+	// Local model tags verified against ollama.com/library (2026-11-09). A saved tag
+	// not listed here keeps working; the settings dropdowns add it as an extra entry.
 	ollama: {
 		'gemma4': 'Gemma 4',
 		'qwen3.8': 'Qwen 3.8',
 		'qwen3.6': 'Qwen 3.6',
-		'qwen3.5': 'Qwen 3.5',
 		'gpt-oss': 'gpt-oss',
-		'llama4': 'Llama 4',
-		'phi4': 'Phi-4',
-		'llama3.2': 'Llama 3.2',
-		'llama3': 'Llama 3',
-		'gemma3': 'Gemma 3',
-		'gemma': 'Gemma',
-		'qwen3': 'Qwen 3',
 		'deepseek-r1': 'DeepSeek-R1',
-		'mistral': 'Mistral',
-		'codellama': 'Code Llama',
+		'llama3.2': 'Llama 3.2',
+	},
+};
+
+/** The user's effort scale; `''` (Default) sends no effort field at all. */
+export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
+
+/** The wire value one effort step maps to; an absent step sends nothing. `false` turns thinking off (Ollama). */
+export type EffortWireMap = Partial<Record<EffortLevel, string | false>>;
+
+const SAME_EFFORTS: EffortWireMap = { low: 'low', medium: 'medium', high: 'high', max: 'max' };
+const GEMINI_EFFORTS: EffortWireMap = { low: 'LOW', medium: 'MEDIUM', high: 'HIGH', max: 'HIGH' };
+const GPT_OSS_EFFORTS: EffortWireMap = { low: 'low', medium: 'medium', high: 'high', max: 'high' };
+const OLLAMA_THINKING_EFFORTS: EffortWireMap = { low: false };
+
+/**
+ * Internal clamp table: how each effort step maps onto a model's accepted values.
+ * A model absent here takes no effort parameter and shows no effort control.
+ * Verified against docs.claude.com (`output_config.effort`), developers.openai.com
+ * (`reasoning_effort`), ai.google.dev thinking docs (`thinkingLevel`) and
+ * docs.ollama.com/capabilities/thinking (`think`), 2026-11-13.
+ */
+export const EFFORT_OPTIONS: Record<AIProvider, Record<string, EffortWireMap>> = {
+	openai: {
+		'gpt-6-astra': SAME_EFFORTS,
+		'gpt-6.1-sol': SAME_EFFORTS,
+		'gpt-6.1-terra': SAME_EFFORTS,
+		'gpt-6-luna': SAME_EFFORTS,
+		'gpt-5.6-sol': SAME_EFFORTS,
+		'gpt-5.6-terra': SAME_EFFORTS,
+		'gpt-5.6-luna': SAME_EFFORTS,
+	},
+	anthropic: {
+		'fable': SAME_EFFORTS,
+		'opus': SAME_EFFORTS,
+		'sonnet': SAME_EFFORTS,
+		'haiku': SAME_EFFORTS,
+	},
+	gemini: {
+		'gemini-4-argon': GEMINI_EFFORTS,
+		'gemini-3.8-flash': GEMINI_EFFORTS,
+		'gemini-3.6-flash': GEMINI_EFFORTS,
+		'gemini-3.5-flash-lite': GEMINI_EFFORTS,
+	},
+	ollama: {
+		'gpt-oss': GPT_OSS_EFFORTS,
+		// Thinking models whose `think` is a boolean: only Low changes anything (thinking off).
+		'qwen3.8': OLLAMA_THINKING_EFFORTS,
+		'qwen3.6': OLLAMA_THINKING_EFFORTS,
+		'qwen3.5': OLLAMA_THINKING_EFFORTS,
+		'qwen3': OLLAMA_THINKING_EFFORTS,
+		'gemma4': OLLAMA_THINKING_EFFORTS,
+		'deepseek-r1': OLLAMA_THINKING_EFFORTS,
 	},
 };
 
 export type TranscriptionProvider = 'whisper-api' | 'deepgram' | 'gemini' | 'local-whisper';
+
+/** Every vendor with an API key in `ai.providerKeys`; Deepgram serves transcription only. */
+export type KeyedProvider = Exclude<AIProvider, 'ollama'> | 'deepgram';
 
 /**
  * Per-transcription-provider model options, mirroring {@link MODEL_OPTIONS}.
@@ -134,18 +177,37 @@ export interface SystemOneSettings {
 	confidenceFloor: number;
 }
 
-export interface AISettings {
+/** Features that call the generative AI client and can override the default provider/model. */
+export type AIFeatureId = Extract<
+	FeatureId,
+	'elaboration' | 'enrichment' | 'summarize' | 'tidy' | 'organize' | 'deep-dive' | 'title' | 'rem' | 'illustrate' | 'audio' | 'image'
+>;
+
+/** A feature's own provider and model; absent means the feature uses the default. */
+export interface AIModelOverride {
 	provider: AIProvider;
+	model: string;
+	/** Absent means the model's own default effort. */
+	effort?: EffortLevel;
+}
+
+export interface AISettings {
+	/** Default provider; every feature without an override uses it. */
+	provider: AIProvider;
+	/** Key for the default provider. */
 	apiKey: string;
+	/** Keys for providers used only by feature overrides; the default provider always uses `apiKey`. */
+	providerKeys: Partial<Record<KeyedProvider, string>>;
+	/** Per-feature provider/model overrides. */
+	overrides: Partial<Record<AIFeatureId, AIModelOverride>>;
 	ollamaEndpoint: string;
 	model: string;
-	maxTokens: number;
-	temperature: number;
+	/** Effort for the default model; `''` means the model's own default. */
+	effort: EffortLevel | '';
 	/**
 	 * Opt-in response cache (#397). When `true`, an identical AI request reuses
-	 * the previous result instead of spending again. Caching is automatic at
-	 * temperature 0 (deterministic) regardless of this flag; enabling it extends
-	 * caching to any temperature. "Regenerate" actions always bypass the cache.
+	 * the previous result instead of spending again. "Regenerate" actions always
+	 * bypass the cache.
 	 */
 	cacheResponses: boolean;
 	/** Narrative voice for elaboration, deep dive, and summarize prose (#540). */
@@ -191,9 +253,6 @@ export interface PostProcessingSettings {
 export interface AudioSettings {
 	enabled: boolean;
 	transcriptionProvider: TranscriptionProvider;
-	whisperApiKey: string;
-	deepgramApiKey: string;
-	geminiApiKey: string;
 	/** Model for the active `transcriptionProvider`; resolved via TRANSCRIPTION_MODEL_OPTIONS. */
 	transcriptionModel: string;
 	localWhisperPath: string;
@@ -486,10 +545,11 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 	ai: {
 		provider: 'anthropic',
 		apiKey: '',
+		providerKeys: {},
+		overrides: {},
 		ollamaEndpoint: 'http://localhost:11434',
 		model: 'opus',
-		maxTokens: 2048,
-		temperature: 0.7,
+		effort: '',
 		cacheResponses: false,
 		voice: 'neutral',
 		voiceCustom: '',
@@ -522,9 +582,6 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 	audio: {
 		enabled: true,
 		transcriptionProvider: 'whisper-api',
-		whisperApiKey: '',
-		deepgramApiKey: '',
-		geminiApiKey: '',
 		transcriptionModel: 'whisper-1',
 		localWhisperPath: '',
 		language: '',

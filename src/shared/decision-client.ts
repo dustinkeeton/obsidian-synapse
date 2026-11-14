@@ -236,7 +236,7 @@ export class DecisionClient {
 			throw new DecisionLaneError('disabled', 'System 1 decisions are off or no key is set');
 		}
 		const model = ai.systemOne.model;
-		const cacheable = ai.temperature === 0 || ai.cacheResponses === true;
+		const cacheable = ai.cacheResponses === true;
 		const bypass = opts?.bypassCache === true;
 
 		const merged: Record<string, DecisionAnswer> = {};

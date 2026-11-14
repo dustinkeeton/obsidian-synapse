@@ -121,12 +121,8 @@ describe('Transcriber', () => {
 
 	beforeEach(() => {
 		settings = makeSettings({
-			ai: { ...DEFAULT_SETTINGS.ai, apiKey: 'sk-test-key' },
-			audio: {
-				...DEFAULT_SETTINGS.audio,
-				whisperApiKey: 'sk-whisper-key',
-				deepgramApiKey: 'dg-test-key',
-			},
+			ai: { ...DEFAULT_SETTINGS.ai, apiKey: 'sk-test-key', providerKeys: { openai: 'sk-whisper-key', deepgram: 'dg-test-key' } },
+			audio: { ...DEFAULT_SETTINGS.audio },
 		});
 		transcriber = new Transcriber(() => settings);
 		mockRequestUrl.mockReset();
@@ -153,23 +149,23 @@ describe('Transcriber', () => {
 
 	describe('Whisper API (requestUrl)', () => {
 		it('throws when no API key is configured', async () => {
-			settings.audio.whisperApiKey = '';
+			delete settings.ai.providerKeys.openai;
 			settings.ai.apiKey = '';
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
-				.rejects.toThrow('No OpenAI API key configured for Whisper');
+				.rejects.toThrow('No OpenAI API key configured for transcription');
 		});
 
 		it('does not send a non-OpenAI shared key to Whisper', async () => {
-			settings.audio.whisperApiKey = '';
+			delete settings.ai.providerKeys.openai;
 			settings.ai.provider = 'anthropic';
 			settings.ai.apiKey = 'sk-ant-shared-key';
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
-				.rejects.toThrow('No OpenAI API key configured for Whisper');
+				.rejects.toThrow('No OpenAI API key configured for transcription');
 			expect(mockRequestUrl).not.toHaveBeenCalled();
 		});
 
-		it('falls back to shared AI key when whisperApiKey is empty and the AI provider is OpenAI', async () => {
-			settings.audio.whisperApiKey = '';
+		it('uses the main AI key when OpenAI is the default provider', async () => {
+			delete settings.ai.providerKeys.openai;
 			settings.ai.provider = 'openai';
 			settings.ai.apiKey = 'sk-shared-key';
 
@@ -415,7 +411,7 @@ describe('Transcriber', () => {
 		});
 
 		it('throws when no API key is configured', async () => {
-			settings.audio.deepgramApiKey = '';
+			delete settings.ai.providerKeys.deepgram;
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
 				.rejects.toThrow('No Deepgram API key configured');
 		});
@@ -598,11 +594,11 @@ describe('Transcriber', () => {
 
 		beforeEach(() => {
 			settings.audio.transcriptionProvider = 'gemini';
-			settings.audio.geminiApiKey = 'AIza-test-key';
+			settings.ai.providerKeys.gemini = 'AIza-test-key';
 		});
 
 		it('throws when no API key is configured', async () => {
-			settings.audio.geminiApiKey = '';
+			delete settings.ai.providerKeys.gemini;
 			settings.ai.apiKey = '';
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
 				.rejects.toThrow('No Gemini API key configured');
@@ -633,7 +629,7 @@ describe('Transcriber', () => {
 		});
 
 		it('does not send a non-Gemini shared key to Gemini', async () => {
-			settings.audio.geminiApiKey = '';
+			delete settings.ai.providerKeys.gemini;
 			settings.ai.provider = 'openai';
 			settings.ai.apiKey = 'sk-shared-key';
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
@@ -641,8 +637,8 @@ describe('Transcriber', () => {
 			expect(mockRequestUrl).not.toHaveBeenCalled();
 		});
 
-		it('falls back to shared AI key when geminiApiKey is empty and the AI provider is Gemini', async () => {
-			settings.audio.geminiApiKey = '';
+		it('uses the main AI key when Gemini is the default provider', async () => {
+			delete settings.ai.providerKeys.gemini;
 			settings.ai.provider = 'gemini';
 			settings.ai.apiKey = 'AIza-shared-key';
 
@@ -738,7 +734,7 @@ describe('Transcriber', () => {
 			});
 
 			await expect(transcriber.transcribe(new ArrayBuffer(8), 'test.mp3'))
-				.rejects.toThrow(/MAX_TOKENS/);
+				.rejects.toThrow(/output limit/);
 		});
 
 		describe('no speech (#524)', () => {

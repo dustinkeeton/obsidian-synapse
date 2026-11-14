@@ -27,7 +27,7 @@ describe('hashString', () => {
 
 describe('contentKey', () => {
 	it('is deterministic for the same ordered parts', () => {
-		const parts = ['notes/a.md', 'deadbeefdeadbeef', 'openai', 'gpt-4o'];
+		const parts = ['notes/a.md', 'deadbeefdeadbeef', 'openai', 'gpt-6-astra'];
 		expect(contentKey(parts)).toBe(contentKey(parts));
 	});
 

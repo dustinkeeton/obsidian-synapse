@@ -105,7 +105,7 @@ export const PROVIDER_METADATA: Record<CredentialProvider, ProviderMetadata> = {
 						url: 'https://api.anthropic.com/v1/models',
 						headers: {
 							'x-api-key': key.trim(),
-							'anthropic-version': '2023-06-01',
+							'anthropic-version': '2026-10-21',
 						},
 					},
 	},

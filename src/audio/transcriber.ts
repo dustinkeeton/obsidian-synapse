@@ -32,6 +32,7 @@ import {
 	parseJson,
 	NoSpeechDetectedError,
 	hasSpeechContent,
+	apiKeyForProvider,
 } from '../shared';
 import { TranscriptionResult } from './types';
 import { resolveTranscriptionModel, whisperResponseFormat } from './transcription-models';
@@ -308,23 +309,16 @@ export class Transcriber {
 		}
 	}
 
-	/** Dedicated whisperApiKey, else the shared AI key only when it is an OpenAI key; never another vendor's key. */
-	private getWhisperApiKey(): string {
-		const settings = this.getSettings();
-		const shared = settings.ai.provider === 'openai' ? settings.ai.apiKey : '';
-		return settings.audio.whisperApiKey || shared;
-	}
-
 	private async transcribeWhisperAPI(
 		audioData: ArrayBuffer,
 		fileName: string
 	): Promise<TranscriptionResult> {
 		const settings = this.getSettings();
-		const apiKey = this.getWhisperApiKey();
+		const apiKey = apiKeyForProvider(settings, 'openai');
 		if (!apiKey) {
 			throw new Error(
-				'No OpenAI API key configured for Whisper. ' +
-				'Set one in Audio Transcription settings or use OpenAI as your AI provider.'
+				'No OpenAI API key configured for transcription. ' +
+				'Add one under Per-feature models in AI configuration.'
 			);
 		}
 
@@ -380,11 +374,12 @@ export class Transcriber {
 		audioData: ArrayBuffer,
 		fileName: string
 	): Promise<TranscriptionResult> {
+		const apiKey = apiKeyForProvider(this.getSettings(), 'deepgram');
 		const settings = this.getSettings().audio;
-		if (!settings.deepgramApiKey) {
+		if (!apiKey) {
 			throw new Error(
 				'No Deepgram API key configured. ' +
-				'Set one in Audio Transcription settings.'
+				'Add one under Per-feature models in AI configuration.'
 			);
 		}
 		// Pin the model explicitly: omitting it rides Deepgram's API default
@@ -402,7 +397,7 @@ export class Transcriber {
 			url: `https://api.deepgram.com/v1/listen?${params}`,
 			method: 'POST',
 			headers: {
-				'Authorization': `Token ${settings.deepgramApiKey}`,
+				'Authorization': `Token ${apiKey}`,
 				'Content-Type': 'audio/*',
 			},
 			body: audioData,
@@ -422,23 +417,16 @@ export class Transcriber {
 		};
 	}
 
-	/** Dedicated geminiApiKey, else the shared AI key only when it is a Gemini key; never another vendor's key. */
-	private getGeminiApiKey(): string {
-		const settings = this.getSettings();
-		const shared = settings.ai.provider === 'gemini' ? settings.ai.apiKey : '';
-		return settings.audio.geminiApiKey || shared;
-	}
-
 	private async transcribeGemini(
 		audioData: ArrayBuffer,
 		fileName: string
 	): Promise<TranscriptionResult> {
 		const settings = this.getSettings();
-		const apiKey = this.getGeminiApiKey();
+		const apiKey = apiKeyForProvider(settings, 'gemini');
 		if (!apiKey) {
 			throw new Error(
 				'No Gemini API key configured. ' +
-				'Set one in Audio Transcription settings or use Google Gemini as your AI provider.'
+				'Add one under Per-feature models in AI configuration.'
 			);
 		}
 
@@ -484,8 +472,6 @@ export class Transcriber {
 					},
 				],
 			}],
-			// Deterministic output is preferable for transcription.
-			generationConfig: { temperature: 0 },
 		});
 
 		const model = resolveTranscriptionModel('gemini', settings.audio.transcriptionModel);

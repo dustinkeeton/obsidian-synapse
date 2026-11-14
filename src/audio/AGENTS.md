@@ -8,7 +8,7 @@ Transcribes audio files from the vault using configurable providers (Whisper API
 
 ## Public API
 
-Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTranscriptionCredentials`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioClipper`, `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry` (`index.ts:19-21`). `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` and `AudioEmbed` are declared in `shared/audio-embeds.ts` and only re-exported here (`index.ts:19-20`). `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-credentials.ts`.
+Barrel (`index.ts`) re-exports: `AudioModule`, `renderAudioSettings`, `renderTranscriptionSetting`, `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, and types `AudioClipper`, `AudioEmbed`, `TranscribeOptions`, `TranscriptionResult`, `TimestampEntry` (`index.ts:19-21`). `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX` and `AudioEmbed` are declared in `shared/audio-embeds.ts` and only re-exported here (`index.ts:19-20`). `transcriber.ts` symbols below are module-internal (reached via `audio/transcriber`, not the barrel) and consumed by tests + `transcription-setting.ts`.
 
 ```ts
 // types.ts:36 — structural ffmpeg surface; video's AudioExtractor satisfies it, so audio never imports video
@@ -33,7 +33,7 @@ class AudioModule {
 }
 
 function renderAudioSettings(ctx: SettingsSectionContext): void   // settings UI; from settings-section.ts
-function renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext): void   // re-exported on the barrel (#332/#335); from transcription-credentials.ts; settings-tab.ts imports it via `./audio`
+function renderTranscriptionSetting(parent: HTMLElement, ctx: SettingsSectionContext): void   // re-exported on the barrel; from transcription-setting.ts; the "Transcription" row of settings-ui/ai-overrides.ts renderAiOverrides
 function findAudioEmbeds(content: string, sourcePath: string, metadataCache: MetadataCache): AudioEmbed[]   // re-export of shared/audio-embeds.ts:13
 
 // transcriber.ts (module-internal: imported directly, NOT via the barrel)
@@ -70,7 +70,7 @@ interface PostProcessOptions { update?: (message: string) => void; onCacheHit?: 
 interface PostProcessorDeps { notify?: (message: string) => void; delayMs?: number }   // notify = single end-of-run notice; delayMs default 2000
 class PostProcessor {
   constructor(getSettings: () => SynapseSettings, deps?: PostProcessorDeps)
-  process(rawTranscript: string, opts?: PostProcessOptions): Promise<string>   // !isWorthPostProcessing(raw) -> returns input, zero AI calls (#524); fits ai.maxTokens -> one call; over -> sectioned (#467)
+  process(rawTranscript: string, opts?: PostProcessOptions): Promise<string>   // !isWorthPostProcessing(raw) -> returns input, zero AI calls (#524); fits CALL_TOKEN_BUDGET (2048, post-processor.ts; deps.tokenBudget overrides) -> one call; over -> sectioned (#467)
 }
 
 // transcript-segmenter.ts (module-internal, pure)
@@ -88,20 +88,20 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }   // re-exp
 | `transcriber.ts` | `Transcriber`, `buildMultipartBody`, `GEMINI_MAX_INLINE_AUDIO_BYTES` | Provider-routed transcription (Whisper, Deepgram, Gemini, local stub) over `requestUrl`; manual multipart with sanitized headers (internal `sanitizeMultipartHeaderValue`, `geminiMimeType`); Gemini text via shared `extractGeminiResponseText` |
 | `transcriber.test.ts` | Tests | Transcriber + multipart + provider routing tests |
 | `transcription-models.test.ts` | Tests | `TRANSCRIPTION_MODEL_OPTIONS` registry shape, `transcriptionModelOptions` / `hasTranscriptionModelOptions`, `resolveTranscriptionModel`, `whisperResponseFormat` (#521) |
-| `transcription-credentials.test.ts` | Tests | `renderTranscriptionCredentials` provider dropdown + per-provider key fields |
+| `transcription-setting.test.ts` | Tests | `renderTranscriptionSetting` renders for every provider |
 | `settings-section.test.ts` | Tests | `renderAudioSettings` section rendering |
-| `post-processor.ts` | `PostProcessor`, `PostProcessOptions`, `PostProcessorDeps` | AI transcript cleanup via `AIClient`; transcripts over `ai.maxTokens` run in sections (#467); every transcript span enters the prompt through `wrapUntrusted` (post-processor.ts:61,129,131,151) |
+| `post-processor.ts` | `PostProcessor`, `PostProcessOptions`, `PostProcessorDeps` | AI transcript cleanup via `AIClient`; transcripts over `CALL_TOKEN_BUDGET` (2048) run in sections (#467); every transcript span enters the prompt through `wrapUntrusted` (post-processor.ts:61,129,131,151) |
 | `no-speech.test.ts` | Tests | `AudioModule` no-speech paths (#524): zero AI calls, note untouched, notices, batch/combined partial results |
 | `post-processor.test.ts` | Tests | Blank/short-input guard (#524), single-call path, sectioning, overlap trim, raw fallback, progress, key points, inter-call delay |
 | `transcript-segmenter.ts` | `segmentTranscript`, `trimRepeatedContext`, `TranscriptSegment` | Pure boundary-aware splitter used by `PostProcessor` |
 | `transcript-segmenter.test.ts` | Tests | Boundary selection, budget, round-trip, overlap context |
 | `settings-section.ts` | `renderAudioSettings` | Audio settings UI section |
-| `transcription-credentials.ts` | `renderTranscriptionCredentials(body: HTMLElement, ctx: SettingsSectionContext)` | Transcription-provider dropdown + per-provider API-key fields rendered into the AI Configuration section (#332/#335). Re-exported from `index.ts` (the module's public API) so `settings-tab.ts` wires it through the `./audio` barrel rather than deep-importing this file. Imports `PROVIDER_METADATA`/`decorateCredentialField` and types `CredentialProvider`/`CredentialFieldHandle`/`SettingsSectionContext` via the `../shared` barrel (no deep `../shared/<file>` imports) |
+| `transcription-setting.ts` | `renderTranscriptionSetting(parent, ctx)` | One "Transcription" provider · model dropdown (`transcriptionChoiceOptions`, `transcription-models.ts`) in the per-feature model list; Gemini inline-size note. Keys render with the other vendor keys in `settings-ui/ai-overrides.ts` |
 | `cache-report.test.ts` | Tests | `AudioModule` response-cache reporting (#527): `aiCached` flag + finish wording, fresh-transcript bypass |
 | `combine-transcription.test.ts` | Tests | `AudioModule.transcribeAndInsertCombined` (#214): ffmpeg concat vs per-file merge, <2-embed fallback |
 | `lyrics-reformat.test.ts` | Tests | `AudioModule.transcribe` lyrics schema reformatting (#234) |
 | `process-transcript-text.test.ts` | Tests | `AudioModule.processTranscriptText` caption-tier seam (#184) |
-| `index.ts` | `AudioModule` (+ `renderAudioSettings`, `renderTranscriptionCredentials`, `shared/audio-embeds` & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307); serializes every note-mutating insert through the shared `NoteOperationQueue` (internal `queued`, `insertFileTranscription`, `insertTranscriptions`, `insertCombinedTranscription`, #483); schema-reformat failures log through shared `redactError` |
+| `index.ts` | `AudioModule` (+ `renderAudioSettings`, `renderTranscriptionSetting`, `shared/audio-embeds` & type re-exports) | Orchestrator, public transcription methods; gates writes via `isPathExcluded`/`findMatchingRule` (#307); serializes every note-mutating insert through the shared `NoteOperationQueue` (internal `queued`, `insertFileTranscription`, `insertTranscriptions`, `insertCombinedTranscription`, #483); schema-reformat failures log through shared `redactError` |
 
 ## Data Flow
 
@@ -120,13 +120,13 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }   // re-exp
    |  Routes by transcriptionProvider (all via requestUrl, 5min timeout, retry on connection/dns/offline only):
    |  'whisper-api' --> OpenAI /v1/audio/transcriptions
    |       Body: buildMultipartBody() manual multipart/form-data (requestUrl has no FormData)
-   |       Key: audio.whisperApiKey || (ai.provider === 'openai' ? ai.apiKey : '')
+   |       Key: apiKeyForProvider(settings, 'openai') (ai.apiKey when OpenAI is the default provider, else ai.providerKeys.openai)
    |  'deepgram' --> Deepgram /v1/listen (raw ArrayBuffer body)
-   |       Key: audio.deepgramApiKey
+   |       Key: apiKeyForProvider(settings, 'deepgram') (ai.providerKeys.deepgram)
    |  'gemini' --> generativelanguage /v1beta/models/gemini-3.5-flash:generateContent
    |       Inline base64 audio (rejects > GEMINI_MAX_INLINE_AUDIO_BYTES = 15 MB)
    |       Instruction in system_instruction (prompt-injection hardening); text via extractGeminiResponseText()
-   |       Key: audio.geminiApiKey || (ai.provider === 'gemini' ? ai.apiKey : '')
+   |       Key: apiKeyForProvider(settings, 'gemini') (ai.apiKey when Gemini is the default provider, else ai.providerKeys.gemini)
    |  'local-whisper' --> throws (not implemented)
    |  No speech (#524) --> NoSpeechDetectedError, never a result:
    |       every provider: !hasSpeechContent(transcript)
@@ -139,7 +139,7 @@ interface AudioEmbed { fileName: string; file: TFile; line: number }   // re-exp
 4. PostProcessor.process(rawTranscript, { update })  [if postProcess !== false]
    |  !isWorthPostProcessing(raw) -> return raw, no AI call (#524)
    |  Builds instructions from settings flags
-   |  ceil(chars/4) <= ai.maxTokens: one AIClient.complete() call, sanitizeAIResponse() on output
+   |  ceil(chars/4) <= CALL_TOKEN_BUDGET: one AIClient.complete() call, sanitizeAIResponse() on output
    |  otherwise (#467): segmentTranscript(text, maxTokens*0.6*4 chars, 10% overlap) -> one call per section,
    |    sequential with a 2s pause, update("Post-processing (n/total)") before each call;
    |    section prompt = instructions (minus key points) + "Preceding context" (overlap, continuity only) + "Transcript section";
@@ -183,9 +183,6 @@ All under `settings.audio` (interface `AudioSettings`, `settings.ts:191`; defaul
 |-----|------|---------|----------|
 | `enabled` | boolean | `true` | Feature toggle for the audio module |
 | `transcriptionProvider` | `'whisper-api' \| 'deepgram' \| 'gemini' \| 'local-whisper'` | `'whisper-api'` | Transcription backend (routed in `transcriber.ts:295`) |
-| `whisperApiKey` | string | `''` | Dedicated OpenAI key (fallback: `ai.apiKey` only when `ai.provider === 'openai'`, `transcriber.ts:311-315`) |
-| `deepgramApiKey` | string | `''` | Deepgram API key (no fallback) |
-| `geminiApiKey` | string | `''` | Dedicated Gemini key (fallback: `ai.apiKey` only when `ai.provider === 'gemini'`, `transcriber.ts:425-429`) |
 | `transcriptionModel` | string | `'whisper-1'` | Model for the active provider; resolved against `TRANSCRIPTION_MODEL_OPTIONS` (`transcription-models.ts`) |
 | `localWhisperPath` | string | `''` | Reserved for `local-whisper` CLI path (provider not implemented) |
 | `language` | string | `''` | Language hint; empty = auto-detect |

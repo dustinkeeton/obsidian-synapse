@@ -41,7 +41,7 @@ describe('validateCredentials', () => {
 			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(call.url).toBe('https://api.anthropic.com/v1/models');
 			expect(call.headers?.['x-api-key']).toBe('sk-ant-test');
-			expect(call.headers?.['anthropic-version']).toBe('2023-06-01');
+			expect(call.headers?.['anthropic-version']).toBe('2026-10-21');
 		});
 
 		it('sends the Gemini x-goog-api-key header', async () => {

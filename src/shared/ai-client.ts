@@ -1,5 +1,7 @@
 import type { RequestUrlResponse } from 'obsidian';
-import { SynapseSettings } from '../settings';
+import type { AIFeatureId, SynapseSettings } from '../settings';
+import { aiRequestTimeoutMs, anthropicMaxTokens, effortFor, effortWireValue, resolveAIConfig } from './ai-config';
+import type { ResolvedAIConfig } from './ai-config';
 import { ChatMessage, ContentBlock, TextContentBlock } from './types';
 import { redactSecrets } from './redact';
 import { isRecord } from './json-utils';
@@ -27,7 +29,7 @@ export interface AIRequestOptions {
 	bypassCache?: boolean;
 	/** Called when the response is replayed from the response cache (#527); never for a dispatch or a coalesced join. */
 	onCacheHit?: () => void;
-	/** Model for this call only (e.g. a vision model); the configured `ai.model` is never touched. */
+	/** Model for this call only (e.g. a vision model), on the feature's resolved provider; settings are never touched. */
 	model?: string;
 }
 
@@ -44,30 +46,12 @@ const ANTHROPIC_MODEL_MAP: Record<string, string> = {
 	haiku: 'claude-haiku-5-5',
 };
 
-/**
- * Anthropic model IDs that still accept `temperature`/`top_p`/`top_k`. The
- * allowlist is inverted deliberately: every other current model rejects those
- * with a 400, and omitting them is accepted by every model.
- */
-const ANTHROPIC_SAMPLING_PARAM_MODELS = new Set([
-	'claude-opus-4-6',
-	'claude-sonnet-4-6',
-	'claude-haiku-4-5',
-]);
+/** Anthropic API version; the 2026-10-21 version rejects sampling parameters, which are never sent. */
+export const ANTHROPIC_API_VERSION = '2026-10-21';
 
-function rejectsSamplingParams(modelId: string): boolean {
-	return !ANTHROPIC_SAMPLING_PARAM_MODELS.has(modelId);
-}
-
-/**
- * OpenAI model IDs that still accept `temperature`/`top_p`. Inverted for the
- * same reason as the Anthropic set: reasoning models (o-series, GPT-5.6, GPT-6)
- * reject sampling params with a 400, and omitting them is always accepted.
- */
-const OPENAI_SAMPLING_PARAM_MODELS = new Set(['gpt-4o', 'gpt-4o-mini']);
-
-function rejectsOpenAISamplingParams(modelId: string): boolean {
-	return !OPENAI_SAMPLING_PARAM_MODELS.has(modelId);
+/** Thrown when a reply stopped at its output limit, so partial text is never returned or cached. */
+function truncated(provider: string): Error {
+	return new Error(`${provider} stopped at its output limit before finishing, so the partial reply was discarded`);
 }
 
 /** Fable is unavailable to zero-data-retention orgs, which get a 400 on every request. */
@@ -130,6 +114,9 @@ interface GeminiResponseJson {
 	promptFeedback?: { blockReason?: string };
 }
 
+/** Gemini finish reasons that mean the reply was cut off. */
+const GEMINI_TRUNCATED = new Set(['MAX_TOKENS', 'CONTINUATION']);
+
 /**
  * Extract the concatenated text parts from a Gemini generateContent response.
  *
@@ -155,21 +142,18 @@ export function extractGeminiResponseText(json: unknown): string {
 			throw new Error(`Gemini response blocked (${blockReason})`);
 		}
 		const finishReason = candidate?.finishReason;
-		if (finishReason === 'MAX_TOKENS') {
-			throw new Error(
-				'Gemini returned no text: token limit reached (MAX_TOKENS) — consider raising max tokens in AI settings'
-			);
-		}
+		if (finishReason && GEMINI_TRUNCATED.has(finishReason)) throw truncated('Gemini');
 		throw new Error(
 			`Gemini returned no text${finishReason ? ` (finish reason: ${finishReason})` : ''}`
 		);
 	}
+	if (candidate?.finishReason && GEMINI_TRUNCATED.has(candidate.finishReason)) throw truncated('Gemini');
 	return parts.map(p => p.text ?? '').join('');
 }
 
 /** The subset of an OpenAI chat-completions response needed to extract text. */
 interface OpenAIChatResponse {
-	choices?: Array<{ message?: { content?: string } }>;
+	choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
 }
 
 /** The subset of an Anthropic messages response needed to extract text. */
@@ -183,6 +167,7 @@ interface AnthropicMessageResponse {
 /** The subset of an Ollama chat response needed to extract text. */
 interface OllamaChatResponse {
 	message?: { content?: string };
+	done_reason?: string;
 }
 
 /**
@@ -207,7 +192,9 @@ function briefShape(json: unknown): string {
  * Throw a descriptive error instead.
  */
 export function extractOpenAIResponseText(json: unknown): string {
-	const content = (json as OpenAIChatResponse | null)?.choices?.[0]?.message?.content;
+	const choice = (json as OpenAIChatResponse | null)?.choices?.[0];
+	if (choice?.finish_reason === 'length') throw truncated('OpenAI');
+	const content = choice?.message?.content;
 	if (typeof content !== 'string') {
 		throw new Error(`Unexpected OpenAI response: ${briefShape(json)}`);
 	}
@@ -231,6 +218,7 @@ export function extractAnthropicResponseText(json: unknown): string {
 			`Anthropic declined this request (safety refusal, not a network or API-key failure)${reason ? `: ${reason}` : ''}`
 		);
 	}
+	if (response?.stop_reason === 'max_tokens') throw truncated('Anthropic');
 	const blocks = response?.content;
 	if (Array.isArray(blocks)) {
 		const text = blocks
@@ -249,7 +237,9 @@ export function extractAnthropicResponseText(json: unknown): string {
  * error instead of an opaque `TypeError` on `message.content` for a bad shape.
  */
 export function extractOllamaResponseText(json: unknown): string {
-	const content = (json as OllamaChatResponse | null)?.message?.content;
+	const response = json as OllamaChatResponse | null;
+	if (response?.done_reason === 'length') throw truncated('Ollama');
+	const content = response?.message?.content;
 	if (typeof content !== 'string') {
 		throw new Error(`Unexpected Ollama response: ${briefShape(json)}`);
 	}
@@ -316,7 +306,11 @@ export class AIClient {
 	 */
 	private readonly cache = new Map<string, string>();
 
-	constructor(private getSettings: () => SynapseSettings) {}
+	/** `feature` selects that feature's provider/model override; omitted means the default. */
+	constructor(
+		private getSettings: () => SynapseSettings,
+		private feature?: AIFeatureId,
+	) {}
 
 	async complete(prompt: string, systemPrompt?: string, opts?: AIRequestOptions): Promise<string> {
 		const messages: ChatMessage[] = [];
@@ -333,22 +327,23 @@ export class AIClient {
 	 * dispatch lives in {@link dispatch}; this method is the caching wrapper.
 	 */
 	async chat(messages: ChatMessage[], opts?: AIRequestOptions): Promise<string> {
-		const { ai } = this.getSettings();
-		const model = opts?.model || ai.model;
+		const settings = this.getSettings();
+		const { ai } = settings;
+		const resolved = resolveAIConfig(settings, this.feature);
+		const cfg: ResolvedAIConfig = opts?.model
+			? { ...resolved, model: opts.model, effort: effortFor(resolved.provider, opts.model, resolved.effort) }
+			: resolved;
 
 		// Deterministic key over the fully-resolved request. `messages` already
 		// embeds the system prompt, so it is covered by the JSON serialization.
 		const key = contentKey([
 			JSON.stringify(messages),
-			ai.provider,
-			model,
-			String(ai.temperature),
-			String(ai.maxTokens),
+			cfg.provider,
+			cfg.model,
+			cfg.effort ?? '',
 		]);
 
-		// Cache participation is opt-in: automatic at temperature 0 (the response
-		// is meant to be deterministic), or whenever the user enables it.
-		const cacheable = ai.temperature === 0 || ai.cacheResponses === true;
+		const cacheable = ai.cacheResponses === true;
 		const bypass = opts?.bypassCache === true;
 
 		// Cache read — skipped on bypass so a "regenerate" always re-dispatches.
@@ -371,7 +366,7 @@ export class AIClient {
 
 		// Populate the cache only on success, INSIDE the `.then()`, so a rejected
 		// dispatch can never be cached. A bypass still refreshes the cache here.
-		const dispatchPromise = this.dispatch(messages, model).then((res) => {
+		const dispatchPromise = this.dispatch(messages, cfg).then((res) => {
 			if (cacheable) {
 				this.cacheSet(key, res);
 			}
@@ -398,20 +393,18 @@ export class AIClient {
 	 * Behavior is unchanged from the pre-cache `chat()`; the caching/coalescing
 	 * wrapper lives in {@link chat}.
 	 */
-	private async dispatch(messages: ChatMessage[], requestedModel: string): Promise<string> {
-		const { ai } = this.getSettings();
-
-		switch (ai.provider) {
+	private async dispatch(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
+		switch (cfg.provider) {
 			case 'openai':
-				return this.callOpenAI(messages, requestedModel);
+				return this.callOpenAI(messages, cfg);
 			case 'anthropic':
-				return this.callAnthropic(messages, requestedModel);
+				return this.callAnthropic(messages, cfg);
 			case 'gemini':
-				return this.callGemini(messages, requestedModel);
+				return this.callGemini(messages, cfg);
 			case 'ollama':
-				return this.callOllama(messages, requestedModel);
+				return this.callOllama(messages, cfg);
 			default:
-				throw new Error(`Unsupported AI provider: ${ai.provider}`);
+				throw new Error(`Unsupported AI provider: ${String(cfg.provider)}`);
 		}
 	}
 
@@ -447,46 +440,43 @@ export class AIClient {
 		}
 	}
 
-	private async callOpenAI(messages: ChatMessage[], requestedModel: string): Promise<string> {
-		const { ai } = this.getSettings();
-		const model = resolveModelId(ai.provider, requestedModel);
-		// `max_tokens` is deprecated and is a 400 on reasoning models;
-		// `max_completion_tokens` replaces it and is accepted by every model.
+	private async callOpenAI(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
+		const model = resolveModelId(cfg.provider, cfg.model);
 		const body: Record<string, unknown> = {
 			model,
 			messages: messages.map(m => ({
-				role: m.role,
+				// Every listed OpenAI model is a reasoning model, for which `developer` replaces `system`.
+				role: m.role === 'system' ? 'developer' : m.role,
 				content: typeof m.content === 'string'
 					? m.content
 					: toOpenAIContent(m.content),
 			})),
-			max_completion_tokens: ai.maxTokens,
 		};
-		if (!rejectsOpenAISamplingParams(model)) {
-			body.temperature = ai.temperature;
+		const effort = effortWireValue(cfg.provider, cfg.model, cfg.effort);
+		if (effort !== undefined) {
+			body.reasoning_effort = effort;
 		}
 
 		const response = await safeRequest({
 			url: 'https://api.openai.com/v1/chat/completions',
 			method: 'POST',
 			headers: {
-				'Authorization': `Bearer ${ai.apiKey}`,
+				'Authorization': `Bearer ${cfg.apiKey}`,
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify(body),
-		});
+		}, aiRequestTimeoutMs(cfg.effort));
 		return extractOpenAIResponseText(response.json);
 	}
 
-	private async callAnthropic(messages: ChatMessage[], requestedModel: string): Promise<string> {
-		const { ai } = this.getSettings();
-		const model = resolveModelId(ai.provider, requestedModel);
+	private async callAnthropic(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
+		const model = resolveModelId(cfg.provider, cfg.model);
 		const systemMsg = messages.find(m => m.role === 'system');
 		const nonSystemMsgs = messages.filter(m => m.role !== 'system');
 
 		const body: Record<string, unknown> = {
 			model,
-			max_tokens: ai.maxTokens,
+			max_tokens: anthropicMaxTokens(cfg.effort),
 			messages: nonSystemMsgs.map(m => ({
 				role: m.role,
 				content: typeof m.content === 'string'
@@ -494,10 +484,10 @@ export class AIClient {
 					: toAnthropicContent(m.content),
 			})),
 		};
-		// Sampling params are a 400 on the current generation; `thinking` is never
-		// sent because an explicit `{type: "disabled"}` is itself a 400 on Fable.
-		if (!rejectsSamplingParams(model)) {
-			body.temperature = ai.temperature;
+		// `thinking` is never sent: adaptive thinking is on by default.
+		const effort = effortWireValue(cfg.provider, cfg.model, cfg.effort);
+		if (effort !== undefined) {
+			body.output_config = { effort };
 		}
 		if (systemMsg) {
 			body.system = typeof systemMsg.content === 'string'
@@ -511,21 +501,20 @@ export class AIClient {
 				url: 'https://api.anthropic.com/v1/messages',
 				method: 'POST',
 				headers: {
-					'x-api-key': ai.apiKey,
-					'anthropic-version': '2023-06-01',
+					'x-api-key': cfg.apiKey,
+					'anthropic-version': ANTHROPIC_API_VERSION,
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify(body),
-			});
+			}, aiRequestTimeoutMs(cfg.effort));
 		} catch (err) {
 			throw withAnthropicErrorHint(err, model);
 		}
 		return extractAnthropicResponseText(response.json);
 	}
 
-	private async callGemini(messages: ChatMessage[], requestedModel: string): Promise<string> {
-		const { ai } = this.getSettings();
-		const model = resolveModelId(ai.provider, requestedModel);
+	private async callGemini(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
+		const model = resolveModelId(cfg.provider, cfg.model);
 		const systemMsg = messages.find(m => m.role === 'system');
 		const nonSystemMsgs = messages.filter(m => m.role !== 'system');
 
@@ -537,11 +526,11 @@ export class AIClient {
 					? [{ text: m.content }]
 					: toGeminiContent(m.content),
 			})),
-			generationConfig: {
-				maxOutputTokens: ai.maxTokens,
-				temperature: ai.temperature,
-			},
 		};
+		const effort = effortWireValue(cfg.provider, cfg.model, cfg.effort);
+		if (effort !== undefined) {
+			body.generationConfig = { thinkingConfig: { thinkingLevel: effort } };
+		}
 		if (systemMsg) {
 			// Gemini has no 'system' message role; route it into system_instruction.
 			const text = typeof systemMsg.content === 'string'
@@ -557,21 +546,20 @@ export class AIClient {
 			url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
 			method: 'POST',
 			headers: {
-				'x-goog-api-key': ai.apiKey,
+				'x-goog-api-key': cfg.apiKey,
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify(body),
-		});
+		}, aiRequestTimeoutMs(cfg.effort));
 		return extractGeminiResponseText(response.json);
 	}
 
-	private async callOllama(messages: ChatMessage[], requestedModel: string): Promise<string> {
-		const { ai } = this.getSettings();
+	private async callOllama(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
 
 		// Validate Ollama endpoint — allow http for localhost, require https otherwise
 		let endpointUrl: URL;
 		try {
-			endpointUrl = new URL(ai.ollamaEndpoint);
+			endpointUrl = new URL(cfg.ollamaEndpoint);
 		} catch {
 			throw new Error('Invalid Ollama endpoint URL');
 		}
@@ -580,9 +568,10 @@ export class AIClient {
 			throw new Error('Ollama endpoint must use HTTPS (or HTTP for localhost only)');
 		}
 
-		const model = resolveModelId(ai.provider, requestedModel);
+		const model = resolveModelId(cfg.provider, cfg.model);
+		const think = effortWireValue(cfg.provider, cfg.model, cfg.effort);
 		const response = await safeRequest({
-			url: `${ai.ollamaEndpoint}/api/chat`,
+			url: `${cfg.ollamaEndpoint}/api/chat`,
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -594,8 +583,9 @@ export class AIClient {
 					return toOllamaMessage(m.role, m.content);
 				}),
 				stream: false,
+				...(think !== undefined ? { think } : {}),
 			}),
-		});
+		}, aiRequestTimeoutMs(cfg.effort));
 		return extractOllamaResponseText(response.json);
 	}
 }

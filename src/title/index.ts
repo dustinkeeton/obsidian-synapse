@@ -42,7 +42,7 @@ export class TitleModule implements FeatureModule {
 		this.getSettings = deps.getSettings;
 		this.notifications = deps.notifications;
 		this.noteQueue = deps.noteQueue;
-		const aiClient = new AIClient(deps.getSettings);
+		const aiClient = new AIClient(deps.getSettings, 'title');
 		this.store = new TitleProposalStore(deps.plugin.app, deps.getSettings);
 		this.suggester = new TitleSuggester(aiClient);
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;

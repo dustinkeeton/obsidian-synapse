@@ -46,7 +46,7 @@ describe('PROVIDER_METADATA', () => {
 			expect(PROVIDER_METADATA.anthropic.buildProbe({ key: 'sk-ant-test' })).toEqual({
 				method: 'GET',
 				url: 'https://api.anthropic.com/v1/models',
-				headers: { 'x-api-key': 'sk-ant-test', 'anthropic-version': '2023-06-01' },
+				headers: { 'x-api-key': 'sk-ant-test', 'anthropic-version': '2026-10-21' },
 			});
 		});
 

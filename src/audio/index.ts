@@ -55,7 +55,7 @@ export class AudioModule implements FeatureModule {
 		this.postProcessor = new PostProcessor(deps.getSettings, {
 			notify: (message) => this.notifications.info(message),
 		});
-		this.aiClient = new AIClient(deps.getSettings);
+		this.aiClient = new AIClient(deps.getSettings, 'audio');
 	}
 
 	async onload(): Promise<void> {
@@ -616,7 +616,5 @@ export class AudioModule implements FeatureModule {
 
 // Settings section renderer (#243)
 export { renderAudioSettings } from './settings-section';
-// Transcription-provider credential renderer. Re-exported on the module's
-// public API so consumers (settings-tab.ts) wire it through the `./audio`
-// barrel rather than deep-importing the internal file (index = public API).
-export { renderTranscriptionCredentials } from './transcription-credentials';
+// The "Transcription" row of the per-feature model list (settings-ui/ai-overrides.ts).
+export { renderTranscriptionSetting } from './transcription-setting';

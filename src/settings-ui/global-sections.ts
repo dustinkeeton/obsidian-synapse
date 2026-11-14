@@ -1,6 +1,6 @@
 import { Setting, setIcon } from 'obsidian';
 import { MODEL_OPTIONS } from '../settings';
-import type { AIProvider } from '../settings';
+import type { AIProvider, EffortLevel } from '../settings';
 import {
 	addEnhancedSlider,
 	FolderPickerModal,
@@ -8,6 +8,7 @@ import {
 	renderFeatureChipSelect,
 	PROVIDER_METADATA,
 	aiProviderToCredential,
+	effortFor,
 	decorateCredentialField,
 	ConfirmModal,
 	applyResetAll,
@@ -20,9 +21,9 @@ import type {
 } from '../shared';
 import { PROPOSAL_KINDS } from '../views';
 import type { ProposalKind } from '../views';
-import { renderTranscriptionCredentials } from '../audio';
 import { renderSystemOneCredentials } from './system-one-credentials';
 import { renderVoiceSetting } from './voice-setting';
+import { AI_PROVIDER_LABELS, DEFAULT_CHOICE, effortChoiceOptions, providerModelOptions, renderAiOverrides, renderOllamaEndpoint } from './ai-overrides';
 import { applyApiKeyEmphasis, API_KEY_NO_SUBSCRIPTION_NOTE } from '../onboarding';
 import { foldActiveNoteProperties } from '../properties-fold';
 import { ChangelogModal } from '../changelog';
@@ -86,15 +87,10 @@ export function renderAiConfiguration(ctx: SettingsSectionContext): void {
 
 	new Setting(aiBody)
 		.setName('AI provider')
-		.setDesc('Which AI service to use for elaboration and post-processing')
+		.setDesc('Default AI service. Individual features can use a different one below.')
 		.addDropdown((dd) =>
 			dd
-				.addOptions({
-					openai: 'OpenAI',
-					anthropic: 'Anthropic',
-					gemini: 'Google Gemini',
-					ollama: 'Ollama (Local)',
-				})
+				.addOptions(AI_PROVIDER_LABELS)
 				.setValue(plugin.settings.ai.provider)
 				.onChange(async (value) => {
 					const provider = value as AIProvider;
@@ -139,46 +135,14 @@ export function renderAiConfiguration(ctx: SettingsSectionContext): void {
 	}
 
 	if (plugin.settings.ai.provider === 'ollama') {
-		let ollamaField: CredentialFieldHandle | undefined;
-		const endpointSetting = new Setting(aiBody)
-			.setName('Ollama endpoint')
-			.setDesc('URL for local Ollama server (HTTPS required for non-localhost)')
-			.addText((text) =>
-				text
-					.setPlaceholder(PROVIDER_METADATA.ollama.placeholder)
-					.setValue(plugin.settings.ai.ollamaEndpoint)
-					.onChange(async (value) => {
-						// ai-client.ts enforces the same scheme rule at call time.
-						try {
-							const parsed = new URL(value);
-							const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1' || parsed.hostname === '[::1]';
-							if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLocal)) {
-								return;
-							}
-						} catch {
-							return;
-						}
-						plugin.settings.ai.ollamaEndpoint = value;
-						await plugin.saveSettings();
-						ollamaField?.reset();
-					})
-			);
-		ollamaField = decorateCredentialField({
-			setting: endpointSetting,
-			provider: 'ollama',
-			getKey: () => '',
-			getEndpoint: () => plugin.settings.ai.ollamaEndpoint,
-		});
+		renderOllamaEndpoint(aiBody, ctx);
 	}
 
-	// Transcription provider lives here because its choice is coupled to the AI provider (#332).
-	renderTranscriptionCredentials(aiBody, ctx);
-
-	const models = MODEL_OPTIONS[plugin.settings.ai.provider];
+	const models = providerModelOptions(plugin.settings.ai.provider, plugin.settings.ai.model);
 
 	new Setting(aiBody)
 		.setName('Model')
-		.setDesc('Model to use for AI operations')
+		.setDesc('Default model for AI operations')
 		.addDropdown((dd) => {
 			dd.addOptions(models);
 			if (!(plugin.settings.ai.model in models)) {
@@ -187,49 +151,34 @@ export function renderAiConfiguration(ctx: SettingsSectionContext): void {
 			dd.setValue(plugin.settings.ai.model);
 			dd.onChange(async (value) => {
 				plugin.settings.ai.model = value;
+				plugin.settings.ai.effort = effortFor(plugin.settings.ai.provider, value, plugin.settings.ai.effort) ?? '';
 				await plugin.saveSettings();
+				ctx.rerender();
 			});
 		});
 
-	addEnhancedSlider(
+	const defaultEfforts = effortChoiceOptions(plugin.settings.ai.provider, plugin.settings.ai.model);
+	if (defaultEfforts) {
 		new Setting(aiBody)
-			.setName('Temperature')
-			.setDesc('Controls randomness (0-1)'),
-		{
-			min: 0,
-			max: 1,
-			step: 0.1,
-			value: plugin.settings.ai.temperature,
-			showTicks: true,
-			onChange: async (value) => {
-				plugin.settings.ai.temperature = value;
-				await plugin.saveSettings();
-			},
-		},
-	);
+			.setName('Effort')
+			.setDesc('How much the default model reasons before answering. Higher effort is slower and costs more.')
+			.addDropdown((dd) => {
+				dd.addOptions(defaultEfforts);
+				const current = plugin.settings.ai.effort;
+				dd.setValue(current in defaultEfforts ? current : DEFAULT_CHOICE);
+				dd.onChange(async (value) => {
+					plugin.settings.ai.effort = value as EffortLevel | '';
+					await plugin.saveSettings();
+				});
+			});
+	}
 
-	addEnhancedSlider(
-		new Setting(aiBody)
-			.setName('Max tokens')
-			.setDesc('Maximum tokens in AI responses (256-8192)'),
-		{
-			min: 256,
-			max: 8192,
-			step: 256,
-			value: plugin.settings.ai.maxTokens,
-			showTicks: true,
-			onChange: async (value) => {
-				plugin.settings.ai.maxTokens = value;
-				await plugin.saveSettings();
-			},
-		},
-	);
+	renderAiOverrides(aiBody, ctx);
 
 	new Setting(aiBody)
 		.setName('Cache identical AI responses')
 		.setDesc(
 			'Reuse the previous result for an identical request instead of spending again. ' +
-			'Caching is automatic at temperature 0; turn this on to cache at any temperature. ' +
 			'"Regenerate" actions always bypass the cache.'
 		)
 		.addToggle((toggle) =>

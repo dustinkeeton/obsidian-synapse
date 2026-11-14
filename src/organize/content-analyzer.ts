@@ -42,7 +42,7 @@ export class ContentAnalyzer {
 		private getSettings: () => SynapseSettings,
 		placement?: PlacementDecider
 	) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'organize');
 		this.placement = placement ?? new PlacementDecider(app, getSettings);
 	}
 

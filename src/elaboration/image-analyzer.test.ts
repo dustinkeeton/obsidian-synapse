@@ -334,21 +334,21 @@ describe('ImageAnalyzer.analyzeImagesInNote', () => {
 	});
 
 	it('uses vision model when configured', async () => {
-		settings.image.visionModel = 'gpt-4o';
-		settings.ai.model = 'gpt-4o-mini';
+		settings.image.visionModel = 'gpt-6-astra';
+		settings.ai.model = 'gpt-6-luna';
 
 		await analyzer.analyzeImagesInNote(
 			'notes/test.md',
 			'![[photo.png]]'
 		);
 
-		expect(mockChat.mock.calls[0][1]).toMatchObject({ model: 'gpt-4o' });
-		expect(settings.ai.model).toBe('gpt-4o-mini');
+		expect(mockChat.mock.calls[0][1]).toMatchObject({ model: 'gpt-6-astra' });
+		expect(settings.ai.model).toBe('gpt-6-luna');
 	});
 
 	it('leaves the configured model untouched when chat throws', async () => {
-		settings.image.visionModel = 'gpt-4o';
-		settings.ai.model = 'gpt-4o-mini';
+		settings.image.visionModel = 'gpt-6-astra';
+		settings.ai.model = 'gpt-6-luna';
 		mockChat.mockRejectedValue(new Error('API error'));
 
 		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -358,7 +358,7 @@ describe('ImageAnalyzer.analyzeImagesInNote', () => {
 			'![[photo.png]]'
 		);
 
-		expect(settings.ai.model).toBe('gpt-4o-mini');
+		expect(settings.ai.model).toBe('gpt-6-luna');
 		warnSpy.mockRestore();
 	});
 });

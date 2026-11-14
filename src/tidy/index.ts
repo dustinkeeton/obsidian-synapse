@@ -45,7 +45,7 @@ export class TidyModule implements FeatureModule {
 		this.notifications = deps.notifications;
 		this.registrar = deps.registrar;
 		this.noteQueue = deps.noteQueue;
-		this.aiClient = new AIClient(deps.getSettings);
+		this.aiClient = new AIClient(deps.getSettings, 'tidy');
 		this.store = new TidyStore(deps.plugin.app, deps.getSettings);
 	}
 

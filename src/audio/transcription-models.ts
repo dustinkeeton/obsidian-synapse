@@ -36,6 +36,38 @@ export function resolveTranscriptionModel(
 	return Object.keys(options)[0] ?? '';
 }
 
+/** Vendor labels for the transcription dropdown; local Whisper is not offered yet. */
+const TRANSCRIPTION_PROVIDER_LABELS: Partial<Record<TranscriptionProvider, string>> = {
+	'whisper-api': 'OpenAI',
+	deepgram: 'Deepgram',
+	gemini: 'Google Gemini',
+};
+
+export function encodeTranscriptionChoice(provider: TranscriptionProvider, model: string): string {
+	return `${provider}:${resolveTranscriptionModel(provider, model)}`;
+}
+
+/** Inverse of {@link encodeTranscriptionChoice}; `undefined` for an unknown or hidden choice. */
+export function decodeTranscriptionChoice(value: string): { provider: TranscriptionProvider; model: string } | undefined {
+	const sep = value.indexOf(':');
+	if (sep < 0) return undefined;
+	const provider = value.slice(0, sep) as TranscriptionProvider;
+	const model = value.slice(sep + 1);
+	if (!(provider in TRANSCRIPTION_PROVIDER_LABELS) || !(model in transcriptionModelOptions(provider))) return undefined;
+	return { provider, model };
+}
+
+/** Every offered transcription provider/model pair, labelled "Vendor · Model". */
+export function transcriptionChoiceOptions(): Record<string, string> {
+	const options: Record<string, string> = {};
+	for (const [provider, label] of Object.entries(TRANSCRIPTION_PROVIDER_LABELS) as [TranscriptionProvider, string][]) {
+		for (const [model, modelLabel] of Object.entries(transcriptionModelOptions(provider))) {
+			options[encodeTranscriptionChoice(provider, model)] = `${label} · ${modelLabel}`;
+		}
+	}
+	return options;
+}
+
 /**
  * The `response_format` to request from the OpenAI transcription endpoint.
  * Only whisper-1 accepts `verbose_json`; the GPT transcription models reject
