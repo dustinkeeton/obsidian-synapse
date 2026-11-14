@@ -403,7 +403,7 @@ export class DeepDiveModule implements FeatureModule {
 				const { topic } = task;
 				const cacheUse: CacheUse = {};
 				const aiOpts = trackAiCache(cacheUse);
-				const noteContent = await this.generator.generateContent(topic, source.title, source.content, aiOpts);
+				const noteContent = await this.generator.generateContent(topic, source.title, source.path, source.content, aiOpts);
 				const proposedPath = await this.buildProposedPath(topic.title, rootFile, source.parentProposedPath, aiOpts);
 
 				// Score quality using child topics (extracted from generated content)

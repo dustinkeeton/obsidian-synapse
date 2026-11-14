@@ -45,7 +45,10 @@ function createVault() {
 		metadataCache: {
 			getFileCache: vi.fn().mockReturnValue(null),
 			getFirstLinkpathDest: vi.fn((lp: string) =>
-				[...files.keys()].some((p) => basename(p) === lp.toLowerCase()) ? {} : null),
+				[...files.keys()].some((p) => {
+					const target = lp.toLowerCase();
+					return target.includes('/') ? p.replace(/\.md$/, '').toLowerCase() === target : basename(p) === target;
+				}) ? {} : null),
 		},
 	};
 }
@@ -128,7 +131,7 @@ describe('deep dive accept writes no unresolved links (#581)', () => {
 			expect(unresolvedIn(content), path).toEqual([]);
 		}
 		const syllabus = [...env.files.entries()].find(([p]) => p.includes('Deep Dive -- Root'))![1];
-		expect(syllabus).toContain('[[Kept]]');
+		expect(syllabus).toContain('[[Deep Dives/Root/Kept|Kept]]');
 		expect(syllabus).not.toContain('Dropped');
 	});
 

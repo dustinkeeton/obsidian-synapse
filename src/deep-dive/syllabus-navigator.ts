@@ -61,13 +61,11 @@ export function computeTraversalOrder(
 	return nodes;
 }
 
-/**
- * Build a wiki-link for Obsidian from a file path.
- * Extracts the basename (without extension) for the link text.
- */
+/** Path-qualified wiki-link displaying the basename; bare basenames collide across runs (#607). */
 export function wikiLink(path: string): string {
-	const basename = path.replace(/\.md$/, '').split('/').pop() || path;
-	return `[[${basename}]]`;
+	const linkpath = path.replace(/\.md$/, '');
+	const basename = linkpath.split('/').pop() || linkpath;
+	return linkpath === basename ? `[[${basename}]]` : `[[${linkpath}|${basename}]]`;
 }
 
 /**
@@ -157,9 +155,9 @@ export function buildNavigationContext(
  * Format:
  * > [!note|synapse-nav] Deep Dive Navigation
  * > Machine Learning > Neural Networks > Backpropagation
- * > **Root:** [[Machine Learning]] | **Up:** [[Neural Networks]]
- * > **Prev:** [[Activation Functions]] | **Next:** [[Regularization Techniques]]
- * > *Part 3 of 6 in [[Deep Dive -- Machine Learning]]*
+ * > **Root:** [[Machine Learning]] | **Up:** [[Deep Dives/Machine Learning/Neural Networks|Neural Networks]]
+ * > **Prev:** [[Deep Dives/Machine Learning/Neural Networks/Activation Functions|Activation Functions]] | **Next:** [[Deep Dives/Machine Learning/Regularization Techniques|Regularization Techniques]]
+ * > *Part 3 of 6 in [[Deep Dives/Machine Learning/Deep Dive -- Machine Learning|Deep Dive -- Machine Learning]]*
  */
 export function renderNavigationBlock(ctx: NavigationContext): string {
 	const lines: string[] = [];
@@ -263,12 +261,9 @@ export function buildTreeFromNodes(
  *
  * ## Topics
  *
- * 1. [[Neural Networks]]
- *    1. [[Backpropagation]]
- *    2. [[Activation Functions]]
- * 2. [[Gradient Descent]]
- *    1. [[Learning Rate Schedules]]
- * 3. [[Regularization Techniques]]
+ * 1. [[Deep Dives/Machine Learning/Neural Networks|Neural Networks]]
+ *    1. [[Deep Dives/Machine Learning/Neural Networks/Backpropagation|Backpropagation]]
+ *    ...
  *
  * ## Topic Map
  *

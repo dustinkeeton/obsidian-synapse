@@ -37,7 +37,7 @@ describe('NoteGenerator — image embed preservation', () => {
 			relatedUrls: [],
 		};
 
-		await generator.generateContent(topic, 'Parent Note', 'Source content here');
+		await generator.generateContent(topic, 'Parent Note', 'notes/Parent Note.md', 'Source content here');
 
 		expect(mockComplete).toHaveBeenCalledOnce();
 		const [, systemPrompt] = mockComplete.mock.calls[0];
@@ -56,7 +56,7 @@ describe('NoteGenerator — image embed preservation', () => {
 			relatedUrls: ['https://example.com'],
 		};
 
-		await generator.generateContent(topic, 'Parent Note', 'Source content');
+		await generator.generateContent(topic, 'Parent Note', 'notes/Parent Note.md', 'Source content');
 
 		const [, systemPrompt] = mockComplete.mock.calls[0];
 		expect(systemPrompt).toContain('reference them naturally in the text');
@@ -75,7 +75,7 @@ describe('NoteGenerator — image embed preservation', () => {
 			relatedUrls: [],
 		};
 
-		await generator.generateContent(topic, 'Parent Note', 'Source content');
+		await generator.generateContent(topic, 'Parent Note', 'notes/Parent Note.md', 'Source content');
 
 		const [, systemPrompt] = mockComplete.mock.calls[0];
 		expect(systemPrompt).toContain('do NOT write [[wikilinks]]');
@@ -100,7 +100,7 @@ describe('NoteGenerator — voice setting (#540)', () => {
 
 	it('keeps the encyclopedic rule and appends the neutral voice fragment by default', async () => {
 		const settings = structuredClone(DEFAULT_SETTINGS);
-		await new NoteGenerator(() => settings).generateContent(topic, 'Parent', 'Source');
+		await new NoteGenerator(() => settings).generateContent(topic, 'Parent', 'notes/Parent.md', 'Source');
 
 		const [, systemPrompt] = mockComplete.mock.calls[0];
 		expect(systemPrompt).toContain('Write in an encyclopedic, informative tone');
@@ -111,12 +111,34 @@ describe('NoteGenerator — voice setting (#540)', () => {
 	it('picks up a voice change on the next call without rebuilding the generator', async () => {
 		const settings: SynapseSettings = structuredClone(DEFAULT_SETTINGS);
 		const generator = new NoteGenerator(() => settings);
-		await generator.generateContent(topic, 'Parent', 'Source');
+		await generator.generateContent(topic, 'Parent', 'notes/Parent.md', 'Source');
 		settings.ai.voice = 'match-note';
-		await generator.generateContent(topic, 'Parent', 'Source');
+		await generator.generateContent(topic, 'Parent', 'notes/Parent.md', 'Source');
 
 		expect(mockComplete.mock.calls[0][1]).toContain('neutral, third-person voice');
 		expect(mockComplete.mock.calls[1][1]).toContain('Match the register and grammatical person');
 		expect(mockComplete.mock.calls[1][1]).not.toContain('neutral, third-person voice');
+	});
+});
+
+describe('NoteGenerator — parent link (#607)', () => {
+	const topic: ExtractedTopic = { title: 'Design', description: '', relevance: 0.8, existsInVault: false, relatedUrls: [] };
+
+	beforeEach(() => mockComplete.mockClear());
+
+	it('path-qualifies the parent link when injecting into existing frontmatter', async () => {
+		mockComplete.mockResolvedValue('---\ntags: [topic]\n---\n\nBody.');
+		const out = await new NoteGenerator(() => structuredClone(DEFAULT_SETTINGS))
+			.generateContent(topic, 'Untitled', 'Projects/Alpha/Untitled.md', 'Source');
+
+		expect(out).toContain('parent: "[[Projects/Alpha/Untitled|Untitled]]"');
+	});
+
+	it('path-qualifies the parent link when adding frontmatter', async () => {
+		mockComplete.mockResolvedValue('Body.');
+		const out = await new NoteGenerator(() => structuredClone(DEFAULT_SETTINGS))
+			.generateContent(topic, 'Untitled', 'Projects/Beta/Untitled.md', 'Source');
+
+		expect(out.startsWith('---\nparent: "[[Projects/Beta/Untitled|Untitled]]"\n---\n')).toBe(true);
 	});
 });
