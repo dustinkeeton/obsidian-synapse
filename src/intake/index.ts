@@ -701,9 +701,7 @@ export class IntakeModule implements FeatureModule {
 	}
 
 	/**
-	 * Build an Obsidian wiki-link to a path (mirrors deep-dive's `wikiLink`:
-	 * `[[basename]]`). Inlined rather than imported to keep the intake module's
-	 * import boundary (only `obsidian` + `src/shared/*`).
+	 * Build an Obsidian wiki-link to a path as `[[basename]]`.
 	 */
 	private wikiLink(path: string): string {
 		return `[[${this.basenameOf(path)}]]`;

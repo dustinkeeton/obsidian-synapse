@@ -1,5 +1,6 @@
 import type { DeepDiveProposal, DeepDiveRun, NavigationContext, TraversalNode } from './types';
 import { generateTreeDiagram, TreeNode, CALLOUT_TYPES, calloutHeaderLine, calloutHeaderSource } from '../shared';
+import type { LinkpathFor } from '../shared';
 
 /**
  * Compute depth-first traversal order from accepted proposals in a run.
@@ -61,13 +62,12 @@ export function computeTraversalOrder(
 	return nodes;
 }
 
-/**
- * Build a wiki-link for Obsidian from a file path.
- * Extracts the basename (without extension) for the link text.
- */
-export function wikiLink(path: string): string {
-	const basename = path.replace(/\.md$/, '').split('/').pop() || path;
-	return `[[${basename}]]`;
+/** Wiki-link displaying the basename, path-qualified by `linkpathFor` when the basename collides (#607). */
+export function wikiLink(path: string, linkpathFor: LinkpathFor): string {
+	const bare = path.replace(/\.md$/, '');
+	const basename = bare.split('/').pop() || bare;
+	const linkpath = linkpathFor(path) ?? basename;
+	return linkpath === basename ? `[[${basename}]]` : `[[${linkpath}|${basename}]]`;
 }
 
 /**
@@ -157,11 +157,11 @@ export function buildNavigationContext(
  * Format:
  * > [!note|synapse-nav] Deep Dive Navigation
  * > Machine Learning > Neural Networks > Backpropagation
- * > **Root:** [[Machine Learning]] | **Up:** [[Neural Networks]]
- * > **Prev:** [[Activation Functions]] | **Next:** [[Regularization Techniques]]
- * > *Part 3 of 6 in [[Deep Dive -- Machine Learning]]*
+ * > **Root:** [[Machine Learning]] | **Up:** [[Deep Dives/Machine Learning/Neural Networks|Neural Networks]]
+ * > **Prev:** [[Deep Dives/Machine Learning/Neural Networks/Activation Functions|Activation Functions]] | **Next:** [[Deep Dives/Machine Learning/Regularization Techniques|Regularization Techniques]]
+ * > *Part 3 of 6 in [[Deep Dives/Machine Learning/Deep Dive -- Machine Learning|Deep Dive -- Machine Learning]]*
  */
-export function renderNavigationBlock(ctx: NavigationContext): string {
+export function renderNavigationBlock(ctx: NavigationContext, linkpathFor: LinkpathFor): string {
 	const lines: string[] = [];
 	lines.push(calloutHeaderLine(CALLOUT_TYPES.nav, 'Deep Dive Navigation'));
 
@@ -170,9 +170,9 @@ export function renderNavigationBlock(ctx: NavigationContext): string {
 	lines.push(`> ${breadcrumbLine}`);
 
 	// Root and Up line
-	const rootLink = `**Root:** ${wikiLink(ctx.root.path)}`;
+	const rootLink = `**Root:** ${wikiLink(ctx.root.path, linkpathFor)}`;
 	if (ctx.up) {
-		lines.push(`> ${rootLink} | **Up:** ${wikiLink(ctx.up.path)}`);
+		lines.push(`> ${rootLink} | **Up:** ${wikiLink(ctx.up.path, linkpathFor)}`);
 	} else {
 		lines.push(`> ${rootLink}`);
 	}
@@ -180,17 +180,17 @@ export function renderNavigationBlock(ctx: NavigationContext): string {
 	// Prev and Next line
 	const parts: string[] = [];
 	if (ctx.prev) {
-		parts.push(`**Prev:** ${wikiLink(ctx.prev.path)}`);
+		parts.push(`**Prev:** ${wikiLink(ctx.prev.path, linkpathFor)}`);
 	}
 	if (ctx.next) {
-		parts.push(`**Next:** ${wikiLink(ctx.next.path)}`);
+		parts.push(`**Next:** ${wikiLink(ctx.next.path, linkpathFor)}`);
 	}
 	if (parts.length > 0) {
 		lines.push(`> ${parts.join(' | ')}`);
 	}
 
 	// Position indicator
-	lines.push(`> *Part ${ctx.position} of ${ctx.total} in ${wikiLink(ctx.syllabus.path)}*`);
+	lines.push(`> *Part ${ctx.position} of ${ctx.total} in ${wikiLink(ctx.syllabus.path, linkpathFor)}*`);
 
 	return lines.join('\n');
 }
@@ -263,12 +263,9 @@ export function buildTreeFromNodes(
  *
  * ## Topics
  *
- * 1. [[Neural Networks]]
- *    1. [[Backpropagation]]
- *    2. [[Activation Functions]]
- * 2. [[Gradient Descent]]
- *    1. [[Learning Rate Schedules]]
- * 3. [[Regularization Techniques]]
+ * 1. [[Deep Dives/Machine Learning/Neural Networks|Neural Networks]]
+ *    1. [[Deep Dives/Machine Learning/Neural Networks/Backpropagation|Backpropagation]]
+ *    ...
  *
  * ## Topic Map
  *
@@ -282,7 +279,8 @@ export function buildTreeFromNodes(
  */
 export function renderSyllabusContent(
 	nodes: TraversalNode[],
-	run: DeepDiveRun
+	run: DeepDiveRun,
+	linkpathFor: LinkpathFor
 ): string {
 	const rootTitle = run.rootNotePath.replace(/\.md$/, '').split('/').pop() || run.rootNotePath;
 
@@ -302,7 +300,7 @@ export function renderSyllabusContent(
 		counterByParent.set(parentKey, count);
 
 		const indent = '   '.repeat(node.depth);
-		const link = wikiLink(node.proposedPath);
+		const link = wikiLink(node.proposedPath, linkpathFor);
 		lines.push(`${indent}${count}. ${link}`);
 	}
 
@@ -323,7 +321,7 @@ export function renderSyllabusContent(
 
 	lines.push('');
 	lines.push('---');
-	lines.push(`*Generated from ${wikiLink(run.rootNotePath)} -- ${nodes.length} note${nodes.length === 1 ? '' : 's'} across ${depthCount} depth${depthCount === 1 ? '' : 's'}*`);
+	lines.push(`*Generated from ${wikiLink(run.rootNotePath, linkpathFor)} -- ${nodes.length} note${nodes.length === 1 ? '' : 's'} across ${depthCount} depth${depthCount === 1 ? '' : 's'}*`);
 
 	return lines.join('\n');
 }
