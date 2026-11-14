@@ -80,18 +80,15 @@ describe('applySectionReset — 1:1 top-level subtrees', () => {
 });
 
 describe('applySectionReset — audio (scoped: keep credentials)', () => {
-	it('restores the four behavior fields but PRESERVES the six credential/provider fields', () => {
+	it('restores the four behavior fields but PRESERVES the six transcription provider fields', () => {
 		const s = freshSettings();
 		// Behavior customizations (owned by the Audio section)…
 		s.audio.enabled = false;
 		s.audio.language = 'es';
 		s.audio.autoFormatLyrics = false;
 		s.audio.postProcessing.removeFiller = false;
-		// …and credential/provider customizations (owned by AI configuration).
+		// …and transcription provider customizations (owned by AI configuration).
 		s.audio.transcriptionProvider = 'deepgram';
-		s.audio.whisperApiKey = 'sk-whisper';
-		s.audio.deepgramApiKey = 'dg-key';
-		s.audio.geminiApiKey = 'gm-key';
 		s.audio.transcriptionModel = 'gpt-transcribe';
 		s.audio.localWhisperPath = '/opt/whisper';
 
@@ -104,9 +101,6 @@ describe('applySectionReset — audio (scoped: keep credentials)', () => {
 		expect(s.audio.postProcessing).toEqual(DEFAULT_SETTINGS.audio.postProcessing);
 		// …credentials/provider left exactly as the user set them.
 		expect(s.audio.transcriptionProvider).toBe('deepgram');
-		expect(s.audio.whisperApiKey).toBe('sk-whisper');
-		expect(s.audio.deepgramApiKey).toBe('dg-key');
-		expect(s.audio.geminiApiKey).toBe('gm-key');
 		expect(s.audio.transcriptionModel).toBe('gpt-transcribe');
 		expect(s.audio.localWhisperPath).toBe('/opt/whisper');
 	});
@@ -123,15 +117,12 @@ describe('applySectionReset — audio (scoped: keep credentials)', () => {
 });
 
 describe('applySectionReset — ai (restores ai + audio credentials)', () => {
-	it('restores the ai group and the six audio credential/provider fields', () => {
+	it('restores the ai group and the three transcription provider fields', () => {
 		const s = freshSettings();
 		s.ai.provider = 'anthropic';
 		s.ai.apiKey = 'sk-ai';
-		s.ai.temperature = 0.1;
+		s.ai.effort = 'high';
 		s.audio.transcriptionProvider = 'deepgram';
-		s.audio.whisperApiKey = 'sk-whisper';
-		s.audio.deepgramApiKey = 'dg-key';
-		s.audio.geminiApiKey = 'gm-key';
 		s.audio.transcriptionModel = 'gpt-transcribe';
 		s.audio.localWhisperPath = '/opt/whisper';
 		// A behavior field the AI reset must NOT touch.
@@ -141,9 +132,6 @@ describe('applySectionReset — ai (restores ai + audio credentials)', () => {
 
 		expect(s.ai).toEqual(DEFAULT_SETTINGS.ai);
 		expect(s.audio.transcriptionProvider).toBe(DEFAULT_SETTINGS.audio.transcriptionProvider);
-		expect(s.audio.whisperApiKey).toBe('');
-		expect(s.audio.deepgramApiKey).toBe('');
-		expect(s.audio.geminiApiKey).toBe('');
 		expect(s.audio.transcriptionModel).toBe(DEFAULT_SETTINGS.audio.transcriptionModel);
 		expect(s.audio.localWhisperPath).toBe('');
 		// Audio behavior is out of scope for an AI reset.
@@ -250,19 +238,16 @@ describe('sectionMatchesDefaults', () => {
 			expect(sectionMatchesDefaults(p, 'audio')).toBe(false);
 		});
 
-		it('is NOT dirtied by the credential/provider fields (owned by AI configuration)', () => {
+		it('is NOT dirtied by the transcription provider fields (owned by AI configuration)', () => {
 			const s = freshSettings();
 			s.audio.transcriptionProvider = 'deepgram';
-			s.audio.whisperApiKey = 'sk-whisper';
-			s.audio.deepgramApiKey = 'dg-key';
-			s.audio.geminiApiKey = 'gm-key';
 			s.audio.transcriptionModel = 'gpt-transcribe';
 			s.audio.localWhisperPath = '/opt/whisper';
 			expect(sectionMatchesDefaults(s, 'audio')).toBe(true);
 		});
 	});
 
-	describe('ai (ai group + the six audio credential/provider fields)', () => {
+	describe('ai (ai group + the three transcription provider fields)', () => {
 		it('goes false when an ai-group field diverges', () => {
 			const s = freshSettings();
 			s.ai.apiKey = 'sk-ai';
@@ -271,9 +256,6 @@ describe('sectionMatchesDefaults', () => {
 
 		const AI_CREDENTIAL_MUTATIONS: Array<[string, (s: SynapseSettings) => void]> = [
 			['transcriptionProvider', (s) => { s.audio.transcriptionProvider = 'deepgram'; }],
-			['whisperApiKey', (s) => { s.audio.whisperApiKey = 'sk-whisper'; }],
-			['deepgramApiKey', (s) => { s.audio.deepgramApiKey = 'dg-key'; }],
-			['geminiApiKey', (s) => { s.audio.geminiApiKey = 'gm-key'; }],
 			['transcriptionModel', (s) => { s.audio.transcriptionModel = 'gpt-transcribe'; }],
 			['localWhisperPath', (s) => { s.audio.localWhisperPath = '/opt/whisper'; }],
 		];
@@ -300,7 +282,6 @@ describe('applyResetAll', () => {
 		const s = freshSettings();
 		s.ai.apiKey = 'sk';
 		s.elaboration.enabled = false;
-		s.audio.deepgramApiKey = 'dg';
 		s.exclusions = [];
 
 		const result = applyResetAll(s);

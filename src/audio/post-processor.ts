@@ -5,7 +5,9 @@ import { segmentTranscript, trimRepeatedContext, type TranscriptSegment } from '
 
 // Conservative chars-per-token estimate; real ratios are usually higher.
 const CHARS_PER_TOKEN = 4;
-// Share of ai.maxTokens a section may occupy, leaving headroom for a rewrite that grows.
+// Output budget one post-processing call is sized for; longer transcripts are split into sections.
+const CALL_TOKEN_BUDGET = 2048;
+// Share of the budget a section may occupy, leaving headroom for a rewrite that grows.
 const SECTION_TOKEN_SHARE = 0.6;
 const OVERLAP_SHARE = 0.1;
 // Matches the inter-file pause AudioModule uses between provider calls.
@@ -32,6 +34,8 @@ export interface PostProcessorDeps {
 	/** Sink for the single end-of-run notice when sections were kept raw. */
 	notify?: (message: string) => void;
 	delayMs?: number;
+	/** Overrides {@link CALL_TOKEN_BUDGET}; tests use a small one to force sectioning. */
+	tokenBudget?: number;
 }
 
 export class PostProcessor {
@@ -41,7 +45,7 @@ export class PostProcessor {
 		private getSettings: () => SynapseSettings,
 		private deps: PostProcessorDeps = {}
 	) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'audio');
 	}
 
 	async process(rawTranscript: string, opts: PostProcessOptions = {}): Promise<string> {
@@ -54,7 +58,7 @@ export class PostProcessor {
 		const sectionInstructions = buildInstructions(settings, false);
 		if (sectionInstructions.length === 0 && !keyPoints) return rawTranscript;
 
-		const { maxTokens } = this.getSettings().ai;
+		const maxTokens = this.deps.tokenBudget ?? CALL_TOKEN_BUDGET;
 		const estimatedTokens = Math.ceil(rawTranscript.length / CHARS_PER_TOKEN);
 		if (estimatedTokens <= maxTokens) {
 			const response = await this.aiClient.complete(

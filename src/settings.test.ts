@@ -51,10 +51,6 @@ describe('Gemini provider settings (#251)', () => {
 		}
 	});
 
-	it('defaults the dedicated Gemini transcription key to empty', () => {
-		expect(DEFAULT_SETTINGS.audio.geminiApiKey).toBe('');
-	});
-
 	it('enables lyric auto-formatting by default (#234)', () => {
 		expect(DEFAULT_SETTINGS.audio.autoFormatLyrics).toBe(true);
 	});
@@ -84,8 +80,6 @@ describe('OpenAI model options (#519)', () => {
 			'gpt-5.6-sol',
 			'gpt-5.6-terra',
 			'gpt-5.6-luna',
-			'gpt-4o',
-			'gpt-4o-mini',
 		]);
 	});
 

@@ -32,7 +32,7 @@ describe('"Fetch a fresh transcript" bypasses the AI post-processing cache (#527
 	let content: string;
 	const settings = structuredClone(DEFAULT_SETTINGS);
 	settings.exclusions = [];
-	settings.ai.temperature = 0;
+	settings.ai.cacheResponses = true;
 	settings.audio.postProcessing.enabled = true;
 	settings.audio.postProcessing.addStructure = true;
 

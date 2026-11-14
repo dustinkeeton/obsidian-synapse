@@ -23,7 +23,7 @@ Exported from `index.ts`:
 interface AIRequestOptions {                          // ai-client.ts:21; type re-exported from the barrel (#527)
   bypassCache?: boolean                               // forces fresh dispatch for "regenerate"
   onCacheHit?: () => void                             // #527; called only when the response is replayed from the cache (never for a dispatch, a bypass, or a coalesced join)
-  model?: string                                      // ai-client.ts:31; per-call model (e.g. image.visionModel); chat() resolves `opts.model || ai.model` (:337), keys the cache on it, and threads it through dispatch() to every provider call — settings.ai.model is never mutated
+  model?: string                                      // ai-client.ts:31; per-call model (e.g. image.visionModel); chat() resolves `opts.model || resolveAIConfig(settings, feature).model`, keys the cache on it, and threads it through dispatch() to every provider call — settings.ai.model is never mutated
 }
 class AIClient {
   constructor(getSettings: () => SynapseSettings)
@@ -33,13 +33,13 @@ class AIClient {
 function extractGeminiResponseText(json: unknown): string  // throws on blocked/empty 200 shapes
 export { redactSecrets }                              // re-export of redact.ts (back-compat; redactError is NOT re-exported here)
 // chat()/complete() wrap a private dispatch() with an opt-in per-instance LRU response cache (max 50)
-// + in-flight coalescing (#397). Cacheable when ai.temperature === 0 OR ai.cacheResponses === true.
-// Key = contentKey([JSON(messages), provider, model, temperature, maxTokens]); bypassCache skips the
+// + in-flight coalescing (#397). Cacheable when ai.cacheResponses === true.
+// Key = contentKey([JSON(messages), provider, model, effort]) over the resolved config; bypassCache skips the
 // cache read + coalescing but still refreshes the cache; only successful dispatches are cached.
 
 // safe-request.ts (#558; extracted from ai-client.ts, shared by AIClient and DecisionClient)
 class ApiRequestError extends Error { readonly status: number }   // safe-request.ts:12; message = `API error (<status>): <redactSecrets(detail)>`
-function safeRequest(options: RequestUrlParam, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<RequestUrlResponse>   // safe-request.ts:32; requestUrl({...options, throw:false}) raced against the timeout (120s); throws ApiRequestError on status >= 400; a requestUrl rejection (dropped connection) retries after NETWORK_RETRY_DELAYS_MS [1s, 3s], first waiting for activeDocument to be visible again; a RequestTimeoutError retries only if the page was hidden during the attempt; HTTP errors never retry here
+function safeRequest(options: RequestUrlParam, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<RequestUrlResponse>   // safe-request.ts:32; requestUrl({...options, throw:false}) raced against the timeout (120s default; AIClient passes `aiRequestTimeoutMs(provider, model, effort)`, 600s for an effort-controlled model unless Low); throws ApiRequestError on status >= 400; a requestUrl rejection (dropped connection) retries after NETWORK_RETRY_DELAYS_MS [1s, 3s], first waiting for activeDocument to be visible again; a RequestTimeoutError retries only if the page was hidden during the attempt; HTTP errors never retry here
 
 // decision-client.ts (#558) — System 1 lane over TypeSafe's POST /v1/systemone; NOT an AIProvider
 const SYSTEM_ONE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'   // :9
@@ -66,7 +66,7 @@ function chunkQuestions<Q>(state: string, questions: Record<string, Q>): Array<R
 class DecisionClient {
   constructor(getSettings: () => SynapseSettings)                                     // :220
   isEnabled(): boolean                                                                // :223; ai.systemOne.enabled && apiKey non-blank — seats skip the lane entirely otherwise
-  decide<Q>(state: string, questions: Q, opts?: DecisionRequestOptions): Promise<DecisionResult<Q>>   // :229; one request per chunk, answers merged, usage summed; Authorization: Bearer <key>; withRetry x3 (1s base) on 429/529 only; cacheable under the same rule as AIClient (temperature 0 or cacheResponses), key = contentKey([state, JSON(chunk), model]); bypassCache re-dispatches; onCacheHit fires once if any chunk replayed; failures never cached
+  decide<Q>(state: string, questions: Q, opts?: DecisionRequestOptions): Promise<DecisionResult<Q>>   // :229; one request per chunk, answers merged, usage summed; Authorization: Bearer <key>; withRetry x3 (1s base) on 429/529 only; cacheable under the same rule as AIClient (cacheResponses), key = contentKey([state, JSON(chunk), model]); bypassCache re-dispatches; onCacheHit fires once if any chunk replayed; failures never cached
 }
 
 // confidence-router.ts (#558)
@@ -509,7 +509,7 @@ function stripTrackingParams(url: string): string   // drops utm_*, fbclid, gcli
 
 // settings-migrations.ts (#93: version-stamped settings migration runner)
 interface SettingsMigration { to: number; migrate: (raw: Record<string, unknown>) => Record<string, unknown> }
-const CURRENT_SETTINGS_VERSION: number                 // 4 (highest migration `to`; DEFAULT_SETTINGS stamps this)
+const CURRENT_SETTINGS_VERSION: number                 // 8 (highest migration `to`; DEFAULT_SETTINGS stamps this)
 const SETTINGS_MIGRATIONS: SettingsMigration[]         // ordered chain: v1 excludeFolders->exclusions (#307), v2 drop inert rem.semanticMatching
 function readSettingsVersion(raw: Record<string, unknown> | null | undefined): number   // 0 when absent/non-numeric
 function migrateSettings(raw: Record<string, unknown>, fromVersion: number): Record<string, unknown>   // clones, replays migrations with to > fromVersion
@@ -635,7 +635,8 @@ function scoreLyricsContent(content: string): number
 | `decision-client.test.ts` | Tests | Builders, chunking + budget error, request shape (Bearer, throw:false), 401/422/429/529/timeout/malformed paths, key redaction, cache hit/bypass/no-cache-on-failure |
 | `confidence-router.ts` | `routeByConfidence`, `partitionByConfidence`, `DecisionLane`, `RoutedDecision`, `ConfidenceRoute`, `ConfidencePartition` | Confidence routing (#558): act on the System 1 answer at or above the floor, otherwise run the generative fallback exactly once (lane off / null / below floor / throw). Imports `redact` |
 | `confidence-router.test.ts` | Tests | Above/at/below floor, disabled, null, throw (redacted warn), fallback-once, partition |
-| `ai-client.ts` | `AIClient`, `AIRequestOptions`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support. `chat()`/`complete()` accept `opts?: AIRequestOptions` and wrap a private `dispatch(messages, requestedModel)` with an opt-in per-instance LRU response cache (max 50) + in-flight coalescing (#397; key via `contentKey` over messages + provider + resolved model + temperature + maxTokens); `opts.model` overrides `ai.model` for that call only (`:337`) and is passed to `callOpenAI/Anthropic/Gemini/Ollama(messages, requestedModel)`; `resolveModelId`, `cacheGet`/`cacheSet`, `to*Content` (internal). Imports `safeRequest` from `safe-request.ts` (#558), `redactSecrets` from `redact.ts`, `contentKey` from `hash-utils.ts` |
+| `ai-client.ts` | `AIClient`, `AIRequestOptions`, `extractGeminiResponseText`, re-export `redactSecrets` | Multi-provider AI completion (openai/anthropic/gemini/ollama) with multi-modal support. `chat()`/`complete()` accept `opts?: AIRequestOptions` and wrap a private `dispatch(messages, requestedModel)` with an opt-in per-instance LRU response cache (max 50) + in-flight coalescing (#397; key via `contentKey` over messages + resolved provider + model + effort); constructor takes an optional `AIFeatureId`; each call resolves a `ResolvedAIConfig` (provider/model/apiKey/ollamaEndpoint) via `resolveAIConfig`, `opts.model` overrides its model for that call only, and the config is passed to `callOpenAI/Anthropic/Gemini/Ollama(messages, cfg)`; `resolveModelId`, `cacheGet`/`cacheSet`, `to*Content` (internal). Imports `safeRequest` from `safe-request.ts` (#558), `redactSecrets` from `redact.ts`, `contentKey` from `hash-utils.ts` |
+| `ai-config.ts` | `AI_FEATURE_IDS`, `EFFORT_LEVELS`, `anthropicMaxTokens`, `aiRequestTimeoutMs`, `LONG_AI_REQUEST_TIMEOUT_MS`, `ResolvedAIConfig`, `resolveAIConfig`, `hasEffortControl`, `effortStepsFor`, `effortFor`, `switchDefaultProvider`, `effortWireValue`, `aiOverrideFor`, `apiKeyForProvider`, `visionModelOverride`, `extraProviders`, `transcriptionKeyProvider` | Per-feature provider/model/effort resolution over `ai.overrides` + `ai.providerKeys` + `EFFORT_OPTIONS`; default provider always uses `ai.apiKey`; one key per vendor shared by chat and transcription (`extraProviders` lists the non-default vendors needing a key row) |
 | `ai-client.test.ts` | Tests | Per-provider request/response shapes (Gemini, OpenAI, Anthropic) + `redactSecrets` re-export |
 | `redact.ts` | `redactSecrets`, `redactError` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). `redactSecrets` consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts`, `update-checker.ts`, `notifications.ts`; `redactError(value)` renders a caught error to a redacted log-safe string (stack ?? `name: message` -> redactSecrets) for every raw-error console sink (main, data-folder-migration, onboarding, checkpoints, update-checker, transcript-cache, audio, intake, rem, elaboration x2, shared/image-preprocess, transcription x2, clipboard catches in notifications + video settings, fire-and-forget). Behavior covered by `redact.test.ts` |
 | `redact.test.ts` | Tests | Redaction pattern tests |
@@ -740,7 +741,7 @@ function scoreLyricsContent(content: string): number
 | `insertion-point.test.ts` | Tests | Block scanner (fences with blanks, loose lists, tables, callouts, math, quote children), section-lead vs heading-only, mid-paragraph fragment, never-inside-block, blank-line discipline, stale-line fallback, region by type/title in both header spellings (`[!synapse-summary]` and `[!summary|synapse-summary]` resolve to the same identity and label), miss-in-region, prefixed embed/nested callout/mermaid application, depth-2 prefixes, descriptions |
 | `source-context.ts` | `SourceImage`, `SourceContext` | Post-op source material types (#213): URLs and images an action acted on |
 | `extract-image-urls.test.ts` | Tests | `extractImageUrls` ordering/resolution/filters/cap; `fetchPageContentWithImages`; `fetchHtmlDocument` content type |
-| `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching`, `renameWhisperModelToTranscriptionModel`, `replaceRetiredModels`, `RETIRED_MODEL_REPLACEMENTS` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag; v3 renames `audio.whisperModel` -> `audio.transcriptionModel` (#521); v4 repoints retired model ids to vendor replacements |
+| `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching`, `renameWhisperModelToTranscriptionModel`, `replaceRetiredModels`, `RETIRED_MODEL_REPLACEMENTS`, `dropSamplingSettings`, `moveTranscriptionKeys`, `normalizeEfforts`, `RETIRED_EFFORT_REPLACEMENTS` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag; v3 renames `audio.whisperModel` -> `audio.transcriptionModel` (#521); v4 repoints retired model ids to vendor replacements; v5 drops `ai.temperature` / `ai.maxTokens` (#596); v6 replays the v4 remap for gpt-4o / gpt-4o-mini; v7 `moveTranscriptionKeys` moves the audio key fields into `ai.providerKeys`; v8 `normalizeEfforts` maps none / minimal -> low and xhigh -> high (`RETIRED_EFFORT_REPLACEMENTS`) |
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
 | `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:296`) |
 | `settings-merge.test.ts` | Tests | Merge semantics + pollution-key tests |
@@ -769,15 +770,19 @@ AIClient.chat(messages) --> dispatch(messages)
 |     Others: pass-through
 |
 |-- 'openai'    --> POST api.openai.com/v1/chat/completions
-|                   Auth: Bearer {ai.apiKey}; sends max_completion_tokens (never max_tokens);
-|                   temperature omitted for reasoning models
-|-- 'anthropic' --> POST api.anthropic.com/v1/messages
-|                   Auth: x-api-key, system message extracted to top-level field
+|                   Auth: Bearer {resolved apiKey}; system -> role 'developer'; no token cap, no sampling params;
+|                   reasoning_effort when set; finish_reason 'length' throws
+|-- 'anthropic' --> POST api.anthropic.com/v1/messages (anthropic-version 2026-10-21)
+|                   Auth: x-api-key, system message extracted to top-level field; max_tokens
+|                   anthropicMaxTokens(effort) (16384, or 21333 at High/Max); output_config.effort when set;
+|                   never `thinking`; stop_reason 'refusal', 'max_tokens' and 'model_context_window_exceeded' throw
 |-- 'gemini'    --> POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
 |                   Auth: x-goog-api-key; system routed to system_instruction; 'assistant'->'model';
-|                   response parsed via extractGeminiResponseText() (throws on blocked/empty 200)
+|                   generationConfig.thinkingConfig.thinkingLevel LOW/MEDIUM/HIGH when effort is set; no maxOutputTokens;
+|                   response parsed via extractGeminiResponseText() (throws on blocked/empty 200, MAX_TOKENS, CONTINUATION)
 |-- 'ollama'    --> POST {ollamaEndpoint}/api/chat
-|                   HTTPS required (HTTP for localhost only)
+|                   HTTPS required (HTTP for localhost only); think per EFFORT_OPTIONS (gpt-oss: level; qwen3.x /
+|                   gemma4 / deepseek-r1: false at Low); done_reason 'length' throws
 |
 All use Obsidian requestUrl via safeRequest() (120s timeout, redacts secrets in error bodies via redactSecrets)
 ```

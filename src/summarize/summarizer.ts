@@ -18,7 +18,7 @@ export class Summarizer {
 	private client: AIClient;
 
 	constructor(private getSettings: () => SynapseSettings) {
-		this.client = new AIClient(getSettings);
+		this.client = new AIClient(getSettings, 'summarize');
 	}
 
 	async summarize(

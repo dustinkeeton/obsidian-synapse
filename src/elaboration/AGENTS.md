@@ -209,7 +209,7 @@ guardProposal(detection: DetectionResult): Promise<
 >
 ```
 
-- key: `proposalContentKey(notePath, cachedRead(full content), reasons, settings)` (proposer.ts:20) -- `contentKey([...])` hash over `normalizePath(notePath)`, `hashString(content)`, the type-sorted detection reasons, and `ai.provider/model/temperature/maxTokens`. Keyed on inputs (not the model output) so temperature>0 sampling stays deterministic across runs.
+- key: `proposalContentKey(notePath, cachedRead(full content), reasons, settings)` (proposer.ts:20) -- `contentKey([...])` hash over `normalizePath(notePath)`, `hashString(content)`, the type-sorted detection reasons, and the resolved elaboration provider/model (not effort). Keyed on inputs (not the model output) so model sampling stays deterministic across runs.
 - `duplicate`: a pending OR accepted proposal already shares the key -> skip. A `rejected` proposal with the same key does NOT block (the user may retry a declined suggestion).
 - `cap`: pending proposals for the note already >= `proposal.maxProposalsPerNote` -> skip.
 - On skip the caller completes the checkpoint item (or finishes the scanNote op honestly) without saving; on pass the key is forwarded to `generate(detection, key)` so the proposal's `id` and `contentKey` both equal it.
@@ -252,7 +252,7 @@ const MAX_IMAGES_PER_NOTE = 5
 - Finds wiki-link (`![[image.png]]`) and markdown (`![alt](path)`) refs; skips external `http(s)` markdown URLs (vault images only).
 - Caps at `MAX_IMAGES_PER_NOTE` (5).
 - Resolves via `metadataCache.getFirstLinkpathDest`; reads binary; downscales over `settings.image.maxImageSizeMb` (default 5) MB via `preprocessImage` from the `../shared` barrel (image-analyzer.ts:117; downscale surfaced via `notifications.info`, 3s dedup #396).
-- Passes the vision model per call: `aiClient.chat(..., { ...aiOpts, model: settings.image.visionModel || settings.ai.model })` (image-analyzer.ts:150); `settings.ai.model` is never mutated.
+- Passes the vision model per call: `aiClient.chat(..., { ...aiOpts, model: visionModelOverride(settings) })` (image-analyzer.ts:150); `settings.ai.model` is never mutated.
 - Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:412).
 
 ## Configuration
@@ -275,7 +275,7 @@ All under `settings.elaboration` unless noted.
 | `proposal.maxProposalsPerNote` | number | 3 | Per-note pending-proposal cap; `guardProposal` skips with reason `cap` once reached (index.ts:158) |
 | `proposal.preserveFrontmatter` | boolean | true | Defined in settings; not referenced by module code |
 
-Path exclusions use centralized `settings.exclusions: ExclusionRule[]` via `isPathExcluded(path,'elaboration',settings)`; there is no per-module `excludeFolders`. Auto-accept is `settings.autoAccept.elaboration` (default false), passed in via `shouldAutoAccept: () => boolean`; module code never mutates settings. Image analysis reads `settings.image.enabled`, `settings.image.visionModel`, `settings.image.maxImageSizeMb`, `settings.ai.model`. The rewrite system prompt reads `settings.ai.voice`/`settings.ai.voiceCustom` per call via `voiceInstruction` (#540); voice is NOT part of the dedup key. The dedup content key additionally folds in `settings.ai.provider`, `settings.ai.model`, `settings.ai.temperature`, `settings.ai.maxTokens` (`proposalContentKey`, proposer.ts:20).
+Path exclusions use centralized `settings.exclusions: ExclusionRule[]` via `isPathExcluded(path,'elaboration',settings)`; there is no per-module `excludeFolders`. Auto-accept is `settings.autoAccept.elaboration` (default false), passed in via `shouldAutoAccept: () => boolean`; module code never mutates settings. Image analysis reads `settings.image.enabled`, `settings.image.visionModel`, `settings.image.maxImageSizeMb`, and resolves its model through the `image` feature client. The rewrite system prompt reads `settings.ai.voice`/`settings.ai.voiceCustom` per call via `voiceInstruction` (#540); voice is NOT part of the dedup key. The dedup content key additionally folds in the resolved elaboration provider + model + effort (`resolveAIConfig(settings, 'elaboration')`) (`proposalContentKey`, proposer.ts:20).
 
 ## Commands Registered
 

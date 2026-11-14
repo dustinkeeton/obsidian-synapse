@@ -43,14 +43,18 @@ describe('titleContentKey', () => {
 		expect(a).not.toBe(b);
 	});
 
-	it('changes when AI provider/model/temperature/maxTokens change', () => {
+	it('changes when AI provider or model change', () => {
 		const base = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings());
 
 		const provider = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings((s) => { s.ai.provider = 'gemini'; }));
 		const model = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings((s) => { s.ai.model = 'different-model'; }));
-		const temp = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings((s) => { s.ai.temperature = s.ai.temperature + 0.3; }));
-		const tokens = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings((s) => { s.ai.maxTokens = s.ai.maxTokens + 100; }));
 
-		expect(new Set([base, provider, model, temp, tokens]).size).toBe(5);
+		expect(new Set([base, provider, model]).size).toBe(3);
+	});
+
+	it('ignores effort, so a reject still holds after an effort change', () => {
+		const base = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings());
+		const high = titleContentKey(PATH, CONTENT, 'Untitled', 'untitled', settings((s) => { s.ai.effort = 'high'; }));
+		expect(high).toBe(base);
 	});
 });

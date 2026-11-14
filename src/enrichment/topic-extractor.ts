@@ -30,7 +30,7 @@ export class TopicExtractor {
 		private analyzer: VaultAnalyzer,
 		private getSettings: () => SynapseSettings
 	) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'enrichment');
 	}
 
 	/**

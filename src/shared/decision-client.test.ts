@@ -240,7 +240,7 @@ describe('DecisionClient', () => {
 	});
 
 	describe('response cache', () => {
-		it('does not cache by default (temperature 0.7, cacheResponses off)', async () => {
+		it('does not cache by default (cacheResponses off)', async () => {
 			mockRequestUrl.mockResolvedValue(choiceResponse('q', 'a'));
 			const client = new DecisionClient(() => makeSettings());
 			const onCacheHit = vi.fn();
@@ -266,9 +266,9 @@ describe('DecisionClient', () => {
 			expect(second.answers.q.choice).toBe('a');
 		});
 
-		it('caches at temperature 0 and keys on state, questions, and model', async () => {
+		it('keys the cache on state, questions, and model', async () => {
 			mockRequestUrl.mockResolvedValue(choiceResponse('q', 'a'));
-			const client = new DecisionClient(() => makeSettings((s) => { s.ai.temperature = 0; }));
+			const client = new DecisionClient(() => makeSettings((s) => { s.ai.cacheResponses = true; }));
 
 			await client.decide('s', { q: choice('Pick', { a: null }) });
 			await client.decide('s', { q: choice('Pick', { a: null }) });

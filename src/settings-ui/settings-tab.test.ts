@@ -648,13 +648,13 @@ describe('SynapseSettingTab — per-section reset rows (#442)', () => {
 		expect(plugin.saveSettings).not.toHaveBeenCalled();
 	});
 
-	it('scopes the Audio section reset so transcription credentials survive', async () => {
+	it('scopes the Audio section reset so the transcription choice survives', async () => {
 		confirmResult.mockResolvedValue(true);
 		const { tab, plugin } = makeTab((s) => {
 			s.audio.enabled = false;
 			s.audio.language = 'es';
-			s.audio.deepgramApiKey = 'dg-key';
-			s.audio.whisperApiKey = 'sk-whisper';
+			s.audio.transcriptionProvider = 'deepgram';
+			s.audio.transcriptionModel = 'nova-3-medical';
 		});
 		tab.display();
 
@@ -664,9 +664,9 @@ describe('SynapseSettingTab — per-section reset rows (#442)', () => {
 		// Behavior restored…
 		expect(plugin.settings.audio.enabled).toBe(DEFAULT_SETTINGS.audio.enabled);
 		expect(plugin.settings.audio.language).toBe(DEFAULT_SETTINGS.audio.language);
-		// …credentials preserved.
-		expect(plugin.settings.audio.deepgramApiKey).toBe('dg-key');
-		expect(plugin.settings.audio.whisperApiKey).toBe('sk-whisper');
+		// …transcription choice preserved.
+		expect(plugin.settings.audio.transcriptionProvider).toBe('deepgram');
+		expect(plugin.settings.audio.transcriptionModel).toBe('nova-3-medical');
 	});
 });
 

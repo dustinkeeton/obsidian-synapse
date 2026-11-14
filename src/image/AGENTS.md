@@ -41,7 +41,7 @@ interface OCRResult  { text: string; sourceName?: string }           // types.ts
 // extractor.ts:6 — internal class, constructed by ImageModule
 class ImageExtractor {
   constructor(getSettings: () => SynapseSettings, notifications: NotificationManager)
-  extract(imageData: ArrayBuffer, fileName: string, aiOpts?: AIRequestOptions): Promise<OCRResult>   // extractor.ts:16; chat() gets { ...aiOpts, model: image.visionModel || ai.model } (extractor.ts:46, #527)
+  extract(imageData: ArrayBuffer, fileName: string, aiOpts?: AIRequestOptions): Promise<OCRResult>   // extractor.ts:16; chat() gets { ...aiOpts, model: visionModelOverride(settings) } (extractor.ts:46, #527)
 }
 
 ```
@@ -94,7 +94,7 @@ private insertExtractions(noteFile: TFile, embeds: ImageEmbed[], op: OperationHa
    arrayBufferToBase64(processed.data)  [shared]
    ContentBlock[] = [ { type:'image', data, mediaType }, { type:'text', text: OCR prompt } ]
    AIClient.chat([{role:'system', content:'You are an OCR assistant...'}, {role:'user', content: blocks}],
-                 { ...aiOpts, model: image.visionModel || ai.model })   // extractor.ts:43-46; settings never mutated
+                 { ...aiOpts, model: visionModelOverride(settings) })   // extractor.ts:43-46; settings never mutated
    -> OCRResult { text, sourceName: fileName }
 
 Output callout (collapsed):
@@ -112,7 +112,7 @@ Output callout (collapsed):
 
 ## Vision Model Override
 
-`ImageExtractor.extract()` (extractor.ts:46) passes `{ ...aiOpts, model: settings.image.visionModel || settings.ai.model }` to `AIClient.chat()`. `AIRequestOptions.model` (`shared/ai-client.ts:31`) is a per-call override: `chat()` resolves `opts.model || ai.model` (`shared/ai-client.ts:337`), keys the response cache on it, and threads it through `dispatch` to every provider call. `settings.ai.model` is never mutated, so concurrent callers cannot observe a foreign model. Empty `visionModel` means no override.
+`ImageExtractor.extract()` (extractor.ts:46) passes `{ ...aiOpts, model: visionModelOverride(settings) }` to `AIClient.chat()`. `AIRequestOptions.model` (`shared/ai-client.ts:31`) is a per-call override: `chat()` resolves `opts.model || resolveAIConfig(settings, 'image').model`, keys the response cache on it, and threads it through `dispatch` to every provider call. `settings.ai.model` is never mutated, so concurrent callers cannot observe a foreign model. Empty `visionModel` means no override.
 
 ## Exclusion Behavior
 
@@ -134,7 +134,7 @@ Path exclusions use the centralized `settings.exclusions: ExclusionRule[]`:
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
 | `enabled` | boolean | true | Module activation; also gates image analysis in the elaboration proposer |
-| `visionModel` | string | `''` | Override AI model for vision calls (empty = use `ai.model`) |
+| `visionModel` | string | `''` | Override AI model for vision calls (empty = no override; superseded by an `ai.overrides.image` entry) |
 | `language` | string | `''` | Language hint; reserved, not consumed anywhere |
 | `maxImageSizeMb` | number | 5 | Max base64 payload (MB) before `preprocessImage` auto-downscales |
 

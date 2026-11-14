@@ -110,7 +110,7 @@ export class NoteAnalyzer {
 	private ai: AIClient;
 
 	constructor(private getSettings: () => SynapseSettings) {
-		this.ai = new AIClient(getSettings);
+		this.ai = new AIClient(getSettings, 'illustrate');
 	}
 
 	async analyze(notePath: string, body: string, opts?: AIRequestOptions): Promise<IllustrateSpot[]> {

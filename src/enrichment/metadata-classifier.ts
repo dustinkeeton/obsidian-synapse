@@ -40,7 +40,7 @@ export class MetadataClassifier {
 	private decisionClient: DecisionClient;
 
 	constructor(private getSettings: () => SynapseSettings) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'enrichment');
 		this.decisionClient = new DecisionClient(getSettings);
 	}
 

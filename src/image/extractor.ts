@@ -1,4 +1,4 @@
-import { AIClient, NotificationManager, arrayBufferToBase64, preprocessImage } from '../shared';
+import { AIClient, NotificationManager, arrayBufferToBase64, preprocessImage, visionModelOverride } from '../shared';
 import type { AIRequestOptions, ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
 import { OCRResult } from './types';
@@ -10,7 +10,7 @@ export class ImageExtractor {
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager
 	) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'image');
 	}
 
 	async extract(imageData: ArrayBuffer, fileName: string, aiOpts?: AIRequestOptions): Promise<OCRResult> {
@@ -43,7 +43,7 @@ export class ImageExtractor {
 		const text = await this.aiClient.chat([
 			{ role: 'system', content: 'You are an OCR assistant. Extract text from images accurately.' },
 			{ role: 'user', content: contentBlocks },
-		], { ...aiOpts, model: settings.image.visionModel || settings.ai.model });
+		], { ...aiOpts, model: visionModelOverride(settings) });
 		return { text, sourceName: fileName };
 	}
 

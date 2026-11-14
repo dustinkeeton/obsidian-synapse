@@ -1,5 +1,5 @@
 import { App, TFile } from 'obsidian';
-import { AIClient, arrayBufferToBase64, NotificationManager, preprocessImage, redactError } from '../shared';
+import { AIClient, arrayBufferToBase64, NotificationManager, preprocessImage, redactError, visionModelOverride } from '../shared';
 import type { AIRequestOptions, ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
 
@@ -29,7 +29,7 @@ export class ImageAnalyzer {
 		private getSettings: () => SynapseSettings,
 		private notifications: NotificationManager
 	) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'image');
 	}
 
 	/**
@@ -147,7 +147,7 @@ METADATA: Any observable metadata clues (timestamps visible in the image, camera
 				content: 'You are an image analysis assistant. Analyze images and provide structured descriptions. Be concise but thorough. Focus on factual observations.',
 			},
 			{ role: 'user', content: contentBlocks },
-		], { ...aiOpts, model: settings.image.visionModel || settings.ai.model });
+		], { ...aiOpts, model: visionModelOverride(settings) });
 
 		return this.parseAnalysisResponse(ref.reference, response);
 	}

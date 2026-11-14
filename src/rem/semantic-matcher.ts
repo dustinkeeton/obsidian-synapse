@@ -112,7 +112,7 @@ export class SemanticMatcher {
 		private app: App,
 		private getSettings: () => SynapseSettings
 	) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'rem');
 		this.decisionClient = new DecisionClient(getSettings);
 	}
 

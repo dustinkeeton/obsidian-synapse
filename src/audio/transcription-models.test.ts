@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+	decodeTranscriptionChoice,
+	encodeTranscriptionChoice,
 	hasTranscriptionModelOptions,
+	transcriptionChoiceOptions,
 	resolveTranscriptionModel,
 	transcriptionModelOptions,
 	whisperResponseFormat,
@@ -108,5 +111,31 @@ describe('whisperResponseFormat (#521)', () => {
 
 	it('falls back to json for the GPT transcription models, which reject verbose_json', () => {
 		expect(whisperResponseFormat('gpt-transcribe')).toBe('json');
+	});
+});
+
+describe('transcription choices', () => {
+	it('lists every offered provider/model pair and hides local Whisper', () => {
+		const options = transcriptionChoiceOptions();
+		expect(options['whisper-api:gpt-transcribe']).toBe('OpenAI · GPT Transcribe');
+		expect(options['deepgram:nova-3-general']).toBe('Deepgram · Nova-3 General');
+		expect(Object.keys(options).some((k) => k.startsWith('local-whisper:'))).toBe(false);
+	});
+
+	it('round-trips through encode and decode', () => {
+		for (const value of Object.keys(transcriptionChoiceOptions())) {
+			const choice = decodeTranscriptionChoice(value);
+			expect(choice && encodeTranscriptionChoice(choice.provider, choice.model)).toBe(value);
+		}
+	});
+
+	it('encodes a stale model as the provider\'s first model', () => {
+		expect(encodeTranscriptionChoice('deepgram', 'whisper-1')).toBe('deepgram:nova-3-general');
+	});
+
+	it('rejects unknown, hidden and malformed choices', () => {
+		expect(decodeTranscriptionChoice('deepgram:bogus')).toBeUndefined();
+		expect(decodeTranscriptionChoice('local-whisper:')).toBeUndefined();
+		expect(decodeTranscriptionChoice('nonsense')).toBeUndefined();
 	});
 });

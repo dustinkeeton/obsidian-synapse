@@ -4,10 +4,9 @@ import type { SettingsSectionContext } from '../shared';
 /**
  * Render the Audio Transcription settings accordion (#243).
  *
- * The transcription provider dropdown and its provider-specific API-key fields
- * live in the AI Configuration section (#332, see
- * {@link renderTranscriptionCredentials}); this section owns the remaining
- * audio settings (language, lyrics formatting, post-processing).
+ * The transcription provider and model are chosen in the AI configuration's
+ * per-feature model list (`renderTranscriptionSetting`); this section owns the
+ * remaining audio settings (language, lyrics formatting, post-processing).
  */
 export function renderAudioSettings(ctx: SettingsSectionContext): void {
 	const { plugin } = ctx;

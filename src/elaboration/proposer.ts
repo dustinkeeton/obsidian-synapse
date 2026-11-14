@@ -1,6 +1,6 @@
 import { App, TFile, getAllTags, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, redactError, isPathExcluded, findUrls, isEffectivelyEmptyProse, splitRawFrontmatter, voiceInstruction } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, redactError, isPathExcluded, findUrls, isEffectivelyEmptyProse, splitRawFrontmatter, voiceInstruction, resolveAIConfig } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
 import type { AIRequestOptions } from '../shared';
 import { DetectionResult, DetectionReason, Proposal } from './types';
@@ -10,7 +10,7 @@ import { DetectionResult, DetectionReason, Proposal } from './types';
  *
  * Keying on the *inputs* (note path + content + detection reasons + the AI
  * settings that shape the request) rather than the model's *output* is what
- * makes re-scanning an unchanged note idempotent: temperature > 0 sampling
+ * makes re-scanning an unchanged note idempotent: model sampling
  * would otherwise yield different text — and thus a different key — every run.
  *
  * `detectionReasons` are sorted by `type` before serializing because detector
@@ -23,14 +23,13 @@ export function proposalContentKey(
 	reasons: DetectionReason[],
 	settings: SynapseSettings
 ): string {
+	const { provider, model } = resolveAIConfig(settings, 'elaboration');
 	return contentKey([
 		normalizePath(notePath),
 		hashString(content),
 		JSON.stringify([...reasons].sort((a, b) => a.type.localeCompare(b.type))),
-		settings.ai.provider,
-		settings.ai.model,
-		String(settings.ai.temperature),
-		String(settings.ai.maxTokens),
+		provider,
+		model,
 	]);
 }
 
@@ -64,7 +63,7 @@ export class ProposalGenerator {
 		private notifications: NotificationManager,
 		private contextBudgetChars: number = DEFAULT_CONTEXT_BUDGET_CHARS
 	) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'elaboration');
 		this.imageAnalyzer = new ImageAnalyzer(app, getSettings, notifications);
 	}
 

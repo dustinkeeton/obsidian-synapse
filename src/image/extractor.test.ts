@@ -86,26 +86,35 @@ describe('ImageExtractor', () => {
 	});
 
 	it('uses vision model when configured', async () => {
-		settings.image.visionModel = 'gpt-4o';
-		settings.ai.model = 'gpt-4o-mini';
+		settings.image.visionModel = 'gpt-6-astra';
+		settings.ai.model = 'gpt-6-luna';
 
 		const buffer = makeImageBuffer();
 		await extractor.extract(buffer, 'screenshot.png');
 
-		expect(mockChat.mock.calls[0][1]?.model).toBe('gpt-4o');
-		expect(settings.ai.model).toBe('gpt-4o-mini');
+		expect(mockChat.mock.calls[0][1]?.model).toBe('gpt-6-astra');
+		expect(settings.ai.model).toBe('gpt-6-luna');
 	});
 
 	it('falls back to default model when no vision model set', async () => {
 		settings.image.visionModel = '';
-		settings.ai.model = 'gpt-4o';
+		settings.ai.model = 'gpt-6-astra';
 
 		const buffer = makeImageBuffer();
 		await extractor.extract(buffer, 'screenshot.png');
 
-		expect(mockChat.mock.calls[0][1]?.model).toBe('gpt-4o');
-		expect(settings.ai.model).toBe('gpt-4o');
+		expect(mockChat.mock.calls[0][1]?.model).toBeUndefined();
+		expect(settings.ai.model).toBe('gpt-6-astra');
 		expect(mockChat).toHaveBeenCalledOnce();
+	});
+
+	it('lets an image override supersede the vision model', async () => {
+		settings.image.visionModel = 'gpt-6-luna';
+		settings.ai.overrides = { image: { provider: 'gemini', model: 'gemini-3.8-flash' } };
+
+		await extractor.extract(makeImageBuffer(), 'screenshot.png');
+
+		expect(mockChat.mock.calls[0][1]?.model).toBeUndefined();
 	});
 
 	it('maps jpeg extension to correct media type', async () => {
@@ -141,13 +150,13 @@ describe('ImageExtractor', () => {
 	});
 
 	it('leaves the configured model untouched when chat throws', async () => {
-		settings.image.visionModel = 'gpt-4o';
-		settings.ai.model = 'gpt-4o-mini';
+		settings.image.visionModel = 'gpt-6-astra';
+		settings.ai.model = 'gpt-6-luna';
 		mockChat.mockRejectedValue(new Error('API error'));
 
 		const buffer = makeImageBuffer();
 		await expect(extractor.extract(buffer, 'screenshot.png')).rejects.toThrow('API error');
 
-		expect(settings.ai.model).toBe('gpt-4o-mini');
+		expect(settings.ai.model).toBe('gpt-6-luna');
 	});
 });

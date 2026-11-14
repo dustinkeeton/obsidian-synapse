@@ -28,7 +28,7 @@ function isSectionVisible(entry: SettingsSectionEntry, platform?: { isDesktop: b
 function renderDevBuildBanner(containerEl: HTMLElement, info: BuildInfo, version: string): void   // settings-tab.ts:66 — `.synapse-dev-build-banner` callout: bold "Development build" lead + `describeDevBuild` detail
 
 // global-sections.ts
-function renderAiConfiguration(ctx: SettingsSectionContext): void   // :83  configSection('ai'); hosts renderTranscriptionCredentials, renderVoiceSetting (:244, #540) and, last, renderSystemOneCredentials (:247, #558)
+function renderAiConfiguration(ctx: SettingsSectionContext): void   // :83  configSection('ai'); hosts renderAiOverrides (transcription row first, then per-feature rows and extra vendor keys), renderVoiceSetting (:244, #540) and, last, renderSystemOneCredentials (:247, #558)
 function renderAutoAccept(ctx: SettingsSectionContext): void        // :283 configSection('autoAccept'); subscribes via ctx.onFeatureToggle
 function renderExclusions(ctx: SettingsSectionContext): void        // :354 configSection('exclusions')
 function renderGeneral(ctx: SettingsSectionContext): void           // :443 configSection('general')
@@ -69,7 +69,7 @@ function renderSystemOneCredentials(body: HTMLElement, ctx: SettingsSectionConte
 | `MODEL_OPTIONS`, `AIProvider` (type) | `../settings` | `global-sections.ts:2-3` |
 | `addEnhancedSlider`, `FolderPickerModal`, `ALL_FEATURE_IDS`, `renderFeatureChipSelect`, `PROVIDER_METADATA`, `aiProviderToCredential`, `decorateCredentialField`, `ConfirmModal`, `applyResetAll` + types | `../shared` | `global-sections.ts:4-20` |
 | `PROPOSAL_KINDS`, `ProposalKind` (type) | `../views` | `global-sections.ts:21-22` |
-| `renderTranscriptionCredentials` | `../audio` | `global-sections.ts:23` |
+| `renderTranscriptionSetting` | `../audio` | `ai-overrides.ts` |
 | `renderSystemOneCredentials` | `./system-one-credentials` | `global-sections.ts:24` |
 | `renderVoiceSetting` | `./voice-setting` | `global-sections.ts:25` |
 | `Setting`, `setIcon` · `VOICE_OPTIONS`, `SettingsSectionContext` + `VoiceMode` (types) | `obsidian` · `../shared` | `voice-setting.ts:1-3` |

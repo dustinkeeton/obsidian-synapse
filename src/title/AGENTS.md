@@ -81,7 +81,7 @@ function titleContentKey(
 ): string
 ```
 
-Keys over INPUTS: `normalizePath(notePath)`, `hashString(content)`, `currentTitle`, `trigger`, `ai.provider`, `ai.model`, `ai.temperature`, `ai.maxTokens`. Mirrors `proposalContentKey` in `elaboration/proposer.ts`. Keying on inputs (not the model's output) makes re-scanning an unchanged note idempotent so the reject-loop dedup guard holds despite temperature>0 sampling.
+Keys over INPUTS: `normalizePath(notePath)`, `hashString(content)`, `currentTitle`, `trigger`, the resolved title provider + model, not effort (`resolveAIConfig(settings, 'title')`). Mirrors `proposalContentKey` in `elaboration/proposer.ts`. Keying on inputs (not the model's output) makes re-scanning an unchanged note idempotent so the reject-loop dedup guard holds despite model sampling.
 
 ## renderTitleSettings (`settings-section.ts`)
 
@@ -243,7 +243,7 @@ Out: constructed by `modules/registry.ts:14` (TitleModule); `main.ts:192` wires 
 - Collision is rechecked LIVE at accept time (#408): `computeTargetPath` is recomputed and a stale `conflictsWith` never drives a rename. A plain manual Accept on a live collision NEVER overwrites — it surfaces "Add suffix or Merge" and leaves the proposal pending (`{ status: 'conflict' }`). Auto-accept derives the resolution from `settings.title.duplicateHandling`.
 - `iterate` renames to the next free `-1`/`-2` path via `findAvailableVaultPath`; `merge` folds the note into the existing one (frontmatter union — target wins scalars, tags+aliases unioned — bodies joined by a horizontal rule) and trashes the source (recoverable). `merge` falls back to a plain rename when the target is not a TFile.
 - Reject-loop dedup (#408): both check methods skip when an existing proposal has the same `contentKey` and `status !== 'accepted'`. Editing the note changes the content hash → key → a new proposal is allowed; an `accepted` proposal never blocks.
-- `contentKey` is computed from inputs BEFORE the AI call (temperature>0 output would otherwise vary every run).
+- `contentKey` is computed from inputs BEFORE the AI call (sampled output would otherwise vary every run).
 - Auto-accept for title RENAMES (or MERGES) the file; the notice reflects the REAL outcome (suffixed name / merge target), not the originally proposed title (#408).
 - Renames use `vault.rename` (NOT `fileManager.renameFile`) on purpose: Obsidian's automatic link update would rewrite the visible prose of referencing notes. Instead every resolving accept branch snapshots inbound links first (`collectInboundLinks`, feature-detected `metadataCache.getBacklinksForFile`, backlink-remediation.ts:45 — no-op if absent) and rewrites them afterwards with display text preserved byte-for-byte; embeds retarget without an alias (#485). Merge retargets links from the trashed source title to the surviving note.
 - `checkTitle` is silent: no notifications until a proposal is confirmed or auto-accepted. The Review toast is gated through `reviewAction()` and suppressed for `postOp` invocations (#366) and when auto-accept is on. The only surface during the AI call is a non-cancellable unified-sidebar in-progress row (`trackInProgress`, `index.ts:128`, `index.ts:216`; #577).

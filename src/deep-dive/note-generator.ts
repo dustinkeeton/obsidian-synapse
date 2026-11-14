@@ -11,7 +11,7 @@ export class NoteGenerator {
 	private aiClient: AIClient;
 
 	constructor(private getSettings: () => SynapseSettings, private linkpathFor: LinkpathFor) {
-		this.aiClient = new AIClient(getSettings);
+		this.aiClient = new AIClient(getSettings, 'deep-dive');
 	}
 
 	/**
