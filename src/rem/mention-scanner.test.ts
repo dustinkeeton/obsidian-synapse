@@ -367,6 +367,7 @@ describe('MentionScanner', () => {
 			const files = [
 				source,
 				makeFile('Deep Dives/2D Animation Production.md'),
+				makeFile('Deep Dives/Untitled.md'),
 				makeFile('Pipeline.md'),
 				makeFile('Notes.md'),
 			];
@@ -392,10 +393,10 @@ describe('MentionScanner', () => {
 			expect(results[0].occurrences.map(o => o.lineNumber)).toEqual([3]);
 		});
 
-		it('never targets the source note or a same-named note', () => {
-			const results = scanner.scan(source, '2D Animation Production covers the pipeline.', 20);
+		it('never targets the source note or an Untitled note, but offers a same-named note', () => {
+			const results = scanner.scan(source, '2D Animation Production covers the untitled pipeline.', 20);
 
-			expect(results.map(r => r.targetPath)).toEqual(['Pipeline.md']);
+			expect(results.map(r => r.targetPath).sort()).toEqual(['Deep Dives/2D Animation Production.md', 'Pipeline.md']);
 		});
 	});
 });

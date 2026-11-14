@@ -84,11 +84,11 @@ interface RemSettings {
 | `mention-scanner.ts` | `MentionScanner` | Phase 1: literal title/alias mention scanning |
 | `semantic-matcher.ts` | `SemanticMatcher`, `RELEVANCE_LEVELS`, `relevanceFromScore`, `anchorSentences`, `RemLaneError`, `NO_ANCHOR` | Phase 2: semantic matching; lane-only (`score` + anchor `choice`) when `ai.systemOne` is on, one generative prompt otherwise (#558, #566) |
 | `overlaps.ts` | `withoutOverlaps` | Drops occurrences overlapping a higher-ranked candidate's, then candidates left with none |
-| `rem-applier.ts` | `RemApplier`, `RemApplyResult` | Inserts `[[wikilinks]]` for accepted candidates after validating each occurrence against the fresh content (re-locate nearest whole-word non-skipped match, else drop; #575) |
+| `rem-applier.ts` | `RemApplier`, `RemApplyResult` | Inserts path-qualified `[[folder/Target|text]]` links (bare `[[Target]]` only for a vault-root note whose name equals the text, #608) for accepted candidates after validating each occurrence against the fresh content (re-locate nearest whole-word non-skipped match, else drop; #575) |
 | `skip-regions.ts` | `SkipRegion`, `buildSkipRegions`, `isInSkipRegion`, `isWordBoundary`, `lineStartOffsets`, `withoutSkipRegions` | Unlinkable ranges (frontmatter, code, wikilinks/embeds, md links, every Synapse-identity callout block in `CALLOUT_TYPES` incl. nav + enrichment, `[!base|synapse-*]` and legacy `[!synapse-*]` headers, #608) shared by scanner, applier, `anchorSentences`, the generative concept filter, and `withoutSkipRegions` |
 | `rem-store.ts` | `RemStore` | Proposal persistence under `rem.remFolderPath` |
 | `settings-section.ts` | `renderRemSettings` | REM settings UI section |
-| `mention-scanner.test.ts` | Tests | MentionScanner tests incl. no candidate inside nav/enrichment callouts and no source or same-named target (#608) |
+| `mention-scanner.test.ts` | Tests | MentionScanner tests incl. no candidate inside nav/enrichment callouts and no source or `Untitled` target, a same-named note still offered (#608) |
 | `auto-accept.test.ts` | Tests | Auto-accept behavior tests (#228) |
 | `rem-applier.test.ts` | Tests | RemApplier tests incl. stale-offset re-locate/drop/dedupe (#575) |
 | `skip-regions.test.ts` | Tests | Skip regions incl. Synapse callouts (summary, nav, enrichment related/references, both header spellings; #608), `withoutSkipRegions` |
@@ -107,9 +107,9 @@ remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private sca
   --> isExcluded? (isPathExcluded 'rem' + enrichment.excludeTags)
   --> notifications.trackInProgress('Finding links in <basename>', { kind: 'rem', target: filePath }) (#577; non-cancellable sidebar row, ended in finally) -> private scanIncludedNote (index.ts:169)
   --> gatherCandidates(file, content, cacheUse):
-        MentionScanner.scan(...) literal candidates (lookup excludes the source and any same-basename note, #608), down-weighted by titleMatchWeight
+        MentionScanner.scan(...) literal candidates (lookup excludes the source and `isUntitled` names, #608), down-weighted by titleMatchWeight
         SemanticMatcher.match(..., trackAiCache(cacheUse)) always-on, filtered by confidenceThreshold   (#527)
-          titles = included notes minus self and any note sharing the source basename (#608), literal matches, and every [[wikilink]] target already in the note (linkedTargets, semantic-matcher.ts:328; getFirstLinkpathDest + link text)
+          titles = included notes minus self and `isUntitled` names (#608), literal matches, and every [[wikilink]] target already in the note (linkedTargets, semantic-matcher.ts:328; getFirstLinkpathDest + link text)
           lane on (matchOnLane, :154) — zero complete() calls (#566):
             anchorSentences(content[0:4000]) (:57; frontmatter/code fences/list markers/skip regions skipped, a `.` between word characters never ends a sentence (Y14.5, #608), sentences with [ ] | ` dropped, deduped, <= MAX_CHOICE_OPTIONS-1); none -> []
             one score per title over RELEVANCE_LEVELS (:26) with its folder in the question; relevance = P(strongly related) only (relevanceFromScore, :41)
@@ -234,4 +234,4 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 | `RemApplier`, `RemApplyResult` | `./rem-applier` |
 | `RemStore` | `./rem-store` |
 
-Internal-file shared imports: `semantic-matcher.ts` imports `AIClient`, `DecisionClient`, `score`, `choice`, `MAX_CHOICE_OPTIONS` (#558, #566), `ChoiceQuestion`/`DecisionRequestOptions`/`ScoreAnswer`/`ScoreQuestion` (types; `match(..., aiOpts?)` forwards `aiOpts` to `decide()` and `complete()`, #527), `isRecord`, `parseJson`, `getIncludedMarkdownFiles`, `redactError` from `../shared`, plus `buildSkipRegions`, `isInSkipRegion`, `lineStartOffsets` from `./skip-regions` (#608). `RemLaneError` renders its cause through `redactError`, and `index.ts` logs the skip through it. Its AI-call failure sink routes `console.warn` through `redactError` (redaction single-source-of-truth); the JSON-parse failure path logs a static message with no error payload. `rem-store.ts` imports `ensureFolder`, `isRecord`, `readJsonFile`; `settings-section.ts` imports `addEnhancedSlider`, `SettingsSectionContext`; `skip-regions.ts` imports `scanBlocks`, `parseCalloutHeader`, `CALLOUT_TYPES`.
+Internal-file shared imports: `semantic-matcher.ts` imports `AIClient`, `DecisionClient`, `score`, `choice`, `MAX_CHOICE_OPTIONS` (#558, #566), `ChoiceQuestion`/`DecisionRequestOptions`/`ScoreAnswer`/`ScoreQuestion` (types; `match(..., aiOpts?)` forwards `aiOpts` to `decide()` and `complete()`, #527), `isRecord`, `parseJson`, `getIncludedMarkdownFiles`, `isUntitled`, `redactError` from `../shared`, plus `buildSkipRegions`, `isInSkipRegion`, `lineStartOffsets` from `./skip-regions` (#608). `RemLaneError` renders its cause through `redactError`, and `index.ts` logs the skip through it. Its AI-call failure sink routes `console.warn` through `redactError` (redaction single-source-of-truth); the JSON-parse failure path logs a static message with no error payload. `rem-store.ts` imports `ensureFolder`, `isRecord`, `readJsonFile`; `settings-section.ts` imports `addEnhancedSlider`, `SettingsSectionContext`; `skip-regions.ts` imports `scanBlocks`, `parseCalloutHeader`, `CALLOUT_TYPES`.

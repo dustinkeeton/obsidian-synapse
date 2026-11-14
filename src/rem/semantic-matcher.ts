@@ -1,7 +1,7 @@
 import type { App, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { RemLinkCandidate, RemOccurrence } from './types';
-import { AIClient, DecisionClient, MAX_CHOICE_OPTIONS, choice, isRecord, parseJson, getIncludedMarkdownFiles, redactError, score } from '../shared';
+import { AIClient, DecisionClient, MAX_CHOICE_OPTIONS, choice, isRecord, parseJson, getIncludedMarkdownFiles, isUntitled, redactError, score } from '../shared';
 import type { ChoiceQuestion, DecisionRequestOptions, ScoreAnswer, ScoreQuestion } from '../shared';
 import { buildSkipRegions, isInSkipRegion, lineStartOffsets } from './skip-regions';
 
@@ -132,10 +132,9 @@ export class SemanticMatcher {
 	): Promise<RemLinkCandidate[]> {
 		const linked = this.linkedTargets(sourceFile, content);
 		const allTitles: NoteTitle[] = [];
-		const sourceName = sourceFile.basename.toLowerCase();
 		for (const file of getIncludedMarkdownFiles(this.app, 'rem', this.getSettings())) {
-			// A same-named note would be written as [[name]], which resolves ambiguously back to the source.
-			if (file.path === sourceFile.path || file.basename.toLowerCase() === sourceName) continue;
+			// Default "Untitled" names carry no meaning to link on.
+			if (file.path === sourceFile.path || isUntitled(file.basename)) continue;
 			if (existingMatches.has(file.path)) continue;
 			if (linked.paths.has(file.path) || linked.names.has(file.basename.toLowerCase()) || linked.names.has(file.path.replace(/\.md$/, '').toLowerCase())) continue;
 			allTitles.push({ path: file.path, title: file.basename, folder: file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '' });

@@ -20,8 +20,8 @@ interface Span {
 
 /**
  * Applies accepted wikilink insertions to note content.
- * Replaces matched text with `[[target|matchedText]]` (or `[[target]]`
- * if the matched text equals the display name).
+ * Replaces matched text with `[[folder/target|matchedText]]` (or `[[target]]`
+ * for a vault-root note whose matched text equals its name).
  *
  * Scan-time offsets are validated against the content being written; an occurrence
  * whose text moved is re-located, and one that cannot be found is dropped.
@@ -111,15 +111,10 @@ export class RemApplier {
 		return best?.span ?? null;
 	}
 
-	/**
-	 * Build the wikilink string for a candidate.
-	 * Uses `[[displayName]]` when the matched text equals the display name,
-	 * otherwise uses `[[displayName|matchedText]]` to preserve the original phrasing.
-	 */
+	/** Path-qualified so a target sharing a basename with another note (or the source) resolves to the target. */
 	private buildWikilink(candidate: RemLinkCandidate): string {
-		if (candidate.matchedText.toLowerCase() === candidate.targetDisplayName.toLowerCase()) {
-			return `[[${candidate.targetDisplayName}]]`;
-		}
-		return `[[${candidate.targetDisplayName}|${candidate.matchedText}]]`;
+		const linkpath = candidate.targetPath.replace(/\.md$/, '');
+		if (linkpath.toLowerCase() === candidate.matchedText.toLowerCase()) return `[[${linkpath}]]`;
+		return `[[${linkpath}|${candidate.matchedText}]]`;
 	}
 }

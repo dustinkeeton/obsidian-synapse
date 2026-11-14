@@ -109,18 +109,31 @@ describe('SemanticMatcher', () => {
 		expect(result[0].occurrences.map((o) => o.lineNumber)).toEqual([9]);
 	});
 
-	it('never offers a same-named note as a target (#608)', async () => {
+	it('offers a same-named note but never an Untitled note as a target (#608)', async () => {
 		const source = mockFile('Deep Dives/Animation/Pipeline.md');
 		const twin = mockFile('Deep Dives/Pipeline.md');
-		const other = mockFile('notes/Storyboards.md');
-		app.vault.getMarkdownFiles.mockReturnValue([source, twin, other]);
+		const untitled = mockFile('Deep Dives/Untitled 2.md');
+		app.vault.getMarkdownFiles.mockReturnValue([source, twin, untitled]);
 		completeSpy.mockResolvedValue('[]');
 
-		await makeMatcher().match(source, 'pipeline and storyboards', new Set(), 10);
+		await makeMatcher().match(source, 'pipeline and an untitled draft', new Set(), 10);
 
 		const userPrompt = completeSpy.mock.calls[0][0];
-		expect(userPrompt).toContain('Storyboards');
-		expect(userPrompt).not.toMatch(/^Pipeline$/m);
+		expect(userPrompt).toMatch(/Pipeline/);
+		expect(userPrompt).not.toMatch(/Untitled/);
+	});
+
+	it('links a same-named note by path so it never resolves back to the source (#608)', async () => {
+		const source = mockFile('Deep Dives/Animation/Pipeline.md');
+		const twin = mockFile('Deep Dives/Pipeline.md');
+		app.vault.getMarkdownFiles.mockReturnValue([source, twin]);
+		completeSpy.mockResolvedValue(JSON.stringify([{ title: 'Pipeline', matchedConcept: 'production pipeline', confidence: 0.9 }]));
+		const content = 'The production pipeline has stages.';
+
+		const candidates = await makeMatcher().match(source, content, new Set(), 10);
+		const { content: linked } = new RemApplier().apply(content, candidates);
+
+		expect(linked).toBe('The [[Deep Dives/Pipeline|production pipeline]] has stages.');
 	});
 
 	it('strips ```json code fences before parsing', async () => {
@@ -174,8 +187,8 @@ describe('SemanticMatcher', () => {
 		const candidates = await makeMatcher().match(source, content, new Set(), 10);
 		const { content: linked } = new RemApplier().apply(content, candidates);
 
-		const resolver = { getFirstLinkpathDest: (lp: string) => vaultFiles.find((f) => f.basename === lp) ?? null };
-		expect(linked).toContain('[[Real|real thing]]');
+		const resolver = { getFirstLinkpathDest: (lp: string) => vaultFiles.find((f) => f.path === `${lp}.md` || f.basename === lp) ?? null };
+		expect(linked).toContain('[[notes/Real|real thing]]');
 		expect(stripUnresolvedLinks(linked, resolver, source.path)).toBe(linked);
 	});
 

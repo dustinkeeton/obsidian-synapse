@@ -8,7 +8,7 @@ function occ(lineNumber: number, lineText: string, startOffset: number, endOffse
 
 function candidate(overrides: Partial<RemLinkCandidate> = {}): RemLinkCandidate {
 	return {
-		targetPath: 'notes/Target.md',
+		targetPath: `${overrides.targetDisplayName ?? 'Target'}.md`,
 		targetDisplayName: 'Target',
 		matchedText: 'Target',
 		matchType: 'title',
@@ -55,7 +55,6 @@ describe('RemApplier', () => {
 			targetDisplayName: 'Target',
 			occurrences: [occ(0, content, 4, 10)],
 		});
-		// matchedText differs in case but is considered equal → bare link, keeping display name casing
 		expect(applier.apply(content, [c]).content).toBe('the [[Target]] note');
 	});
 
@@ -83,8 +82,7 @@ describe('RemApplier', () => {
 			targetDisplayName: 'Beta',
 			occurrences: [occ(1, lines[1], 4, 8)],
 		});
-		// matchedText equals displayName case-insensitively → bare links
-		expect(applier.apply(content, [a, b]).content).toBe('[[Alpha]] here\nand [[Beta]] there');
+		expect(applier.apply(content, [a, b]).content).toBe('[[Alpha]] here\nand [[notes/Beta|beta]] there');
 	});
 
 	it('drops an out-of-range occurrence whose text is nowhere in the content', () => {
@@ -123,7 +121,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [google([occ(0, scanned, 11, 17)])]);
 
-			expect(result.content).toBe('# Title\n\nNew intro line\nI searched [[Google]] today');
+			expect(result.content).toBe('# Title\n\nNew intro line\nI searched [[notes/Google|google]] today');
 			expect(result).toMatchObject({ applied: 1, dropped: 0 });
 		});
 
@@ -133,7 +131,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [google([occ(0, scanned, 11, 17)])]);
 
-			expect(result.content).toBe('Yesterday I searched [[Google]] today');
+			expect(result.content).toBe('Yesterday I searched [[notes/Google|google]] today');
 		});
 
 		it('drops an occurrence whose text was removed and leaves the content intact', () => {
@@ -157,7 +155,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [google([occ(0, scanned, 9, 15)])]);
 
-			expect(result.content).toBe(fresh.replace('Notes on google', 'Notes on [[Google]]'));
+			expect(result.content).toBe(fresh.replace('Notes on google', 'Notes on [[notes/Google|google]]'));
 			expect(result.content).not.toContain('lele');
 		});
 
@@ -184,7 +182,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [google([occ(0, scanned, 0, 6), occ(0, scanned, 11, 17)])]);
 
-			expect(result.content).toBe('only [[Google]] now');
+			expect(result.content).toBe('only [[notes/Google|google]] now');
 			expect(result).toMatchObject({ applied: 1, dropped: 1 });
 		});
 
@@ -194,7 +192,7 @@ describe('RemApplier', () => {
 
 			const result = applier.apply(fresh, [c]);
 
-			expect(result.content).toBe('x [[Google]]\n[[Google]] y');
+			expect(result.content).toBe('x [[notes/Google|google]]\n[[notes/Google|google]] y');
 		});
 	});
 });

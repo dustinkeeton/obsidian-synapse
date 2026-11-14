@@ -1,6 +1,6 @@
 import type { App, CachedMetadata, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
-import { normalizeFrontmatterTags, getIncludedMarkdownFiles } from '../shared';
+import { normalizeFrontmatterTags, getIncludedMarkdownFiles, isUntitled } from '../shared';
 import { buildSkipRegions, isInSkipRegion, isWordBoundary, type SkipRegion } from './skip-regions';
 import type { RemLinkCandidate, RemOccurrence } from './types';
 
@@ -85,13 +85,12 @@ export class MentionScanner {
 	 * sorted by term length descending (longest-match-first).
 	 */
 	private buildLookupTable(sourceFile: TFile): LookupEntry[] {
-		const sourceName = sourceFile.basename.toLowerCase();
 		const entries: LookupEntry[] = [];
 		const files = getIncludedMarkdownFiles(this.app, 'rem', this.getSettings());
 
 		for (const file of files) {
-			// A same-named note would be written as [[name]], which resolves ambiguously back to the source.
-			if (file.path === sourceFile.path || file.basename.toLowerCase() === sourceName) continue;
+			// Default "Untitled" names carry no meaning to link on.
+			if (file.path === sourceFile.path || isUntitled(file.basename)) continue;
 
 			const displayName = file.basename;
 
