@@ -23,8 +23,34 @@ describe('buildSkipRegions', () => {
 		expect(buildSkipRegions(content)).toEqual([{ start, end }]);
 	});
 
-	it('does not cover other callouts', () => {
-		const content = '> [!info|synapse-enrichment] Related\n> networks';
+	it.each([
+		['deep-dive nav', '> [!note|synapse-nav] Deep Dive Navigation\n> Animation > Production pipeline'],
+		['legacy deep-dive nav', '> [!synapse-nav] Deep Dive Navigation\n> Animation > Production pipeline'],
+		['enrichment related notes', '> [!info|synapse-enrichment] Related Notes\n> - [[Storyboards]]'],
+		['legacy enrichment related notes', '> [!synapse-enrichment] Related Notes\n> - [[Storyboards]]'],
+		['enrichment references', '> [!info|synapse-enrichment] References\n> - [Pixar](https://pixar.com) - production pipeline overview'],
+		['legacy enrichment references', '> [!synapse-enrichment] References\n> - [Pixar](https://pixar.com) - production pipeline overview'],
+		['deep-dive', '> [!note|synapse-deep-dive] Deep dive\n> production pipeline'],
+	])('covers a %s callout, header included', (_label, callout) => {
+		const content = `${callout}\n\nafter`;
+		const regions = buildSkipRegions(content);
+
+		expect(isInSkipRegion(0, callout.length, regions)).toBe(true);
+		expect(regions.some(r => r.start === 0 && r.end === callout.length)).toBe(true);
+		expect(isInSkipRegion(content.indexOf('after'), content.length, regions)).toBe(false);
+	});
+
+	it.each([
+		['transcription', '> [!quote|synapse-transcription] Transcription\n> production pipeline'],
+		['OCR', '> [!quote|synapse-ocr] Extracted text\n> production pipeline'],
+		['lyrics', '> [!quote|synapse-lyrics] Lyrics\n> production pipeline'],
+		['legacy elaboration', '> [!synapse-elaboration] Elaboration\n> production pipeline'],
+	])('leaves a %s callout linkable, since it holds the note content', (_label, callout) => {
+		expect(buildSkipRegions(callout)).toEqual([]);
+	});
+
+	it('does not cover a non-Synapse callout', () => {
+		const content = '> [!info] Related\n> networks';
 
 		expect(buildSkipRegions(content)).toEqual([]);
 	});

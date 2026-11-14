@@ -1,6 +1,6 @@
 import type { App, CachedMetadata, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
-import { normalizeFrontmatterTags, getIncludedMarkdownFiles } from '../shared';
+import { normalizeFrontmatterTags, getIncludedMarkdownFiles, isUntitled } from '../shared';
 import { buildSkipRegions, isInSkipRegion, isWordBoundary, type SkipRegion } from './skip-regions';
 import type { RemLinkCandidate, RemOccurrence } from './types';
 
@@ -37,7 +37,7 @@ export class MentionScanner {
 	 * @returns Array of link candidates, sorted by number of occurrences (descending)
 	 */
 	scan(sourceFile: TFile, content: string, maxLinks: number): RemLinkCandidate[] {
-		const lookup = this.buildLookupTable(sourceFile.path);
+		const lookup = this.buildLookupTable(sourceFile);
 		if (lookup.length === 0) return [];
 
 		const skipRegions = buildSkipRegions(content);
@@ -84,13 +84,13 @@ export class MentionScanner {
 	 * Build a lookup table of all vault note titles and aliases,
 	 * sorted by term length descending (longest-match-first).
 	 */
-	private buildLookupTable(sourceFilePath: string): LookupEntry[] {
+	private buildLookupTable(sourceFile: TFile): LookupEntry[] {
 		const entries: LookupEntry[] = [];
 		const files = getIncludedMarkdownFiles(this.app, 'rem', this.getSettings());
 
 		for (const file of files) {
-			// Skip self-references
-			if (file.path === sourceFilePath) continue;
+			// Default "Untitled" names carry no meaning to link on.
+			if (file.path === sourceFile.path || isUntitled(file.basename)) continue;
 
 			const displayName = file.basename;
 

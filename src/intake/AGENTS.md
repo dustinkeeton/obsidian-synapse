@@ -8,7 +8,7 @@ Watches a configurable intake folder and auto-processes newly added/settled note
 
 ## Public API
 
-Exported from `index.ts` (`index.ts:25-33`, `index.ts:727`):
+Exported from `index.ts` (`index.ts:25-33`, `index.ts:725`):
 
 ```ts
 // index.ts:70 — class IntakeModule

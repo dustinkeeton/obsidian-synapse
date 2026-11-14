@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { SemanticMatcher } from './semantic-matcher';
-import { AIClient, stripUnresolvedLinks } from '../shared';
+import { AIClient, linkpathFor, stripUnresolvedLinks } from '../shared';
 import { RemApplier } from './rem-applier';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile } from '../__test-utils__/mock-factories';
@@ -85,6 +85,57 @@ describe('SemanticMatcher', () => {
 		expect(result[0].occurrences[0]).toMatchObject({ lineNumber: 0, startOffset: 20 });
 	});
 
+	it('drops concept occurrences inside Synapse callouts (#608)', async () => {
+		const source = mockFile('notes/Source.md');
+		const target = mockFile('notes/Pipelines.md');
+		app.vault.getMarkdownFiles.mockReturnValue([source, target]);
+		completeSpy.mockResolvedValue(JSON.stringify([{ title: 'Pipelines', matchedConcept: 'pipeline', confidence: 0.9 }]));
+		const content = [
+			'> [!note|synapse-nav] Deep Dive Navigation',
+			'> Production pipeline',
+			'',
+			'> [!info|synapse-enrichment] Related Notes',
+			'> pipeline',
+			'',
+			'> [!synapse-enrichment] References',
+			'> - Pixar - pipeline overview',
+			'',
+			'The pipeline matters.',
+		].join('\n');
+
+		const result = await makeMatcher().match(source, content, new Set(), 10);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].occurrences.map((o) => o.lineNumber)).toEqual([9]);
+	});
+
+	it('offers a same-named note but never an Untitled note as a target (#608)', async () => {
+		const source = mockFile('Deep Dives/Animation/Pipeline.md');
+		const twin = mockFile('Deep Dives/Pipeline.md');
+		const untitled = mockFile('Deep Dives/Untitled 2.md');
+		app.vault.getMarkdownFiles.mockReturnValue([source, twin, untitled]);
+		completeSpy.mockResolvedValue('[]');
+
+		await makeMatcher().match(source, 'pipeline and an untitled draft', new Set(), 10);
+
+		const userPrompt = completeSpy.mock.calls[0][0];
+		expect(userPrompt).toMatch(/Pipeline/);
+		expect(userPrompt).not.toMatch(/Untitled/);
+	});
+
+	it('links a same-named note by path so it never resolves back to the source (#608)', async () => {
+		const source = mockFile('Deep Dives/Animation/Pipeline.md');
+		const twin = mockFile('Deep Dives/Pipeline.md');
+		app.vault.getMarkdownFiles.mockReturnValue([source, twin]);
+		completeSpy.mockResolvedValue(JSON.stringify([{ title: 'Pipeline', matchedConcept: 'production pipeline', confidence: 0.9 }]));
+		const content = 'The production pipeline has stages.';
+
+		const candidates = await makeMatcher().match(source, content, new Set(), 10);
+		const { content: linked } = new RemApplier((path) => linkpathFor(app as unknown as App, path)).apply(content, candidates);
+
+		expect(linked).toBe('The [[Deep Dives/Pipeline|production pipeline]] has stages.');
+	});
+
 	it('strips ```json code fences before parsing', async () => {
 		const source = mockFile('notes/Source.md');
 		const target = mockFile('notes/Topic.md');
@@ -134,9 +185,9 @@ describe('SemanticMatcher', () => {
 		const content = 'A real thing and an imagined thing.';
 
 		const candidates = await makeMatcher().match(source, content, new Set(), 10);
-		const { content: linked } = new RemApplier().apply(content, candidates);
+		const { content: linked } = new RemApplier((path) => linkpathFor(app as unknown as App, path)).apply(content, candidates);
 
-		const resolver = { getFirstLinkpathDest: (lp: string) => vaultFiles.find((f) => f.basename === lp) ?? null };
+		const resolver = { getFirstLinkpathDest: (lp: string) => vaultFiles.find((f) => f.path === `${lp}.md` || f.basename === lp) ?? null };
 		expect(linked).toContain('[[Real|real thing]]');
 		expect(stripUnresolvedLinks(linked, resolver, source.path)).toBe(linked);
 	});

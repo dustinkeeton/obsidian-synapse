@@ -92,6 +92,8 @@ export type { CalloutType, CalloutBase } from './callouts';
 export { buildMediaEmbedLines, mediaEmbedFor } from './media-embed';
 export { stripUnresolvedLinks, wikilinkTargets, linkResolves } from './link-guard';
 export type { LinkResolver, StripLinksOptions } from './link-guard';
+export { linkpathFor } from './linkpath';
+export type { LinkpathFor } from './linkpath';
 export {
 	parseFrontmatter,
 	serializeFrontmatter,

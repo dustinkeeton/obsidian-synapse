@@ -5,7 +5,7 @@ import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule, NoteOperationQueue } from '../shared';
 import type { CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
-import { generateId, getMarkdownFiles, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport, settleOnThrow, type ScanTarget, scanScopeLabel, toScanScope } from '../shared';
+import { generateId, getMarkdownFiles, linkpathFor, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport, settleOnThrow, type ScanTarget, scanScopeLabel, toScanScope } from '../shared';
 import { MentionScanner } from './mention-scanner';
 import { withoutSkipRegions } from './skip-regions';
 import { RemLaneError, SemanticMatcher } from './semantic-matcher';
@@ -32,10 +32,10 @@ export class RemModule implements FeatureModule {
 	private checkpointManager: CheckpointManager;
 	private registrar: CommandRegistrar;
 	private noteQueue: NoteOperationQueue;
-	private store!: RemStore;
-	private scanner!: MentionScanner;
-	private semanticMatcher!: SemanticMatcher;
-	private applier!: RemApplier;
+	private store: RemStore;
+	private scanner: MentionScanner;
+	private semanticMatcher: SemanticMatcher;
+	private applier: RemApplier;
 
 	/** Optional callback to refresh the unified proposal view. */
 	onViewRefreshNeeded: (() => Promise<void>) | null = null;
@@ -58,14 +58,13 @@ export class RemModule implements FeatureModule {
 		this.registrar = deps.registrar;
 		this.noteQueue = deps.noteQueue;
 		if (shouldAutoAccept) this.shouldAutoAccept = shouldAutoAccept;
-	}
-
-	async onload(): Promise<void> {
 		this.store = new RemStore(this.plugin.app, this.getSettings);
 		this.scanner = new MentionScanner(this.plugin.app, this.getSettings);
 		this.semanticMatcher = new SemanticMatcher(this.plugin.app, this.getSettings);
-		this.applier = new RemApplier();
+		this.applier = new RemApplier((path) => linkpathFor(this.plugin.app, path));
+	}
 
+	async onload(): Promise<void> {
 		await this.store.init();
 
 		// Command: scan current note

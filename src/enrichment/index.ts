@@ -365,7 +365,8 @@ export class EnrichmentModule implements FeatureModule {
 					proposal.result.internalLinks =
 						this.linkResolver.mergeTopicCandidates(
 							extras,
-							proposal.result.internalLinks
+							proposal.result.internalLinks,
+							notePath
 						);
 					await this.store.save(proposal);
 				}
@@ -539,7 +540,8 @@ export class EnrichmentModule implements FeatureModule {
 		// Merge topic-extracted links with graph-based links
 		const internalLinks = this.linkResolver.mergeTopicCandidates(
 			topicLinks,
-			graphLinks
+			graphLinks,
+			file.path
 		);
 
 		const result: EnrichmentResult = {

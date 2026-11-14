@@ -68,6 +68,7 @@ export class TopicExtractor {
 
 			if (matchedPath) {
 				// Existing note — skip if already linked
+				if (matchedPath === notePath) continue;
 				if (existingSet.has(matchedPath)) continue;
 				if (seenPaths.has(matchedPath)) continue;
 				seenPaths.add(matchedPath);

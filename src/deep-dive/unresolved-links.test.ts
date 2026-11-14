@@ -30,6 +30,7 @@ function createVault() {
 		adapterFiles,
 		vault: {
 			getAbstractFileByPath: vi.fn((p: string) => (files.has(p) ? new TFile(p) : null)),
+			getMarkdownFiles: vi.fn(() => [...files.keys()].map((p) => new TFile(p))),
 			read: vi.fn(async (f: TFile) => files.get(f.path) ?? ''),
 			create: vi.fn(async (p: string, c: string) => { files.set(p, c); return new TFile(p); }),
 			process: vi.fn(async (f: TFile, fn: (d: string) => string) => { files.set(f.path, fn(files.get(f.path) ?? '')); }),
@@ -45,7 +46,10 @@ function createVault() {
 		metadataCache: {
 			getFileCache: vi.fn().mockReturnValue(null),
 			getFirstLinkpathDest: vi.fn((lp: string) =>
-				[...files.keys()].some((p) => basename(p) === lp.toLowerCase()) ? {} : null),
+				[...files.keys()].some((p) => {
+					const target = lp.toLowerCase();
+					return target.includes('/') ? p.replace(/\.md$/, '').toLowerCase() === target : basename(p) === target;
+				}) ? {} : null),
 		},
 	};
 }

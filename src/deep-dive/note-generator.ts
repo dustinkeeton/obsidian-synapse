@@ -1,7 +1,8 @@
 import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse, stripCodeFences, voiceInstruction } from '../shared';
-import type { AIRequestOptions } from '../shared';
+import type { AIRequestOptions, LinkpathFor } from '../shared';
 import { ExtractedTopic } from './types';
+import { wikiLink } from './syllabus-navigator';
 
 /**
  * Generates full markdown content for a child note based on an extracted topic.
@@ -9,7 +10,7 @@ import { ExtractedTopic } from './types';
 export class NoteGenerator {
 	private aiClient: AIClient;
 
-	constructor(private getSettings: () => SynapseSettings) {
+	constructor(private getSettings: () => SynapseSettings, private linkpathFor: LinkpathFor) {
 		this.aiClient = new AIClient(getSettings, 'deep-dive');
 	}
 
@@ -17,11 +18,13 @@ export class NoteGenerator {
 	 * Generate content for a new note about the given topic.
 	 * @param topic         The extracted topic to expand
 	 * @param sourceTitle   Title of the parent note
+	 * @param sourcePath    Vault path of the parent note (target of the `parent:` link)
 	 * @param sourceContent Content of the parent note (for context)
 	 */
 	async generateContent(
 		topic: ExtractedTopic,
 		sourceTitle: string,
+		sourcePath: string,
 		sourceContent: string,
 		aiOpts?: AIRequestOptions
 	): Promise<string> {
@@ -50,10 +53,11 @@ Context from parent note (for reference, do not repeat):
 ${sourceContent.slice(0, 2000)}`;
 
 		const content = await this.aiClient.complete(userPrompt, systemPrompt, aiOpts);
-		return this.cleanContent(stripCodeFences(sanitizeAIResponse(content)), topic, sourceTitle);
+		return this.cleanContent(stripCodeFences(sanitizeAIResponse(content)), sourcePath);
 	}
 
-	private cleanContent(content: string, topic: ExtractedTopic, sourceTitle: string): string {
+	private cleanContent(content: string, sourcePath: string): string {
+		const parentLink = wikiLink(sourcePath, this.linkpathFor).replace(/[\\"]/g, '\\$&');
 		let cleaned = content.trim();
 
 		// If AI added an H1 title, remove it (Obsidian uses filename)
@@ -61,11 +65,11 @@ ${sourceContent.slice(0, 2000)}`;
 
 		// Ensure frontmatter exists with at minimum a parent link
 		if (!cleaned.startsWith('---')) {
-			cleaned = `---\nparent: "[[${sourceTitle}]]"\n---\n\n${cleaned}`;
+			cleaned = `---\nparent: "${parentLink}"\n---\n\n${cleaned}`;
 		} else {
 			// Inject parent link into existing frontmatter if not present
 			if (!cleaned.includes('parent:')) {
-				cleaned = cleaned.replace(/^---\n/, `---\nparent: "[[${sourceTitle}]]"\n`);
+				cleaned = cleaned.replace(/^---\n/, `---\nparent: "${parentLink}"\n`);
 			}
 		}
 

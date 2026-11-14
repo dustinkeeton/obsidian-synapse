@@ -100,8 +100,9 @@ Note: `TagVocabularyEntry`, `EnrichmentSettings`, and `EnrichmentWeightSettings`
 | `vault-analyzer.ts` | `VaultAnalyzer` | Cached vault-wide `TagIndex`, `LinkGraph`, and per-key frontmatter value sets (#563) from `MetadataCache`; invalidated on `'resolved'` event |
 | `weight-calculator.ts` | `computeProximityWeight` | Pure function: folder-proximity scoring |
 | `metadata-classifier.ts` | `MetadataClassifier` | Tag classification against the user-defined vocabulary: System 1 `choice` per category when `ai.systemOne` is on, generative prompt for the rest (#558); rejects hallucinated tags |
-| `topic-extractor.ts` | `TopicExtractor` | AI topic extraction; matched topics → `InternalLinkCandidate`; unmatched topics accumulated for multi-note resolution |
-| `link-resolver.ts` | `LinkResolver` | Graph-based internal link candidates (link hops, shared tags, folder proximity); merges with topic candidates |
+| `topic-extractor.ts` | `TopicExtractor` | AI topic extraction; matched topics (never the source note itself, #609) → `InternalLinkCandidate`; unmatched topics accumulated for multi-note resolution |
+| `link-resolver.ts` | `LinkResolver` | Graph-based internal link candidates (link hops, shared tags, folder proximity); merges with topic candidates and drops self-links (#609) |
+| `self-link.ts` | `isSelfLink`, `withoutSelfLinks` | Self-link predicate over path / resolved linkpath (basename / alias only for an unresolved linkpath); used by `mergeTopicCandidates` and `EnrichmentApplier.apply` (#609) |
 | `prompt-builder.ts` | `PromptBuilder` | AI prompts for external link suggestions; frontmatter suggestions with a System 1 `choice` per lane key first when `ai.systemOne` is on (#563) |
 | `enrichment-store.ts` | `EnrichmentStore` | CRUD for enrichment proposal JSON files in the enrichment folder |
 | `enrichment-applier.ts` | `EnrichmentApplier` | Applies/undoes accepted enrichments to note content non-destructively via `vault.process` |
@@ -140,8 +141,11 @@ class TopicExtractor {
 class LinkResolver {
   constructor(app: App, analyzer: VaultAnalyzer, getSettings: () => SynapseSettings)
   findInternalLinks(file: TFile, existingLinkPaths: string[]): InternalLinkCandidate[]
-  mergeTopicCandidates(topicCandidates: InternalLinkCandidate[], graphCandidates: InternalLinkCandidate[]): InternalLinkCandidate[]
+  mergeTopicCandidates(topicCandidates: InternalLinkCandidate[], graphCandidates: InternalLinkCandidate[], sourcePath: string): InternalLinkCandidate[]   // drops self-links via withoutSelfLinks (#609)
 }
+// self-link.ts (#609)
+function isSelfLink(candidate: Pick<InternalLinkCandidate, 'targetPath' | 'displayText'>, app: App, sourcePath: string): boolean   // :22; targetPath === source, or getFirstLinkpathDest(linkpath)?.path === source; only when the linkpath does not resolve: linkpath === source basename or a source frontmatter alias (case-insensitive)
+function withoutSelfLinks<T>(candidates: T[], app: App, sourcePath: string): T[]   // :38
 // prompt-builder.ts
 class PromptBuilder {
   constructor(getSettings: () => SynapseSettings)
@@ -226,7 +230,7 @@ enrich(filePath, trigger, options?)
        ├─ TopicExtractor.extractTopics(.., aiOpts)  → InternalLinkCandidate[] (topics)
        ├─ PromptBuilder.suggestExternalLinks(.., aiOpts)  → ExternalLinkCandidate[]
        ├─ PromptBuilder.suggestFrontmatter(.., aiOpts, keys => analyzer.buildFrontmatterValueIndex(keys))    → FrontmatterEnrichment[]   (System 1 choice per key over existing vault values first when ai.systemOne is on, #563)
-       ├─ LinkResolver.mergeTopicCandidates(topicLinks, graphLinks)
+       ├─ LinkResolver.mergeTopicCandidates(topicLinks, graphLinks, file.path)   [drops links back to the note itself, #609]
        └─ EnrichmentStore.save(proposal)  [skipped when totalItems === 0 → returns null]
   └─ topicExtractor.clearPending(); op.finish(withCacheReport('Enrichment proposal created' | 'No enrichments needed', [cacheUse]), reviewAction(...)) [#527; Review toast unless postOp/auto-accept #366]; maybeAutoAccept(id) [if shouldAutoAccept()]
   └─ refreshView() → onViewRefreshNeeded()
@@ -240,7 +244,7 @@ scanVault(target?, skipConfirmation?, onlyFile?)
            noteQueue.run(path, ...) per note (#483, silent); completeItem() per file
   Phase 4: TopicExtractor.resolveNewNoteCandidates()
            → topics cited by 2+ notes → new-note InternalLinkCandidates
-           → merged into existing proposals via LinkResolver.mergeTopicCandidates()
+           → merged into existing proposals via LinkResolver.mergeTopicCandidates(extras, internalLinks, notePath) (self-links dropped, #609)
   Auto-accept (#228): runs AFTER Phase 4 so merged candidates are included; batch mode (one summary Notice);
            each apply takes its own note's queue slot: noteQueue.run(notePath, () => maybeAutoAccept(id, true)) (#483)
   Finish: withCacheReport('Generated N proposals' | 'Resumed -- generated N proposals', cacheUses, 'note') — one aggregated cache line, one CacheUse per note processed incl. notes that needed no enrichment (#527)
@@ -251,7 +255,7 @@ scanVault(target?, skipConfirmation?, onlyFile?)
 User review (UnifiedProposalView):
   Accept Selected → acceptSelectedFromView(id, accepted)
                     → noteQueue.run(proposal.sourceNotePath, acceptSelected) (#483, silent)
-                    → EnrichmentApplier.apply(proposal, accepted)
+                    → EnrichmentApplier.apply(proposal, accepted)   [Related Notes skips isSelfLink entries, covering pre-#609 proposals]
                     → EnrichmentStore.updateStatus(id, 'accepted' | 'partially-accepted')
   Reject          → rejectFromView(id)
                     → EnrichmentStore.updateStatus(id, 'rejected')
