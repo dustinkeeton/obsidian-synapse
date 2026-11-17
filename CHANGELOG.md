@@ -5,6 +5,35 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] - 2026-11-17
+
+### Added
+
+- Each AI feature can use its own provider, model, and effort. The new **Per-feature models** list under **AI configuration** has a row for every feature, plus transcription. Features left on **Default** use the provider and model above it
+- An **Effort** setting controls how much the model reasons before answering: Default, Low, Medium, High, or Max. It appears only for models that support it, and each feature can set its own
+
+### Changed
+
+- Synapse keeps one API key per provider, shared by every feature and by transcription. Key fields appear only for providers you use besides your default, and the separate transcription key fields are gone. If you had a transcription key for the same provider as your default, transcription now uses your main key
+- Switching your default provider keeps each provider's key, so switching back does not lose it
+- The **Temperature** and **Max tokens** settings are removed. Caching identical responses is controlled by its own setting only
+- Models that reason get up to 10 minutes to answer at every effort step except Low. Low, and models without an effort setting, keep the 2-minute limit
+- GPT-4o, GPT-4o mini, and Gemini 3.1 Flash Lite are removed from the model lists. Saved settings move to GPT-6 Luna and Gemini 3.5 Flash Lite
+- Titles and elaboration proposals you rejected before this update may be proposed once more
+
+### Fixed
+
+- A reply cut off at the model's output limit is now reported as an error instead of being written to your note or cached
+- Enrichment no longer lists the note itself under Related Notes
+- Deep dive navigation, syllabus, and parent links point to the right note when two notes share a name
+- REM no longer adds links inside Synapse's own callouts, never links a note to itself or to an untitled note, and no longer splits a sentence at a decimal such as "v1.2"
+- The review sidebar refreshes correctly when REM is turned off
+
+### Security
+
+- Every AI feature now treats note text, transcripts, fetched pages, and text in images strictly as material to work on, never as instructions. A note or page that tells the model to do something else is handled as content
+- Interrupted deep dive runs read back from the `.synapse` folder are checked before use, so a tampered file cannot read or overwrite files outside the runs folder
+
 ## [1.5.0] - 2026-11-09
 
 ### Added
