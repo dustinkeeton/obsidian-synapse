@@ -1,5 +1,5 @@
 import type { PostProcessingSettings, SynapseSettings } from '../settings';
-import { AIClient, isWorthPostProcessing, redactError, sanitizeAIResponse, sleep, stripUntrustedMarkers, wrapUntrusted } from '../shared';
+import { AIClient, isWorthPostProcessing, redactError, sanitizeAIResponse, sleep, stripCodeFences, stripUntrustedMarkers, wrapUntrusted } from '../shared';
 import type { AIRequestOptions } from '../shared';
 import { segmentTranscript, trimRepeatedContext, type TranscriptSegment } from './transcript-segmenter';
 
@@ -155,11 +155,12 @@ export class PostProcessor {
 			])}\n\nTranscript:\n${wrapUntrusted(text, 'transcript')}`;
 		try {
 			const reply = sanitizeAIResponse(await this.aiClient.complete(prompt, SYSTEM_PROMPT, aiRequestOptions(opts)));
-			if (stripUntrustedMarkers(reply) !== reply) {
+			const opening = text.trim().slice(0, 200);
+			if (stripUntrustedMarkers(reply) !== reply || (opening.length > 0 && reply.includes(opening))) {
 				console.warn('[Synapse] Key points pass echoed the transcript; transcript kept without key points');
 				return null;
 			}
-			const summary = reply.trim();
+			const summary = stripCodeFences(reply).trim();
 			return summary.length > 0 ? summary : null;
 		} catch (error) {
 			console.warn('[Synapse] Key points pass failed; transcript kept without key points', redactError(error));

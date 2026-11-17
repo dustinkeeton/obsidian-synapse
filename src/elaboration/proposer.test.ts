@@ -406,7 +406,7 @@ describe('ProposalGenerator -- article URL external context', () => {
 
 	it('makes no proposal and says why when the AI rewrite is empty after cleanup', async () => {
 		const { generator, notifications } = makeGenerator('# Notes\n\nA short stub.');
-		mockComplete.mockResolvedValueOnce('<<<UNTRUSTED_EXTERNAL_CONTENT id="x" source="note">>>\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="x">>>');
+		mockComplete.mockResolvedValueOnce('<<<UNTRUSTED_EXTERNAL_CONTENT id="ab12" source="note">>>\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="ab12">>>');
 
 		const proposal = await generator.generate({ notePath: 'notes/stub.md', reasons: [{ type: 'user-requested' }] });
 

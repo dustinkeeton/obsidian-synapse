@@ -281,6 +281,38 @@ describe('PostProcessor', () => {
 			expect(completeSpy).toHaveBeenCalledTimes(3);
 			expect(result).toBe('Clean one.\n\nClean two.\n\n## Puntos clave\n- un punto');
 		});
+		it('unwraps a key-points reply sent inside a code block', async () => {
+			completeSpy
+				.mockResolvedValueOnce('Clean one.')
+				.mockResolvedValueOnce('Clean two.')
+				.mockResolvedValueOnce('```markdown\n## Puntos clave\n- un punto\n```');
+			const update = vi.fn();
+			const settings = longSettings((s) => {
+				s.audio.postProcessing.extractKeyPoints = true;
+			});
+			const pp = longPP(() => settings, { delayMs: 0 });
+
+			const result = await pp.process([paragraph('one'), paragraph('two')].join('\n\n'), { update });
+
+			expect(completeSpy).toHaveBeenCalledTimes(3);
+			expect(result).toBe('Clean one.\n\nClean two.\n\n## Puntos clave\n- un punto');
+		});
+		it('drops a key-points reply that repeats the transcript without markers', async () => {
+			completeSpy
+				.mockResolvedValueOnce('Clean one.')
+				.mockResolvedValueOnce('Clean two.')
+				.mockResolvedValueOnce('## Key Points\nClean one.\n\nClean two.');
+			const update = vi.fn();
+			const settings = longSettings((s) => {
+				s.audio.postProcessing.extractKeyPoints = true;
+			});
+			const pp = longPP(() => settings, { delayMs: 0 });
+
+			const result = await pp.process([paragraph('one'), paragraph('two')].join('\n\n'), { update });
+
+			expect(completeSpy).toHaveBeenCalledTimes(3);
+			expect(result).toBe('Clean one.\n\nClean two.');
+		});
 
 		it('adds key points once at the end instead of once per section', async () => {
 			completeSpy

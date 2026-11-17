@@ -193,6 +193,11 @@ describe('stripUntrustedMarkers', () => {
 		expect(stripUntrustedMarkers(reply)).toBe('body\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="bbbb">>>');
 	});
 
+	it('an id-less echoed opener removes only an id-less close marker', () => {
+		const reply = '<<<UNTRUSTED_EXTERNAL_CONTENT source="note">>>\nbody\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="cccc">>>';
+		expect(stripUntrustedMarkers(reply)).toBe('body\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="cccc">>>');
+	});
+
 	it('leaves an ordinary code block untouched', () => {
 		const reply = '```ts\nconst x = 1;\n```';
 		expect(stripUntrustedMarkers(reply)).toBe(reply);
