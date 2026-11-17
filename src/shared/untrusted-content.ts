@@ -1,12 +1,12 @@
 /**
  * Structural prompt-injection defense for untrusted external content.
  *
- * Several pipeline phases fetch text the plugin does not control -- article /
- * tweet / Reddit bodies, model-derived image analysis -- and splice it into an
- * AI prompt. A fetched page can carry adversarial text ("ignore previous
- * instructions...") that the model may follow. `wrapUntrusted` fences that
- * content in labeled delimiters with an explicit data-not-instructions frame so
- * the model treats it as reference material, not commands.
+ * Every AI feature splices text the user did not write as instructions --
+ * note bodies and metadata, transcripts, fetched pages, model-derived image
+ * analysis -- into a prompt. Any of it can carry adversarial text ("ignore
+ * previous instructions...") that the model may follow. `wrapUntrusted` fences
+ * that content in labeled delimiters with an explicit data-not-instructions
+ * frame so the model treats it as material, not commands.
  *
  * This is a STRUCTURAL defense, not a lexical one. We deliberately do NOT
  * regex-strip injection phrases ("ignore previous instructions", etc.): that is
@@ -16,10 +16,10 @@
  * system-prompt clause instructing the model never to obey instructions found
  * inside these blocks.
  *
- * The one thing we MUST scrub is the delimiter syntax itself: if untrusted
- * content could emit its own closing fence, it could "break out" of the block
- * and have its trailing text read as trusted instructions. `neutralizeFences`
- * strips that out before wrapping.
+ * Breakout is blocked by the per-block `id` shared by the open and close
+ * markers, which content cannot predict, plus hyphenation of the sentinel
+ * keyword inside content. A note that quotes the keyword literally therefore
+ * comes back hyphenated from a rewrite feature.
  */
 
 import { hashString } from './hash-utils';

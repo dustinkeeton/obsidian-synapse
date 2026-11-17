@@ -134,7 +134,10 @@ export class ProposalGenerator {
 
 		const rawRewrite = await this.aiClient.complete(prompt, systemPrompt, aiOpts);
 		const proposedAdditions = stripCodeFences(stripUntrustedMarkers(sanitizeAIResponse(rawRewrite)));
-		if (!proposedAdditions.trim()) throw new Error('The AI returned an empty rewrite');
+		if (!proposedAdditions.trim()) {
+			this.notifications.info(`The AI returned an empty rewrite for "${noteFile.basename}", so no proposal was made.`);
+			return null;
+		}
 
 		return {
 			id: key,
@@ -166,7 +169,7 @@ export class ProposalGenerator {
 				case 'todo-marker':
 					return `Contains TODO markers: ${r.markers.join(', ')}`;
 				case 'empty-section':
-					return `Empty section: "${r.heading}"`;
+					return `Empty section: ${wrapUntrusted(r.heading, 'section heading')}`;
 				case 'sparse-link':
 					return `Linked from ${r.linkedFrom.length} notes but has sparse content`;
 				case 'user-requested':

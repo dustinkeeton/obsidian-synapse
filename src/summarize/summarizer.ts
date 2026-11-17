@@ -30,7 +30,7 @@ export class Summarizer {
 	): Promise<string> {
 		const systemPrompt = `${customPrompt || STYLE_PROMPTS[style]}\n\n${UNTRUSTED_RULE}\n\n${voiceInstruction(this.getSettings().ai)}`;
 
-		const userPrompt = `Source: ${source}\n\nIf image URLs are present in the source content, preserve them as markdown image embeds (![alt](url)) rather than describing the image. For internal images like [[image.jpg]], embed them as ![[image.jpg]].\n\n${wrapUntrusted(content, source)}`;
+		const userPrompt = `Source:\n${wrapUntrusted(source, 'source label')}\n\nIf image URLs are present in the source content, preserve them as markdown image embeds (![alt](url)) rather than describing the image. For internal images like [[image.jpg]], embed them as ![[image.jpg]].\n\n${wrapUntrusted(content, source)}`;
 
 		const response = await this.client.complete(userPrompt, systemPrompt, opts);
 		return sanitizeAIResponse(response);

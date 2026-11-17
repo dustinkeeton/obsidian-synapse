@@ -404,6 +404,16 @@ describe('ProposalGenerator -- article URL external context', () => {
 		vi.restoreAllMocks();
 	});
 
+	it('makes no proposal and says why when the AI rewrite is empty after cleanup', async () => {
+		const { generator, notifications } = makeGenerator('# Notes\n\nA short stub.');
+		mockComplete.mockResolvedValueOnce('<<<UNTRUSTED_EXTERNAL_CONTENT id="x" source="note">>>\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="x">>>');
+
+		const proposal = await generator.generate({ notePath: 'notes/stub.md', reasons: [{ type: 'user-requested' }] });
+
+		expect(proposal).toBeNull();
+		expect(notifications.info).toHaveBeenCalledWith(expect.stringContaining('empty rewrite'));
+	});
+
 	it('fetches a non-Twitter article URL into external context', async () => {
 		const { generator } = makeGenerator(
 			'# Notes\n\nSee https://example.com/post for details.'

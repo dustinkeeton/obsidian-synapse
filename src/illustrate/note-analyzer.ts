@@ -116,7 +116,8 @@ export class NoteAnalyzer {
 	async analyze(notePath: string, body: string, opts?: AIRequestOptions): Promise<IllustrateSpot[]> {
 		const { maxItemsPerNote: max, mermaid } = this.getSettings().illustrate;
 		const prompt = [
-			`Propose at most ${max} ${mermaid ? 'visuals' : 'photos'} for the note "${notePath}".`,
+			`Propose at most ${max} ${mermaid ? 'visuals' : 'photos'} for the note at this path:`,
+			wrapUntrusted(notePath, 'note path'),
 			'',
 			wrapUntrusted(body.slice(0, MAX_NOTE_CHARS), 'note'),
 		].join('\n');
