@@ -7,7 +7,7 @@ import {
 	isPathExcluded, matchesExcludeTag, detectSchemaFor, openScanFolderPicker,
 	mergeCacheUse, trackAiCache, transcriptCacheUse, withCacheReport, findMarkdownLinks,
 	stripUnresolvedLinks, wikilinkTargets,
-	scanScopeLabel, type ScanTarget,
+	scanScopeLabel, type ScanTarget, revealSettingsSection, VIDEO_SETTINGS_SECTION,
 } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { OperationHandle } from '../shared';
@@ -937,7 +937,7 @@ export class SummarizeModule implements FeatureModule {
 		if (dependency) {
 			this.notifications.info(dependency.message, DEPENDENCY_NOTICE_DURATION, {
 				label: 'Open settings',
-				onClick: () => this.revealVideoSettings(),
+				onClick: () => revealSettingsSection(this.plugin, this.getSettings(), VIDEO_SETTINGS_SECTION),
 			});
 			return;
 		}
@@ -948,50 +948,6 @@ export class SummarizeModule implements FeatureModule {
 			return;
 		}
 		fallback();
-	}
-
-	/**
-	 * Open Synapse settings and reveal the Video transcription section — wired as
-	 * the onClick of the dependency-missing "Open settings" action (#382). The
-	 * `app.setting` API is undocumented, so every access is feature-detected and
-	 * degrades to a no-op when absent.
-	 */
-	private revealVideoSettings(): void {
-		const setting = (this.plugin.app as unknown as {
-			setting?: {
-				open?: () => void;
-				openTabById?: (id: string) => { containerEl?: HTMLElement } | undefined;
-			};
-		}).setting;
-		if (!setting || typeof setting.open !== 'function') return;
-
-		// Expand the Video accordion before the tab paints so it opens revealed.
-		// Mutating the live settings object (the same instance the settings tab
-		// reads) is what takes effect on render; persistence is best-effort.
-		this.getSettings().ui.collapsedSections['video'] = false;
-		void (this.plugin as unknown as {
-			saveSettings?: () => Promise<void>;
-		}).saveSettings?.();
-
-		setting.open();
-		const tab = typeof setting.openTabById === 'function'
-			? setting.openTabById('synapse')
-			: undefined;
-
-		// Best-effort scroll of the Video section into view once the tab paints.
-		// The section is already expanded above, so this is pure polish. `findAll`
-		// is an Obsidian HTMLElement augmentation returning a typed array (no
-		// `Array.from` needed); feature-detect it so the vitest environment — where
-		// containerEl only gains `findAll` via the obsidian mock — no-ops cleanly.
-		const containerEl = tab?.containerEl;
-		if (containerEl && typeof containerEl.findAll === 'function') {
-			window.setTimeout(() => {
-				const title = containerEl
-					.findAll('.synapse-accordion-title')
-					.find((el) => el.textContent === 'Video transcription');
-				title?.closest('.synapse-accordion')?.scrollIntoView({ block: 'start' });
-			}, 0);
-		}
 	}
 
 	/**

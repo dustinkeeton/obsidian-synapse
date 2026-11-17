@@ -477,7 +477,7 @@ export class Transcriber {
 		const model = resolveTranscriptionModel('gemini', settings.audio.transcriptionModel);
 
 		const response = await this.requestTranscription('the Gemini transcription API', {
-			url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+			url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
 			method: 'POST',
 			headers: {
 				'x-goog-api-key': apiKey,

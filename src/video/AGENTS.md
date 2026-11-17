@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-11-09
+last-updated: 2026-11-17
 ---
 
 # Video Module
@@ -204,7 +204,7 @@ class AudioCodecReadError extends Error {}     // audio-extractor.ts:57; ffprobe
 
 Registered via `registrar.register('check-dependencies', ...)` (index.ts:68); Obsidian prefixes the manifest id with `synapse:`. The handler reports yt-dlp/ffmpeg presence and brew install hints. Transcription palette commands (`transcribe-media`, `transcribe-note-media`) are wired in `main.ts`, not here.
 
-## Settings Keys (VideoSettings, `settings.ts:213`)
+## Settings Keys (VideoSettings, `settings.ts:272`)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -214,13 +214,13 @@ Registered via `registrar.register('check-dependencies', ...)` (index.ts:68); Ob
 | `video.tempFolder` | `string` | `'.synapse/temp'` | Vault folder ensured on load for temp work |
 | `video.downloadFolder` | `string` | `'Media'` | Vault folder to save downloaded videos (empty = do not save) |
 | `video.embedInNote` | `boolean` | `true` | Add `![[video.mp4]]` embed to note when a video is saved |
-| `video.captionsFirst` | `boolean` | `true` | Prefer the YouTube caption tier over download+transcribe (#184; `settings.ts:226`); consumed by `transcription/caption-strategy.ts` `canHandle`, toggle rendered at `settings-section.ts:173` |
-| `video.frameExtraction.enabled` | `boolean` | `false` | Declared only (`settings.ts:206-211`, defaults `settings.ts:551`); no read site in `src/video/` — no frame extractor exists |
+| `video.captionsFirst` | `boolean` | `true` | Prefer the YouTube caption tier over download+transcribe (#184; `settings.ts:285`); consumed by `transcription/caption-strategy.ts` `canHandle`, toggle rendered at `settings-section.ts:173` |
+| `video.frameExtraction.enabled` | `boolean` | `false` | Declared only (`settings.ts:265-270`, defaults `settings.ts:608`); no read site in `src/video/` — no frame extractor exists |
 | `video.frameExtraction.intervalSeconds` | `number` | `30` | Declared only; no read site |
-| `video.frameExtraction.visionModel` | `string` | `'opus'` | Declared only; touched solely by the v4 retired-model migration (`shared/settings-migrations.ts:127`) |
+| `video.frameExtraction.visionModel` | `string` | `'opus'` | Declared only; touched solely by the v4 retired-model migration, replayed as v6 (`shared/settings-migrations.ts:130`, `:255`, `:258`) |
 | `video.frameExtraction.maxFrames` | `number` | `20` | Declared only; no read site |
 
-Settings UI: `renderVideoSettings` (`settings-section.ts:152`) renders the accordion; `addPathSetting` attaches per-OS install-help panels (#382/#383) to the yt-dlp and ffmpeg path fields. Invoked only on desktop by `settings-tab.ts`.
+Settings UI: `renderVideoSettings` (`settings-section.ts:152`) renders the accordion under `VIDEO_SETTINGS_SECTION` (`{ key: 'video', title: 'Video transcription' }`, from `../shared`, `settings-section.ts:155-157`; the same ref `summarize` passes to `revealSettingsSection`); `addPathSetting` attaches per-OS install-help panels (#382/#383) to the yt-dlp and ffmpeg path fields. Invoked only on desktop by `settings-tab.ts`.
 
 ## External Runtime Dependencies
 

@@ -68,7 +68,6 @@ When feature directories do exist, each file contains:
 Docs passes don't rewrite these paths (globs allowed). If one has drifted
 from reality, flag the drift in your report instead:
 
-- `README.md`
 - `CLAUDE.md`
 - `CONTRIBUTING.md`
 - `CODE_OF_CONDUCT.md`

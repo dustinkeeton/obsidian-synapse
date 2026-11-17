@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-11-09
+last-updated: 2026-11-17
 ---
 
 # Image Module
@@ -129,7 +129,7 @@ Path exclusions use the centralized `settings.exclusions: ExclusionRule[]`:
 
 ## Settings
 
-`ImageSettings` (`settings.ts:230`); defaults at `settings.ts:558`. All under `settings.image`:
+`ImageSettings` (`settings.ts:289`); defaults at `settings.ts:615`. All under `settings.image`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|

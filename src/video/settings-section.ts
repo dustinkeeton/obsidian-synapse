@@ -1,5 +1,5 @@
 import { Platform, Setting, setIcon } from 'obsidian';
-import { redactError } from '../shared';
+import { redactError, VIDEO_SETTINGS_SECTION } from '../shared';
 import type { SettingsSectionContext, NotificationManager } from '../shared';
 
 /** A single copy-able install command shown in a path setting's help panel (#382/#383). */
@@ -153,8 +153,8 @@ export function renderVideoSettings(ctx: SettingsSectionContext): void {
 	const { plugin } = ctx;
 
 	const videoBody = ctx.featureSection(
-		'video',
-		'Video transcription',
+		VIDEO_SETTINGS_SECTION.key,
+		VIDEO_SETTINGS_SECTION.title,
 		() => plugin.settings.video.enabled,
 		(v) => { plugin.settings.video.enabled = v; },
 		'Enable video transcription',

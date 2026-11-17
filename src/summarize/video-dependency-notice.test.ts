@@ -63,6 +63,7 @@ vi.mock('../shared', async () => ({
 	...(await vi.importActual<typeof import('../shared/note-operation-queue')>('../shared/note-operation-queue')),
 	...(await vi.importActual<typeof import('../shared/prose-reduction')>('../shared/prose-reduction')),
 	...(await vi.importActual<typeof import('../shared/media-embed')>('../shared/media-embed')),
+	...(await vi.importActual<typeof import('../shared/settings-section')>('../shared/settings-section')),
 	FolderPickerModal: vi.fn(),
 	findAudioEmbeds: vi.fn().mockReturnValue([]),
 	getMarkdownFiles: vi.fn().mockReturnValue([]),

@@ -145,12 +145,15 @@ export {
 	createSettingsSectionContext,
 	isSectionCollapsed,
 	persistCollapse,
+	revealSettingsSection,
+	VIDEO_SETTINGS_SECTION,
 } from './settings-section';
 export type {
 	SettingsSectionContext,
 	SettingsSectionContextOptions,
 	SectionRegistryEntry,
 	FeatureToggleListener,
+	SettingsSectionRef,
 } from './settings-section';
 export { ConfirmModal } from './confirm-modal';
 export type { ConfirmModalOptions } from './confirm-modal';

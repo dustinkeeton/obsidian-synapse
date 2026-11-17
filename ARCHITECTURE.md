@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Last updated**: 2026-11-09 · **Version**: 1.4.1
+**Last updated**: 2026-11-17 · **Version**: 1.5.0
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
@@ -12,7 +12,7 @@ The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, che
 
 - **Feature modules** do the actual work (transcribe, enrich, summarize…). Each one is self-contained in `src/<feature>/` and exposes its public surface through a single `index.ts` barrel.
 - **`modules/registry.ts` is the one list of feature modules** (#504). `main.ts` never names a module in its lifecycle: it builds one `ModuleDeps` bundle (plugin, settings getter, notifications, checkpoint manager, command registrar, note queue), hands it to the registry, and the registry constructs every module in order, calls `onload()` on the enabled ones, and unloads them in reverse. Every module constructor takes `ModuleDeps` first. Adding a module is one registry entry plus an `enabled`-flagged settings section — leaving either out is a compile error.
-- **`shared/`** is the foundation everything stands on — the AI client, validation, checkpoints, callouts, URL detection, the transcript cache, image preprocessing, structure-aware insertion points, and the cache-hit / no-speech helpers. It depends on no feature module. Anything two features both need lives here, never in one feature for the other to import — the 2026-10-06 audit moved `preprocessImage` here for exactly that reason.
+- **`shared/`** is the foundation everything stands on — the AI client and its per-feature config (`ai-config.ts`, #619), validation, checkpoints, callouts, URL detection, the transcript cache, image preprocessing, structure-aware insertion points, and the cache-hit / no-speech helpers. It depends on no feature module. Anything two features both need lives here, never in one feature for the other to import — the 2026-10-06 audit moved `preprocessImage` here for exactly that reason.
 - **Callouts are native types with a Synapse tag** (#554). Every AI block is written as `> [!<base>|synapse-<identity>]` — `[!quote|synapse-transcription]`, `[!summary|synapse-summary]`, `[!info|synapse-enrichment]` — so the user's theme styles it and Synapse only adds an icon. The old bare `[!synapse-x]` spelling is still read, never written, and never bulk-migrated.
 - **`commands/`** is a developer-level master switch for every command, sitting *above* user settings. It also depends on nothing else in `src/`.
 - **`pipeline/`** runs features in order; **`intake/`** decides what to feed the pipeline. Neither imports a feature module directly — `main.ts` injects the features into them. This is what keeps the dependency graph acyclic.
@@ -178,7 +178,7 @@ src/
 │   ├── mention-scanner.ts  #   Literal title/alias matches (down-weighted by titleMatchWeight, #380)
 │   ├── semantic-matcher.ts #   Always-on AI semantic matches (#380)
 │   ├── overlaps.ts         #   Drop overlapping anchors; higher-ranked candidate wins (#566)
-│   ├── skip-regions.ts     #   Unlinkable ranges (frontmatter, code, links, summary callouts) shared by scanner, applier, semantic filter (#575)
+│   ├── skip-regions.ts     #   Unlinkable ranges (frontmatter, code, links, Synapse metadata callouts: summary, nav, enrichment, illustrate, deep-dive) shared by scanner, applier, semantic filter (#575, #612)
 │   ├── rem-applier.ts      #   Re-validate each link position against the live note, then insert wikilinks (#575)
 │   ├── rem-store.ts        #   Proposal persistence
 │   └── index.ts            #   RemModule orchestrator
@@ -191,8 +191,8 @@ src/
 │   └── index.ts            #   ElaborationModule orchestrator; accept = in-place body rewrite + stale-body ConfirmModal (#552)
 │
 ├── audio/                  # Audio transcription
-│   ├── transcriber.ts      #   Whisper / Deepgram / Gemini / local routing; manual multipart w/ sanitized headers; no-speech detection (#524)
-│   ├── post-processor.ts   #   AI transcript cleanup — single call when it fits ai.maxTokens, otherwise sectioned (#467)
+│   ├── transcriber.ts      #   Whisper / Deepgram / Gemini / local routing; vendor key from ai.providerKeys (#619); Gemini model id URL-encoded; manual multipart w/ sanitized headers; no-speech detection (#524)
+│   ├── post-processor.ts   #   AI transcript cleanup — single call within a fixed 2,048-token budget, otherwise sectioned (#467); transcript fenced via wrapUntrusted
 │   ├── transcript-segmenter.ts # Pure splitter: paragraph → line → sentence → word boundaries, word-aligned overlap (#467)
 │   ├── transcription-models.ts # Resolve audio.transcriptionModel against the active provider's registry (#521)
 │   ├── transcription-credentials.ts # Provider + model dropdowns + key fields rendered inside AI Configuration
@@ -235,7 +235,8 @@ src/
 │   ├── vault-analyzer.ts       # Cached vault tag index + link graph
 │   ├── weight-calculator.ts    # Proximity weight scoring (pure function)
 │   ├── prompt-builder.ts       # External links + frontmatter suggestions
-│   ├── enrichment-applier.ts   # Apply/undo enrichments with markers
+│   ├── enrichment-applier.ts   # Apply/undo enrichments with markers; never writes a self-link
+│   ├── self-link.ts            # isSelfLink / withoutSelfLinks — drop candidates that resolve to the note itself (#610)
 │   ├── enrichment-store.ts     # JSON file persistence
 │   └── index.ts                # EnrichmentModule orchestrator
 │
@@ -263,8 +264,8 @@ src/
 │   ├── topic-analyzer.ts   #   AI topic extraction from note content
 │   ├── note-generator.ts   #   AI content generation for topics — plain prose, no [[wikilinks]] (#581)
 │   ├── quality-scorer.ts   #   Local heuristic quality scoring
-│   ├── syllabus-navigator.ts # Traversal ordering, syllabus index, navigation
-│   ├── deep-dive-store.ts  #   Proposal + run persistence
+│   ├── syllabus-navigator.ts # Traversal ordering, syllabus index, navigation; links via linkpathFor, folder-qualified on a name clash (#611)
+│   ├── deep-dive-store.ts  #   Proposal + run persistence; run ids must match /^[A-Za-z0-9_-]+$/ (2026-11-17)
 │   ├── types.ts            #   Proposal/run/topic types (incl. the saved resume queue, #595), TraversalNode / NavigationContext, + the SuggestDirectory injection contract (no organize import)
 │   └── index.ts            #   DeepDiveModule orchestrator; auto-organize nesting calls the injected suggestDirectory callback; an interrupted run resumes from its saved queue (#595); AI-chosen titles pass through safeNoteName
 │
@@ -293,7 +294,9 @@ src/
 │   └── title-detector.ts   #   Re-exports isUntitled from ../shared (canonical home is shared/)
 │
 ├── shared/                 # Cross-cutting utilities (base layer)
-│   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); per-instance LRU response cache + in-flight coalescing (#397); onCacheHit signal (#527); re-exports redactSecrets
+│   ├── ai-client.ts        #   Multi-provider AI (OpenAI, Anthropic, Gemini, Ollama); per-instance LRU response cache + in-flight coalescing (#397); onCacheHit signal (#527); adds the untrusted-content policy to every request (#620); re-exports redactSecrets
+│   ├── ai-config.ts        #   resolveAIConfig (per-feature provider/model/effort), effort wire values, Anthropic output cap, request timeouts, switchDefaultProvider (#619)
+│   ├── linkpath.ts         #   linkpathFor() — bare basename while unique, folder-qualified on a clash (#611, #612)
 │   ├── safe-request.ts     #   safeRequest + ApiRequestError — requestUrl with throw:false, timeout, redacted typed status error (#558; shared by both clients); retries a dropped connection once the app is back in the foreground (#595)
 │   ├── decision-client.ts  #   DecisionClient — System 1 lane over TypeSafe /v1/systemone (choice · score · noul), budget chunking, 429/529 retry (#558)
 │   ├── confidence-router.ts#   routeByConfidence / partitionByConfidence — act above the floor, generative fallback exactly once (#558)
@@ -307,7 +310,7 @@ src/
 │   ├── data-folder-migration.ts # migrateDataFolder — one-time .auto-notes → .synapse rename (#496)
 │   ├── settings-migrations.ts # Version-stamped migration runner (#93): migrateSettings/readSettingsVersion/CURRENT_SETTINGS_VERSION (now 4)
 │   ├── hash-utils.ts       #   hashString/contentKey — dependency-free input-keyed hashing for idempotency (#395)
-│   ├── untrusted-content.ts#   wrapUntrusted() — structural prompt-injection fence for fetched external content (#398)
+│   ├── untrusted-content.ts#   wrapUntrusted() / stripUntrustedMarkers() / UNTRUSTED_CONTENT_POLICY — prompt-injection fence with a per-block random id, used by every AI feature (#398, #620)
 │   ├── review-action.ts    #   reviewAction() — centralized "Review" completion-toast gate (#366)
 │   ├── node-loader.ts      #   loadNodeModules/assertDesktop/DesktopOnlyError/shellEnv — the ONE guarded Node-builtin site
 │   ├── exclusions.ts       #   Centralized path-exclusion model + glob matcher (#307); tag-exclusion helper
@@ -357,7 +360,7 @@ src/
 │   ├── content-schemas.ts  #   Content-type detection registry (recipe / receipt / lyrics)
 │   ├── collapsible-section.ts # Settings UI: collapsible accordion section
 │   ├── feature-chip-select.ts # Settings UI: multi-feature chip selector (exclusions)
-│   ├── settings-section.ts #   Settings UI: shared per-section context + collapse persistence (type-only import of SynapsePlugin)
+│   ├── settings-section.ts #   Settings UI: shared per-section context + collapse persistence (type-only import of SynapsePlugin); revealSettingsSection opens the tab at one section
 │   ├── markdown.d.ts       #   Ambient `declare module '*.md'` so esbuild can inline CHANGELOG.md (#375)
 │   └── index.ts            #   Barrel export
 │
@@ -578,7 +581,7 @@ sequenceDiagram
     participant CR as checkpoints/ (recovery)
 
     O->>M: onload()
-    M->>M: loadSettings() (version-stamped migrateSettings replay → deepMergeSettings → stamp settingsVersion, #93; v1 excludeFolders→exclusions #307, v2 drop rem.semanticMatching, v3 whisperModel→transcriptionModel #521, v4 retired model ids → vendor replacements)
+    M->>M: loadSettings() (version-stamped migrateSettings replay → deepMergeSettings → stamp settingsVersion, #93; v1 excludeFolders→exclusions #307, v2 drop rem.semanticMatching, v3 whisperModel→transcriptionModel #521, v4 retired model ids → vendor replacements, v5–v8 request standard + per-vendor keys #619)
     M->>M: registerSynapseIcons() (brand S-Signal mark + feature glyphs, before any ribbon/setIcon use)
     M->>M: NotificationManager() (status bar on desktop only); migrateDataFolder() (.auto-notes -> .synapse)
     M->>M: addSettingTab()
@@ -681,7 +684,7 @@ Settings evolve through a version-stamped, append-only migration chain in `share
 
 - **One stamp, ordered replay.** A persisted `settingsVersion` records the schema version of `data.json`. On load, `migrateSettings(raw, from)` clones the raw object once and applies every migration whose `to > from` in ascending order, *before* the deep-merge over `DEFAULT_SETTINGS`. `main.loadSettings()` then stamps `settingsVersion = CURRENT_SETTINGS_VERSION` and saves once on upgrade.
 - **Pure & tested.** Each step is a pure `Record<string, unknown> → Record<string, unknown>` function; a drift-guard test asserts `CURRENT_SETTINGS_VERSION` equals the highest migration `to`.
-- **Current chain (v4):**
+- **Current chain (v8):**
 
   | Step | What it does |
   |------|--------------|
@@ -689,6 +692,10 @@ Settings evolve through a version-stamped, append-only migration chain in `share
   | `v2` | Drops the inert `rem.semanticMatching` flag left by the always-on REM change (#380) |
   | `v3` | Renames the Whisper-only `audio.whisperModel` to the provider-agnostic `audio.transcriptionModel` (#521), carrying the user's value across and never overwriting an existing `transcriptionModel` |
   | `v4` | Repoints a saved model id the vendor has retired (`o3`, `o3-mini`, `o4-mini`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3.5-flash`) to its replacement, across `ai.model`, `audio.transcriptionModel`, `image.visionModel`, and `video.frameExtraction.visionModel` |
+  | `v5` | Drops `ai.temperature` and `ai.maxTokens` (#619); a saved temperature of 0 turns on `ai.cacheResponses`, which kept caching on |
+  | `v6` | Replays the retired-model remap for ids retired since (`gpt-4o` / `gpt-4o-mini` → `gpt-6-luna`, `gemini-3.1-flash-lite` → `gemini-3.5-flash-lite`) |
+  | `v7` | Moves the old per-provider transcription keys into `ai.providerKeys` — one key per vendor, so an existing main key wins |
+  | `v8` | Maps effort `none` / `minimal` to Low and `xhigh` to High, for `ai.effort` and every override |
 
 - **Layering.** Lives in `shared/`, imports only `shared/exclusions.ts`, never `../settings` — so the sanctioned `settings → settings-migrations → exclusions` edge stays acyclic.
 
@@ -763,7 +770,7 @@ graph TB
         Deepgram["Deepgram"]
         Gemini["Gemini audio"]
         YtDlp["yt-dlp + ffmpeg"]
-        Vision["Vision Models<br/>(GPT-4o, Claude, etc.)"]
+        Vision["Vision Models<br/>(image feature model or image.visionModel)"]
     end
 
     Ribbon["Ribbon icon (synapse-transcribe)"] --> UM
@@ -822,9 +829,9 @@ Every routed transcription is written to `.synapse/transcript-cache.json` and re
 
 ### Sectioned Post-Processing (#467)
 
-A transcript that fits `ai.maxTokens` runs in one call, byte-for-byte the same prompt as before. A longer one is split by `audio/transcript-segmenter.ts` and cleaned section by section:
+A transcript that fits one call's budget (a fixed 2,048 tokens, `CALL_TOKEN_BUDGET` in `audio/post-processor.ts`) runs in one call. A longer one is split by `audio/transcript-segmenter.ts` and cleaned section by section:
 
-- **Budget.** A section body is 60% of `ai.maxTokens` at 4 chars/token, leaving headroom for a rewrite that grows.
+- **Budget.** A section body is 60% of that budget at 4 chars/token, leaving headroom for a rewrite that grows.
 - **Boundaries.** Paragraph first, then line, sentence, word; a hard cut only for a whitespace-free run. A line is never split unless it alone exceeds the budget, so speaker lines, timestamps, and headings stay intact.
 - **Overlap.** Each section carries the word-aligned tail (10% of the budget) of the previous raw section as a "Preceding context" block the model is told not to repeat; a verbatim repeat is trimmed on rejoin.
 - **Fallback.** A section whose call throws, comes back empty, or hits the token cap keeps its raw slice; the rest still run, and one notice reports "kept k of n sections raw". Key points, when enabled, are one extra pass over the rejoined text.
@@ -1122,13 +1129,14 @@ Design principles:
 ```mermaid
 graph TB
     AIC["AIClient<br/>(shared/ai-client.ts)"]
+    Cfg["resolveAIConfig(settings, feature)<br/>(shared/ai-config.ts)"] -->|"provider · model · effort · key"| AIC
 
-    AIC -->|"'openai'"| OAI["POST api.openai.com/v1/chat/completions<br/>Auth: Bearer {ai.apiKey}<br/>max_completion_tokens; temperature omitted for reasoning models"]
-    AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>Models: fable/opus/sonnet/haiku resolved to full IDs in ai-client.ts"]
-    AIC -->|"'gemini'"| GEM["POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent<br/>Auth: x-goog-api-key · system -> system_instruction"]
+    AIC -->|"'openai'"| OAI["POST api.openai.com/v1/chat/completions<br/>Auth: Bearer {ai.apiKey}<br/>Chat Completions · system as role developer<br/>effort → reasoning_effort · no output cap"]
+    AIC -->|"'anthropic'"| ANT["POST api.anthropic.com/v1/messages<br/>Auth: x-api-key<br/>fable/opus/sonnet/haiku → full IDs<br/>max_tokens 16,384 (21,333 at High/Max) · effort → output_config.effort"]
+    AIC -->|"'gemini'"| GEM["POST generativelanguage.googleapis.com/v1beta/models/{model, URL-encoded}:generateContent<br/>Auth: x-goog-api-key · system -> system_instruction · effort → thinkingLevel"]
     AIC -->|"'ollama'"| OLL["POST {ollamaEndpoint}/api/chat<br/>HTTPS required (HTTP localhost only)"]
 
-    AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2min timeout · dropped-connection retry (#595)<br/>Error extraction · Secret redaction (shared/redact.ts)"]
+    AIC --> Safe["safeRequest()<br/>Obsidian requestUrl · 2 min timeout, 10 min for reasoning models · dropped-connection retry (#595)<br/>Error extraction · Secret redaction (shared/redact.ts)"]
 ```
 
 **A dropped connection is retried, an HTTP error is not** (#595). `safeRequest` (`shared/safe-request.ts`) retries a transport failure up to twice (after 1 s, then 3 s), waiting first for Obsidian to return to the foreground — the case is iOS suspending the app mid-request. A timeout is retried only if the app was backgrounded during the attempt.
@@ -1156,19 +1164,37 @@ graph LR
 
 ### Caching & Coalescing (#397)
 
-`AIClient.chat()` wraps the raw provider dispatch with idempotency support, keyed by a deterministic `contentKey([messages, provider, model, temperature, maxTokens])` (inputs only):
+`AIClient.chat()` wraps the raw provider dispatch with idempotency support, keyed by a deterministic `contentKey([messages, provider, model, effort])` over the feature's resolved config (inputs only):
 
 - **In-flight coalescing** — a concurrent identical request joins the live dispatch promise (in-flight `Map`, entry cleared in `.finally()`) instead of issuing a second network call.
-- **Response cache** — a per-instance, bounded LRU of request key → successful response. Participates when `temperature === 0` (deterministic) **or** the user opts in via `ai.cacheResponses`; populated **only on success** (errors are never cached).
+- **Response cache** — a per-instance, bounded LRU of request key → successful response. Participates only when the user opts in via `ai.cacheResponses` (since #619 there is no temperature to imply it); populated **only on success** (errors are never cached).
 - **Bypass** — a `bypassCache` option skips both the cache read and coalescing so a "regenerate" action always re-dispatches.
 - **Replay signal** (#527) — `AIRequestOptions.onCacheHit` fires only when a stored response is replayed: never on a dispatch, a bypass, an uncacheable request, or a coalesced in-flight join. Modules pass `trackAiCache(use)` and finish their toast through `withCacheReport(message, uses, unit)` so any cached input is named.
-- **Per-call model** (2026-10-06 audit) — `AIRequestOptions.model` overrides `ai.model` for one request (vision calls pass `image.visionModel`); the cache key uses the resolved model, so a vision-model call never replays a default-model response. Nothing mutates `settings.ai.model`.
+- **Per-call model** (2026-10-06 audit) — `AIRequestOptions.model` overrides the resolved model for one request (vision calls pass `visionModelOverride(settings)`) and re-clamps effort for it; the cache key uses the resolved model, so a vision-model call never replays a default-model response. Nothing mutates `settings.ai.model`.
 
-### Request Shape by Provider (#308/#519)
+### Per-Feature Models (#619)
 
-- **OpenAI** sends `max_completion_tokens` (never the deprecated `max_tokens`) and omits `temperature` for reasoning models — an inverted allowlist of the models that still accept sampling (`gpt-4o`, `gpt-4o-mini`); unknown IDs fail safe by omitting. This is what fixed the "Unsupported parameter: 'max_tokens'" error on o3/o3-mini/o4-mini.
-- **Anthropic** aliases resolve to bare current-generation IDs; `temperature` is sent only where the model accepts it; no `thinking` parameter is sent; a `stop_reason: "refusal"` is surfaced as a safety refusal rather than a generic error.
-- **Default provider and model** for new installs are Anthropic and the `opus` alias (#597). Existing vaults keep their saved provider and model; only a retired model id is repointed, by settings migration v4.
+Each AI feature asks for its config by name: `new AIClient(getSettings, feature)`, then `resolveAIConfig(settings, feature)` (`shared/ai-config.ts`) on every call.
+
+- **Override or default.** A feature with an entry in `ai.overrides` uses that provider, model, and effort; one without uses `ai.provider` / `ai.model` / `ai.effort`.
+- **One key per vendor.** The default provider's key is `ai.apiKey`; any other vendor's key is in `ai.providerKeys`. Ollama shares `ai.ollamaEndpoint`.
+- **Transcription is the first row** of the same list (`audio.transcriptionProvider` + `audio.transcriptionModel`) and uses the same vendor keys; Deepgram's lives in `ai.providerKeys.deepgram`.
+- **Switching the default swaps keys.** `switchDefaultProvider` moves the old default's key into `providerKeys` and the new default's saved key into `apiKey`.
+
+### Request Standard (#619)
+
+| What | Rule |
+|------|------|
+| Sampling knobs | No provider receives `temperature`, `top_p`, or `top_k`; Anthropic never receives `thinking` |
+| Effort | One user scale — Default / Low / Medium / High / Max. Default sends nothing. `EFFORT_OPTIONS` maps each step per model: Anthropic `output_config.effort`, OpenAI `reasoning_effort`, Gemini `thinkingLevel`, Ollama `think` |
+| Output cap | Anthropic only: `max_tokens` 16,384, or 21,333 at High/Max. OpenAI, Gemini, and Ollama send no cap |
+| Truncation | A reply cut off at its limit throws before anything is returned or cached, for every provider |
+| Timeout | 10 min for a model with an effort control at any step but Low (Default counts as reasoning); 2 min otherwise (`aiRequestTimeoutMs`) |
+| OpenAI | Stays on Chat Completions; system messages go as role `developer` |
+| Anthropic | `anthropic-version: 2026-10-21`; aliases resolve to full model ids; a refusal is surfaced as a safety refusal |
+
+- **Default provider and model** for new installs are Anthropic and the `opus` alias (#597). Existing vaults keep theirs; a retired model id is repointed by migration v4, replayed as v6.
+- **Deferred**: streaming (#614), the OpenAI Responses API (#615), structured output (#616), Ollama capability discovery (#617), Gemini continuation (#618).
 
 ### Multi-Modal Vision Support
 
@@ -1221,16 +1247,17 @@ AI-generated content that lands beside the user's text uses Obsidian callouts fr
 
 ```
 SynapseSettings
-+-- settingsVersion -> Persisted schema version (#93); drives the migration runner, stamped to CURRENT_SETTINGS_VERSION (4) on save
-+-- ai              -> Provider (default anthropic), API key, model (default opus), temperature, max tokens,
-|                     cacheResponses (#397, opt-in; caching automatic at temperature 0),
++-- settingsVersion -> Persisted schema version (#93); drives the migration runner, stamped to CURRENT_SETTINGS_VERSION (8) on save
++-- ai              -> Provider (default anthropic), API key, model (default opus), effort (Default · Low · Medium · High · Max),
+|                     providerKeys (one key per other vendor, #619), overrides (per-feature provider/model/effort, #619),
+|                     ollamaEndpoint, cacheResponses (#397, opt-in; the only cache gate),
 |                     voice (#540: neutral · match-note · first-person · custom; default neutral) + voiceCustom
 |   +-- systemOne   -> System 1 decision lane (#558): enabled (default OFF), apiKey (TypeSafe), model (jev-latest), confidenceFloor (0.6)
 +-- elaboration     -> Detection thresholds, scan behavior, proposal storage
 |   +-- detection   -> Word threshold, TODO markers, empty sections, exclude tags
 |   +-- proposal    -> Max per note, preserve frontmatter (declared only — accept always keeps it, #552), include context,
 |                     includeBacklinkContext (#500, default on: backlink excerpts + tag siblings in the prompt)
-+-- audio           -> Transcription provider + transcriptionModel (#521, per-provider registry), API keys, language, post-processing, auto-format lyrics (#234)
++-- audio           -> Transcription provider + transcriptionModel (#521; keys from ai.providerKeys since #619), language, post-processing, auto-format lyrics (#234)
 |   +-- postProcessing -> Filler removal (off by default since #468), structure, key points, custom prompt
 +-- video           -> yt-dlp/ffmpeg paths, download folder, embed setting,
 |                     captionsFirst (#184, default on: prefer YouTube captions over download)
@@ -1284,7 +1311,7 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Multipart header hardening | Vault-/settings-derived field + file names sanitized (`sanitizeMultipartHeaderValue`: strip CR/LF, replace `"`/`\`) before `Content-Disposition` lines — blocks multipart/header injection (2026-06-11) | `audio/transcriber.ts` |
 | API key protection | `redactSecrets()` (strings) + `redactError()` (raw caught errors — Error `.stack`/`.message`) — **single source of truth** scrubbing keys from error messages/console on **every error path**; covers OpenAI/Anthropic `sk-`, `key-`, Deepgram `dg-`, `Bearer`/`Token`, `anthropic-`, and Gemini `AIza`. Password-masked inputs; keys live only in gitignored `data.json` | `shared/redact.ts` (used by `ai-client.ts`, `credential-validator.ts`, all of `notifications.ts`; `redactError` at audio/index, rem/semantic-matcher, elaboration/image-analyzer + proposer, shared/image-preprocess, shared/fire-and-forget, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, `main.ts` lifecycle paths, and `update-checker.ts`; `redactSecrets` also at the credential Test chip `credential-field.ts` and the `update-checker.ts` fetch-fail log) |
 | Redaction enforcement (lint) | Custom type-aware ESLint rule `synapse/no-unredacted-console` (#418): every value reaching a `console.*` sink must be **statically string-like** — i.e. already rendered through `redactError`/`redactSecrets`, which return `string`. Flags `String()`/`JSON.stringify()` of non-strings and direct `.message`/`.stack` access as bypasses; fails closed if type info is unavailable; scoped to shipped `src` (tests/mocks excluded). Runs in CI via `npm run lint` | `scripts/eslint-rules/no-unredacted-console.mjs`, `eslint.config.mjs` |
-| Prompt-injection defense | `wrapUntrusted()` fences fetched untrusted content (article/tweet/Reddit, image analysis) in labeled delimiters + data-not-instructions frame + anti-breakout scrub — structural, not lexical (#398). Since 2026-11-09 it also wraps everything summarize sends (with a system-prompt rule: never obey embedded instructions, never add links or image URLs not already present) and the tweet text enrichment fetches, and audio post-processing fences the transcript (whole, per section, and the preceding-context excerpt) under a system prompt that calls it text to edit, never instructions to follow. Gemini audio instruction in `system_instruction` | `shared/untrusted-content.ts` (used by `elaboration/proposer.ts`, `summarize/summarizer.ts`, `enrichment/index.ts`, `illustrate/note-analyzer.ts`, `audio/post-processor.ts`), `audio/transcriber.ts` |
+| Prompt-injection defense | **Since #620 every AI feature is covered.** `AIClient.chat` adds `UNTRUSTED_CONTENT_POLICY` to the first system message of every request; every call site fences note bodies, transcripts, fetched pages, and note metadata with `wrapUntrusted`, whose open and close markers share a random per-block id the content cannot predict; rewrite features strip an echoed fence with `stripUntrustedMarkers`; `shared/prompt-injection-guard.test.ts` fails a file that fences less often than it calls the AI. The System 1 lane is not fenced yet. History: `wrapUntrusted()` first fenced fetched untrusted content (article/tweet/Reddit, image analysis) in labeled delimiters + data-not-instructions frame + anti-breakout scrub — structural, not lexical (#398). Since 2026-11-09 it also wraps everything summarize sends (with a system-prompt rule: never obey embedded instructions, never add links or image URLs not already present) and the tweet text enrichment fetches, and audio post-processing fences the transcript (whole, per section, and the preceding-context excerpt) under a system prompt that calls it text to edit, never instructions to follow. Gemini audio instruction in `system_instruction` | `shared/untrusted-content.ts`, `shared/ai-client.ts`, every AI-calling module; `audio/transcriber.ts` |
 | Caption fetch hardening | YouTube caption URLs pass `sanitizeUrl` and go over Obsidian `requestUrl` with a 30 s per-request timeout. Since #501: caption tracks fetch only over `https:` from `youtube.com`/`googlevideo.com` with no embedded credentials; player JSON is bounded at 8 MiB and the track body at 16 MiB before `JSON.parse`; chapter titles and cue text are markdown-escaped at the render boundary; the video title is control-char-stripped and length-bounded. Any fetch/parse failure logs via `redactError` and falls through to the next tier | `transcription/youtube-captions.ts` |
 | yt-dlp argv hardening | Every yt-dlp invocation ends its option list with `--` before the URL positional — the download path since #501 and the duration probe since 2026-10-06 (`duration-detector.ts:139`); `dumpJson()` re-runs `sanitizeUrl()` at its own boundary; the dependency probe runs the configured tool path through `sanitizePath` before `which` (`audio-extractor.ts:585`) | `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
 | Related-notes fencing | Elaboration's backlink/outbound/tag context block is wrapped via `wrapUntrusted(_, 'related notes')`, so a linking note cannot forge a closing fence or smuggle instructions (#500) | `elaboration/proposer.ts` |
@@ -1293,16 +1320,17 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Download type check | An Illustrate download whose `Content-Type` is present and not `image/*` is rejected, so only image bytes enter the vault (2026-11-09) | `illustrate/asset-writer.ts:46-50` |
 | Public-host check | Illustrate refuses a download or a linked-page fetch whose host is loopback, private-network, link-local, or unqualified (`sanitizePublicUrl` → `isPrivateHost`): the download fails, the linked page is skipped. It checks the hostname only, so it cannot see where DNS or a redirect lands. Links the user wrote into a note, fetched by summarize and elaboration, still allow local addresses by design (2026-11-09) | `shared/validation.ts`; `illustrate/asset-writer.ts:36`, `illustrate/linked-pages.ts:21` |
 | Stored-path re-validation | A path read back from a stored proposal or snapshot is checked before it is written or renamed to (`assertVaultRelativePath`: not empty, not absolute, no `..` segment, no null byte) — deep-dive accept, organize accept, organize undo (single note and whole run, which lists a bad path as skipped). Title accept rejects a stored title that contains a path separator or is only dots (2026-11-09) | `shared/validation.ts`; `deep-dive/index.ts:176`, `organize/index.ts:440,539,598`, `title/index.ts:362` |
+| Stored-id checks | Checkpoint ids must match `/^[a-z0-9]+$/`; deep-dive run ids read back from proposals and checkpoints must match `/^[A-Za-z0-9_-]+$/` before they become a file name (`saveRun` throws, `loadRun` returns null; 2026-11-17) | `shared/id-utils.ts`, `deep-dive/deep-dive-store.ts:32` |
 | Redirect pinning | A Reddit share page may only redirect the follow-up fetch to a Reddit URL, re-run through `sanitizeUrl` first (2026-10-06) | `shared/reddit-fetcher.ts:203-206` |
 | Temp-file cleanup | Clipped-audio source copy and ffmpeg output are unlinked in a `finally` on every exit path, so a failed clip never leaves vault audio in the OS temp dir (2026-10-06). Since 2026-11-09 `VideoModule.processUrl` and `downloadVideoToVault` do the same for the extracted audio and the downloaded video | `audio/index.ts:237-243`, `video/index.ts:106-151`, `video/index.ts:329-346` |
 | Unguessable temp names | Every file Synapse creates in the OS temp dir is named `synapse-<kind>-<timestamp>-<random>`, the suffix from `randomToken()` (CSPRNG hex), not a timestamp alone (2026-11-09) | `shared/id-utils.ts:16`; `audio/index.ts`, `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
 | Safe deep-dive file names | AI-chosen topic titles pass through `safeNoteName`: path separators and reserved characters become `-`, leading dots are stripped (no `..` segment, no hidden file), empty becomes "Untitled" (2026-11-09) | `deep-dive/index.ts:690` |
-| Undocumented Obsidian APIs | Feature-detected, never assumed: `app.commands` (actions sidebar shows a "run it from the command palette" notice), `metadataCache.getBacklinksForFile` (no backlink rewrite), `SuggestModal` `chooser.useSelectedItem` (Shift+Enter does nothing) | `views/command-runner.ts:33-42`, `title/backlink-remediation.ts:45`, `shared/scan-folder-picker-modal.ts:30` |
+| Undocumented Obsidian APIs | Feature-detected, never assumed: `app.commands` (actions sidebar shows a "run it from the command palette" notice), `metadataCache.getBacklinksForFile` (no backlink rewrite), `SuggestModal` `chooser.useSelectedItem` (Shift+Enter does nothing), `app.setting.open` / `openTabById` (update notice falls back to a plain message; `revealSettingsSection` does nothing) | `views/command-runner.ts:33-42`, `title/backlink-remediation.ts:45`, `shared/scan-folder-picker-modal.ts:30`, `shared/update-checker.ts:218-230`, `shared/settings-section.ts:140-153` |
 | Release workflow inputs | Tag/version strings pass through `env` with a strict `X.Y.Z` check — no expression interpolation into the shell (2026-10-06) | `.github/workflows/release.yml`, `.github/workflows/tag-on-version-bump.yml` |
-| Pinned CI actions | Every third-party GitHub Action is referenced by full commit SHA, with the version in a trailing comment, so a moved tag cannot change what CI or a release runs (2026-11-09) | `.github/workflows/ci.yml`, `release.yml`, `tag-on-version-bump.yml` |
+| Pinned CI actions | Every third-party GitHub Action is referenced by full commit SHA, with the version in a trailing comment, so a moved tag cannot change what CI or a release runs (2026-11-09). Since 2026-11-17 `ci.yml` declares `permissions: contents: read` like `waffle-doctor.yml`; `release.yml` and `tag-on-version-bump.yml` get `contents: write` + `id-token: write` + `attestations: write`; `waffle-label-hook.yml` grants per-job write scopes (issues, and contents + pull requests for the implement job) | `.github/workflows/*.yml` |
 | Illustrate network surface | Off by default; sends an AI-proposed search query (never note text) to keyless Wikimedia Commons / Openverse; downloads only the accepted image (15 MB cap); the note is fenced via `wrapUntrusted` before analysis; charts use only numbers already in the note (#213) | `illustrate/providers/*`, `illustrate/asset-writer.ts`, `illustrate/note-analyzer.ts` |
 | Frontmatter safety | Key validation regex + forbidden keys blocklist | `enrichment/enrichment-applier.ts` |
-| Network security | Ollama HTTPS required (HTTP for localhost only), 2min timeouts | `shared/ai-client.ts` |
+| Network security | Ollama HTTPS required (HTTP for localhost only); AI requests time out at 2 min, or 10 min for a reasoning model; Gemini model ids are URL-encoded into the request path (2026-11-17) | `shared/ai-client.ts`, `shared/ai-config.ts`, `audio/transcriber.ts` |
 | Credential validation | Live key probe is one minimal authenticated GET (a POST for TypeSafe, which has no GET surface); result is **ephemeral** (never persisted) and routed through `redactSecrets` so an echoed key can't reach the status chip | `shared/credential-validator.ts`, `shared/provider-metadata.ts` |
 | Idempotent updates | `%% synapse-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
 | Prototype pollution | `deepMergeSettings` skips `__proto__`, `constructor`, `prototype` keys | `shared/settings-merge.ts` |
@@ -1314,6 +1342,7 @@ No audit pass has found a critical or high vulnerability. `data.json` (live API 
 
 | Pass | Outcome |
 |------|---------|
+| 2026-11-17 (release readiness, branch `release-readiness-audit`) | No critical or high issue in shipped code. `ci.yml` made read-only; deep-dive run ids validated; the Gemini transcriber URL-encodes the model id; summarize's settings-reveal logic moved to `shared/settings-section.ts`. `npm audit`: 0 production, 12 high in dev tooling (`picomatch`), not fixed. Graph re-verified acyclic |
 | 2026-11-09 (pre-release, whole codebase) | Fenced the two remaining places fetched text reached a prompt unfenced (summarize content, enrichment tweet text); made Illustrate's provider-supplied URL, link text, and attribution unable to forge markdown and rejected non-image downloads; gave OS-temp files random names and removed video temp files on every exit path; sanitized deep-dive file names; feature-detected the undocumented Obsidian APIs. Module type contracts moved into each module's `types.ts`. **Follow-up round, same day:** Illustrate refuses local and private-network hosts; audio post-processing fences the transcript; stored proposal and snapshot paths are re-validated before use; CI actions are pinned to commit SHAs; dev-dependency advisories cleared (`npm audit` reports 0 vulnerabilities); four dead files removed and the note scanners moved to `shared/`, leaving `video → audio` as the only runtime feature → feature import. Graph re-verified acyclic |
 | 2026-10-06 (`chore/audit-2026-10-06`) | Graph re-verified acyclic after the module-boundary refactor (per-call `model`, `shared/image-preprocess`, injected `suggestDirectory`, `AudioClipper`). Five defense-in-depth closures — provider-URL scheme check, Reddit redirect pinning, `--` on the yt-dlp duration probe, `sanitizePath` on the dependency probe, clipped-audio temp cleanup — plus release-workflow input hygiene. None was exploitable on its own |
 | 2026-09-17 (docs pass) | Graph re-verified acyclic after the `main.ts` refactor family (#496/#504) |
@@ -1343,6 +1372,7 @@ No audit pass has found a critical or high vulnerability. `data.json` (live API 
    - **Callouts**: write headers with `buildCallout`/`calloutHeaderLine` and match them with `calloutIdentity`/`isCalloutHeader`/`calloutHeaderSource` — never a literal `[!synapse-x]` string, because the written form is `[!<base>|synapse-x]` (#554).
    - **Mid-note insertion**: place blocks with `shared/insertion-point.ts` (`resolveInsertionPoint` + `applyInsertion`) rather than string-splicing, so you never split a paragraph, list, fence, or table (#213).
    - **Registering it**: add one entry to `MODULE_FACTORIES` in `modules/registry.ts` and an `enabled`-flagged section in `settings.ts`. `FeatureModules` is mapped over the settings keys, so a section without a registry entry is a compile error, and `registry.test.ts` fails if a `*Module` class is not constructed by the registry.
+   - **Sending text to the AI**: create the client as `new AIClient(getSettings, '<feature>')` so per-feature models apply (#619), and fence every note-, transcript-, or page-derived span with `wrapUntrusted(content, source)` — `shared/prompt-injection-guard.test.ts` fails the file otherwise (#620).
    - **Finish messages**: any operation that calls the AI passes `trackAiCache(use)` as its request options and finishes its toast through `withCacheReport(message, uses, unit)` (#527), so a cached transcript or AI response is always reported.
 5. Types go in `<module>/types.ts` — including the dependency bundles and callback types other modules are handed (the 2026-11-09 audit moved the stragglers there) — tests co-located as `<name>.test.ts`
 6. All shared utilities imported from `../shared` (barrel export) — never from a sibling feature module or an internal `shared/` file. Where you only need a *type* from a higher layer, use `import type` (erased at compile time, no runtime cycle).

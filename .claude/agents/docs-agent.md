@@ -32,7 +32,6 @@ Follow the `docs-agent` skill for the file set and format rules, and the `accura
 Docs passes don't rewrite these paths (globs allowed). If one has drifted
 from reality, flag the drift in your report instead:
 
-- `README.md`
 - `CLAUDE.md`
 - `CONTRIBUTING.md`
 - `CODE_OF_CONDUCT.md`

@@ -84,7 +84,7 @@ use" section; this list is the reviewer-facing counterpart.
   toast styling. Rationale in full at `styles.css:587`–`598`.
 
 - **`app.setting.open()` / `app.setting.openTabById()`
-  (`src/shared/update-checker.ts`, `src/summarize/index.ts`).** The settings
+  (`src/shared/update-checker.ts`, `src/shared/settings-section.ts`).** The settings
   navigation API is undocumented, so both call sites feature-detect every member
   and degrade — to a plain "open Settings → Community plugins" notice for the
   update checker, to a no-op for the video-settings reveal — when it is absent.
@@ -148,7 +148,7 @@ preset, including its bundled `typescript-eslint` type-checked layer, run once w
 and once without the repo's type info) and the per-rule enumeration is recorded in
 the issue-comment triage on #454. Bottom line: after excluding untyped-analysis
 artifacts (all `no-unsafe-*`), test-only findings (`globalThis`), and the one
-genuine fix (`querySelectorAll` → Obsidian's typed `findAll`, `src/summarize/index.ts`),
+genuine fix (`querySelectorAll` → Obsidian's typed `findAll`, now `src/shared/settings-section.ts`),
 the only review findings that survive a correctly-scoped, type-aware pass of
 shipped code are the intentional builtin `require()`s at `src/shared/node-loader.ts:72`–`75`
 documented in §2.

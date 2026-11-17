@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-11-09
+last-updated: 2026-11-17
 ---
 
 # Intake Module
@@ -136,7 +136,7 @@ Collision policy (#227, `resolveBreadcrumbPath`, index.ts:654): two distinct not
 
 ## Configuration
 
-All under `settings.intake` (`IntakeSettings`, `settings.ts:344`; defaults `DEFAULT_SETTINGS.intake`, `settings.ts:653`):
+All under `settings.intake` (`IntakeSettings`, `settings.ts:403`; defaults `DEFAULT_SETTINGS.intake`, `settings.ts:710`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|

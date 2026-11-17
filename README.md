@@ -160,7 +160,7 @@ These are the only services Synapse contacts, what each one is used for, and wha
 
 | Service | Used for | What is sent | Account |
 |---------|----------|--------------|---------|
-| OpenAI -- `api.openai.com` | AI provider; Whisper audio transcription | The note content you act on, or the audio you transcribe | API key required |
+| OpenAI -- `api.openai.com` | AI provider; audio transcription | The note content you act on, or the audio you transcribe | API key required |
 | Anthropic -- `api.anthropic.com` | AI provider | The note content you act on | API key required |
 | Google Gemini -- `generativelanguage.googleapis.com` | AI provider; audio transcription | The note content you act on, or the audio you transcribe | API key required |
 | Deepgram -- `api.deepgram.com` | Audio transcription | The audio you transcribe | API key required |
@@ -176,7 +176,7 @@ These are the only services Synapse contacts, what each one is used for, and wha
 
 ### What this means for you
 
-- **Cloud AI and transcription require an account.** OpenAI, Anthropic, Google Gemini, and Deepgram each need an API key you supply in **Settings > Synapse**. The note content or audio you act on is sent to the one provider you selected so it can do the work, and to no one else.
+- **Cloud AI and transcription require an account.** OpenAI, Anthropic, Google Gemini, and Deepgram each need an API key you supply in **Settings > Synapse**. The note content or audio you act on is sent only to the provider that feature uses -- your default provider, or the one you picked for that feature under **Per-feature models** -- and to no one else.
 - **Ollama stays offline.** Selected as your AI provider, **Ollama** sends note content only to the local endpoint you set (default `http://localhost:11434`) -- no account, no key, nothing leaving your machine. Use it if you want Synapse to work without sending anything out. Transcription has no on-device option yet: a local Whisper backend is planned but not available.
 - **System 1 decisions send note text to TypeSafe.** The **System 1 decisions** toggle under **Settings > Synapse > AI configuration** is off by default. Turned on, the note you act on and the options it chooses among go to TypeSafe's Jev model. Exclusion rules still apply, and Jev can only pick options your vault already has.
 - **Content you link is fetched from third-party sites.** When a note references a tweet or a web page and you run elaboration, enrichment, or summarize, Synapse requests that URL to read its content -- from Twitter/X (falling back to the fxtwitter and vxtwitter mirrors), from Reddit (the post's public Atom feed), or from the site itself. To avoid this, don't run those features on notes whose links you would rather not request, or turn the feature off in settings.
@@ -286,19 +286,26 @@ Open **Settings > Synapse** to configure the plugin. All features can be individ
 | AI provider | OpenAI, Anthropic, Google Gemini, or Ollama (local) | Anthropic |
 | API key | Your API key for the selected provider | -- |
 | Ollama endpoint | URL for local Ollama server (shown when Ollama selected) | `http://localhost:11434` |
-| Model | AI model for the selected provider | Claude Opus |
-| Temperature | Controls randomness (0 = deterministic, 1 = creative) | 0.7 |
-| Max tokens | Maximum tokens in AI responses (256-8192) | 2048 |
-| Cache identical AI responses | Reuse the previous result for an identical request at any temperature (always on at temperature 0); "Regenerate" bypasses it | Off |
+| Model | Default model for AI operations | Claude Opus |
+| Effort | How much the default model reasons before answering: Default, Low, Medium, High, or Max. Shown only for models that support it; higher effort is slower and costs more | Default |
+| Cache identical AI responses | Reuse the previous result for an identical request instead of spending again; "Regenerate" actions always bypass it | Off |
 | Voice | How elaboration, deep dive, and summaries write: Neutral (third person, never writes as you), Match the note (mirrors the note's register without speaking for you), First person (writes as you, opt-in), or Custom (your own instruction). Quoted or transcribed material always keeps its original wording | Neutral |
+
+**Per-feature models** (same section): pick a different provider, model, and effort for any
+feature. A feature left on **Default** uses the provider and model above.
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Transcription | Speech-to-text provider and model for audio and video: OpenAI (GPT Transcribe, or Whisper v1), Deepgram (Nova models), or Google Gemini | OpenAI · Whisper v1 |
+| Elaboration, Enrichment, Summarize, Tidy, Organize, Deep dive, Title, REM, Illustrate, Transcript post-processing, Image OCR and analysis | Provider and model for that feature, plus an effort dropdown when the chosen model supports one | Default |
+| *Provider* API key | Appears for each extra provider a feature above uses (OpenAI, Anthropic, Google Gemini, Deepgram). Synapse stores one key per provider and every feature that uses that provider shares it. A feature set to Ollama adds the **Ollama endpoint** row instead | -- |
 
 Each API-key field carries a **Get an API key →** link to the right provider's console and a
 **Test** button that makes a minimal authenticated request and reports **✓ Connected** or
 **✗ Invalid key** inline -- so you can confirm a key works before running a feature, instead of
-discovering a typo later. The same helpers appear on the per-provider transcription key fields, and
-Ollama's endpoint gets a reachability **Test**. Keys are still entered manually: a one-click OAuth
-"connect" flow isn't offered because the major providers don't support third-party API access that
-way (see DECISIONS.md).
+discovering a typo later. Ollama's endpoint gets a reachability **Test**. Keys are still entered
+manually: a one-click OAuth "connect" flow isn't offered because the major providers don't support
+third-party API access that way (see DECISIONS.md).
 
 **System 1 decisions** (same section; the last three rows appear once the toggle is on):
 
@@ -349,8 +356,6 @@ One toggle per proposal type -- Elaboration, Enrichment, Organize, Deep dive, Ti
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Enable audio | Toggle audio transcription | On |
-| Transcription provider | OpenAI Whisper API, Deepgram, or Google Gemini | OpenAI Whisper API |
-| Transcription model | Model used by the selected transcription provider | Whisper v1 |
 | Language | Audio language; empty auto-detects | Auto-detect |
 | Auto-format song lyrics | Format song transcripts into verse/chorus structure | On |
 | Post-processing | Clean up transcriptions with AI | On |

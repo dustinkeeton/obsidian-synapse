@@ -28,7 +28,6 @@ Follow the `docs-human` skill for the file set and format rules, the `prose` ski
 Docs passes don't rewrite these paths (globs allowed). If one has drifted
 from reality, flag the drift in your report instead:
 
-- `README.md`
 - `CLAUDE.md`
 - `CONTRIBUTING.md`
 - `CODE_OF_CONDUCT.md`

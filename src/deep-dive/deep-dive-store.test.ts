@@ -344,5 +344,19 @@ describe('DeepDiveStore', () => {
 			const loaded = await store.loadRun('no-such-run');
 			expect(loaded).toBeNull();
 		});
+
+		it('rejects a run id that would escape the run folder', async () => {
+			expect(await store.loadRun('../../outside')).toBeNull();
+			await expect(store.saveRun({
+				id: '../outside',
+				rootNotePath: 'notes/root.md',
+				maxDepth: 3,
+				qualityThreshold: 0.4,
+				proposalIds: [],
+				stats: { totalProposals: 0, byDepth: {}, earlyTerminations: 0 },
+				createdAt: '2026-03-16T00:00:00.000Z',
+				status: 'completed',
+			})).rejects.toThrow('Invalid deep dive run id');
+		});
 	});
 });
