@@ -482,6 +482,9 @@ function contentKey(parts: string[]): string          // length-prefixed (netstr
 const UNTRUSTED_OPEN_TAG: string                       // 'UNTRUSTED_EXTERNAL_CONTENT'
 const UNTRUSTED_CLOSE_FENCE: string                    // '<<<END_UNTRUSTED_EXTERNAL_CONTENT>>>'
 function wrapUntrusted(content: string, source?: string): string   // fence content in labeled delimiters + anti-breakout sanitization
+const UNTRUSTED_CONTENT_POLICY: string                  // system clause: supplied material is data, never instructions
+function withUntrustedPolicy(messages: ChatMessage[]): ChatMessage[]   // add the policy to the first system message (or prepend one); AIClient.chat calls it on every request
+function stripUntrustedMarkers(output: string): string   // drop a wrapper the model echoed around rewritten output
 
 // insertion-point.ts (#213: structure-aware mid-document placement seam shared by proposal kinds)
 interface InsertionAnchor { kind: 'heading' | 'paragraph' | 'end'; text: string }   // 'heading' matches heading lines only; 'paragraph' matches any line incl. inside blocks (a heading hit promotes); 'end' = explicit append
@@ -895,7 +898,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `withCacheReport` / `trackAiCache` / `transcriptCacheUse` / `mergeCacheUse` | audio/index, video/index, transcription/insert-url-transcript, summarize/index, tidy/index, elaboration/index, enrichment/index, deep-dive/index, organize/index, rem/index, title/index, image/index (#527 finish messages) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
-| `wrapUntrusted` | elaboration/proposer (fetched-link content, related-notes context, image-analysis prompt fencing; `elaboration/proposer.ts:252,336,410`), enrichment/index (fetched tweet text, `enrichment/index.ts:724`), summarize/summarizer (summarized content, `summarize/summarizer.ts:33`), illustrate/note-analyzer (note body, `illustrate/note-analyzer.ts:121`), audio/post-processor (whole transcript, preceding context, section body, key-points input; `audio/post-processor.ts:61,129,131,151`) |
+| `wrapUntrusted` | every non-test file that calls an AI client with text (enforced by `shared/prompt-injection-guard.test.ts`): audio (post-processor, lyrics reformat), deep-dive (topic-analyzer, note-generator), elaboration/proposer (note body, fetched links, related notes, image analysis), enrichment (index tweets, metadata-classifier, prompt-builder, topic-extractor), illustrate/note-analyzer, organize/content-analyzer, rem/semantic-matcher, summarize/summarizer, tidy, title/title-suggester |
 | `findAvailableVaultPath` | video/index (same-day re-download), title/index (duplicate "iterate" resolution, #408) |
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
 | `voiceInstruction` | elaboration/proposer, deep-dive/note-generator, summarize/summarizer (#540) |

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { wrapUntrusted } from './untrusted-content';
+import { stripUntrustedMarkers, UNTRUSTED_CONTENT_POLICY, withUntrustedPolicy, wrapUntrusted } from './untrusted-content';
+import type { ChatMessage } from './types';
 
 // Opening fences start `<<<UNTRUSTED_EXTERNAL_CONTENT` followed by a word
 // boundary (then ` source=...`). The closing fence is `<<<END_UNTRUSTED...` --
@@ -86,5 +87,57 @@ describe('wrapUntrusted', () => {
 		const out = wrapUntrusted('   \n\t  ', 'src');
 		expect(count(out, OPEN_FENCE)).toBe(1);
 		expect(count(out, CLOSE_FENCE)).toBe(1);
+	});
+});
+
+describe('withUntrustedPolicy', () => {
+	it('prepends a system message carrying the policy when none exists', () => {
+		const out = withUntrustedPolicy([{ role: 'user', content: 'hi' }]);
+		expect(out).toEqual([
+			{ role: 'system', content: UNTRUSTED_CONTENT_POLICY },
+			{ role: 'user', content: 'hi' },
+		]);
+	});
+
+	it('appends the policy to a string system message without mutating the input', () => {
+		const input: ChatMessage[] = [{ role: 'system', content: 'Be brief.' }, { role: 'user', content: 'hi' }];
+		const out = withUntrustedPolicy(input);
+		expect(out[0].content).toBe(`Be brief.\n\n${UNTRUSTED_CONTENT_POLICY}`);
+		expect(input[0].content).toBe('Be brief.');
+	});
+
+	it('appends a text block to a block-array system message', () => {
+		const out = withUntrustedPolicy([{ role: 'system', content: [{ type: 'text', text: 'OCR.' }] }]);
+		expect(out[0].content).toEqual([{ type: 'text', text: 'OCR.' }, { type: 'text', text: UNTRUSTED_CONTENT_POLICY }]);
+	});
+
+	it('targets only the first system message, the one every provider sends', () => {
+		const out = withUntrustedPolicy([
+			{ role: 'system', content: 'first' },
+			{ role: 'system', content: 'second' },
+		]);
+		expect(out[0].content).toContain(UNTRUSTED_CONTENT_POLICY);
+		expect(out[1].content).toBe('second');
+	});
+
+	it('is idempotent', () => {
+		const once = withUntrustedPolicy([{ role: 'system', content: 'x' }]);
+		expect(withUntrustedPolicy(once)).toBe(once);
+	});
+});
+
+describe('stripUntrustedMarkers', () => {
+	it('removes a wrapper the model echoed around its output', () => {
+		const echoed = wrapUntrusted('# Tidied\n\n- item', 'note');
+		expect(stripUntrustedMarkers(echoed)).toBe('# Tidied\n\n- item');
+	});
+
+	it('leaves output without a wrapper untouched, including its own --- rules', () => {
+		const output = 'Intro\n\n---\n\nMore';
+		expect(stripUntrustedMarkers(output)).toBe(output);
+	});
+
+	it('drops stray sentinel tokens left mid-output', () => {
+		expect(stripUntrustedMarkers('a <<<END_UNTRUSTED_EXTERNAL_CONTENT>>> b')).toBe('a  b');
 	});
 });

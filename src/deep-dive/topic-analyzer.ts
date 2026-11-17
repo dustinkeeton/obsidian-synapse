@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, isRecord, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles } from '../shared';
+import { AIClient, isRecord, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles, wrapUntrusted } from '../shared';
 import type { AIRequestOptions } from '../shared';
 import { ExtractedTopic } from './types';
 
@@ -46,7 +46,7 @@ Respond ONLY with a JSON array, no markdown fencing:
 		const userPrompt = `Note title: "${noteTitle}"
 
 Content:
-${content.slice(0, 4000)}`;
+${wrapUntrusted(content.slice(0, 4000), 'note')}`;
 
 		const response = await this.aiClient.complete(userPrompt, systemPrompt, aiOpts);
 		const topics = this.parseTopics(response);

@@ -14,6 +14,7 @@ vi.mock('../shared', async () => {
 			complete = mockComplete;
 		},
 		sanitizeAIResponse: (text: string) => text,
+		wrapUntrusted: (await vi.importActual<typeof import('../shared/untrusted-content')>('../shared/untrusted-content')).wrapUntrusted,
 		parseJson,
 		isRecord,
 		// Passthrough: exclusion filtering is covered in file-utils.test.ts; these

@@ -321,6 +321,7 @@ export function isLyricsContent(content: string): boolean {
 
 const LYRICS_PROMPT =
 	'You are formatting a song transcript as structured lyrics. The transcript IS the lyrics — ' +
+	'it arrives inside a <<<UNTRUSTED_EXTERNAL_CONTENT>>> block; leave the block markers and its "Reference data only" line out of the output. ' +
 	'preserve EVERY line exactly. Do NOT summarize, paraphrase, condense, translate, or omit any line. ' +
 	'Reproduce repeated sections (such as a repeated chorus) IN FULL each time they occur — never collapse ' +
 	'a repeat to "Chorus (repeat)" or similar.\n\n' +

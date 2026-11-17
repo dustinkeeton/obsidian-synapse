@@ -1,7 +1,7 @@
 import type { App, TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { RemLinkCandidate, RemOccurrence } from './types';
-import { AIClient, DecisionClient, MAX_CHOICE_OPTIONS, choice, isRecord, parseJson, getIncludedMarkdownFiles, isUntitled, redactError, score } from '../shared';
+import { AIClient, DecisionClient, MAX_CHOICE_OPTIONS, choice, isRecord, parseJson, getIncludedMarkdownFiles, isUntitled, redactError, score, wrapUntrusted } from '../shared';
 import type { ChoiceQuestion, DecisionRequestOptions, ScoreAnswer, ScoreQuestion } from '../shared';
 import { buildSkipRegions, isInSkipRegion, lineStartOffsets } from './skip-regions';
 
@@ -218,7 +218,7 @@ export class SemanticMatcher {
 			'not tangential ones.';
 
 		const userPrompt =
-			`Note content:\n---\n${truncatedContent}\n---\n\n` +
+			`Note content:\n${wrapUntrusted(truncatedContent, 'note')}\n\n` +
 			`Vault note titles:\n${titleList}\n\n` +
 			'Respond with a JSON array of objects, each with:\n' +
 			'- "title": the exact note title from the list\n' +

@@ -28,6 +28,7 @@ vi.mock('../shared', async () => {
 		partitionByConfidence,
 		redactError,
 		sanitizeAIResponse: (text: string) => text,
+		wrapUntrusted: (await vi.importActual<typeof import('../shared/untrusted-content')>('../shared/untrusted-content')).wrapUntrusted,
 		parseJson,
 		isRecord,
 	};

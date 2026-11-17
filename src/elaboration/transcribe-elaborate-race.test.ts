@@ -15,7 +15,7 @@ const ELABORATION = 'Elaborated body';
 
 /** Echoes the note body from the prompt plus an elaboration, as the rewrite prompt asks the model to. */
 function rewriteFromPrompt(prompt: string): string {
-	const match = prompt.match(/\n---\n([\s\S]*?)\n---\n/);
+	const match = prompt.match(/source="note">>>\n[^\n]*\n---\n([\s\S]*?)\n<<<END_UNTRUSTED_EXTERNAL_CONTENT>>>/);
 	return `${match?.[1] ?? ''}\n\n${ELABORATION}`;
 }
 

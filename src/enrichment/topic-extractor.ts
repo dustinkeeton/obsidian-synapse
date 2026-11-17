@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles } from '../shared';
+import { AIClient, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles, wrapUntrusted } from '../shared';
 import type { AIRequestOptions } from '../shared';
 import { InternalLinkCandidate } from './types';
 import { VaultAnalyzer } from './vault-analyzer';
@@ -162,7 +162,7 @@ export class TopicExtractor {
 		const prompt = `Identify the key concepts, people, technologies, theories, and topics in this note that would make good links to other notes in a knowledge base.
 
 ## Note Content
-${truncatedContent}
+${wrapUntrusted(truncatedContent, 'note')}
 
 ## Instructions
 - Be specific: prefer "AI Governance" over "AI", "React Hooks" over "React".
