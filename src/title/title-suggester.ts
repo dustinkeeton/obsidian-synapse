@@ -1,4 +1,4 @@
-import { AIClient, sanitizeAIResponse, stripCodeFences } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, wrapUntrusted } from '../shared';
 import type { AIRequestOptions } from '../shared';
 
 /**
@@ -26,10 +26,11 @@ export class TitleSuggester {
 		].join('\n');
 
 		const prompt = [
-			`Current title: ${currentTitle}`,
+			'Current title:',
+			wrapUntrusted(currentTitle, 'note title'),
 			'',
 			'Note content:',
-			truncated,
+			wrapUntrusted(truncated, 'note'),
 		].join('\n');
 
 		const response = stripCodeFences(sanitizeAIResponse(
@@ -57,10 +58,11 @@ export class TitleSuggester {
 		].join('\n');
 
 		const prompt = [
-			`Current title: ${currentTitle}`,
+			'Current title:',
+			wrapUntrusted(currentTitle, 'note title'),
 			'',
 			'Note content:',
-			truncated,
+			wrapUntrusted(truncated, 'note'),
 		].join('\n');
 
 		const response = stripCodeFences(sanitizeAIResponse(

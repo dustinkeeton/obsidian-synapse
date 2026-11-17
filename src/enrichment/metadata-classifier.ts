@@ -9,6 +9,7 @@ import {
 	partitionByConfidence,
 	redactError,
 	sanitizeAIResponse,
+	wrapUntrusted,
 } from '../shared';
 import type { ChoiceQuestion, DecisionRequestOptions } from '../shared';
 import { TagCandidate } from './types';
@@ -190,10 +191,10 @@ export class MetadataClassifier {
 		const prompt = `Classify this note using ONLY tags from the vocabulary below.
 
 ## Note Content
-${truncatedContent}
+${wrapUntrusted(truncatedContent, 'note')}
 
 ## Existing Tags on This Note
-${existingTags.length > 0 ? existingTags.join(', ') : '(none)'}
+${existingTags.length > 0 ? wrapUntrusted(existingTags.join(', '), 'note tags') : '(none)'}
 
 ## Tag Vocabulary
 ${vocabDescription}

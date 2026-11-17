@@ -1,6 +1,6 @@
 import { App, TFile, getAllTags } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, isRecord, parseFrontmatter, parseJson, redactError, sanitizeAIResponse, withRetry } from '../shared';
+import { AIClient, isRecord, parseFrontmatter, parseJson, redactError, sanitizeAIResponse, withRetry, wrapUntrusted } from '../shared';
 import type { AIRequestOptions, DecisionLane, DecisionRequestOptions } from '../shared';
 import { PlacementDecider } from './placement-decider';
 import { ContentAnalysis, NoteTopic, Placement } from './types';
@@ -115,9 +115,9 @@ export class ContentAnalyzer {
 			? trimmedBody.slice(0, maxChars) + '\n\n[Content truncated]'
 			: trimmedBody;
 
-		const contextParts = [truncated];
+		const contextParts = [wrapUntrusted(truncated, 'note')];
 		if (tags.length > 0) {
-			contextParts.push(`\nExisting tags: ${tags.join(', ')}`);
+			contextParts.push(`\nExisting tags:\n${wrapUntrusted(tags.join(', '), 'note tags')}`);
 		}
 
 		try {

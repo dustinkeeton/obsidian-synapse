@@ -3,7 +3,7 @@ import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import {
 	NotificationManager, buildCallout, CALLOUT_TYPES, calloutForTranscriptionResult,
-	sanitizeAIResponse, AIClient, detectSchemaFor,
+	sanitizeAIResponse, stripUntrustedMarkers, wrapUntrusted, AIClient, detectSchemaFor,
 	CheckpointManager, NoteOperationQueue, generateId, formatTimeRange, loadNodeModules,
 	isPathExcluded, findMatchingRule, redactError,
 	NoSpeechDetectedError, hasSpeechContent, isNoSpeechError, noSpeechNotice, withCacheReport,
@@ -171,7 +171,7 @@ export class AudioModule implements FeatureModule {
 		if (!schema || schema.mode !== 'reformat') return;
 
 		try {
-			const reformatted = sanitizeAIResponse(await this.aiClient.complete(base, schema.prompt, { onCacheHit: opts.onCacheHit, bypassCache: opts.bypassCache }));
+			const reformatted = stripUntrustedMarkers(sanitizeAIResponse(await this.aiClient.complete(wrapUntrusted(base, 'transcript'), schema.prompt, { onCacheHit: opts.onCacheHit, bypassCache: opts.bypassCache })));
 			if (reformatted.trim()) {
 				result.processed = reformatted;
 				result.reformatted = true;

@@ -1,5 +1,5 @@
 import { SynapseSettings } from '../settings';
-import { AIClient, sanitizeAIResponse, stripCodeFences, voiceInstruction } from '../shared';
+import { AIClient, sanitizeAIResponse, stripCodeFences, stripUntrustedMarkers, voiceInstruction, wrapUntrusted } from '../shared';
 import type { AIRequestOptions, LinkpathFor } from '../shared';
 import { ExtractedTopic } from './types';
 import { wikiLink } from './syllabus-navigator';
@@ -44,16 +44,18 @@ Rules:
 		const urlContext = topic.relatedUrls.length > 0
 			? `\nRelevant URLs: ${topic.relatedUrls.join(', ')}`
 			: '';
+		const topicBlock = wrapUntrusted(`Topic: ${topic.title}\nScope: ${topic.description}${urlContext}`, 'extracted topic');
 
-		const userPrompt = `Write a note about: "${topic.title}"
-Topic scope: ${topic.description}
-Parent note: "${sourceTitle}"${urlContext}
+		const userPrompt = `Write a note about the topic described in this block:
+${topicBlock}
+Parent note title:
+${wrapUntrusted(sourceTitle, 'parent note title')}
 
 Context from parent note (for reference, do not repeat):
-${sourceContent.slice(0, 2000)}`;
+${wrapUntrusted(sourceContent.slice(0, 2000), 'parent note')}`;
 
 		const content = await this.aiClient.complete(userPrompt, systemPrompt, aiOpts);
-		return this.cleanContent(stripCodeFences(sanitizeAIResponse(content)), sourcePath);
+		return this.cleanContent(stripCodeFences(stripUntrustedMarkers(sanitizeAIResponse(content))), sourcePath);
 	}
 
 	private cleanContent(content: string, sourcePath: string): string {

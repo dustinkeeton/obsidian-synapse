@@ -7,6 +7,7 @@ import { redactSecrets } from './redact';
 import { isRecord } from './json-utils';
 import { contentKey } from './hash-utils';
 import { safeRequest } from './safe-request';
+import { withUntrustedPolicy } from './untrusted-content';
 
 // Re-exported for back-compat: existing callers and tests import `redactSecrets`
 // from this module. The implementation now lives in ./redact (single source of
@@ -328,7 +329,8 @@ export class AIClient {
 	 * and (when enabled) serving/refreshing a response cache. The raw provider
 	 * dispatch lives in {@link dispatch}; this method is the caching wrapper.
 	 */
-	async chat(messages: ChatMessage[], opts?: AIRequestOptions): Promise<string> {
+	async chat(input: ChatMessage[], opts?: AIRequestOptions): Promise<string> {
+		const messages = withUntrustedPolicy(input);
 		const settings = this.getSettings();
 		const { ai } = settings;
 		const resolved = resolveAIConfig(settings, this.feature);

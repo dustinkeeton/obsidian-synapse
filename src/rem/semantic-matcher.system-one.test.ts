@@ -235,6 +235,6 @@ describe('SemanticMatcher two-lane behaviour (#558, #566)', () => {
 
 		await makeMatcher().match(source, 'See [[ml]]. ' + content, new Set(), 10);
 
-		expect(complete.mock.calls[0][0]).toContain('Vault note titles:\nGardening\nDeep Learning\n');
+		expect(complete.mock.calls[0][0]).toMatch(/source="vault note titles">>>\n[^\n]*\n---\nGardening\nDeep Learning\n</);
 	});
 });

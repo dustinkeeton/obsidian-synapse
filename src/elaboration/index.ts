@@ -446,11 +446,9 @@ export class ElaborationModule implements FeatureModule {
 				const cacheUse: CacheUse = {};
 				const proposal = await this.proposer.generate(result, guard.key, trackAiCache(cacheUse));
 				if (!proposal) {
-					// generate() returns null when the note is essentially just
-					// unreadable link(s): no proposal is created and the link-load
-					// failure was already surfaced. Finish honestly instead of
-					// claiming a proposal was generated.
-					op.finish('No proposal -- could not load the linked content');
+					// generate() returns null after it has already notified why
+					// (unreadable links or an empty AI rewrite).
+					op.finish('No proposal created');
 					return;
 				}
 				await this.store.save(proposal);

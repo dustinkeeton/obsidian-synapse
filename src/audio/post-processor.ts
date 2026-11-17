@@ -1,5 +1,5 @@
 import type { PostProcessingSettings, SynapseSettings } from '../settings';
-import { AIClient, isWorthPostProcessing, redactError, sanitizeAIResponse, sleep, wrapUntrusted } from '../shared';
+import { AIClient, isWorthPostProcessing, redactError, sanitizeAIResponse, sleep, stripCodeFences, stripUntrustedMarkers, wrapUntrusted } from '../shared';
 import type { AIRequestOptions } from '../shared';
 import { segmentTranscript, trimRepeatedContext, type TranscriptSegment } from './transcript-segmenter';
 
@@ -66,7 +66,7 @@ export class PostProcessor {
 				SYSTEM_PROMPT,
 				aiRequestOptions(opts)
 			);
-			return sanitizeAIResponse(response);
+			return stripUntrustedMarkers(sanitizeAIResponse(response));
 		}
 
 		return this.processInSections(rawTranscript, sectionInstructions, keyPoints, maxTokens, opts);
@@ -135,7 +135,7 @@ export class PostProcessor {
 			`${formatInstructions([...instructions, sectionNote])}\n\n${context}Transcript section:\n${wrapUntrusted(segment.body, 'transcript section')}`;
 		try {
 			const response = await this.aiClient.complete(prompt, SYSTEM_PROMPT, aiRequestOptions(opts));
-			const cleaned = trimRepeatedContext(sanitizeAIResponse(response).trim(), segment.context);
+			const cleaned = trimRepeatedContext(stripUntrustedMarkers(sanitizeAIResponse(response)).trim(), segment.context);
 			if (cleaned.length === 0) return null;
 			if (Math.ceil(cleaned.length / CHARS_PER_TOKEN) >= maxTokens) return null;
 			return cleaned;
@@ -154,9 +154,13 @@ export class PostProcessor {
 				'Write a "Key Points" section with bullet points summarizing the transcript. Output only that section, starting with a "Key Points" heading.',
 			])}\n\nTranscript:\n${wrapUntrusted(text, 'transcript')}`;
 		try {
-			const summary = sanitizeAIResponse(
-				await this.aiClient.complete(prompt, SYSTEM_PROMPT, aiRequestOptions(opts))
-			).trim();
+			const reply = sanitizeAIResponse(await this.aiClient.complete(prompt, SYSTEM_PROMPT, aiRequestOptions(opts)));
+			const opening = text.trim().slice(0, 200);
+			if (stripUntrustedMarkers(reply) !== reply || (opening.length > 0 && reply.includes(opening))) {
+				console.warn('[Synapse] Key points pass echoed the transcript; transcript kept without key points');
+				return null;
+			}
+			const summary = stripCodeFences(reply).trim();
 			return summary.length > 0 ? summary : null;
 		} catch (error) {
 			console.warn('[Synapse] Key points pass failed; transcript kept without key points', redactError(error));

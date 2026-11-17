@@ -192,7 +192,7 @@ export {
 export type { ContentSchema, PipelineStage, SchemaMode } from './content-schemas';
 export { generateId, isValidCheckpointId, randomToken } from './id-utils';
 export { hashString, contentKey } from './hash-utils';
-export { wrapUntrusted, UNTRUSTED_OPEN_TAG, UNTRUSTED_CLOSE_FENCE } from './untrusted-content';
+export { wrapUntrusted, withUntrustedPolicy, stripUntrustedMarkers, UNTRUSTED_CONTENT_POLICY, UNTRUSTED_OPEN_TAG, UNTRUSTED_CLOSE_TAG } from './untrusted-content';
 export { resolveInsertionPoint, applyInsertion, describeInsertion, locateRegion, scanBlocks } from './insertion-point';
 export type { InsertionAnchor, InsertionStrategy, InsertionBlockType, ResolvedInsertion, RegionLocator, ResolveInsertionOptions, LocatedRegion } from './insertion-point';
 export { isUntitled, isGenericTitle } from './title-detector';

@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, isRecord, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles } from '../shared';
+import { AIClient, isRecord, parseJson, sanitizeAIResponse, getIncludedMarkdownFiles, wrapUntrusted } from '../shared';
 import type { AIRequestOptions } from '../shared';
 import { ExtractedTopic } from './types';
 
@@ -38,15 +38,20 @@ Rules:
 - Relevance score 0-1 indicates how central the topic is to the source note
 - Include a one-sentence description of what the note should cover
 - Extract any URLs from the source that relate to each topic
-- Do NOT repeat any of these ancestor topics: ${ancestorTopics.length > 0 ? ancestorTopics.join(', ') : '(none)'}
+- Do NOT repeat any of the ancestor topics listed in the user message
 
 Respond ONLY with a JSON array, no markdown fencing:
 [{"title": "Topic Name", "description": "What this note covers", "relevance": 0.8, "relatedUrls": ["https://..."]}]`;
 
-		const userPrompt = `Note title: "${noteTitle}"
+		const ancestors = ancestorTopics.length > 0 ? wrapUntrusted(ancestorTopics.join('\n'), 'ancestor topics') : '(none)';
+		const userPrompt = `Note title:
+${wrapUntrusted(noteTitle, 'note title')}
+
+Ancestor topics:
+${ancestors}
 
 Content:
-${content.slice(0, 4000)}`;
+${wrapUntrusted(content.slice(0, 4000), 'note')}`;
 
 		const response = await this.aiClient.complete(userPrompt, systemPrompt, aiOpts);
 		const topics = this.parseTopics(response);

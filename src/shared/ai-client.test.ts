@@ -4,6 +4,7 @@ import { AIClient, redactSecrets } from './ai-client';
 import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 import type { ChatMessage, ContentBlock } from './types';
 import { voiceInstruction } from './voice';
+import { UNTRUSTED_CONTENT_POLICY } from './untrusted-content';
 
 const mockRequestUrl = vi.mocked(requestUrl);
 
@@ -138,20 +139,20 @@ describe('AIClient — Gemini provider', () => {
 		await client.complete('Hello', 'You are concise.');
 
 		const body = lastRequestBody();
-		expect(body.system_instruction).toEqual({ parts: [{ text: 'You are concise.' }] });
+		expect(body.system_instruction).toEqual({ parts: [{ text: `You are concise.\n\n${UNTRUSTED_CONTENT_POLICY}` }] });
 		// The system message must not leak into contents
 		expect(body.contents).toHaveLength(1);
 		expect(body.contents[0].role).toBe('user');
 		expect(body.contents[0].parts).toEqual([{ text: 'Hello' }]);
 	});
 
-	it('omits system_instruction when no system message is present', async () => {
+	it('sends the untrusted-content policy as system_instruction when no system message is present', async () => {
 		mockRequestUrl.mockResolvedValue(geminiResponse('ok'));
 
 		await client.chat([{ role: 'user', content: 'Hi' }]);
 
 		const body = lastRequestBody();
-		expect(body.system_instruction).toBeUndefined();
+		expect(body.system_instruction).toEqual({ parts: [{ text: UNTRUSTED_CONTENT_POLICY }] });
 	});
 
 	it('maps the assistant role to model', async () => {
@@ -321,7 +322,7 @@ describe('AIClient — OpenAI provider', () => {
 		expect(body).not.toHaveProperty('temperature');
 		expect(body).not.toHaveProperty('reasoning_effort');
 		// reasoning models take instructions as the developer role
-		expect(body.messages[0]).toEqual({ role: 'developer', content: 'Be brief.' });
+		expect(body.messages[0]).toEqual({ role: 'developer', content: `Be brief.\n\n${UNTRUSTED_CONTENT_POLICY}` });
 		expect(body.messages[1]).toEqual({ role: 'user', content: 'Hi' });
 		expect(result).toBe('hello');
 	});
@@ -336,7 +337,7 @@ describe('AIClient — OpenAI provider', () => {
 		await client.chat([{ role: 'user', content: blocks }]);
 
 		const body = lastRequestBody();
-		expect(body.messages[0].content).toEqual([
+		expect(body.messages[1].content).toEqual([
 			{ type: 'text', text: 'describe' },
 			{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,Zm9v' } },
 		]);
@@ -396,18 +397,18 @@ describe('AIClient — Anthropic provider', () => {
 		const body = lastRequestBody();
 		expect(body.model).toBe('claude-sonnet-5-5');
 		// system message is lifted out of messages into the top-level system field
-		expect(body.system).toBe('You are terse.');
+		expect(body.system).toBe(`You are terse.\n\n${UNTRUSTED_CONTENT_POLICY}`);
 		expect(body.messages).toEqual([{ role: 'user', content: 'Hello' }]);
 		expect(result).toBe('hi');
 	});
 
-	it('omits the system field when no system message is supplied', async () => {
+	it('sends the untrusted-content policy as the system field when no system message is supplied', async () => {
 		mockRequestUrl.mockResolvedValue(anthropicResponse('ok'));
 
 		await client.chat([{ role: 'user', content: 'Hi' }]);
 
 		const body = lastRequestBody();
-		expect(body.system).toBeUndefined();
+		expect(body.system).toBe(UNTRUSTED_CONTENT_POLICY);
 	});
 
 	it('serializes vision content blocks into base64 image source parts', async () => {
@@ -598,7 +599,7 @@ describe('AIClient — Ollama provider', () => {
 		await client.chat([{ role: 'user', content: blocks }]);
 
 		const body = lastRequestBody();
-		expect(body.messages[0]).toEqual({
+		expect(body.messages[1]).toEqual({
 			role: 'user',
 			content: 'first\nsecond',
 			images: ['aW1n'],
