@@ -249,7 +249,7 @@ describe('PostProcessor', () => {
 			}
 		});
 
-		it('drops a key-points reply that is not a Key Points section', async () => {
+		it('drops a key-points reply that echoed the fenced transcript', async () => {
 			completeSpy
 				.mockResolvedValueOnce('Clean one.')
 				.mockResolvedValueOnce('Clean two.')
@@ -264,6 +264,22 @@ describe('PostProcessor', () => {
 
 			expect(completeSpy).toHaveBeenCalledTimes(3);
 			expect(result).toBe('Clean one.\n\nClean two.');
+		});
+		it('keeps a key-points reply with a non-English heading', async () => {
+			completeSpy
+				.mockResolvedValueOnce('Clean one.')
+				.mockResolvedValueOnce('Clean two.')
+				.mockResolvedValueOnce('## Puntos clave\n- un punto');
+			const update = vi.fn();
+			const settings = longSettings((s) => {
+				s.audio.postProcessing.extractKeyPoints = true;
+			});
+			const pp = longPP(() => settings, { delayMs: 0 });
+
+			const result = await pp.process([paragraph('one'), paragraph('two')].join('\n\n'), { update });
+
+			expect(completeSpy).toHaveBeenCalledTimes(3);
+			expect(result).toBe('Clean one.\n\nClean two.\n\n## Puntos clave\n- un punto');
 		});
 
 		it('adds key points once at the end instead of once per section', async () => {

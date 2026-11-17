@@ -70,7 +70,7 @@ awaited, so there is no cycle).
 |------|-------------|------|
 | `index.ts` | `SummarizeModule`, type + fn re-exports | Orchestrator, commands, scan + summarize flows |
 | `types.ts` | `TranscribedMedia`, `SummarizeTarget`, `TranscribeUrlFn`, `TranscribeAudioFn` | Target type model + injected transcriber contracts |
-| `summarizer.ts` | `Summarizer` | AI summarization with style (bullets/paragraph/key-points); content fenced with `wrapUntrusted(content, source)` (summarizer.ts:33) and the system prompt carries `UNTRUSTED_RULE` (summarizer.ts:14-15) |
+| `summarizer.ts` | `Summarizer` | AI summarization with style (bullets/paragraph/key-points); content fenced with `wrapUntrusted(content, 'summarized content')` and the source name in its own `wrapUntrusted(source, 'source label')` block (summarizer.ts:33) and the system prompt carries `UNTRUSTED_RULE` (summarizer.ts:14-15) |
 | `note-scanner.ts` | `findSummarizeTargets`, `hasSummaryBelow`, `extractNoteProse`, `extractTranscriptionContent` | Pure-string scan for URLs / transcription blocks via shared `findUrls` / `findMarkdownLinks` (paren-aware, #543); note-prose extraction. A URL target is dropped when a transcription block for the same (social-normalized) source exists ANYWHERE in the note (`dropUrlsTranscribedElsewhere`, #488), not only within 5 lines below it |
 | `summarize-modal.ts` | `SummarizeSelectionModal`, `SummarizeModalDefaults`, `countCombinable` | Selection modal for 2+ targets; include-note + combine toggles (#367). The combine toggle renders only for 2+ combinable (non-enrichment) items, hides (`.is-hidden`) while the live selection drops below 2, and `combine` is forced false for a single chosen item (#544) |
 | `settings-section.ts` | `renderSummarizeSettings` | Summarize settings UI section (#243) |
@@ -230,7 +230,7 @@ All under `settings.summarize` (`SummarizeSettings`, `settings.ts:270`):
 
 `Summarizer.summarize` appends `voiceInstruction(settings.ai)` (`settings.ai.voice`, default `'neutral'`) to every system prompt -- style default, schema, `COMPREHENSIVE_SUMMARY_PROMPT`, and `customPrompt` alike (summarizer.ts:31, #540). The fragment exempts quoted/transcribed material from re-voicing.
 
-Untrusted-content fencing: `Summarizer.summarize` wraps the content in `wrapUntrusted(content, source)` (summarizer.ts:33; shared `untrusted-content.ts`) and inserts `UNTRUSTED_RULE` (summarizer.ts:14-15) between the style/custom prompt and the voice fragment of every system prompt: the fenced block is material to summarize only, embedded instructions are never obeyed, and no link or image URL that is not already present in it may be added.
+Untrusted-content fencing: `Summarizer.summarize` fences the content with the fixed label `wrapUntrusted(content, 'summarized content')` and the source name in a separate `wrapUntrusted(source, 'source label')` block (summarizer.ts:33; shared `untrusted-content.ts`) and inserts `UNTRUSTED_RULE` (summarizer.ts:14-15) between the style/custom prompt and the voice fragment of every system prompt: the fenced block is material to summarize only, embedded instructions are never obeyed, and no link or image URL that is not already present in it may be added.
 
 Path exclusion: centralized `settings.exclusions: ExclusionRule[]`; no per-module `excludeFolders`. Checked via `isPathExcluded(path, 'summarize', settings)`; tag exclusion via `matchesExcludeTag(file, excludeTags, metadataCache)` (both in `isExcluded`, `index.ts:1149`).
 

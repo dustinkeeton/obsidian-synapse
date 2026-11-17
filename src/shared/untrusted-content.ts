@@ -43,7 +43,7 @@ function neutralizeFences(content: string): string {
 	return content.replace(SENTINEL_WORD, 'UNTRUSTED-EXTERNAL-CONTENT');
 }
 
-const FENCE_ID_CACHE_MAX = 500;
+const FENCE_ID_CACHE_MAX = 20000;
 const fenceIds = new Map<string, string>();
 
 /** A CSPRNG id per distinct block, reused within the session (LRU) so identical requests still coalesce and hit the response cache. */
