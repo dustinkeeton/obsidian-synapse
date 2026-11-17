@@ -10,7 +10,13 @@ const IMAGE_ONLY: Record<string, string> = {
 	'elaboration/image-analyzer.ts': 'image analysis: image block + fixed instruction',
 };
 
-const AI_CALL = /\b\w*(?:ai|client)\w*\.(?:complete|chat)\(/i;
+const AI_CALL = /\b\w*(?:ai|client|llm|model)\w*\s*\.\s*(?:complete|chat)\s*\(/i;
+const AI_CLIENT_FILE = /\bAIClient\b/;
+const ANY_CALL = /(?<!checkpointManager)\s*\.\s*(?:complete|chat)\s*\(/;
+
+function callsAI(text: string): boolean {
+	return AI_CALL.test(text) || (AI_CLIENT_FILE.test(text) && ANY_CALL.test(text));
+}
 
 function sourceFiles(dir: string): string[] {
 	return readdirSync(dir).flatMap((name) => {
@@ -23,7 +29,7 @@ function sourceFiles(dir: string): string[] {
 describe('prompt-injection guard', () => {
 	const callers = sourceFiles(SRC)
 		.map((path) => ({ file: relative(SRC, path), text: readFileSync(path, 'utf8') }))
-		.filter(({ file, text }) => file !== 'shared/ai-client.ts' && AI_CALL.test(text));
+		.filter(({ file, text }) => file !== 'shared/ai-client.ts' && callsAI(text));
 
 	it('finds the AI call sites it guards', () => {
 		expect(callers.length).toBeGreaterThan(10);

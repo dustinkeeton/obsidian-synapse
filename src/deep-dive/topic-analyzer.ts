@@ -38,12 +38,16 @@ Rules:
 - Relevance score 0-1 indicates how central the topic is to the source note
 - Include a one-sentence description of what the note should cover
 - Extract any URLs from the source that relate to each topic
-- Do NOT repeat any of these ancestor topics: ${ancestorTopics.length > 0 ? ancestorTopics.join(', ') : '(none)'}
+- Do NOT repeat any of the ancestor topics listed in the user message
 
 Respond ONLY with a JSON array, no markdown fencing:
 [{"title": "Topic Name", "description": "What this note covers", "relevance": 0.8, "relatedUrls": ["https://..."]}]`;
 
+		const ancestors = ancestorTopics.length > 0 ? wrapUntrusted(ancestorTopics.join('\n'), 'ancestor topics') : '(none)';
 		const userPrompt = `Note title: "${noteTitle}"
+
+Ancestor topics:
+${ancestors}
 
 Content:
 ${wrapUntrusted(content.slice(0, 4000), 'note')}`;

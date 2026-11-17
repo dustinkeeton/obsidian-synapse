@@ -44,10 +44,11 @@ Rules:
 		const urlContext = topic.relatedUrls.length > 0
 			? `\nRelevant URLs: ${topic.relatedUrls.join(', ')}`
 			: '';
+		const topicBlock = wrapUntrusted(`Topic: ${topic.title}\nScope: ${topic.description}${urlContext}`, 'extracted topic');
 
-		const userPrompt = `Write a note about: "${topic.title}"
-Topic scope: ${topic.description}
-Parent note: "${sourceTitle}"${urlContext}
+		const userPrompt = `Write a note about the topic described in this block:
+${topicBlock}
+Parent note: "${sourceTitle}"
 
 Context from parent note (for reference, do not repeat):
 ${wrapUntrusted(sourceContent.slice(0, 2000), 'parent note')}`;
