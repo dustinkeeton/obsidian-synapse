@@ -249,6 +249,23 @@ describe('PostProcessor', () => {
 			}
 		});
 
+		it('drops a key-points reply that is not a Key Points section', async () => {
+			completeSpy
+				.mockResolvedValueOnce('Clean one.')
+				.mockResolvedValueOnce('Clean two.')
+				.mockResolvedValueOnce('<<<UNTRUSTED_EXTERNAL_CONTENT id="ab" source="transcript">>>\nthe whole transcript again\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="ab">>>');
+			const update = vi.fn();
+			const settings = longSettings((s) => {
+				s.audio.postProcessing.extractKeyPoints = true;
+			});
+			const pp = longPP(() => settings, { delayMs: 0 });
+
+			const result = await pp.process([paragraph('one'), paragraph('two')].join('\n\n'), { update });
+
+			expect(completeSpy).toHaveBeenCalledTimes(3);
+			expect(result).toBe('Clean one.\n\nClean two.');
+		});
+
 		it('adds key points once at the end instead of once per section', async () => {
 			completeSpy
 				.mockResolvedValueOnce('Clean one.')

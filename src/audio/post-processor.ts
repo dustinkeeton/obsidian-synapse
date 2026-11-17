@@ -154,10 +154,10 @@ export class PostProcessor {
 				'Write a "Key Points" section with bullet points summarizing the transcript. Output only that section, starting with a "Key Points" heading.',
 			])}\n\nTranscript:\n${wrapUntrusted(text, 'transcript')}`;
 		try {
-			const summary = sanitizeAIResponse(
+			const summary = stripUntrustedMarkers(sanitizeAIResponse(
 				await this.aiClient.complete(prompt, SYSTEM_PROMPT, aiRequestOptions(opts))
-			).trim();
-			return summary.length > 0 ? summary : null;
+			)).trim();
+			return /key points/i.test(summary.split('\n', 1)[0]) ? summary : null;
 		} catch (error) {
 			console.warn('[Synapse] Key points pass failed; transcript kept without key points', redactError(error));
 			return null;

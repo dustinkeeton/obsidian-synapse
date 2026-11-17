@@ -183,6 +183,27 @@ describe('stripUntrustedMarkers', () => {
 		expect(stripUntrustedMarkers('a <<<END_UNTRUSTED_EXTERNAL_CONTENT>>> b')).toBe('a <<<END_UNTRUSTED_EXTERNAL_CONTENT>>> b');
 	});
 
+	it('keeps a quoted close marker at the end of a prose line', () => {
+		const reply = 'Protocol example: <<<END_UNTRUSTED_EXTERNAL_CONTENT id="0123456789abcdef">>>';
+		expect(stripUntrustedMarkers(reply)).toBe(reply);
+	});
+
+	it('removes the close marker only when its id matches the echoed open marker', () => {
+		const reply = '<<<UNTRUSTED_EXTERNAL_CONTENT id="aaaa" source="note">>>\nbody\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="bbbb">>>';
+		expect(stripUntrustedMarkers(reply)).toBe('body\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="bbbb">>>');
+	});
+
+	it('leaves an ordinary code block untouched', () => {
+		const reply = '```ts\nconst x = 1;\n```';
+		expect(stripUntrustedMarkers(reply)).toBe(reply);
+	});
+
+	it('handles CRLF echoes and a reply that is only the envelope', () => {
+		expect(stripUntrustedMarkers(wrapUntrusted('body', 'note').replace(/\n/g, '\r\n'))).toBe('body');
+		const id = 'abcd';
+		expect(stripUntrustedMarkers(`<<<UNTRUSTED_EXTERNAL_CONTENT id="${id}" source="note">>>\n<<<END_UNTRUSTED_EXTERNAL_CONTENT id="${id}">>>`)).toBe('');
+	});
+
 	it('removes an echoed envelope wrapped in a markdown code fence', () => {
 		const echoed = '```markdown\n' + wrapUntrusted('# Tidied', 'note') + '\n```';
 		expect(stripUntrustedMarkers(echoed)).toBe('# Tidied');

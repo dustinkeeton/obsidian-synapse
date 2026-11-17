@@ -14,16 +14,18 @@ const AI_CALL = /\b\w*(?:ai|client|llm|model)\w*\s*\.\s*(?:complete|chat)\s*\(/i
 const AI_CLIENT_FILE = /\bAIClient\b/;
 const ANY_CALL = /(?<!checkpointManager)\s*\.\s*(?:complete|chat)\s*\(/;
 
-function callsAI(text: string): boolean {
-	return AI_CALL.test(text) || (AI_CLIENT_FILE.test(text) && ANY_CALL.test(text));
+function countMatches(text: string, re: RegExp): number {
+	return (text.match(new RegExp(re.source, `${re.flags.replace('g', '')}g`)) ?? []).length;
+}
+
+/** The same enumeration drives discovery and counting: any call shape in an `AIClient` file, else ai/client/llm/model receivers. */
+function countAICalls(text: string): number {
+	const named = countMatches(text, AI_CALL);
+	return AI_CLIENT_FILE.test(text) ? Math.max(named, countMatches(text, ANY_CALL)) : named;
 }
 
 function stripComments(text: string): string {
 	return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-}
-
-function countMatches(text: string, re: RegExp): number {
-	return (text.match(new RegExp(re.source, `${re.flags.replace('g', '')}g`)) ?? []).length;
 }
 
 function sourceFiles(dir: string): string[] {
@@ -37,7 +39,7 @@ function sourceFiles(dir: string): string[] {
 describe('prompt-injection guard', () => {
 	const callers = sourceFiles(SRC)
 		.map((path) => ({ file: relative(SRC, path), text: stripComments(readFileSync(path, 'utf8')) }))
-		.filter(({ file, text }) => file !== 'shared/ai-client.ts' && callsAI(text));
+		.filter(({ file, text }) => file !== 'shared/ai-client.ts' && countAICalls(text) > 0);
 
 	it('finds the AI call sites it guards', () => {
 		expect(callers.length).toBeGreaterThan(10);
@@ -53,7 +55,7 @@ describe('prompt-injection guard', () => {
 	it('fences at least once per AI call in each file', () => {
 		const underFenced = callers
 			.filter(({ file }) => !(file in IMAGE_ONLY))
-			.map(({ file, text }) => ({ file, calls: countMatches(text, AI_CALL), fences: countMatches(text, /wrapUntrusted\(/) }))
+			.map(({ file, text }) => ({ file, calls: countAICalls(text), fences: countMatches(text, /wrapUntrusted\(/) }))
 			.filter(({ calls, fences }) => fences < calls);
 		expect(underFenced).toEqual([]);
 	});
