@@ -6,6 +6,98 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-17: Release-readiness audit — four small closures, no redesign
+
+**Context**: Pre-release audit of `main` after 1.5.0 (branch `release-readiness-audit`). The pass found no critical or high issue in shipped code; it closed four small gaps.
+
+**Decision**: Fix each at the point where it sits.
+
+| Gap | Fix | Where |
+|-----|-----|-------|
+| CI ran with the default token permissions | `ci.yml` declares `permissions: contents: read`, matching `waffle-doctor.yml`. Write scopes are held only by the release, tag, and label-hook workflows | `.github/workflows/ci.yml:9` |
+| A deep-dive run id read back from a proposal or checkpoint became a file name unchecked | Run ids must match `/^[A-Za-z0-9_-]+$/`: `saveRun` throws, `loadRun` returns null | `deep-dive/deep-dive-store.ts:32` |
+| The Gemini transcriber put the model id into the URL path raw | `encodeURIComponent(model)`, as the chat client already does | `audio/transcriber.ts:480`, `shared/ai-client.ts:550` |
+| Summarize carried its own copy of the "open settings at a section" logic | Moved to `revealSettingsSection` with a shared `VIDEO_SETTINGS_SECTION` ref, so the settings tab and the notice name the section the same way | `shared/settings-section.ts` |
+
+**Alternatives considered**: None recorded.
+
+**Rationale**: Each gap is a value trusted one step further than the code around it already allows. A check where the value enters is the cheapest fix and the hardest to bypass, as in the 2026-11-09 pass.
+
+**Impact**:
+- A tampered run id can no longer read or write outside `.synapse/deep-dive/runs/`; a new test covers it.
+- `docs/automated-review-notes.md` now points the undocumented `app.setting` touch at `shared/settings-section.ts`.
+- `npm audit` shows 12 high advisories in dev tooling (`picomatch` via `typescript-eslint`, `vite`, `vitest`) and 0 in production. They are not fixed in this pass.
+
+---
+
+## 2026-11-17: Every AI feature fences what it sends, and every request carries the rule (#620)
+
+**Context**: Text a feature reads from a note, transcript, fetched page, or image could carry instructions the model might follow. Only summarize, illustrate, audio post-processing, and parts of elaboration and enrichment fenced that text.
+
+**Decision**: Guard every AI feature, and add a test that keeps new ones guarded.
+
+- **A rule on every request** — `AIClient.chat` adds `UNTRUSTED_CONTENT_POLICY` to the first system message (or prepends one) through `withUntrustedPolicy`.
+- **Every call site fences its input** with `wrapUntrusted` — deep dive, tidy, title, organize, REM, enrichment, the elaboration body, lyrics reformat — and note metadata too (titles, tags, frontmatter keys, links, headings).
+- **Fences cannot be forged** — open and close markers share a random (CSPRNG) id per distinct block, reused through a 20,000-entry session LRU so identical requests still hit the response cache.
+- **Echoes are stripped** — rewrite features pass the reply through `stripUntrustedMarkers`; an empty rewrite fails tidy and skips the note in elaboration.
+- **A guard test** (`shared/prompt-injection-guard.test.ts`) fails a file that calls `wrapUntrusted` fewer times than it calls the AI. The two image-only callers are allowlisted.
+
+**Alternatives considered**: Fencing the System 1 lane's input too — deferred. It could shift Jev's calibrated answers, so it needs its own change.
+
+**Rationale**: The defense only works if no path skips it; a per-request rule covers text inside images and any future unfenced call.
+
+**Impact**:
+- Prompts changed, so cached AI responses miss once.
+- The guard is structural: it lowers the chance a model obeys injected text, it does not remove it. The test works per file, so it cannot prove every input in a file is fenced.
+- Known gap: the System 1 lane (off by default) still sends note text unfenced.
+
+---
+
+## 2026-11-13: Each AI feature picks its own provider, model, and effort; every request follows one standard (#619, #596)
+
+**Context**: Every feature shared one provider and model, and requests carried per-provider sampling knobs (`temperature`, max tokens) that newer reasoning models reject or ignore.
+
+**Decision**:
+
+- **Per-feature models** — a "Per-feature models" list under AI configuration (`ai.overrides`). A feature with no override uses the default. Transcription is the first row of the same list.
+- **One key per vendor** — `ai.providerKeys`, shared by chat and transcription. Changing the default provider swaps keys so each vendor keeps its own.
+- **Three user controls** — provider, model, effort. Effort is Default / Low / Medium / High / Max; Default sends nothing. An internal table (`EFFORT_OPTIONS`) maps each step to what each model accepts, and the dropdown offers only steps that send something.
+- **One request standard** — no provider receives `temperature`, `top_p`, or `top_k`; Anthropic never receives `thinking`. Only Anthropic gets an output cap (16,384, or 21,333 at High/Max). A reply cut off at its limit throws before anything is returned or cached.
+- **Longer timeouts for reasoning** — 10 minutes for a model with an effort control at any step except Low; 2 minutes otherwise.
+- **Migrations v5–v8** — drop temperature and max tokens; replay the retired-model remap (GPT-4o / GPT-4o mini → GPT-6 Luna, Gemini 3.1 Flash Lite → Gemini 3.5 Flash Lite); move the old transcription keys; map effort `none`/`minimal` to Low and `xhigh` to High.
+
+**Alternatives considered**: Deferred as follow-ups rather than built here: streaming (#614), the OpenAI Responses API (#615), structured output (#616), Ollama capability discovery (#617), Gemini continuation (#618).
+
+**Rationale**: Users need different models for different jobs (a cheap model for tags, a strong one for deep dives). One standard stops each provider from drifting on parameters its newest models refuse.
+
+**Impact**:
+- New module `shared/ai-config.ts` (`resolveAIConfig`, `effortWireValue`, `aiRequestTimeoutMs`, `switchDefaultProvider`). The response-cache key becomes `[messages, provider, model, effort]`.
+- Already-rejected titles and elaboration proposals can be proposed once more, because their dedup keys no longer include temperature and max tokens.
+- A user who kept a separate Whisper or Gemini key from the same vendor as their default provider now uses the main key for transcription.
+- Not yet tested in the Obsidian app.
+
+---
+
+## 2026-11-13: Links stay bare until a name clashes; REM and enrichment never link a note to itself (#610, #611, #612, #606)
+
+**Context**: Deep-dive runs with colliding note names linked into each other's notes (#607); REM linked text inside Synapse's own callouts and sometimes a note to itself (#608); enrichment could list the note in its own Related Notes (#609); with REM disabled, the review sidebar stopped refreshing (#605).
+
+**Decision**:
+
+- **One linkpath rule** — `linkpathFor(app, path)` (`shared/linkpath.ts`) returns the bare basename while no other note shares it, the folder-qualified path once one does, and null when that path holds `#` `^` `|` `[` `]`. Deep-dive nav, syllabus, and `parent:` links (#611) and REM targets (#612) use it.
+- **REM skips Synapse metadata callouts** — summary, nav, enrichment, illustrate, deep-dive. Transcription, OCR, lyrics, and legacy elaboration callouts hold the note's own content and stay linkable.
+- **No self-targets** — REM leaves out the source note and `Untitled` notes; enrichment drops a candidate that resolves to the note by path, basename, or alias (`enrichment/self-link.ts`).
+- **No mid-decimal sentence splits** — REM's anchor sentences keep `Y14.5` or `v1.2` whole.
+- **REM builds its store in the constructor** (#606), like every other proposal module, so a disabled REM no longer throws on the sidebar's proposal read.
+
+**Alternatives considered**: Always folder-qualifying links — rejected; a bare link still resolves after organize moves the note.
+
+**Rationale**: A link should point at the note the user means, and survive the moves Synapse itself makes.
+
+**Impact**: Existing deep-dive nav blocks are replaced on their next refresh, with no migration. Organize moves notes with `vault.rename`, which does not update links, so a folder-qualified link can still dangle after a move (#613, open).
+
+---
+
 ## 2026-11-09: Pre-release audit — every remaining trust boundary gets its own check
 
 **Context**: Security pass of the pre-release audit of the whole codebase (branch `release-codebase-audit`). Each item was a place where text or a file from outside the vault was trusted a step further than the code around it already allowed.

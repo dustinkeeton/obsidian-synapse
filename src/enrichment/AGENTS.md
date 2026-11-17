@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-11-09
+last-updated: 2026-11-17
 ---
 
 # Enrichment Module
@@ -280,7 +280,7 @@ private isExcluded(file: TFile): boolean {
 
 ## Settings Keys
 
-All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:253-268`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:564-590`).
+All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:312-327`) unless noted. Defaults from `DEFAULT_SETTINGS.enrichment` (`settings.ts:621-647`).
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -301,7 +301,7 @@ All under `settings.enrichment` (interface `EnrichmentSettings`, `settings.ts:25
 | `settings.exclusions` (top-level) | `ExclusionRule[]` | — | Path/glob exclusions scoped by feature `'enrichment'`; replaces removed `excludeFolders` |
 | `settings.autoAccept.enrichment` (top-level) | `boolean` | — | Wired to the `shouldAutoAccept` constructor param (#228) |
 
-`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:247-251`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book). `EnrichmentWeightSettings` defaults (`settings.ts:578-585`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
+`TagVocabularyEntry` = `{ category: string; tags: string[]; description: string }` (`settings.ts:306-310`). Default vocabulary: `Status` (draft, todo, reference, unfinished, needs-review, archived), `Type` (meeting, idea, project, log, guide, brainstorm), `Source` (source/video, source/audio, source/transcript, source/article, source/book). `EnrichmentWeightSettings` defaults (`settings.ts:635-642`): `sameFolder 1.0`, `siblingFolder 0.8`, `cousinFolder 0.5`, `distantFolder 0.2`, `decayPerLevel 0.15`, `minWeight 0.1`.
 
 ## Invariants
 

@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-11-09
+last-updated: 2026-11-17
 ---
 
 # Summarize Module
@@ -53,11 +53,11 @@ keyed on the note being summarized; the queue-free cores (`processTargetsForFile
 | `processTargetsCombined` (index.ts:302) | `file.path` | `processTargetsForFile(..., combine=true)` | `op.update("Waiting for another Synapse operation on <basename>")` | interactive combined path |
 | `processTargets` (index.ts:574) | `file.path` | `processFileTargets(...)` | same | interactive per-item path |
 | `resumeFromCheckpoint` loop (index.ts:208) | `file.path` | `vault.read` + `collectTargets` + `processTargetsForFile` | none | one slot per note, never per batch |
-| `scanVault` loop (index.ts:1106) | `file.path` | `vault.read` + `collectTargets` + `processTargetsForFile` | none | one slot per note, never per batch |
+| `scanVault` loop (index.ts:1062) | `file.path` | `vault.read` + `collectTargets` + `processTargetsForFile` | none | one slot per note, never per batch |
 
 Batch loops take the slot BEFORE the `vault.read` + `collectTargets` so target line numbers cannot
 go stale under us. The batch callback returns `null` when `targets.length === 0`; the caller
-`continue`s on a falsy result (index.ts:220, index.ts:1118).
+`continue`s on a falsy result (index.ts:220, index.ts:1074).
 
 `fireEnrichmentCallbacks` (index.ts:608) and `onOrganizeRequested` fire AFTER the slot is released,
 so the enrichment / title / organize follow-ups enqueue BEHIND this operation and read the summary
@@ -157,13 +157,13 @@ fireEnrichmentCallbacks(path, result)                                 index.ts:6
 ## Vault Scan (checkpointed)
 
 ```
-scanVault(target?, skipConfirmation?, onlyFile?)                  index.ts:1010
+scanVault(target?, skipConfirmation?, onlyFile?)                  index.ts:966
   Phase 1: collect files with targets (cancellable scan; onlyFile narrows scope, #111)
   Phase 2: user confirmation (skipped when skipConfirmation=true / Fire Synapse)
   Phase 3: checkpointed processing
     --> checkpointManager.create({ module: 'summarize', items })
     --> addDeferredTask('refresh-sidebar-view')
-    --> per file: noteQueue.run(file.path, async () => {            index.ts:1106
+    --> per file: noteQueue.run(file.path, async () => {            index.ts:1062
                     re-read + collectTargets
                     if no targets -> null (caller continues)
                     processTargetsForFile(..., combineSummaries)
@@ -214,7 +214,7 @@ Effectively-empty gate (#544): the target is appended only when `!isEffectivelyE
 
 ## Settings Keys
 
-All under `settings.summarize` (`SummarizeSettings`, `settings.ts:270`):
+All under `settings.summarize` (`SummarizeSettings`, `settings.ts:329`):
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|
@@ -232,7 +232,7 @@ All under `settings.summarize` (`SummarizeSettings`, `settings.ts:270`):
 
 Untrusted-content fencing: `Summarizer.summarize` fences the content with the fixed label `wrapUntrusted(content, 'summarized content')` and the source name in a separate `wrapUntrusted(source, 'source label')` block (summarizer.ts:33; shared `untrusted-content.ts`) and inserts `UNTRUSTED_RULE` (summarizer.ts:14-15) between the style/custom prompt and the voice fragment of every system prompt: the fenced block is material to summarize only, embedded instructions are never obeyed, and no link or image URL that is not already present in it may be added.
 
-Path exclusion: centralized `settings.exclusions: ExclusionRule[]`; no per-module `excludeFolders`. Checked via `isPathExcluded(path, 'summarize', settings)`; tag exclusion via `matchesExcludeTag(file, excludeTags, metadataCache)` (both in `isExcluded`, `index.ts:1149`).
+Path exclusion: centralized `settings.exclusions: ExclusionRule[]`; no per-module `excludeFolders`. Checked via `isPathExcluded(path, 'summarize', settings)`; tag exclusion via `matchesExcludeTag(file, excludeTags, metadataCache)` (both in `isExcluded`, `index.ts:1105`).
 
 ## Content-Aware Schemas
 
@@ -252,7 +252,7 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 
 | Condition | Handling |
 |-----------|----------|
-| Missing video dep (yt-dlp/ffmpeg) | `DependencyMissingError` matched by `name` through the `cause` chain (`findDependencyMissingError`); shows an actionable "Open settings" notice that reveals the Video section (#382) |
+| Missing video dep (yt-dlp/ffmpeg) | `DependencyMissingError` matched by `name` through the `cause` chain (`findDependencyMissingError`); shows an actionable "Open settings" notice that reveals the Video section via `revealSettingsSection(plugin, settings, VIDEO_SETTINGS_SECTION)` from `../shared` (`index.ts:940`; #382) |
 | Media URL transcription fails (no tier, captions unavailable, mobile) | `MediaTranscriptionError` -> `linkLoadError(source, reason)` notice carrying the router's platform-aware message; NO summary callout for that target; in the combined path the whole combined callout is withheld (#488) |
 | Media has no speech (#524) | `NoSpeechDetectedError` matched by `name` through the `cause` chain (`findErrorByName`); `notifications.info(message)`, target skipped, no summary written |
 | URL fetch throws | `notifyTargetError` -> `linkLoadError(source, reason)` persistent notice; target skipped |
@@ -266,7 +266,7 @@ Enrichment-ref targets always use `COMPREHENSIVE_SUMMARY_PROMPT`.
 
 | Import | From |
 |--------|------|
-| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContentWithImages`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks`, `buildMediaEmbedLines`, `stripUnresolvedLinks`, `wikilinkTargets`, `scanScopeLabel`, `ScanTarget` (type) | `../shared` (index.ts) |
+| `openScanFolderPicker`, `getMarkdownFiles`, `NotificationManager`, `buildCallout`, `CALLOUT_TYPES`, `CheckpointManager`, `NoteOperationQueue`, `generateId`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `detectSchemaFor`, `OperationHandle`, `isSupportedUrl`, `detectPlatform`, `fetchPageContentWithImages`, `fetchTweetContent`, `isRedditUrl`, `fetchRedditContent`, `linkLoadError`, `mergeCacheUse`, `trackAiCache`, `transcriptCacheUse`, `withCacheReport`, `findMarkdownLinks`, `buildMediaEmbedLines`, `stripUnresolvedLinks`, `wikilinkTargets`, `scanScopeLabel`, `ScanTarget` (type), `revealSettingsSection`, `VIDEO_SETTINGS_SECTION` | `../shared` (index.ts:4-16) |
 | `CALLOUT_TYPES`, `ENRICHMENT_START`, `ENRICHMENT_END`, `parseFrontmatter`, `findUrls`, `findMarkdownLinks`, `isCalloutHeader`, `calloutHeaderSource` | `../shared` (note-scanner.ts) |
 | `CacheUse`, `Checkpoint`, `CheckpointWorkItem`, `DeferredTask`, `ModuleDeps`, `FeatureModule` | `../shared` (type-only, index.ts:12) |
 | `findAudioEmbeds` | `../shared` (index.ts:15; declared in `shared/audio-embeds.ts`) |

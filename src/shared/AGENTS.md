@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-11-09
+last-updated: 2026-11-17
 ---
 
 # Shared Module
@@ -11,7 +11,7 @@ Canonical homes (re-exported elsewhere for back-compat — import from the `shar
 - `video-urls.ts` (`findVideoUrls`, `VideoUrlEmbed`) and `image-embeds.ts` (`findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `ImageEmbed`) — moved here from `src/video/note-scanner.ts` / `src/image/note-scanner.ts` so `transcription` scans a note without a runtime `video` / `image` import; both barrels re-export the same names.
 - `redact.ts` (`redactSecrets`, `redactError`) — single source of truth for API-key/token redaction; `ai-client.ts` re-exports `redactSecrets` (only). `redactSecrets` is consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts` (Test-button validation-catch message), `update-checker.ts` (fetch-failure detail), and `notifications.ts` (operation-error + notifyError paths). `redactError(value)` renders a caught error to a redacted, log-safe string (prefers `.stack`, falls back to `name: message`, then `redactSecrets`); it is the one sanctioned way to log a raw error, routed through by every raw-error console sink (`main.ts` settings-migration catch, `shared/data-folder-migration.ts`, `onboarding/onboarding.ts` first-run catch, `checkpoints/checkpoint-recovery.ts`, `update-checker.ts` unexpected-error catch, `transcript-cache.ts`, audio, intake, rem/semantic-matcher, elaboration/image-analyzer, elaboration/proposer, shared/image-preprocess, transcription/caption-strategy + youtube-captions, the clipboard-copy catches in `notifications.ts` + `video/settings-section.ts`, shared/fire-and-forget). Previously `ai-client` and the former `api-utils.notifyError` each kept inline copies that drifted (the `notifyError` copy lacked the Google `AIza` pattern). The console-sink contract is lint-enforced (#418) by the custom type-aware rule `synapse/no-unredacted-console` (`scripts/eslint-rules/no-unredacted-console.mjs`, scoped in `eslint.config.mjs` to shipped `src/**/*.ts`, excluding tests/mocks/test-utils): every value reaching `console.*` must be statically string-like or routed through `redactError`/`redactSecrets`.
 - `encoding.ts` (`arrayBufferToBase64`, `base64EncodedLength`) — base64 helpers shared by audio + image + elaboration; nothing re-exports them any more (the former `image/preprocess.ts` back-compat re-export is gone).
-- `image-preprocess.ts` (`preprocessImage`, `PreprocessResult`) — moved here from `image/preprocess.ts` so `elaboration/image-analyzer.ts` and `image/extractor.ts` both reach it without a cross-feature import; barrel `index.ts:50-51`.
+- `image-preprocess.ts` (`preprocessImage`, `PreprocessResult`) — moved here from `image/preprocess.ts` so `elaboration/image-analyzer.ts` and `image/extractor.ts` both reach it without a cross-feature import; barrel `index.ts:52-53`.
 - `title-detector.ts` (`isUntitled`, `isGenericTitle`) — note-title predicates; lives here (not in `title/`) so non-title features can reuse them without a cross-feature import. `title/title-detector.ts` re-exports `isUntitled`.
 
 ## Public API
@@ -20,13 +20,13 @@ Exported from `index.ts`:
 
 ```ts
 // ai-client.ts
-interface AIRequestOptions {                          // ai-client.ts:21; type re-exported from the barrel (#527)
+interface AIRequestOptions {                          // ai-client.ts:24; type re-exported from the barrel (#527)
   bypassCache?: boolean                               // forces fresh dispatch for "regenerate"
   onCacheHit?: () => void                             // #527; called only when the response is replayed from the cache (never for a dispatch, a bypass, or a coalesced join)
-  model?: string                                      // ai-client.ts:31; per-call model (e.g. image.visionModel); chat() resolves `opts.model || resolveAIConfig(settings, feature).model`, keys the cache on it, and threads it through dispatch() to every provider call — settings.ai.model is never mutated
+  model?: string                                      // ai-client.ts:34; per-call model (e.g. image.visionModel) on the feature's resolved provider; chat() replaces resolveAIConfig(settings, feature).model with it and re-clamps effort via effortFor (ai-client.ts:337-339), keys the cache on it, and threads it through dispatch() to every provider call — settings.ai.model is never mutated
 }
 class AIClient {
-  constructor(getSettings: () => SynapseSettings)
+  constructor(getSettings: () => SynapseSettings, feature?: AIFeatureId)   // ai-client.ts:313; feature selects ai.overrides[feature]
   complete(prompt: string, systemPrompt?: string, opts?: AIRequestOptions): Promise<string>
   chat(messages: ChatMessage[], opts?: AIRequestOptions): Promise<string>   // providers: openai | anthropic | gemini | ollama
 }
@@ -576,8 +576,8 @@ function assertDesktop(context?: string): void
 function loadNodeModules(): NodeModules
 function shellEnv(): NodeJS.ProcessEnv
 
-// settings-section.ts (imports `type SynapsePlugin` from ../main — type-only back-edge, erased at compile time)
-interface SectionRegistryEntry { key: string; title: string; bodyEl: HTMLElement; reset?: () => Promise<void> }   // settings-section.ts:21
+// settings-section.ts (type-only imports: `Plugin` from obsidian, `SynapsePlugin` from ../main — type-only back-edge, erased at compile time — and `SynapseSettings` from ../settings)
+interface SectionRegistryEntry { key: string; title: string; bodyEl: HTMLElement; reset?: () => Promise<void> }   // settings-section.ts:23
 interface SettingsSectionContext {
   containerEl: HTMLElement
   plugin: SynapsePlugin
@@ -597,6 +597,9 @@ interface SettingsSectionContextOptions {
 function createSettingsSectionContext(options: SettingsSectionContextOptions): SettingsSectionContext
 function isSectionCollapsed(plugin: SynapsePlugin, key: string, enabled: boolean | null): boolean
 function persistCollapse(plugin: SynapsePlugin, key: string, collapsed: boolean): Promise<void>
+interface SettingsSectionRef { key: string; title: string }   // settings-section.ts:122; an accordion's persisted key + rendered title
+const VIDEO_SETTINGS_SECTION: SettingsSectionRef   // { key: 'video', title: 'Video transcription' }, settings-section.ts:129; shared so summarize can reveal video settings without importing video
+function revealSettingsSection(plugin: Plugin, settings: SynapseSettings, section: SettingsSectionRef): void   // settings-section.ts:135; opens the Synapse tab with section expanded + scrolled into view; undocumented app.setting feature-detected (no-op when absent); saveSettings fire-and-forget (rejection dropped)
 
 // exclusions.ts
 type FeatureId = 'elaboration' | 'enrichment' | 'summarize' | 'tidy' | 'organize' | 'deep-dive' | 'audio' | 'video' | 'title' | 'image' | 'rem' | 'intake'
@@ -650,7 +653,7 @@ function scoreLyricsContent(content: string): number
 | `types.ts` | `ChatMessage`, `ContentBlock`, `TextContentBlock`, `ImageContentBlock` | Shared types including multi-modal content blocks |
 | `notifications.ts` | `NotificationManager`, `linkLoadError`, `settleOnThrow`, `OperationHandle`, `NoticeAction` (barrel); `NoticeLevel` (module-local, not re-exported) | Centralized notifications with cancellation, progress, confirmation snackbars, and action buttons. `dispose()` tears down all in-flight operations (called from `main.ts` `onunload()`). `info()`/`success()` accept optional `action?: NoticeAction`; `infoSticky()` shows a duration-0 dismissible action toast; `error()`/`notifyError()`/operation-error `console.error` all route through `redactSecrets` (single redaction source). One-shot `info()`/`success()`/`error()` (no action) are equal-message throttled within 3s (#396) to prevent per-item toast floods; tracked-operation, `confirm()`, action, and `notifyError()` toasts are exempt. `linkLoadError(source, reason)` builds the shared external-link failure message used by Elaborate + Summarize |
 | `notifications.test.ts` | Tests | NotificationManager tests |
-| `in-progress-registry.ts` | `InProgressRegistry`, `InProgressEntry`, `InProgressKind`, `InProgressListener`, `InProgressMeta` (barrel `index.ts:61-62`) | Plugin-level registry of running proposal-producing operations (#577); owned by `NotificationManager.inProgress`; imports only `redact.ts` |
+| `in-progress-registry.ts` | `InProgressRegistry`, `InProgressEntry`, `InProgressKind`, `InProgressListener`, `InProgressMeta` (barrel `index.ts:63-64`) | Plugin-level registry of running proposal-producing operations (#577); owned by `NotificationManager.inProgress`; imports only `redact.ts` |
 | `in-progress-registry.test.ts` | Tests | InProgressRegistry + NotificationManager integration |
 | `update-checker.ts` | `UpdateChecker`, `isNewerVersion`, `UpdateCheckerDeps` | In-app "newer Synapse available" check (#365). Polls the plugin's own public GitHub Releases API at most once/24h (gated on `settings.updates.enableUpdateNotifications`), compares the latest tag to the running version, and shows a sticky notice via `notifications.infoSticky` whose button opens Settings → Community plugins. Fails silently (offline/non-200/malformed → logged `null`); the fetch-failure detail is logged through `redactSecrets` and the outer unexpected-error catch through `redactError`. Records the shown version so it never nags twice. `isNewerVersion` is pure semver gt |
 | `update-checker.test.ts` | Tests | UpdateChecker + isNewerVersion tests |
@@ -658,7 +661,7 @@ function scoreLyricsContent(content: string): number
 | `file-utils.test.ts` | Tests | `getMarkdownFiles` recursive/non-recursive scope, `getIncludedMarkdownFiles` exclusion filtering, `findAvailableVaultPath` suffixing |
 | `api-utils.ts` | `withRetry`, `sleep`, `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError` | Retry with exponential backoff + per-error `shouldRetry` gate, network-error classification/disclosure. `notifyError` no longer lives here — error display moved to `NotificationManager` |
 | `api-utils.test.ts` | Tests | `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError`, `withRetry` |
-| `validation.ts` | `sanitizeUrl`, `sanitizePublicUrl`, `isPrivateHost`, `sanitizePath`, `assertVaultRelativePath` (the three new ones re-exported on the barrel's last line, `index.ts:233`), `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
+| `validation.ts` | `sanitizeUrl`, `sanitizePublicUrl`, `isPrivateHost`, `sanitizePath`, `assertVaultRelativePath` (the three new ones re-exported on the barrel's last line, `index.ts:240`), `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
 | `validation.test.ts` | Tests | Validation tests |
 | `url-detector.ts` | `detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult` | Regex platform detection (moved here from video/) |
 | `url-detector.test.ts` | Tests | URL detection tests (moved here from video/) |
@@ -674,11 +677,11 @@ function scoreLyricsContent(content: string): number
 | `frontmatter-utils.test.ts` | Tests | Frontmatter tests; `splitRawFrontmatter` describe (`:127`): byte-for-byte raw block, no-frontmatter case, mid-document `---` not matched, body boundary agrees with `parseFrontmatter`, block without trailing newline |
 | `callouts.ts` | `CALLOUT_TYPES`, `CALLOUT_BASES`, `buildCallout`, `calloutHeaderToken`, `calloutHeaderLine`, `calloutIdentity`, `calloutHeaderSource`, `parseCalloutHeader`, `isCalloutHeader`, `hasCallout`, `calloutForTranscriptionResult`, `ENRICHMENT_START`, `ENRICHMENT_END`, `CalloutType`, `CalloutBase` | Unified callout registry, builder and matcher for AI content (#554). Callouts are written `> [!<base>|<identity>]` (`CALLOUT_BASES` picks the base; `calloutHeaderLine` is the only header writer); readers accept that form and the legacy bare `> [!synapse-*]` through `calloutIdentity` / `isCalloutHeader` / `calloutHeaderSource`. `calloutForTranscriptionResult` selects callout type and verb based on `schemaId` |
 | `callouts.test.ts` | Tests | Every type has a base; header token/line; identity + matcher for both spellings (nested prefix, fold marker, base-only `[!summary]` rejected); `calloutHeaderSource` fragment; `buildCallout` round-trips through the matcher |
-| `audio-embeds.ts` | `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `AudioEmbed` (barrel, `index.ts:227-228`); `hasTranscriptionBelow` (module-only) | Audio-embed scan over note content: `![[*.mp3\|wav\|m4a\|ogg\|flac\|webm\|aac]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout. Imports `./callouts` only. Re-exported by the `audio` barrel; used by summarize/index, transcription/ (direct from `shared`) |
+| `audio-embeds.ts` | `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `AudioEmbed` (barrel, `index.ts:234-235`); `hasTranscriptionBelow` (module-only) | Audio-embed scan over note content: `![[*.mp3\|wav\|m4a\|ogg\|flac\|webm\|aac]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout. Imports `./callouts` only. Re-exported by the `audio` barrel; used by summarize/index, transcription/ (direct from `shared`) |
 | `audio-embeds.test.ts` | Tests | Embed detection, already-transcribed skip (legacy, callout), line numbers, unresolved files; `hasTranscriptionBelow` incl. the lyrics callout |
-| `video-urls.ts` | `findVideoUrls`, `VideoUrlEmbed` (barrel, `index.ts:229-230`); `hasTranscriptionBelow` (module-only) | Video-URL scan over note content via `findUrls` + `detectPlatform`: skips blockquote lines, undetected and `twitter` URLs, and a URL whose next 3 lines carry a legacy `**Transcription of X**` or a `synapse-transcription` callout. Imports `./callouts`, `./url-classifier`, `./url-detector`. Re-exported by the `video` barrel; used by video/index (type), transcription/ |
+| `video-urls.ts` | `findVideoUrls`, `VideoUrlEmbed` (barrel, `index.ts:236-237`); `hasTranscriptionBelow` (module-only) | Video-URL scan over note content via `findUrls` + `detectPlatform`: skips blockquote lines, undetected and `twitter` URLs, and a URL whose next 3 lines carry a legacy `**Transcription of X**` or a `synapse-transcription` callout. Imports `./callouts`, `./url-classifier`, `./url-detector`. Re-exported by the `video` barrel; used by video/index (type), transcription/ |
 | `video-urls.test.ts` | Tests | Moved from `video/note-scanner.test.ts`: URL detection per platform, markdown links, twitter skip, already-transcribed skip, line numbers; `hasTranscriptionBelow` |
-| `image-embeds.ts` | `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `ImageEmbed` (barrel, `index.ts:231-232`); `hasExtractionBelow` (module-only) | Image-embed scan over note content: `![[*.png\|jpg\|jpeg\|gif\|webp\|bmp\|tiff]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**OCR of X**` or a `synapse-ocr` callout. Imports `./callouts` only. Re-exported by the `image` barrel; used by image/index (type), transcription/ |
+| `image-embeds.ts` | `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `ImageEmbed` (barrel, `index.ts:238-239`); `hasExtractionBelow` (module-only) | Image-embed scan over note content: `![[*.png\|jpg\|jpeg\|gif\|webp\|bmp\|tiff]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**OCR of X**` or a `synapse-ocr` callout. Imports `./callouts` only. Re-exported by the `image` barrel; used by image/index (type), transcription/ |
 | `image-embeds.test.ts` | Tests | Moved from `image/note-scanner.test.ts`: embed detection, already-extracted skip, line numbers, unresolved files |
 | `media-embed.ts` | `mediaEmbedFor`, `buildMediaEmbedLines` | Downloaded-media embed lines (#561): one builder for the `![[file]]` + blank line every write site puts above a transcription/summary callout; gated on `video.embedInNote`, dedupes against the note content when given. No imports. Used by `transcription/url-transcription.ts`, `video/index.ts`, `summarize/index.ts` |
 | `media-embed.test.ts` | Tests | File-name-only link, folder-only path, on/off, no download, already-embedded, different file embedded |
@@ -695,11 +698,11 @@ function scoreLyricsContent(content: string): number
 | `scan-scope.test.ts` | Tests | Scope normalization + labels |
 | `scan-folder-picker-modal.ts` | `ScanFolderPickerModal`, `ScanFolderSuggestion`, `ROOT_LABEL`, `ROOT_TOP_LEVEL_LABEL` | Scan picker with top-level-only root row + Shift+Enter non-recursive choice (#589); Shift+Enter goes through the feature-detected `chooser.useSelectedItem` (`scan-folder-picker-modal.ts:30`), no-op when absent |
 | `scan-folder-picker-modal.test.ts` | Tests | Row order, scope returned per row/modifier, Shift+Enter registration |
-| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:158` (direct import; section reset), `settings-ui/global-sections.ts:574` (via barrel; reset all), `elaboration/index.ts:523` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:17` cites the settle-once pattern in a comment only, no import |
+| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:204` (direct import; section reset), `settings-ui/global-sections.ts:525` (via barrel; reset all), `elaboration/index.ts:521` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:17` cites the settle-once pattern in a comment only, no import |
 | `confirm-modal.test.ts` | Tests | ConfirmModal tests |
 | `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |
 | `settings-reset.test.ts` | Tests | Reset helper tests |
-| `id-utils.ts` | `generateId`, `randomToken`, `isValidCheckpointId` | ID generation, CSPRNG temp-name token, and validation for checkpoint paths (barrel: `index.ts:189`) |
+| `id-utils.ts` | `generateId`, `randomToken`, `isValidCheckpointId` | ID generation, CSPRNG temp-name token, and validation for checkpoint paths (barrel: `index.ts:196`) |
 | `checkpoint-types.ts` | `CheckpointModule`, `CheckpointStatus`, `CheckpointWorkItem`, `DeferredTask`, `Checkpoint` | Checkpoint data model types |
 | `checkpoint-manager.ts` | `CheckpointManager` | CRUD and lifecycle management for resumable operation checkpoints |
 | `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
@@ -756,7 +759,7 @@ function scoreLyricsContent(content: string): number
 | `json-utils.test.ts` | Tests | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` |
 | `node-loader.ts` | `loadNodeModules`, `assertDesktop`, `shellEnv`, `DesktopOnlyError`, `NodeModules` | Single sanctioned entry point for desktop-only Node.js builtins (os/path/fs/child_process). Lazy-loads inside function body so importing never triggers a module load on mobile. `shellEnv()` builds a narrowed subprocess environment with PATH augmented for common tool install locations |
 | `node-loader.test.ts` | Tests | Desktop guard (`loadNodeModules`, `assertDesktop`), `shellEnv` allowlist |
-| `settings-section.ts` | `createSettingsSectionContext`, `isSectionCollapsed`, `persistCollapse`, `SettingsSectionContext`, `SettingsSectionContextOptions`, `SectionRegistryEntry`, `FeatureToggleListener` | Shared accordion plumbing for the settings tab (#243). Feature renderers receive a `SettingsSectionContext` and call `featureSection()`/`configSection()` to build accordions without importing `settings-tab.ts` |
+| `settings-section.ts` | `createSettingsSectionContext`, `isSectionCollapsed`, `persistCollapse`, `revealSettingsSection`, `VIDEO_SETTINGS_SECTION`, `SettingsSectionContext`, `SettingsSectionContextOptions`, `SectionRegistryEntry`, `FeatureToggleListener`, `SettingsSectionRef` | Shared accordion plumbing for the settings tab (#243); `revealSettingsSection` opens the tab on one accordion (consumer: summarize video-dependency notice; key/title constant shared with `video/settings-section.ts`). Feature renderers receive a `SettingsSectionContext` and call `featureSection()`/`configSection()` to build accordions without importing `settings-tab.ts` |
 | `markdown.d.ts` | ambient `declare module '*.md'` | Types `import X from '*.md'` as a string (esbuild inlines the file at build time); used by `changelog-modal.ts` to bundle CHANGELOG.md (#375). Not part of the barrel |
 | `index.ts` | re-exports | Barrel file |
 

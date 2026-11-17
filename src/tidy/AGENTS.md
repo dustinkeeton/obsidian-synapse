@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-10-19
+last-updated: 2026-11-17
 ---
 
 # Tidy Module
@@ -158,7 +158,7 @@ Registry entries live in `src/commands/registry.ts`. Source ids are bare; Obsidi
 
 ## Configuration
 
-`TidySettings` (`settings.ts:284`), under `settings.tidy`:
+`TidySettings` (`settings.ts:343`), under `settings.tidy`:
 
 | Key | Type | Default | Controls |
 |-----|------|---------|----------|

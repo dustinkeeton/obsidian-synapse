@@ -57,6 +57,18 @@ config:
     buildCmd: node esbuild.config.mjs production
     testCmd: npm test
     typecheckCmd: npx tsc --noEmit --skipLibCheck
+  docs:
+    # Toolkit default minus README.md: docs passes keep the README in step with the code.
+    protectedDocs:
+      - CLAUDE.md
+      - CONTRIBUTING.md
+      - CODE_OF_CONDUCT.md
+      - SECURITY.md
+      - LICENSE
+      - CHANGELOG.md
+      - .waffle/waffle.yaml
+      - .waffle/waffle.local.yaml
+      - .waffle/extensions/**
   doctor:
     toolkitRef: github:dustinkeeton/wafflestack#v0.20.0
     # This repo deliberately gitignores some renders (.agents/, .codex/, and the

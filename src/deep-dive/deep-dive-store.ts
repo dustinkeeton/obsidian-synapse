@@ -28,6 +28,9 @@ function isDeepDiveRun(v: unknown): v is DeepDiveRun {
 	);
 }
 
+/** A run id read back from stored proposals or checkpoints becomes a file name; no separators or dots. */
+const isSafeRunId = (id: string): boolean => /^[A-Za-z0-9_-]+$/.test(id);
+
 /**
  * Persists deep dive proposals and run metadata as JSON files.
  * Proposals live in {proposalFolderPath}/proposals/.
@@ -159,12 +162,14 @@ export class DeepDiveStore {
 	// ── Runs ──
 
 	async saveRun(run: DeepDiveRun): Promise<void> {
+		if (!isSafeRunId(run.id)) throw new Error('Invalid deep dive run id');
 		await ensureFolder(this.app, this.runFolder);
 		const path = normalizePath(`${this.runFolder}/${run.id}.json`);
 		await this.app.vault.adapter.write(path, JSON.stringify(run, null, 2));
 	}
 
 	async loadRun(id: string): Promise<DeepDiveRun | null> {
+		if (!isSafeRunId(id)) return null;
 		const path = normalizePath(`${this.runFolder}/${id}.json`);
 		return readJsonFile(this.app.vault.adapter, path, isDeepDiveRun);
 	}

@@ -1,4 +1,6 @@
+import type { Plugin } from 'obsidian';
 import type SynapsePlugin from '../main';
+import type { SynapseSettings } from '../settings';
 import { addCollapsibleSection } from './collapsible-section';
 import { ConfirmModal } from './confirm-modal';
 import { applySectionReset, sectionHasReset } from './settings-reset';
@@ -114,6 +116,50 @@ export function isSectionCollapsed(
 	const persisted = plugin.settings.ui.collapsedSections[key];
 	if (persisted !== undefined) return persisted;
 	return enabled === false;
+}
+
+/** A settings accordion's persisted key and rendered title. */
+export interface SettingsSectionRef {
+	key: string;
+	title: string;
+}
+
+const SYNAPSE_SETTINGS_TAB_ID = 'synapse';
+
+export const VIDEO_SETTINGS_SECTION: SettingsSectionRef = { key: 'video', title: 'Video transcription' };
+
+/**
+ * Open the Synapse settings tab with `section` expanded and scrolled into view.
+ * `app.setting` is undocumented: every access is feature-detected and degrades to a no-op.
+ */
+export function revealSettingsSection(
+	plugin: Plugin,
+	settings: SynapseSettings,
+	section: SettingsSectionRef,
+): void {
+	const setting = (plugin.app as unknown as {
+		setting?: {
+			open?: () => void;
+			openTabById?: (id: string) => { containerEl?: HTMLElement } | undefined;
+		};
+	}).setting;
+	if (!setting || typeof setting.open !== 'function') return;
+
+	// The tab renders from this live object, so expand before it paints; persistence is best-effort.
+	settings.ui.collapsedSections[section.key] = false;
+	void (plugin as unknown as { saveSettings?: () => Promise<void> }).saveSettings?.();
+
+	setting.open();
+	const tab = typeof setting.openTabById === 'function' ? setting.openTabById(SYNAPSE_SETTINGS_TAB_ID) : undefined;
+	const containerEl = tab?.containerEl;
+	if (containerEl && typeof containerEl.findAll === 'function') {
+		window.setTimeout(() => {
+			const title = containerEl
+				.findAll('.synapse-accordion-title')
+				.find((el) => el.textContent === section.title);
+			title?.closest('.synapse-accordion')?.scrollIntoView({ block: 'start' });
+		}, 0);
+	}
 }
 
 /** Persist a section's collapse state and save. */
