@@ -26,7 +26,8 @@ export class TitleSuggester {
 		].join('\n');
 
 		const prompt = [
-			`Current title: ${currentTitle}`,
+			'Current title:',
+			wrapUntrusted(currentTitle, 'note title'),
 			'',
 			'Note content:',
 			wrapUntrusted(truncated, 'note'),
@@ -57,7 +58,8 @@ export class TitleSuggester {
 		].join('\n');
 
 		const prompt = [
-			`Current title: ${currentTitle}`,
+			'Current title:',
+			wrapUntrusted(currentTitle, 'note title'),
 			'',
 			'Note content:',
 			wrapUntrusted(truncated, 'note'),

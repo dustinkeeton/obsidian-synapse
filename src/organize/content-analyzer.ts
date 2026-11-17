@@ -117,7 +117,7 @@ export class ContentAnalyzer {
 
 		const contextParts = [wrapUntrusted(truncated, 'note')];
 		if (tags.length > 0) {
-			contextParts.push(`\nExisting tags: ${tags.join(', ')}`);
+			contextParts.push(`\nExisting tags:\n${wrapUntrusted(tags.join(', '), 'note tags')}`);
 		}
 
 		try {

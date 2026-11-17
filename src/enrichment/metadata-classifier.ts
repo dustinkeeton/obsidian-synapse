@@ -194,7 +194,7 @@ export class MetadataClassifier {
 ${wrapUntrusted(truncatedContent, 'note')}
 
 ## Existing Tags on This Note
-${existingTags.length > 0 ? existingTags.join(', ') : '(none)'}
+${existingTags.length > 0 ? wrapUntrusted(existingTags.join(', '), 'note tags') : '(none)'}
 
 ## Tag Vocabulary
 ${vocabDescription}

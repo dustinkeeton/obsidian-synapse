@@ -225,7 +225,7 @@ describe('TidyModule', () => {
 
 			await module.tidy(tfile('notes/test.md'));
 
-			expect(prompt).toContain('<<<UNTRUSTED_EXTERNAL_CONTENT source="note">>>');
+			expect(prompt).toContain('source="note">>>');
 			expect(prompt).toContain('>>> import os');
 			const written = await mockPlugin.app.vault.process.mock.results[0].value as string;
 			expect(written).toBe('Run:\n\n```\n>>> import os\n```');

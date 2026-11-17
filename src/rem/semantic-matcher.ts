@@ -219,7 +219,7 @@ export class SemanticMatcher {
 
 		const userPrompt =
 			`Note content:\n${wrapUntrusted(truncatedContent, 'note')}\n\n` +
-			`Vault note titles:\n${titleList}\n\n` +
+			`Vault note titles:\n${wrapUntrusted(titleList, 'vault note titles')}\n\n` +
 			'Respond with a JSON array of objects, each with:\n' +
 			'- "title": the exact note title from the list\n' +
 			'- "matchedConcept": the phrase or concept in the note content that relates to this title\n' +

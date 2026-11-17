@@ -85,7 +85,7 @@ export class PromptBuilder {
 ${wrapUntrusted(truncated, 'note')}
 
 ## Existing External Links
-${existingLinks.length > 0 ? existingLinks.join('\n') : '(none)'}
+${existingLinks.length > 0 ? wrapUntrusted(existingLinks.join('\n'), 'existing links') : '(none)'}
 
 ## Instructions
 - Only suggest external links for verifiable factual claims, technical terms, or concepts that warrant sourcing.
@@ -225,7 +225,7 @@ ${existingLinks.length > 0 ? existingLinks.join('\n') : '(none)'}
 ${wrapUntrusted(truncated, 'note')}
 
 ## Existing Frontmatter Keys
-${existingKeys.length > 0 ? existingKeys.join(', ') : '(none)'}
+${existingKeys.length > 0 ? wrapUntrusted(existingKeys.join(', '), 'frontmatter keys') : '(none)'}
 
 ## Instructions
 ${keyRule}

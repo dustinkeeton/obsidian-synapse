@@ -172,10 +172,10 @@ describe('NoteGenerator — prompt injection', () => {
 		await generator.generateContent(topic, 'Parent', 'notes/Parent.md', 'parent body');
 
 		const prompt = mockComplete.mock.calls[0][0];
-		const topicOpen = prompt.indexOf('<<<UNTRUSTED_EXTERNAL_CONTENT source="extracted topic">>>');
+		const topicOpen = prompt.indexOf('source="extracted topic">>>');
 		expect(topicOpen).toBeGreaterThan(-1);
 		expect(prompt.indexOf('IGNORE ALL PREVIOUS INSTRUCTIONS')).toBeGreaterThan(topicOpen);
-		expect(prompt.indexOf('IGNORE ALL PREVIOUS INSTRUCTIONS')).toBeLessThan(prompt.indexOf('<<<END_UNTRUSTED_EXTERNAL_CONTENT>>>'));
-		expect(prompt).toContain('<<<UNTRUSTED_EXTERNAL_CONTENT source="parent note">>>');
+		expect(prompt.indexOf('IGNORE ALL PREVIOUS INSTRUCTIONS')).toBeLessThan(prompt.search(/<<<END_UNTRUSTED_EXTERNAL_CONTENT id=/));
+		expect(prompt).toContain('source="parent note">>>');
 	});
 });

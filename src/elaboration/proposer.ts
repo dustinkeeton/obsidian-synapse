@@ -134,6 +134,7 @@ export class ProposalGenerator {
 
 		const rawRewrite = await this.aiClient.complete(prompt, systemPrompt, aiOpts);
 		const proposedAdditions = stripCodeFences(stripUntrustedMarkers(sanitizeAIResponse(rawRewrite)));
+		if (!proposedAdditions.trim()) throw new Error('The AI returned an empty rewrite');
 
 		return {
 			id: key,
@@ -180,7 +181,7 @@ export class ProposalGenerator {
 		// so surface it as context in every prompt. (The empty-body + generic-title
 		// case is already short-circuited in generate(), so any empty body reaching
 		// here has a meaningful title to seed from.)
-		const titleContext = `Note title: "${noteTitle}"`;
+		const titleContext = `Note title:\n${wrapUntrusted(noteTitle, 'note title')}`;
 
 		let prompt: string;
 		if (content.trim() === '') {

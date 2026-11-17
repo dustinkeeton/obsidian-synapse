@@ -48,7 +48,8 @@ Rules:
 
 		const userPrompt = `Write a note about the topic described in this block:
 ${topicBlock}
-Parent note: "${sourceTitle}"
+Parent note title:
+${wrapUntrusted(sourceTitle, 'parent note title')}
 
 Context from parent note (for reference, do not repeat):
 ${wrapUntrusted(sourceContent.slice(0, 2000), 'parent note')}`;

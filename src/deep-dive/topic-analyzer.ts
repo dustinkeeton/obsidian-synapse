@@ -44,7 +44,8 @@ Respond ONLY with a JSON array, no markdown fencing:
 [{"title": "Topic Name", "description": "What this note covers", "relevance": 0.8, "relatedUrls": ["https://..."]}]`;
 
 		const ancestors = ancestorTopics.length > 0 ? wrapUntrusted(ancestorTopics.join('\n'), 'ancestor topics') : '(none)';
-		const userPrompt = `Note title: "${noteTitle}"
+		const userPrompt = `Note title:
+${wrapUntrusted(noteTitle, 'note title')}
 
 Ancestor topics:
 ${ancestors}

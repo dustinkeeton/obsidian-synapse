@@ -174,6 +174,7 @@ export class TidyModule implements FeatureModule {
 			// Sanitize AI output then strip any code fences the AI may have wrapped it in
 			const sanitized = sanitizeAIResponse(tidiedBody);
 			const cleaned = stripCodeFences(stripUntrustedMarkers(sanitized));
+			if (!cleaned.trim()) throw new Error('the AI returned an empty note');
 
 			// Reassemble with the note's current frontmatter, re-parsed from the
 			// fresh content inside the atomic callback (the AI-cleaned body can't
