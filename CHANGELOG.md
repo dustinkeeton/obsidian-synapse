@@ -5,7 +5,7 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.5.1] - 2026-11-17
+## [1.6.0] - 2026-11-17
 
 ### Added
 
