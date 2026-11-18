@@ -3,7 +3,7 @@ import { TFolder } from 'obsidian';
 import { createSynapseApi, API_VERSION, VERB_DEFINITIONS } from './index';
 import type { SynapseApi } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
-import { InProgressRegistry } from '../shared';
+import { NotificationManager, jobOpId } from '../shared';
 import { createMockApp, mockFile } from '../__test-utils__/mock-factories';
 import type { FeatureModules } from '../modules';
 import type { PipelineModuleMap } from '../pipeline';
@@ -37,7 +37,7 @@ function fakeModules() {
 			getPendingProposals: elaboration.pending,
 			acceptProposal: vi.fn(async () => true),
 			rejectProposal: vi.fn(async () => undefined),
-			scanNote: vi.fn(async () => ({ ok: true, message: 'Proposal generated', proposalId: 'e2', writtenPaths: [], cacheUse: { ai: true } })),
+			scanNote: vi.fn(async () => ({ status: 'completed', message: 'Proposal generated', proposalIds: ['e2'], writtenPaths: [], cacheUse: { ai: true } })),
 		},
 		enrichment: {
 			getPendingProposals: enrichment.pending,
@@ -55,8 +55,8 @@ function fakeModules() {
 			getPendingProposals: deepDive.pending,
 			acceptProposal: vi.fn(async () => true),
 			rejectProposal: vi.fn(),
-			run: vi.fn(async () => ({ ok: true, message: 'Generated 2 proposals', runId: 'run1', proposalIds: ['d1', 'd2'], writtenPaths: [], cacheUse: {} })),
-			regenerate: vi.fn(async () => ({ ok: true, message: 'Regenerated', runId: 'run1', proposalIds: ['d1'], writtenPaths: ['Deep Dives/A.md'], cacheUse: {} })),
+			run: vi.fn(async (_path: string, _options: unknown) => ({ status: 'completed', message: 'Generated 2 proposals', runId: 'run1', proposalIds: ['d1', 'd2'], writtenPaths: [], cacheUse: {} })),
+			regenerate: vi.fn(async (_target: unknown) => ({ status: 'completed', message: 'Regenerated', runId: 'run1', proposalIds: ['d1'], writtenPaths: ['Deep Dives/A.md'], cacheUse: {} })),
 		},
 		title: {
 			getPendingProposals: title.pending,
@@ -90,6 +90,7 @@ describe('createSynapseApi (#623)', () => {
 	let app: ReturnType<typeof createMockApp>;
 	let api: SynapseApi;
 	let listIncomplete: ReturnType<typeof vi.fn>;
+	let notifications: NotificationManager;
 
 	beforeEach(() => {
 		settings = structuredClone(DEFAULT_SETTINGS);
@@ -111,7 +112,7 @@ describe('createSynapseApi (#623)', () => {
 			tidy: vi.fn(async () => 0),
 			organize: vi.fn(async () => 0),
 		};
-		const inProgress = new InProgressRegistry();
+		notifications = new NotificationManager();
 		listIncomplete = vi.fn(async () => []);
 		api = createSynapseApi({
 			app: app as never,
@@ -119,7 +120,7 @@ describe('createSynapseApi (#623)', () => {
 			getSettings: () => settings,
 			modules: modules as unknown as FeatureModules,
 			scanFns,
-			notifications: { inProgress } as never,
+			notifications,
 			checkpointManager: { listIncomplete } as never,
 		});
 	});
@@ -207,6 +208,12 @@ describe('createSynapseApi (#623)', () => {
 			expect((await api.deepDive.regenerate(42 as never)).error).toBe('target must be a string');
 		});
 
+		it('checks jobs verb arguments', async () => {
+			expect(api.jobs.get(42 as never)).toBeNull();
+			expect((await api.jobs.wait('job1', -5)).error).toBe('timeoutMs must be at least 0');
+			expect(api.jobs.cancel(undefined as never).error).toBe('id is required');
+		});
+
 		it('requires the note path', async () => {
 			expect((await api.elaborate(undefined as never)).error).toBe('notePath is required');
 		});
@@ -233,8 +240,17 @@ describe('createSynapseApi (#623)', () => {
 		});
 	});
 
+	/** Start a long verb and wait for its job; fails the test when no job started. */
+	async function runJob(start: Promise<{ ok: boolean; jobId?: string; error?: string }>) {
+		const started = await start;
+		expect(started).toMatchObject({ ok: true });
+		const waited = await api.jobs.wait(started.jobId!);
+		expect(waited.timedOut).toBe(false);
+		return waited.job!;
+	}
+
 	describe('scanFolder', () => {
-		it('runs the scan without confirmation and reports new proposal ids', async () => {
+		it('runs the scan as a job without confirmation and reports new proposal ids', async () => {
 			vi.mocked(scanFns.elaboration).mockImplementationOnce(async () => {
 				modules.elaboration.getPendingProposals.mockResolvedValue([
 					{ id: 'e1', sourceNotePath: NOTE, createdAt: 't', status: 'pending' },
@@ -243,29 +259,78 @@ describe('createSynapseApi (#623)', () => {
 				return 2;
 			});
 
-			const result = await api.scanFolder('elaboration', 'notes', { recursive: false });
+			const job = await runJob(api.scanFolder('elaboration', 'notes', { recursive: false }));
 
-			expect(scanFns.elaboration).toHaveBeenCalledWith({ folder: 'notes', recursive: false }, true);
-			expect(result).toMatchObject({ ok: true, proposals: ['e9'], count: 2, written: null });
+			expect(scanFns.elaboration).toHaveBeenCalledWith({ folder: 'notes', recursive: false, jobId: job.id }, true);
+			expect(job).toMatchObject({ verb: 'scanFolder', status: 'completed', result: { ok: true, proposals: ['e9'], count: 2, written: null } });
 		});
 
 		it('treats "" as the vault root and reports a void count as null', async () => {
-			const result = await api.scanFolder('summarize', '');
-			expect(scanFns.summarize).toHaveBeenCalledWith({ folder: undefined, recursive: true }, true);
-			expect(result.count).toBeNull();
+			const job = await runJob(api.scanFolder('summarize', ''));
+			expect(scanFns.summarize).toHaveBeenCalledWith({ folder: undefined, recursive: true, jobId: job.id }, true);
+			expect(job.result).toMatchObject({ count: null });
 		});
 
-		it('refuses an unknown feature or folder', async () => {
+		it('ends failed when the scan\'s own operation errors, though the scan returned', async () => {
+			vi.mocked(scanFns.tidy).mockImplementationOnce(async (target) => {
+				notifications.startOperation('Tidying', jobOpId('tidy-vault', target)).error('Tidy failed -- quota');
+				return 0;
+			});
+			const job = await runJob(api.scanFolder('tidy', 'notes'));
+			expect(job).toMatchObject({ status: 'failed', error: 'Tidy failed -- quota' });
+		});
+
+		it('is cancelled through jobs.cancel', async () => {
+			let release!: () => void;
+			let signalStarted!: () => void;
+			const scanStarted = new Promise<void>((resolve) => { signalStarted = resolve; });
+			vi.mocked(scanFns.rem).mockImplementationOnce(async (target) => {
+				notifications.startOperation('REM scanning', jobOpId('rem-directory-scan', target));
+				signalStarted();
+				await new Promise<void>((resolve) => { release = resolve; });
+				return 0;
+			});
+			const started = await api.scanFolder('rem', 'notes');
+			await scanStarted;
+			expect(api.jobs.get(started.jobId!)?.progress?.message).toBe('REM scanning');
+			expect(api.jobs.cancel(started.jobId!)).toEqual({ ok: true });
+			release();
+			expect((await api.jobs.wait(started.jobId!)).job?.status).toBe('cancelled');
+		});
+
+		it('refuses an unknown feature, a missing folder or a disabled feature without starting a job', async () => {
 			expect((await api.scanFolder('nope' as never, 'notes')).error).toContain('feature must be one of');
 			expect((await api.scanFolder('tidy', 'missing')).error).toContain('Folder not found');
+			settings.tidy.enabled = false;
+			expect((await api.scanFolder('tidy', 'notes')).error).toContain('disabled');
+			expect(api.jobs.list()).toEqual([]);
+			expect(scanFns.tidy).not.toHaveBeenCalled();
+		});
+
+		it('is available while any scan feature is on', () => {
+			for (const key of ['elaboration', 'summarize', 'enrichment', 'rem', 'illustrate', 'tidy'] as const) settings[key].enabled = false;
+			expect(api.capabilities().verbs.find((v) => v.name === 'scanFolder')?.available).toBe(true);
+			settings.organize.enabled = false;
+			expect(api.capabilities().verbs.find((v) => v.name === 'scanFolder')?.available).toBe(false);
 		});
 	});
 
 	describe('deepDive', () => {
-		it('passes run options through and maps the outcome', async () => {
-			const result = await api.deepDive.run(NOTE, { depth: 2, maxNotes: 5 });
-			expect(modules.deepDive.run).toHaveBeenCalledWith(NOTE, { depth: 2, maxNotes: 5 });
-			expect(result).toMatchObject({ ok: true, runId: 'run1', proposals: ['d1', 'd2'] });
+		it('runs as a job, passing options and the job id through', async () => {
+			const job = await runJob(api.deepDive.run(NOTE, { depth: 2, maxNotes: 5 }));
+			expect(modules.deepDive.run).toHaveBeenCalledWith(NOTE, { depth: 2, maxNotes: 5, jobId: job.id });
+			expect(job).toMatchObject({ verb: 'deepDive.run', status: 'completed', result: { ok: true, runId: 'run1', proposals: ['d1', 'd2'] } });
+		});
+
+		it('refuses a missing note without starting a job', async () => {
+			expect(await api.deepDive.run('notes/Nope.md')).toEqual({ ok: false, error: 'Note not found: notes/Nope.md' });
+			expect(modules.deepDive.run).not.toHaveBeenCalled();
+		});
+
+		it('maps a failed outcome to a failed job', async () => {
+			modules.deepDive.run.mockResolvedValueOnce({ status: 'failed', message: 'No topics found', proposalIds: [], writtenPaths: [], cacheUse: {} } as never);
+			const job = await runJob(api.deepDive.run(NOTE));
+			expect(job).toMatchObject({ status: 'failed', error: 'No topics found', result: { ok: false } });
 		});
 
 		it('reads a .md string as a note path and anything else as a proposal id', async () => {

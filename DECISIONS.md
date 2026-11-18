@@ -6,6 +6,23 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-18: API jobs track the operations they start (#624)
+
+**Context**: Deep dives and folder scans run for minutes. A blocking `eval` gets no progress and can't be cancelled. #624 proposed backing jobs with `InProgressRegistry`, but that registry only holds proposal-producing operations that pass metadata; summarize and tidy scans don't.
+
+**Decision**: `api.deepDive.run` and `api.scanFolder` return a job id at once. The job id travels to the module (`ScanScope.jobId`, `DeepDiveRunOptions.jobId`), which tags the operations it starts: `<op id>@job:<job id>`. `NotificationManager` keeps a per-job log of tagged operations, and the job reads its progress, failure and cancellation from it. `jobs.cancel` calls `cancelOperation` on each tagged operation, the same path as the toast's Cancel. The long verbs changed shape instead of gaining job-returning twins, since the API is unstable until the epic ships.
+
+**Alternatives considered**: Changing all seven folder scans to return a shared outcome type, so a job could read failure and cancellation from the return value. That touches every scan and the Fire Synapse pipeline for information the operations already carry. The shared `OperationOutcome` type now covers deep dive and elaboration; the scans keep their count returns.
+
+**Rationale**: Each scan already reports its state through its operation toast. Tagging the op id is one call per scan and needs no new contract.
+
+**Impact**:
+- Op ids are unique per job. Only a scan's own scan and generate operations are tagged, not the per-note ones inside it.
+- Finished jobs are kept for an hour (the last 50), in memory.
+- Moved to its own issue (#633): a shared accept-result type for every module's `acceptProposal`.
+
+---
+
 ## 2026-11-18: A public API object for external agents, not a server (#623)
 
 **Context**: Driving Synapse from an agent meant `obsidian eval` into private fields such as `plugin.modules.deepDive.generator`, working around modals, and reading `.synapse/*.json` by hand. That breaks on any refactor and skips `NoteOperationQueue`.

@@ -202,16 +202,19 @@ const api = app.plugins.plugins.synapse.api;
 api.capabilities();          // verbs, their arguments, and which features are on and have a key
 await api.status();          // versions, each feature's provider/model/effort and key source, running work
 
-await api.deepDive.run('Topics/Rust.md', { depth: 2, maxNotes: 10 });
+const { jobId } = await api.deepDive.run('Topics/Rust.md', { depth: 2, maxNotes: 10 });
+api.jobs.get(jobId);                      // status and progress, e.g. "Generating deep dive (3/10)"
+const { job } = await api.jobs.wait(jobId, 60000);   // up to a minute; check job.status and job.result
+api.jobs.cancel(jobId);                   // same as pressing Cancel on its toast
 await api.deepDive.regenerate('Deep Dives/Rust/Ownership.md');   // rewrite one note's body, keeping its frontmatter, navigation and enrichment sections
 await api.elaborate('Inbox/stub.md');
-await api.scanFolder('enrichment', 'Projects', { recursive: false });
+await api.scanFolder('enrichment', 'Projects', { recursive: false });   // also a job
 
 const pending = await api.proposals.list('deep-dive');
 await api.proposals.accept('deep-dive', pending.items[0].id);
 ```
 
-- Every action returns `{ ok, message, error, written, proposals, cacheUse }` and never throws. When `ok` is false, `error` says why. Calls check their arguments first, so a typo in an option is refused instead of ignored.
+- Long-running work (deep dives, folder scans) starts a job and returns its id right away; `jobs.wait` and `jobs.get` report progress and the result. Other actions return `{ ok, message, error, written, proposals, cacheUse }` directly. Nothing throws. When `ok` is false, `error` says why. Calls check their arguments first, so a typo in an option is refused instead of ignored.
 - Calls take every answer a dialog would ask for, so nothing waits on a click. An elaboration whose note you edited after it was generated is skipped unless you pass `{ force: true }`.
 - `status()` reports where each feature's key comes from, never the key.
 - Calls go through the same queue, exclusions, toasts and safety steps as the commands. A disabled feature refuses its calls.

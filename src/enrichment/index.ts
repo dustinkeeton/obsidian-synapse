@@ -1,5 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { extractUrls, findUrls, type ScanTarget, scanScopeLabel } from '../shared';
+import { jobOpId } from '../shared';
 import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
@@ -232,7 +233,7 @@ export class EnrichmentModule implements FeatureModule {
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for enrichment`,
-			'enrichment-vault-scan', { kind: 'enrichment', target: folderLabel ?? 'Whole vault' }
+			jobOpId('enrichment-vault-scan', target), { kind: 'enrichment', target: folderLabel ?? 'Whole vault' }
 		);
 
 		let allFiles = getMarkdownFiles(this.plugin.app, target);
@@ -283,7 +284,7 @@ export class EnrichmentModule implements FeatureModule {
 
 		const genOp = this.notifications.startOperation(
 			'Generating enrichment proposals',
-			'enrichment-vault-generate', { kind: 'enrichment', target: folderLabel ?? 'Whole vault' }
+			jobOpId('enrichment-vault-generate', target), { kind: 'enrichment', target: folderLabel ?? 'Whole vault' }
 		);
 		return settleOnThrow(genOp, 'Enrichment generation failed', async () => {
 			// Track proposal IDs mapped to note paths for Phase 4 injection

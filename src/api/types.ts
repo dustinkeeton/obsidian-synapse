@@ -26,6 +26,43 @@ export interface ApiResult {
 	cacheUse: CacheUse | null;
 }
 
+/** What a long verb returns at once (#624); `jobId` is set exactly when `ok` is true. */
+export interface ApiJobStart {
+	ok: boolean;
+	jobId?: string;
+	/** Why no job started (bad arguments, feature disabled, missing note or folder). */
+	error?: string;
+}
+
+export type ApiJobStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** A job as `jobs.get` / `jobs.wait` report it. */
+export interface ApiJob {
+	id: string;
+	/** The verb that started it, e.g. `deepDive.run`. */
+	verb: string;
+	/** `failed`: the verb failed, or one of its operations ended in an error. `cancelled`: via `jobs.cancel` or a toast / sidebar Cancel. */
+	status: ApiJobStatus;
+	startedAt: string;
+	finishedAt?: string;
+	/** The newest running operation's status line (the last one when finished); null before the first starts. */
+	progress: { message: string; current?: number; total?: number } | null;
+	/** Set once finished: the verb's result (a `DeepDiveRunResult` or `ScanFolderResult`). */
+	result?: ApiResult;
+	/** Why it failed; secrets redacted. */
+	error?: string;
+	/** Every operation the job started, in start order; omitted by `jobs.list`. */
+	operations?: { id: string; message: string; state: 'running' | 'done' | 'error' | 'cancelled'; current?: number; total?: number }[];
+}
+
+export interface ApiJobWait {
+	ok: boolean;
+	/** True when the timeout passed first; `job` then shows it still running. */
+	timedOut: boolean;
+	job: ApiJob | null;
+	error?: string;
+}
+
 export interface DeepDiveRunResult extends ApiResult {
 	runId?: string;
 }
@@ -110,7 +147,7 @@ export interface ApiVerbSpec {
 	description: string;
 	/** Positional arguments, in order. */
 	params: ApiParamSpec[];
-	/** Runs for minutes on large inputs (#624 turns these into jobs). */
+	/** Returns `{ ok, jobId }` at once and runs as a job; follow it with `jobs.wait` / `jobs.get` (#624). */
 	long: boolean;
 	/** False when the feature it needs is disabled or unavailable. */
 	available: boolean;
@@ -159,10 +196,19 @@ export interface SynapseApi {
 	capabilities(): ApiCapabilities;
 	status(): Promise<ApiStatus>;
 	elaborate(notePath: string): Promise<ApiResult>;
-	scanFolder(feature: ApiScanFeature, folder: string, options?: ApiScanOptions): Promise<ScanFolderResult>;
+	/** Starts a job whose result is a `ScanFolderResult`. */
+	scanFolder(feature: ApiScanFeature, folder: string, options?: ApiScanOptions): Promise<ApiJobStart>;
 	deepDive: {
-		run(notePath: string, options?: ApiDeepDiveRunOptions): Promise<DeepDiveRunResult>;
+		/** Starts a job whose result is a `DeepDiveRunResult`. */
+		run(notePath: string, options?: ApiDeepDiveRunOptions): Promise<ApiJobStart>;
 		regenerate(target: ApiRegenerateTarget): Promise<DeepDiveRunResult>;
+	};
+	jobs: {
+		get(id: string): ApiJob | null;
+		wait(id: string, timeoutMs?: number): Promise<ApiJobWait>;
+		cancel(id: string): { ok: boolean; error?: string };
+		/** Running and recently finished jobs, without their operations. */
+		list(): ApiJob[];
 	};
 	proposals: {
 		list(kind?: ProposalKind): Promise<ApiProposalList>;

@@ -13,17 +13,17 @@ class RemModule {
   onViewRefreshNeeded: (() => Promise<void>) | null
   onOpenProposalView: (() => void) | null
 
-  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:53; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar, noteQueue); #228 getter default () => false
+  constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:54; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar, noteQueue); #228 getter default () => false
   onload(): Promise<void>
   onunload(): void
-  remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null>   // index.ts:137; takes the note's queue slot once (#585); postOp silences info notices + result toast + auto-accept notices
+  remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null>   // index.ts:138; takes the note's queue slot once (#585); postOp silences info notices + result toast + auto-accept notices
   remScanDirectory(target?: ScanTarget, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   acceptProposal(id: string, acceptedMatchTexts: string[], options?: { silent?: boolean }): Promise<void>
   rejectProposal(id: string): Promise<void>
   undoProposal(id: string): Promise<void>
   getPendingProposals(): Promise<RemProposal[]>
-  getProposal(id: string): Promise<RemProposal | null>   // index.ts:532; any status; api.proposals.accept reads it to confirm an accept applied (#623)
+  getProposal(id: string): Promise<RemProposal | null>   // index.ts:533; any status; api.proposals.accept reads it to confirm an accept applied (#623)
 }
 ```
 
@@ -104,9 +104,9 @@ interface RemSettings {
 ## Data Flow
 
 ```
-remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private scanNote core (index.ts:142)
+remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private scanNote core (index.ts:143)
   --> isExcluded? (isPathExcluded 'rem' + enrichment.excludeTags)
-  --> notifications.trackInProgress('Finding links in <basename>', { kind: 'rem', target: filePath }) (#577; non-cancellable sidebar row, ended in finally) -> private scanIncludedNote (index.ts:169)
+  --> notifications.trackInProgress('Finding links in <basename>', { kind: 'rem', target: filePath }) (#577; non-cancellable sidebar row, ended in finally) -> private scanIncludedNote (index.ts:170)
   --> gatherCandidates(file, content, cacheUse):
         MentionScanner.scan(...) literal candidates (lookup excludes the source and `isUntitled` names, #608), down-weighted by titleMatchWeight
         SemanticMatcher.match(..., trackAiCache(cacheUse)) always-on, filtered by confidenceThreshold   (#527)
@@ -183,12 +183,12 @@ WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This
 
 `remScanDirectory` and `resumeFromCheckpoint` use `CheckpointManager` with module `'rem'`. Items tracked as `rem-{index}-{path}`. On error or cancel, all proposals created in the run are batch-rejected via `rejectProposalBatch()`.
 
-Resume re-checks exclusion rules silently (a path may have been excluded after checkpoint creation). Resume runs the same `gatherCandidates` pipeline as a fresh scan (literal + always-on semantic), so resumed items also get content-relevant links (#380). Resume opens `startOperation('Resuming REM scan', 'rem-resume', { kind: 'rem' })` (`index.ts:320-324`), so it shows as a cancellable in-progress sidebar row (#577).
+Resume re-checks exclusion rules silently (a path may have been excluded after checkpoint creation). Resume runs the same `gatherCandidates` pipeline as a fresh scan (literal + always-on semantic), so resumed items also get content-relevant links (#380). Resume opens `startOperation('Resuming REM scan', 'rem-resume', { kind: 'rem' })` (`index.ts:321-325`), so it shows as a cancellable in-progress sidebar row (#577).
 
 ## Exclusion Rules
 
 ```ts
-// index.ts:542-548
+// index.ts:543-549
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (
@@ -224,8 +224,8 @@ Settings UI (`settings-section.ts`) renders only the `enabled` toggle, `confiden
 
 | Import | From |
 |--------|------|
-| `generateId`, `getMarkdownFiles`, `openScanFolderPicker`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `redactError`, `reviewAction`, `trackAiCache`, `withCacheReport`, `settleOnThrow`, `scanScopeLabel`, `toScanScope`, `ScanTarget` (type) | `../shared` (index.ts:8) |
-| `NotificationManager`, `CheckpointManager`, `ModuleDeps`, `FeatureModule`, `NoteOperationQueue`, `CacheUse`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` (inline `import('../shared')`, index.ts:320) | `../shared` (type-only, index.ts:5-6) |
+| `generateId`, `getMarkdownFiles`, `openScanFolderPicker`, `fireAndForget`, `isPathExcluded`, `matchesExcludeTag`, `findMatchingRule`, `redactError`, `reviewAction`, `trackAiCache`, `withCacheReport`, `settleOnThrow`, `scanScopeLabel`, `toScanScope`, `ScanTarget` (type) | `../shared` (index.ts:9) |
+| `NotificationManager`, `CheckpointManager`, `ModuleDeps`, `FeatureModule`, `NoteOperationQueue`, `CacheUse`, `DeferredTask`, `CheckpointWorkItem`, `Checkpoint` (inline `import('../shared')`, index.ts:321) | `../shared` (type-only, index.ts:5-7) |
 | `CommandRegistrar` | `../commands` (type-only) |
 | `SynapseSettings`, `RemSettings` | `../settings` (type-only) |
 | `MentionScanner` | `./mention-scanner` |

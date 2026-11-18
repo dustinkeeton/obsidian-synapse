@@ -1,5 +1,6 @@
 import { Plugin, TFile } from 'obsidian';
 import { extractUrls, type ScanTarget, scanScopeLabel } from '../shared';
+import { jobOpId } from '../shared';
 import type { SourceContext } from '../shared';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar, isInFlow } from '../commands';
@@ -270,7 +271,7 @@ export class ElaborationModule implements FeatureModule {
 		const folderLabel = scanScopeLabel(target);
 		// --- Phase 1: Detection (lightweight, local-only) ---
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
-		const scanOp = this.notifications.startOperation(scopeLabel, 'vault-scan', { kind: 'elaboration', target: folderLabel ?? 'Whole vault' });
+		const scanOp = this.notifications.startOperation(scopeLabel, jobOpId('vault-scan', target), { kind: 'elaboration', target: folderLabel ?? 'Whole vault' });
 		let files = getMarkdownFiles(this.plugin.app, target);
 		// Per-file scoping (#111): narrow to the single requested note.
 		if (onlyFile) files = files.filter(f => f.path === onlyFile.path);
@@ -312,7 +313,7 @@ export class ElaborationModule implements FeatureModule {
 		// --- Phase 3: Proposal generation (heavy, cancellable, checkpointed) ---
 		const genOp = this.notifications.startOperation(
 			'Generating proposals',
-			'vault-generate', { kind: 'elaboration', target: folderLabel ?? 'Whole vault' }
+			jobOpId('vault-generate', target), { kind: 'elaboration', target: folderLabel ?? 'Whole vault' }
 		);
 		return settleOnThrow(genOp, 'Proposal generation failed', async () => {
 			const createdProposalIds: string[] = [];
@@ -424,7 +425,7 @@ export class ElaborationModule implements FeatureModule {
 	): Promise<ElaborationOutcome> {
 		const cacheUse: CacheUse = {};
 		const done = (ok: boolean, message: string, extra: Partial<ElaborationOutcome> = {}): ElaborationOutcome =>
-			({ ok, message, writtenPaths: [], cacheUse, ...extra });
+			({ status: ok ? 'completed' : 'failed', message, proposalIds: [], writtenPaths: [], cacheUse, ...extra });
 		try {
 			const detectorResult = await this.detector.detect(file);
 
@@ -472,7 +473,7 @@ export class ElaborationModule implements FeatureModule {
 				);
 				const applied = await this.maybeAutoAccept(proposal);
 				await this.refreshView();
-				return done(true, message, { proposalId: proposal.id, writtenPaths: applied ? [file.path] : [] });
+				return done(true, message, { proposalIds: [proposal.id], writtenPaths: applied ? [file.path] : [] });
 			}
 			op.finish('Note does not appear to be a stub');
 			return done(true, 'Note does not appear to be a stub');

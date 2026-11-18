@@ -28,11 +28,11 @@ class DeepDiveModule {
 }
 
 // types.ts; barrel-exported (#623)
-interface DeepDiveRunOptions { depth?: number; maxNotes?: number; autoAccept?: boolean }   // depth clamped to MIN_DEPTH..MAX_DEPTH; each defaults to its setting
-interface DeepDiveOutcome { ok: boolean; message: string; runId?: string; proposalIds: string[]; writtenPaths: string[]; cacheUse: CacheUse }
+interface DeepDiveRunOptions { depth?: number; maxNotes?: number; autoAccept?: boolean; jobId?: string }   // jobId (#624): tags the run's ops with jobOpId; never persisted   // depth clamped to MIN_DEPTH..MAX_DEPTH; each defaults to its setting
+interface DeepDiveOutcome extends OperationOutcome { runId?: string }   // shared OperationOutcome (#624): status completed | failed | cancelled (a cancelled run is `cancelled`), message, proposalIds, writtenPaths, cacheUse
 type DeepDiveRegenerateTarget = { proposalId: string } | { notePath: string }
 
-// types.ts:130 — NOT barrel-exported (index.ts:59-71 exports only the proposal/run/topic and navigator types); the registry passes an inline lambda
+// types.ts:125 — NOT barrel-exported (index.ts:59-71 exports only the proposal/run/topic and navigator types); the registry passes an inline lambda
 type SuggestDirectory = (text: string, aiOpts?: AIRequestOptions) => Promise<string | null>
 
 function buildDeepDivePath(               // index.ts:866; file name = private safeNoteName(topicTitle) (index.ts:847)
@@ -56,7 +56,7 @@ function syllabusPath(rootNotePath: string, noteOutputFolder: string): string
 function injectNavigationBlock(content: string, navBlock: string): string
 ```
 
-Exported types (all declared in `types.ts`; `TraversalNode` `types.ts:136`, `NavigationContext` `types.ts:152`): `DeepDiveProposal`, `DeepDiveRun`, `ExtractedTopic`, `QualityScore`, `DeepDiveProposalStatus`, `DeepDiveRunStatus`, `TraversalNode`, `NavigationContext`
+Exported types (all declared in `types.ts`; `TraversalNode` `types.ts:131`, `NavigationContext` `types.ts:147`): `DeepDiveProposal`, `DeepDiveRun`, `ExtractedTopic`, `QualityScore`, `DeepDiveProposalStatus`, `DeepDiveRunStatus`, `TraversalNode`, `NavigationContext`
 
 Re-exported settings renderer: `renderDeepDiveSettings` (from `./settings-section`)
 
@@ -88,13 +88,13 @@ Serialization contract: see `src/shared/AGENTS.md` → `note-operation-queue.ts`
 | `deep-dive-store.ts` | `DeepDiveStore` (deep-dive-store.ts:39) | JSON persistence for proposals and runs; run ids gated by the private `isSafeRunId` (`/^[A-Za-z0-9_-]+$/`, deep-dive-store.ts:32) before they become a file name |
 | `depth-selector-modal.ts` | `DepthSelectorModal` (depth-selector-modal.ts:7), `selectDepth` (:83), `MIN_DEPTH`, `MAX_DEPTH` (:4-5) | Modal for user to select recursion depth (1-6) |
 | `settings-section.ts` | `renderDeepDiveSettings` (settings-section.ts:12) | Settings UI renderer (accordion key `deepDive`) |
-| `types.ts` | -- | All deep-dive types, incl. the `SuggestDirectory` injection contract (types.ts:130; imports `AIRequestOptions` type from `../shared`) and the navigator's `TraversalNode` (types.ts:136) / `NavigationContext` (types.ts:152) |
+| `types.ts` | -- | All deep-dive types, incl. the `SuggestDirectory` injection contract (types.ts:125; imports `AIRequestOptions` type from `../shared`) and the navigator's `TraversalNode` (types.ts:131) / `NavigationContext` (types.ts:147) |
 
 `syllabus-navigator.ts` also exports `wikiLink` (syllabus-navigator.ts:66) and `buildBreadcrumbs` (syllabus-navigator.ts:76); these are internal helpers and are NOT re-exported through `index.ts`. `wikiLink(path, linkpathFor)` writes `[[linkpath|Note]]` (`[[Note]]` when the linkpath is the basename). `DeepDiveModule` passes `shared` `linkpathFor(app, path)`: bare while the basename is unique (so a moved note keeps resolving), folder-qualified once another note shares it, so nav, syllabus and `parent:` links resolve to their own run when basenames collide across runs (#607); a qualified path holding `#` `^` `|` `[` `]` falls back to the bare basename; `injectNavigationBlock` matches the nav callout by header, so bare-link blocks from older runs are replaced the same way.
 
 ## Dependency on `organize` module
 
-`deep-dive` has NO `../organize` import. In `auto-organize` nesting mode, `buildAutoOrganizedPath` (index.ts:799) calls the injected `this.suggestDirectory(topicTitle, aiOpts)` (the proposal's `aiOpts`, #527) when it is non-null; a non-null directory becomes `normalizePath(`${directory}/${safeName}.md`)` with `safeName = safeNoteName(topicTitle)` (index.ts:810), otherwise (null result, thrown error, or no callback wired) it falls back to `buildDeepDivePath` (nested mode, index.ts:817). The topic-extraction + directory-scoring + 0.6 score floor live on the organize side (`OrganizeModule.suggestDirectory`, `organize/index.ts:81`); the registry wires the two (`modules/registry.ts:110-116`).
+`deep-dive` has NO `../organize` import. In `auto-organize` nesting mode, `buildAutoOrganizedPath` (index.ts:799) calls the injected `this.suggestDirectory(topicTitle, aiOpts)` (the proposal's `aiOpts`, #527) when it is non-null; a non-null directory becomes `normalizePath(`${directory}/${safeName}.md`)` with `safeName = safeNoteName(topicTitle)` (index.ts:810), otherwise (null result, thrown error, or no callback wired) it falls back to `buildDeepDivePath` (nested mode, index.ts:817). The topic-extraction + directory-scoring + 0.6 score floor live on the organize side (`OrganizeModule.suggestDirectory`, `organize/index.ts:82`); the registry wires the two (`modules/registry.ts:110-116`).
 
 ## Data Flow
 
@@ -283,9 +283,9 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 | Op id | Site | Target |
 |-------|------|--------|
-| `deep-dive-scan-<path>` | `index.ts:435` | root note path |
+| `deep-dive-scan-<path>` (+ `@job:<jobId>` under a public-API job, #624) | `index.ts:435` | root note path |
 | `deep-dive-regenerate-<id>` | `index.ts:343` | proposal's `proposedPath` |
-| `deep-dive-generate-<runId>` | `index.ts:531` | root note path (one row per run, so parallel runs keep their own progress and Cancel) |
+| `deep-dive-generate-<runId>` (+ `@job:<jobId>` under a public-API job, #624) | `index.ts:531` | root note path (one row per run, so parallel runs keep their own progress and Cancel) |
 
 ## Dependencies
 

@@ -1,14 +1,15 @@
 import { normalizePath, TFile, TFolder } from 'obsidian';
 import { redactSecrets } from '../shared';
-import type { FeatureSettingsKey } from '../shared';
+import type { FeatureSettingsKey, OperationOutcome } from '../shared';
 import { PROPOSAL_KINDS } from '../views';
 import type { ProposalKind } from '../views';
 import { buildCapabilities } from './capabilities';
 import { buildProposalAdapters } from './proposals';
 import { buildStatus, featureCapabilities } from './status';
 import { validateArgs } from './validate';
+import { JobRegistry } from './jobs';
 import type {
-	ApiRegenerateTarget, ApiResult, ApiScanFeature, DeepDiveRunResult, ScanFolderResult, SynapseApi, SynapseApiDeps,
+	ApiJobStart, ApiRegenerateTarget, ApiResult, ApiScanFeature, DeepDiveRunResult, ScanFolderResult, SynapseApi, SynapseApiDeps,
 } from './types';
 import { API_VERSION } from './types';
 
@@ -18,7 +19,9 @@ export type {
 	SynapseApi, SynapseApiDeps, ApiResult, DeepDiveRunResult, ScanFolderResult, ApiScanFeature, ApiScanOptions,
 	ApiDeepDiveRunOptions, ApiRegenerateTarget, ApiProposal, ApiProposalList, ApiAcceptOptions, ApiKeySource, ApiFeatureCapability,
 	ApiParamSpec, ApiVerbSpec, ApiCapabilities, ApiAIStatus, ApiCheckpointStatus, ApiStatus,
+	ApiJob, ApiJobStart, ApiJobStatus, ApiJobWait,
 } from './types';
+export { JobRegistry, MAX_FINISHED_JOBS, FINISHED_JOB_TTL_MS, DEFAULT_WAIT_MS, MAX_WAIT_MS } from './jobs';
 
 /** Scan features whose output is proposals, so `scanFolder` can report the new ids. */
 const SCAN_PROPOSAL_KIND: Partial<Record<ApiScanFeature, ProposalKind>> = {
@@ -44,8 +47,16 @@ function failure(error: string): ApiResult {
 	return { ok: false, error: redactSecrets(error), written: [], proposals: [], cacheUse: null };
 }
 
-function scanFailure(error: string): ScanFolderResult {
-	return { ...failure(error), count: null };
+function jobRefused(error: string): ApiJobStart {
+	return { ok: false, error: redactSecrets(error) };
+}
+
+/** A module outcome as an ApiResult; anything but `completed` is `ok: false` with the outcome's message as the error. */
+function fromOutcome(outcome: OperationOutcome): ApiResult {
+	const result = { written: outcome.writtenPaths, proposals: outcome.proposalIds, cacheUse: outcome.cacheUse };
+	return outcome.status === 'completed'
+		? { ok: true, message: outcome.message, ...result }
+		: { ok: false, error: redactSecrets(outcome.message), ...result };
 }
 
 const asIs = (failed: ApiResult): ApiResult => failed;
@@ -72,6 +83,7 @@ function toRegenerateTarget(target: ApiRegenerateTarget): { proposalId: string }
 export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 	const { app, modules } = deps;
 	const adapters = buildProposalAdapters(app, modules);
+	const jobs = new JobRegistry(deps.notifications);
 
 	const disabled = (feature: FeatureSettingsKey, label: string): string | null =>
 		deps.getSettings()[feature].enabled ? null : `${label} is disabled in Synapse settings`;
@@ -98,49 +110,44 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 			if (off) return failure(off);
 			const file = noteFile(notePath);
 			if (!file) return failure(`Note not found: ${notePath}`);
-			const outcome = await modules.elaboration.scanNote(file, true);
-			return outcome.ok
-				? { ok: true, message: outcome.message, written: outcome.writtenPaths, proposals: outcome.proposalId ? [outcome.proposalId] : [], cacheUse: outcome.cacheUse }
-				: failure(outcome.message);
+			return fromOutcome(await modules.elaboration.scanNote(file, true));
 		}, asIs),
 
-		scanFolder: (feature, folder, options) => settle<ScanFolderResult>(async () => {
-			const invalid = validateArgs('scanFolder', [feature, folder, options]);
-			if (invalid) return scanFailure(invalid);
-			const scan = deps.scanFns[feature];
-			const off = disabled(feature, FEATURE_LABEL[feature]);
-			if (off) return scanFailure(off);
+		scanFolder: async (feature, folder, options) => {
+			const refused = validateArgs('scanFolder', [feature, folder, options]) ?? disabled(feature, FEATURE_LABEL[feature]);
+			if (refused) return jobRefused(refused);
 			const path = normalizePath(folder || '/');
 			const root = path === '/' || path === '';
-			if (!root && !(app.vault.getAbstractFileByPath(path) instanceof TFolder)) {
-				return scanFailure(`Folder not found: ${folder}`);
-			}
+			if (!root && !(app.vault.getAbstractFileByPath(path) instanceof TFolder)) return jobRefused(`Folder not found: ${folder}`);
+			const scan = deps.scanFns[feature];
 			const kind = SCAN_PROPOSAL_KIND[feature];
-			const before = await pendingIds(kind);
-			const count = await scan({ folder: root ? undefined : path, recursive: options?.recursive ?? true }, true);
-			const after = await pendingIds(kind);
-			return {
-				ok: true,
-				message: `${FEATURE_LABEL[feature]} scan finished`,
-				written: null,
-				proposals: [...after].filter((id) => !before.has(id)),
-				cacheUse: null,
-				count: typeof count === 'number' ? count : null,
-			};
-		}, (failed) => ({ ...failed, count: null })),
+			const jobId = jobs.start('scanFolder', (id) => settle<ScanFolderResult>(async () => {
+				const before = await pendingIds(kind);
+				const count = await scan({ folder: root ? undefined : path, recursive: options?.recursive ?? true, jobId: id }, true);
+				const after = await pendingIds(kind);
+				return {
+					ok: true,
+					message: `${FEATURE_LABEL[feature]} scan finished`,
+					written: null,
+					proposals: [...after].filter((pid) => !before.has(pid)),
+					cacheUse: null,
+					count: typeof count === 'number' ? count : null,
+				};
+			}, (failed) => ({ ...failed, count: null })));
+			return { ok: true, jobId };
+		},
 
 		deepDive: {
-			run: (notePath, options) => settle<DeepDiveRunResult>(async () => {
-				const invalid = validateArgs('deepDive.run', [notePath, options]);
-				if (invalid) return failure(invalid);
-				const off = disabled('deepDive', FEATURE_LABEL.deepDive);
-				if (off) return failure(off);
-				const outcome = await modules.deepDive.run(notePath, options ?? {});
-				const result = { written: outcome.writtenPaths, proposals: outcome.proposalIds, cacheUse: outcome.cacheUse, runId: outcome.runId };
-				return outcome.ok
-					? { ok: true, message: outcome.message, ...result }
-					: { ok: false, error: redactSecrets(outcome.message), ...result };
-			}, asIs),
+			run: async (notePath, options) => {
+				const refused = validateArgs('deepDive.run', [notePath, options]) ?? disabled('deepDive', FEATURE_LABEL.deepDive);
+				if (refused) return jobRefused(refused);
+				if (!noteFile(notePath)) return jobRefused(`Note not found: ${notePath}`);
+				const jobId = jobs.start('deepDive.run', (id) => settle<DeepDiveRunResult>(async () => {
+					const outcome = await modules.deepDive.run(notePath, { ...options, jobId: id });
+					return { ...fromOutcome(outcome), runId: outcome.runId };
+				}, asIs));
+				return { ok: true, jobId };
+			},
 
 			regenerate: (target) => settle<DeepDiveRunResult>(async () => {
 				const invalid = validateArgs('deepDive.regenerate', [target]);
@@ -148,11 +155,21 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 				const off = disabled('deepDive', FEATURE_LABEL.deepDive);
 				if (off) return failure(off);
 				const outcome = await modules.deepDive.regenerate(toRegenerateTarget(target));
-				const result = { written: outcome.writtenPaths, proposals: outcome.proposalIds, cacheUse: outcome.cacheUse, runId: outcome.runId };
-				return outcome.ok
-					? { ok: true, message: outcome.message, ...result }
-					: { ok: false, error: redactSecrets(outcome.message), ...result };
+				return { ...fromOutcome(outcome), runId: outcome.runId };
 			}, asIs),
+		},
+
+		jobs: {
+			get: (id) => (validateArgs('jobs.get', [id]) ? null : jobs.get(id)),
+			wait: async (id, timeoutMs) => {
+				const invalid = validateArgs('jobs.wait', [id, timeoutMs]);
+				return invalid ? { ok: false, timedOut: false, job: null, error: invalid } : jobs.wait(id, timeoutMs);
+			},
+			cancel: (id) => {
+				const invalid = validateArgs('jobs.cancel', [id]);
+				return invalid ? { ok: false, error: invalid } : jobs.cancel(id);
+			},
+			list: () => jobs.list(),
 		},
 
 		proposals: {
