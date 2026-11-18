@@ -6,6 +6,28 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-18: A public API object for external agents, not a server (#623)
+
+**Context**: Driving Synapse from an agent meant `obsidian eval` into private fields such as `plugin.modules.deepDive.generator`, working around modals, and reading `.synapse/*.json` by hand. That breaks on any refactor and skips `NoteOperationQueue`.
+
+**Decision**: Expose a versioned object at `app.plugins.plugins.synapse.api` (`src/api/`), built after the modules load.
+
+- `capabilities()` and `status()` describe the plugin. `status()` reports where each key comes from, never the key.
+- Verbs take every answer a modal would ask for: `deepDive.run` takes depth, note cap and auto-accept; elaboration accept takes `force`; title accept takes `resolution`. The modals stay as thin callers of the same module cores.
+- Every verb resolves to `{ ok, message, error, written, proposals, cacheUse }` and never throws. Errors pass through `redactSecrets`.
+- Verbs call the modules' public entry points, so queueing, exclusions, toasts and in-progress rows are the same as for the palette commands.
+- `deepDive.regenerate` rewrites one note's body and keeps its frontmatter, nav block and enrichment sections.
+
+**Alternatives considered**: An MCP or HTTP server inside the plugin. A listening port adds auth, DNS-rebinding and review surface; the epic (#629) defers it, and an MCP stdio shim outside the plugin (#628) wraps this API instead.
+
+**Rationale**: An object on the plugin needs no port, no new dependency and no auth of its own. Whoever can run `eval` already has full vault access. A versioned shape gives agents something stable to code against.
+
+**Impact**:
+- `DeepDiveModule.run` / `regenerate`, `ElaborationOutcome` from `scanNote`, and `acceptProposal(..., { onStale })` are new module seams. `acceptProposal` on elaboration and deep dive now returns whether it applied.
+- Jobs (#624), stop reasons (#625), external generation (#626), the activity log (#627) and the MCP shim (#628) build on this object.
+
+---
+
 ## 2026-11-17: Release-readiness audit — four small closures, no redesign
 
 **Context**: Pre-release audit of `main` after 1.5.0 (branch `release-readiness-audit`). The pass found no critical or high issue in shipped code; it closed four small gaps.

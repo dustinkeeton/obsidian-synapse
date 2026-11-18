@@ -30,7 +30,7 @@ class EnrichmentModule {
   scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:224
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>   // index.ts:129
   getPendingProposals(): Promise<EnrichmentProposal[]>   // index.ts:121
-  acceptSelectedFromView(id: string, accepted: AcceptedItems, options?: { silent?: boolean }): Promise<void>  // index.ts:574; queue wrapper over private acceptSelected (#483)
+  acceptSelectedFromView(id: string, accepted?: AcceptedItems, options?: { silent?: boolean }): Promise<void>  // index.ts:576; queue wrapper over private acceptSelected (#483); omitted `accepted` = every item (buildAcceptAll), used by api.proposals.accept (#623)
   rejectFromView(id: string): Promise<void>   // index.ts:623; no note write; unqueued
 }
 
@@ -210,7 +210,7 @@ In (consumed by this module):
 
 Out (consumed by other modules):
 - `src/modules/registry.ts`: constructs `new EnrichmentModule(deps, autoAccept(deps, 'enrichment'))` (`modules/registry.ts:92`)
-- `src/main.ts`: wires `onViewRefreshNeeded`, `onOpenProposalView`; calls `scanVault()` (`main.ts:95`), `getPendingProposals()` (`main.ts:112`), `resumeFromCheckpoint()` (`main.ts:127`), `acceptSelectedFromView()` / `rejectFromView()` (`main.ts:150-151`), `enrich(path, trigger, { postOp: true })` via `PostOpHookDeps.enrich` (`main.ts:191`); assigns `onEnrichmentApplied = buildPostOpHook(postOpDeps, 'enrichment')` (`main.ts:202`; illustrate leg only, fired from `enrichment/index.ts:651-654` with `sourceUrls` + `producedRegion: { kind: 'whole-note' }`)
+- `src/main.ts`: wires `onViewRefreshNeeded`, `onOpenProposalView`; calls `scanVault()` (`main.ts:99`), `getPendingProposals()` (`main.ts:116`), `resumeFromCheckpoint()` (`main.ts:131`), `acceptSelectedFromView()` / `rejectFromView()` (`main.ts:154-155`), `enrich(path, trigger, { postOp: true })` via `PostOpHookDeps.enrich` (`main.ts:195`); assigns `onEnrichmentApplied = buildPostOpHook(postOpDeps, 'enrichment')` (`main.ts:206`; illustrate leg only, fired from `enrichment/index.ts:651-654` with `sourceUrls` + `producedRegion: { kind: 'whole-note' }`)
 
 No feature-module dependencies (enrichment does not import from elaboration, transcription, etc.).
 

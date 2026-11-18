@@ -356,7 +356,7 @@ class NoteOperationQueue {
   get size(): number                  // number of paths with queued/running operations (diagnostics/tests)
   run<T>(notePath: string, operation: () => Promise<T>, options?: NoteOperationOptions): Promise<T>
 }
-// One instance per plugin (created in main.ts:56), injected into every module that mutates a note after an AI call.
+// One instance per plugin (created in main.ts:60), injected into every module that mutates a note after an AI call.
 // Chain entries never reject (built from internal resolve-only promises), so a failing operation cannot poison a key;
 // `run` rejections still propagate to the caller and still release the slot (note-operation-queue.ts:46-47).
 
@@ -526,7 +526,7 @@ function voiceInstruction(settings: VoiceSettings): string   // voice rule + VER
 // settings-merge.ts:10 — persisted settings over defaults; nested records recurse, arrays/primitives overwrite; drops __proto__/constructor/prototype keys; NOT a deep clone (untouched nested defaults shared by reference)
 function deepMergeSettings<T extends object>(target: T, source: Record<string, unknown>): T
 
-// data-folder-migration.ts:5 / :6 / :13 — one-time `.auto-notes/` -> `.synapse/` rename at load (main.ts:50); never throws
+// data-folder-migration.ts:5 / :6 / :13 — one-time `.auto-notes/` -> `.synapse/` rename at load (main.ts:54); never throws
 const LEGACY_DATA_FOLDER = '.auto-notes'
 const DATA_FOLDER = '.synapse'
 function migrateDataFolder(adapter: DataAdapter, notifications: NotificationManager): Promise<void>   // absent old folder = silent return; both present = console.warn, no rename; failure = console.error(redactError) + notifications.error
@@ -698,7 +698,7 @@ function scoreLyricsContent(content: string): number
 | `scan-scope.test.ts` | Tests | Scope normalization + labels |
 | `scan-folder-picker-modal.ts` | `ScanFolderPickerModal`, `ScanFolderSuggestion`, `ROOT_LABEL`, `ROOT_TOP_LEVEL_LABEL` | Scan picker with top-level-only root row + Shift+Enter non-recursive choice (#589); Shift+Enter goes through the feature-detected `chooser.useSelectedItem` (`scan-folder-picker-modal.ts:30`), no-op when absent |
 | `scan-folder-picker-modal.test.ts` | Tests | Row order, scope returned per row/modifier, Shift+Enter registration |
-| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:204` (direct import; section reset), `settings-ui/global-sections.ts:525` (via barrel; reset all), `elaboration/index.ts:521` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:17` cites the settle-once pattern in a comment only, no import |
+| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:204` (direct import; section reset), `settings-ui/global-sections.ts:525` (via barrel; reset all), `elaboration/index.ts:534` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:17` cites the settle-once pattern in a comment only, no import |
 | `confirm-modal.test.ts` | Tests | ConfirmModal tests |
 | `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |
 | `settings-reset.test.ts` | Tests | Reset helper tests |
@@ -749,11 +749,11 @@ function scoreLyricsContent(content: string): number
 | `extract-image-urls.test.ts` | Tests | `extractImageUrls` ordering/resolution/filters/cap; `fetchPageContentWithImages`; `fetchHtmlDocument` content type |
 | `settings-migrations.ts` | `migrateSettings`, `readSettingsVersion`, `CURRENT_SETTINGS_VERSION`, `SETTINGS_MIGRATIONS`, `SettingsMigration` (+ `foldExcludeFoldersIntoExclusions`, `dropSemanticMatching`, `renameWhisperModelToTranscriptionModel`, `replaceRetiredModels`, `RETIRED_MODEL_REPLACEMENTS`, `dropSamplingSettings`, `moveTranscriptionKeys`, `normalizeEfforts`, `RETIRED_EFFORT_REPLACEMENTS` for tests) | Version-stamped settings migration runner (#93). Pure; imports only `shared/exclusions` (stays bottom layer, never imports `../settings`). Replays every migration with `to > persisted settingsVersion` over the raw `data.json` before defaults merge. v1 folds legacy `excludeFolders` -> `exclusions` (#307); v2 drops the inert `rem.semanticMatching` flag; v3 renames `audio.whisperModel` -> `audio.transcriptionModel` (#521); v4 repoints retired model ids to vendor replacements; v5 drops `ai.temperature` / `ai.maxTokens` (#596); v6 replays the v4 remap for gpt-4o / gpt-4o-mini; v7 `moveTranscriptionKeys` moves the audio key fields into `ai.providerKeys`; v8 `normalizeEfforts` maps none / minimal -> low and xhigh -> high (`RETIRED_EFFORT_REPLACEMENTS`) |
 | `settings-migrations.test.ts` | Tests | Migration runner + per-step + drift-guard tests |
-| `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:296`) |
+| `settings-merge.ts` | `deepMergeSettings` | Prototype-pollution-safe merge of persisted settings over `DEFAULT_SETTINGS` (nested records recurse, arrays are leaves, not a deep clone). No imports. Used by `main.loadSettings` (`main.ts:310`) |
 | `settings-merge.test.ts` | Tests | Merge semantics + pollution-key tests |
 | `voice.ts` | `voiceInstruction`, `VOICE_OPTIONS`, `VoiceMode`, `VoiceSettings` (+ rule constants for tests) | System-prompt voice fragment for prose-authoring call sites (#540). No imports |
 | `voice.test.ts` | Tests | Per-option output, custom trim + blank fallback, unknown-value fallback, verbatim exemption on every option |
-| `data-folder-migration.ts` | `migrateDataFolder`, `LEGACY_DATA_FOLDER`, `DATA_FOLDER` | One-time `.auto-notes/` -> `.synapse/` data-folder rename via `DataAdapter` (skip when absent, warn when both exist, `notifications.success`/`error` outcome). Imports `redact`, `notifications` (type). Called once at `main.ts:50` |
+| `data-folder-migration.ts` | `migrateDataFolder`, `LEGACY_DATA_FOLDER`, `DATA_FOLDER` | One-time `.auto-notes/` -> `.synapse/` data-folder rename via `DataAdapter` (skip when absent, warn when both exist, `notifications.success`/`error` outcome). Imports `redact`, `notifications` (type). Called once at `main.ts:54` |
 | `data-folder-migration.test.ts` | Tests | Rename / skip / conflict / failure paths |
 | `json-utils.ts` | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` | Type-safe JSON helpers. `parseJson` returns `unknown` (not `any`). `readJsonFile` reads via `DataAdapter`, validates with a type guard, returns `null` on any failure |
 | `json-utils.test.ts` | Tests | `parseJson`, `isRecord`, `asStringArray`, `readJsonFile` |
@@ -897,7 +897,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 |---------|---------|
 | `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index, summarize/summarizer, organize/content-analyzer, deep-dive/topic-analyzer, deep-dive/note-generator, rem/semantic-matcher, title/title-suggester |
 | `redactSecrets` | ai-client (safeRequest error bodies + API-error wrap), credential-validator (probe error messages), credential-field (Test-button validation-catch chip message), update-checker (fetch-failure detail), notifications (`error`/`notifyError`/operation-error toast + console paths) |
-| `redactError` | main (settings-migration console sink only, `main.ts:292`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, shared/image-preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
+| `redactError` | main (settings-migration console sink only, `main.ts:306`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, shared/image-preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
 | `withCacheReport` / `trackAiCache` / `transcriptCacheUse` / `mergeCacheUse` | audio/index, video/index, transcription/insert-url-transcript, summarize/index, tidy/index, elaboration/index, enrichment/index, deep-dive/index, organize/index, rem/index, title/index, image/index (#527 finish messages) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
@@ -906,16 +906,16 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
 | `voiceInstruction` | elaboration/proposer, deep-dive/note-generator, summarize/summarizer (#540) |
 | `VOICE_OPTIONS` | settings-ui/voice-setting |
-| `deepMergeSettings` | main (`loadSettings`, `main.ts:296`: migrated raw record over `DEFAULT_SETTINGS`) |
-| `migrateDataFolder` | main (`onload`, `main.ts:50`, right after `NotificationManager` construction) |
+| `deepMergeSettings` | main (`loadSettings`, `main.ts:310`: migrated raw record over `DEFAULT_SETTINGS`) |
+| `migrateDataFolder` | main (`onload`, `main.ts:54`, right after `NotificationManager` construction) |
 | `extractGeminiResponseText` | ai-client (callGemini), audio/transcriber (Gemini provider) |
 | `arrayBufferToBase64` / `base64EncodedLength` | image/extractor, elaboration/image-analyzer, audio/transcriber (Gemini inline audio), shared/image-preprocess (`base64EncodedLength` only) |
 | `preprocessImage` | image/extractor, elaboration/image-analyzer (both via the barrel) |
 | `classifyNetworkError` / `describeNetworkError` | audio/transcriber (retry gating + failure disclosure) |
 | `NotificationManager` | all feature modules (injected via `ModuleDeps`) |
 | `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive, rem (all injected via `ModuleDeps`) |
-| `ModuleDeps` / `FeatureModule` / `FeatureSettingsKey` | every feature module (`implements FeatureModule`, `constructor(deps: ModuleDeps, ...)`), modules/registry (`FeatureModules` mapped over `FeatureSettingsKey`; construct/load/unload loops), main (builds the ONE `ModuleDeps`, `main.ts:60-67`), `__test-utils__/mock-factories.makeModuleDeps` |
-| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:56`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via `ModuleDeps`), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
+| `ModuleDeps` / `FeatureModule` / `FeatureSettingsKey` | every feature module (`implements FeatureModule`, `constructor(deps: ModuleDeps, ...)`), modules/registry (`FeatureModules` mapped over `FeatureSettingsKey`; construct/load/unload loops), main (builds the ONE `ModuleDeps`, `main.ts:64-71`), `__test-utils__/mock-factories.makeModuleDeps` |
+| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:60`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via `ModuleDeps`), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
 | `classifyUrl` / `extractUrls` | intake (URL routing), elaboration/index, enrichment/index, deep-dive/index, illustrate/index (source URLs) |
 | `findAudioEmbeds` / `AUDIO_EXTENSIONS` / `AUDIO_EMBED_REGEX` / `AudioEmbed` | summarize/index (`collectTargets`), audio/index (barrel re-export + `AudioEmbed` params), transcription/ (via the `audio` barrel) |
@@ -931,7 +931,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `isTwitterUrl` | elaboration/proposer, enrichment/index |
 | `sanitizeUrl` | video/index, video/audio-extractor, transcription/duration-detector, transcription/youtube-captions; in-layer: content-fetcher (`fetchHtmlDocument`, `content-fetcher.ts:42`), tweet-fetcher, reddit-fetcher, url-classifier |
 | `sanitizePublicUrl` | illustrate/asset-writer (`illustrate/asset-writer.ts:36`), illustrate/linked-pages (`illustrate/linked-pages.ts:21`) |
-| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:176`), organize/index (`organize/index.ts:440,539,598`) |
+| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:195`), organize/index (`organize/index.ts:440,539,598`) |
 | `sanitizePath` | video/audio-extractor |
 | `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, image/index, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `parseFrontmatter` | enrichment/index, enrichment/enrichment-applier, tidy/index |

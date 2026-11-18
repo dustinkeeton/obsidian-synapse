@@ -97,7 +97,7 @@ startup catch-up scan (#462), armed by onload via workspace.onLayoutReady + CATC
         markProcessedAndMaybeMove (index.ts:514) --> optional writeCaptureBreadcrumb (index.ts:608)
 ```
 
-`transcribeUrlToNote` implementation is `appendUrlTranscript` (`src/transcription/insert-url-transcript.ts:77`), wired at `main.ts:72-79`: `UrlTranscriptionRouter.transcribe(url)` → `buildUrlTranscriptBlock(result, url, video.embedInNote)` → `vault.process` append under operation toast `intake-url-<path>`; on error the toast reports and the error is rethrown so the note stays un-stamped. No speech (#524) resolves instead: notice, nothing appended, note stamped (final, not retriable).
+`transcribeUrlToNote` implementation is `appendUrlTranscript` (`src/transcription/insert-url-transcript.ts:77`), wired at `main.ts:76-83`: `UrlTranscriptionRouter.transcribe(url)` → `buildUrlTranscriptBlock(result, url, video.embedInNote)` → `vault.process` append under operation toast `intake-url-<path>`; on error the toast reports and the error is rethrown so the note stays un-stamped. No speech (#524) resolves instead: notice, nothing appended, note stamped (final, not retriable).
 
 ## Startup Catch-up Scan (#462)
 
@@ -173,7 +173,7 @@ All under `settings.intake` (`IntakeSettings`, `settings.ts:403`; defaults `DEFA
 | `classifyUrl`, `extractUrls`, `ParsedNote` (type) | `../shared` | `intake-dispatcher.ts:2-3` |
 | `SettingsSectionContext` (type) | `../shared` | `settings-section.ts:2` |
 | `SynapseSettings` (type) | `../settings` | `index.ts:3` |
-| `fireOnFile`, `transcribeUrlToNote` | injected via `IntakeDeps` (wired in `main.ts:72-79`) | |
+| `fireOnFile`, `transcribeUrlToNote` | injected via `IntakeDeps` (wired in `main.ts:76-83`) | |
 
 Architecture rule: intake imports no feature module. `fireOnFile` is `SynapseRunner.fireOnFile`; `transcribeUrlToNote` is `appendUrlTranscript` from `src/transcription/insert-url-transcript.ts` (router transcribe + `buildUrlTranscriptBlock` + append), both injected by `main.ts`.
 

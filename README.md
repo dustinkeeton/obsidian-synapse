@@ -192,6 +192,30 @@ Synapse proposes, you decide -- and that holds for the network too: apart from t
 
 For the reviewer-facing counterpart to this section -- the desktop-only Node usage declaration, the wontfix rationale for the `node-loader` require pattern and the `:has()` toast selectors, and the rebuttals for the automated review's false positives -- see [`docs/automated-review-notes.md`](docs/automated-review-notes.md).
 
+## Scripting Synapse from an agent
+
+Synapse has a versioned API at `app.plugins.plugins.synapse.api`. An agent such as Claude Code, or a script, can drive it through the Obsidian CLI's `eval` command or the developer console, without clicking through modals.
+
+```js
+const api = app.plugins.plugins.synapse.api;
+
+api.capabilities();          // verbs, their arguments, and which features are on and have a key
+await api.status();          // versions, each feature's provider/model/effort and key source, running work
+
+await api.deepDive.run('Topics/Rust.md', { depth: 2, maxNotes: 10 });
+await api.deepDive.regenerate('Deep Dives/Rust/Ownership.md');   // rewrite one note, keeping its frontmatter and links
+await api.elaborate('Inbox/stub.md');
+await api.scanFolder('enrichment', 'Projects', { recursive: false });
+
+const pending = await api.proposals.list('deep-dive');
+await api.proposals.accept('deep-dive', pending[0].id);
+```
+
+- Every call returns `{ ok, message, error, written, proposals, cacheUse }` and never throws. When `ok` is false, `error` says why.
+- Calls take every answer a dialog would ask for, so nothing waits on a click. An elaboration whose note you edited after it was generated is skipped unless you pass `{ force: true }`.
+- `status()` reports where each feature's key comes from, never the key.
+- Calls go through the same queue, exclusions, toasts and safety steps as the commands. A disabled feature refuses its calls.
+
 ## FAQ
 
 ### Can I use my Claude Pro/Max plan (or ChatGPT Plus / Gemini Advanced) instead of an API key?

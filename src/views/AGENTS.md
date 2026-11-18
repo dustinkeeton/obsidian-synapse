@@ -187,15 +187,15 @@ Sequential because organize accepts may move files. Mutually exclusive via `acce
 
 ## Data Flow
 
-Input: `refreshUnifiedView(workspace, sources)` (`view-activation.ts:64`) reads every `UnifiedViewSources` reader into `UnifiedItem[]` plus incomplete checkpoints and one in-progress snapshot, then calls `setItems()` / `setCheckpoints()` / `setInProgress()` on each open unified leaf. `watchInProgress` pushes registry changes between refreshes. The `UnifiedViewSources` instance is built in `main.ts:110-120` (seven `getPendingProposals()` readers + `checkpointManager.listIncomplete()` + `notifications.inProgress.snapshot()`).
+Input: `refreshUnifiedView(workspace, sources)` (`view-activation.ts:64`) reads every `UnifiedViewSources` reader into `UnifiedItem[]` plus incomplete checkpoints and one in-progress snapshot, then calls `setItems()` / `setCheckpoints()` / `setInProgress()` on each open unified leaf. `watchInProgress` pushes registry changes between refreshes. The `UnifiedViewSources` instance is built in `main.ts:114-124` (seven `getPendingProposals()` readers + `checkpointManager.listIncomplete()` + `notifications.inProgress.snapshot()`).
 
 Processing: view stores items, re-renders. User clicks invoke `UnifiedViewCallbacks` (proposal accept/reject) or `SynapseActionsCallbacks.runAction` (command dispatch via `runRegisteredCommand`). The view holds no proposal store and never touches `app`/vault for state — only `openNote()` opens files in the editor.
 
-Output: callbacks return `Promise<void>`; modules mutate the vault/proposal store and re-trigger `refreshUnifiedView` through their `onViewRefreshNeeded` slot (`main.ts:181-184`). `SynapseActionsView.refresh()` re-renders on `active-leaf-change` to enable/disable `context:'note'` buttons.
+Output: callbacks return `Promise<void>`; modules mutate the vault/proposal store and re-trigger `refreshUnifiedView` through their `onViewRefreshNeeded` slot (`main.ts:185-188`). `SynapseActionsView.refresh()` re-renders on `active-leaf-change` to enable/disable `context:'note'` buttons.
 
 ## Wiring (main.ts)
 
-`main.ts:147-166` registers `UNIFIED_VIEW_TYPE` with the third `notifications` arg; the checkpoint callbacks delegate to `CheckpointRecoveryModule.discard/resume` (`src/checkpoints`). Modules are locals destructured from the registry's `FeatureModules` record (`main.ts:82`):
+`main.ts:151-170` registers `UNIFIED_VIEW_TYPE` with the third `notifications` arg; the checkpoint callbacks delegate to `CheckpointRecoveryModule.discard/resume` (`src/checkpoints`). Modules are locals destructured from the registry's `FeatureModules` record (`main.ts:86`):
 
 ```ts
 new UnifiedProposalView(leaf, {
@@ -218,10 +218,10 @@ new UnifiedProposalView(leaf, {
   onCheckpointResume: (id) => this.checkpoints.resume(id),
   onCancelInProgress: (id) => this.notifications.cancelOperation(id),
 }, this.notifications);
-this.register(watchInProgress(this.app.workspace, viewSources, this.notifications.inProgress));   // main.ts:167
+this.register(watchInProgress(this.app.workspace, viewSources, this.notifications.inProgress));   // main.ts:171
 ```
 
-`main.ts:170-174` registers `SYNAPSE_ACTIONS_VIEW_TYPE`; `main.ts:175-178` calls `refresh()` on `active-leaf-change`:
+`main.ts:174-178` registers `SYNAPSE_ACTIONS_VIEW_TYPE`; `main.ts:179-182` calls `refresh()` on `active-leaf-change`:
 
 ```ts
 new SynapseActionsView(leaf, {
@@ -231,7 +231,7 @@ new SynapseActionsView(leaf, {
 });
 ```
 
-Activation entry points: ribbon `synapse` and every module's `onOpenProposalView` slot call `activateUnifiedView` via `openProposalView` (`main.ts:122-123`, `:181-184`, `:218`); command `review-proposals` (`main.ts:224-226`); ribbon `synapse-actions` calls `activateSynapseActionsView` (`main.ts:220-222`).
+Activation entry points: ribbon `synapse` and every module's `onOpenProposalView` slot call `activateUnifiedView` via `openProposalView` (`main.ts:126-127`, `:185-188`, `:222`); command `review-proposals` (`main.ts:228-230`); ribbon `synapse-actions` calls `activateSynapseActionsView` (`main.ts:224-226`).
 
 ## Dependencies
 

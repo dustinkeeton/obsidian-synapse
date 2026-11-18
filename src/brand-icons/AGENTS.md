@@ -25,9 +25,9 @@ function registerSynapseIcons(): void
 
 | Key | Line | Referenced by |
 |-----|------|---------------|
-| `synapse` | 42 | `main.ts:218` ribbon; `views/unified-proposal-view.ts:81` `getIcon`; `commands/registry.ts` (`review-proposals` icon) |
-| `synapse-actions` | 45 | `main.ts:220` ribbon; `views/synapse-actions-view.ts:51` `getIcon` |
-| `synapse-transcribe` | 47 | `main.ts:219` ribbon; `commands/registry.ts` (`transcribe-media`, `transcribe-note-media`) |
+| `synapse` | 42 | `main.ts:222` ribbon; `views/unified-proposal-view.ts:81` `getIcon`; `commands/registry.ts` (`review-proposals` icon) |
+| `synapse-actions` | 45 | `main.ts:224` ribbon; `views/synapse-actions-view.ts:51` `getIcon` |
+| `synapse-transcribe` | 47 | `main.ts:223` ribbon; `commands/registry.ts` (`transcribe-media`, `transcribe-note-media`) |
 | `synapse-fire` | 48 | `commands/registry.ts` (`fire`) |
 | `synapse-checkpoints` | 49 | `commands/registry.ts` (`manage-checkpoints`) |
 | `synapse-main` | 51 | `commands/icons.ts` `FEATURE_ICONS.main` |

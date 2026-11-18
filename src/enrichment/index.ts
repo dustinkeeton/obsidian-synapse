@@ -572,17 +572,17 @@ export class EnrichmentModule implements FeatureModule {
 		return proposal.id;
 	}
 
-	/** Accept selected items in a proposal. Called from unified view. */
+	/** Accept selected items in a proposal (every item when `accepted` is omitted). Called from unified view and the public API. */
 	async acceptSelectedFromView(
 		id: string,
-		accepted: AcceptedItems,
+		accepted?: AcceptedItems,
 		options?: { silent?: boolean }
 	): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
 		await this.noteQueue.run(
 			proposal.sourceNotePath,
-			() => this.acceptSelected(id, accepted, options)
+			() => this.acceptSelected(id, accepted ?? this.buildAcceptAll(proposal.result), options)
 		);
 	}
 

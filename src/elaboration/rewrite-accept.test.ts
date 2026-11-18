@@ -143,9 +143,10 @@ describe('ElaborationModule accept rewrites the note body (#552)', () => {
 	}
 
 	async function generatePending(mod: ElaborationModule): Promise<Proposal> {
-		await mod.scanNote(harness.noteFile as never);
+		const outcome = await mod.scanNote(harness.noteFile as never);
 		const pending = await mod.getPendingProposals();
 		expect(pending).toHaveLength(1);
+		expect(outcome).toMatchObject({ ok: true, proposalId: pending[0].id, writtenPaths: [] });
 		return pending[0];
 	}
 
@@ -304,6 +305,41 @@ describe('ElaborationModule accept rewrites the note body (#552)', () => {
 			expect(confirmModalCtor).not.toHaveBeenCalled();
 			expect(harness.content()).toBe(edited);
 			expect((await mod.getPendingProposals())[0]?.status).toBe('pending');
+		});
+
+		it('onStale: skip leaves a changed note pending without the modal and returns false', async () => {
+			const mod = build('Stub.');
+			const proposal = await generatePending(mod);
+			const edited = 'Stub. Plus an edit made after the proposal.';
+			harness.setContent(edited);
+
+			const applied = await mod.acceptProposal(proposal.id, undefined, { onStale: 'skip' });
+
+			expect(applied).toBe(false);
+			expect(confirmModalCtor).not.toHaveBeenCalled();
+			expect(harness.content()).toBe(edited);
+		});
+
+		it('onStale: replace rewrites a changed note without the modal and returns true', async () => {
+			const mod = build('Stub.');
+			const proposal = await generatePending(mod);
+			harness.setContent('Stub. Plus an edit made after the proposal.');
+
+			const applied = await mod.acceptProposal(proposal.id, undefined, { onStale: 'replace' });
+
+			expect(applied).toBe(true);
+			expect(confirmModalCtor).not.toHaveBeenCalled();
+			expect(harness.content()).toBe(REWRITE + '\n');
+		});
+
+		it('scanNote reports the note as written when auto-accept rewrites it', async () => {
+			settings.autoAccept.elaboration = true;
+			const mod = build('Stub.');
+
+			const outcome = await mod.scanNote(harness.noteFile as never);
+
+			expect(outcome).toMatchObject({ ok: true, writtenPaths: [NOTE_PATH] });
+			expect(outcome.proposalId).toBeDefined();
 		});
 
 		it('batch auto-accept skips a stale note and does not count it as accepted', async () => {

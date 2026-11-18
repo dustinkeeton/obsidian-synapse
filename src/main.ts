@@ -25,12 +25,16 @@ import {
 import type { UnifiedViewSources } from './views';
 import { registerSynapseIcons } from './brand-icons';
 import { registerPropertiesAutoFold } from './properties-fold';
+import { createSynapseApi } from './api';
+import type { SynapseApi } from './api';
 
 export default class SynapsePlugin extends Plugin {
 	settings!: SynapseSettings;
 	notifications!: NotificationManager;
 	/** Vault-file transcript store behind every URL-transcription path (#488); cleared from Video settings. */
 	transcriptCache!: TranscriptCache;
+	/** Versioned public API for external agents (#623): `app.plugins.plugins.synapse.api`; null until onload finishes. */
+	api: SynapseApi | null = null;
 	private checkpointManager!: CheckpointManager;
 	private noteQueue!: NoteOperationQueue;
 	private updateChecker!: UpdateChecker;
@@ -145,13 +149,13 @@ export default class SynapsePlugin extends Plugin {
 		});
 
 		this.registerView(UNIFIED_VIEW_TYPE, (leaf) => new UnifiedProposalView(leaf, {
-			onElaborationAccept: (id, content) => elaboration.acceptProposal(id, content),
+			onElaborationAccept: (id, content) => elaboration.acceptProposal(id, content).then(() => {}),
 			onElaborationReject: (id) => elaboration.rejectProposal(id),
 			onEnrichmentAcceptSelected: (id, accepted) => enrichment.acceptSelectedFromView(id, accepted),
 			onEnrichmentReject: (id) => enrichment.rejectFromView(id),
 			onOrganizeAccept: (id) => organize.acceptProposal(id),
 			onOrganizeReject: (id) => organize.rejectProposal(id),
-			onDeepDiveAccept: (id) => deepDive.acceptProposal(id),
+			onDeepDiveAccept: (id) => deepDive.acceptProposal(id).then(() => {}),
 			onDeepDiveReject: (id) => deepDive.rejectProposal(id),
 			onTitleAccept: (id, resolution) =>
 				title.acceptProposal(id, resolution ? { resolution } : undefined).then(() => {}),
@@ -258,6 +262,15 @@ export default class SynapsePlugin extends Plugin {
 		});
 
 		auditCommands(registrar.getAttempted()).forEach(w => console.warn('[Synapse] ' + w));
+		this.api = createSynapseApi({
+			app: this.app,
+			pluginVersion: this.manifest.version,
+			getSettings,
+			modules,
+			scanFns: moduleMap,
+			notifications: this.notifications,
+			checkpointManager: this.checkpointManager,
+		});
 		await runFirstRunOnboarding({
 			getSettings,
 			isFreshInstall: this.isFreshInstall,
@@ -270,6 +283,7 @@ export default class SynapsePlugin extends Plugin {
 	}
 
 	onunload(): void {
+		this.api = null;
 		if (this.updateCheckTimeout !== null) {
 			window.clearTimeout(this.updateCheckTimeout);
 			this.updateCheckTimeout = null;
