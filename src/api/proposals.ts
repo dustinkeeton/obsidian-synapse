@@ -22,12 +22,29 @@ function plural(count: number, noun: string): string {
 	return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-/** For modules whose accept returns nothing: applied when the proposal left the pending list. */
-async function appliedUnlessPending(adapter: Pick<ProposalAdapter, 'list'>, id: string, written: string[]): Promise<AcceptOutcome> {
-	const stillPending = (await adapter.list()).some((p) => p.id === id);
-	return stillPending
-		? { applied: false, written: [], error: 'Proposal was not applied; it is still pending' }
-		: { applied: true, written };
+const APPLIED_STATUSES = new Set(['accepted', 'partially-accepted']);
+
+/** For modules whose accept returns nothing: applied only when the stored status says so (a module may reject instead). */
+async function appliedFromStatus(
+	getProposal: (id: string) => Promise<{ status: string } | null>,
+	id: string,
+	written: string[]
+): Promise<AcceptOutcome> {
+	const status = (await getProposal(id))?.status;
+	if (status && APPLIED_STATUSES.has(status)) return { applied: true, written };
+	return { applied: false, written: [], error: `Proposal was not applied (status: ${status ?? 'missing'})` };
+}
+
+/** `items` must be a non-empty subset of what the proposal offers. */
+function invalidItems(items: string[] | undefined, offered: string[]): string | null {
+	if (items === undefined) return null;
+	if (!Array.isArray(items) || items.length === 0) return 'items must list at least one item';
+	const unknown = items.filter((item) => !offered.includes(item));
+	return unknown.length > 0 ? `Unknown items: ${unknown.join(', ')}` : null;
+}
+
+function noteExists(app: App, path: string): boolean {
+	return app.vault.getAbstractFileByPath(normalizePath(path)) instanceof TFile;
 }
 
 export function buildProposalAdapters(app: App, modules: FeatureModules): Record<ProposalKind, ProposalAdapter> {
@@ -39,8 +56,10 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 		})),
 		accept: async (id, options) => {
 			const proposal = (await elaboration.getPendingProposals()).find((p) => p.id === id);
+			if (!proposal) return { applied: false, written: [], error: 'Proposal not found or not pending' };
+			if (!noteExists(app, proposal.sourceNotePath)) return { applied: false, written: [], error: `Source note no longer exists: ${proposal.sourceNotePath}` };
 			const applied = await elaboration.acceptProposal(id, options.content, { onStale: options.force ? 'replace' : 'skip' });
-			if (applied) return { applied, written: proposal ? [proposal.sourceNotePath] : [] };
+			if (applied) return { applied, written: [proposal.sourceNotePath] };
 			return { applied, written: [], error: 'Not applied: the note changed since the proposal was generated (pass force: true to replace it)' };
 		},
 		reject: (id) => elaboration.rejectProposal(id),
@@ -61,7 +80,7 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 		accept: async (id) => {
 			const proposal = (await enrichment.getPendingProposals()).find((p) => p.id === id);
 			await enrichment.acceptSelectedFromView(id);
-			return appliedUnlessPending(enrichmentAdapter, id, proposal ? [proposal.sourceNotePath] : []);
+			return appliedFromStatus((pid) => enrichment.getProposal(pid), id, proposal ? [proposal.sourceNotePath] : []);
 		},
 		reject: (id) => enrichment.rejectFromView(id),
 	};
@@ -74,7 +93,7 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 			const proposal = (await organize.getPendingProposals()).find((p) => p.id === id);
 			await organize.acceptProposal(id);
 			const moved = proposal ? normalizePath(`${proposal.proposedDirectory}/${proposal.sourceNotePath.split('/').pop() ?? ''}`) : null;
-			return appliedUnlessPending(organizeAdapter, id, moved && app.vault.getAbstractFileByPath(moved) instanceof TFile ? [moved] : []);
+			return appliedFromStatus((pid) => organize.getProposal(pid), id, moved && noteExists(app, moved) ? [moved] : []);
 		},
 		reject: (id) => organize.rejectProposal(id),
 	};
@@ -126,8 +145,11 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 		accept: async (id, options) => {
 			const proposal = (await rem.getPendingProposals()).find((p) => p.id === id);
 			if (!proposal) return { applied: false, written: [], error: 'Proposal not found or not pending' };
-			await rem.acceptProposal(id, options.items ?? proposal.candidates.map((c) => c.matchedText));
-			return appliedUnlessPending(remAdapter, id, [proposal.sourceNotePath]);
+			const offered = proposal.candidates.map((c) => c.matchedText);
+			const bad = invalidItems(options.items, offered);
+			if (bad) return { applied: false, written: [], error: bad };
+			await rem.acceptProposal(id, options.items ?? offered);
+			return appliedFromStatus((pid) => rem.getProposal(pid), id, [proposal.sourceNotePath]);
 		},
 		reject: (id) => rem.rejectProposal(id),
 	};
@@ -144,8 +166,11 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 		accept: async (id, options) => {
 			const proposal = (await illustrate.getPendingProposals()).find((p) => p.id === id);
 			if (!proposal) return { applied: false, written: [], error: 'Proposal not found or not pending' };
-			await illustrate.acceptProposal(id, options.items ?? proposal.items.map((item) => item.id));
-			return appliedUnlessPending(illustrateAdapter, id, [proposal.sourceNotePath]);
+			const offered = proposal.items.map((item) => item.id);
+			const bad = invalidItems(options.items, offered);
+			if (bad) return { applied: false, written: [], error: bad };
+			await illustrate.acceptProposal(id, options.items ?? offered);
+			return appliedFromStatus((pid) => illustrate.getProposal(pid), id, [proposal.sourceNotePath]);
 		},
 		reject: (id) => illustrate.rejectProposal(id),
 	};

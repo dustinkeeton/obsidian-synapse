@@ -528,6 +528,11 @@ export class RemModule implements FeatureModule {
 		return this.store.loadPending();
 	}
 
+	/** One proposal in any status; null when missing. Lets the public API confirm what an accept did (#623). */
+	async getProposal(id: string): Promise<RemProposal | null> {
+		return this.store.load(id);
+	}
+
 	/**
 	 * Check if a file is excluded from REM scanning. Path exclusion is
 	 * centralized (#307) under the `rem` feature; tag exclusion still reuses

@@ -23,6 +23,7 @@ class RemModule {
   rejectProposal(id: string): Promise<void>
   undoProposal(id: string): Promise<void>
   getPendingProposals(): Promise<RemProposal[]>
+  getProposal(id: string): Promise<RemProposal | null>   // index.ts:532; any status; api.proposals.accept reads it to confirm an accept applied (#623)
 }
 ```
 
@@ -187,7 +188,7 @@ Resume re-checks exclusion rules silently (a path may have been excluded after c
 ## Exclusion Rules
 
 ```ts
-// index.ts:537-543
+// index.ts:542-548
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (

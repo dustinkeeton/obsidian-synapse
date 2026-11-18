@@ -122,6 +122,11 @@ export class EnrichmentModule implements FeatureModule {
 		return this.store.loadPending();
 	}
 
+	/** One proposal in any status; null when missing. Lets the public API confirm what an accept did (#623). */
+	async getProposal(id: string): Promise<EnrichmentProposal | null> {
+		return this.store.load(id);
+	}
+
 	/**
 	 * Resume enrichment from a checkpoint (C1).
 	 * Re-enriches the remaining files from the checkpoint.

@@ -5,7 +5,10 @@ import type { FeatureModules } from '../modules';
 import type { PipelineModuleKey, PipelineModuleMap } from '../pipeline';
 import type { ProposalKind } from '../views';
 
-/** Bumped on any breaking change to the shapes below; additive changes keep it. */
+/**
+ * Bumped on any breaking change to the shapes below once a release ships them; additive changes keep it.
+ * Unstable until epic #629 ships: #624 changes the long verbs to return jobs.
+ */
 export const API_VERSION = 1;
 
 /** Every verb resolves to this; verbs never throw. */
@@ -63,6 +66,13 @@ export interface ApiProposal {
 	summary: string;
 	/** Selectable item ids for `accept(..., { items })`: REM matched texts, illustrate item ids. */
 	items?: string[];
+}
+
+/** `proposals.list` result; never rejects. */
+export interface ApiProposalList {
+	ok: boolean;
+	error?: string;
+	items: ApiProposal[];
 }
 
 export interface ApiAcceptOptions {
@@ -139,7 +149,8 @@ export interface ApiStatus {
 	transcription: { provider: TranscriptionProvider; model: string; keySource: ApiKeySource };
 	systemOne: { enabled: boolean; model: string; keySource: ApiKeySource };
 	inProgress: InProgressEntry[];
-	checkpoints: ApiCheckpointStatus[];
+	/** `null` when the checkpoint folder could not be read. */
+	checkpoints: ApiCheckpointStatus[] | null;
 }
 
 /** The object at `app.plugins.plugins.synapse.api`. */
@@ -154,7 +165,7 @@ export interface SynapseApi {
 		regenerate(target: ApiRegenerateTarget): Promise<DeepDiveRunResult>;
 	};
 	proposals: {
-		list(kind?: ProposalKind): Promise<ApiProposal[]>;
+		list(kind?: ProposalKind): Promise<ApiProposalList>;
 		accept(kind: ProposalKind, id: string, options?: ApiAcceptOptions): Promise<ApiResult>;
 		reject(kind: ProposalKind, id: string): Promise<ApiResult>;
 	};

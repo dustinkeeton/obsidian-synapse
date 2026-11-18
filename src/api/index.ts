@@ -6,6 +6,7 @@ import type { ProposalKind } from '../views';
 import { buildCapabilities } from './capabilities';
 import { buildProposalAdapters } from './proposals';
 import { buildStatus, featureCapabilities } from './status';
+import { validateArgs } from './validate';
 import type {
 	ApiRegenerateTarget, ApiResult, ApiScanFeature, DeepDiveRunResult, ScanFolderResult, SynapseApi, SynapseApiDeps,
 } from './types';
@@ -15,7 +16,7 @@ export { API_VERSION } from './types';
 export { VERB_DEFINITIONS } from './capabilities';
 export type {
 	SynapseApi, SynapseApiDeps, ApiResult, DeepDiveRunResult, ScanFolderResult, ApiScanFeature, ApiScanOptions,
-	ApiDeepDiveRunOptions, ApiRegenerateTarget, ApiProposal, ApiAcceptOptions, ApiKeySource, ApiFeatureCapability,
+	ApiDeepDiveRunOptions, ApiRegenerateTarget, ApiProposal, ApiProposalList, ApiAcceptOptions, ApiKeySource, ApiFeatureCapability,
 	ApiParamSpec, ApiVerbSpec, ApiCapabilities, ApiAIStatus, ApiCheckpointStatus, ApiStatus,
 } from './types';
 
@@ -91,6 +92,8 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 		status: () => buildStatus(deps),
 
 		elaborate: (notePath) => settle(async () => {
+			const invalid = validateArgs('elaborate', [notePath]);
+			if (invalid) return failure(invalid);
 			const off = disabled('elaboration', FEATURE_LABEL.elaboration);
 			if (off) return failure(off);
 			const file = noteFile(notePath);
@@ -101,9 +104,10 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 				: failure(outcome.message);
 		}, asIs),
 
-		scanFolder: (feature, folder, options = {}) => settle<ScanFolderResult>(async () => {
+		scanFolder: (feature, folder, options) => settle<ScanFolderResult>(async () => {
+			const invalid = validateArgs('scanFolder', [feature, folder, options]);
+			if (invalid) return scanFailure(invalid);
 			const scan = deps.scanFns[feature];
-			if (!scan) return scanFailure(`Unknown scan feature: ${String(feature)}`);
 			const off = disabled(feature, FEATURE_LABEL[feature]);
 			if (off) return scanFailure(off);
 			const path = normalizePath(folder || '/');
@@ -113,7 +117,7 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 			}
 			const kind = SCAN_PROPOSAL_KIND[feature];
 			const before = await pendingIds(kind);
-			const count = await scan({ folder: root ? undefined : path, recursive: options.recursive ?? true }, true);
+			const count = await scan({ folder: root ? undefined : path, recursive: options?.recursive ?? true }, true);
 			const after = await pendingIds(kind);
 			return {
 				ok: true,
@@ -126,10 +130,12 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 		}, (failed) => ({ ...failed, count: null })),
 
 		deepDive: {
-			run: (notePath, options = {}) => settle<DeepDiveRunResult>(async () => {
+			run: (notePath, options) => settle<DeepDiveRunResult>(async () => {
+				const invalid = validateArgs('deepDive.run', [notePath, options]);
+				if (invalid) return failure(invalid);
 				const off = disabled('deepDive', FEATURE_LABEL.deepDive);
 				if (off) return failure(off);
-				const outcome = await modules.deepDive.run(notePath, options);
+				const outcome = await modules.deepDive.run(notePath, options ?? {});
 				const result = { written: outcome.writtenPaths, proposals: outcome.proposalIds, cacheUse: outcome.cacheUse, runId: outcome.runId };
 				return outcome.ok
 					? { ok: true, message: outcome.message, ...result }
@@ -137,6 +143,8 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 			}, asIs),
 
 			regenerate: (target) => settle<DeepDiveRunResult>(async () => {
+				const invalid = validateArgs('deepDive.regenerate', [target]);
+				if (invalid) return failure(invalid);
 				const off = disabled('deepDive', FEATURE_LABEL.deepDive);
 				if (off) return failure(off);
 				const outcome = await modules.deepDive.regenerate(toRegenerateTarget(target));
@@ -149,23 +157,30 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 
 		proposals: {
 			list: async (kind) => {
-				if (kind !== undefined && !isProposalKind(kind)) return [];
-				const kinds = kind ? [kind] : PROPOSAL_KINDS;
-				const lists = await Promise.all(kinds.map((k) => adapters[k].list()));
-				return lists.flat();
+				const invalid = validateArgs('proposals.list', [kind]);
+				if (invalid) return { ok: false, error: invalid, items: [] };
+				try {
+					const kinds = kind ? [kind] : PROPOSAL_KINDS;
+					const lists = await Promise.all(kinds.map((k) => adapters[k].list()));
+					return { ok: true, items: lists.flat() };
+				} catch (error) {
+					return { ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)), items: [] };
+				}
 			},
 
-			accept: (kind, id, options = {}) => settle(async () => {
-				if (!isProposalKind(kind)) return failure(`Unknown proposal kind: ${String(kind)}`);
+			accept: (kind, id, options) => settle(async () => {
+				const invalid = validateArgs('proposals.accept', [kind, id, options]);
+				if (invalid || !isProposalKind(kind)) return failure(invalid ?? `Unknown proposal kind: ${String(kind)}`);
 				if (!(await adapters[kind].list()).some((p) => p.id === id)) return failure(`No pending ${kind} proposal with id ${id}`);
-				const outcome = await adapters[kind].accept(id, options);
+				const outcome = await adapters[kind].accept(id, options ?? {});
 				return outcome.applied
 					? { ok: true, message: 'Proposal accepted', written: outcome.written, proposals: [id], cacheUse: null }
 					: { ...failure(outcome.error ?? 'Proposal was not applied'), proposals: [id] };
 			}, asIs),
 
 			reject: (kind, id) => settle(async () => {
-				if (!isProposalKind(kind)) return failure(`Unknown proposal kind: ${String(kind)}`);
+				const invalid = validateArgs('proposals.reject', [kind, id]);
+				if (invalid || !isProposalKind(kind)) return failure(invalid ?? `Unknown proposal kind: ${String(kind)}`);
 				if (!(await adapters[kind].list()).some((p) => p.id === id)) return failure(`No pending ${kind} proposal with id ${id}`);
 				await adapters[kind].reject(id);
 				return { ok: true, message: 'Proposal rejected', written: [], proposals: [id], cacheUse: null };

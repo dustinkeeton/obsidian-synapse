@@ -157,7 +157,7 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
 8. Finish line (#527): one CacheUse per note (index.ts:175 batch, index.ts:454 single)
    |  scanVault:            withCacheReport(`Generated N proposal(s)`, cacheUses, 'proposal')  (index.ts:389)
    |  resumeFromCheckpoint: withCacheReport(`Resumed -- generated N proposal(s)`, cacheUses, 'proposal')  (index.ts:247)
-   |  scanNote:             withCacheReport('Proposal generated', [cacheUse])  (index.ts:468)
+   |  scanNote:             withCacheReport('Proposal generated', [cacheUse])  (index.ts:464)
    |  cacheUses collects only notes that produced a proposal (index.ts:221, index.ts:353)
    |
 9. onViewRefreshNeeded() -> main refreshes unified view

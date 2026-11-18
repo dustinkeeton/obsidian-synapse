@@ -25,6 +25,7 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 **Impact**:
 - `DeepDiveModule.run` / `regenerate`, `ElaborationOutcome` from `scanNote`, and `acceptProposal(..., { onStale })` are new module seams. `acceptProposal` on elaboration and deep dive now returns whether it applied.
 - Jobs (#624), stop reasons (#625), external generation (#626), the activity log (#627) and the MCP shim (#628) build on this object.
+- The shape is not frozen until the epic ships. No release carries the API before then, so #624 changes `deepDive.run` and `scanFolder` to return jobs directly instead of adding parallel verbs; `API_VERSION` counts breaking changes only from the first release.
 
 ---
 

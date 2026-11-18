@@ -104,9 +104,15 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 		description: 'Rewrite one deep-dive note from its topic, keeping its frontmatter, nav block and enrichment sections; a pending proposal gets new content instead',
 		params: [{
 			name: 'target',
-			description: 'A proposal id, or the path (ending in .md) of the note a deep-dive proposal created',
+			description: 'A proposal id, or the path (ending in .md) of the note a deep-dive proposal created; or { proposalId } / { notePath }',
 			required: true,
-			schema: { type: 'string' },
+			schema: {
+				oneOf: [
+					{ type: 'string' },
+					{ type: 'object', properties: { proposalId: { type: 'string' } }, required: ['proposalId'], additionalProperties: false },
+					{ type: 'object', properties: { notePath: { type: 'string' } }, required: ['notePath'], additionalProperties: false },
+				],
+			},
 		}],
 		long: false,
 		feature: 'deepDive',

@@ -86,7 +86,7 @@ describe('DeepDiveModule Review toast action (#366)', () => {
 			confirm: vi.fn().mockResolvedValue(true),
 			notifyError: vi.fn(),
 			startOperation: vi.fn((_label: string, id?: string) =>
-				id === 'deep-dive-generate' ? genOp : scanOp
+				id?.startsWith('deep-dive-generate') ? genOp : scanOp
 			),
 		};
 

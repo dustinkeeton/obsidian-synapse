@@ -320,15 +320,19 @@ export class DeepDiveModule implements FeatureModule {
 	}
 
 	/**
-	 * Rewrite one deep-dive note from its topic and source note. A pending proposal
-	 * gets new `proposedContent`; an accepted note gets a new body under its own
-	 * frontmatter, with its nav block and enrichment sections kept (written under the
-	 * note's queue slot). Rejected proposals are refused.
+	 * Rewrite one deep-dive note from its topic and source note, always with a fresh
+	 * model call. A pending proposal gets new `proposedContent`; an accepted note gets a
+	 * new body under its own frontmatter, keeping its nav block and enrichment sections.
+	 * The store/vault write re-reads the proposal under its note's queue slot, so an
+	 * accept that lands mid-generation is honored. Rejected proposals are refused.
 	 */
 	async regenerate(target: DeepDiveRegenerateTarget): Promise<DeepDiveOutcome> {
 		const proposal = await this.findProposal(target);
 		if (!proposal) return failedOutcome('No deep dive proposal matches that target');
 		if (proposal.status === 'rejected') return failedOutcome(`Proposal ${proposal.id} was rejected; nothing to regenerate`);
+		if (proposal.status === 'accepted' && !this.noteExists(proposal.proposedPath)) {
+			return failedOutcome(`Note not found at ${proposal.proposedPath}; it was moved, renamed or deleted after it was accepted`);
+		}
 
 		const source = await this.resolveRegenerateSource(proposal);
 		if (!source) return failedOutcome(`Source note not found: ${proposal.sourceNotePath}`);
@@ -340,31 +344,42 @@ export class DeepDiveModule implements FeatureModule {
 		);
 		try {
 			const content = await this.generator.generateContent(
-				proposal.topic, source.title, proposal.sourceNotePath, source.content, trackAiCache(cacheUse)
+				proposal.topic, source.title, proposal.sourceNotePath, source.content, { ...trackAiCache(cacheUse), bypassCache: true }
 			);
-			const writtenPaths: string[] = [];
-			if (proposal.status === 'accepted') {
-				const written = await this.noteQueue.run(proposal.proposedPath, () => this.rewriteAcceptedNote(proposal.proposedPath, content));
-				if (!written) {
-					op.error(`Note not found: ${proposal.proposedPath}`);
-					return failedOutcome(`Note not found: ${proposal.proposedPath}`, cacheUse);
-				}
-				writtenPaths.push(proposal.proposedPath);
+			const written = await this.noteQueue.run(proposal.proposedPath, () => this.applyRegenerated(proposal.id, content));
+			if (typeof written === 'string') {
+				op.error(written);
+				return failedOutcome(written, cacheUse);
 			}
-			const latest = await this.store.loadProposal(proposal.id);
-			if (latest) {
-				latest.proposedContent = content;
-				await this.store.saveProposal(latest);
-			}
-			const message = withCacheReport(`Regenerated ${proposal.topic.title}`, [cacheUse]);
+			const message = `Regenerated ${proposal.topic.title}`;
 			op.finish(message);
 			await this.onViewRefreshNeeded?.();
-			return { ok: true, message, runId: proposal.runId, proposalIds: [proposal.id], writtenPaths, cacheUse };
+			return { ok: true, message, runId: proposal.runId, proposalIds: [proposal.id], writtenPaths: written.writtenPaths, cacheUse };
 		} catch (error) {
 			const message = `Regeneration failed -- ${error instanceof Error ? error.message : String(error)}`;
 			op.error(message);
 			return failedOutcome(message, cacheUse);
 		}
+	}
+
+	/** Queue-free core of regenerate's write; a string is the reason nothing was written. */
+	private async applyRegenerated(id: string, content: string): Promise<{ writtenPaths: string[] } | string> {
+		const latest = await this.store.loadProposal(id);
+		if (!latest || latest.status === 'rejected') return `Proposal ${id} was rejected or removed during regeneration`;
+		const writtenPaths: string[] = [];
+		if (latest.status === 'accepted') {
+			if (!(await this.rewriteAcceptedNote(latest.proposedPath, content))) {
+				return `Note not found at ${latest.proposedPath}; it was moved, renamed or deleted after it was accepted`;
+			}
+			writtenPaths.push(latest.proposedPath);
+		}
+		latest.proposedContent = content;
+		await this.store.saveProposal(latest);
+		return { writtenPaths };
+	}
+
+	private noteExists(path: string): boolean {
+		return this.plugin.app.vault.getAbstractFileByPath(normalizePath(path)) instanceof TFile;
 	}
 
 	/** By id, or the newest non-rejected proposal whose `proposedPath` is the note (any status when all are rejected). */
@@ -513,7 +528,7 @@ export class DeepDiveModule implements FeatureModule {
 		const autoAccept = run.autoAccept ?? this.shouldAutoAccept();
 		const pending = run.pending ?? { tasks: [], processedCount: 0 };
 		run.pending = pending;
-		const genOp = this.notifications.startOperation('Generating deep dive', 'deep-dive-generate', { kind: 'deep-dive', target: rootFile.path });
+		const genOp = this.notifications.startOperation('Generating deep dive', `deep-dive-generate-${run.id}`, { kind: 'deep-dive', target: rootFile.path });
 		const sources = new Map<string, TaskSource>();
 		const cacheUses: CacheUse[] = [];
 		const generatedIds: string[] = [];

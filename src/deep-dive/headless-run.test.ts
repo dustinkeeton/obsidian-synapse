@@ -45,12 +45,19 @@ describe('DeepDiveModule headless verbs', () => {
 	let generated: string[];
 	let confirm: ReturnType<typeof vi.fn>;
 	let files: Map<string, string>;
+	let failOn: string | null;
+	let onGenerate: ((topic: string) => void) | null;
+	let register: ReturnType<typeof vi.fn>;
+	let checkpoints: ReturnType<typeof createMockCheckpointManager>;
 
 	beforeEach(async () => {
 		settings = structuredClone(DEFAULT_SETTINGS);
 		proposals = new Map();
 		savedRun = null;
 		generated = [];
+		failOn = null;
+		onGenerate = null;
+		vi.mocked(selectDepth).mockClear();
 		files = new Map([['notes/Root.md', '# Root\n\nA note about neural network training.']]);
 
 		app = createMockApp();
@@ -82,17 +89,21 @@ describe('DeepDiveModule headless verbs', () => {
 		vi.spyOn(AIClient.prototype, 'complete').mockImplementation(async (userPrompt: string, systemPrompt?: string) => {
 			if (systemPrompt?.includes('knowledge graph analyst')) return TOPICS;
 			const topic = TOPIC_TITLES.find((t) => userPrompt.includes(t)) ?? '';
+			if (topic === failOn) throw new Error('The network connection was lost.');
+			onGenerate?.(topic);
 			generated.push(topic);
 			return `## About\n\nFresh body about ${topic}.`;
 		});
 
+		register = vi.fn();
+		checkpoints = createMockCheckpointManager();
 		mod = new DeepDiveModule(
 			makeModuleDeps({
 				plugin: { app } as unknown as Plugin,
 				getSettings: () => settings,
 				notifications: notifications as never,
-				checkpointManager: createMockCheckpointManager() as never,
-				registrar: { register: vi.fn() } as never,
+				checkpointManager: checkpoints as never,
+				registrar: { register } as never,
 				noteQueue: new NoteOperationQueue(),
 			}),
 			() => false
@@ -136,6 +147,33 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(outcome.writtenPaths).toHaveLength(3);
 		});
 
+		it('keeps the per-run cap when an interrupted run resumes', async () => {
+			failOn = 'Gradient Descent';
+			await mod.run('notes/Root.md', { depth: 1, maxNotes: 2 });
+			failOn = null;
+
+			await mod.resumeFromCheckpoint({ id: 'mockcheckpoint', metadata: { runId: savedRun?.id }, remainingItems: [] } as never);
+
+			expect(generated).toEqual(['Backpropagation', 'Gradient Descent']);
+			expect(savedRun?.status).toBe('completed');
+		});
+
+		it('gives each run its own in-progress op id', async () => {
+			await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+			const startOperation = (mod as unknown as { notifications: { startOperation: { mock: { calls: unknown[][] } } } }).notifications.startOperation;
+			expect(startOperation.mock.calls.map((c) => String(c[1]))).toContain(`deep-dive-generate-${savedRun?.id}`);
+		});
+
+		it('the palette command asks for depth before confirming', async () => {
+			const spec = register.mock.calls.find((c) => c[0] === 'deep-dive')?.[2] as {
+				editorCallback: (editor: unknown, ctx: { file: TFile }) => Promise<void>;
+			};
+			await spec.editorCallback({}, { file: mockFile('notes/Root.md') });
+
+			expect(vi.mocked(selectDepth).mock.invocationCallOrder[0]).toBeLessThan(confirm.mock.invocationCallOrder[0]);
+			expect(confirm.mock.calls[0][0]).toContain('(depth 1)');
+		});
+
 		it('reports a missing note without starting a run', async () => {
 			const outcome = await mod.run('notes/Missing.md');
 
@@ -169,6 +207,36 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(outcome.ok).toBe(true);
 			expect(outcome.writtenPaths).toEqual([path]);
 			expect(files.get(path)).toBe(`---\nparent: "[[Root]]"\n---\n${nav}\n\n## About\n\nFresh body about Backpropagation.\n\n${enrichment}\n`);
+		});
+
+		it('always makes a fresh model call', async () => {
+			proposals.set('p1', proposal({}));
+			await mod.regenerate({ proposalId: 'p1' });
+			expect(vi.mocked(AIClient.prototype.complete).mock.calls.at(-1)?.[2]).toMatchObject({ bypassCache: true });
+		});
+
+		it('refuses an accepted proposal whose note is gone, before any model call', async () => {
+			proposals.set('p1', proposal({ status: 'accepted' }));
+
+			const outcome = await mod.regenerate({ proposalId: 'p1' });
+
+			expect(outcome.ok).toBe(false);
+			expect(outcome.message).toContain('moved, renamed or deleted');
+			expect(generated).toEqual([]);
+		});
+
+		it('writes the note when the proposal is accepted while generating', async () => {
+			const path = 'Deep Dives/Root/Backpropagation.md';
+			proposals.set('p1', proposal({}));
+			onGenerate = () => {
+				proposals.set('p1', { ...proposals.get('p1')!, status: 'accepted' });
+				files.set(path, '---\nparent: "[[Root]]"\n---\nOld body\n');
+			};
+
+			const outcome = await mod.regenerate({ proposalId: 'p1' });
+
+			expect(outcome.writtenPaths).toEqual([path]);
+			expect(files.get(path)).toContain('Fresh body about Backpropagation.');
 		});
 
 		it('refuses a rejected proposal', async () => {

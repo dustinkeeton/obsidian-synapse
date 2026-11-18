@@ -61,7 +61,7 @@ export async function buildStatus(deps: SynapseApiDeps): Promise<ApiStatus> {
 	}
 	const ai = {} as ApiStatus['ai'];
 	for (const feature of AI_FEATURE_IDS) ai[feature] = aiStatus(settings, feature);
-	const checkpoints = await deps.checkpointManager.listIncomplete();
+	const checkpoints = await deps.checkpointManager.listIncomplete().catch(() => null);
 	return {
 		apiVersion: API_VERSION,
 		pluginVersion: deps.pluginVersion,
@@ -79,13 +79,13 @@ export async function buildStatus(deps: SynapseApiDeps): Promise<ApiStatus> {
 			keySource: settings.ai.systemOne.apiKey ? 'provider-key' : 'missing',
 		},
 		inProgress: deps.notifications.inProgress.snapshot(),
-		checkpoints: checkpoints.map((cp) => ({
+		checkpoints: checkpoints?.map((cp) => ({
 			id: cp.id,
 			module: cp.module,
 			label: cp.operationLabel,
 			completed: cp.completedItems.length,
 			remaining: cp.remainingItems.length,
 			updatedAt: cp.updatedAt,
-		})),
+		})) ?? null,
 	};
 }

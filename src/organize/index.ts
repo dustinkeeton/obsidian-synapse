@@ -127,6 +127,11 @@ export class OrganizeModule implements FeatureModule {
 		return this.store.loadPendingProposals();
 	}
 
+	/** One proposal in any status; null when missing. Lets the public API confirm what an accept did (#623). */
+	async getProposal(id: string): Promise<OrganizeProposal | null> {
+		return this.store.loadProposal(id);
+	}
+
 	/**
 	 * Resume organize from a checkpoint (C1).
 	 * Re-organizes the remaining files from the checkpoint.

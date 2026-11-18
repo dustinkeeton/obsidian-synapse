@@ -931,7 +931,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `isTwitterUrl` | elaboration/proposer, enrichment/index |
 | `sanitizeUrl` | video/index, video/audio-extractor, transcription/duration-detector, transcription/youtube-captions; in-layer: content-fetcher (`fetchHtmlDocument`, `content-fetcher.ts:42`), tweet-fetcher, reddit-fetcher, url-classifier |
 | `sanitizePublicUrl` | illustrate/asset-writer (`illustrate/asset-writer.ts:36`), illustrate/linked-pages (`illustrate/linked-pages.ts:21`) |
-| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:195`), organize/index (`organize/index.ts:440,539,598`) |
+| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:195`), organize/index (`organize/index.ts:445,539,598`) |
 | `sanitizePath` | video/audio-extractor |
 | `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, image/index, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `parseFrontmatter` | enrichment/index, enrichment/enrichment-applier, tidy/index |
