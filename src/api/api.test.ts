@@ -197,6 +197,16 @@ describe('createSynapseApi (#623)', () => {
 			expect((await api.deepDive.regenerate(42 as never)).ok).toBe(false);
 		});
 
+		it('refuses option names inherited from Object.prototype', async () => {
+			const result = await api.deepDive.run(NOTE, JSON.parse('{"constructor": 1}') as never);
+			expect(result.error).toContain('unknown option "constructor"');
+		});
+
+		it('names the bad field of an object-form regenerate target', async () => {
+			expect((await api.deepDive.regenerate({ proposalId: 1 } as never)).error).toBe('target.proposalId must be a string');
+			expect((await api.deepDive.regenerate(42 as never)).error).toBe('target must be a string');
+		});
+
 		it('requires the note path', async () => {
 			expect((await api.elaborate(undefined as never)).error).toBe('notePath is required');
 		});

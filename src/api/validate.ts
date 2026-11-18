@@ -16,8 +16,12 @@ function typeError(value: unknown, schema: Schema, at: string): string | null {
 /** Checks the JSON Schema subset `VERB_DEFINITIONS` uses: type, enum, minimum, maximum, properties, required, additionalProperties: false, items, oneOf. */
 function check(value: unknown, schema: Schema, at: string): string | null {
 	if (Array.isArray(schema.oneOf)) {
-		const errors = (schema.oneOf as Schema[]).map((branch) => check(value, branch, at));
-		return errors.includes(null) ? null : errors[0];
+		const branches = schema.oneOf as Schema[];
+		const errors = branches.map((branch) => check(value, branch, at));
+		if (errors.includes(null)) return null;
+		// Report against a branch of the value's own type, so `{ proposalId: 1 }` hears about proposalId, not "must be a string".
+		const sameType = branches.findIndex((branch) => typeError(value, branch, at) === null);
+		return errors[sameType === -1 ? 0 : sameType];
 	}
 	const wrongType = typeError(value, schema, at);
 	if (wrongType) return wrongType;
@@ -37,7 +41,7 @@ function check(value: unknown, schema: Schema, at: string): string | null {
 		const missing = ((schema.required ?? []) as string[]).find((key) => (value as Record<string, unknown>)[key] === undefined);
 		if (missing) return `${at}.${missing} is required`;
 		for (const [key, field] of Object.entries(value)) {
-			if (!(key in properties)) {
+			if (!Object.prototype.hasOwnProperty.call(properties, key)) {
 				if (schema.additionalProperties === false) return `${at} has unknown option "${key}"`;
 				continue;
 			}
