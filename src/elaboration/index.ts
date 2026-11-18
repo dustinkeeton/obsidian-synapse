@@ -14,9 +14,14 @@ import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationH
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator, proposalContentKey } from './proposer';
-import { DetectionResult, Proposal } from './types';
+import { DetectionResult, ElaborationOutcome, Proposal } from './types';
 
-export type { DetectionReason, DetectionResult, Proposal } from './types';
+export type { DetectionReason, DetectionResult, ElaborationOutcome, Proposal } from './types';
+
+interface AcceptOptions {
+	silent?: boolean;
+	onStale?: 'confirm' | 'skip' | 'replace';
+}
 
 export class ElaborationModule implements FeatureModule {
 	private plugin: Plugin;
@@ -398,12 +403,13 @@ export class ElaborationModule implements FeatureModule {
 		});
 	}
 
-	async scanNote(file: TFile, userInvoked = true): Promise<void> {
+	/** Elaborate one note; `userInvoked` bypasses the stub gate. The outcome mirrors the operation toast. */
+	async scanNote(file: TFile, userInvoked = true): Promise<ElaborationOutcome> {
 		const op = this.notifications.startOperation(
 			`Scanning ${file.basename}`,
 			`scan-${file.path}`, { kind: 'elaboration', target: file.path }
 		);
-		await settleOnThrow(op, 'Elaboration failed', () => this.noteQueue.run(
+		return settleOnThrow(op, 'Elaboration failed', () => this.noteQueue.run(
 			file.path,
 			() => this.generateForNote(file, userInvoked, op),
 			{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
@@ -415,7 +421,10 @@ export class ElaborationModule implements FeatureModule {
 		file: TFile,
 		userInvoked: boolean,
 		op: OperationHandle
-	): Promise<void> {
+	): Promise<ElaborationOutcome> {
+		const cacheUse: CacheUse = {};
+		const done = (ok: boolean, message: string, extra: Partial<ElaborationOutcome> = {}): ElaborationOutcome =>
+			({ ok, message, writtenPaths: [], cacheUse, ...extra });
 		try {
 			const detectorResult = await this.detector.detect(file);
 
@@ -435,41 +444,42 @@ export class ElaborationModule implements FeatureModule {
 					// Nothing new to propose: either this exact note state was
 					// already proposed/accepted, or the per-note pending cap is
 					// reached. Finish honestly without spending an AI call.
-					op.finish(
-						guard.reason === 'cap'
-							? 'No new proposal -- this note already has the maximum pending proposals'
-							: 'No new proposal -- this note is unchanged since its last elaboration'
-					);
-					return;
+					const message = guard.reason === 'cap'
+						? 'No new proposal -- this note already has the maximum pending proposals'
+						: 'No new proposal -- this note is unchanged since its last elaboration';
+					op.finish(message);
+					return done(true, message);
 				}
 
-				const cacheUse: CacheUse = {};
 				const proposal = await this.proposer.generate(result, guard.key, trackAiCache(cacheUse));
 				if (!proposal) {
 					// generate() returns null after it has already notified why
 					// (unreadable links or an empty AI rewrite).
 					op.finish('No proposal created');
-					return;
+					return done(false, 'No proposal created');
 				}
 				await this.store.save(proposal);
 				// Review action only when the proposal stays pending — auto-accept
 				// (applied right after) leaves nothing to review (#366).
+				const message = withCacheReport('Proposal generated', [cacheUse]);
 				op.finish(
-					withCacheReport('Proposal generated', [cacheUse]),
+					message,
 					reviewAction({
 						generated: true,
 						shouldAutoAccept: this.shouldAutoAccept,
 						openProposalView: this.onOpenProposalView,
 					})
 				);
-				await this.maybeAutoAccept(proposal);
+				const applied = await this.maybeAutoAccept(proposal);
 				await this.refreshView();
-			} else {
-				op.finish('Note does not appear to be a stub');
+				return done(true, message, { proposalId: proposal.id, writtenPaths: applied ? [file.path] : [] });
 			}
+			op.finish('Note does not appear to be a stub');
+			return done(true, 'Note does not appear to be a stub');
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			op.error(`Note scan failed -- ${msg}`);
+			return done(false, `Note scan failed -- ${msg}`);
 		}
 	}
 
@@ -480,16 +490,18 @@ export class ElaborationModule implements FeatureModule {
 	 * `options.silent` suppresses the per-proposal success Notice and the view
 	 * refresh; used by batch auto-accept so callers can emit a single summary
 	 * Notice and refresh once. It also turns the stale-body guard into a skip
-	 * instead of a confirm modal.
+	 * instead of a confirm modal. `options.onStale` overrides that guard:
+	 * `confirm` asks (the default), `skip` leaves the proposal pending, `replace`
+	 * overwrites the edited note. Returns `true` only when the note was rewritten.
 	 */
 	async acceptProposal(
 		id: string,
 		editedContent?: string,
-		options?: { silent?: boolean }
-	): Promise<void> {
+		options?: AcceptOptions
+	): Promise<boolean> {
 		const proposal = await this.store.load(id);
-		if (!proposal) return;
-		await this.noteQueue.run(
+		if (!proposal) return false;
+		return this.noteQueue.run(
 			proposal.sourceNotePath,
 			() => this.applyProposal(id, editedContent, options)
 		);
@@ -503,7 +515,7 @@ export class ElaborationModule implements FeatureModule {
 	private async applyProposal(
 		id: string,
 		editedContent?: string,
-		options?: { silent?: boolean }
+		options?: AcceptOptions
 	): Promise<boolean> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return false;
@@ -516,8 +528,9 @@ export class ElaborationModule implements FeatureModule {
 
 		// Stale-body guard: accept overwrites, so never clobber edits made after generation.
 		const current = await this.plugin.app.vault.read(file);
-		if (current !== proposal.originalContent) {
-			if (options?.silent) return false;
+		const onStale = options?.onStale ?? (options?.silent ? 'skip' : 'confirm');
+		if (current !== proposal.originalContent && onStale !== 'replace') {
+			if (onStale === 'skip') return false;
 			const confirmed = await new ConfirmModal(this.plugin.app, {
 				title: 'Note changed since this proposal was generated',
 				message: `"${file.basename}" was edited after this elaboration was proposed. Accepting replaces the note's current content with the proposed rewrite.`,

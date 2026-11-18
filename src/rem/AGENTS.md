@@ -23,6 +23,7 @@ class RemModule {
   rejectProposal(id: string): Promise<void>
   undoProposal(id: string): Promise<void>
   getPendingProposals(): Promise<RemProposal[]>
+  getProposal(id: string): Promise<RemProposal | null>   // index.ts:532; any status; api.proposals.accept reads it to confirm an accept applied (#623)
 }
 ```
 
@@ -172,7 +173,7 @@ WARNING: REM auto-accept REWRITES note body text (inserts `[[wikilinks]]`). This
 
 | Caller | Wiring | Gate |
 |--------|--------|------|
-| deep-dive accept (`deepDive.onNoteAccepted`) | `PostOpHookDeps.remNote` = `rem.remScanNote(filePath, { postOp: true })` (`main.ts:195`); leg in `pipeline/post-op-hooks.ts:57-60`, dispatched via `fireAndForget` | wire time: `rem.enabled && deepDive.autoRemOnAccept` |
+| deep-dive accept (`deepDive.onNoteAccepted`) | `PostOpHookDeps.remNote` = `rem.remScanNote(filePath, { postOp: true })` (`main.ts:199`); leg in `pipeline/post-op-hooks.ts:57-60`, dispatched via `fireAndForget` | wire time: `rem.enabled && deepDive.autoRemOnAccept` |
 
 - `remScanNote` takes the note's `NoteOperationQueue` slot itself (#585), so the leg enqueues behind the deep-dive accept that holds the same `proposedPath` key. `remScanDirectory` / `resumeFromCheckpoint` stay unqueued.
 - `{ postOp: true }` suppresses the file-not-found, exclusion, lane-skip and no-mentions notices and the "Found N linkable mentions" toast; a pending proposal surfaces only via `refreshView()`. `autoAccept.rem` still applies, silently: `maybeAutoAccept(proposal, postOp)` skips the "Auto-accepted REM links" and "Inserted N wikilinks" notices.
@@ -187,7 +188,7 @@ Resume re-checks exclusion rules silently (a path may have been excluded after c
 ## Exclusion Rules
 
 ```ts
-// index.ts:537-543
+// index.ts:542-548
 private isExcluded(file: TFile): boolean {
   const settings = this.getSettings();
   return (

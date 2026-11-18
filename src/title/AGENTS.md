@@ -232,7 +232,7 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 In: `shared/` (AIClient, NotificationManager, NoteOperationQueue, generateId, readNote, isPathExcluded, reviewAction, trackAiCache, withCacheReport, CacheUse, AIRequestOptions, findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags, contentKey, hashString, ensureFolder, isRecord, readJsonFile, sanitizeAIResponse, stripCodeFences, isUntitled, SettingsSectionContext), `settings.ts` (SynapseSettings interface only — `index.ts:2`, `title-store.ts:2`, `content-key.ts:3`; `TitleDuplicateStrategy` is declared here in `types.ts:15` and type-imported BY `settings.ts:8`), `obsidian` (Plugin, TFile, normalizePath, Setting, App)
 
-Out: constructed by `modules/registry.ts:14` (TitleModule); `main.ts:192` wires `title.checkTitle` into the post-op hooks; `views/` (TitleProposal, TitleDuplicateStrategy types); `settings-ui/settings-tab.ts:16` (renderTitleSettings); `settings.ts:8` (TitleDuplicateStrategy type). No feature module imports from `title/`.
+Out: constructed by `modules/registry.ts:14` (TitleModule); `main.ts:196` wires `title.checkTitle` into the post-op hooks; `views/` (TitleProposal, TitleDuplicateStrategy types); `settings-ui/settings-tab.ts:16` (renderTitleSettings); `settings.ts:8` (TitleDuplicateStrategy type). No feature module imports from `title/`.
 
 ## Invariants / Gotchas
 

@@ -86,12 +86,12 @@ describe('DeepDiveModule Review toast action (#366)', () => {
 			confirm: vi.fn().mockResolvedValue(true),
 			notifyError: vi.fn(),
 			startOperation: vi.fn((_label: string, id?: string) =>
-				id === 'deep-dive-generate' ? genOp : scanOp
+				id?.startsWith('deep-dive-generate') ? genOp : scanOp
 			),
 		};
 
 		// Auto-accept walks the generated tree and creates notes; isolate the apply.
-		vi.spyOn(DeepDiveModule.prototype, 'acceptProposal').mockResolvedValue(undefined);
+		vi.spyOn(DeepDiveModule.prototype, 'acceptProposal').mockResolvedValue(true);
 	});
 
 	afterEach(() => vi.restoreAllMocks());

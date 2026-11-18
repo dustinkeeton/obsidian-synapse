@@ -124,7 +124,7 @@ fire(target?)  /  fireOnFile(file)
 
 ## Post-Op Hooks (`post-op-hooks.ts`)
 
-Wired in `main.ts:188-205`: one `PostOpHookDeps` (`main.ts:188-196`; `illustrateNote` -> `illustrate.illustrateNote(filePath, ctx)`, `:194`; `remNote` -> `rem.remScanNote(filePath, { postOp: true })`, `:195`) feeds `buildPostOpHook` for each source (`elaboration.onProposalAccepted`, `audio.onTranscriptionComplete`, `video.onTranscriptionComplete`, `image.onExtractionComplete`, `summarize.onSummaryComplete`, `enrichment.onEnrichmentApplied` (`:202`), `deepDive.onNoteAccepted`) and `buildAutoOrganizeHook` for `deepDive.onOrganizeRequested` / `summarize.onOrganizeRequested`.
+Wired in `main.ts:192-209`: one `PostOpHookDeps` (`main.ts:192-200`; `illustrateNote` -> `illustrate.illustrateNote(filePath, ctx)`, `:198`; `remNote` -> `rem.remScanNote(filePath, { postOp: true })`, `:199`) feeds `buildPostOpHook` for each source (`elaboration.onProposalAccepted`, `audio.onTranscriptionComplete`, `video.onTranscriptionComplete`, `image.onExtractionComplete`, `summarize.onSummaryComplete`, `enrichment.onEnrichmentApplied` (`:206`), `deepDive.onNoteAccepted`) and `buildAutoOrganizeHook` for `deepDive.onOrganizeRequested` / `summarize.onOrganizeRequested`.
 
 `buildPostOpHook(deps, source)` builds independent legs at wire time and runs every wired leg per call with `(filePath, ctx)`; `null` when no leg is wired (`post-op-hooks.ts:71`). Source `'enrichment'` (`enrichment.onEnrichmentApplied`) gets the illustrate leg only. Leg order per call: enrich/title, REM, illustrate (`post-op-hooks.ts:40-69`).
 
@@ -170,7 +170,7 @@ Context producers (`ctx`): elaboration accept -> `sourceUrls` = links in the not
 | `NotificationManager`, `ScanTarget`, `SourceContext` (types) | `../shared` (`synapse-runner.ts:3`, `types.ts:2`) |
 | `SynapseSettings`, `IllustrateRunAfterKey` (types) | `../settings` (`SynapseSettings`: `types.ts:3`, `synapse-runner.ts:4`; `IllustrateRunAfterKey`: `post-op-hooks.ts:3`, re-exported by `settings.ts:11` from `illustrate/types`) |
 | `TFile` (type) | `obsidian` (`types.ts:1`, `post-op-hooks.ts:1`, `synapse-runner.ts:1`) |
-| `PipelineModuleMap` instances | injected by `main.ts:92-100` from each feature module's scan fn |
-| `PostOpHookDeps` instance | injected by `main.ts:188-196` (`enrichment.enrich`, `title.checkTitle` wrapped with `{ postOp: true }`; `organize.organizeNote`; `illustrate.illustrateNote`; `remNote` = `rem.remScanNote(filePath, { postOp: true })`; `RemModule` takes the queue slot) |
+| `PipelineModuleMap` instances | injected by `main.ts:96-104` from each feature module's scan fn |
+| `PostOpHookDeps` instance | injected by `main.ts:192-200` (`enrichment.enrich`, `title.checkTitle` wrapped with `{ postOp: true }`; `organize.organizeNote`; `illustrate.illustrateNote`; `remNote` = `rem.remScanNote(filePath, { postOp: true })`; `RemModule` takes the queue slot) |
 
 Pipeline imports `commands` (for the `fire-synapse` flow gate) and `shared` (`fireAndForget`, `scanScopeLabel`, `toScanScope`) but NOT the feature modules directly — `main.ts` injects the `PipelineModuleMap` and `PostOpHookDeps`, keeping the runner and the hooks decoupled from concrete feature implementations.

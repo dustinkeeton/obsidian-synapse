@@ -1,4 +1,4 @@
-import type { AIRequestOptions } from '../shared';
+import type { AIRequestOptions, CacheUse } from '../shared';
 
 /** Topic extracted from a note's content via AI analysis. */
 export interface ExtractedTopic {
@@ -81,7 +81,36 @@ export interface DeepDiveRun {
 	status: DeepDiveRunStatus;
 	/** Unfinished generation work, kept so an interrupted run can resume from its checkpoint. */
 	pending?: DeepDivePendingWork;
+	/** Per-run note cap from `DeepDiveModule.run`; absent = `deepDive.maxNotesPerRun`. */
+	maxNotes?: number;
+	/** Per-run auto-accept from `DeepDiveModule.run`; absent = `autoAccept['deep-dive']`. */
+	autoAccept?: boolean;
 }
+
+/** Answers the depth picker and confirm modal would ask for, so a run can start without UI. */
+export interface DeepDiveRunOptions {
+	/** Recursion depth; default `deepDive.maxDepth`, clamped to the picker's 1-6. */
+	depth?: number;
+	/** Note cap for this run; default `deepDive.maxNotesPerRun`. */
+	maxNotes?: number;
+	/** Accept every generated note when the run finishes; default `autoAccept['deep-dive']`. */
+	autoAccept?: boolean;
+}
+
+/** What a deep-dive run, or a regeneration, did. */
+export interface DeepDiveOutcome {
+	ok: boolean;
+	message: string;
+	runId?: string;
+	/** Proposals this call created (run) or rewrote (regenerate). */
+	proposalIds: string[];
+	/** Vault notes this call wrote. */
+	writtenPaths: string[];
+	cacheUse: CacheUse;
+}
+
+/** `regenerate` target: a proposal id, or the path of the note a proposal created. */
+export type DeepDiveRegenerateTarget = { proposalId: string } | { notePath: string };
 
 /** One topic still to generate; its source is the root note, or the parent proposal when set. */
 export interface DeepDiveTask {

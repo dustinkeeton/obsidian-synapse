@@ -154,6 +154,11 @@ export class IllustrateModule implements FeatureModule {
 		return this.store.loadPending();
 	}
 
+	/** One proposal in any status; null when missing. Lets the public API confirm what an accept did (#623). */
+	async getProposal(id: string): Promise<IllustrateProposal | null> {
+		return this.store.load(id);
+	}
+
 	/** Providers enabled in settings, in preference order. */
 	private activeProviders(): MediaProvider[] {
 		const flags = this.getSettings().illustrate.providers;

@@ -122,6 +122,11 @@ export class EnrichmentModule implements FeatureModule {
 		return this.store.loadPending();
 	}
 
+	/** One proposal in any status; null when missing. Lets the public API confirm what an accept did (#623). */
+	async getProposal(id: string): Promise<EnrichmentProposal | null> {
+		return this.store.load(id);
+	}
+
 	/**
 	 * Resume enrichment from a checkpoint (C1).
 	 * Re-enriches the remaining files from the checkpoint.
@@ -572,17 +577,17 @@ export class EnrichmentModule implements FeatureModule {
 		return proposal.id;
 	}
 
-	/** Accept selected items in a proposal. Called from unified view. */
+	/** Accept selected items in a proposal (every item when `accepted` is omitted). Called from unified view and the public API. */
 	async acceptSelectedFromView(
 		id: string,
-		accepted: AcceptedItems,
+		accepted?: AcceptedItems,
 		options?: { silent?: boolean }
 	): Promise<void> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return;
 		await this.noteQueue.run(
 			proposal.sourceNotePath,
-			() => this.acceptSelected(id, accepted, options)
+			() => this.acceptSelected(id, accepted ?? this.buildAcceptAll(proposal.result), options)
 		);
 	}
 

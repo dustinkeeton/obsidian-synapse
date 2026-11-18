@@ -4,7 +4,7 @@
 
 Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
-The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (306 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `illustrate/` (#213) is the newest feature module, shipped in 1.3.0.
+The codebase has **26 modules under `src/`** (api, audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (320 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `api/` (#623) is the public API that external agents call. `illustrate/` (#213) is the newest feature module, shipped in 1.3.0.
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -18,6 +18,7 @@ The codebase has **25 modules under `src/`** (audio, brand-icons, changelog, che
 - **`pipeline/`** runs features in order; **`intake/`** decides what to feed the pipeline. Neither imports a feature module directly — `main.ts` injects the features into them. This is what keeps the dependency graph acyclic.
 - **`views/`** holds the two sidebars: the **unified proposal view** (review/accept every proposal type, with an **In progress** section listing the operations still producing proposals, #577) and the **Synapse actions view** (registry-driven, touch-friendly buttons so mobile users reach any command without the palette).
 - **`transcription/`** holds the transcription modals and the **URL tier router** (#184): YouTube captions over plain HTTP first, desktop yt-dlp/ffmpeg second. It reaches `audio` and `video` only through callbacks injected by `main.ts`. Every URL path shares one router built over a **persistent transcript cache** (`shared/transcript-cache.ts`, #488), so a URL is transcribed once and reused by the modal, summarize, and intake.
+- **`api/`** is the versioned public API at `app.plugins.plugins.synapse.api` (#623). An agent or script calls `status()`, `capabilities()` and modal-free verbs (deep dive run and regenerate, elaborate, folder scans, proposal accept and reject). Each verb returns a structured result and never throws. Like `checkpoints/`, it reaches the features only through what `main.ts` hands it.
 - **`checkpoints/`** owns the checkpoint *recovery* UX (#496) — the delayed startup "interrupted operations" prompt, the `manage-checkpoints` command, and the sidebar's resume/discard buttons. Persistence stays in `shared/checkpoint-manager.ts`; resume reaches a feature module only through an injected handler map.
 - **No links to missing notes** (#581). Every write of AI-generated or fetched text passes through `stripUnresolvedLinks` (`shared/link-guard.ts`), which turns a `[[link]]` to a note that doesn't exist into plain text (alias kept as the visible text). Embeds and code are left alone, and an elaboration accept keeps links already in the note and links the user typed during review.
 - **One note, one operation at a time.** A single `NoteOperationQueue` (`shared/note-operation-queue.ts`, #483) is injected into every module that reads a note, calls the AI, and writes it back, so two features never interleave writes on the same note.
@@ -128,7 +129,7 @@ graph TB
     style Image fill:#e8f5e9,stroke:#333
 ```
 
-Both `shared/` and `commands/` are **base layers**: every feature may depend on them, but they depend on no feature module. `pipeline/`, `intake/`, and `checkpoints/` reach the features only through dependencies injected by `main.ts`, never by importing them. `modules/registry.ts` is the one file (besides the settings tab) that imports every feature barrel — it sits at the top, so the whole graph stays acyclic.
+Both `shared/` and `commands/` are **base layers**: every feature may depend on them, but they depend on no feature module. `pipeline/`, `intake/`, `checkpoints/`, and `api/` reach the features only through dependencies injected by `main.ts`, never by importing them. `modules/registry.ts` is the one file (besides the settings tab) that imports every feature barrel — it sits at the top, so the whole graph stays acyclic.
 
 ---
 
@@ -147,6 +148,13 @@ src/
 ├── modules/                # Feature-module registry (#504) — the one list of feature modules
 │   ├── registry.ts         #   MODULE_FACTORIES (ordered) + constructFeatureModules / loadFeatureModules / unloadFeatureModules
 │   └── index.ts            #   Barrel export
+│
+├── api/                    # Public API for external agents (#623): app.plugins.plugins.synapse.api
+│   ├── index.ts            #   createSynapseApi: verbs, feature gate, never-throw wrapper
+│   ├── capabilities.ts     #   VERB_DEFINITIONS (name, JSON-schema params) + capabilities()
+│   ├── status.ts           #   status(): resolved provider/model/effort, key source, in-progress, checkpoints
+│   ├── proposals.ts        #   Per-kind accept/reject/list adapters
+│   └── types.ts            #   SynapseApi, ApiResult, API_VERSION
 │
 ├── checkpoints/            # Checkpoint recovery UX (#496)
 │   ├── checkpoint-recovery.ts # CheckpointRecoveryModule: startup prompt (3 s), manage-checkpoints command, resume/discard

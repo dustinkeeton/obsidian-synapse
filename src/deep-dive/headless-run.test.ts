@@ -1,0 +1,262 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { DeepDiveModule } from './index';
+import { DeepDiveStore } from './deep-dive-store';
+import { selectDepth } from './depth-selector-modal';
+import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
+import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
+import type { Plugin, TFile } from 'obsidian';
+import { AIClient, ENRICHMENT_END, ENRICHMENT_START, NoteOperationQueue } from '../shared';
+import type { DeepDiveProposal, DeepDiveRun } from './types';
+
+vi.mock('./depth-selector-modal', () => ({
+	selectDepth: vi.fn(async () => 1),
+	MIN_DEPTH: 1,
+	MAX_DEPTH: 6,
+}));
+
+const mockFile = (path: string): TFile => rawFile(path) as unknown as TFile;
+
+const TOPIC_TITLES = ['Backpropagation', 'Gradient Descent', 'Overfitting'];
+const TOPICS = JSON.stringify(TOPIC_TITLES.map((title) => ({ title, description: `About ${title}`, relevance: 0.9 })));
+
+function proposal(overrides: Partial<DeepDiveProposal>): DeepDiveProposal {
+	return {
+		id: 'p1',
+		runId: 'run1',
+		sourceNotePath: 'notes/Root.md',
+		topic: { title: 'Backpropagation', description: 'About Backpropagation', relevance: 0.9, existsInVault: false, relatedUrls: [] },
+		proposedPath: 'Deep Dives/Root/Backpropagation.md',
+		proposedContent: 'old content',
+		depth: 0,
+		qualityScore: { score: 0.9, topicCount: 0, wordCount: 10, isTooGeneric: false, hasHighOverlap: false, reasoning: '' },
+		childProposalIds: [],
+		createdAt: '2026-11-01T00:00:00.000Z',
+		status: 'pending',
+		...overrides,
+	};
+}
+
+describe('DeepDiveModule headless verbs', () => {
+	let settings: SynapseSettings;
+	let app: ReturnType<typeof createMockApp>;
+	let mod: DeepDiveModule;
+	let proposals: Map<string, DeepDiveProposal>;
+	let savedRun: DeepDiveRun | null;
+	let generated: string[];
+	let confirm: ReturnType<typeof vi.fn>;
+	let files: Map<string, string>;
+	let failOn: string | null;
+	let onGenerate: ((topic: string) => void) | null;
+	let register: ReturnType<typeof vi.fn>;
+	let checkpoints: ReturnType<typeof createMockCheckpointManager>;
+
+	beforeEach(async () => {
+		settings = structuredClone(DEFAULT_SETTINGS);
+		proposals = new Map();
+		savedRun = null;
+		generated = [];
+		failOn = null;
+		onGenerate = null;
+		vi.mocked(selectDepth).mockClear();
+		files = new Map([['notes/Root.md', '# Root\n\nA note about neural network training.']]);
+
+		app = createMockApp();
+		app.vault.getAbstractFileByPath.mockImplementation((p: string) => (files.has(p) ? mockFile(p) : null));
+		app.vault.read.mockImplementation(async (file: { path: string }) => files.get(file.path) ?? '');
+		app.vault.process.mockImplementation(async (file: { path: string }, fn: (data: string) => string) => {
+			const next = fn(files.get(file.path) ?? '');
+			files.set(file.path, next);
+			return next;
+		});
+
+		confirm = vi.fn().mockResolvedValue(true);
+		const notifications = {
+			info: vi.fn(),
+			success: vi.fn(),
+			notifyError: vi.fn(),
+			confirm,
+			startOperation: vi.fn(() => ({ progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled: false })),
+		};
+
+		vi.spyOn(DeepDiveStore.prototype, 'init').mockResolvedValue(undefined);
+		vi.spyOn(DeepDiveStore.prototype, 'saveProposal').mockImplementation(async (p) => { proposals.set(p.id, structuredClone(p)); });
+		vi.spyOn(DeepDiveStore.prototype, 'loadProposal').mockImplementation(async (id) => structuredClone(proposals.get(id) ?? null));
+		vi.spyOn(DeepDiveStore.prototype, 'loadAllProposals').mockImplementation(async () => [...proposals.values()]);
+		vi.spyOn(DeepDiveStore.prototype, 'loadProposalsByRunId').mockImplementation(async (runId) => [...proposals.values()].filter((p) => p.runId === runId));
+		vi.spyOn(DeepDiveStore.prototype, 'saveRun').mockImplementation(async (run) => { savedRun = structuredClone(run); });
+		vi.spyOn(DeepDiveStore.prototype, 'loadRun').mockImplementation(async () => structuredClone(savedRun));
+
+		vi.spyOn(AIClient.prototype, 'complete').mockImplementation(async (userPrompt: string, systemPrompt?: string) => {
+			if (systemPrompt?.includes('knowledge graph analyst')) return TOPICS;
+			const topic = TOPIC_TITLES.find((t) => userPrompt.includes(t)) ?? '';
+			if (topic === failOn) throw new Error('The network connection was lost.');
+			onGenerate?.(topic);
+			generated.push(topic);
+			return `## About\n\nFresh body about ${topic}.`;
+		});
+
+		register = vi.fn();
+		checkpoints = createMockCheckpointManager();
+		mod = new DeepDiveModule(
+			makeModuleDeps({
+				plugin: { app } as unknown as Plugin,
+				getSettings: () => settings,
+				notifications: notifications as never,
+				checkpointManager: checkpoints as never,
+				registrar: { register } as never,
+				noteQueue: new NoteOperationQueue(),
+			}),
+			() => false
+		);
+		await mod.onload();
+	});
+
+	afterEach(() => vi.restoreAllMocks());
+
+	describe('run', () => {
+		it('opens neither the depth picker nor the confirm prompt', async () => {
+			const outcome = await mod.run('notes/Root.md', { depth: 1 });
+
+			expect(selectDepth).not.toHaveBeenCalled();
+			expect(confirm).not.toHaveBeenCalled();
+			expect(outcome.ok).toBe(true);
+			expect(outcome.runId).toBe(savedRun?.id);
+			expect(outcome.proposalIds).toHaveLength(3);
+			expect(outcome.writtenPaths).toEqual([]);
+		});
+
+		it('stops at the per-run note cap and records it on the run', async () => {
+			const outcome = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+
+			expect(generated).toEqual(['Backpropagation']);
+			expect(outcome.proposalIds).toHaveLength(1);
+			expect(savedRun?.maxNotes).toBe(1);
+		});
+
+		it('clamps depth to the picker range', async () => {
+			await mod.run('notes/Root.md', { depth: 99, maxNotes: 1 });
+			expect(savedRun?.maxDepth).toBe(6);
+		});
+
+		it('accepts every generated note when autoAccept is true, regardless of the setting', async () => {
+			const accept = vi.spyOn(mod, 'acceptProposal').mockResolvedValue(true);
+
+			const outcome = await mod.run('notes/Root.md', { depth: 1, autoAccept: true });
+
+			expect(accept).toHaveBeenCalledTimes(3);
+			expect(outcome.writtenPaths).toHaveLength(3);
+		});
+
+		it('keeps the per-run cap when an interrupted run resumes', async () => {
+			failOn = 'Gradient Descent';
+			await mod.run('notes/Root.md', { depth: 1, maxNotes: 2 });
+			failOn = null;
+
+			await mod.resumeFromCheckpoint({ id: 'mockcheckpoint', metadata: { runId: savedRun?.id }, remainingItems: [] } as never);
+
+			expect(generated).toEqual(['Backpropagation', 'Gradient Descent']);
+			expect(savedRun?.status).toBe('completed');
+		});
+
+		it('gives each run its own in-progress op id', async () => {
+			await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+			const startOperation = (mod as unknown as { notifications: { startOperation: { mock: { calls: unknown[][] } } } }).notifications.startOperation;
+			expect(startOperation.mock.calls.map((c) => String(c[1]))).toContain(`deep-dive-generate-${savedRun?.id}`);
+		});
+
+		it('the palette command asks for depth before confirming', async () => {
+			const spec = register.mock.calls.find((c) => c[0] === 'deep-dive')?.[2] as {
+				editorCallback: (editor: unknown, ctx: { file: TFile }) => Promise<void>;
+			};
+			await spec.editorCallback({}, { file: mockFile('notes/Root.md') });
+
+			expect(vi.mocked(selectDepth).mock.invocationCallOrder[0]).toBeLessThan(confirm.mock.invocationCallOrder[0]);
+			expect(confirm.mock.calls[0][0]).toContain('(depth 1)');
+		});
+
+		it('reports a missing note without starting a run', async () => {
+			const outcome = await mod.run('notes/Missing.md');
+
+			expect(outcome.ok).toBe(false);
+			expect(outcome.message).toContain('Note not found');
+			expect(savedRun).toBeNull();
+		});
+	});
+
+	describe('regenerate', () => {
+		it('rewrites a pending proposal in the store without touching the vault', async () => {
+			proposals.set('p1', proposal({}));
+
+			const outcome = await mod.regenerate({ proposalId: 'p1' });
+
+			expect(outcome.ok).toBe(true);
+			expect(outcome.writtenPaths).toEqual([]);
+			expect(proposals.get('p1')?.proposedContent).toContain('Fresh body about Backpropagation.');
+			expect(app.vault.process).not.toHaveBeenCalled();
+		});
+
+		it('rewrites an accepted note body, keeping frontmatter, nav and enrichment', async () => {
+			const path = 'Deep Dives/Root/Backpropagation.md';
+			proposals.set('p1', proposal({ status: 'accepted' }));
+			const nav = '> [!note|synapse-nav] Navigation\n> Up: [[Root]]';
+			const enrichment = `${ENRICHMENT_START}\n## Related Notes\n- [[Root]]\n${ENRICHMENT_END}`;
+			files.set(path, `---\nparent: "[[Root]]"\n---\n${nav}\n\nTruncated mid-sen\n\n${enrichment}\n`);
+
+			const outcome = await mod.regenerate({ notePath: path });
+
+			expect(outcome.ok).toBe(true);
+			expect(outcome.writtenPaths).toEqual([path]);
+			expect(files.get(path)).toBe(`---\nparent: "[[Root]]"\n---\n${nav}\n\n## About\n\nFresh body about Backpropagation.\n\n${enrichment}\n`);
+		});
+
+		it('always makes a fresh model call', async () => {
+			proposals.set('p1', proposal({}));
+			await mod.regenerate({ proposalId: 'p1' });
+			expect(vi.mocked(AIClient.prototype.complete).mock.calls.at(-1)?.[2]).toMatchObject({ bypassCache: true });
+		});
+
+		it('refuses an accepted proposal whose note is gone, before any model call', async () => {
+			proposals.set('p1', proposal({ status: 'accepted' }));
+
+			const outcome = await mod.regenerate({ proposalId: 'p1' });
+
+			expect(outcome.ok).toBe(false);
+			expect(outcome.message).toContain('moved, renamed or deleted');
+			expect(generated).toEqual([]);
+		});
+
+		it('writes the note when the proposal is accepted while generating', async () => {
+			const path = 'Deep Dives/Root/Backpropagation.md';
+			proposals.set('p1', proposal({}));
+			onGenerate = () => {
+				proposals.set('p1', { ...proposals.get('p1')!, status: 'accepted' });
+				files.set(path, '---\nparent: "[[Root]]"\n---\nOld body\n');
+			};
+
+			const outcome = await mod.regenerate({ proposalId: 'p1' });
+
+			expect(outcome.writtenPaths).toEqual([path]);
+			expect(files.get(path)).toContain('Fresh body about Backpropagation.');
+		});
+
+		it('refuses a rejected proposal', async () => {
+			proposals.set('p1', proposal({ status: 'rejected' }));
+
+			const outcome = await mod.regenerate({ proposalId: 'p1' });
+
+			expect(outcome.ok).toBe(false);
+			expect(generated).toEqual([]);
+		});
+
+		it('falls back to the parent proposal when the source note is not in the vault', async () => {
+			proposals.set('parent', proposal({ id: 'parent', topic: { ...proposal({}).topic, title: 'Gradient Descent' }, proposedPath: 'Deep Dives/Root/Gradient Descent.md', proposedContent: 'parent body' }));
+			proposals.set('child', proposal({ id: 'child', sourceNotePath: 'Deep Dives/Root/Gradient Descent.md' }));
+
+			const outcome = await mod.regenerate({ proposalId: 'child' });
+
+			expect(outcome.ok).toBe(true);
+			const prompt = vi.mocked(AIClient.prototype.complete).mock.calls.at(-1)?.[0] ?? '';
+			expect(prompt).toContain('parent body');
+		});
+	});
+});

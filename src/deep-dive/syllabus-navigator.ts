@@ -326,6 +326,17 @@ export function renderSyllabusContent(
 	return lines.join('\n');
 }
 
+/** An existing `synapse-nav` callout (either spelling): its header line and every following `>` line. */
+function navBlockPattern(): RegExp {
+	return new RegExp(`^> ${calloutHeaderSource(CALLOUT_TYPES.nav)}[^\\n]*(?:\\n>[^\\n]*)*\\n?`, 'm');
+}
+
+/** The note's `synapse-nav` callout, without its trailing newline; null when it has none. */
+export function findNavigationBlock(content: string): string | null {
+	const match = content.match(navBlockPattern());
+	return match ? match[0].replace(/\n$/, '') : null;
+}
+
 /**
  * Prepend or update the navigation block in a note's content.
  *
@@ -336,8 +347,7 @@ export function injectNavigationBlock(
 	content: string,
 	navBlock: string
 ): string {
-	// Pattern to match an existing nav block (callout lines starting with >)
-	const navPattern = new RegExp(`^> ${calloutHeaderSource(CALLOUT_TYPES.nav)}[^\\n]*(?:\\n>[^\\n]*)*\\n?`, 'm');
+	const navPattern = navBlockPattern();
 
 	if (navPattern.test(content)) {
 		return content.replace(navPattern, navBlock + '\n');
