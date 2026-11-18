@@ -445,6 +445,8 @@ export class DeepDiveModule implements FeatureModule {
 			scanOp.error(`Topic extraction failed -- ${msg}`);
 			return stop(`Topic extraction failed -- ${msg}`);
 		}
+		// Cancelled while the model was extracting: stop before a run or checkpoint exists.
+		if (scanOp.cancelled) return stop('Deep dive cancelled');
 
 		if (rootTopics.length === 0) {
 			scanOp.finish(withCacheReport('No topics found', [scanUse]));

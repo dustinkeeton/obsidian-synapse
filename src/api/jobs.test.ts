@@ -37,7 +37,7 @@ describe('JobRegistry (#624)', () => {
 			return gate.promise;
 		});
 
-		expect(jobs.get(id)).toMatchObject({ verb: 'scanFolder', status: 'running', progress: { message: 'Generating (2/5)', current: 2, total: 5 } });
+		expect(jobs.get(id)).toMatchObject({ ok: true, job: { verb: 'scanFolder', status: 'running', progress: { message: 'Generating (2/5)', current: 2, total: 5 } } });
 		gate.resolve(OK);
 		const waited = await jobs.wait(id);
 		expect(waited).toMatchObject({ ok: true, timedOut: false, job: { status: 'completed', result: OK } });
@@ -69,11 +69,23 @@ describe('JobRegistry (#624)', () => {
 			return gate.promise;
 		});
 
-		expect(jobs.cancel(id)).toEqual({ ok: true });
+		expect(jobs.cancel(id)).toEqual({ ok: true, stoppedOperations: 1 });
 		expect(handle?.cancelled).toBe(true);
 		gate.resolve({ ...OK, ok: false, error: 'Deep dive cancelled' });
 		expect((await jobs.wait(id)).job?.status).toBe('cancelled');
 		expect(jobs.cancel(id).ok).toBe(false);
+	});
+
+	it('finishes normally when a cancel stopped nothing, e.g. work after its last operation', async () => {
+		const gate = deferred<ApiResult>();
+		const id = jobs.start('deepDive.run', (jobId) => {
+			notifications.startOperation('Generating', jobOpId('gen', { jobId })).finish();
+			return gate.promise;
+		});
+
+		expect(jobs.cancel(id)).toEqual({ ok: true, stoppedOperations: 0 });
+		gate.resolve(OK);
+		expect((await jobs.wait(id)).job?.status).toBe('completed');
 	});
 
 	it('ends cancelled when the user presses Cancel on the toast', async () => {
@@ -96,7 +108,9 @@ describe('JobRegistry (#624)', () => {
 	});
 
 	it('reports unknown ids', async () => {
-		expect(jobs.get('nope')).toBeNull();
+		const missing = jobs.get('nope');
+		expect(missing).toMatchObject({ ok: false, job: null });
+		expect(missing.error).toContain('No job with id nope');
 		expect(await jobs.wait('nope')).toMatchObject({ ok: false, job: null });
 		expect(jobs.cancel('nope').ok).toBe(false);
 	});
@@ -107,7 +121,7 @@ describe('JobRegistry (#624)', () => {
 			return OK;
 		});
 		await jobs.wait(id);
-		expect(jobs.get(id)?.operations).toHaveLength(1);
+		expect(jobs.get(id).job?.operations).toHaveLength(1);
 		expect(jobs.list()[0].operations).toBeUndefined();
 	});
 
@@ -118,6 +132,7 @@ describe('JobRegistry (#624)', () => {
 		});
 		await jobs.wait(first);
 		now += FINISHED_JOB_TTL_MS + 1;
+		expect(jobs.get(first).ok).toBe(false);
 		expect(jobs.list()).toEqual([]);
 		expect(notifications.jobOps.list(first)).toEqual([]);
 

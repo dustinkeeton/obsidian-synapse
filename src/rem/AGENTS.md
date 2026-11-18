@@ -16,7 +16,7 @@ class RemModule {
   constructor(deps: ModuleDeps, shouldAutoAccept?: () => boolean)   // index.ts:54; #504 bundle (plugin, getSettings, notifications, checkpointManager, registrar, noteQueue); #228 getter default () => false
   onload(): Promise<void>
   onunload(): void
-  remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null>   // index.ts:138; takes the note's queue slot once (#585); postOp silences info notices + result toast + auto-accept notices
+  remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null>   // index.ts:137; takes the note's queue slot once (#585); postOp silences info notices + result toast + auto-accept notices
   remScanDirectory(target?: ScanTarget, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
   acceptProposal(id: string, acceptedMatchTexts: string[], options?: { silent?: boolean }): Promise<void>
@@ -104,7 +104,7 @@ interface RemSettings {
 ## Data Flow
 
 ```
-remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private scanNote core (index.ts:143)
+remScanNote(filePath, options?)   // noteQueue.run(filePath, ...) -> private scanNote core (index.ts:142)
   --> isExcluded? (isPathExcluded 'rem' + enrichment.excludeTags)
   --> notifications.trackInProgress('Finding links in <basename>', { kind: 'rem', target: filePath }) (#577; non-cancellable sidebar row, ended in finally) -> private scanIncludedNote (index.ts:170)
   --> gatherCandidates(file, content, cacheUse):

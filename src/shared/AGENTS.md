@@ -867,9 +867,9 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 - Status bar integration (shows active operation count)
 - In-progress registry (#577): `inProgress` lists running proposal-producing operations for the unified sidebar; opt-in per call via `startOperation(label, id, meta)` (cancellable rows) or `trackInProgress(label, meta)` (toast-less, non-cancellable rows)
 - Styling via `styles.css` classes (prefix `synapse-notice`), loaded/unloaded with the plugin
-- Secret redaction on every error path via `redactSecrets` — `error()`, `notifyError()`, and the operation `error()` `console.error` all route through `showErrorNotice`/`redactSecrets`. Source ref: `notifications.ts:328` (operation-error console sink), `notifications.ts:487` (`error()`), `notifications.ts:575` (`notifyError()`)
+- Secret redaction on every error path via `redactSecrets` — `error()`, `notifyError()`, and the operation `error()` `console.error` all route through `showErrorNotice`/`redactSecrets`. Source ref: `notifications.ts:328` (operation-error console sink), `notifications.ts:493` (`error()`), `notifications.ts:581` (`notifyError()`)
 - `info()` and `success()` accept optional `action?: NoticeAction` 3rd param — renders an action button on the toast (floors duration to 8s, then auto-dismiss)
-- `infoSticky(message, action)` — duration-0 dismissible action toast that stays up until the user clicks the action or clicks the toast; used by `UpdateChecker` for the "update available" prompt. Source ref: `notifications.ts:461`
+- `infoSticky(message, action)` — duration-0 dismissible action toast that stays up until the user clicks the action or clicks the toast; used by `UpdateChecker` for the "update available" prompt. Source ref: `notifications.ts:467`
 - `error(message)` — persistent (until clicked) error toast; clicking copies the redacted text to the clipboard. `notifyError(context, error)` wraps an error object + context label through the same sink
 - `OperationHandle.finish(message?, action?)` accepts optional `action?: NoticeAction` — completion toast includes a button that runs `action.onClick()` then hides the toast
 - `dispose()` — tears down every in-flight tracked operation (stops its `setInterval` + hides its notice, clears the map). Called from `main.ts` `onunload()` so disabling the plugin mid-operation never leaves an orphaned 400ms timer firing against a detached toast; also clears `inProgress`. Source ref: `notifications.ts:186`
@@ -947,7 +947,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `isTwitterUrl` | elaboration/proposer, enrichment/index |
 | `sanitizeUrl` | video/index, video/audio-extractor, transcription/duration-detector, transcription/youtube-captions; in-layer: content-fetcher (`fetchHtmlDocument`, `content-fetcher.ts:42`), tweet-fetcher, reddit-fetcher, url-classifier |
 | `sanitizePublicUrl` | illustrate/asset-writer (`illustrate/asset-writer.ts:36`), illustrate/linked-pages (`illustrate/linked-pages.ts:21`) |
-| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:195`), organize/index (`organize/index.ts:446,544,603`) |
+| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:195`), organize/index (`organize/index.ts:446,545,604`) |
 | `sanitizePath` | video/audio-extractor |
 | `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, image/index, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `parseFrontmatter` | enrichment/index, enrichment/enrichment-applier, tidy/index |

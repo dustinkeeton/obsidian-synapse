@@ -74,6 +74,7 @@ function fakeModules() {
 			getProposal: illustrate.get,
 			acceptProposal: vi.fn(async (id: string) => illustrate.set(id, 'accepted')),
 			rejectProposal: vi.fn(),
+			scanBlocker: (): string | null => null,
 		},
 		audio: {}, video: null, image: {}, summarize: {}, tidy: {}, intake: {},
 	};
@@ -209,7 +210,7 @@ describe('createSynapseApi (#623)', () => {
 		});
 
 		it('checks jobs verb arguments', async () => {
-			expect(api.jobs.get(42 as never)).toBeNull();
+			expect(api.jobs.get(42 as never)).toEqual({ ok: false, job: null, error: 'id must be a string' });
 			expect((await api.jobs.wait('job1', -5)).error).toBe('timeoutMs must be at least 0');
 			expect(api.jobs.cancel(undefined as never).error).toBe('id is required');
 		});
@@ -292,8 +293,8 @@ describe('createSynapseApi (#623)', () => {
 			});
 			const started = await api.scanFolder('rem', 'notes');
 			await scanStarted;
-			expect(api.jobs.get(started.jobId!)?.progress?.message).toBe('REM scanning');
-			expect(api.jobs.cancel(started.jobId!)).toEqual({ ok: true });
+			expect(api.jobs.get(started.jobId!).job?.progress?.message).toBe('REM scanning');
+			expect(api.jobs.cancel(started.jobId!)).toEqual({ ok: true, stoppedOperations: 1 });
 			release();
 			expect((await api.jobs.wait(started.jobId!)).job?.status).toBe('cancelled');
 		});
@@ -305,6 +306,26 @@ describe('createSynapseApi (#623)', () => {
 			expect((await api.scanFolder('tidy', 'notes')).error).toContain('disabled');
 			expect(api.jobs.list()).toEqual([]);
 			expect(scanFns.tidy).not.toHaveBeenCalled();
+		});
+
+		it('counts only new proposals for notes inside the scanned folder', async () => {
+			vi.mocked(scanFns.elaboration).mockImplementationOnce(async () => {
+				modules.elaboration.getPendingProposals.mockResolvedValue([
+					{ id: 'e1', sourceNotePath: NOTE, createdAt: 't', status: 'pending' },
+					{ id: 'mine', sourceNotePath: 'notes/sub/x.md', createdAt: 't', status: 'pending' },
+					{ id: 'other-job', sourceNotePath: 'elsewhere/y.md', createdAt: 't', status: 'pending' },
+				]);
+				return 1;
+			});
+			const job = await runJob(api.scanFolder('elaboration', 'notes'));
+			expect(job.result?.proposals).toEqual(['mine']);
+		});
+
+		it('refuses an illustrate scan that has nothing enabled to propose', async () => {
+			settings.illustrate.enabled = true;
+			modules.illustrate.scanBlocker = () => 'Illustrate has nothing to propose';
+			expect(await api.scanFolder('illustrate', 'notes')).toEqual({ ok: false, error: 'Illustrate has nothing to propose' });
+			expect(scanFns.illustrate).not.toHaveBeenCalled();
 		});
 
 		it('is available while any scan feature is on', () => {

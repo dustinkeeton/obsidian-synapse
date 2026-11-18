@@ -41,7 +41,7 @@ export interface ApiJob {
 	id: string;
 	/** The verb that started it, e.g. `deepDive.run`. */
 	verb: string;
-	/** `failed`: the verb failed, or one of its operations ended in an error. `cancelled`: via `jobs.cancel` or a toast / sidebar Cancel. */
+	/** `failed`: the verb failed, or one of its operations ended in an error. `cancelled`: one of its operations was stopped (`jobs.cancel`, or a toast / sidebar Cancel); a cancel that stopped nothing leaves the job to finish normally. */
 	status: ApiJobStatus;
 	startedAt: string;
 	finishedAt?: string;
@@ -53,6 +53,20 @@ export interface ApiJob {
 	error?: string;
 	/** Every operation the job started, in start order; omitted by `jobs.list`. */
 	operations?: { id: string; message: string; state: 'running' | 'done' | 'error' | 'cancelled'; current?: number; total?: number }[];
+}
+
+export interface ApiJobLookup {
+	ok: boolean;
+	job: ApiJob | null;
+	/** Bad id, or a job that was never started or has been dropped. */
+	error?: string;
+}
+
+export interface ApiJobCancel {
+	ok: boolean;
+	/** Operations stopped now; 0 means none was running, though any the job starts later are cancelled at once. */
+	stoppedOperations: number;
+	error?: string;
 }
 
 export interface ApiJobWait {
@@ -204,9 +218,9 @@ export interface SynapseApi {
 		regenerate(target: ApiRegenerateTarget): Promise<DeepDiveRunResult>;
 	};
 	jobs: {
-		get(id: string): ApiJob | null;
+		get(id: string): ApiJobLookup;
 		wait(id: string, timeoutMs?: number): Promise<ApiJobWait>;
-		cancel(id: string): { ok: boolean; error?: string };
+		cancel(id: string): ApiJobCancel;
 		/** Running and recently finished jobs, without their operations. */
 		list(): ApiJob[];
 	};

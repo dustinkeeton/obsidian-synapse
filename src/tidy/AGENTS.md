@@ -10,7 +10,7 @@ AI spelling correction and markdown formatting for notes with no content changes
 
 ```ts
 class TidyModule {
-  constructor(deps: ModuleDeps)        // index.ts:43; keeps plugin, getSettings, notifications, registrar, noteQueue (#483); checkpointManager not retained
+  constructor(deps: ModuleDeps)        // index.ts:44; keeps plugin, getSettings, notifications, registrar, noteQueue (#483); checkpointManager not retained
   onload(): Promise<void>
   onunload(): void
   scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>

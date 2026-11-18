@@ -17,11 +17,12 @@ class IllustrateModule {
   onload(): Promise<void>                                            // registers illustrate-current-note, illustrate-folder (openScanFolderPicker -> scanVault(scope))
   onunload(): void
   getPendingProposals(): Promise<IllustrateProposal[]>
+  scanBlocker(): string | null   // index.ts:190; NOTHING_ENABLED_MESSAGE when no photo provider and Mermaid off, else null; scanVault exits on it, api.scanFolder refuses with it (#624)
   getProposal(id: string): Promise<IllustrateProposal | null>   // index.ts:159; any status; api.proposals.accept reads it to confirm an accept applied (#623)
   illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast (info notice + no-op when no provider and Mermaid are enabled); with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch, placed INSIDE ctx.producedRegion when it is a callout; skipped while a run for the path is in flight, when a proposal is already pending, or when the region already holds a synapse-illustrate callout
-  scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:340; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
-  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:391
-  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:444; queued write
+  scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:345; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
+  resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:396
+  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:449; queued write
   rejectProposal(id: string): Promise<void>
 }
 
@@ -119,13 +120,13 @@ interface IllustrateSettings {
 ## Data Flow
 
 ```
-illustrateNote(path, ctx)   // post-op (#213) -> private illustrateFromContext (index.ts:291)
+illustrateNote(path, ctx)   // post-op (#213) -> private illustrateFromContext (index.ts:296)
   --> exclusions; wordCount(cachedRead) >= 80
-  --> notifications.trackInProgress('Illustrating <basename>', { kind: 'illustrate', target: path }) (#577; non-cancellable sidebar row, ended in finally) -> private buildFromContext (index.ts:319)
+  --> notifications.trackInProgress('Illustrating <basename>', { kind: 'illustrate', target: path }) (#577; non-cancellable sidebar row, ended in finally) -> private buildFromContext (index.ts:324)
   --> images = ctx.sourceImages; if fetchLinkedPages && ctx.sourceUrls && images < 3: += fetchLinkedPageImages(urls, { maxPages: maxLinkedPagesPerNote, maxImages: 12 - images })
   --> region = ctx.producedRegion kind 'callout' ? locateRegion(content, region) : none; region already has a synapse-illustrate callout (hasCallout, either spelling) -> null
   --> buildProposal(file, {}, images, region): analyzer sees ONLY the region's de-prefixed text; placements resolved with { within: region, insideContainers: true }; photo spots try SourceProvider(images) first (license 'Source page' must pass licenseFilter), then enabled repositories
-  --> dedupePhotos (#583, every buildProposal; private, index.ts:209; helpers spotFit :79, duplicateLosers :86; findPhoto/resolveItem take exclude?: ReadonlySet<string>): an image matched by several spots stays at the spot with the highest imageRelevance(query+caption+anchor), tie -> earliest placement line; losers re-resolve excluding every claimed fileUrl (next source image, then repositories) or drop
+  --> dedupePhotos (#583, every buildProposal; private, index.ts:214; helpers spotFit :79, duplicateLosers :86; findPhoto/resolveItem take exclude?: ReadonlySet<string>): an image matched by several spots stays at the spot with the highest imageRelevance(query+caption+anchor), tie -> earliest placement line; losers re-resolve excluding every claimed fileUrl (next source image, then repositories) or drop
   --> maybeAutoAccept; refreshView; errors -> notifyError (no operation toast, no confirm)
 
 illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoint(cp)
@@ -162,4 +163,4 @@ No feature-module imports. Mobile-safe: `requestUrl` only, no Node built-ins.
 
 ## Unresolved Links (#581)
 
-- Accepted item captions (index.ts:455) and built blocks (index.ts:473) pass through `stripUnresolvedLinks` (captions are unlinked before the `alreadyInserted` check so dedup stays stable); `![[asset]]` embeds and Mermaid fences are untouched.
+- Accepted item captions (index.ts:460) and built blocks (index.ts:478) pass through `stripUnresolvedLinks` (captions are unlinked before the `alreadyInserted` check so dedup stays stable); `![[asset]]` embeds and Mermaid fences are untouched.

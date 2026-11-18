@@ -203,7 +203,7 @@ api.capabilities();          // verbs, their arguments, and which features are o
 await api.status();          // versions, each feature's provider/model/effort and key source, running work
 
 const { jobId } = await api.deepDive.run('Topics/Rust.md', { depth: 2, maxNotes: 10 });
-api.jobs.get(jobId);                      // status and progress, e.g. "Generating deep dive (3/10)"
+api.jobs.get(jobId).job;                  // status and progress, e.g. "Generating deep dive (3/10)"
 const { job } = await api.jobs.wait(jobId, 60000);   // up to a minute; check job.status and job.result
 api.jobs.cancel(jobId);                   // same as pressing Cancel on its toast
 await api.deepDive.regenerate('Deep Dives/Rust/Ownership.md');   // rewrite one note's body, keeping its frontmatter, navigation and enrichment sections

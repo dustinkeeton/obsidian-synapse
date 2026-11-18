@@ -1,6 +1,6 @@
 import { generateId, redactSecrets } from '../shared';
 import type { JobOperation, NotificationManager } from '../shared';
-import type { ApiJob, ApiJobStatus, ApiJobWait, ApiResult } from './types';
+import type { ApiJob, ApiJobCancel, ApiJobLookup, ApiJobStatus, ApiJobWait, ApiResult } from './types';
 
 /** Finished jobs kept for `get` / `wait`; the oldest beyond this are dropped. */
 export const MAX_FINISHED_JOBS = 50;
@@ -18,6 +18,10 @@ interface JobRecord {
 	result?: ApiResult;
 	error?: string;
 	done: Promise<void>;
+}
+
+function unknownJob(id: string): string {
+	return `No job with id ${id} (finished jobs are kept for an hour, the last ${MAX_FINISHED_JOBS})`;
 }
 
 function failedResult(error: string): ApiResult {
@@ -46,9 +50,10 @@ export class JobRegistry {
 		return id;
 	}
 
-	get(id: string): ApiJob | null {
+	get(id: string): ApiJobLookup {
+		this.prune();
 		const record = this.jobs.get(id);
-		return record ? this.snapshot(record) : null;
+		return record ? { ok: true, job: this.snapshot(record) } : { ok: false, job: null, error: unknownJob(id) };
 	}
 
 	list(): ApiJob[] {
@@ -58,8 +63,9 @@ export class JobRegistry {
 
 	/** Resolves when the job finishes or `timeoutMs` (default 30 s, at most 10 min) passes. */
 	async wait(id: string, timeoutMs = DEFAULT_WAIT_MS): Promise<ApiJobWait> {
+		this.prune();
 		const record = this.jobs.get(id);
-		if (!record) return { ok: false, timedOut: false, job: null, error: `No job with id ${id}` };
+		if (!record) return { ok: false, timedOut: false, job: null, error: unknownJob(id) };
 		const limit = Math.min(Math.max(0, timeoutMs), MAX_WAIT_MS);
 		let timer: number | undefined;
 		const timedOut = await Promise.race([
@@ -70,19 +76,22 @@ export class JobRegistry {
 		return { ok: true, timedOut, job: this.snapshot(record) };
 	}
 
-	/** Request cancellation; the job ends `cancelled` once its operations stop. */
-	cancel(id: string): { ok: boolean; error?: string } {
+	/**
+	 * Cancel the job's running operations now, and any it starts later. The job ends `cancelled`
+	 * only if an operation actually stopped; work outside its operations (e.g. deep dive's
+	 * auto-accept after generation) runs to the end.
+	 */
+	cancel(id: string): ApiJobCancel {
 		const record = this.jobs.get(id);
-		if (!record) return { ok: false, error: `No job with id ${id}` };
-		if (record.status !== 'running') return { ok: false, error: `Job ${id} already ${record.status}` };
-		this.notifications.cancelJob(id);
-		return { ok: true };
+		if (!record) return { ok: false, stoppedOperations: 0, error: unknownJob(id) };
+		if (record.status !== 'running') return { ok: false, stoppedOperations: 0, error: `Job ${id} already ${record.status}` };
+		return { ok: true, stoppedOperations: this.notifications.cancelJob(id) };
 	}
 
 	private finish(record: JobRecord, result: ApiResult): void {
 		const ops = this.notifications.jobOps.list(record.id);
 		const failedOp = ops.find((op) => op.state === 'error');
-		if (this.notifications.jobOps.isCancelled(record.id) || ops.some((op) => op.state === 'cancelled')) {
+		if (ops.some((op) => op.state === 'cancelled')) {
 			record.status = 'cancelled';
 		} else if (!result.ok) {
 			record.status = 'failed';

@@ -184,6 +184,17 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(confirm.mock.calls[0][0]).toContain('(depth 1)');
 		});
 
+		it('stops before creating a run when cancelled during topic extraction', async () => {
+			const startOperation = (mod as unknown as { notifications: { startOperation: ReturnType<typeof vi.fn> } }).notifications.startOperation;
+			startOperation.mockImplementationOnce(() => ({ progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled: true }));
+
+			const outcome = await mod.run('notes/Root.md', { depth: 1 });
+
+			expect(outcome).toMatchObject({ status: 'failed', message: 'Deep dive cancelled' });
+			expect(savedRun).toBeNull();
+			expect(checkpoints.create).not.toHaveBeenCalled();
+		});
+
 		it('reports a missing note without starting a run', async () => {
 			const outcome = await mod.run('notes/Missing.md');
 

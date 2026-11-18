@@ -9,7 +9,7 @@ import { buildStatus, featureCapabilities } from './status';
 import { validateArgs } from './validate';
 import { JobRegistry } from './jobs';
 import type {
-	ApiJobStart, ApiRegenerateTarget, ApiResult, ApiScanFeature, DeepDiveRunResult, ScanFolderResult, SynapseApi, SynapseApiDeps,
+	ApiJobStart, ApiProposal, ApiRegenerateTarget, ApiResult, ApiScanFeature, DeepDiveRunResult, ScanFolderResult, SynapseApi, SynapseApiDeps,
 } from './types';
 import { API_VERSION } from './types';
 
@@ -19,7 +19,7 @@ export type {
 	SynapseApi, SynapseApiDeps, ApiResult, DeepDiveRunResult, ScanFolderResult, ApiScanFeature, ApiScanOptions,
 	ApiDeepDiveRunOptions, ApiRegenerateTarget, ApiProposal, ApiProposalList, ApiAcceptOptions, ApiKeySource, ApiFeatureCapability,
 	ApiParamSpec, ApiVerbSpec, ApiCapabilities, ApiAIStatus, ApiCheckpointStatus, ApiStatus,
-	ApiJob, ApiJobStart, ApiJobStatus, ApiJobWait,
+	ApiJob, ApiJobCancel, ApiJobLookup, ApiJobStart, ApiJobStatus, ApiJobWait,
 } from './types';
 export { JobRegistry, MAX_FINISHED_JOBS, FINISHED_JOB_TTL_MS, DEFAULT_WAIT_MS, MAX_WAIT_MS } from './jobs';
 
@@ -45,6 +45,13 @@ const FEATURE_LABEL: Record<ApiScanFeature | 'deepDive', string> = {
 
 function failure(error: string): ApiResult {
 	return { ok: false, error: redactSecrets(error), written: [], proposals: [], cacheUse: null };
+}
+
+/** Whether a note lies in a scan's folder ('' = vault root), at any depth or only its top level. */
+function isInScanScope(notePath: string, folder: string, recursive: boolean): boolean {
+	const parent = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '';
+	if (!recursive) return parent === folder;
+	return folder === '' || notePath.startsWith(`${folder}/`);
 }
 
 function jobRefused(error: string): ApiJobStart {
@@ -93,8 +100,7 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 		return file instanceof TFile && file.extension === 'md' ? file : null;
 	};
 
-	const pendingIds = async (kind: ProposalKind | undefined): Promise<Set<string>> =>
-		kind ? new Set((await adapters[kind].list()).map((p) => p.id)) : new Set();
+	const pending = async (kind: ProposalKind | undefined): Promise<ApiProposal[]> => (kind ? adapters[kind].list() : []);
 
 	return {
 		version: API_VERSION,
@@ -114,7 +120,9 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 		}, asIs),
 
 		scanFolder: async (feature, folder, options) => {
-			const refused = validateArgs('scanFolder', [feature, folder, options]) ?? disabled(feature, FEATURE_LABEL[feature]);
+			const refused = validateArgs('scanFolder', [feature, folder, options])
+				?? disabled(feature, FEATURE_LABEL[feature])
+				?? (feature === 'illustrate' ? modules.illustrate.scanBlocker() : null);
 			if (refused) return jobRefused(refused);
 			const path = normalizePath(folder || '/');
 			const root = path === '/' || path === '';
@@ -122,14 +130,16 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 			const scan = deps.scanFns[feature];
 			const kind = SCAN_PROPOSAL_KIND[feature];
 			const jobId = jobs.start('scanFolder', (id) => settle<ScanFolderResult>(async () => {
-				const before = await pendingIds(kind);
-				const count = await scan({ folder: root ? undefined : path, recursive: options?.recursive ?? true, jobId: id }, true);
-				const after = await pendingIds(kind);
+				const recursive = options?.recursive ?? true;
+				const before = new Set((await pending(kind)).map((p) => p.id));
+				const count = await scan({ folder: root ? undefined : path, recursive, jobId: id }, true);
+				const inScope = (notePath: string) => isInScanScope(notePath, root ? '' : path, recursive);
+				const created = (await pending(kind)).filter((p) => !before.has(p.id) && inScope(p.notePath));
 				return {
 					ok: true,
 					message: `${FEATURE_LABEL[feature]} scan finished`,
 					written: null,
-					proposals: [...after].filter((pid) => !before.has(pid)),
+					proposals: created.map((p) => p.id),
 					cacheUse: null,
 					count: typeof count === 'number' ? count : null,
 				};
@@ -160,14 +170,17 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 		},
 
 		jobs: {
-			get: (id) => (validateArgs('jobs.get', [id]) ? null : jobs.get(id)),
+			get: (id) => {
+				const invalid = validateArgs('jobs.get', [id]);
+				return invalid ? { ok: false, job: null, error: invalid } : jobs.get(id);
+			},
 			wait: async (id, timeoutMs) => {
 				const invalid = validateArgs('jobs.wait', [id, timeoutMs]);
 				return invalid ? { ok: false, timedOut: false, job: null, error: invalid } : jobs.wait(id, timeoutMs);
 			},
 			cancel: (id) => {
 				const invalid = validateArgs('jobs.cancel', [id]);
-				return invalid ? { ok: false, error: invalid } : jobs.cancel(id);
+				return invalid ? { ok: false, stoppedOperations: 0, error: invalid } : jobs.cancel(id);
 			},
 			list: () => jobs.list(),
 		},

@@ -60,7 +60,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'scanFolder',
-		description: 'Start one feature\'s folder scan as a job, without the confirmation prompt; returns { ok, jobId }',
+		description: 'Start one feature\'s folder scan as a job, without the confirmation prompt; returns { ok, jobId }. Job result: { ok, message, error, written: null, proposals (new ids for notes in the folder), cacheUse: null, count }',
 		params: [
 			{
 				name: 'feature',
@@ -86,7 +86,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'deepDive.run',
-		description: 'Start a deep dive on a note as a job: extract topics and generate child-note proposals, with no depth picker or confirmation; returns { ok, jobId }',
+		description: 'Start a deep dive on a note as a job: extract topics and generate child-note proposals, with no depth picker or confirmation; returns { ok, jobId }. Job result: { ok, message, error, written (notes created under auto-accept), proposals, cacheUse, runId }',
 		params: [
 			notePath,
 			{
@@ -127,7 +127,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'jobs.get',
-		description: 'A job\'s status, progress, operations, and its result once finished; null for an unknown id',
+		description: 'A job\'s status, progress, operations, and its result once finished; returns { ok, job, error } (ok: false for a bad, unknown or expired id)',
 		params: [jobId],
 		long: false,
 	},
@@ -147,7 +147,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'jobs.cancel',
-		description: 'Cancel a running job, the same as pressing Cancel on its toast',
+		description: 'Cancel a running job, the same as pressing Cancel on its toast; returns { ok, stoppedOperations }. Work outside its operations (deep dive auto-accept) still finishes',
 		params: [jobId],
 		long: false,
 	},

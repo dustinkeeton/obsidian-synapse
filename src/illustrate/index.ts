@@ -186,6 +186,11 @@ export class IllustrateModule implements FeatureModule {
 		return null;
 	}
 
+	/** Why a folder scan would produce nothing, before it starts; null when it can run. The public API refuses the scan with it (#624). */
+	scanBlocker(): string | null {
+		return this.hasOutputKind() ? null : NOTHING_ENABLED_MESSAGE;
+	}
+
 	/** False when a run has no output kind it can produce (no photo provider, Mermaid off). */
 	private hasOutputKind(): boolean {
 		const { mermaid } = this.getSettings().illustrate;

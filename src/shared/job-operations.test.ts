@@ -62,7 +62,7 @@ describe('NotificationManager job operations', () => {
 		const other = manager.startOperation('B', 'b@job:j2');
 		const untagged = manager.startOperation('C', 'c');
 
-		manager.cancelJob('j1');
+		expect(manager.cancelJob('j1')).toBe(1);
 
 		expect(mine.cancelled).toBe(true);
 		expect(other.cancelled).toBe(false);
