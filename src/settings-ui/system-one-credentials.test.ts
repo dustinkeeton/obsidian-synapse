@@ -38,7 +38,7 @@ describe('renderSystemOneCredentials (#558)', () => {
 		renderSystemOneCredentials(body, ctx);
 		expect(rowNames()).toEqual(['System 1 decisions', 'TypeSafe API key', 'Decision model', 'Confidence floor']);
 		const keyRow = Setting.instances[1];
-		expect(keyRow.addButton).toHaveBeenCalledTimes(1);
+		expect(keyRow.buttons).toHaveLength(1);
 		const children = Array.from(keyRow.settingEl.children) as unknown as StubEl[];
 		expect(children.filter((c) => c.classList.contains('synapse-credential-extras'))).toHaveLength(1);
 	});

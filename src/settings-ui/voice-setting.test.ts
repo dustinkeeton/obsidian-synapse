@@ -60,7 +60,7 @@ describe('renderVoiceSetting (#540)', () => {
 
 		expect(body.children).toHaveLength(1);
 		expect(Setting.instances.map((s) => s.name)).toEqual(['Voice']);
-		expect(Setting.instances[0].setDesc).toHaveBeenCalledWith(VOICE_DESC);
+		expect(Setting.instances[0].desc).toBe(VOICE_DESC);
 		expect(walkEls(card)).toContain(Setting.instances[0].settingEl);
 		expect(classesOf(select)).toContain('synapse-voice-select');
 		expect((select.children as unknown as StubEl[]).map((o) => o.value)).toEqual(['neutral', 'match-note', 'first-person', 'custom']);

@@ -636,7 +636,7 @@ No npm runtime dependencies. Uses Obsidian `requestUrl`, `execFile` (argument ar
 |-----------|------|
 | Config | `vitest.config.ts` |
 | Setup | `src/__test-utils__/setup.ts` |
-| Obsidian mock | `src/__mocks__/obsidian.ts` (`SuggestModal` stubs `scope.register`/`unregister` + `setInstructions` as `vi.fn()`, `:318-319`) |
+| Obsidian mock | `src/__mocks__/obsidian.ts` (`SuggestModal` stubs `scope.register`/`unregister` + `setInstructions` as `vi.fn()`, `:320-321`; stub-element, `Notice` and `Setting` / `ToggleComponent` / `ButtonComponent` methods are plain functions that record state, not spies, #635) |
 | Mock factories | `src/__test-utils__/mock-factories.ts` |
 | Test files | `src/**/*.test.ts` |
 | Lint config | `eslint.config.mjs` (flat, type-aware) |
