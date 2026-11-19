@@ -28,6 +28,11 @@ function isDeepDiveRun(v: unknown): v is DeepDiveRun {
 	);
 }
 
+/** A run that stopped at its note cap with topics still queued (#625). */
+function isCapped(run: DeepDiveRun): boolean {
+	return run.endReason === 'cap' && (run.pending?.tasks.length ?? 0) > 0;
+}
+
 /** A run id read back from stored proposals or checkpoints becomes a file name; no separators or dots. */
 const isSafeRunId = (id: string): boolean => /^[A-Za-z0-9_-]+$/.test(id);
 
@@ -37,6 +42,9 @@ const isSafeRunId = (id: string): boolean => /^[A-Za-z0-9_-]+$/.test(id);
  * Runs live in {proposalFolderPath}/runs/.
  */
 export class DeepDiveStore {
+	/** Ids of capped runs in `folder`, built from every run file once, then kept current by `saveRun`. */
+	private cappedIds: { folder: string; ids: Set<string> } | null = null;
+
 	constructor(
 		private app: App,
 		private getSettings: () => SynapseSettings
@@ -166,12 +174,33 @@ export class DeepDiveStore {
 		await ensureFolder(this.app, this.runFolder);
 		const path = normalizePath(`${this.runFolder}/${run.id}.json`);
 		await this.app.vault.adapter.write(path, JSON.stringify(run, null, 2));
+		if (this.cappedIds?.folder === this.runFolder) {
+			if (isCapped(run)) this.cappedIds.ids.add(run.id);
+			else this.cappedIds.ids.delete(run.id);
+		}
 	}
 
 	async loadRun(id: string): Promise<DeepDiveRun | null> {
 		if (!isSafeRunId(id)) return null;
 		const path = normalizePath(`${this.runFolder}/${id}.json`);
 		return readJsonFile(this.app.vault.adapter, path, isDeepDiveRun);
+	}
+
+	/** Capped runs (#625), reading only their files after the first call. */
+	async loadCappedRuns(): Promise<DeepDiveRun[]> {
+		if (this.cappedIds?.folder !== this.runFolder) {
+			const folder = this.runFolder;
+			const ids = new Set((await this.loadAllRuns()).filter(isCapped).map(run => run.id));
+			this.cappedIds = { folder, ids };
+		}
+		const { ids } = this.cappedIds;
+		const runs: DeepDiveRun[] = [];
+		for (const id of [...ids]) {
+			const run = await this.loadRun(id);
+			if (run && isCapped(run)) runs.push(run);
+			else ids.delete(id);
+		}
+		return runs;
 	}
 
 	async loadAllRuns(): Promise<DeepDiveRun[]> {

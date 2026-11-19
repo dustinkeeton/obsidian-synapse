@@ -23,7 +23,7 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 **Impact**:
 - The response cache stores each reply's metadata, so a cache replay reports the original values with `cached: true`.
 - A capped run stays listed (sidebar banner, `status().continuableDeepDives`) until it is continued or its remaining topics are discarded.
-- A continue pass restarts the cap count; the run's id, proposals and stats carry on.
+- A continue pass restarts the cap count; the run's id, proposals and stats carry on. Auto-accept on a continue covers only that pass's proposals, so ones left pending for review stay pending.
 
 ---
 

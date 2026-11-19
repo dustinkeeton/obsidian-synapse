@@ -23,19 +23,20 @@ Exported from `index.ts`:
 interface AIRequestOptions {                          // ai-client.ts:24; type re-exported from the barrel (#527)
   bypassCache?: boolean                               // forces fresh dispatch for "regenerate"
   onCacheHit?: () => void                             // #527; called only when the response is replayed from the cache (never for a dispatch, a bypass, or a coalesced join)
-  model?: string                                      // ai-client.ts:34; per-call model (e.g. image.visionModel) on the feature's resolved provider; chat() replaces resolveAIConfig(settings, feature).model with it and re-clamps effort via effortFor (ai-client.ts:399-401), keys the cache on it, and threads it through dispatch() to every provider call — settings.ai.model is never mutated
+  model?: string                                      // ai-client.ts:34; per-call model (e.g. image.visionModel) on the feature's resolved provider; chat() replaces resolveAIConfig(settings, feature).model with it and re-clamps effort via effortFor (ai-client.ts:404-406), keys the cache on it, and threads it through dispatch() to every provider call — settings.ai.model is never mutated
   onResponse?: (info: AIResponseInfo) => void         // ai-client.ts:36; #625; called on every returned reply (dispatch, bypass, coalesced join, cache replay), never on a throw (truncation included)
 }
 interface AIResponseInfo {                            // ai-client.ts:46; #625; barrel type export
   provider: AIProvider
   model: string                                       // the wire model id (resolveModelId), e.g. claude-opus-5-5
   stopReason?: string                                 // provider's own value: OpenAI finish_reason, Anthropic stop_reason, Gemini finishReason, Ollama done_reason
-  usage?: AIUsage                                     // { inputTokens?, outputTokens? } (ai-client.ts:40); absent when the provider reported neither
+  usage?: AIUsage                                     // { inputTokens?, outputTokens? } (ai-client.ts:40); absent when the provider reported neither; outputTokens includes reasoning (Gemini: candidatesTokenCount + thoughtsTokenCount)
   cached?: boolean                                    // true on a cache replay; stopReason/usage are then the original dispatch's (the cache stores reply + meta)
+  joined?: boolean                                    // true when the call joined an identical in-flight request; usage is that request's, so summing would count it twice
 }
-function replyMeta(provider: AIProvider, json: unknown): { stopReason?; usage? }   // ai-client.ts:77; barrel export; reads the fields above from a parsed provider response
+function replyMeta(provider: AIProvider, json: unknown): { stopReason?; usage? }   // ai-client.ts:81; barrel export; reads the fields above from a parsed provider response
 class AIClient {
-  constructor(getSettings: () => SynapseSettings, feature?: AIFeatureId)   // ai-client.ts:375; feature selects ai.overrides[feature]
+  constructor(getSettings: () => SynapseSettings, feature?: AIFeatureId)   // ai-client.ts:380; feature selects ai.overrides[feature]
   complete(prompt: string, systemPrompt?: string, opts?: AIRequestOptions): Promise<string>
   chat(messages: ChatMessage[], opts?: AIRequestOptions): Promise<string>   // providers: openai | anthropic | gemini | ollama
 }

@@ -943,7 +943,7 @@ describe('AIClient — response info (#625)', () => {
 		expect(onResponse).toHaveBeenCalledWith({ provider: 'anthropic', model: 'claude-opus-5-5', stopReason: 'end_turn' });
 	});
 
-	it('replays the original info, marked cached, on a cache hit and on a coalesced join', async () => {
+	it('marks a coalesced join as joined and a cache replay as cached, with the original info', async () => {
 		const settings = makeSettings((s) => { s.ai.provider = 'openai'; s.ai.model = 'gpt-6-astra'; s.ai.apiKey = 'k'; s.ai.cacheResponses = true; });
 		mockRequestUrl.mockResolvedValue(ok({ choices: [{ message: { content: 'hi' }, finish_reason: 'stop' }] }));
 		const client = new AIClient(() => settings);
@@ -956,8 +956,34 @@ describe('AIClient — response info (#625)', () => {
 
 		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
 		expect(first).toHaveBeenCalledWith({ provider: 'openai', model: 'gpt-6-astra', stopReason: 'stop' });
-		expect(joined).toHaveBeenCalledWith({ provider: 'openai', model: 'gpt-6-astra', stopReason: 'stop' });
+		expect(joined).toHaveBeenCalledWith({ provider: 'openai', model: 'gpt-6-astra', stopReason: 'stop', joined: true });
 		expect(replayed).toHaveBeenCalledWith({ provider: 'openai', model: 'gpt-6-astra', stopReason: 'stop', cached: true });
+	});
+
+	it('reports a bypassed request as a fresh dispatch', async () => {
+		const settings = makeSettings((s) => { s.ai.provider = 'openai'; s.ai.model = 'gpt-6-astra'; s.ai.apiKey = 'k'; s.ai.cacheResponses = true; });
+		mockRequestUrl.mockResolvedValue(ok({ choices: [{ message: { content: 'hi' }, finish_reason: 'stop' }] }));
+		const client = new AIClient(() => settings);
+		await client.chat(QUESTION);
+		const onResponse = vi.fn();
+
+		await client.chat(QUESTION, { bypassCache: true, onResponse });
+
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+		expect(onResponse).toHaveBeenCalledWith({ provider: 'openai', model: 'gpt-6-astra', stopReason: 'stop' });
+	});
+
+	it('counts Gemini thinking tokens as output, like the other providers', async () => {
+		const settings = makeSettings((s) => { s.ai.provider = 'gemini'; s.ai.model = 'gemini-4-argon'; s.ai.apiKey = 'k'; });
+		mockRequestUrl.mockResolvedValue(ok({
+			candidates: [{ content: { parts: [{ text: 'hi' }] }, finishReason: 'STOP' }],
+			usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 3, thoughtsTokenCount: 40 },
+		}));
+		const onResponse = vi.fn();
+
+		await new AIClient(() => settings).chat(QUESTION, { onResponse });
+
+		expect(onResponse).toHaveBeenCalledWith(expect.objectContaining({ usage: { inputTokens: 12, outputTokens: 43 } }));
 	});
 
 	it('does not report a reply that was refused for truncation', async () => {

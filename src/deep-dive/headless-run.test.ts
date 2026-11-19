@@ -284,6 +284,24 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(savedRun?.endReason).toBe('cap');
 		});
 
+		it('auto-accepts only the proposals this pass generates', async () => {
+			const first = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1, autoAccept: false });
+			const accept = vi.spyOn(mod, 'acceptProposal').mockResolvedValue(true);
+
+			const outcome = await mod.continueRun(first.runId!, { autoAccept: true });
+
+			expect(accept.mock.calls.map((c) => c[0])).toEqual(outcome.proposalIds);
+			expect(accept.mock.calls.map((c) => c[0])).not.toContain(first.proposalIds[0]);
+		});
+
+		it('toasts each refusal, since the toast and sidebar callers ignore the outcome', async () => {
+			const info = (mod as unknown as { notifications: { info: ReturnType<typeof vi.fn> } }).notifications.info;
+
+			await mod.continueRun('nope');
+
+			expect(info).toHaveBeenCalledWith('No deep dive run with id nope');
+		});
+
 		it('refuses a run that did not stop at its cap', async () => {
 			const first = await mod.run('notes/Root.md', { depth: 1 });
 

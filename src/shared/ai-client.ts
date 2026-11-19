@@ -36,7 +36,7 @@ export interface AIRequestOptions {
 	onResponse?: (info: AIResponseInfo) => void;
 }
 
-/** Token counts as the provider reported them; absent fields were not reported. */
+/** Token counts as the provider reported them; absent fields were not reported. `outputTokens` includes reasoning tokens for every provider (Gemini's `thoughtsTokenCount` is added in). */
 export interface AIUsage {
 	inputTokens?: number;
 	outputTokens?: number;
@@ -51,6 +51,8 @@ export interface AIResponseInfo {
 	usage?: AIUsage;
 	/** True when the reply was replayed from the response cache; `stopReason` and `usage` are the original dispatch's. */
 	cached?: boolean;
+	/** True when this call joined an identical request already in flight; `usage` is that request's, so don't count it twice. */
+	joined?: boolean;
 }
 
 /** A reply's text with its stop reason and usage, as read from a provider response. */
@@ -64,10 +66,12 @@ function num(v: unknown): number | undefined {
 	return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-function usageOf(input: unknown, output: unknown): AIUsage | undefined {
+function usageOf(input: unknown, output: unknown, reasoning?: unknown): AIUsage | undefined {
 	const usage: AIUsage = {};
 	const i = num(input);
-	const o = num(output);
+	const visible = num(output);
+	const thoughts = num(reasoning);
+	const o = visible === undefined ? undefined : visible + (thoughts ?? 0);
 	if (i !== undefined) usage.inputTokens = i;
 	if (o !== undefined) usage.outputTokens = o;
 	return i === undefined && o === undefined ? undefined : usage;
@@ -87,7 +91,8 @@ export function replyMeta(provider: AIProvider, json: unknown): Omit<AIReply, 't
 			return { stopReason: str(r.stop_reason), usage: usageOf(field(r.usage, 'input_tokens'), field(r.usage, 'output_tokens')) };
 		case 'gemini': {
 			const candidate: unknown = Array.isArray(r.candidates) ? (r.candidates as unknown[])[0] : undefined;
-			return { stopReason: str(field(candidate, 'finishReason')), usage: usageOf(field(r.usageMetadata, 'promptTokenCount'), field(r.usageMetadata, 'candidatesTokenCount')) };
+			const meta = r.usageMetadata;
+			return { stopReason: str(field(candidate, 'finishReason')), usage: usageOf(field(meta, 'promptTokenCount'), field(meta, 'candidatesTokenCount'), field(meta, 'thoughtsTokenCount')) };
 		}
 		case 'ollama':
 			return { stopReason: str(r.done_reason), usage: usageOf(r.prompt_eval_count, r.eval_count) };
@@ -412,12 +417,13 @@ export class AIClient {
 		const cacheable = ai.cacheResponses === true;
 		const bypass = opts?.bypassCache === true;
 		const wireModel = resolveModelId(cfg.provider, cfg.model);
-		const deliver = (reply: AIReply, cached: boolean): string => {
+		const deliver = (reply: AIReply, via: 'dispatch' | 'cache' | 'join'): string => {
 			if (opts?.onResponse) {
 				const info: AIResponseInfo = { provider: cfg.provider, model: wireModel };
 				if (reply.stopReason !== undefined) info.stopReason = reply.stopReason;
 				if (reply.usage) info.usage = { ...reply.usage };
-				if (cached) info.cached = true;
+				if (via === 'cache') info.cached = true;
+				if (via === 'join') info.joined = true;
 				opts.onResponse(info);
 			}
 			return reply.text;
@@ -428,7 +434,7 @@ export class AIClient {
 			const cached = this.cacheGet(key);
 			if (cached !== undefined) {
 				opts?.onCacheHit?.();
-				return deliver(cached, true);
+				return deliver(cached, 'cache');
 			}
 		}
 
@@ -437,7 +443,7 @@ export class AIClient {
 		if (!bypass) {
 			const existing = this.inFlight.get(key);
 			if (existing) {
-				return existing.then((reply) => deliver(reply, false));
+				return existing.then((reply) => deliver(reply, 'join'));
 			}
 		}
 
@@ -451,7 +457,7 @@ export class AIClient {
 		});
 
 		if (bypass) {
-			return dispatchPromise.then((reply) => deliver(reply, false));
+			return dispatchPromise.then((reply) => deliver(reply, 'dispatch'));
 		}
 
 		// Register for coalescing and clear the entry once settled. The cleanup is
@@ -462,7 +468,7 @@ export class AIClient {
 			if (this.inFlight.get(key) === dispatchPromise) {
 				this.inFlight.delete(key);
 			}
-		}).then((reply) => deliver(reply, false));
+		}).then((reply) => deliver(reply, 'dispatch'));
 	}
 
 	/**

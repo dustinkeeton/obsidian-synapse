@@ -190,6 +190,27 @@ describe('DeepDiveStore', () => {
 		});
 	});
 
+	describe('loadCappedRuns (#625)', () => {
+		const run = (id: string, overrides: Partial<DeepDiveRun> = {}): DeepDiveRun => ({
+			id, rootNotePath: 'notes/root.md', maxDepth: 2, qualityThreshold: 0.4, proposalIds: [],
+			stats: { totalProposals: 1, byDepth: {}, earlyTerminations: 0 }, createdAt: '2026-11-01T00:00:00.000Z', status: 'completed',
+			...overrides,
+		});
+		const capped = { endReason: 'cap' as const, pending: { tasks: [{ topic: makeProposal().topic, depth: 0, ancestorTopics: [] }], processedCount: 1 } };
+
+		it('reads every run once, then only the capped ones, tracking saves', async () => {
+			await store.saveRun(run('a', capped));
+			await store.saveRun(run('b', { endReason: 'exhausted' }));
+			expect((await store.loadCappedRuns()).map((r) => r.id)).toEqual(['a']);
+
+			mockAdapter.read.mockClear();
+			await store.saveRun(run('c', capped));
+			await store.saveRun(run('a', { endReason: 'exhausted' }));
+			expect((await store.loadCappedRuns()).map((r) => r.id)).toEqual(['c']);
+			expect(mockAdapter.read.mock.calls.map((c) => String(c[0]))).toEqual(['.synapse/deep-dive/runs/c.json']);
+		});
+	});
+
 	describe('deleteAllProposals', () => {
 		it('removes all proposals', async () => {
 			await store.saveProposal(makeProposal({ id: 'p1' }));

@@ -532,9 +532,9 @@ export class DeepDiveModule implements FeatureModule {
 
 	/** Capped runs whose remaining topics can still be generated (#625), newest first. */
 	async listContinuableRuns(): Promise<ContinuableDeepDiveRun[]> {
-		const runs = await this.store.loadAllRuns();
+		const runs = await this.store.loadCappedRuns();
 		return runs
-			.filter(run => run.endReason === 'cap' && (run.pending?.tasks.length ?? 0) > 0 && !this.continuing.has(run.id))
+			.filter(run => !this.continuing.has(run.id))
 			.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 			.map(run => ({
 				runId: run.id,
@@ -547,19 +547,24 @@ export class DeepDiveModule implements FeatureModule {
 
 	/**
 	 * Generate the topics a capped run had left (#625), under a fresh cap: `options.maxNotes`, else the
-	 * run's own. Toasts like a run; `options.autoAccept` overrides the run's setting for this pass.
+	 * run's own. Toasts like a run; auto-accept (`options.autoAccept`, else the run's setting) covers only
+	 * the proposals this pass generates. Each refusal is toasted, since the toast and sidebar ignore the outcome.
 	 */
 	async continueRun(runId: string, options: Omit<DeepDiveRunOptions, 'depth'> = {}): Promise<DeepDiveOutcome> {
+		const refuse = (message: string): DeepDiveOutcome => {
+			this.notifications.info(message);
+			return failedOutcome(message);
+		};
 		const run = await this.store.loadRun(runId);
-		if (!run) return failedOutcome(`No deep dive run with id ${runId}`);
-		if (this.continuing.has(run.id)) return failedOutcome('This deep dive is already continuing');
+		if (!run) return refuse(`No deep dive run with id ${runId}`);
+		if (this.continuing.has(run.id)) return refuse('This deep dive is already continuing');
 		if (run.endReason !== 'cap' || !run.pending || run.pending.tasks.length === 0) {
-			return failedOutcome('This deep dive has no remaining topics to continue');
+			return refuse('This deep dive has no remaining topics to continue');
 		}
 		const rootFile = this.plugin.app.vault.getAbstractFileByPath(run.rootNotePath);
 		const rootContent = rootFile instanceof TFile ? await readNote(this.plugin.app, rootFile.path) : null;
 		if (!(rootFile instanceof TFile) || rootContent === null) {
-			return failedOutcome(`Source note not found: ${run.rootNotePath}`);
+			return refuse(`Source note not found: ${run.rootNotePath}. Discard its remaining topics from the proposal sidebar.`);
 		}
 		this.continuing.add(run.id);
 		try {
@@ -737,7 +742,7 @@ export class DeepDiveModule implements FeatureModule {
 
 				// Auto-accept the whole generated tree if enabled (#228), in
 				// creation order so navigation resolves. Skipped on cancellation.
-				const accepted = autoAccept ? await this.autoAcceptRun(run.proposalIds) : [];
+				const accepted = autoAccept ? await this.autoAcceptRun(generatedIds) : [];
 				result = outcome('completed', finishLine, accepted);
 			}
 
