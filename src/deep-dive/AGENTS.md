@@ -160,7 +160,7 @@ rejectProposal(id)                                      [unqueued, index.ts:261]
 
 ```
 run(notePath, options)           [public; api.deepDive.run]
-  --> prepareRun(file, jobId?): same exclusion / read / topic-extraction stops as the command, each toasted; returns { ok: false, message } instead of opening anything; a scan op cancelled during extraction stops it ('Deep dive cancelled') before any run or checkpoint exists
+  --> prepareRun(file, jobId?): same exclusion / read / topic-extraction stops as the command, each toasted; returns { ok: false, message } instead of opening anything; a scan op cancelled during extraction stops it ('Deep dive cancelled') before any run or checkpoint exists, flagged `cancelled: true` so `run()` returns status 'cancelled'
   --> startRun(file, content, newTopics, { depth: clampDepth(options.depth ?? maxDepth), maxNotes?, autoAccept? })   [shared with the command after its modals]
   --> runGeneration returns DeepDiveOutcome; cap = run.maxNotes ?? maxNotesPerRun; auto-accept = run.autoAccept ?? shouldAutoAccept()
   --> autoAcceptRun(proposalIds) returns the created paths -> outcome.writtenPaths
