@@ -34,7 +34,28 @@ export interface AIRequestOptions {
 	model?: string;
 	/** Called with how the reply was produced (#625): on a dispatch, a coalesced join and a cache replay alike; never on a throw. */
 	onResponse?: (info: AIResponseInfo) => void;
+	/** Called before every request that reaches a model (a dispatch or an external request), never for a cache replay or a join; a throw refuses the call (#626). */
+	beforeCall?: () => void;
+	/** External generation (#626): the request goes to this function instead of a provider; the response cache and coalescing are skipped. */
+	external?: ExternalGenerator;
 }
+
+/** A model request handed to an external generator (#626): the exact messages, `UNTRUSTED_CONTENT_POLICY` included. */
+export interface ExternalAIRequest {
+	feature: AIFeatureId | null;
+	messages: ChatMessage[];
+}
+
+/** What an external generator returns for one request. `truncated: true` discards the reply, as a provider's output-limit stop would. */
+export interface ExternalAIReply {
+	text: string;
+	model?: string;
+	stopReason?: string;
+	truncated?: boolean;
+	usage?: AIUsage;
+}
+
+export type ExternalGenerator = (request: ExternalAIRequest) => Promise<ExternalAIReply>;
 
 /** Token counts as the provider reported them; absent fields were not reported. `outputTokens` includes reasoning tokens for every provider (Gemini's `thoughtsTokenCount` is added in). */
 export interface AIUsage {
@@ -44,7 +65,8 @@ export interface AIUsage {
 
 /** How a reply was produced (#625). `stopReason` is the provider's own value (`end_turn`, `stop`, `STOP`, …). */
 export interface AIResponseInfo {
-	provider: AIProvider;
+	/** `external` when the caller generated the reply (#626). */
+	provider: AIProvider | 'external';
 	/** The model id sent on the wire. */
 	model: string;
 	stopReason?: string;
@@ -398,6 +420,7 @@ export class AIClient {
 	 */
 	async chat(input: ChatMessage[], opts?: AIRequestOptions): Promise<string> {
 		const messages = withUntrustedPolicy(input);
+		if (opts?.external) return this.generateExternally(messages, opts.external, opts);
 		const settings = this.getSettings();
 		const { ai } = settings;
 		const resolved = resolveAIConfig(settings, this.feature);
@@ -447,6 +470,7 @@ export class AIClient {
 			}
 		}
 
+		opts?.beforeCall?.();
 		// Populate the cache only on success, INSIDE the `.then()`, so a rejected
 		// dispatch can never be cached. A bypass still refreshes the cache here.
 		const dispatchPromise = this.dispatch(messages, cfg).then((res) => {
@@ -469,6 +493,21 @@ export class AIClient {
 				this.inFlight.delete(key);
 			}
 		}).then((reply) => deliver(reply, 'dispatch'));
+	}
+
+	/** The caller generates the reply (#626); a truncated or non-text reply throws before any text is returned. */
+	private async generateExternally(messages: ChatMessage[], external: ExternalGenerator, opts: AIRequestOptions): Promise<string> {
+		opts.beforeCall?.();
+		const reply = await external({ feature: this.feature ?? null, messages });
+		if (typeof reply?.text !== 'string') throw new Error('The external reply has no text');
+		if (reply.truncated) throw truncated('The external model');
+		if (opts.onResponse) {
+			const info: AIResponseInfo = { provider: 'external', model: reply.model ?? 'external' };
+			if (reply.stopReason !== undefined) info.stopReason = reply.stopReason;
+			if (reply.usage) info.usage = { ...reply.usage };
+			opts.onResponse(info);
+		}
+		return reply.text;
 	}
 
 	/**

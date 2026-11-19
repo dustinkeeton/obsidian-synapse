@@ -184,4 +184,17 @@ describe('ElaborationModule auto-accept (#228)', () => {
 
 		expect(chained).toHaveBeenCalledWith('notes/topic.md', { sourceUrls: expect.any(Array) as string[], producedRegion: { kind: 'whole-note' } });
 	});
+
+	it('tags its op with a public-API job and passes the job\'s AI options to the generating call (#626)', async () => {
+		const mod = build(() => false);
+		const beforeCall = vi.fn();
+
+		await mod.scanNote(mockFile('notes/topic.md') as never, true, { jobId: 'j1', ai: { beforeCall } });
+
+		const opts = sharedCompleteMock.mock.calls[0][2] as { beforeCall?: () => void };
+		opts.beforeCall?.();
+		expect(beforeCall).toHaveBeenCalledTimes(1);
+		expect(notifications.jobOps.list('j1').map((op) => op.id)).toEqual(['scan-notes/topic.md@job:j1']);
+		expect(await mod.getPendingProposals()).toHaveLength(1);
+	});
 });

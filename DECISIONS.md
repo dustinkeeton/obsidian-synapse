@@ -6,6 +6,28 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-19: Let an agent write the text, through the same code path (#626)
+
+**Context**: An agent that runs on a subscription, such as Claude Code, can't lend Synapse its credentials, and Synapse never handles them. Every elaboration or deep dive it started still spent the plugin's API key, and nothing showed what a job cost.
+
+**Decision**:
+- `elaborate` and the `deepDive` verbs take `billing: 'plugin-key' | 'external'`. The default comes from a new per-feature setting, **Agents generate the text** (`agentBilling`), which is off.
+- With `external`, the feature's code runs unchanged. At each model call, `AIClient` hands the final messages to the job instead of a provider. The job reports `awaiting-output` with those `requests`, and `jobs.commit` answers them. The text then goes through the feature's normal checks and queue-held write.
+- `elaborate` and `deepDive.regenerate` now run as jobs too, so every verb that calls a model behaves the same way.
+- Every generating job reports `usage` (calls and tokens) and takes an optional `maxCalls` cap. `status()` reports each feature's default billing.
+
+**Alternatives considered**: Splitting each feature into pure `buildRequests` / `applyOutputs` steps behind separate `prepare` / `commit` verbs, as the issue sketched. Deep dive is many dependent rounds (topics, each note, then its child topics), so that split would mean rewriting both features as state machines. It would also leave two copies of the safety steps to keep in step.
+
+**Rationale**: Pausing at the model call keeps one code path. Fencing, the untrusted-content policy, sanitizing, link stripping, the stale-body guard and the note queue all apply to an agent's text exactly as they do to a provider reply. `jobs.wait` and `jobs.commit` give the agent the prepare and commit loop without new per-feature verbs, and the MCP shim (#628) can answer requests with sampling the same way.
+
+**Impact**:
+- An agent's text gets no extra trust. Its requests already carry fenced content and the policy line.
+- Elaboration holds the note's queue slot while it waits, so an unanswered request fails after 30 minutes, and cancelling the job fails it at once.
+- External calls skip the response cache. Folder scans, the other features, the System 1 lane, and commands run in Obsidian always use their own keys.
+- Breaking API change while it is unstable: `elaborate` and `deepDive.regenerate` return `{ ok, jobId }` instead of a result.
+
+---
+
 ## 2026-11-19: Record why generation stopped, and let a capped deep dive continue (#625)
 
 **Context**: A proposal didn't record why its model stopped, so a reply cut off at the output limit couldn't be found later. A deep dive that hit `maxNotesPerRun` was marked `completed` and its queue deleted, so it looked the same as one that ran out of topics, and the remaining topics were lost.

@@ -81,3 +81,19 @@ describe('NotificationManager job operations', () => {
 		expect(manager.jobOps.list('plain')).toEqual([]);
 	});
 });
+
+describe('JobOperationLog.onCancelled (#626)', () => {
+	it('reports a job once per op that ends cancelled, and stops after unsubscribe', () => {
+		const log = new JobOperationLog();
+		const seen: string[] = [];
+		const off = log.onCancelled((jobId) => seen.push(jobId));
+		log.record('scan@job:j1', { label: 'Scan' });
+		log.record('scan@job:j1', { state: 'cancelled' });
+		log.record('scan@job:j1', { state: 'cancelled', message: 'again' });
+		log.record('gen@job:j1', { label: 'Gen', state: 'error' });
+		log.record('plain', { state: 'cancelled' });
+		off();
+		log.record('other@job:j2', { state: 'cancelled' });
+		expect(seen).toEqual(['j1']);
+	});
+});

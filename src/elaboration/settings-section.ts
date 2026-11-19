@@ -66,4 +66,16 @@ export function renderElaborationSettings(ctx: SettingsSectionContext): void {
 					await plugin.saveSettings();
 				})
 		);
+
+	new Setting(elaborationBody)
+		.setName('Agents generate the text')
+		.setDesc('When an external agent runs elaboration through the Synapse API, its own model writes the text and Synapse spends no API credit. Commands you run in Obsidian always use your key; an agent can override this per call.')
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.elaboration.agentBilling === 'external')
+				.onChange(async (value) => {
+					plugin.settings.elaboration.agentBilling = value ? 'external' : 'plugin-key';
+					await plugin.saveSettings();
+				})
+		);
 }

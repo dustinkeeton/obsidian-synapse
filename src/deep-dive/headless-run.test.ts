@@ -49,6 +49,7 @@ describe('DeepDiveModule headless verbs', () => {
 	let onGenerate: ((topic: string) => void) | null;
 	let register: ReturnType<typeof vi.fn>;
 	let checkpoints: ReturnType<typeof createMockCheckpointManager>;
+	let startOperation: ReturnType<typeof vi.fn>;
 
 	beforeEach(async () => {
 		settings = structuredClone(DEFAULT_SETTINGS);
@@ -77,6 +78,7 @@ describe('DeepDiveModule headless verbs', () => {
 			confirm,
 			startOperation: vi.fn(() => ({ progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled: false })),
 		};
+		startOperation = notifications.startOperation;
 
 		vi.spyOn(DeepDiveStore.prototype, 'init').mockResolvedValue(undefined);
 		vi.spyOn(DeepDiveStore.prototype, 'saveProposal').mockImplementation(async (p) => { proposals.set(p.id, structuredClone(p)); });
@@ -176,6 +178,57 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(proposals.get(outcome.proposalIds[0])?.generation).toEqual({
 				provider: 'anthropic', model: 'claude-opus-5-5', stopReason: 'end_turn', usage: { outputTokens: 321 },
 			});
+		});
+
+		it('joins the job\'s AI options into every model call, keeping the proposal\'s own generation record (#626)', async () => {
+			const complete = vi.mocked(AIClient.prototype.complete);
+			const base = complete.getMockImplementation()!;
+			complete.mockImplementation(async (user, system, opts) => {
+				opts?.beforeCall?.();
+				const text = await base(user, system, opts);
+				opts?.onResponse?.({ provider: 'external', model: 'agent' });
+				return text;
+			});
+			const ai = { beforeCall: vi.fn(), onResponse: vi.fn() };
+
+			const outcome = await mod.run('notes/Root.md', { depth: 1, ai });
+
+			expect(ai.beforeCall).toHaveBeenCalledTimes(4);
+			expect(ai.onResponse).toHaveBeenCalledTimes(4);
+			expect(proposals.get(outcome.proposalIds[0])?.generation).toEqual({ provider: 'external', model: 'agent' });
+		});
+
+		it('ends as cancelled when a cancel rejects the model call in flight (#626)', async () => {
+			const genOp = { progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled: false };
+			startOperation.mockImplementation((label: string) => label === 'Generating deep dive'
+				? genOp
+				: { progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled: false });
+			onGenerate = () => {
+				genOp.cancelled = true;
+				throw new Error('Job cancelled');
+			};
+
+			const outcome = await mod.run('notes/Root.md', { depth: 1 });
+
+			expect(outcome).toMatchObject({ status: 'cancelled', endReason: 'cancelled', proposalIds: [] });
+			expect(savedRun).toMatchObject({ status: 'cancelled', endReason: 'cancelled' });
+			expect(savedRun?.pending).toBeUndefined();
+			expect(checkpoints.discard).toHaveBeenCalled();
+			expect(genOp.error).not.toHaveBeenCalled();
+		});
+
+		it('ends as cancelled when a cancel rejects topic extraction (#626)', async () => {
+			const scanOp = { progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled: false };
+			startOperation.mockImplementation(() => scanOp);
+			vi.mocked(AIClient.prototype.complete).mockImplementation(async () => {
+				scanOp.cancelled = true;
+				throw new Error('Job cancelled');
+			});
+
+			const outcome = await mod.run('notes/Root.md', { depth: 1 });
+
+			expect(outcome).toMatchObject({ status: 'cancelled', message: 'Deep dive cancelled' });
+			expect(savedRun).toBeNull();
 		});
 
 		it('clamps depth to the picker range', async () => {
@@ -343,6 +396,19 @@ describe('DeepDiveModule headless verbs', () => {
 			await mod.regenerate({ proposalId: 'p1' });
 
 			expect(proposals.get('p1')?.generation).toEqual({ provider: 'anthropic', model: 'claude-opus-5-5', stopReason: 'end_turn' });
+		});
+
+		it('tags its op with the job and joins the job\'s AI options, still bypassing the cache (#626)', async () => {
+			proposals.set('p1', proposal({}));
+			const ai = { beforeCall: vi.fn() };
+
+			await mod.regenerate({ proposalId: 'p1' }, { jobId: 'j1', ai });
+
+			expect(startOperation).toHaveBeenCalledWith(expect.any(String) as unknown, 'deep-dive-regenerate-p1@job:j1', expect.any(Object) as unknown);
+			const opts = vi.mocked(AIClient.prototype.complete).mock.calls[0][2];
+			expect(opts).toMatchObject({ bypassCache: true, beforeCall: expect.any(Function) as unknown });
+			opts?.beforeCall?.();
+			expect(ai.beforeCall).toHaveBeenCalledTimes(1);
 		});
 
 		it('rewrites a pending proposal in the store without touching the vault', async () => {

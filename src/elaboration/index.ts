@@ -9,15 +9,21 @@ import {
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager,
 	NoteOperationQueue, generateId, ConfirmModal, splitRawFrontmatter,
 	fireAndForget, reviewAction, openScanFolderPicker, trackAiCache, withCacheReport,
-	stripUnresolvedLinks, wikilinkTargets, settleOnThrow,
+	stripUnresolvedLinks, wikilinkTargets, settleOnThrow, combineAIOptions,
 } from '../shared';
-import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import type { AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator, proposalContentKey } from './proposer';
 import { DetectionResult, ElaborationOutcome, Proposal } from './types';
 
 export type { DetectionReason, DetectionResult, ElaborationOutcome, Proposal } from './types';
+
+/** A public-API job running `scanNote` (#624, #626): its op is tagged with `jobOpId`; `ai` joins every model call. Not persisted. */
+export interface ElaborationJobOptions {
+	jobId?: string;
+	ai?: AIRequestOptions;
+}
 
 interface AcceptOptions {
 	silent?: boolean;
@@ -405,14 +411,14 @@ export class ElaborationModule implements FeatureModule {
 	}
 
 	/** Elaborate one note; `userInvoked` bypasses the stub gate. The outcome mirrors the operation toast. */
-	async scanNote(file: TFile, userInvoked = true): Promise<ElaborationOutcome> {
+	async scanNote(file: TFile, userInvoked = true, job: ElaborationJobOptions = {}): Promise<ElaborationOutcome> {
 		const op = this.notifications.startOperation(
 			`Scanning ${file.basename}`,
-			`scan-${file.path}`, { kind: 'elaboration', target: file.path }
+			jobOpId(`scan-${file.path}`, job), { kind: 'elaboration', target: file.path }
 		);
 		return settleOnThrow(op, 'Elaboration failed', () => this.noteQueue.run(
 			file.path,
-			() => this.generateForNote(file, userInvoked, op),
+			() => this.generateForNote(file, userInvoked, op, job.ai),
 			{ onWait: () => op.update(`Waiting for another Synapse operation on ${file.basename}`) }
 		));
 	}
@@ -421,7 +427,8 @@ export class ElaborationModule implements FeatureModule {
 	private async generateForNote(
 		file: TFile,
 		userInvoked: boolean,
-		op: OperationHandle
+		op: OperationHandle,
+		ai?: AIRequestOptions
 	): Promise<ElaborationOutcome> {
 		const cacheUse: CacheUse = {};
 		const done = (ok: boolean, message: string, extra: Partial<ElaborationOutcome> = {}): ElaborationOutcome =>
@@ -452,7 +459,7 @@ export class ElaborationModule implements FeatureModule {
 					return done(true, message);
 				}
 
-				const proposal = await this.proposer.generate(result, guard.key, trackAiCache(cacheUse));
+				const proposal = await this.proposer.generate(result, guard.key, combineAIOptions(trackAiCache(cacheUse), ai));
 				if (!proposal) {
 					// generate() returns null after it has already notified why
 					// (unreadable links or an empty AI rewrite).

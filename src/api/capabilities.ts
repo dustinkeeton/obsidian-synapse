@@ -11,7 +11,7 @@ type VerbDefinition = Omit<ApiVerbSpec, 'available'> & {
 
 const jobId: ApiParamSpec = {
 	name: 'id',
-	description: 'Job id from a long verb (scanFolder, deepDive.run)',
+	description: 'Job id from a long verb (scanFolder, elaborate, deepDive.*)',
 	required: true,
 	schema: { type: 'string' },
 };
@@ -21,6 +21,20 @@ const notePath: ApiParamSpec = {
 	description: 'Vault-relative path of a markdown note, e.g. "Topics/Rust.md"',
 	required: true,
 	schema: { type: 'string' },
+};
+
+/** Billing and call cap, taken by every generating verb (#626). */
+const generationProperties = {
+	billing: { type: 'string', enum: ['plugin-key', 'external'] },
+	maxCalls: { type: 'integer', minimum: 1 },
+};
+const generationHelp = 'billing (plugin-key: Synapse calls the model with its key; external: the job waits at each model call with status awaiting-output and its requests, answered with jobs.commit; default: the feature\'s "Agents generate the text" setting), maxCalls (fail the job past this many model calls)';
+
+const generationOptions: ApiParamSpec = {
+	name: 'options',
+	description: generationHelp,
+	required: false,
+	schema: { type: 'object', properties: generationProperties, additionalProperties: false },
 };
 
 const proposalKind: ApiParamSpec = {
@@ -47,15 +61,15 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'status',
-		description: 'Plugin and settings versions, per-feature provider/model/effort and key source, running operations, interrupted checkpoints',
+		description: 'Plugin and settings versions, per-feature provider/model/effort, key source and default billing, running operations, interrupted checkpoints, capped deep dives',
 		params: [],
 		long: false,
 	},
 	{
 		name: 'elaborate',
-		description: 'Generate an elaboration proposal for one note (auto-accepted when that setting is on)',
-		params: [notePath],
-		long: false,
+		description: 'Generate an elaboration proposal for one note as a job (auto-accepted when that setting is on); returns { ok, jobId }. Job result: { ok, message, error, written (the note, when auto-accepted), proposals, cacheUse }',
+		params: [notePath, generationOptions],
+		long: true,
 		feature: 'elaboration',
 	},
 	{
@@ -91,7 +105,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 			notePath,
 			{
 				name: 'options',
-				description: 'depth (1-6), maxNotes, autoAccept; each defaults to its setting',
+				description: `depth (1-6), maxNotes, autoAccept; each defaults to its setting. ${generationHelp}`,
 				required: false,
 				schema: {
 					type: 'object',
@@ -99,6 +113,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 						depth: { type: 'integer', minimum: 1, maximum: 6 },
 						maxNotes: { type: 'integer', minimum: 1 },
 						autoAccept: { type: 'boolean' },
+						...generationProperties,
 					},
 					additionalProperties: false,
 				},
@@ -114,13 +129,14 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 			{ name: 'runId', description: 'The capped run (deepDive.run result runId, or status().continuableDeepDives)', required: true, schema: { type: 'string' } },
 			{
 				name: 'options',
-				description: 'maxNotes (cap for this pass), autoAccept; each defaults to the run\'s own',
+				description: `maxNotes (cap for this pass), autoAccept; each defaults to the run's own. ${generationHelp}`,
 				required: false,
 				schema: {
 					type: 'object',
 					properties: {
 						maxNotes: { type: 'integer', minimum: 1 },
 						autoAccept: { type: 'boolean' },
+						...generationProperties,
 					},
 					additionalProperties: false,
 				},
@@ -131,7 +147,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'deepDive.regenerate',
-		description: 'Rewrite one deep-dive note from its topic, keeping its frontmatter, nav block and enrichment sections; a pending proposal gets new content instead',
+		description: 'Rewrite one deep-dive note from its topic as a job, keeping its frontmatter, nav block and enrichment sections; a pending proposal gets new content instead. Returns { ok, jobId }. Job result: { ok, message, error, written (the note, when accepted), proposals, cacheUse, runId }',
 		params: [{
 			name: 'target',
 			description: 'A proposal id, or the path (ending in .md) of the note a deep-dive proposal created; or { proposalId } / { notePath }',
@@ -143,8 +159,8 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 					{ type: 'object', properties: { notePath: { type: 'string' } }, required: ['notePath'], additionalProperties: false },
 				],
 			},
-		}],
-		long: false,
+		}, generationOptions],
+		long: true,
 		feature: 'deepDive',
 	},
 	{
@@ -155,7 +171,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'jobs.wait',
-		description: 'Wait until a job finishes or the timeout passes; returns { ok, timedOut, job }',
+		description: 'Wait until a job finishes, is awaiting-output, or the timeout passes; returns { ok, timedOut, job }',
 		params: [
 			jobId,
 			{
@@ -171,6 +187,45 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 		name: 'jobs.cancel',
 		description: 'Cancel a running job, the same as pressing Cancel on its toast; returns { ok, stoppedOperations }. Work outside its operations (deep dive auto-accept) still finishes',
 		params: [jobId],
+		long: false,
+	},
+	{
+		name: 'jobs.commit',
+		description: 'Answer the requests of a job that is awaiting-output (external billing): Synapse post-processes each text exactly as a reply from its own key, then the job goes on; returns as jobs.wait does. Nothing is applied when any output is invalid',
+		params: [
+			jobId,
+			{
+				name: 'outputs',
+				description: 'One { requestId, text } per answered request; optional model (recorded on the proposal), stopReason, truncated (true discards the reply as cut off), usage { inputTokens, outputTokens }',
+				required: true,
+				schema: {
+					type: 'array',
+					items: {
+						type: 'object',
+						properties: {
+							requestId: { type: 'string' },
+							text: { type: 'string' },
+							model: { type: 'string' },
+							stopReason: { type: 'string' },
+							truncated: { type: 'boolean' },
+							usage: {
+								type: 'object',
+								properties: { inputTokens: { type: 'integer', minimum: 0 }, outputTokens: { type: 'integer', minimum: 0 } },
+								additionalProperties: false,
+							},
+						},
+						required: ['requestId', 'text'],
+						additionalProperties: false,
+					},
+				},
+			},
+			{
+				name: 'timeoutMs',
+				description: 'Milliseconds to wait after committing; default 30000, at most 600000',
+				required: false,
+				schema: { type: 'integer', minimum: 0, maximum: 600000 },
+			},
+		],
 		long: false,
 	},
 	{

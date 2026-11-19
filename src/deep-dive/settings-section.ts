@@ -150,4 +150,16 @@ export function renderDeepDiveSettings(ctx: SettingsSectionContext): void {
 					await plugin.saveSettings();
 				})
 		);
+
+	new Setting(deepDiveBody)
+		.setName('Agents generate the text')
+		.setDesc('When an external agent runs a deep dive through the Synapse API, its own model writes the text and Synapse spends no API credit. Commands you run in Obsidian always use your key; an agent can override this per call.')
+		.addToggle((toggle) =>
+			toggle
+				.setValue(plugin.settings.deepDive.agentBilling === 'external')
+				.onChange(async (value) => {
+					plugin.settings.deepDive.agentBilling = value ? 'external' : 'plugin-key';
+					await plugin.saveSettings();
+				})
+		);
 }

@@ -31,6 +31,7 @@ export interface JobOperation {
 export class JobOperationLog {
 	private byJob = new Map<string, Map<string, JobOperation>>();
 	private cancelled = new Set<string>();
+	private cancelListeners = new Set<(jobId: string) => void>();
 
 	/** Record a start or change for a job-tagged op id; ignored for untagged ids. */
 	record(opId: string, patch: Partial<Omit<JobOperation, 'id'>> & { label?: string }): void {
@@ -44,6 +45,15 @@ export class JobOperationLog {
 		const existing = ops.get(opId);
 		const base: JobOperation = existing ?? { id: opId, label: patch.label ?? '', message: patch.label ?? '', state: 'running', startedAt: Date.now() };
 		ops.set(opId, { ...base, ...patch });
+		if (patch.state === 'cancelled' && base.state !== 'cancelled') {
+			for (const listener of this.cancelListeners) listener(jobId);
+		}
+	}
+
+	/** Called with the job id whenever one of its operations ends cancelled (#626); returns the unsubscribe function. */
+	onCancelled(listener: (jobId: string) => void): () => void {
+		this.cancelListeners.add(listener);
+		return () => this.cancelListeners.delete(listener);
 	}
 
 	/** A same-id restart begins a fresh record. */

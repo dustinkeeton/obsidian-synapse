@@ -2,7 +2,7 @@ import type { AIFeatureId, AIProvider, KeyedProvider, SynapseSettings } from '..
 import { AI_FEATURE_IDS, resolveAIConfig, transcriptionKeyProvider } from '../shared';
 import type { FeatureSettingsKey } from '../shared';
 import type { FeatureModules } from '../modules';
-import type { ApiAIStatus, ApiFeatureCapability, ApiKeySource, ApiStatus, SynapseApiDeps } from './types';
+import type { ApiAIStatus, ApiBilling, ApiFeatureCapability, ApiKeySource, ApiStatus, SynapseApiDeps } from './types';
 import { API_VERSION } from './types';
 
 /** Where a vendor's key comes from; never the key itself. */
@@ -12,6 +12,13 @@ export function keySourceFor(settings: SynapseSettings, provider: KeyedProvider 
 	return settings.ai.providerKeys?.[provider] ? 'provider-key' : 'missing';
 }
 
+/** Default billing of an agent call (#626); only elaboration and deep dive can bill externally. */
+export function defaultBilling(settings: SynapseSettings, feature: AIFeatureId): ApiBilling {
+	if (feature === 'elaboration') return settings.elaboration.agentBilling;
+	if (feature === 'deep-dive') return settings.deepDive.agentBilling;
+	return 'plugin-key';
+}
+
 export function aiStatus(settings: SynapseSettings, feature: AIFeatureId): ApiAIStatus {
 	const config = resolveAIConfig(settings, feature);
 	return {
@@ -19,6 +26,7 @@ export function aiStatus(settings: SynapseSettings, feature: AIFeatureId): ApiAI
 		model: config.model,
 		effort: config.effort ?? null,
 		keySource: keySourceFor(settings, config.provider),
+		billing: defaultBilling(settings, feature),
 	};
 }
 

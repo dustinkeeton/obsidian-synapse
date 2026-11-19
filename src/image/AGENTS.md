@@ -26,7 +26,7 @@ const IMAGE_EXTENSIONS: RegExp   // /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i
 const IMAGE_EMBED_REGEX: RegExp  // /!\[\[([^\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))\]\]/gi
 
 // NOT exported here any more: `preprocessImage` / `PreprocessResult` / `arrayBufferToBase64` live in `shared`
-// (`shared/image-preprocess.ts`, `shared/encoding.ts`; barrel `shared/index.ts:49-50`)
+// (`shared/image-preprocess.ts`, `shared/encoding.ts`; barrel `shared/index.ts:50-51`)
 
 // re-exported from ./settings-section (index.ts:243)
 function renderImageSettings(ctx: SettingsSectionContext): void
