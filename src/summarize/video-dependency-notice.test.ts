@@ -270,7 +270,7 @@ describe('SummarizeModule video-dependency onboarding (#382)', () => {
 			text: 'Video transcription',
 		});
 		accordion.scrollIntoView = scrollIntoView;
-		(title.closest as unknown as Mock).mockReturnValue(accordion);
+		vi.spyOn(title, 'closest').mockReturnValue(accordion);
 		openTabById.mockReturnValue({ containerEl: container });
 
 		module = build(vi.fn().mockRejectedValue(

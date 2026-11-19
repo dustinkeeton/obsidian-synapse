@@ -82,10 +82,6 @@ function rowToggle(row: Setting): ToggleComponent {
 	return row.components[0];
 }
 
-function lastSetDisabledArg(row: Setting): boolean {
-	const calls = (row.setDisabled as ReturnType<typeof vi.fn>).mock.calls;
-	return calls[calls.length - 1][0] as boolean;
-}
 
 /** Recursively collect all anchor elements rendered into a stub element tree. */
 function findAnchors(el: StubEl, out: StubEl[] = []): StubEl[] {
@@ -214,8 +210,8 @@ describe('SynapseSettingTab — Auto-Accept disabled state', () => {
 		tab.display();
 
 		const rows = autoAcceptRows(tab);
-		expect(lastSetDisabledArg(rows['rem'])).toBe(true);
-		expect(lastSetDisabledArg(rows['elaboration'])).toBe(false);
+		expect(rows['rem'].disabled).toBe(true);
+		expect(rows['elaboration'].disabled).toBe(false);
 	});
 
 	it('maps deep-dive to the deepDive feature flag (keys are not 1:1)', () => {
@@ -226,8 +222,8 @@ describe('SynapseSettingTab — Auto-Accept disabled state', () => {
 		tab.display();
 
 		const rows = autoAcceptRows(tab);
-		expect(lastSetDisabledArg(rows['deep-dive'])).toBe(true);
-		expect(lastSetDisabledArg(rows['organize'])).toBe(false);
+		expect(rows['deep-dive'].disabled).toBe(true);
+		expect(rows['organize'].disabled).toBe(false);
 	});
 
 	it('preserves the stored autoAccept value across a disable → re-enable cycle', async () => {
@@ -253,12 +249,12 @@ describe('SynapseSettingTab — Auto-Accept disabled state', () => {
 		expect(plugin.settings.rem.enabled).toBe(false);
 		expect(plugin.settings.autoAccept.rem).toBe(true);
 		// …and the row was greyed out live (no full re-render).
-		expect(lastSetDisabledArg(remRow)).toBe(true);
+		expect(remRow.disabled).toBe(true);
 
 		// Re-enable the feature: value still intact, row re-enabled live.
 		await remFeatureToggle!._trigger(true);
 		expect(plugin.settings.autoAccept.rem).toBe(true);
-		expect(lastSetDisabledArg(remRow)).toBe(false);
+		expect(remRow.disabled).toBe(false);
 
 		// A fresh render restores the toggle exactly as the user left it (ON).
 		tab.display();
@@ -558,7 +554,7 @@ describe('SynapseSettingTab — per-section reset rows (#442)', () => {
 		for (const key of Object.keys(controls)) {
 			expect(controls[key].button.buttonText).toBe('Reset');
 			expect(controls[key].button.classes).toContain('mod-destructive');
-			expect(controls[key].button.setWarning).not.toHaveBeenCalled();
+			expect(controls[key].button.warning).toBe(false);
 		}
 		// …and About hosts the global reset-all row instead of a per-section reset.
 		expect(controls['about']).toBeUndefined();
@@ -594,10 +590,7 @@ describe('SynapseSettingTab — per-section reset rows (#442)', () => {
 		});
 		tab.display();
 
-		const setDisabled = resetControls(tab)['audio'].button.setDisabled as ReturnType<
-			typeof vi.fn
-		>;
-		expect(setDisabled.mock.calls.at(-1)?.[0]).toBe(false);
+		expect(resetControls(tab)['audio'].button.disabled).toBe(false);
 	});
 
 	it('re-enables a section reset live when a change event fires on its body', () => {

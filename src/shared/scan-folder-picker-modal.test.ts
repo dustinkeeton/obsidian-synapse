@@ -118,11 +118,13 @@ describe('ScanFolderPickerModal', () => {
 		const [all, topLevel] = modal.getSuggestions('');
 		const elAll = createEl();
 		const elTop = createEl();
+		const allSpy = vi.spyOn(elAll, 'createEl');
+		const topSpy = vi.spyOn(elTop, 'createEl');
 
 		modal.renderSuggestion(all, elAll);
 		modal.renderSuggestion(topLevel, elTop);
 
-		expect(elAll.createEl).toHaveBeenCalledWith('div', { text: ROOT_LABEL });
-		expect(elTop.createEl).toHaveBeenCalledWith('div', { text: ROOT_TOP_LEVEL_LABEL });
+		expect(allSpy).toHaveBeenCalledWith('div', { text: ROOT_LABEL });
+		expect(topSpy).toHaveBeenCalledWith('div', { text: ROOT_TOP_LEVEL_LABEL });
 	});
 });

@@ -126,7 +126,7 @@ describe('renderVideoSettings', () => {
 		expect(panels).toHaveLength(2);
 
 		const helpButtons = ButtonComponent.instances.filter((b) =>
-			b.setTooltip.mock.calls.some((c) => c[0] === 'Show install commands'),
+			b.tooltips.includes('Show install commands'),
 		);
 		expect(helpButtons).toHaveLength(2);
 
@@ -192,9 +192,7 @@ describe('renderVideoSettings', () => {
 		const domText = walk(containerEl).map((e) => e.textContent ?? '').join(' ');
 		expect(domText).not.toMatch(/download the binary/i);
 
-		const tooltips = ButtonComponent.instances.flatMap((b) =>
-			b.setTooltip.mock.calls.map((c) => String(c[0])),
-		);
+		const tooltips = ButtonComponent.instances.flatMap((b) => b.tooltips);
 		expect(tooltips.join(' ')).not.toMatch(/download/i);
 	});
 });

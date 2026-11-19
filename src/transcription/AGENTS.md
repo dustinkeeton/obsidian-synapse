@@ -261,7 +261,7 @@ URLs (`detectUrlDuration`):
 
 `TimeRangeSlider` (`time-range-slider.ts`): pure DOM component with no Obsidian dependencies beyond `createEl`/`createDiv`:
 - Two overlapping `<input type="range">` on a shared track
-- Visual highlight for selected region: `trackHighlight.setCssProps({ '--synapse-range-start', '--synapse-range-width' })` with percentage values (`time-range-slider.ts:132`); `styles.css` `.synapse-time-range-track-highlight` reads them as `left: var(--synapse-range-start, 0%)` / `width: var(--synapse-range-width, 0%)` — no inline `style.left`/`style.width` (the obsidian test mock stubs `setCssProps`, `__mocks__/obsidian.ts:230`)
+- Visual highlight for selected region: `trackHighlight.setCssProps({ '--synapse-range-start', '--synapse-range-width' })` with percentage values (`time-range-slider.ts:132`); `styles.css` `.synapse-time-range-track-highlight` reads them as `left: var(--synapse-range-start, 0%)` / `width: var(--synapse-range-width, 0%)` — no inline `style.left`/`style.width` (the obsidian test mock stubs `setCssProps`, `__mocks__/obsidian.ts:227`)
 - Timestamp labels update live (`MM:SS` or `HH:MM:SS`)
 - Step size: 1s for media <= 600s (10min), 5s otherwise
 - Handles cannot cross (enforced via input event handlers; clamped to `end - 1` / `start + 1`)
