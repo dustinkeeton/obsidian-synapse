@@ -392,11 +392,11 @@ describe('PostProcessor', () => {
 });
 
 describe('PostProcessor response-cache reporting (#527)', () => {
-	type Dispatcher = { dispatch: (messages: unknown) => Promise<string> };
+	type Dispatcher = { dispatch: (messages: unknown) => Promise<{ text: string }> };
 	let dispatchSpy: MockInstance<Dispatcher['dispatch']>;
 
 	beforeEach(() => {
-		dispatchSpy = vi.spyOn(AIClient.prototype as unknown as Dispatcher, 'dispatch').mockResolvedValue('processed');
+		dispatchSpy = vi.spyOn(AIClient.prototype as unknown as Dispatcher, 'dispatch').mockResolvedValue({ text: 'processed' });
 	});
 
 	afterEach(() => vi.restoreAllMocks());
@@ -416,7 +416,7 @@ describe('PostProcessor response-cache reporting (#527)', () => {
 	it('reports a chunked run in which only some sections were replayed', async () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const transcript = ['one', 'two', 'three'].map(paragraph).join('\n\n');
-		dispatchSpy.mockResolvedValueOnce('s1').mockRejectedValueOnce(new Error('boom')).mockResolvedValue('s3');
+		dispatchSpy.mockResolvedValueOnce({ text: 's1' }).mockRejectedValueOnce(new Error('boom')).mockResolvedValue({ text: 's3' });
 		const pp = longPP(() => longSettings((s) => { s.ai.cacheResponses = true; }), { delayMs: 0 });
 		await pp.process(transcript);
 		const onCacheHit = vi.fn();

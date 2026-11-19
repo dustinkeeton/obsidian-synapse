@@ -91,7 +91,21 @@ describe('ProposalGenerator -- image embed preservation (no images)', () => {
 
 		await generator.generate({ notePath: 'notes/test.md', reasons: [{ type: 'user-requested' }] }, undefined, { onCacheHit });
 
-		expect(mockComplete.mock.calls[0][2]).toEqual({ onCacheHit });
+		expect(mockComplete.mock.calls[0][2]).toMatchObject({ onCacheHit });
+	});
+
+	it('records how the rewrite was produced on the proposal (#625)', async () => {
+		const info = { provider: 'anthropic', model: 'claude-opus-5-5', stopReason: 'end_turn', usage: { inputTokens: 900, outputTokens: 400 } };
+		const onResponse = vi.fn();
+		mockComplete.mockImplementationOnce((_p: string, _s?: string, opts?: unknown) => {
+			(opts as { onResponse?: (i: typeof info) => void } | undefined)?.onResponse?.(info);
+			return Promise.resolve('Rewritten body.');
+		});
+
+		const proposal = await generator.generate({ notePath: 'notes/test.md', reasons: [{ type: 'user-requested' }] }, undefined, { onResponse });
+
+		expect(proposal?.generation).toEqual(info);
+		expect(onResponse).toHaveBeenCalledWith(info);
 	});
 
 	it('includes image embed preservation instruction in system prompt', async () => {

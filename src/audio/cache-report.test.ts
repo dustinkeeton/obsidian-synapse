@@ -18,7 +18,7 @@ import type { NotificationManager, CheckpointManager } from '../shared';
 import type { AudioEmbed } from '../shared';
 import { DEFAULT_SETTINGS } from '../settings';
 
-type Dispatcher = { dispatch: (messages: unknown) => Promise<string> };
+type Dispatcher = { dispatch: (messages: unknown) => Promise<{ text: string }> };
 
 const tfile = (p: string): ObsidianTFile => new TFile(p) as unknown as ObsidianTFile;
 const NOTE = ['# Memo', '', '![[one.mp3]]', '', '![[two.mp3]]', '', 'tail'].join('\n');
@@ -37,7 +37,7 @@ describe('AudioModule response-cache reporting (#527)', () => {
 		transcribeMock.mockImplementation((_data: ArrayBuffer, fileName: string) =>
 			Promise.resolve({ raw: `spoken words recorded in ${fileName}`, sourceName: fileName })
 		);
-		vi.spyOn(AIClient.prototype as unknown as Dispatcher, 'dispatch').mockResolvedValue('A cleaned transcript.');
+		vi.spyOn(AIClient.prototype as unknown as Dispatcher, 'dispatch').mockResolvedValue({ text: 'A cleaned transcript.' });
 		finish = vi.fn<(message?: string) => void>();
 		const notifications = {
 			startOperation: vi.fn(() => ({ update: vi.fn(), progress: vi.fn(), finish, error: vi.fn(), cancelled: false })),
@@ -95,7 +95,7 @@ describe('AudioModule response-cache reporting (#527)', () => {
 
 		it('dispatches caption post-processing instead of replaying it, then serves the new response', async () => {
 			const dispatch = vi.mocked((AIClient.prototype as unknown as Dispatcher).dispatch);
-			dispatch.mockResolvedValueOnce('Stale cleanup.').mockResolvedValue('Fresh cleanup.');
+			dispatch.mockResolvedValueOnce({ text: 'Stale cleanup.' }).mockResolvedValue({ text: 'Fresh cleanup.' });
 			await module.processTranscriptText(RAW);
 			const onCacheHit = vi.fn();
 

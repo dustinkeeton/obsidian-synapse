@@ -85,6 +85,7 @@ describe('DeepDiveModule headless verbs', () => {
 		vi.spyOn(DeepDiveStore.prototype, 'loadProposalsByRunId').mockImplementation(async (runId) => [...proposals.values()].filter((p) => p.runId === runId));
 		vi.spyOn(DeepDiveStore.prototype, 'saveRun').mockImplementation(async (run) => { savedRun = structuredClone(run); });
 		vi.spyOn(DeepDiveStore.prototype, 'loadRun').mockImplementation(async () => structuredClone(savedRun));
+		vi.spyOn(DeepDiveStore.prototype, 'loadAllRuns').mockImplementation(async () => (savedRun ? [structuredClone(savedRun)] : []));
 
 		vi.spyOn(AIClient.prototype, 'complete').mockImplementation(async (userPrompt: string, systemPrompt?: string) => {
 			if (systemPrompt?.includes('knowledge graph analyst')) return TOPICS;
@@ -131,6 +132,50 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(generated).toEqual(['Backpropagation']);
 			expect(outcome.proposalIds).toHaveLength(1);
 			expect(savedRun?.maxNotes).toBe(1);
+		});
+
+		it('keeps the remaining topics when it stops at the cap, and says so (#625)', async () => {
+			const outcome = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+
+			expect(outcome).toMatchObject({ status: 'completed', endReason: 'cap', remainingTopics: 2 });
+			expect(savedRun).toMatchObject({ status: 'completed', endReason: 'cap' });
+			expect(savedRun?.pending?.tasks.map((t) => t.topic.title)).toEqual(['Gradient Descent', 'Overfitting']);
+		});
+
+		it('drops the queue and records exhausted when every topic was generated (#625)', async () => {
+			const outcome = await mod.run('notes/Root.md', { depth: 1 });
+
+			expect(outcome.endReason).toBe('exhausted');
+			expect(outcome).not.toHaveProperty('remainingTopics');
+			expect(savedRun?.endReason).toBe('exhausted');
+			expect(savedRun?.pending).toBeUndefined();
+		});
+
+		it('records error on an interrupted run and clears it when the run resumes (#625)', async () => {
+			failOn = 'Gradient Descent';
+			await mod.run('notes/Root.md', { depth: 1 });
+			expect(savedRun).toMatchObject({ status: 'in-progress', endReason: 'error' });
+			failOn = null;
+
+			await mod.resumeFromCheckpoint({ id: 'mockcheckpoint', metadata: { runId: savedRun?.id }, remainingItems: [] } as never);
+
+			expect(savedRun).toMatchObject({ status: 'completed', endReason: 'exhausted' });
+		});
+
+		it('records the stop reason, model and usage of each generated note (#625)', async () => {
+			const complete = vi.mocked(AIClient.prototype.complete);
+			const base = complete.getMockImplementation()!;
+			complete.mockImplementation(async (user, system, opts) => {
+				const text = await base(user, system, opts);
+				opts?.onResponse?.({ provider: 'anthropic', model: 'claude-opus-5-5', stopReason: 'end_turn', usage: { outputTokens: 321 } });
+				return text;
+			});
+
+			const outcome = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+
+			expect(proposals.get(outcome.proposalIds[0])?.generation).toEqual({
+				provider: 'anthropic', model: 'claude-opus-5-5', stopReason: 'end_turn', usage: { outputTokens: 321 },
+			});
 		});
 
 		it('clamps depth to the picker range', async () => {
@@ -204,7 +249,84 @@ describe('DeepDiveModule headless verbs', () => {
 		});
 	});
 
+	describe('continueRun (#625)', () => {
+		it('generates the remaining topics under a fresh cap, in the same run', async () => {
+			const first = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+
+			const outcome = await mod.continueRun(first.runId!);
+
+			expect(generated).toEqual(['Backpropagation', 'Gradient Descent']);
+			expect(outcome).toMatchObject({ status: 'completed', runId: first.runId, endReason: 'cap', remainingTopics: 1 });
+			expect(outcome.proposalIds).toHaveLength(1);
+			expect(savedRun?.proposalIds).toHaveLength(2);
+			expect(checkpoints.create).toHaveBeenCalledTimes(2);
+		});
+
+		it('takes a new cap and finishes the run', async () => {
+			const first = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+
+			const outcome = await mod.continueRun(first.runId!, { maxNotes: 10 });
+
+			expect(generated).toEqual(TOPIC_TITLES);
+			expect(outcome.endReason).toBe('exhausted');
+			expect(savedRun?.pending).toBeUndefined();
+			expect(await mod.listContinuableRuns()).toEqual([]);
+		});
+
+		it('lists a capped run until it is continued or discarded', async () => {
+			const first = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+
+			expect(await mod.listContinuableRuns()).toEqual([
+				expect.objectContaining({ runId: first.runId, rootNotePath: 'notes/Root.md', remainingTopics: 2, totalProposals: 1 }),
+			]);
+			expect(await mod.discardContinuation(first.runId!)).toBe(true);
+			expect(await mod.listContinuableRuns()).toEqual([]);
+			expect(savedRun?.endReason).toBe('cap');
+		});
+
+		it('refuses a run that did not stop at its cap', async () => {
+			const first = await mod.run('notes/Root.md', { depth: 1 });
+
+			const outcome = await mod.continueRun(first.runId!);
+
+			expect(outcome).toMatchObject({ status: 'failed', message: 'This deep dive has no remaining topics to continue' });
+		});
+
+		it('refuses an unknown run and a missing root note', async () => {
+			expect((await mod.continueRun('nope')).status).toBe('failed');
+			savedRun = null;
+			const first = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+			files.delete('notes/Root.md');
+
+			expect((await mod.continueRun(first.runId!)).message).toContain('Source note not found');
+		});
+
+		it('offers Continue on the finish toast when the run is capped', async () => {
+			await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+			const startOperation = (mod as unknown as { notifications: { startOperation: { mock: { results: Array<{ value: { finish: { mock: { calls: unknown[][] } } } }> } } } }).notifications.startOperation;
+			const genFinish = startOperation.mock.results[1].value.finish.mock.calls[0];
+
+			expect(String(genFinish[0])).toContain('stopped at the 1-note cap with 2 topics left');
+			expect(genFinish[1]).toMatchObject({ label: 'Continue' });
+		});
+	});
+
 	describe('regenerate', () => {
+		it('replaces the recorded generation with the new call\'s (#625)', async () => {
+			proposals.set('p1', proposal({ generation: { provider: 'openai', model: 'gpt-6-luna', stopReason: 'stop' } }));
+			const complete = vi.mocked(AIClient.prototype.complete);
+			const base = complete.getMockImplementation()!;
+			complete.mockImplementation(async (user, system, opts) => {
+				const text = await base(user, system, opts);
+				opts?.onResponse?.({ provider: 'anthropic', model: 'claude-opus-5-5', stopReason: 'end_turn' });
+				return text;
+			});
+
+			await mod.regenerate({ proposalId: 'p1' });
+
+			expect(proposals.get('p1')?.generation).toEqual({ provider: 'anthropic', model: 'claude-opus-5-5', stopReason: 'end_turn' });
+		});
+
 		it('rewrites a pending proposal in the store without touching the vault', async () => {
 			proposals.set('p1', proposal({}));
 

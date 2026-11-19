@@ -1,7 +1,7 @@
 import type { Proposal } from '../elaboration';
 import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
-import type { DeepDiveProposal } from '../deep-dive';
+import type { ContinuableDeepDiveRun, DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal, TitleDuplicateStrategy } from '../title';
 import type { RemProposal } from '../rem';
 import type { IllustrateProposal } from '../illustrate';
@@ -83,6 +83,9 @@ export interface UnifiedViewCallbacks {
 	// Illustrate: `acceptedItemIds` picks which proposed visuals to insert.
 	onIllustrateAcceptSelected: (id: string, acceptedItemIds: string[]) => Promise<void>;
 	onIllustrateReject: (id: string) => Promise<void>;
+	// Capped deep dives (#625)
+	onDeepDiveContinue: (runId: string) => Promise<void>;
+	onDeepDiveDiscardContinuation: (runId: string) => Promise<void>;
 	// Checkpoints
 	onCheckpointDiscard: (id: string) => Promise<void>;
 	onCheckpointResume: (id: string) => Promise<void>;
@@ -100,6 +103,8 @@ export interface UnifiedViewSources {
 	rem: () => Promise<RemProposal[]>;
 	illustrate: () => Promise<IllustrateProposal[]>;
 	checkpoints: () => Promise<Checkpoint[]>;
+	/** Deep dives stopped at their note cap with topics left (#625). */
+	continuableDeepDives: () => Promise<ContinuableDeepDiveRun[]>;
 	inProgress: () => InProgressEntry[];
 }
 

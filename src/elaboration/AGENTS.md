@@ -50,6 +50,7 @@ interface Proposal {
   insertionTarget?: string
   status: 'pending' | 'accepted' | 'rejected'
   imageAnalysis?: ImageAnalysis[]
+  generation?: AIResponseInfo   // provider, wire model, stopReason, usage, cached of the rewrite call (#625; proposer.ts captures it via onResponse and forwards to the caller's own onResponse); absent on older proposals
 }
 
 // index.ts private queue cores (#483): every public entry point above acquires the note's
@@ -77,7 +78,7 @@ function proposalContentKey(
 function renderElaborationSettings(ctx: SettingsSectionContext): void
 ```
 
-`DetectionReason`, `DetectionResult`, `Proposal` are re-exported from `index.ts` via `export type` (index.ts:20). `ImageAnalysis` and `ImageAnalyzer` stay internal to `image-analyzer.ts` (not re-exported from `index.ts`). New proposals always set `insertionPoint: 'replace'` (proposer.ts:147); `'append' | 'after-heading' | 'replace-section'` and `insertionTarget` stay on the type only so proposal files written before #552 still pass `isProposal` (proposal-store.ts:12), and accepting such a file rewrites the body like any other.
+`DetectionReason`, `DetectionResult`, `Proposal` are re-exported from `index.ts` via `export type` (index.ts:20). `ImageAnalysis` and `ImageAnalyzer` stay internal to `image-analyzer.ts` (not re-exported from `index.ts`). New proposals always set `insertionPoint: 'replace'` (proposer.ts:151); `'append' | 'after-heading' | 'replace-section'` and `insertionTarget` stay on the type only so proposal files written before #552 still pass `isProposal` (proposal-store.ts:12), and accepting such a file rewrites the body like any other.
 
 ## File Inventory
 
@@ -139,14 +140,14 @@ function renderElaborationSettings(ctx: SettingsSectionContext): void
    |    2. outbound links (<=5, first 500 chars each)
    |    3. note tags (frontmatter + inline, folded) + <=10 tag-sibling titles -- only if includeBacklinkContext
    |  the first entry that does not fit ends gathering; whole block wrapped via wrapUntrusted(_, 'related notes')
-   |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:410)
+   |  Context: ImageAnalyzer if settings.image.enabled; wrapped via wrapUntrusted (proposer.ts:415)
    |  Context: external URLs (<=3) -- tweet(500) / Reddit(2000) / article(2000); video hosts skipped
-   |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:252)
+   |           each fetched body wrapped via wrapUntrusted(text,url) (proposer.ts:257)
    |  Guard B: attempted>0 && externalContext='' && isLinkDominated -> return null (proposer.ts:126)
-   |  buildPrompt(basename, BODY, ...) always prepends `Note title: "<basename>"` (proposer.ts:184); the prompt never carries YAML
+   |  buildPrompt(basename, BODY, ...) always prepends `Note title: "<basename>"` (proposer.ts:189); the prompt never carries YAML
    |  System prompt REWRITE_SYSTEM_PROMPT (proposer.ts:37) + voiceInstruction(settings.ai) (proposer.ts:131, #540) + REWRITE_INSTRUCTIONS (proposer.ts:41):
    |  output the COMPLETE rewritten body, preserve the original intent, keep every sentence/embed/wikilink/URL, no frontmatter, no code fence
-   |  AIClient.complete(prompt, systemPrompt, aiOpts)  (proposer.ts:136; aiOpts = trackAiCache(cacheUse), #527)
+   |  AIClient.complete(prompt, systemPrompt, aiOpts)  (proposer.ts:140; aiOpts = trackAiCache(cacheUse), #527)
    |  proposedAdditions = stripCodeFences(sanitizeAIResponse(raw))  -- the rewritten body
    |  Returns: Proposal (id===contentKey===key, originalContent=full content, status:'pending', insertionPoint:'replace') | null
    |
@@ -184,7 +185,7 @@ Body is analyzed with frontmatter stripped (`stripFrontmatter`, detector.ts:61-6
 
 ## Title Signal and Anti-Fabrication Guards (#380, #387)
 
-The note title is surfaced as context in every prompt (`Note title: "<basename>"`, proposer.ts:184); an empty body seeds the proposal from the title alone rather than an empty block (proposer.ts:190). "Body" here is the frontmatter-stripped content (proposer.ts:81), so a frontmatter-only note counts as empty.
+The note title is surfaced as context in every prompt (`Note title: "<basename>"`, proposer.ts:189); an empty body seeds the proposal from the title alone rather than an empty block (proposer.ts:195). "Body" here is the frontmatter-stripped content (proposer.ts:81), so a frontmatter-only note counts as empty.
 
 Guard A (empty-body + generic title), proposer.ts:95-100:
 
@@ -254,7 +255,7 @@ const MAX_IMAGES_PER_NOTE = 5
 - Caps at `MAX_IMAGES_PER_NOTE` (5).
 - Resolves via `metadataCache.getFirstLinkpathDest`; reads binary; downscales over `settings.image.maxImageSizeMb` (default 5) MB via `preprocessImage` from the `../shared` barrel (image-analyzer.ts:117; downscale surfaced via `notifications.info`, 3s dedup #396).
 - Passes the vision model per call: `aiClient.chat(..., { ...aiOpts, model: visionModelOverride(settings) })` (image-analyzer.ts:150); `settings.ai.model` is never mutated.
-- Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:412).
+- Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:417).
 
 ## Configuration
 
@@ -311,7 +312,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 | type `SettingsSectionContext` | `../shared` | settings-section.ts |
 | `CommandRegistrar`, `isInFlow` | `../commands` | index.ts |
 
-No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:425). `index.ts` no longer imports `buildCallout` / `CALLOUT_TYPES`; `CALLOUT_TYPES.elaboration` and its CSS remain in `shared/callouts.ts` + `styles.css` only to render notes elaborated before #552.
+No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:430). `index.ts` no longer imports `buildCallout` / `CALLOUT_TYPES`; `CALLOUT_TYPES.elaboration` and its CSS remain in `shared/callouts.ts` + `styles.css` only to render notes elaborated before #552.
 
 ## Invariants / Gotchas
 

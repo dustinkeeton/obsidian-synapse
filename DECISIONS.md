@@ -6,6 +6,27 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-19: Record why generation stopped, and let a capped deep dive continue (#625)
+
+**Context**: A proposal didn't record why its model stopped, so a reply cut off at the output limit couldn't be found later. A deep dive that hit `maxNotesPerRun` was marked `completed` and its queue deleted, so it looked the same as one that ran out of topics, and the remaining topics were lost.
+
+**Decision**:
+- `AIClient` reports each reply's provider, wire model, stop reason and token usage through a new `onResponse` callback on the request options, the same pattern as `onCacheHit`. `chat()` still returns a string.
+- Elaboration and deep-dive proposals store this as `generation`.
+- Each deep-dive run records an `endReason`: `cap`, `exhausted`, `cancelled` or `error`. A `cap` run keeps its queue.
+- **Continue** generates the queued topics under a fresh cap, in the same run. It is offered on the finish toast, in a sidebar banner, and as `api.deepDive.continue`. It shares the generation loop with resume.
+
+**Alternatives considered**: Changing `chat()` to return the text with its metadata. That touches every AI caller for data that only two features keep.
+
+**Rationale**: The callback reaches only the callers that want the data. Truncated replies already throw (#596), so a stored stop reason shows a finished reply and which model wrote it, and the token counts show cost. Keeping a capped queue costs one file per run.
+
+**Impact**:
+- The response cache stores each reply's metadata, so a cache replay reports the original values with `cached: true`.
+- A capped run stays listed (sidebar banner, `status().continuableDeepDives`) until it is continued or its remaining topics are discarded.
+- A continue pass restarts the cap count; the run's id, proposals and stats carry on.
+
+---
+
 ## 2026-11-18: API jobs track the operations they start (#624)
 
 **Context**: Deep dives and folder scans run for minutes. A blocking `eval` gets no progress and can't be cancelled. #624 proposed backing jobs with `InProgressRegistry`, but that registry only holds proposal-producing operations that pass metadata; summarize and tidy scans don't.

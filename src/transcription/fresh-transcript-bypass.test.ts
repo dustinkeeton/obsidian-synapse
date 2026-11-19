@@ -11,7 +11,7 @@ import type { InsertUrlTranscriptDeps } from './types';
 import type { TranscriptStore } from './types';
 import * as youtubeCaptions from './youtube-captions';
 
-type Dispatcher = { dispatch: (messages: unknown) => Promise<string> };
+type Dispatcher = { dispatch: (messages: unknown) => Promise<{ text: string }> };
 
 const URL = 'https://www.youtube.com/watch?v=abc123xyz00';
 
@@ -82,8 +82,8 @@ describe('"Fetch a fresh transcript" bypasses the AI post-processing cache (#527
 	it('replays the cleanup pass without the toggle and dispatches it with the toggle', async () => {
 		const dispatch = vi
 			.spyOn(AIClient.prototype as unknown as Dispatcher, 'dispatch')
-			.mockResolvedValueOnce('Stale cleanup.')
-			.mockResolvedValue('Fresh cleanup.');
+			.mockResolvedValueOnce({ text: 'Stale cleanup.' })
+			.mockResolvedValue({ text: 'Fresh cleanup.' });
 
 		await insertUrlTranscript(deps(memoryStore()), URL);
 		await insertUrlTranscript(deps(memoryStore()), URL);

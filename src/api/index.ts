@@ -9,7 +9,7 @@ import { buildStatus, featureCapabilities } from './status';
 import { validateArgs } from './validate';
 import { JobRegistry } from './jobs';
 import type {
-	ApiJobStart, ApiProposal, ApiRegenerateTarget, ApiResult, ApiScanFeature, DeepDiveRunResult, ScanFolderResult, SynapseApi, SynapseApiDeps,
+	ApiDeepDiveEndReason, ApiJobStart, ApiProposal, ApiRegenerateTarget, ApiResult, ApiScanFeature, DeepDiveRunResult, ScanFolderResult, SynapseApi, SynapseApiDeps,
 } from './types';
 import { API_VERSION } from './types';
 
@@ -64,6 +64,14 @@ function fromOutcome(outcome: OperationOutcome): ApiResult {
 	return outcome.status === 'completed'
 		? { ok: true, message: outcome.message, ...result }
 		: { ok: false, error: redactSecrets(outcome.message), ...result };
+}
+
+/** A deep-dive `run` / `continueRun` outcome, with its run id and why generation ended. */
+function fromRunOutcome(outcome: OperationOutcome & { runId?: string; endReason?: ApiDeepDiveEndReason; remainingTopics?: number }): DeepDiveRunResult {
+	const result: DeepDiveRunResult = { ...fromOutcome(outcome), runId: outcome.runId };
+	if (outcome.endReason) result.endReason = outcome.endReason;
+	if (outcome.remainingTopics !== undefined) result.remainingTopics = outcome.remainingTopics;
+	return result;
 }
 
 const asIs = (failed: ApiResult): ApiResult => failed;
@@ -153,8 +161,20 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 				if (refused) return jobRefused(refused);
 				if (!noteFile(notePath)) return jobRefused(`Note not found: ${notePath}`);
 				const jobId = jobs.start('deepDive.run', (id) => settle<DeepDiveRunResult>(async () => {
-					const outcome = await modules.deepDive.run(notePath, { ...options, jobId: id });
-					return { ...fromOutcome(outcome), runId: outcome.runId };
+					return fromRunOutcome(await modules.deepDive.run(notePath, { ...options, jobId: id }));
+				}, asIs));
+				return { ok: true, jobId };
+			},
+
+			continue: async (runId, options) => {
+				const refused = validateArgs('deepDive.continue', [runId, options]) ?? disabled('deepDive', FEATURE_LABEL.deepDive);
+				if (refused) return jobRefused(refused);
+				const continuable = await modules.deepDive.listContinuableRuns();
+				if (!continuable.some((run) => run.runId === runId)) {
+					return jobRefused(`No capped deep dive with id ${runId} has topics left (see status().continuableDeepDives)`);
+				}
+				const jobId = jobs.start('deepDive.continue', (id) => settle<DeepDiveRunResult>(async () => {
+					return fromRunOutcome(await modules.deepDive.continueRun(runId, { ...options, jobId: id }));
 				}, asIs));
 				return { ok: true, jobId };
 			},

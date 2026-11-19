@@ -1,5 +1,5 @@
 import type { ImageAnalysis } from './image-analyzer';
-import type { OperationOutcome } from '../shared';
+import type { AIResponseInfo, OperationOutcome } from '../shared';
 
 export type DetectionReason =
 	| { type: 'short-note'; wordCount: number }
@@ -34,6 +34,8 @@ export interface Proposal {
 	status: 'pending' | 'accepted' | 'rejected';
 	/** Image analysis results used during proposal generation, if any */
 	imageAnalysis?: ImageAnalysis[];
+	/** How the rewrite was produced: provider, model, stop reason, usage (#625). Absent on proposals saved before it. */
+	generation?: AIResponseInfo;
 }
 
 /** What one `scanNote` call did: the proposal generated, and the note when auto-accept rewrote it. `failed` = stopped on an error or produced nothing. */

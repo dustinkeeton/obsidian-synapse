@@ -7,6 +7,7 @@ import type { Proposal } from '../elaboration';
 import { createEl, type StubEl } from '../__mocks__/obsidian';
 import type { WorkspaceLeaf } from 'obsidian';
 import type { InProgressEntry } from '../shared';
+import type { ContinuableDeepDiveRun } from '../deep-dive';
 
 /**
  * The private surface of {@link UnifiedProposalView} these tests reach into via
@@ -26,6 +27,8 @@ interface ViewInternals {
 	renderElaborationReview(proposal: Proposal): void;
 	setItems(items: UnifiedItem[]): void;
 	setInProgress(entries: InProgressEntry[]): void;
+	setContinuableDeepDives(runs: ContinuableDeepDiveRun[]): void;
+	setCheckpoints(checkpoints: never[]): void;
 	render(): void;
 	reviewingElaboration: Proposal | null;
 }
@@ -54,6 +57,8 @@ function mockCallbacks(): UnifiedViewCallbacks {
 		onRemReject: vi.fn().mockResolvedValue(undefined),
 		onIllustrateAcceptSelected: vi.fn().mockResolvedValue(undefined),
 		onIllustrateReject: vi.fn().mockResolvedValue(undefined),
+		onDeepDiveContinue: vi.fn().mockResolvedValue(undefined),
+		onDeepDiveDiscardContinuation: vi.fn().mockResolvedValue(undefined),
 		onCheckpointDiscard: vi.fn().mockResolvedValue(undefined),
 		onCheckpointResume: vi.fn().mockResolvedValue(undefined),
 		onCancelInProgress: vi.fn(),
@@ -538,5 +543,42 @@ describe('UnifiedProposalView in progress section (#577)', () => {
 		view.reviewingElaboration = null;
 		view.render();
 		expect(elsWithClass(view.contentEl, 'synapse-in-progress-row')).toHaveLength(1);
+	});
+});
+
+describe('UnifiedProposalView capped deep dives (#625)', () => {
+	const run: ContinuableDeepDiveRun = { runId: 'run1', rootNotePath: 'notes/Neural Networks.md', remainingTopics: 3, totalProposals: 50, createdAt: '2026-11-01T00:00:00Z' };
+
+	function setup() {
+		const callbacks = mockCallbacks();
+		const view = new UnifiedProposalView(mockLeaf(), callbacks, new NotificationManager()) as unknown as ViewInternals;
+		view.contentEl = createEl();
+		view.setContinuableDeepDives([run]);
+		view.setCheckpoints([]);
+		return { view, callbacks };
+	}
+
+	it('shows a card per capped run, in place of the empty state', () => {
+		const { view } = setup();
+		const banner = elsWithClass(view.contentEl, 'synapse-continuable-banner')[0];
+		expect(textOf(banner)).toContain('Deep dive: Neural Networks');
+		expect(textOf(banner)).toContain('50 generated, 3 topics left');
+		expect(elsWithClass(view.contentEl, 'synapse-empty')).toHaveLength(0);
+	});
+
+	it('continues and discards through the callbacks', () => {
+		const { view, callbacks } = setup();
+		const buttons = elsWithTag(elsWithClass(view.contentEl, 'synapse-continuable-banner')[0], 'BUTTON');
+		buttons[0].dispatchEvent({ type: 'click' });
+		buttons[1].dispatchEvent({ type: 'click' });
+		expect(callbacks.onDeepDiveContinue).toHaveBeenCalledWith('run1');
+		expect(callbacks.onDeepDiveDiscardContinuation).toHaveBeenCalledWith('run1');
+	});
+
+	it('drops the banner once no run is capped', () => {
+		const { view } = setup();
+		view.setContinuableDeepDives([]);
+		view.setCheckpoints([]);
+		expect(elsWithClass(view.contentEl, 'synapse-continuable-banner')).toHaveLength(0);
 	});
 });

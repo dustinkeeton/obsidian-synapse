@@ -174,6 +174,15 @@ export class DeepDiveStore {
 		return readJsonFile(this.app.vault.adapter, path, isDeepDiveRun);
 	}
 
+	async loadAllRuns(): Promise<DeepDiveRun[]> {
+		const runs: DeepDiveRun[] = [];
+		for (const path of await this.listFiles(this.runFolder)) {
+			const run = await readJsonFile(this.app.vault.adapter, path, isDeepDiveRun);
+			if (run) runs.push(run);
+		}
+		return runs;
+	}
+
 	// ── Helpers ──
 
 	private proposalFileName(proposal: DeepDiveProposal): string {

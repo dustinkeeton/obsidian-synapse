@@ -7,7 +7,7 @@ Versioned public API for external agents (#623, epic #629). `main.ts:265-273` bu
 ## Public API (`index.ts`)
 
 ```ts
-function createSynapseApi(deps: SynapseApiDeps): SynapseApi   // index.ts:90
+function createSynapseApi(deps: SynapseApiDeps): SynapseApi   // index.ts:98
 const API_VERSION = 1                                          // types.ts:12; bump on a breaking shape change once released
 const VERB_DEFINITIONS: readonly VerbDefinition[]              // capabilities.ts:41; the source #628 generates MCP tools from
 
@@ -29,6 +29,7 @@ interface SynapseApi {
   scanFolder(feature: PipelineModuleKey, folder: string, options?: { recursive?: boolean }): Promise<ApiJobStart>   // job result: ScanFolderResult
   deepDive: {
     run(notePath: string, options?: { depth?; maxNotes?; autoAccept? }): Promise<ApiJobStart>                        // job result: DeepDiveRunResult
+    continue(runId: string, options?: { maxNotes?; autoAccept? }): Promise<ApiJobStart>    // #625; capped run's remaining topics under a fresh cap; job result: DeepDiveRunResult
     regenerate(target: string | { proposalId } | { notePath }): Promise<DeepDiveRunResult>   // string ending ".md" = note path, else proposal id
   }
   jobs: {
@@ -52,12 +53,12 @@ interface ApiResult {
   proposals: string[]            // ids created / rewritten / accepted / rejected
   cacheUse: CacheUse | null      // null = not tracked (scanFolder, proposals.*)
 }
-DeepDiveRunResult = ApiResult & { runId? }
+DeepDiveRunResult = ApiResult & { runId?; endReason?: 'cap' | 'exhausted' | 'cancelled' | 'error'; remainingTopics? }   // endReason / remainingTopics from run and continue (#625)
 ScanFolderResult = ApiResult & { count: number | null }   // the scan's own return; null when it returns void (summarize)
 
 interface ApiJobStart { ok: boolean; jobId?: string; error? }   // jobId exactly when ok
 interface ApiJob {
-  id: string; verb: string                                   // 'scanFolder' | 'deepDive.run'
+  id: string; verb: string                                   // 'scanFolder' | 'deepDive.run' | 'deepDive.continue'
   status: 'running' | 'completed' | 'failed' | 'cancelled'
   startedAt: string; finishedAt?: string
   progress: { message: string; current?: number; total?: number } | null
@@ -69,9 +70,9 @@ interface ApiJob {
 
 ## Jobs (`jobs.ts`, #624)
 
-- `scanFolder` and `deepDive.run` check arguments, the feature gate, and the note or folder first; any refusal returns `{ ok: false, error }` and starts no job. Otherwise they return `{ ok: true, jobId }` at once and the work runs as a job.
+- `scanFolder`, `deepDive.run` and `deepDive.continue` check arguments, the feature gate, and the note or folder first; any refusal returns `{ ok: false, error }` and starts no job. Otherwise they return `{ ok: true, jobId }` at once and the work runs as a job.
 - Tagging: the job id reaches the module (`ScanScope.jobId` for scans, `DeepDiveRunOptions.jobId` for deep dive, never persisted). The module names the operations it starts with `jobOpId(base, scope)` -> `<base>@job:<jobId>`. `NotificationManager` records tagged operations in `jobOps` (`shared/job-operations.ts`): label, message, progress, end state. Op ids are unique per job.
-- Tagged sites: deep-dive topic scan + generation (`deep-dive/index.ts:437`, `:533`); the folder-scan and generate ops of elaboration (`vault-scan`, `vault-generate`), summarize, enrichment, REM (`rem-directory-scan`), illustrate, tidy (`tidy-vault`), organize (`organize-scan`, `organize-generate`). Per-note ops a scan starts are not tagged.
+- Tagged sites: deep-dive topic scan + generation (`deep-dive/index.ts:447`, `:599`); the folder-scan and generate ops of elaboration (`vault-scan`, `vault-generate`), summarize, enrichment, REM (`rem-directory-scan`), illustrate, tidy (`tidy-vault`), organize (`organize-scan`, `organize-generate`). Per-note ops a scan starts are not tagged.
 - Status (`JobRegistry.finish`): `cancelled` when a tagged op actually ended cancelled (`jobs.cancel`, or a toast or sidebar Cancel); a cancel that stopped nothing (e.g. during deep dive's auto-accept, which runs after its last op) leaves the job to finish normally. Else `failed` when the verb's result is `ok: false` or a tagged op ended in an error (its message becomes `error`); else `completed`.
 - `progress` is the newest running tagged op's line, else the last one's.
 - Cancel: `jobs.cancel(id)` -> `NotificationManager.cancelJob(id)`, which runs `cancelOperation` on each running tagged op (the toast's Cancel path), returns how many it stopped (`stoppedOperations`), and cancels any tagged op the job starts afterwards. Deep dive checks its topic-scan op after extraction, so a cancel there ends the run before any run record or checkpoint exists.
@@ -81,7 +82,7 @@ interface ApiJob {
 
 ## Verb contract
 
-- Never throws: every verb body runs in `settle` (index.ts:72), including a job's body; a throw becomes `{ ok: false, error }`. `proposals.list` catches its own failure into `{ ok: false, items: [] }`; `status()` reports `checkpoints: null` when the checkpoint folder can't be read; `capabilities()` is pure.
+- Never throws: every verb body runs in `settle` (index.ts:80), including a job's body; a throw becomes `{ ok: false, error }`. `proposals.list` catches its own failure into `{ ok: false, items: [] }`; `status()` reports `checkpoints: null` when the checkpoint folder can't be read, and `continuableDeepDives: null` when deep dive is off or its runs can't be read; `capabilities()` is pure.
 - Arguments are checked first against the verb's `VERB_DEFINITIONS` schemas (`validateArgs`, validate.ts:53; the subset used: type, enum, minimum, maximum, properties, required, additionalProperties: false, items, oneOf). A bad argument (e.g. `maxNotes: NaN`, `depth: 7`, an unknown option, an unknown kind or feature) returns `ok: false` and calls nothing.
 - Feature gate: a verb whose feature has `settings.<key>.enabled === false` returns `ok: false` and calls nothing (mirrors the palette command not registering).
 - No modal: verbs take every answer a modal asks for. `deepDive.run` skips `selectDepth` and the confirm (`DeepDiveModule.run`); `scanFolder` passes `skipConfirmation = true`; elaboration accept passes `onStale: 'skip'`, or `'replace'` with `force: true`; title accept without `resolution` returns the conflict instead of renaming.
@@ -93,6 +94,7 @@ interface ApiJob {
 | `elaborate` | `elaboration.scanNote(file, true)` (bypasses the stub gate) | proposal id; the note in `written` when auto-accept rewrote it |
 | `scanFolder` (job) | `scanFns[feature]({ folder, recursive, jobId }, true)`; `""` / `/` = vault root; missing folder refused | job result: new pending ids of the feature's proposal kind for notes inside the scanned folder (diff of `list()` before/after, filtered by scope so jobs on other folders don't claim each other's; two overlapping jobs on the same folder can still share ids; none for summarize, tidy); `count` |
 | `deepDive.run` (job) | `deepDive.run(notePath, { ...options, jobId })`; missing note refused | job result: `runId`, generated ids, created paths under auto-accept |
+| `deepDive.continue` (job, #625) | `deepDive.continueRun(runId, { ...options, jobId })`; a run not in `listContinuableRuns()` refused | job result: `runId`, this pass's generated ids, `endReason`, `remainingTopics` |
 | `deepDive.regenerate` | `deepDive.regenerate(target)` | the proposal id; the note path when it was accepted |
 | `proposals.accept` | per-kind adapter (`proposals.ts`) | refuses an id not in the kind's pending list |
 | `proposals.reject` | per-kind adapter | same refusal |
@@ -113,7 +115,9 @@ interface ApiJob {
 
 A module may reject a proposal inside its accept (REM / illustrate with nothing applicable, organize with the note gone, enrichment with nothing to add); the stored-status check reports that as `ok: false`, `Proposal was not applied (status: rejected)`. `items` must be a non-empty subset of the proposal's items, checked before the module is called. Enrichment, organize, REM and illustrate expose `getProposal(id)` for this check.
 
-`ApiProposal.notePath` is the note the proposal changes; for deep dive it is the note it would create, with `sourceNotePath` the topic's source.
+`ApiProposal.notePath` is the note the proposal changes; for deep dive it is the note it would create, with `sourceNotePath` the topic's source. Elaboration and deep-dive items carry `generation` (`AIResponseInfo`: provider, wire model, `stopReason`, `usage`, `cached`) when the proposal recorded it (#625).
+
+`ApiStatus.continuableDeepDives` (#625): `ApiContinuableDeepDive[]` = `{ runId, rootNotePath, remainingTopics, totalProposals, createdAt }` from `DeepDiveModule.listContinuableRuns()`; the API declares its own `ApiDeepDiveEndReason` / `ApiContinuableDeepDive` so it imports no feature barrel, and `fromRunOutcome` (index.ts) maps a run outcome structurally.
 
 ## Status and capabilities (`status.ts`, `capabilities.ts`)
 
@@ -133,4 +137,4 @@ Out: `main.ts` only.
 | File | Covers |
 |------|--------|
 | `jobs.test.ts` | `JobRegistry`: id at once + progress, failed via result / op error / throw, cancel via `jobs.cancel` and via the toast, wait timeout, unknown ids, list without operations, TTL + cap pruning |
-| `api.test.ts` | version; capabilities (verb list + schemas, every verb name resolves to a function, disabled feature, missing key, unbuilt module); status (resolved config, no key in output, unreadable checkpoints); argument validation (deepDive.run options, regenerate target forms, required path); elaborate (result mapping, missing note, disabled, redacted throw); scanFolder as a job (no-confirm call with jobId, new ids, root, failed via op error, cancel, refusals start no job, availability across scan features); deepDive.run as a job (options + jobId, missing note, failed outcome); jobs verb argument checks; regenerate mapping; proposals list (all kinds, store failure) / accept (elaboration onStale + missing note, REM default and invalid items, illustrate subset, module-side rejection, enrichment, organize moved path, deep-dive boolean, title conflict) / refusals |
+| `api.test.ts` | version; capabilities (verb list + schemas, every verb name resolves to a function, disabled feature, missing key, unbuilt module); status (resolved config, no key in output, unreadable checkpoints); argument validation (deepDive.run options, regenerate target forms, required path); elaborate (result mapping, missing note, disabled, redacted throw); scanFolder as a job (no-confirm call with jobId, new ids, root, failed via op error, cancel, refusals start no job, availability across scan features); deepDive.run as a job (options + jobId, missing note, failed outcome, endReason + remainingTopics); deepDive.continue (job, refusals); status continuableDeepDives; proposal `generation`; jobs verb argument checks; regenerate mapping; proposals list (all kinds, store failure) / accept (elaboration onStale + missing note, REM default and invalid items, illustrate subset, module-side rejection, enrichment, organize moved path, deep-dive boolean, title conflict) / refusals |

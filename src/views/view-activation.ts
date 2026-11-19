@@ -40,6 +40,7 @@ function isUnifiedProposalView(view: unknown): view is UnifiedProposalView {
 	const candidate = view as Partial<UnifiedProposalView> | null;
 	return typeof candidate?.setItems === 'function'
 		&& typeof candidate.setCheckpoints === 'function'
+		&& typeof candidate.setContinuableDeepDives === 'function'
 		&& typeof candidate.setInProgress === 'function';
 }
 
@@ -107,6 +108,7 @@ async function refreshOnce(workspace: Workspace, sources: UnifiedViewSources): P
 	for (const p of await sources.illustrate()) items.push({ kind: 'illustrate', data: p });
 
 	const checkpoints = await sources.checkpoints();
+	const continuable = await sources.continuableDeepDives();
 
 	for (const leaf of leaves) {
 		await ensureLoaded(leaf);
@@ -117,6 +119,7 @@ async function refreshOnce(workspace: Workspace, sources: UnifiedViewSources): P
 		const view: unknown = leaf.view;
 		if (!isUnifiedProposalView(view)) continue;
 		view.setItems(items);
+		view.setContinuableDeepDives(continuable);
 		view.setCheckpoints(checkpoints);
 		view.setInProgress(inProgress);
 	}
