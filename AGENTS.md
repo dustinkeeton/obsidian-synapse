@@ -668,6 +668,6 @@ Framework: Vitest, globals enabled, node environment.
 - Third-party GitHub Actions are pinned to full commit SHAs, version in a trailing comment (`.github/workflows/ci.yml`, `release.yml`, `tag-on-version-bump.yml`). Top-level `permissions`: `ci.yml:9` and `waffle-doctor.yml:13` `contents: read`; `release.yml:16` and `tag-on-version-bump.yml:14` `contents: write` + `id-token: write` + `attestations: write`; `waffle-label-hook.yml` sets per-job permissions (`:24` `contents: read` + `issues: write`, `:295` `contents: write` + `issues: write` + `pull-requests: write`)
 - Frontmatter keys validated against allowlist pattern + forbidden keys blocklist
 - Enrichment sections use `%% synapse-enrichment-start/end %%` markers for idempotent updates
-- Checkpoint IDs validated against `/^[a-z0-9]+$/` to prevent path traversal; deep-dive run ids (read back from proposals and checkpoint metadata) against `/^[A-Za-z0-9_-]+$/` (`deep-dive/deep-dive-store.ts:37`: `saveRun` throws, `loadRun` returns null)
+- Checkpoint IDs validated against `/^[a-z0-9]+$/` to prevent path traversal; deep-dive run ids (read back from proposals and checkpoint metadata) against `/^[A-Za-z0-9_-]+$/` (`deep-dive/deep-dive-store.ts:42`: `saveRun` throws, `loadRun` returns null)
 - Gemini model ids are `encodeURIComponent`-encoded into the request URL path (`shared/ai-client.ts:629`, `audio/transcriber.ts:480`)
 - Deep merge in settings rejects `__proto__`, `constructor`, `prototype` keys

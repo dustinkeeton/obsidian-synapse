@@ -209,6 +209,29 @@ describe('DeepDiveStore', () => {
 			expect((await store.loadCappedRuns()).map((r) => r.id)).toEqual(['c']);
 			expect(mockAdapter.read.mock.calls.map((c) => String(c[0]))).toEqual(['.synapse/deep-dive/runs/c.json']);
 		});
+
+		it('picks up a run file another device synced in, and a synced in-progress run that became capped', async () => {
+			await store.saveRun(run('a', { status: 'in-progress' }));
+			expect(await store.loadCappedRuns()).toEqual([]);
+
+			// Written by sync, not through this store.
+			mockFiles.set('.synapse/deep-dive/runs/a.json', JSON.stringify(run('a', capped)));
+			mockFiles.set('.synapse/deep-dive/runs/z.json', JSON.stringify(run('z', capped)));
+
+			expect((await store.loadCappedRuns()).map((r) => r.id).sort()).toEqual(['a', 'z']);
+		});
+
+		it('keeps a save made while the first build is reading', async () => {
+			await store.saveRun(run('a', { status: 'in-progress' }));
+			const loadAll = store.loadAllRuns.bind(store);
+			vi.spyOn(store, 'loadAllRuns').mockImplementationOnce(async () => {
+				const stale = await loadAll();
+				await store.saveRun(run('a', capped));
+				return stale.map((r) => ({ ...r, status: 'completed' as const }));
+			});
+
+			expect((await store.loadCappedRuns()).map((r) => r.id)).toEqual(['a']);
+		});
 	});
 
 	describe('deleteAllProposals', () => {
