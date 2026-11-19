@@ -54,6 +54,8 @@ export class DeepDiveStore {
 	private watched: { folder: string; files: Set<string>; ids: Set<string> } | null = null;
 	/** Saves made while `watched` is being built, replayed onto it after the build. */
 	private savesDuringBuild: Map<string, boolean> | null = null;
+	/** The build in flight; a concurrent `loadCappedRuns` waits for it instead of starting a second one. */
+	private building: Promise<void> | null = null;
 
 	constructor(
 		private app: App,
@@ -204,17 +206,8 @@ export class DeepDiveStore {
 		const files = await this.listFiles(folder);
 		const known = this.watched?.folder === folder ? this.watched : null;
 		if (!known || files.some(f => !known.files.has(f))) {
-			this.savesDuringBuild = new Map();
-			try {
-				const ids = new Set((await this.loadAllRuns()).filter(isWatched).map(run => run.id));
-				for (const [id, watched] of this.savesDuringBuild) {
-					if (watched) ids.add(id);
-					else ids.delete(id);
-				}
-				this.watched = { folder, files: new Set(files), ids };
-			} finally {
-				this.savesDuringBuild = null;
-			}
+			this.building ??= this.buildWatched(folder, files).finally(() => { this.building = null; });
+			await this.building;
 		}
 		const ids = this.watched?.ids ?? new Set<string>();
 		const runs: DeepDiveRun[] = [];
@@ -224,6 +217,21 @@ export class DeepDiveStore {
 			else if (!run || !isWatched(run)) ids.delete(id);
 		}
 		return runs;
+	}
+
+	private async buildWatched(folder: string, files: string[]): Promise<void> {
+		const saves = new Map<string, boolean>();
+		this.savesDuringBuild = saves;
+		try {
+			const ids = new Set((await this.loadAllRuns()).filter(isWatched).map(run => run.id));
+			for (const [id, watched] of saves) {
+				if (watched) ids.add(id);
+				else ids.delete(id);
+			}
+			this.watched = { folder, files: new Set(files), ids };
+		} finally {
+			this.savesDuringBuild = null;
+		}
 	}
 
 	async loadAllRuns(): Promise<DeepDiveRun[]> {

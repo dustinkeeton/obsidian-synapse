@@ -221,6 +221,17 @@ describe('DeepDiveStore', () => {
 			expect((await store.loadCappedRuns()).map((r) => r.id).sort()).toEqual(['a', 'z']);
 		});
 
+		it('shares one build between concurrent calls', async () => {
+			await store.saveRun(run('a', capped));
+			const loadAll = vi.spyOn(store, 'loadAllRuns');
+
+			const [first, second] = await Promise.all([store.loadCappedRuns(), store.loadCappedRuns()]);
+
+			expect(loadAll).toHaveBeenCalledTimes(1);
+			expect(first.map((r) => r.id)).toEqual(['a']);
+			expect(second.map((r) => r.id)).toEqual(['a']);
+		});
+
 		it('keeps a save made while the first build is reading', async () => {
 			await store.saveRun(run('a', { status: 'in-progress' }));
 			const loadAll = store.loadAllRuns.bind(store);
