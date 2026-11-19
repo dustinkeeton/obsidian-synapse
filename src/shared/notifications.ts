@@ -336,9 +336,9 @@ export class NotificationManager {
 
 	/**
 	 * Cancel every running operation of a job, and any it starts later, through
-	 * the same path as the toast's Cancel button (#624).
+	 * the same path as the toast's Cancel button (#624). Returns how many running
+	 * operations it stopped.
 	 */
-	/** Returns how many running operations it stopped. */
 	cancelJob(jobId: string): number {
 		this.jobOps.markCancelled(jobId);
 		let stopped = 0;

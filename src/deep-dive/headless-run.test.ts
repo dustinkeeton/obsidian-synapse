@@ -190,7 +190,7 @@ describe('DeepDiveModule headless verbs', () => {
 
 			const outcome = await mod.run('notes/Root.md', { depth: 1 });
 
-			expect(outcome).toMatchObject({ status: 'failed', message: 'Deep dive cancelled' });
+			expect(outcome).toMatchObject({ status: 'cancelled', message: 'Deep dive cancelled' });
 			expect(savedRun).toBeNull();
 			expect(checkpoints.create).not.toHaveBeenCalled();
 		});

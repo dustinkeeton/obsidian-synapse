@@ -39,10 +39,10 @@ const DEEP_DIVE_RESUMING_MESSAGE = 'Deep dive paused while Obsidian was in the b
 
 type PreparedRun =
 	| { ok: true; content: string; newTopics: ExtractedTopic[]; cacheUse: CacheUse }
-	| { ok: false; message: string; cacheUse: CacheUse };
+	| { ok: false; message: string; cacheUse: CacheUse; cancelled?: boolean };
 
-function failedOutcome(message: string, cacheUse: CacheUse = {}): DeepDiveOutcome {
-	return { status: 'failed', message, proposalIds: [], writtenPaths: [], cacheUse };
+function failedOutcome(message: string, cacheUse: CacheUse = {}, status: 'failed' | 'cancelled' = 'failed'): DeepDiveOutcome {
+	return { status, message, proposalIds: [], writtenPaths: [], cacheUse };
 }
 
 function clampDepth(depth: number): number {
@@ -313,7 +313,7 @@ export class DeepDiveModule implements FeatureModule {
 			return failedOutcome(`Note not found: ${notePath}`);
 		}
 		const prepared = await this.prepareRun(file, options.jobId);
-		if (!prepared.ok) return failedOutcome(prepared.message, prepared.cacheUse);
+		if (!prepared.ok) return failedOutcome(prepared.message, prepared.cacheUse, prepared.cancelled ? 'cancelled' : 'failed');
 		const depth = clampDepth(options.depth ?? this.getSettings().deepDive.maxDepth);
 		const outcome = await this.startRun(file, prepared.content, prepared.newTopics, { ...options, depth });
 		return { ...outcome, cacheUse: mergeCacheUse([prepared.cacheUse, outcome.cacheUse]) };
@@ -446,7 +446,7 @@ export class DeepDiveModule implements FeatureModule {
 			return stop(`Topic extraction failed -- ${msg}`);
 		}
 		// Cancelled while the model was extracting: stop before a run or checkpoint exists.
-		if (scanOp.cancelled) return stop('Deep dive cancelled');
+		if (scanOp.cancelled) return { ok: false, message: 'Deep dive cancelled', cacheUse: scanUse, cancelled: true };
 
 		if (rootTopics.length === 0) {
 			scanOp.finish(withCacheReport('No topics found', [scanUse]));
