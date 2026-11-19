@@ -2,7 +2,7 @@ import { App, TFile, getAllTags, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { AIClient, sanitizeAIResponse, stripCodeFences, isTwitterUrl, fetchTweetContent, isRedditUrl, fetchRedditContent, fetchArticleContent, linkLoadError, NotificationManager, isGenericTitle, hashString, contentKey, wrapUntrusted, stripUntrustedMarkers, redactError, isPathExcluded, findUrls, isEffectivelyEmptyProse, splitRawFrontmatter, voiceInstruction, resolveAIConfig } from '../shared';
 import { ImageAnalyzer, ImageAnalysis } from './image-analyzer';
-import type { AIRequestOptions } from '../shared';
+import type { AIRequestOptions, AIResponseInfo } from '../shared';
 import { DetectionResult, DetectionReason, Proposal } from './types';
 
 /**
@@ -132,7 +132,11 @@ export class ProposalGenerator {
 			? `${basePrompt} Image analysis has been provided -- use the descriptions to write contextually aware content that references what the images actually show. Preserve all image embeds in their original format. ${UNTRUSTED_RULE}`
 			: `${basePrompt} If the source content contains image URLs, preserve them as markdown image embeds (![alt](url)) rather than describing the image in text. For internal images referenced as [[image.jpg]], embed them as ![[image.jpg]]. ${UNTRUSTED_RULE}`;
 
-		const rawRewrite = await this.aiClient.complete(prompt, systemPrompt, aiOpts);
+		let generation: AIResponseInfo | undefined;
+		const rawRewrite = await this.aiClient.complete(prompt, systemPrompt, {
+			...aiOpts,
+			onResponse: (info) => { generation = info; aiOpts?.onResponse?.(info); },
+		});
 		const proposedAdditions = stripCodeFences(stripUntrustedMarkers(sanitizeAIResponse(rawRewrite)));
 		if (!proposedAdditions.trim()) {
 			this.notifications.info(`The AI returned an empty rewrite for "${noteFile.basename}", so no proposal was made.`);
@@ -150,6 +154,7 @@ export class ProposalGenerator {
 			insertionPoint: 'replace',
 			status: 'pending',
 			imageAnalysis: analyses.length > 0 ? analyses : undefined,
+			...(generation ? { generation } : {}),
 		};
 	}
 

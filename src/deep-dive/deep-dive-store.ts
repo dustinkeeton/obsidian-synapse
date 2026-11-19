@@ -28,6 +28,16 @@ function isDeepDiveRun(v: unknown): v is DeepDiveRun {
 	);
 }
 
+/** A run that stopped at its note cap with topics still queued (#625). */
+function isCapped(run: DeepDiveRun): boolean {
+	return run.endReason === 'cap' && (run.pending?.tasks.length ?? 0) > 0;
+}
+
+/** Runs worth re-reading for the capped listing: capped, or still running (another device may cap it and sync the file). */
+function isWatched(run: DeepDiveRun): boolean {
+	return isCapped(run) || run.status === 'in-progress';
+}
+
 /** A run id read back from stored proposals or checkpoints becomes a file name; no separators or dots. */
 const isSafeRunId = (id: string): boolean => /^[A-Za-z0-9_-]+$/.test(id);
 
@@ -37,6 +47,16 @@ const isSafeRunId = (id: string): boolean => /^[A-Za-z0-9_-]+$/.test(id);
  * Runs live in {proposalFolderPath}/runs/.
  */
 export class DeepDiveStore {
+	/**
+	 * Watched run ids in `folder` (see `isWatched`), built from every run file, then kept current by `saveRun`.
+	 * `files` is the folder listing it was built from; a new file (e.g. synced from another device) triggers a rebuild.
+	 */
+	private watched: { folder: string; files: Set<string>; ids: Set<string> } | null = null;
+	/** Saves made while `watched` is being built, replayed onto it after the build. */
+	private savesDuringBuild: Map<string, boolean> | null = null;
+	/** The build in flight; a concurrent `loadCappedRuns` waits for it instead of starting a second one. */
+	private building: Promise<void> | null = null;
+
 	constructor(
 		private app: App,
 		private getSettings: () => SynapseSettings
@@ -166,12 +186,61 @@ export class DeepDiveStore {
 		await ensureFolder(this.app, this.runFolder);
 		const path = normalizePath(`${this.runFolder}/${run.id}.json`);
 		await this.app.vault.adapter.write(path, JSON.stringify(run, null, 2));
+		this.savesDuringBuild?.set(run.id, isWatched(run));
+		if (this.watched?.folder === this.runFolder) {
+			this.watched.files.add(path);
+			if (isWatched(run)) this.watched.ids.add(run.id);
+			else this.watched.ids.delete(run.id);
+		}
 	}
 
 	async loadRun(id: string): Promise<DeepDiveRun | null> {
 		if (!isSafeRunId(id)) return null;
 		const path = normalizePath(`${this.runFolder}/${id}.json`);
 		return readJsonFile(this.app.vault.adapter, path, isDeepDiveRun);
+	}
+
+	/** Capped runs (#625): lists the run folder, then reads only watched runs' files unless the listing gained a file. */
+	async loadCappedRuns(): Promise<DeepDiveRun[]> {
+		const folder = this.runFolder;
+		const files = await this.listFiles(folder);
+		const known = this.watched?.folder === folder ? this.watched : null;
+		if (!known || files.some(f => !known.files.has(f))) {
+			this.building ??= this.buildWatched(folder, files).finally(() => { this.building = null; });
+			await this.building;
+		}
+		const ids = this.watched?.ids ?? new Set<string>();
+		const runs: DeepDiveRun[] = [];
+		for (const id of [...ids]) {
+			const run = await this.loadRun(id);
+			if (run && isCapped(run)) runs.push(run);
+			else if (!run || !isWatched(run)) ids.delete(id);
+		}
+		return runs;
+	}
+
+	private async buildWatched(folder: string, files: string[]): Promise<void> {
+		const saves = new Map<string, boolean>();
+		this.savesDuringBuild = saves;
+		try {
+			const ids = new Set((await this.loadAllRuns()).filter(isWatched).map(run => run.id));
+			for (const [id, watched] of saves) {
+				if (watched) ids.add(id);
+				else ids.delete(id);
+			}
+			this.watched = { folder, files: new Set(files), ids };
+		} finally {
+			this.savesDuringBuild = null;
+		}
+	}
+
+	async loadAllRuns(): Promise<DeepDiveRun[]> {
+		const runs: DeepDiveRun[] = [];
+		for (const path of await this.listFiles(this.runFolder)) {
+			const run = await readJsonFile(this.app.vault.adapter, path, isDeepDiveRun);
+			if (run) runs.push(run);
+		}
+		return runs;
 	}
 
 	// ── Helpers ──

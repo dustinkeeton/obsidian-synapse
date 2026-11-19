@@ -120,6 +120,7 @@ export default class SynapsePlugin extends Plugin {
 			rem: () => rem.getPendingProposals(),
 			illustrate: () => illustrate.getPendingProposals(),
 			checkpoints: () => this.checkpointManager.listIncomplete(),
+			continuableDeepDives: () => (this.settings.deepDive.enabled ? deepDive.listContinuableRuns() : Promise.resolve([])),
 			inProgress: () => this.notifications.inProgress.snapshot(),
 		};
 		const refreshView = () => refreshUnifiedView(this.app.workspace, viewSources);
@@ -164,6 +165,8 @@ export default class SynapsePlugin extends Plugin {
 			onRemReject: (id) => rem.rejectProposal(id),
 			onIllustrateAcceptSelected: (id, itemIds) => illustrate.acceptProposal(id, itemIds),
 			onIllustrateReject: (id) => illustrate.rejectProposal(id),
+			onDeepDiveContinue: (runId) => deepDive.continueRun(runId).then(() => {}),
+			onDeepDiveDiscardContinuation: (runId) => deepDive.discardContinuation(runId).then(() => {}),
 			onCheckpointDiscard: (id) => this.checkpoints.discard(id),
 			onCheckpointResume: (id) => this.checkpoints.resume(id),
 			onCancelInProgress: (id) => this.notifications.cancelOperation(id),

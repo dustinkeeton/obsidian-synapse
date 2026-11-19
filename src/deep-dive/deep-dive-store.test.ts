@@ -190,6 +190,61 @@ describe('DeepDiveStore', () => {
 		});
 	});
 
+	describe('loadCappedRuns (#625)', () => {
+		const run = (id: string, overrides: Partial<DeepDiveRun> = {}): DeepDiveRun => ({
+			id, rootNotePath: 'notes/root.md', maxDepth: 2, qualityThreshold: 0.4, proposalIds: [],
+			stats: { totalProposals: 1, byDepth: {}, earlyTerminations: 0 }, createdAt: '2026-11-01T00:00:00.000Z', status: 'completed',
+			...overrides,
+		});
+		const capped = { endReason: 'cap' as const, pending: { tasks: [{ topic: makeProposal().topic, depth: 0, ancestorTopics: [] }], processedCount: 1 } };
+
+		it('reads every run once, then only the capped ones, tracking saves', async () => {
+			await store.saveRun(run('a', capped));
+			await store.saveRun(run('b', { endReason: 'exhausted' }));
+			expect((await store.loadCappedRuns()).map((r) => r.id)).toEqual(['a']);
+
+			mockAdapter.read.mockClear();
+			await store.saveRun(run('c', capped));
+			await store.saveRun(run('a', { endReason: 'exhausted' }));
+			expect((await store.loadCappedRuns()).map((r) => r.id)).toEqual(['c']);
+			expect(mockAdapter.read.mock.calls.map((c) => String(c[0]))).toEqual(['.synapse/deep-dive/runs/c.json']);
+		});
+
+		it('picks up a run file another device synced in, and a synced in-progress run that became capped', async () => {
+			await store.saveRun(run('a', { status: 'in-progress' }));
+			expect(await store.loadCappedRuns()).toEqual([]);
+
+			// Written by sync, not through this store.
+			mockFiles.set('.synapse/deep-dive/runs/a.json', JSON.stringify(run('a', capped)));
+			mockFiles.set('.synapse/deep-dive/runs/z.json', JSON.stringify(run('z', capped)));
+
+			expect((await store.loadCappedRuns()).map((r) => r.id).sort()).toEqual(['a', 'z']);
+		});
+
+		it('shares one build between concurrent calls', async () => {
+			await store.saveRun(run('a', capped));
+			const loadAll = vi.spyOn(store, 'loadAllRuns');
+
+			const [first, second] = await Promise.all([store.loadCappedRuns(), store.loadCappedRuns()]);
+
+			expect(loadAll).toHaveBeenCalledTimes(1);
+			expect(first.map((r) => r.id)).toEqual(['a']);
+			expect(second.map((r) => r.id)).toEqual(['a']);
+		});
+
+		it('keeps a save made while the first build is reading', async () => {
+			await store.saveRun(run('a', { status: 'in-progress' }));
+			const loadAll = store.loadAllRuns.bind(store);
+			vi.spyOn(store, 'loadAllRuns').mockImplementationOnce(async () => {
+				const stale = await loadAll();
+				await store.saveRun(run('a', capped));
+				return stale.map((r) => ({ ...r, status: 'completed' as const }));
+			});
+
+			expect((await store.loadCappedRuns()).map((r) => r.id)).toEqual(['a']);
+		});
+	});
+
 	describe('deleteAllProposals', () => {
 		it('removes all proposals', async () => {
 			await store.saveProposal(makeProposal({ id: 'p1' }));

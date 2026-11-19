@@ -112,7 +112,7 @@ Output callout (collapsed):
 
 ## Vision Model Override
 
-`ImageExtractor.extract()` (extractor.ts:46) passes `{ ...aiOpts, model: visionModelOverride(settings) }` to `AIClient.chat()`. `AIRequestOptions.model` (`shared/ai-client.ts:31`) is a per-call override: `chat()` resolves `opts.model || resolveAIConfig(settings, 'image').model`, keys the response cache on it, and threads it through `dispatch` to every provider call. `settings.ai.model` is never mutated, so concurrent callers cannot observe a foreign model. Empty `visionModel` means no override.
+`ImageExtractor.extract()` (extractor.ts:46) passes `{ ...aiOpts, model: visionModelOverride(settings) }` to `AIClient.chat()`. `AIRequestOptions.model` (`shared/ai-client.ts:34`) is a per-call override: `chat()` resolves `opts.model || resolveAIConfig(settings, 'image').model`, keys the response cache on it, and threads it through `dispatch` to every provider call. `settings.ai.model` is never mutated, so concurrent callers cannot observe a foreign model. Empty `visionModel` means no override.
 
 ## Exclusion Behavior
 

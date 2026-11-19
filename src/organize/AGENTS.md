@@ -336,7 +336,7 @@ Path exclusion is centralized (#307): `settings.exclusions: ExclusionRule[]` con
 
 In: `shared/` (getMarkdownFiles, NotificationManager, ensureFolder, writeNote, generateOrganizeSummary, generateMoveDiagram, CheckpointManager, NoteOperationQueue, generateId, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport, ConfirmModal, sleep, scanScopeLabel, ScanTarget, settleOnThrow, assertVaultRelativePath, CacheUse, AIRequestOptions, openScanFolderPicker, Checkpoint, CheckpointWorkItem, DeferredTask, MoveRecord, OperationHandle, DecisionLane — see `index.ts:4-13`), `settings.ts` (SynapseSettings), `commands/` (CommandRegistrar, `index.ts:3`)
 
-Out: nothing is imported by another feature. `modules/registry.ts:111-116` wraps `OrganizeModule.suggestDirectory` in a lambda and passes it to `DeepDiveModule` (its `SuggestDirectory` type, `deep-dive/types.ts:125`) for auto-organize nesting mode; `deep-dive` has no `../organize` import. `views/unified-proposal-view.ts` renders `proposalKind` ("Move to X" vs "New folder X") and the lane.
+Out: nothing is imported by another feature. `modules/registry.ts:111-116` wraps `OrganizeModule.suggestDirectory` in a lambda and passes it to `DeepDiveModule` (its `SuggestDirectory` type, `deep-dive/types.ts:151`) for auto-organize nesting mode; `deep-dive` has no `../organize` import. `views/unified-proposal-view.ts` renders `proposalKind` ("Move to X" vs "New folder X") and the lane.
 
 ## Invariants / Gotchas
 

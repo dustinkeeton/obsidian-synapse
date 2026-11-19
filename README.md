@@ -206,6 +206,8 @@ const { jobId } = await api.deepDive.run('Topics/Rust.md', { depth: 2, maxNotes:
 api.jobs.get(jobId).job;                  // status and progress, e.g. "Generating deep dive (3/10)"
 const { job } = await api.jobs.wait(jobId, 60000);   // up to a minute; check job.status and job.result
 api.jobs.cancel(jobId);                   // same as pressing Cancel on its toast
+// job.result.endReason says why the run stopped: 'cap' means it hit maxNotes with topics left
+await api.deepDive.continue(job.result.runId, { maxNotes: 10 });   // another job: generate the rest
 await api.deepDive.regenerate('Deep Dives/Rust/Ownership.md');   // rewrite one note's body, keeping its frontmatter, navigation and enrichment sections
 await api.elaborate('Inbox/stub.md');
 await api.scanFolder('enrichment', 'Projects', { recursive: false });   // also a job
@@ -216,7 +218,8 @@ await api.proposals.accept('deep-dive', pending.items[0].id);
 
 - Long-running work (deep dives, folder scans) starts a job and returns its id right away; `jobs.wait` and `jobs.get` report progress and the result. Other actions return `{ ok, message, error, written, proposals, cacheUse }` directly. Nothing throws. When `ok` is false, `error` says why. Calls check their arguments first, so a typo in an option is refused instead of ignored.
 - Calls take every answer a dialog would ask for, so nothing waits on a click. An elaboration whose note you edited after it was generated is skipped unless you pass `{ force: true }`.
-- `status()` reports where each feature's key comes from, never the key.
+- `status()` reports where each feature's key comes from, never the key, and lists deep dives that stopped at their note cap with topics left.
+- Elaboration and deep-dive proposals record which provider and model wrote them, why the model stopped, and the token counts when the provider reports them. `proposals.list` includes this as `generation`.
 - Calls go through the same queue, exclusions, toasts and safety steps as the commands. A disabled feature refuses its calls.
 
 ## FAQ

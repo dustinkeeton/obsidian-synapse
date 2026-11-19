@@ -53,6 +53,7 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 	const elaborationAdapter: ProposalAdapter = {
 		list: async () => (await elaboration.getPendingProposals()).map((p) => ({
 			kind: 'elaboration', id: p.id, notePath: p.sourceNotePath, createdAt: p.createdAt, summary: 'Rewrite the note body',
+			...(p.generation ? { generation: p.generation } : {}),
 		})),
 		accept: async (id, options) => {
 			const proposal = (await elaboration.getPendingProposals()).find((p) => p.id === id);
@@ -106,6 +107,7 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 			sourceNotePath: p.sourceNotePath,
 			createdAt: p.createdAt,
 			summary: `Create note on "${p.topic.title}" (depth ${p.depth})`,
+			...(p.generation ? { generation: p.generation } : {}),
 		})),
 		accept: async (id) => {
 			const proposal = (await deepDive.getPendingProposals()).find((p) => p.id === id);

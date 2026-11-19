@@ -62,6 +62,9 @@ export async function buildStatus(deps: SynapseApiDeps): Promise<ApiStatus> {
 	const ai = {} as ApiStatus['ai'];
 	for (const feature of AI_FEATURE_IDS) ai[feature] = aiStatus(settings, feature);
 	const checkpoints = await deps.checkpointManager.listIncomplete().catch(() => null);
+	const continuableDeepDives = settings.deepDive.enabled
+		? await deps.modules.deepDive.listContinuableRuns().catch(() => null)
+		: null;
 	return {
 		apiVersion: API_VERSION,
 		pluginVersion: deps.pluginVersion,
@@ -87,5 +90,6 @@ export async function buildStatus(deps: SynapseApiDeps): Promise<ApiStatus> {
 			remaining: cp.remainingItems.length,
 			updatedAt: cp.updatedAt,
 		})) ?? null,
+		continuableDeepDives,
 	};
 }

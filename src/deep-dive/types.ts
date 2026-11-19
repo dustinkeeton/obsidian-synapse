@@ -1,4 +1,4 @@
-import type { AIRequestOptions, OperationOutcome } from '../shared';
+import type { AIRequestOptions, AIResponseInfo, OperationOutcome } from '../shared';
 
 /** Topic extracted from a note's content via AI analysis. */
 export interface ExtractedTopic {
@@ -56,10 +56,19 @@ export interface DeepDiveProposal {
 	childProposalIds: string[];
 	createdAt: string;
 	status: DeepDiveProposalStatus;
+	/** How the note's text was produced: provider, model, stop reason, usage (#625). Absent on proposals saved before it. */
+	generation?: AIResponseInfo;
 }
 
 /** Status of a deep dive run. */
 export type DeepDiveRunStatus = 'in-progress' | 'completed' | 'cancelled';
+
+/**
+ * Why a run's generation loop last ended (#625): `cap` = the note cap was reached with topics left
+ * (kept in `pending`, see `DeepDiveModule.continueRun`); `exhausted` = no topics left; `cancelled`;
+ * `error` = interrupted, resumable from its checkpoint.
+ */
+export type DeepDiveEndReason = 'cap' | 'exhausted' | 'cancelled' | 'error';
 
 /** Metadata for one invocation of the deep dive command. */
 export interface DeepDiveRun {
@@ -79,7 +88,9 @@ export interface DeepDiveRun {
 	};
 	createdAt: string;
 	status: DeepDiveRunStatus;
-	/** Unfinished generation work, kept so an interrupted run can resume from its checkpoint. */
+	/** Why generation last ended; absent while running and on runs saved before #625. */
+	endReason?: DeepDiveEndReason;
+	/** Unfinished generation work: kept so an interrupted run resumes from its checkpoint, and a capped run can continue. */
 	pending?: DeepDivePendingWork;
 	/** Per-run note cap from `DeepDiveModule.run`; absent = `deepDive.maxNotesPerRun`. */
 	maxNotes?: number;
@@ -102,6 +113,21 @@ export interface DeepDiveRunOptions {
 /** What a deep-dive run, or a regeneration, did: proposals created (run) or rewritten (regenerate), notes written. */
 export interface DeepDiveOutcome extends OperationOutcome {
 	runId?: string;
+	/** Set when generation ran (`run`, `continueRun`). */
+	endReason?: DeepDiveEndReason;
+	/** Topics still queued when the run hit its cap; `continueRun` generates them. */
+	remainingTopics?: number;
+}
+
+/** A capped run that can be continued (#625). */
+export interface ContinuableDeepDiveRun {
+	runId: string;
+	rootNotePath: string;
+	/** Topics left in the queue. */
+	remainingTopics: number;
+	/** Proposals the run has generated so far. */
+	totalProposals: number;
+	createdAt: string;
 }
 
 /** `regenerate` target: a proposal id, or the path of the note a proposal created. */

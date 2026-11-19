@@ -9,7 +9,7 @@ import {
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport,
 	stripUnresolvedLinks, assertVaultRelativePath, mergeCacheUse, jobOpId,
 } from '../shared';
-import type { AIRequestOptions, CacheUse, OperationStatus, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
+import type { AIRequestOptions, AIResponseInfo, CacheUse, OperationStatus, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { DeepDiveStore } from './deep-dive-store';
 import { NoteGenerator } from './note-generator';
 import { scoreQuality } from './quality-scorer';
@@ -25,6 +25,8 @@ import { selectDepth, MIN_DEPTH, MAX_DEPTH } from './depth-selector-modal';
 import { mergeRegeneratedNote } from './regenerate';
 import { TopicAnalyzer } from './topic-analyzer';
 import type {
+	ContinuableDeepDiveRun,
+	DeepDiveEndReason,
 	DeepDiveOutcome,
 	DeepDiveProposal,
 	DeepDiveRegenerateTarget,
@@ -57,6 +59,8 @@ interface TaskSource {
 }
 
 export type {
+	ContinuableDeepDiveRun,
+	DeepDiveEndReason,
 	DeepDiveOutcome,
 	DeepDiveRegenerateTarget,
 	DeepDiveRunOptions,
@@ -98,6 +102,8 @@ export class DeepDiveModule implements FeatureModule {
 	private analyzer: TopicAnalyzer;
 	private generator: NoteGenerator;
 	private store: DeepDiveStore;
+	/** Runs `continueRun` is generating right now; a second continue of one is refused. */
+	private readonly continuing = new Set<string>();
 	/** Organize's folder suggestion, injected by the module registry; null means nested placement only. */
 	private suggestDirectory: SuggestDirectory | null;
 
@@ -343,10 +349,12 @@ export class DeepDiveModule implements FeatureModule {
 			`deep-dive-regenerate-${proposal.id}`, { kind: 'deep-dive', target: proposal.proposedPath }
 		);
 		try {
+			let generation: AIResponseInfo | undefined;
 			const content = await this.generator.generateContent(
-				proposal.topic, source.title, proposal.sourceNotePath, source.content, { ...trackAiCache(cacheUse), bypassCache: true }
+				proposal.topic, source.title, proposal.sourceNotePath, source.content,
+				{ ...trackAiCache(cacheUse), bypassCache: true, onResponse: (info) => { generation = info; } }
 			);
-			const written = await this.noteQueue.run(proposal.proposedPath, () => this.applyRegenerated(proposal.id, content));
+			const written = await this.noteQueue.run(proposal.proposedPath, () => this.applyRegenerated(proposal.id, content, generation));
 			if (typeof written === 'string') {
 				op.error(written);
 				return failedOutcome(written, cacheUse);
@@ -363,7 +371,7 @@ export class DeepDiveModule implements FeatureModule {
 	}
 
 	/** Queue-free core of regenerate's write; a string is the reason nothing was written. */
-	private async applyRegenerated(id: string, content: string): Promise<{ writtenPaths: string[] } | string> {
+	private async applyRegenerated(id: string, content: string, generation?: AIResponseInfo): Promise<{ writtenPaths: string[] } | string> {
 		const latest = await this.store.loadProposal(id);
 		if (!latest || latest.status === 'rejected') return `Proposal ${id} was rejected or removed during regeneration`;
 		const writtenPaths: string[] = [];
@@ -374,6 +382,8 @@ export class DeepDiveModule implements FeatureModule {
 			writtenPaths.push(latest.proposedPath);
 		}
 		latest.proposedContent = content;
+		if (generation) latest.generation = generation;
+		else delete latest.generation;
 		await this.store.saveProposal(latest);
 		return { writtenPaths };
 	}
@@ -494,29 +504,88 @@ export class DeepDiveModule implements FeatureModule {
 		}));
 		run.pending = { tasks, processedCount: 0 };
 		await this.store.saveRun(run);
+		const checkpointId = await this.createRunCheckpoint(run, file, tasks);
+		return this.runGeneration(file, content, run, checkpointId, options.jobId);
+	}
 
+	/** A checkpoint over `tasks`, so an interrupted run resumes; its deferred task refreshes the sidebar (I1). */
+	private async createRunCheckpoint(run: DeepDiveRun, file: TFile, tasks: DeepDiveTask[]): Promise<string> {
 		// Topic title is the stable item ID (C2) -- titles are unique within a run
-		const workItems: CheckpointWorkItem[] = newTopics.map(topic => ({
-			id: `topic-${topic.title}`,
-			label: topic.title,
-			payload: { path: file.path, topic, depth: 0 },
+		const workItems: CheckpointWorkItem[] = tasks.map(task => ({
+			id: `topic-${task.topic.title}`,
+			label: task.topic.title,
+			payload: { path: file.path, topic: task.topic, depth: task.depth },
 		}));
-
 		const checkpoint = await this.checkpointManager.create({
 			module: 'deep-dive',
 			operationLabel: `Deep dive: ${file.basename}`,
 			items: workItems,
 			metadata: { runId: run.id, rootNotePath: file.path },
 		});
-
-		// Register deferred task for sidebar refresh (I1)
 		await this.checkpointManager.addDeferredTask(checkpoint.id, {
 			id: generateId(),
 			type: 'refresh-sidebar-view',
 			data: {},
 		});
+		return checkpoint.id;
+	}
 
-		return this.runGeneration(file, content, run, checkpoint.id, options.jobId);
+	/** Capped runs whose remaining topics can still be generated (#625), newest first. */
+	async listContinuableRuns(): Promise<ContinuableDeepDiveRun[]> {
+		const runs = await this.store.loadCappedRuns();
+		return runs
+			.filter(run => !this.continuing.has(run.id))
+			.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+			.map(run => ({
+				runId: run.id,
+				rootNotePath: run.rootNotePath,
+				remainingTopics: run.pending?.tasks.length ?? 0,
+				totalProposals: run.stats.totalProposals,
+				createdAt: run.createdAt,
+			}));
+	}
+
+	/**
+	 * Generate the topics a capped run had left (#625), under a fresh cap: `options.maxNotes`, else the
+	 * run's own. Toasts like a run; auto-accept (`options.autoAccept`, else the run's setting) covers only
+	 * the proposals this pass generates. Each refusal is toasted, since the toast and sidebar ignore the outcome.
+	 */
+	async continueRun(runId: string, options: Omit<DeepDiveRunOptions, 'depth'> = {}): Promise<DeepDiveOutcome> {
+		const refuse = (message: string): DeepDiveOutcome => {
+			this.notifications.info(message);
+			return failedOutcome(message);
+		};
+		const run = await this.store.loadRun(runId);
+		if (!run) return refuse(`No deep dive run with id ${runId}`);
+		if (this.continuing.has(run.id)) return refuse('This deep dive is already continuing');
+		if (run.endReason !== 'cap' || !run.pending || run.pending.tasks.length === 0) {
+			return refuse('This deep dive has no remaining topics to continue');
+		}
+		const rootFile = this.plugin.app.vault.getAbstractFileByPath(run.rootNotePath);
+		const rootContent = rootFile instanceof TFile ? await readNote(this.plugin.app, rootFile.path) : null;
+		if (!(rootFile instanceof TFile) || rootContent === null) {
+			return refuse(`Source note not found: ${run.rootNotePath}. Discard its remaining topics from the proposal sidebar.`);
+		}
+		this.continuing.add(run.id);
+		try {
+			run.pending.processedCount = 0;
+			if (options.maxNotes !== undefined) run.maxNotes = Math.max(1, Math.floor(options.maxNotes));
+			if (options.autoAccept !== undefined) run.autoAccept = options.autoAccept;
+			const checkpointId = await this.createRunCheckpoint(run, rootFile, run.pending.tasks);
+			return await this.runGeneration(rootFile, rootContent, run, checkpointId, options.jobId);
+		} finally {
+			this.continuing.delete(run.id);
+		}
+	}
+
+	/** Drop a capped run's remaining topics, so it is no longer offered for continuing. */
+	async discardContinuation(runId: string): Promise<boolean> {
+		const run = await this.store.loadRun(runId);
+		if (!run || run.endReason !== 'cap' || !run.pending || this.continuing.has(run.id)) return false;
+		delete run.pending;
+		await this.store.saveRun(run);
+		await this.onViewRefreshNeeded?.();
+		return true;
 	}
 
 	/**
@@ -530,12 +599,17 @@ export class DeepDiveModule implements FeatureModule {
 		const autoAccept = run.autoAccept ?? this.shouldAutoAccept();
 		const pending = run.pending ?? { tasks: [], processedCount: 0 };
 		run.pending = pending;
+		run.status = 'in-progress';
+		delete run.endReason;
 		const genOp = this.notifications.startOperation('Generating deep dive', jobOpId(`deep-dive-generate-${run.id}`, { jobId }), { kind: 'deep-dive', target: rootFile.path });
 		const sources = new Map<string, TaskSource>();
 		const cacheUses: CacheUse[] = [];
 		const generatedIds: string[] = [];
-		const outcome = (status: OperationStatus, message: string, writtenPaths: string[] = []): DeepDiveOutcome =>
-			({ status, message, runId: run.id, proposalIds: generatedIds, writtenPaths, cacheUse: mergeCacheUse(cacheUses) });
+		const outcome = (status: OperationStatus, message: string, writtenPaths: string[] = []): DeepDiveOutcome => ({
+			status, message, runId: run.id, proposalIds: generatedIds, writtenPaths, cacheUse: mergeCacheUse(cacheUses),
+			...(run.endReason ? { endReason: run.endReason } : {}),
+			...(run.endReason === 'cap' ? { remainingTopics: pending.tasks.length } : {}),
+		});
 		const stopPauseNotice = this.watchMobilePause();
 
 		try {
@@ -553,7 +627,10 @@ export class DeepDiveModule implements FeatureModule {
 				const { topic } = task;
 				const cacheUse: CacheUse = {};
 				const aiOpts = trackAiCache(cacheUse);
-				const noteContent = await this.generator.generateContent(topic, source.title, source.path, source.content, aiOpts);
+				let generation: AIResponseInfo | undefined;
+				const noteContent = await this.generator.generateContent(
+					topic, source.title, source.path, source.content, { ...aiOpts, onResponse: (info) => { generation = info; } }
+				);
 				const proposedPath = await this.buildProposedPath(topic.title, rootFile, source.parentProposedPath, aiOpts);
 
 				// Score quality using child topics (extracted from generated content)
@@ -588,6 +665,7 @@ export class DeepDiveModule implements FeatureModule {
 					childProposalIds: [],
 					createdAt: new Date().toISOString(),
 					status: 'pending',
+					...(generation ? { generation } : {}),
 				};
 
 				await this.store.saveProposal(proposal);
@@ -625,8 +703,10 @@ export class DeepDiveModule implements FeatureModule {
 				await this.store.saveRun(run);
 			}
 
+			const endReason: DeepDiveEndReason = genOp.cancelled ? 'cancelled' : pending.tasks.length > 0 ? 'cap' : 'exhausted';
 			run.status = genOp.cancelled ? 'cancelled' : 'completed';
-			delete run.pending;
+			run.endReason = endReason;
+			if (endReason !== 'cap') delete run.pending;
 			await this.store.saveRun(run);
 
 			let result: DeepDiveOutcome;
@@ -645,19 +725,24 @@ export class DeepDiveModule implements FeatureModule {
 				// Review action only when proposals were generated AND deep-dive
 				// auto-accept is off — auto-accept (applied right after) creates
 				// every note, leaving nothing to review (#366).
-				const finishLine = withCacheReport(`Generated ${run.stats.totalProposals} proposals (${depthSummary})`, cacheUses, 'proposal');
+				const capNote = endReason === 'cap'
+					? ` -- stopped at the ${maxNotes}-note cap with ${pending.tasks.length} ${pending.tasks.length === 1 ? 'topic' : 'topics'} left`
+					: '';
+				const finishLine = withCacheReport(`Generated ${run.stats.totalProposals} proposals (${depthSummary})${capNote}`, cacheUses, 'proposal');
 				genOp.finish(
 					finishLine,
-					reviewAction({
-						generated: run.stats.totalProposals > 0,
-						shouldAutoAccept: () => autoAccept,
-						openProposalView: this.onOpenProposalView,
-					})
+					endReason === 'cap'
+						? { label: 'Continue', onClick: () => fireAndForget(this.continueRun(run.id), 'Continue deep dive') }
+						: reviewAction({
+							generated: run.stats.totalProposals > 0,
+							shouldAutoAccept: () => autoAccept,
+							openProposalView: this.onOpenProposalView,
+						})
 				);
 
 				// Auto-accept the whole generated tree if enabled (#228), in
 				// creation order so navigation resolves. Skipped on cancellation.
-				const accepted = autoAccept ? await this.autoAcceptRun(run.proposalIds) : [];
+				const accepted = autoAccept ? await this.autoAcceptRun(generatedIds) : [];
 				result = outcome('completed', finishLine, accepted);
 			}
 
@@ -665,6 +750,7 @@ export class DeepDiveModule implements FeatureModule {
 			return result;
 		} catch (error) {
 			// Keep the run and checkpoint resumable; generated proposals stay saved.
+			run.endReason = 'error';
 			try {
 				await this.store.saveRun(run);
 			} catch {

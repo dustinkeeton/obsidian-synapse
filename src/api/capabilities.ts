@@ -86,7 +86,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'deepDive.run',
-		description: 'Start a deep dive on a note as a job: extract topics and generate child-note proposals, with no depth picker or confirmation; returns { ok, jobId }. Job result: { ok, message, error, written (notes created under auto-accept), proposals, cacheUse, runId }',
+		description: 'Start a deep dive on a note as a job: extract topics and generate child-note proposals, with no depth picker or confirmation; returns { ok, jobId }. Job result: { ok, message, error, written (notes created under auto-accept), proposals, cacheUse, runId, endReason (cap | exhausted | cancelled | error), remainingTopics (when capped; continue with deepDive.continue) }',
 		params: [
 			notePath,
 			{
@@ -97,6 +97,28 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 					type: 'object',
 					properties: {
 						depth: { type: 'integer', minimum: 1, maximum: 6 },
+						maxNotes: { type: 'integer', minimum: 1 },
+						autoAccept: { type: 'boolean' },
+					},
+					additionalProperties: false,
+				},
+			},
+		],
+		long: true,
+		feature: 'deepDive',
+	},
+	{
+		name: 'deepDive.continue',
+		description: 'Generate the topics a deep dive left when it stopped at its note cap, as a job under a fresh cap; returns { ok, jobId }. status().continuableDeepDives lists such runs. Job result: same shape as deepDive.run',
+		params: [
+			{ name: 'runId', description: 'The capped run (deepDive.run result runId, or status().continuableDeepDives)', required: true, schema: { type: 'string' } },
+			{
+				name: 'options',
+				description: 'maxNotes (cap for this pass), autoAccept; each defaults to the run\'s own',
+				required: false,
+				schema: {
+					type: 'object',
+					properties: {
 						maxNotes: { type: 'integer', minimum: 1 },
 						autoAccept: { type: 'boolean' },
 					},

@@ -1,5 +1,5 @@
 import type { RequestUrlResponse } from 'obsidian';
-import type { AIFeatureId, SynapseSettings } from '../settings';
+import type { AIFeatureId, AIProvider, SynapseSettings } from '../settings';
 import { aiRequestTimeoutMs, anthropicMaxTokens, effortFor, effortWireValue, resolveAIConfig } from './ai-config';
 import type { ResolvedAIConfig } from './ai-config';
 import { ChatMessage, ContentBlock, TextContentBlock } from './types';
@@ -32,6 +32,73 @@ export interface AIRequestOptions {
 	onCacheHit?: () => void;
 	/** Model for this call only (e.g. a vision model), on the feature's resolved provider; settings are never touched. */
 	model?: string;
+	/** Called with how the reply was produced (#625): on a dispatch, a coalesced join and a cache replay alike; never on a throw. */
+	onResponse?: (info: AIResponseInfo) => void;
+}
+
+/** Token counts as the provider reported them; absent fields were not reported. `outputTokens` includes reasoning tokens for every provider (Gemini's `thoughtsTokenCount` is added in). */
+export interface AIUsage {
+	inputTokens?: number;
+	outputTokens?: number;
+}
+
+/** How a reply was produced (#625). `stopReason` is the provider's own value (`end_turn`, `stop`, `STOP`, …). */
+export interface AIResponseInfo {
+	provider: AIProvider;
+	/** The model id sent on the wire. */
+	model: string;
+	stopReason?: string;
+	usage?: AIUsage;
+	/** True when the reply was replayed from the response cache; `stopReason` and `usage` are the original dispatch's. */
+	cached?: boolean;
+	/** True when this call joined an identical request already in flight; `usage` is that request's, so don't count it twice. */
+	joined?: boolean;
+}
+
+/** A reply's text with its stop reason and usage, as read from a provider response. */
+interface AIReply {
+	text: string;
+	stopReason?: string;
+	usage?: AIUsage;
+}
+
+function num(v: unknown): number | undefined {
+	return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
+
+function usageOf(input: unknown, output: unknown, reasoning?: unknown): AIUsage | undefined {
+	const usage: AIUsage = {};
+	const i = num(input);
+	const visible = num(output);
+	const thoughts = num(reasoning);
+	const o = visible === undefined ? undefined : visible + (thoughts ?? 0);
+	if (i !== undefined) usage.inputTokens = i;
+	if (o !== undefined) usage.outputTokens = o;
+	return i === undefined && o === undefined ? undefined : usage;
+}
+
+/** Stop reason and usage of a parsed provider response (#625); every field is optional on the wire. */
+export function replyMeta(provider: AIProvider, json: unknown): Omit<AIReply, 'text'> {
+	const r = isRecord(json) ? json : {};
+	const field = (obj: unknown, key: string): unknown => (isRecord(obj) ? obj[key] : undefined);
+	const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+	switch (provider) {
+		case 'openai': {
+			const choice: unknown = Array.isArray(r.choices) ? (r.choices as unknown[])[0] : undefined;
+			return { stopReason: str(field(choice, 'finish_reason')), usage: usageOf(field(r.usage, 'prompt_tokens'), field(r.usage, 'completion_tokens')) };
+		}
+		case 'anthropic':
+			return { stopReason: str(r.stop_reason), usage: usageOf(field(r.usage, 'input_tokens'), field(r.usage, 'output_tokens')) };
+		case 'gemini': {
+			const candidate: unknown = Array.isArray(r.candidates) ? (r.candidates as unknown[])[0] : undefined;
+			const meta = r.usageMetadata;
+			return { stopReason: str(field(candidate, 'finishReason')), usage: usageOf(field(meta, 'promptTokenCount'), field(meta, 'candidatesTokenCount'), field(meta, 'thoughtsTokenCount')) };
+		}
+		case 'ollama':
+			return { stopReason: str(r.done_reason), usage: usageOf(r.prompt_eval_count, r.eval_count) };
+		default:
+			return {};
+	}
 }
 
 /**
@@ -296,7 +363,7 @@ export class AIClient {
 	 * removed in a `.finally()` once settled (success OR failure) so a rejection
 	 * never sticks — mirroring intake's in-flight discipline.
 	 */
-	private readonly inFlight = new Map<string, Promise<string>>();
+	private readonly inFlight = new Map<string, Promise<AIReply>>();
 
 	/**
 	 * Opt-in response cache (#397): an insertion-ordered (LRU) map of request
@@ -307,7 +374,7 @@ export class AIClient {
 	 * It does NOT coalesce across separate `new AIClient(...)` instances — a
 	 * shared-static cache is a deliberately deferred option.
 	 */
-	private readonly cache = new Map<string, string>();
+	private readonly cache = new Map<string, AIReply>();
 
 	/** `feature` selects that feature's provider/model override; omitted means the default. */
 	constructor(
@@ -349,13 +416,25 @@ export class AIClient {
 
 		const cacheable = ai.cacheResponses === true;
 		const bypass = opts?.bypassCache === true;
+		const wireModel = resolveModelId(cfg.provider, cfg.model);
+		const deliver = (reply: AIReply, via: 'dispatch' | 'cache' | 'join'): string => {
+			if (opts?.onResponse) {
+				const info: AIResponseInfo = { provider: cfg.provider, model: wireModel };
+				if (reply.stopReason !== undefined) info.stopReason = reply.stopReason;
+				if (reply.usage) info.usage = { ...reply.usage };
+				if (via === 'cache') info.cached = true;
+				if (via === 'join') info.joined = true;
+				opts.onResponse(info);
+			}
+			return reply.text;
+		};
 
 		// Cache read — skipped on bypass so a "regenerate" always re-dispatches.
 		if (cacheable && !bypass) {
 			const cached = this.cacheGet(key);
 			if (cached !== undefined) {
 				opts?.onCacheHit?.();
-				return cached;
+				return deliver(cached, 'cache');
 			}
 		}
 
@@ -364,7 +443,7 @@ export class AIClient {
 		if (!bypass) {
 			const existing = this.inFlight.get(key);
 			if (existing) {
-				return existing;
+				return existing.then((reply) => deliver(reply, 'join'));
 			}
 		}
 
@@ -378,7 +457,7 @@ export class AIClient {
 		});
 
 		if (bypass) {
-			return dispatchPromise;
+			return dispatchPromise.then((reply) => deliver(reply, 'dispatch'));
 		}
 
 		// Register for coalescing and clear the entry once settled. The cleanup is
@@ -389,7 +468,7 @@ export class AIClient {
 			if (this.inFlight.get(key) === dispatchPromise) {
 				this.inFlight.delete(key);
 			}
-		});
+		}).then((reply) => deliver(reply, 'dispatch'));
 	}
 
 	/**
@@ -397,7 +476,7 @@ export class AIClient {
 	 * Behavior is unchanged from the pre-cache `chat()`; the caching/coalescing
 	 * wrapper lives in {@link chat}.
 	 */
-	private async dispatch(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
+	private async dispatch(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<AIReply> {
 		switch (cfg.provider) {
 			case 'openai':
 				return this.callOpenAI(messages, cfg);
@@ -417,11 +496,11 @@ export class AIClient {
 	 * `undefined` when absent. Uses `has` so an empty-string response — a valid
 	 * cached value — is not mistaken for a miss.
 	 */
-	private cacheGet(key: string): string | undefined {
+	private cacheGet(key: string): AIReply | undefined {
 		if (!this.cache.has(key)) {
 			return undefined;
 		}
-		const val = this.cache.get(key) as string;
+		const val = this.cache.get(key) as AIReply;
 		this.cache.delete(key);
 		this.cache.set(key, val);
 		return val;
@@ -431,7 +510,7 @@ export class AIClient {
 	 * LRU write: insert/refresh `key` as most-recently-used and evict the oldest
 	 * entry once the cache exceeds {@link AI_RESPONSE_CACHE_MAX}.
 	 */
-	private cacheSet(key: string, val: string): void {
+	private cacheSet(key: string, val: AIReply): void {
 		if (this.cache.has(key)) {
 			this.cache.delete(key);
 		}
@@ -444,7 +523,7 @@ export class AIClient {
 		}
 	}
 
-	private async callOpenAI(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
+	private async callOpenAI(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<AIReply> {
 		const model = resolveModelId(cfg.provider, cfg.model);
 		const body: Record<string, unknown> = {
 			model,
@@ -470,10 +549,10 @@ export class AIClient {
 			},
 			body: JSON.stringify(body),
 		}, aiRequestTimeoutMs(cfg.provider, cfg.model, cfg.effort));
-		return extractOpenAIResponseText(response.json);
+		return { text: extractOpenAIResponseText(response.json), ...replyMeta('openai', response.json) };
 	}
 
-	private async callAnthropic(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
+	private async callAnthropic(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<AIReply> {
 		const model = resolveModelId(cfg.provider, cfg.model);
 		const systemMsg = messages.find(m => m.role === 'system');
 		const nonSystemMsgs = messages.filter(m => m.role !== 'system');
@@ -514,10 +593,10 @@ export class AIClient {
 		} catch (err) {
 			throw withAnthropicErrorHint(err, model);
 		}
-		return extractAnthropicResponseText(response.json);
+		return { text: extractAnthropicResponseText(response.json), ...replyMeta('anthropic', response.json) };
 	}
 
-	private async callGemini(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
+	private async callGemini(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<AIReply> {
 		const model = resolveModelId(cfg.provider, cfg.model);
 		const systemMsg = messages.find(m => m.role === 'system');
 		const nonSystemMsgs = messages.filter(m => m.role !== 'system');
@@ -555,10 +634,10 @@ export class AIClient {
 			},
 			body: JSON.stringify(body),
 		}, aiRequestTimeoutMs(cfg.provider, cfg.model, cfg.effort));
-		return extractGeminiResponseText(response.json);
+		return { text: extractGeminiResponseText(response.json), ...replyMeta('gemini', response.json) };
 	}
 
-	private async callOllama(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<string> {
+	private async callOllama(messages: ChatMessage[], cfg: ResolvedAIConfig): Promise<AIReply> {
 
 		// Validate Ollama endpoint — allow http for localhost, require https otherwise
 		let endpointUrl: URL;
@@ -590,6 +669,6 @@ export class AIClient {
 				...(think !== undefined ? { think } : {}),
 			}),
 		}, aiRequestTimeoutMs(cfg.provider, cfg.model, cfg.effort));
-		return extractOllamaResponseText(response.json);
+		return { text: extractOllamaResponseText(response.json), ...replyMeta('ollama', response.json) };
 	}
 }

@@ -28,7 +28,7 @@ function fakeModules() {
 	const elaboration = store([row('e1')]);
 	const enrichment = store([row('n1', { result: { tags: [{ tag: 'a' }], internalLinks: [], externalLinks: [], frontmatter: [] } })]);
 	const organize = store([row('o1', { proposedDirectory: 'Archive' })]);
-	const deepDive = store([row('d1', { proposedPath: 'Deep Dives/A.md', topic: { title: 'A' }, depth: 0 })]);
+	const deepDive = store([row('d1', { proposedPath: 'Deep Dives/A.md', topic: { title: 'A' }, depth: 0, generation: { provider: 'anthropic', model: 'claude-opus-5-5', stopReason: 'end_turn' } })]);
 	const title = store([row('t1', { proposedTitle: 'Better' })]);
 	const rem = store([row('r1', { candidates: [{ matchedText: 'alpha' }, { matchedText: 'beta' }] })]);
 	const illustrate = store([row('i1', { items: [{ id: 'x' }, { id: 'y' }] })]);
@@ -57,6 +57,10 @@ function fakeModules() {
 			rejectProposal: vi.fn(),
 			run: vi.fn(async (_path: string, _options: unknown) => ({ status: 'completed', message: 'Generated 2 proposals', runId: 'run1', proposalIds: ['d1', 'd2'], writtenPaths: [], cacheUse: {} })),
 			regenerate: vi.fn(async (_target: unknown) => ({ status: 'completed', message: 'Regenerated', runId: 'run1', proposalIds: ['d1'], writtenPaths: ['Deep Dives/A.md'], cacheUse: {} })),
+			listContinuableRuns: vi.fn(async () => [{ runId: 'run1', rootNotePath: NOTE, remainingTopics: 4, totalProposals: 2, createdAt: '2026-11-01T00:00:00.000Z' }]),
+			continueRun: vi.fn(async (_runId: string, _options: unknown) => ({
+				status: 'completed', message: 'Generated 4 proposals', runId: 'run1', proposalIds: ['d3'], writtenPaths: [], cacheUse: {}, endReason: 'exhausted',
+			})),
 		},
 		title: {
 			getPendingProposals: title.pending,
@@ -171,6 +175,12 @@ describe('createSynapseApi (#623)', () => {
 			expect(status.ai.tidy).toMatchObject({ provider: 'openai', keySource: 'missing' });
 			expect(JSON.stringify(status)).not.toContain('sk-ant-secret-key');
 		});
+	});
+
+	it('status lists capped deep dives that can continue, and null when deep dive is off (#625)', async () => {
+		expect((await api.status()).continuableDeepDives).toEqual([expect.objectContaining({ runId: 'run1', remainingTopics: 4 })]);
+		settings.deepDive.enabled = false;
+		expect((await api.status()).continuableDeepDives).toBeNull();
 	});
 
 	it('status reports checkpoints as null when they cannot be read', async () => {
@@ -354,6 +364,26 @@ describe('createSynapseApi (#623)', () => {
 			expect(job).toMatchObject({ status: 'failed', error: 'No topics found', result: { ok: false } });
 		});
 
+		it('returns why a run ended and how many topics are left (#625)', async () => {
+			modules.deepDive.run.mockResolvedValueOnce({
+				status: 'completed', message: 'Generated 2 proposals', runId: 'run1', proposalIds: ['d1', 'd2'], writtenPaths: [], cacheUse: {}, endReason: 'cap', remainingTopics: 4,
+			} as never);
+			const job = await runJob(api.deepDive.run(NOTE));
+			expect(job.result).toMatchObject({ ok: true, endReason: 'cap', remainingTopics: 4 });
+		});
+
+		it('continues a capped run as a job (#625)', async () => {
+			const job = await runJob(api.deepDive.continue('run1', { maxNotes: 10 }));
+			expect(modules.deepDive.continueRun).toHaveBeenCalledWith('run1', { maxNotes: 10, jobId: job.id });
+			expect(job).toMatchObject({ verb: 'deepDive.continue', status: 'completed', result: { ok: true, runId: 'run1', proposals: ['d3'], endReason: 'exhausted' } });
+		});
+
+		it('refuses to continue a run with nothing left, or bad options, without starting a job (#625)', async () => {
+			expect((await api.deepDive.continue('run9')).error).toContain('No capped deep dive with id run9');
+			expect((await api.deepDive.continue('run1', { depth: 2 } as never)).ok).toBe(false);
+			expect(modules.deepDive.continueRun).not.toHaveBeenCalled();
+		});
+
 		it('reads a .md string as a note path and anything else as a proposal id', async () => {
 			await api.deepDive.regenerate('Deep Dives/A.md');
 			await api.deepDive.regenerate('abc123');
@@ -370,7 +400,10 @@ describe('createSynapseApi (#623)', () => {
 				'elaboration:e1', 'enrichment:n1', 'organize:o1', 'deep-dive:d1', 'title:t1', 'rem:r1', 'illustrate:i1',
 			]);
 			expect(list.items.find((p) => p.kind === 'rem')?.items).toEqual(['alpha', 'beta']);
-			expect(list.items.find((p) => p.kind === 'deep-dive')).toMatchObject({ notePath: 'Deep Dives/A.md', sourceNotePath: NOTE });
+			expect(list.items.find((p) => p.kind === 'deep-dive')).toMatchObject({
+				notePath: 'Deep Dives/A.md', sourceNotePath: NOTE, generation: { provider: 'anthropic', stopReason: 'end_turn' },
+			});
+			expect(list.items.find((p) => p.kind === 'elaboration')).not.toHaveProperty('generation');
 		});
 
 		it('list reports a store failure instead of rejecting', async () => {

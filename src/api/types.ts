@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
 import type { AIFeatureId, AIProvider, EffortLevel, SynapseSettings, TranscriptionProvider } from '../settings';
-import type { CacheUse, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
+import type { AIResponseInfo, CacheUse, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
 import type { FeatureModules } from '../modules';
 import type { PipelineModuleKey, PipelineModuleMap } from '../pipeline';
 import type { ProposalKind } from '../views';
@@ -79,6 +79,10 @@ export interface ApiJobWait {
 
 export interface DeepDiveRunResult extends ApiResult {
 	runId?: string;
+	/** `run` / `continue`: why generation ended (`cap`, `exhausted`, `cancelled`, `error`). */
+	endReason?: ApiDeepDiveEndReason;
+	/** Set when `endReason` is `cap`: topics left for `deepDive.continue`. */
+	remainingTopics?: number;
 }
 
 export interface ScanFolderResult extends ApiResult {
@@ -92,6 +96,25 @@ export type ApiScanFeature = PipelineModuleKey;
 export interface ApiScanOptions {
 	/** Default true; false scans only the folder's top level. */
 	recursive?: boolean;
+}
+
+/** Why a deep dive's generation ended (#625). */
+export type ApiDeepDiveEndReason = 'cap' | 'exhausted' | 'cancelled' | 'error';
+
+/** A deep dive stopped at its note cap with topics left (#625). */
+export interface ApiContinuableDeepDive {
+	runId: string;
+	rootNotePath: string;
+	remainingTopics: number;
+	totalProposals: number;
+	createdAt: string;
+}
+
+export interface ApiDeepDiveContinueOptions {
+	/** Cap for this pass; default the run's own cap. */
+	maxNotes?: number;
+	/** Default the run's own setting. */
+	autoAccept?: boolean;
 }
 
 export interface ApiDeepDiveRunOptions {
@@ -117,6 +140,8 @@ export interface ApiProposal {
 	summary: string;
 	/** Selectable item ids for `accept(..., { items })`: REM matched texts, illustrate item ids. */
 	items?: string[];
+	/** Elaboration and deep dive: provider, model, stop reason and token usage of the generating call (#625). */
+	generation?: AIResponseInfo;
 }
 
 /** `proposals.list` result; never rejects. */
@@ -202,6 +227,8 @@ export interface ApiStatus {
 	inProgress: InProgressEntry[];
 	/** `null` when the checkpoint folder could not be read. */
 	checkpoints: ApiCheckpointStatus[] | null;
+	/** Deep dives stopped at their note cap with topics left (`deepDive.continue`); `null` when deep dive is unavailable or the runs could not be read. */
+	continuableDeepDives: ApiContinuableDeepDive[] | null;
 }
 
 /** The object at `app.plugins.plugins.synapse.api`. */
@@ -215,6 +242,8 @@ export interface SynapseApi {
 	deepDive: {
 		/** Starts a job whose result is a `DeepDiveRunResult`. */
 		run(notePath: string, options?: ApiDeepDiveRunOptions): Promise<ApiJobStart>;
+		/** Starts a job generating a capped run's remaining topics; result is a `DeepDiveRunResult`. */
+		continue(runId: string, options?: ApiDeepDiveContinueOptions): Promise<ApiJobStart>;
 		regenerate(target: ApiRegenerateTarget): Promise<DeepDiveRunResult>;
 	};
 	jobs: {

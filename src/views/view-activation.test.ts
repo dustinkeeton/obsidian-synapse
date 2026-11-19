@@ -19,13 +19,14 @@ function makeSources(): UnifiedViewSources {
 		rem: vi.fn().mockResolvedValue([{ id: 'r1' }]),
 		illustrate: vi.fn().mockResolvedValue([]),
 		checkpoints: vi.fn().mockResolvedValue([{ id: 'cp1' }]),
+		continuableDeepDives: vi.fn().mockResolvedValue([]),
 		inProgress: vi.fn().mockReturnValue([]),
 	};
 }
 
 function makeLeaf() {
 	return {
-		view: { setItems: vi.fn(), setCheckpoints: vi.fn(), setInProgress: vi.fn() },
+		view: { setItems: vi.fn(), setContinuableDeepDives: vi.fn(), setCheckpoints: vi.fn(), setInProgress: vi.fn() },
 		setViewState: vi.fn().mockResolvedValue(undefined),
 	};
 }
@@ -61,7 +62,7 @@ describe('refreshUnifiedView', () => {
 
 describe('refreshUnifiedView — deferred leaves (Obsidian >= 1.7.2)', () => {
 	it('loads a deferred leaf before populating it', async () => {
-		const real = { setItems: vi.fn(), setCheckpoints: vi.fn(), setInProgress: vi.fn() };
+		const real = { setItems: vi.fn(), setContinuableDeepDives: vi.fn(), setCheckpoints: vi.fn(), setInProgress: vi.fn() };
 		const leaf = {
 			view: {} as unknown,
 			isDeferred: true,

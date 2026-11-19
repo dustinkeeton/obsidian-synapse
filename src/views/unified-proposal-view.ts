@@ -2,7 +2,7 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type { Proposal } from '../elaboration';
 import type { AcceptedItems, EnrichmentProposal } from '../enrichment';
 import type { OrganizeProposal } from '../organize';
-import type { DeepDiveProposal } from '../deep-dive';
+import type { ContinuableDeepDiveRun, DeepDiveProposal } from '../deep-dive';
 import type { TitleProposal } from '../title';
 import type { RemProposal } from '../rem';
 import type { IllustrateProposal } from '../illustrate';
@@ -33,6 +33,7 @@ const KIND_LABELS: Record<ProposalKind, string> = {
 export class UnifiedProposalView extends ItemView {
 	private items: UnifiedItem[] = [];
 	private incompleteCheckpoints: Checkpoint[] = [];
+	private continuableDeepDives: ContinuableDeepDiveRun[] = [];
 	private inProgress: InProgressEntry[] = [];
 	/** The list-mode In progress section; null outside list mode. */
 	private inProgressEl: HTMLElement | null = null;
@@ -91,6 +92,11 @@ export class UnifiedProposalView extends ItemView {
 
 	async onClose(): Promise<void> {
 		this.contentEl.empty();
+	}
+
+	/** Stored for the next list render; `refreshUnifiedView` calls `setCheckpoints` right after, which renders. */
+	setContinuableDeepDives(runs: ContinuableDeepDiveRun[]): void {
+		this.continuableDeepDives = runs;
 	}
 
 	setCheckpoints(checkpoints: Checkpoint[]): void {
@@ -449,8 +455,11 @@ export class UnifiedProposalView extends ItemView {
 		if (this.incompleteCheckpoints.length > 0) {
 			this.renderCheckpointBanner(contentEl);
 		}
+		if (this.continuableDeepDives.length > 0) {
+			this.renderContinuableBanner(contentEl);
+		}
 
-		if (this.items.length === 0 && this.incompleteCheckpoints.length === 0) {
+		if (this.items.length === 0 && this.incompleteCheckpoints.length === 0 && this.continuableDeepDives.length === 0) {
 			if (this.inProgress.length > 0) return;
 			contentEl.createEl('p', {
 				text: 'No pending proposals. Scan your vault or enrich a note to get started.',
@@ -1606,6 +1615,28 @@ export class UnifiedProposalView extends ItemView {
 
 			const discardBtn = actions.createEl('button', { text: 'Discard' });
 			this.onClick(discardBtn, () => this.callbacks.onCheckpointDiscard(cp.id), 'Discard operation');
+		}
+	}
+
+	/** Deep dives that stopped at their note cap with topics left (#625). */
+	private renderContinuableBanner(container: HTMLElement): void {
+		const section = container.createDiv({ cls: 'synapse-checkpoint-banner synapse-continuable-banner' });
+		section.createEl('div', { text: 'Capped deep dives', cls: 'synapse-checkpoint-heading' });
+
+		for (const run of this.continuableDeepDives) {
+			const card = section.createDiv({ cls: 'synapse-checkpoint-card' });
+			const info = card.createDiv({ cls: 'synapse-checkpoint-info' });
+			info.createEl('strong', { text: `Deep dive: ${run.rootNotePath.split('/').pop()?.replace(/\.md$/, '') ?? run.rootNotePath}` });
+			info.createEl('small', {
+				text: `Stopped at its note cap -- ${run.totalProposals} generated, ${run.remainingTopics} ${run.remainingTopics === 1 ? 'topic' : 'topics'} left`,
+				cls: 'synapse-reasons',
+			});
+
+			const actions = card.createDiv({ cls: 'synapse-actions' });
+			const continueBtn = actions.createEl('button', { text: 'Continue', cls: 'mod-cta' });
+			this.onClick(continueBtn, () => this.callbacks.onDeepDiveContinue(run.runId), 'Continue deep dive');
+			const discardBtn = actions.createEl('button', { text: 'Discard' });
+			this.onClick(discardBtn, () => this.callbacks.onDeepDiveDiscardContinuation(run.runId), 'Discard remaining deep dive topics');
 		}
 	}
 
