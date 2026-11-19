@@ -181,7 +181,7 @@ describe('NotificationManager', () => {
 			// Clicking invokes the handler exactly once, then hides the toast.
 			button!.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
 			expect(onClick).toHaveBeenCalledTimes(1);
-			expect(notice.hide).toHaveBeenCalledTimes(1);
+			expect(notice.hideCalls).toBe(1);
 		});
 
 		it('success without an action renders no button (regression guard)', () => {
@@ -200,7 +200,7 @@ describe('NotificationManager', () => {
 
 			button?.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
 			expect(onClick).toHaveBeenCalledTimes(1);
-			expect(notice.hide).toHaveBeenCalledTimes(1);
+			expect(notice.hideCalls).toBe(1);
 		});
 
 		it('finish without an action renders no button (regression guard)', () => {
@@ -235,7 +235,7 @@ describe('NotificationManager', () => {
 			findButton(notice.noticeEl)?.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
 
 			expect(onClick).toHaveBeenCalledTimes(1);
-			expect(notice.hide).toHaveBeenCalledTimes(1);
+			expect(notice.hideCalls).toBe(1);
 		});
 	});
 
@@ -299,7 +299,7 @@ describe('NotificationManager', () => {
 
 			notice.noticeEl.dispatchEvent({ type: 'click' });
 
-			expect(notice.hide).toHaveBeenCalledTimes(1);
+			expect(notice.hideCalls).toBe(1);
 			expect(writeText()).toHaveBeenCalledTimes(1);
 			const copied = writeText().mock.calls[0][0];
 			expect(copied).toContain('[REDACTED]');

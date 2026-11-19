@@ -588,13 +588,9 @@ describe('SynapseSettingTab — per-section reset rows (#442)', () => {
 		const { tab } = makeTab((s) => {
 			s.audio.language = 'es'; // dirties the Audio behavior section
 		});
-		const setDisabled = vi.spyOn(ButtonComponent.prototype, 'setDisabled');
 		tab.display();
 
-		const button = resetControls(tab)['audio'].button;
-		const calls = setDisabled.mock.calls.filter((_, i) => setDisabled.mock.contexts[i] === button);
-		setDisabled.mockRestore();
-		expect(calls.at(-1)?.[0]).toBe(false);
+		expect(resetControls(tab)['audio'].button.disabled).toBe(false);
 	});
 
 	it('re-enables a section reset live when a change event fires on its body', () => {

@@ -255,10 +255,15 @@ export class Notice {
 		}
 		Notice.instances.push(this);
 	}
-	setMessage = vi.fn((msg: string) => {
-		if (this.noticeEl) this.noticeEl.textContent = msg;
-	});
-	hide = vi.fn();
+	/** Test helper: number of hide() calls. */
+	hideCalls = 0;
+	setMessage(msg: string): this {
+		this.noticeEl.textContent = msg;
+		return this;
+	}
+	hide(): void {
+		this.hideCalls++;
+	}
 }
 
 export class PluginSettingTab {
@@ -380,8 +385,8 @@ export class ButtonComponent {
 	buttonText = '';
 	/** Every tooltip set via setTooltip, in call order. */
 	tooltips: string[] = [];
-	/** Last disabled state set via setDisabled. */
-	disabled = false;
+	/** Last disabled state set via setDisabled; undefined until called. */
+	disabled: boolean | undefined;
 	/** True once setWarning was called. */
 	warning = false;
 	/** True once setCta was called. */
