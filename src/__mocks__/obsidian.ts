@@ -120,6 +120,7 @@ export interface StubEl extends HTMLElement {
  * plugin. Class state, attributes, children, and event listeners are tracked
  * so tests can introspect structure and dispatch synthetic events.
  */
+// Methods are plain (not `vi.fn`): spies are never released and would retain every rendered tree (#635).
 function createStubEl(tag = 'div'): StubEl {
 	const classes = new Set<string>();
 	const attributes: Record<string, string> = {};
@@ -156,10 +157,10 @@ function createStubEl(tag = 'div'): StubEl {
 	const el: StubEl = {
 		tagName: tag.toUpperCase(),
 		classList: {
-			add: vi.fn((...c: string[]) => c.forEach((x) => classes.add(x))),
-			remove: vi.fn((...c: string[]) => c.forEach((x) => classes.delete(x))),
+			add: (...c: string[]) => c.forEach((x) => classes.add(x)),
+			remove: (...c: string[]) => c.forEach((x) => classes.delete(x)),
 			contains: (c: string) => classes.has(c),
-			toggle: vi.fn((c: string) => (classes.has(c) ? classes.delete(c) : classes.add(c))),
+			toggle: (c: string) => (classes.has(c) ? classes.delete(c) : classes.add(c)),
 		},
 		get className() {
 			return [...classes].join(' ');
@@ -173,40 +174,36 @@ function createStubEl(tag = 'div'): StubEl {
 		},
 		textContent: '',
 		children,
-		empty: vi.fn(() => {
+		empty: () => {
 			children.length = 0;
-		}),
-		createEl: vi.fn((t: string, info?: StubElInfo, cb?: (el: StubEl) => void) =>
-			make(t)(info, cb),
-		),
-		createDiv: vi.fn(make('div')),
-		createSpan: vi.fn(make('span')),
-		addClass: vi.fn((...c: string[]) => c.forEach((x) => classes.add(x))),
-		removeClass: vi.fn((...c: string[]) => c.forEach((x) => classes.delete(x))),
-		toggleClass: vi.fn((c: string, on: boolean) =>
-			on ? classes.add(c) : classes.delete(c),
-		),
+		},
+		createEl: (t: string, info?: StubElInfo, cb?: (el: StubEl) => void) => make(t)(info, cb),
+		createDiv: make('div'),
+		createSpan: make('span'),
+		addClass: (...c: string[]) => c.forEach((x) => classes.add(x)),
+		removeClass: (...c: string[]) => c.forEach((x) => classes.delete(x)),
+		toggleClass: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c)),
 		hasClass: (c: string) => classes.has(c),
-		setText: vi.fn((t: string) => {
+		setText: (t: string) => {
 			el.textContent = t;
-		}),
-		setAttribute: vi.fn((k: string, v: string) => {
+		},
+		setAttribute: (k: string, v: string) => {
 			attributes[k] = v;
-		}),
-		getAttribute: vi.fn((k: string) => (k in attributes ? attributes[k] : null)),
-		removeAttribute: vi.fn((k: string) => {
+		},
+		getAttribute: (k: string) => (k in attributes ? attributes[k] : null),
+		removeAttribute: (k: string) => {
 			delete attributes[k];
-		}),
-		addEventListener: vi.fn((type: string, cb: (evt: StubEvent) => void) => {
+		},
+		addEventListener: (type: string, cb: (evt: StubEvent) => void) => {
 			(listeners[type] ??= []).push(cb);
-		}),
-		removeEventListener: vi.fn(),
+		},
+		removeEventListener: () => {},
 		/** Test helper: synchronously invoke registered listeners for an event. */
 		dispatchEvent: (evt: StubEvent) => {
 			(listeners[evt.type] ?? []).forEach((cb) => cb(evt));
 			return true;
 		},
-		closest: vi.fn().mockReturnValue(null),
+		closest: (_selector: string): StubEl | null => null,
 		/**
 		 * Obsidian's `HTMLElement.findAll` augmentation, absent from jsdom-less
 		 * vitest. Minimal recursive matcher over the tracked `children` tree
@@ -227,9 +224,9 @@ function createStubEl(tag = 'div'): StubEl {
 			return walk(children);
 		},
 		style: {},
-		setCssProps: vi.fn((props: Record<string, string>) => {
+		setCssProps: (props: Record<string, string>) => {
 			Object.assign(cssProps, props);
-		}),
+		},
 	} as unknown as StubEl;
 	return el;
 }
@@ -336,25 +333,32 @@ export class ToggleComponent {
 	static instances: ToggleComponent[] = [];
 	toggleEl = createStubEl();
 	tooltip = '';
+	/** Last state set via setDisabled; undefined until called. */
+	disabled: boolean | undefined;
 	private value = false;
 	private changeCb: ((value: boolean) => unknown) | undefined;
 	constructor() {
 		ToggleComponent.instances.push(this);
 	}
-	getValue = () => this.value;
-	setValue = vi.fn((v: boolean) => {
+	getValue(): boolean {
+		return this.value;
+	}
+	setValue(v: boolean): this {
 		this.value = v;
 		return this;
-	});
-	setTooltip = vi.fn((t: string) => {
+	}
+	setTooltip(t: string): this {
 		this.tooltip = t;
 		return this;
-	});
-	setDisabled = vi.fn().mockReturnThis();
-	onChange = vi.fn((cb: (value: boolean) => unknown) => {
+	}
+	setDisabled(d: boolean): this {
+		this.disabled = d;
+		return this;
+	}
+	onChange(cb: (value: boolean) => unknown): this {
 		this.changeCb = cb;
 		return this;
-	});
+	}
 	/** Test helper: simulate a user toggling the control. */
 	_trigger(v: boolean): unknown {
 		this.value = v;
@@ -366,6 +370,7 @@ export class ToggleComponent {
  * Minimal stand-in for Obsidian's ButtonComponent / ExtraButtonComponent —
  * just the chainable builder surface (`setIcon`, `setButtonText`, `setTooltip`,
  * `onClick`) the settings UI uses. `_click()` is a test helper to fire onClick.
+ * Methods are plain (not `vi.fn`): spies are never released and would retain every rendered tree (#635).
  */
 export class ButtonComponent {
 	/** Test helper: every instance ever constructed (clear between tests). */
@@ -373,33 +378,53 @@ export class ButtonComponent {
 	private clickCb: (() => unknown) | undefined;
 	/** Last text set via setButtonText — lets tests locate a specific button. */
 	buttonText = '';
+	/** Every tooltip set via setTooltip, in call order. */
+	tooltips: string[] = [];
 	/** Last disabled state set via setDisabled. */
 	disabled = false;
+	/** True once setWarning was called. */
+	warning = false;
+	/** True once setCta was called. */
+	cta = false;
+	/** Last icon set via setIcon. */
+	icon = '';
 	/** Classes added via setClass. */
 	classes: string[] = [];
 	constructor() {
 		ButtonComponent.instances.push(this);
 	}
-	setIcon = vi.fn().mockReturnThis();
-	setButtonText = vi.fn((t: string) => {
+	setIcon(icon: string): this {
+		this.icon = icon;
+		return this;
+	}
+	setButtonText(t: string): this {
 		this.buttonText = t;
 		return this;
-	});
-	setTooltip = vi.fn().mockReturnThis();
-	setCta = vi.fn().mockReturnThis();
-	setWarning = vi.fn().mockReturnThis();
-	setClass = vi.fn((cls: string) => {
+	}
+	setTooltip(t: string): this {
+		this.tooltips.push(t);
+		return this;
+	}
+	setCta(): this {
+		this.cta = true;
+		return this;
+	}
+	setWarning(): this {
+		this.warning = true;
+		return this;
+	}
+	setClass(cls: string): this {
 		this.classes.push(cls);
 		return this;
-	});
-	setDisabled = vi.fn((d: boolean) => {
+	}
+	setDisabled(d: boolean): this {
 		this.disabled = d;
 		return this;
-	});
-	onClick = vi.fn((cb: () => unknown) => {
+	}
+	onClick(cb: () => unknown): this {
 		this.clickCb = cb;
 		return this;
-	});
+	}
 	/** Test helper: simulate a user clicking the button. */
 	_click(): unknown {
 		return this.clickCb?.();
@@ -418,10 +443,21 @@ export class Setting {
 	controlEl: StubEl;
 	/** Child components created via add*, mirroring Obsidian's `components`. */
 	components: ToggleComponent[] = [];
+	/** Buttons created via addButton / addExtraButton, in call order. */
+	buttons: ButtonComponent[] = [];
+	extraButtons: ButtonComponent[] = [];
 	/** Every Setting constructed since the last reset (tests clear between cases). */
 	static instances: Setting[] = [];
 	/** Last name set via setName. */
 	name = '';
+	/** Last description set via setDesc. */
+	desc: string | DocumentFragment | undefined;
+	/** Last state set via setDisabled; undefined until called. */
+	disabled: boolean | undefined;
+	/** True once setHeading was called. */
+	heading = false;
+	/** Classes added via setClass. */
+	classes: string[] = [];
 	constructor(containerEl?: { createDiv?: (cls: string) => StubEl }) {
 		this.settingEl = containerEl?.createDiv?.('setting-item') ?? createStubEl();
 		// Some tests hand in a bare container whose createDiv returns a non-stub.
@@ -430,32 +466,56 @@ export class Setting {
 			: createStubEl();
 		Setting.instances.push(this);
 	}
-	setName = vi.fn(function (this: Setting, name: string) {
+	setName(name: string): this {
 		this.name = name;
 		return this;
-	});
-	setDesc = vi.fn().mockReturnThis();
-	setHeading = vi.fn().mockReturnThis();
-	addText = vi.fn().mockReturnThis();
-	addTextArea = vi.fn().mockReturnThis();
-	addDropdown = vi.fn().mockReturnThis();
-	addToggle = vi.fn(function (this: Setting, cb?: (t: ToggleComponent) => void) {
+	}
+	setDesc(desc: string | DocumentFragment): this {
+		this.desc = desc;
+		return this;
+	}
+	setHeading(): this {
+		this.heading = true;
+		return this;
+	}
+	addText(): this {
+		return this;
+	}
+	addTextArea(): this {
+		return this;
+	}
+	addDropdown(): this {
+		return this;
+	}
+	addToggle(cb?: (t: ToggleComponent) => void): this {
 		const toggle = new ToggleComponent();
 		this.components.push(toggle);
 		if (cb) cb(toggle);
 		return this;
-	});
-	addSlider = vi.fn().mockReturnThis();
-	addButton = vi.fn(function (this: Setting, cb?: (b: ButtonComponent) => void) {
-		if (cb) cb(new ButtonComponent());
+	}
+	addSlider(): this {
 		return this;
-	});
-	addExtraButton = vi.fn(function (this: Setting, cb?: (b: ButtonComponent) => void) {
-		if (cb) cb(new ButtonComponent());
+	}
+	addButton(cb?: (b: ButtonComponent) => void): this {
+		const button = new ButtonComponent();
+		this.buttons.push(button);
+		if (cb) cb(button);
 		return this;
-	});
-	setClass = vi.fn().mockReturnThis();
-	setDisabled = vi.fn().mockReturnThis();
+	}
+	addExtraButton(cb?: (b: ButtonComponent) => void): this {
+		const button = new ButtonComponent();
+		this.extraButtons.push(button);
+		if (cb) cb(button);
+		return this;
+	}
+	setClass(cls: string): this {
+		this.classes.push(cls);
+		return this;
+	}
+	setDisabled(d: boolean): this {
+		this.disabled = d;
+		return this;
+	}
 }
 
 export class WorkspaceLeaf {

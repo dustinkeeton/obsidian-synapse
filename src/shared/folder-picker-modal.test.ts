@@ -111,10 +111,11 @@ describe('FolderPickerModal', () => {
 		const app = createMockApp(root);
 		const modal = new FolderPickerModal(app, vi.fn());
 		const el = createEl();
+		const createElSpy = vi.spyOn(el, 'createEl');
 
 		modal.renderSuggestion(root, el);
 
-		expect(el.createEl).toHaveBeenCalledWith('div', { text: '/ (vault root)' });
+		expect(createElSpy).toHaveBeenCalledWith('div', { text: '/ (vault root)' });
 	});
 
 	it('renderSuggestion shows folder path for non-root', () => {
@@ -122,10 +123,11 @@ describe('FolderPickerModal', () => {
 		const app = createMockApp(root);
 		const modal = new FolderPickerModal(app, vi.fn());
 		const el = createEl();
+		const createElSpy = vi.spyOn(el, 'createEl');
 
 		modal.renderSuggestion(projects, el);
 
-		expect(el.createEl).toHaveBeenCalledWith('div', { text: 'projects' });
+		expect(createElSpy).toHaveBeenCalledWith('div', { text: 'projects' });
 	});
 
 	it('getSuggestions ranks exact path match above root when query matches a folder', () => {

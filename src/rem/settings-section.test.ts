@@ -47,8 +47,8 @@ describe('renderRemSettings', () => {
 		const { ctx } = makeCtx();
 		Setting.instances.length = 0;
 		renderRemSettings(ctx);
-		const threshold = Setting.instances.find((st) => st.setName.mock.calls.some(([n]) => n === 'Confidence threshold'))!;
-		expect(threshold.setDesc).toHaveBeenCalledWith(REM_THRESHOLD_DESC);
+		const threshold = Setting.instances.find((st) => st.name === 'Confidence threshold')!;
+		expect(threshold.desc).toBe(REM_THRESHOLD_DESC);
 		expect(REM_THRESHOLD_DESC).toMatch(/strongly related/);
 		expect(REM_THRESHOLD_DESC).toMatch(/before it is proposed/);
 	});

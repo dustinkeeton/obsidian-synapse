@@ -135,11 +135,6 @@ describe('renderAutoAccept — live refresh via ctx.onFeatureToggle', () => {
 		Setting.instances.length = 0;
 	});
 
-	function lastSetDisabledArg(row: Setting): boolean {
-		const calls = (row.setDisabled as ReturnType<typeof vi.fn>).mock.calls;
-		return calls[calls.length - 1][0] as boolean;
-	}
-
 	it('re-syncs the REM row when a feature toggle listener fires', async () => {
 		const listeners: Array<() => void | Promise<void>> = [];
 		const { ctx, plugin } = makeCtx((s) => { s.rem.enabled = true; });
@@ -147,14 +142,14 @@ describe('renderAutoAccept — live refresh via ctx.onFeatureToggle', () => {
 
 		renderAutoAccept(ctx);
 		const remRow = Setting.instances.find((s) => s.name === 'REM (link discovery)')!;
-		expect(lastSetDisabledArg(remRow)).toBe(false);
+		expect(remRow.disabled).toBe(false);
 		expect(listeners).toHaveLength(1);
 
 		plugin.settings.rem.enabled = false;
 		await listeners[0]();
 
-		expect(lastSetDisabledArg(remRow)).toBe(true);
-		expect(remRow.setDesc).toHaveBeenLastCalledWith(
+		expect(remRow.disabled).toBe(true);
+		expect(remRow.desc).toEqual(
 			expect.stringContaining('(Enable REM (link discovery) to configure auto-accept.)'),
 		);
 	});
