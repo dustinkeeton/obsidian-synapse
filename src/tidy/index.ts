@@ -2,6 +2,7 @@ import { Plugin, TFile } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { CommandRegistrar } from '../commands';
 import { AIClient, NotificationManager, NoteOperationQueue, getMarkdownFiles, parseFrontmatter, sanitizeAIResponse, stripCodeFences, stripUntrustedMarkers, wrapUntrusted, serializeFrontmatter, withRetry, generateId, isPathExcluded, findMatchingRule, trackAiCache, withCacheReport, scanScopeLabel, toScanScope, type ScanTarget } from '../shared';
+import { jobOpId } from '../shared';
 import type { CacheUse, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { TidyStore } from './tidy-store';
 import { TidySnapshot } from './types';
@@ -102,7 +103,7 @@ export class TidyModule implements FeatureModule {
 
 		const op = this.notifications.startOperation(
 			toScanScope(target).recursive ? 'Tidying notes' : `Tidying notes in ${scanScopeLabel(target)}`,
-			'tidy-vault'
+			jobOpId('tidy-vault', target)
 		);
 
 		let tidied = 0;

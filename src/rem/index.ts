@@ -3,6 +3,7 @@ import { TFile } from 'obsidian';
 import type { SynapseSettings } from '../settings';
 import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule, NoteOperationQueue } from '../shared';
+import { jobOpId } from '../shared';
 import type { CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
 import { generateId, getMarkdownFiles, linkpathFor, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport, settleOnThrow, type ScanTarget, scanScopeLabel, toScanScope } from '../shared';
@@ -226,7 +227,7 @@ export class RemModule implements FeatureModule {
 
 		const op = this.notifications.startOperation(
 			`REM scanning ${eligible.length} notes${scopeSuffix}`,
-			'rem-directory-scan', { kind: 'rem', target: folderLabel ?? 'Whole vault' }
+			jobOpId('rem-directory-scan', target), { kind: 'rem', target: folderLabel ?? 'Whole vault' }
 		);
 		return settleOnThrow(op, 'REM scan failed', async () => {
 			// Create checkpoint

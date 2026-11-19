@@ -146,7 +146,7 @@ describe('ElaborationModule accept rewrites the note body (#552)', () => {
 		const outcome = await mod.scanNote(harness.noteFile as never);
 		const pending = await mod.getPendingProposals();
 		expect(pending).toHaveLength(1);
-		expect(outcome).toMatchObject({ ok: true, proposalId: pending[0].id, writtenPaths: [] });
+		expect(outcome).toMatchObject({ status: 'completed', proposalIds: [pending[0].id], writtenPaths: [] });
 		return pending[0];
 	}
 
@@ -338,8 +338,8 @@ describe('ElaborationModule accept rewrites the note body (#552)', () => {
 
 			const outcome = await mod.scanNote(harness.noteFile as never);
 
-			expect(outcome).toMatchObject({ ok: true, writtenPaths: [NOTE_PATH] });
-			expect(outcome.proposalId).toBeDefined();
+			expect(outcome).toMatchObject({ status: 'completed', writtenPaths: [NOTE_PATH] });
+			expect(outcome.proposalIds).toHaveLength(1);
 		});
 
 		it('batch auto-accept skips a stale note and does not count it as accepted', async () => {

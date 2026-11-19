@@ -9,6 +9,7 @@ import {
 	stripUnresolvedLinks, wikilinkTargets,
 	scanScopeLabel, type ScanTarget, revealSettingsSection, VIDEO_SETTINGS_SECTION,
 } from '../shared';
+import { jobOpId } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { OperationHandle } from '../shared';
 import { isSupportedUrl, detectPlatform, isEffectivelyEmptyProse } from '../shared';
@@ -969,7 +970,7 @@ export class SummarizeModule implements FeatureModule {
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for summarizable content`,
-			'summarize-vault-scan'
+			jobOpId('summarize-vault-scan', target)
 		);
 
 		let allFiles = getMarkdownFiles(this.plugin.app, target);
@@ -1022,7 +1023,7 @@ export class SummarizeModule implements FeatureModule {
 		// Phase 3: Process files (checkpointed)
 		const genOp = this.notifications.startOperation(
 			'Generating summaries',
-			'summarize-vault-generate'
+			jobOpId('summarize-vault-generate', target)
 		);
 		let totalInline = 0;
 		let totalEnrichment = 0;

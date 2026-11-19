@@ -119,7 +119,7 @@ describe('DeepDiveModule headless verbs', () => {
 
 			expect(selectDepth).not.toHaveBeenCalled();
 			expect(confirm).not.toHaveBeenCalled();
-			expect(outcome.ok).toBe(true);
+			expect(outcome.status).toBe('completed');
 			expect(outcome.runId).toBe(savedRun?.id);
 			expect(outcome.proposalIds).toHaveLength(3);
 			expect(outcome.writtenPaths).toEqual([]);
@@ -164,6 +164,16 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(startOperation.mock.calls.map((c) => String(c[1]))).toContain(`deep-dive-generate-${savedRun?.id}`);
 		});
 
+		it('tags both of its operations with the job id when a public-API job runs it (#624)', async () => {
+			await mod.run('notes/Root.md', { depth: 1, maxNotes: 1, jobId: 'j3' });
+			const startOperation = (mod as unknown as { notifications: { startOperation: { mock: { calls: unknown[][] } } } }).notifications.startOperation;
+			expect(startOperation.mock.calls.map((c) => String(c[1]))).toEqual([
+				'deep-dive-scan-notes/Root.md@job:j3',
+				`deep-dive-generate-${savedRun?.id}@job:j3`,
+			]);
+			expect(savedRun).not.toHaveProperty('jobId');
+		});
+
 		it('the palette command asks for depth before confirming', async () => {
 			const spec = register.mock.calls.find((c) => c[0] === 'deep-dive')?.[2] as {
 				editorCallback: (editor: unknown, ctx: { file: TFile }) => Promise<void>;
@@ -174,10 +184,21 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(confirm.mock.calls[0][0]).toContain('(depth 1)');
 		});
 
+		it('stops before creating a run when cancelled during topic extraction', async () => {
+			const startOperation = (mod as unknown as { notifications: { startOperation: ReturnType<typeof vi.fn> } }).notifications.startOperation;
+			startOperation.mockImplementationOnce(() => ({ progress: vi.fn(), update: vi.fn(), finish: vi.fn(), error: vi.fn(), cancelled: true }));
+
+			const outcome = await mod.run('notes/Root.md', { depth: 1 });
+
+			expect(outcome).toMatchObject({ status: 'cancelled', message: 'Deep dive cancelled' });
+			expect(savedRun).toBeNull();
+			expect(checkpoints.create).not.toHaveBeenCalled();
+		});
+
 		it('reports a missing note without starting a run', async () => {
 			const outcome = await mod.run('notes/Missing.md');
 
-			expect(outcome.ok).toBe(false);
+			expect(outcome.status).toBe('failed');
 			expect(outcome.message).toContain('Note not found');
 			expect(savedRun).toBeNull();
 		});
@@ -189,7 +210,7 @@ describe('DeepDiveModule headless verbs', () => {
 
 			const outcome = await mod.regenerate({ proposalId: 'p1' });
 
-			expect(outcome.ok).toBe(true);
+			expect(outcome.status).toBe('completed');
 			expect(outcome.writtenPaths).toEqual([]);
 			expect(proposals.get('p1')?.proposedContent).toContain('Fresh body about Backpropagation.');
 			expect(app.vault.process).not.toHaveBeenCalled();
@@ -204,7 +225,7 @@ describe('DeepDiveModule headless verbs', () => {
 
 			const outcome = await mod.regenerate({ notePath: path });
 
-			expect(outcome.ok).toBe(true);
+			expect(outcome.status).toBe('completed');
 			expect(outcome.writtenPaths).toEqual([path]);
 			expect(files.get(path)).toBe(`---\nparent: "[[Root]]"\n---\n${nav}\n\n## About\n\nFresh body about Backpropagation.\n\n${enrichment}\n`);
 		});
@@ -220,7 +241,7 @@ describe('DeepDiveModule headless verbs', () => {
 
 			const outcome = await mod.regenerate({ proposalId: 'p1' });
 
-			expect(outcome.ok).toBe(false);
+			expect(outcome.status).toBe('failed');
 			expect(outcome.message).toContain('moved, renamed or deleted');
 			expect(generated).toEqual([]);
 		});
@@ -244,7 +265,7 @@ describe('DeepDiveModule headless verbs', () => {
 
 			const outcome = await mod.regenerate({ proposalId: 'p1' });
 
-			expect(outcome.ok).toBe(false);
+			expect(outcome.status).toBe('failed');
 			expect(generated).toEqual([]);
 		});
 
@@ -254,7 +275,7 @@ describe('DeepDiveModule headless verbs', () => {
 
 			const outcome = await mod.regenerate({ proposalId: 'child' });
 
-			expect(outcome.ok).toBe(true);
+			expect(outcome.status).toBe('completed');
 			const prompt = vi.mocked(AIClient.prototype.complete).mock.calls.at(-1)?.[0] ?? '';
 			expect(prompt).toContain('parent body');
 		});

@@ -294,6 +294,17 @@ describe('TidyModule', () => {
 			expect(count).toBe(2);
 			expect(tidied).toEqual(['Inbox/a.md', 'Inbox/b.md']);
 		});
+
+		it('tags its operation with the job id when a public-API job runs it (#624)', async () => {
+			mockPlugin.app.vault.getMarkdownFiles = vi.fn().mockReturnValue([new TFile('Inbox/a.md')]);
+			vi.spyOn(module, 'tidy').mockResolvedValue(undefined);
+
+			await module.scanVault({ folder: 'Inbox', recursive: true, jobId: 'j7' }, true);
+			await module.scanVault('Inbox', true);
+
+			const ids = mockNotifications.startOperation.mock.calls.map((c) => c[1] as string);
+			expect(ids).toEqual(['tidy-vault@job:j7', 'tidy-vault']);
+		});
 	});
 
 	describe('cache reporting (#527)', () => {

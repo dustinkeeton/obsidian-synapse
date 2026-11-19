@@ -1,6 +1,7 @@
 import { Notice } from 'obsidian';
 import { redactSecrets, redactError } from './redact';
 import { InProgressRegistry, type InProgressMeta } from './in-progress-registry';
+import { JobOperationLog, jobIdOf } from './job-operations';
 
 export type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error';
 
@@ -168,6 +169,8 @@ export class NotificationManager {
 	private lastShown = new Map<string, number>();
 	/** Running proposal-producing operations, fed by {@link startOperation} metadata and {@link trackInProgress}. */
 	readonly inProgress = new InProgressRegistry();
+	/** Operations started under a job id (`jobOpId`), running or finished, for the public API's jobs (#624). */
+	readonly jobOps = new JobOperationLog();
 
 	setStatusBarEl(el: HTMLElement): void {
 		this.statusBarEl = el;
@@ -188,6 +191,7 @@ export class NotificationManager {
 		}
 		this.operations.clear();
 		this.inProgress.clear();
+		this.jobOps.clear();
 		// Drop dedup timestamps too, so a re-enabled plugin starts with a clean
 		// throttle window rather than inheriting stale last-shown times (#396).
 		this.lastShown.clear();
@@ -257,6 +261,7 @@ export class NotificationManager {
 			ellipsisInterval,
 		};
 		this.operations.set(opId, op);
+		this.jobOps.restart(opId, baseLabel);
 		this.updateStatusBar();
 
 		const isCurrent = () => this.operations.get(opId) === op;
@@ -274,6 +279,7 @@ export class NotificationManager {
 				stopEllipsis(op.ellipsisInterval);
 				op.ellipsisInterval = startEllipsisOnEl(op.dotsEl);
 				this.inProgress.update(opId, { label: base });
+				this.jobOps.record(opId, { message: base });
 				this.updateStatusBar();
 			},
 
@@ -294,6 +300,7 @@ export class NotificationManager {
 					total,
 					...(progressLabel ? { label: stripTrailingDots(progressLabel) } : {}),
 				});
+				this.jobOps.record(opId, { message: base, current, total });
 				this.updateStatusBar();
 			},
 
@@ -322,7 +329,26 @@ export class NotificationManager {
 			},
 		};
 
+		const jobId = jobIdOf(opId);
+		if (jobId && this.jobOps.isCancelled(jobId)) this.cancelOperation(opId);
 		return handle;
+	}
+
+	/**
+	 * Cancel every running operation of a job, and any it starts later, through
+	 * the same path as the toast's Cancel button (#624). Returns how many running
+	 * operations it stopped.
+	 */
+	cancelJob(jobId: string): number {
+		this.jobOps.markCancelled(jobId);
+		let stopped = 0;
+		for (const op of [...this.operations.values()]) {
+			if (op.state === 'running' && jobIdOf(op.id) === jobId) {
+				this.cancelOperation(op.id);
+				stopped++;
+			}
+		}
+		return stopped;
 	}
 
 	/**
@@ -585,6 +611,7 @@ export class NotificationManager {
 		if (this.operations.get(op.id) === op) {
 			this.operations.delete(op.id);
 			this.inProgress.end(op.id);
+			this.jobOps.record(op.id, { state: newState, message, endedAt: Date.now() });
 		}
 		this.updateStatusBar();
 	}

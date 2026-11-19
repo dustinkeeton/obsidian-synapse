@@ -1,5 +1,5 @@
 import type { ImageAnalysis } from './image-analyzer';
-import type { CacheUse } from '../shared';
+import type { OperationOutcome } from '../shared';
 
 export type DetectionReason =
 	| { type: 'short-note'; wordCount: number }
@@ -36,13 +36,5 @@ export interface Proposal {
 	imageAnalysis?: ImageAnalysis[];
 }
 
-/** What one `scanNote` call did; `ok: false` means it stopped on an error or produced nothing. */
-export interface ElaborationOutcome {
-	ok: boolean;
-	message: string;
-	/** Set when a proposal was generated. */
-	proposalId?: string;
-	/** The note, when auto-accept rewrote it. */
-	writtenPaths: string[];
-	cacheUse: CacheUse;
-}
+/** What one `scanNote` call did: the proposal generated, and the note when auto-accept rewrote it. `failed` = stopped on an error or produced nothing. */
+export type ElaborationOutcome = OperationOutcome;

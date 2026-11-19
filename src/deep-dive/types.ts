@@ -1,4 +1,4 @@
-import type { AIRequestOptions, CacheUse } from '../shared';
+import type { AIRequestOptions, OperationOutcome } from '../shared';
 
 /** Topic extracted from a note's content via AI analysis. */
 export interface ExtractedTopic {
@@ -95,18 +95,13 @@ export interface DeepDiveRunOptions {
 	maxNotes?: number;
 	/** Accept every generated note when the run finishes; default `autoAccept['deep-dive']`. */
 	autoAccept?: boolean;
+	/** Public-API job running this deep dive (#624); its operations are tagged with `jobOpId`. Not persisted. */
+	jobId?: string;
 }
 
-/** What a deep-dive run, or a regeneration, did. */
-export interface DeepDiveOutcome {
-	ok: boolean;
-	message: string;
+/** What a deep-dive run, or a regeneration, did: proposals created (run) or rewritten (regenerate), notes written. */
+export interface DeepDiveOutcome extends OperationOutcome {
 	runId?: string;
-	/** Proposals this call created (run) or rewrote (regenerate). */
-	proposalIds: string[];
-	/** Vault notes this call wrote. */
-	writtenPaths: string[];
-	cacheUse: CacheUse;
 }
 
 /** `regenerate` target: a proposal id, or the path of the note a proposal created. */

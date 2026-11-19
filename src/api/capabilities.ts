@@ -5,8 +5,15 @@ import type { ApiCapabilities, ApiFeatureCapability, ApiParamSpec, ApiVerbSpec }
 import { API_VERSION } from './types';
 
 type VerbDefinition = Omit<ApiVerbSpec, 'available'> & {
-	/** The verb is available while this feature is enabled and built; omitted = always. */
-	feature?: FeatureSettingsKey;
+	/** The verb is available while any of these features is enabled and built; omitted = always. */
+	feature?: FeatureSettingsKey | readonly FeatureSettingsKey[];
+};
+
+const jobId: ApiParamSpec = {
+	name: 'id',
+	description: 'Job id from a long verb (scanFolder, deepDive.run)',
+	required: true,
+	schema: { type: 'string' },
 };
 
 const notePath: ApiParamSpec = {
@@ -53,7 +60,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'scanFolder',
-		description: 'Run one feature\'s folder scan without the confirmation prompt',
+		description: 'Start one feature\'s folder scan as a job, without the confirmation prompt; returns { ok, jobId }. Job result: { ok, message, error, written: null, proposals (new ids for notes in the folder), cacheUse: null, count }',
 		params: [
 			{
 				name: 'feature',
@@ -75,10 +82,11 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 			},
 		],
 		long: true,
+		feature: SYNAPSE_PIPELINE.map((phase) => phase.key),
 	},
 	{
 		name: 'deepDive.run',
-		description: 'Deep dive a note: extract topics and generate child-note proposals, with no depth picker or confirmation',
+		description: 'Start a deep dive on a note as a job: extract topics and generate child-note proposals, with no depth picker or confirmation; returns { ok, jobId }. Job result: { ok, message, error, written (notes created under auto-accept), proposals, cacheUse, runId }',
 		params: [
 			notePath,
 			{
@@ -116,6 +124,38 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 		}],
 		long: false,
 		feature: 'deepDive',
+	},
+	{
+		name: 'jobs.get',
+		description: 'A job\'s status, progress, operations, and its result once finished; returns { ok, job, error } (ok: false for a bad, unknown or expired id)',
+		params: [jobId],
+		long: false,
+	},
+	{
+		name: 'jobs.wait',
+		description: 'Wait until a job finishes or the timeout passes; returns { ok, timedOut, job }',
+		params: [
+			jobId,
+			{
+				name: 'timeoutMs',
+				description: 'Milliseconds to wait; default 30000, at most 600000',
+				required: false,
+				schema: { type: 'integer', minimum: 0, maximum: 600000 },
+			},
+		],
+		long: false,
+	},
+	{
+		name: 'jobs.cancel',
+		description: 'Cancel a running job, the same as pressing Cancel on its toast; returns { ok, stoppedOperations }. Work outside its operations (deep dive auto-accept) still finishes',
+		params: [jobId],
+		long: false,
+	},
+	{
+		name: 'jobs.list',
+		description: 'Running and recently finished jobs (the last 50, for up to an hour), without their operations',
+		params: [],
+		long: false,
 	},
 	{
 		name: 'proposals.list',
@@ -159,9 +199,10 @@ export function buildCapabilities(
 	pluginVersion: string,
 	features: Record<FeatureSettingsKey, ApiFeatureCapability>
 ): ApiCapabilities {
+	const usable = (key: FeatureSettingsKey) => features[key].enabled && features[key].available;
 	const verbs = VERB_DEFINITIONS.map(({ feature, ...verb }) => ({
 		...verb,
-		available: feature === undefined || (features[feature].enabled && features[feature].available),
+		available: feature === undefined || (typeof feature === 'string' ? usable(feature) : feature.some(usable)),
 	}));
 	return { apiVersion: API_VERSION, pluginVersion, verbs, features };
 }

@@ -18,7 +18,7 @@ The codebase has **26 modules under `src/`** (api, audio, brand-icons, changelog
 - **`pipeline/`** runs features in order; **`intake/`** decides what to feed the pipeline. Neither imports a feature module directly — `main.ts` injects the features into them. This is what keeps the dependency graph acyclic.
 - **`views/`** holds the two sidebars: the **unified proposal view** (review/accept every proposal type, with an **In progress** section listing the operations still producing proposals, #577) and the **Synapse actions view** (registry-driven, touch-friendly buttons so mobile users reach any command without the palette).
 - **`transcription/`** holds the transcription modals and the **URL tier router** (#184): YouTube captions over plain HTTP first, desktop yt-dlp/ffmpeg second. It reaches `audio` and `video` only through callbacks injected by `main.ts`. Every URL path shares one router built over a **persistent transcript cache** (`shared/transcript-cache.ts`, #488), so a URL is transcribed once and reused by the modal, summarize, and intake.
-- **`api/`** is the versioned public API at `app.plugins.plugins.synapse.api` (#623). An agent or script calls `status()`, `capabilities()` and modal-free verbs (deep dive run and regenerate, elaborate, folder scans, proposal accept and reject). Each verb returns a structured result and never throws. Like `checkpoints/`, it reaches the features only through what `main.ts` hands it.
+- **`api/`** is the versioned public API at `app.plugins.plugins.synapse.api` (#623). An agent or script calls `status()`, `capabilities()` and modal-free verbs (deep dive run and regenerate, elaborate, folder scans, proposal accept and reject). Deep dives and folder scans start a job and return its id; `jobs.wait`, `jobs.get` and `jobs.cancel` follow it (#624). Each verb returns a structured result and never throws. Like `checkpoints/`, it reaches the features only through what `main.ts` hands it.
 - **`checkpoints/`** owns the checkpoint *recovery* UX (#496) — the delayed startup "interrupted operations" prompt, the `manage-checkpoints` command, and the sidebar's resume/discard buttons. Persistence stays in `shared/checkpoint-manager.ts`; resume reaches a feature module only through an injected handler map.
 - **No links to missing notes** (#581). Every write of AI-generated or fetched text passes through `stripUnresolvedLinks` (`shared/link-guard.ts`), which turns a `[[link]]` to a note that doesn't exist into plain text (alias kept as the visible text). Embeds and code are left alone, and an elaboration accept keeps links already in the note and links the user typed during review.
 - **One note, one operation at a time.** A single `NoteOperationQueue` (`shared/note-operation-queue.ts`, #483) is injected into every module that reads a note, calls the AI, and writes it back, so two features never interleave writes on the same note.
@@ -154,6 +154,8 @@ src/
 │   ├── capabilities.ts     #   VERB_DEFINITIONS (name, JSON-schema params) + capabilities()
 │   ├── status.ts           #   status(): resolved provider/model/effort, key source, in-progress, checkpoints
 │   ├── proposals.ts        #   Per-kind accept/reject/list adapters
+│   ├── jobs.ts             #   JobRegistry: long verbs as jobs (#624); status/progress from the ops a job tags
+│   ├── validate.ts         #   Argument checks against VERB_DEFINITIONS schemas
 │   └── types.ts            #   SynapseApi, ApiResult, API_VERSION
 │
 ├── checkpoints/            # Checkpoint recovery UX (#496)

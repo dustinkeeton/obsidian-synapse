@@ -8,6 +8,7 @@ import {
 	trackAiCache, withCacheReport, ConfirmModal, sleep,
 	scanScopeLabel, type ScanTarget, settleOnThrow, assertVaultRelativePath,
 } from '../shared';
+import { jobOpId } from '../shared';
 import type { CacheUse, Checkpoint, CheckpointWorkItem, DecisionRequestOptions, DeferredTask, ModuleDeps, FeatureModule, OperationHandle } from '../shared';
 import type { MoveRecord } from '../shared';
 import { describeRun, emptyTally, tallyResult } from './run-summary';
@@ -300,7 +301,7 @@ export class OrganizeModule implements FeatureModule {
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
 		const scanOp = this.notifications.startOperation(
 			`${scopeLabel} for organization`,
-			'organize-scan', { kind: 'organize', target: folderLabel ?? 'Whole vault' }
+			jobOpId('organize-scan', target), { kind: 'organize', target: folderLabel ?? 'Whole vault' }
 		);
 
 		let allFiles = getMarkdownFiles(this.plugin.app, target);
@@ -343,7 +344,7 @@ export class OrganizeModule implements FeatureModule {
 		// Phase 3: Analyze and organize (checkpointed)
 		const genOp = this.notifications.startOperation(
 			'Organizing notes',
-			'organize-generate', { kind: 'organize', target: folderLabel ?? 'Whole vault' }
+			jobOpId('organize-generate', target), { kind: 'organize', target: folderLabel ?? 'Whole vault' }
 		);
 		return settleOnThrow(genOp, 'Organization failed', async () => {
 			const tally = emptyTally();

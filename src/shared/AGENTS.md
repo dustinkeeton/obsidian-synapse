@@ -111,19 +111,33 @@ interface OperationHandle {
   readonly cancelled: boolean
 }
 class NotificationManager {
-  readonly inProgress: InProgressRegistry   // :170; fed by startOperation meta + trackInProgress; read by the unified sidebar (#577)
+  readonly inProgress: InProgressRegistry   // :171; fed by startOperation meta + trackInProgress; read by the unified sidebar (#577)
+  readonly jobOps: JobOperationLog   // :173; every op whose id carries a job tag (jobOpId), running or finished; read by api/jobs.ts (#624)
   setStatusBarEl(el: HTMLElement): void
-  startOperation(label: string, id?: string, meta?: InProgressMeta): OperationHandle   // :200; meta -> inProgress.begin({ cancellable: true }); no meta -> inProgress.end(opId); update()/progress() forward label/current/total; finish/error/cancel end the entry (completeOperation, keyed on the TrackedOperation object); a handle superseded by a same-id restart never updates/ends the newer run's entry or map slot
-  trackInProgress(label: string, meta: InProgressMeta): () => void   // :332; toast-less work, id `track-N`, cancellable: false; returns the end function (call in `finally`)
+  startOperation(label: string, id?: string, meta?: InProgressMeta): OperationHandle   // :204; a job-tagged id is also recorded in jobOps (start, update, progress, end state) and cancelled at once when its job was already cancelled; meta -> inProgress.begin({ cancellable: true }); no meta -> inProgress.end(opId); update()/progress() forward label/current/total; finish/error/cancel end the entry (completeOperation, keyed on the TrackedOperation object); a handle superseded by a same-id restart never updates/ends the newer run's entry or map slot
+  trackInProgress(label: string, meta: InProgressMeta): () => void   // :352; toast-less work, id `track-N`, cancellable: false; returns the end function (call in `finally`)
   confirm(message: string, options?: { proceedLabel?: string; cancelLabel?: string; level?: NoticeLevel }): Promise<boolean>
-  cancelOperation(id: string): void   // :385; also reached from the sidebar via UnifiedViewCallbacks.onCancelInProgress
+  cancelOperation(id: string): void   // :405; also reached from the sidebar via UnifiedViewCallbacks.onCancelInProgress
+  cancelJob(jobId: string): void   // :341; cancelOperation on each running op tagged with jobId, and marks the job so ops it starts later are cancelled at once (#624)
   info(message: string, duration?: number, action?: NoticeAction): void
   infoSticky(message: string, action: NoticeAction): void   // duration 0, dismissible; used by UpdateChecker
   success(message: string, duration?: number, action?: NoticeAction): void
   error(message: string): void   // persistent, copy-on-dismiss; redacts via redactSecrets
   notifyError(context: string, error: unknown): void   // error object + context label; routes through error()/redactSecrets
-  dispose(): void   // notifications.ts:183; also inProgress.clear() (notifications.ts:190)
+  dispose(): void   // notifications.ts:186; also inProgress.clear() (notifications.ts:193)
 }
+
+// job-operations.ts (#624)
+const JOB_OP_MARKER = '@job:'
+function jobOpId(base: string, scope?: unknown): string   // `${base}@job:${scope.jobId}` when scope is an object with a non-empty string jobId (ScanScope, DeepDiveRunOptions); else base
+function jobIdOf(opId: string): string | null
+type JobOperationState = 'running' | 'done' | 'error' | 'cancelled'
+interface JobOperation { id; label; message; state: JobOperationState; current?; total?; startedAt; endedAt? }
+class JobOperationLog { record(opId, patch); restart(opId, label); list(jobId): JobOperation[]; markCancelled(jobId); isCancelled(jobId); forget(jobId); clear() }   // untagged ids ignored
+
+// operation-outcome.ts (#624)
+type OperationStatus = 'completed' | 'failed' | 'cancelled'
+interface OperationOutcome { status: OperationStatus; message: string; proposalIds: string[]; writtenPaths: string[]; cacheUse: CacheUse }   // DeepDiveOutcome extends it (+ runId); ElaborationOutcome = it; the api maps it with fromOutcome
 
 // in-progress-registry.ts (#577)
 type InProgressKind = 'elaboration' | 'enrichment' | 'organize' | 'deep-dive' | 'title' | 'rem' | 'illustrate'   // :4; sanctioned duplicate of views ProposalKind (shared cannot import views); two-way guard views/types.ts:56-59
@@ -661,7 +675,7 @@ function scoreLyricsContent(content: string): number
 | `file-utils.test.ts` | Tests | `getMarkdownFiles` recursive/non-recursive scope, `getIncludedMarkdownFiles` exclusion filtering, `findAvailableVaultPath` suffixing |
 | `api-utils.ts` | `withRetry`, `sleep`, `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError` | Retry with exponential backoff + per-error `shouldRetry` gate, network-error classification/disclosure. `notifyError` no longer lives here — error display moved to `NotificationManager` |
 | `api-utils.test.ts` | Tests | `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError`, `withRetry` |
-| `validation.ts` | `sanitizeUrl`, `sanitizePublicUrl`, `isPrivateHost`, `sanitizePath`, `assertVaultRelativePath` (the three new ones re-exported on the barrel's last line, `index.ts:240`), `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
+| `validation.ts` | `sanitizeUrl`, `sanitizePublicUrl`, `isPrivateHost`, `sanitizePath`, `assertVaultRelativePath` (the three new ones re-exported on the barrel's last line, `index.ts:243`), `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
 | `validation.test.ts` | Tests | Validation tests |
 | `url-detector.ts` | `detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult` | Regex platform detection (moved here from video/) |
 | `url-detector.test.ts` | Tests | URL detection tests (moved here from video/) |
@@ -677,11 +691,11 @@ function scoreLyricsContent(content: string): number
 | `frontmatter-utils.test.ts` | Tests | Frontmatter tests; `splitRawFrontmatter` describe (`:127`): byte-for-byte raw block, no-frontmatter case, mid-document `---` not matched, body boundary agrees with `parseFrontmatter`, block without trailing newline |
 | `callouts.ts` | `CALLOUT_TYPES`, `CALLOUT_BASES`, `buildCallout`, `calloutHeaderToken`, `calloutHeaderLine`, `calloutIdentity`, `calloutHeaderSource`, `parseCalloutHeader`, `isCalloutHeader`, `hasCallout`, `calloutForTranscriptionResult`, `ENRICHMENT_START`, `ENRICHMENT_END`, `CalloutType`, `CalloutBase` | Unified callout registry, builder and matcher for AI content (#554). Callouts are written `> [!<base>|<identity>]` (`CALLOUT_BASES` picks the base; `calloutHeaderLine` is the only header writer); readers accept that form and the legacy bare `> [!synapse-*]` through `calloutIdentity` / `isCalloutHeader` / `calloutHeaderSource`. `calloutForTranscriptionResult` selects callout type and verb based on `schemaId` |
 | `callouts.test.ts` | Tests | Every type has a base; header token/line; identity + matcher for both spellings (nested prefix, fold marker, base-only `[!summary]` rejected); `calloutHeaderSource` fragment; `buildCallout` round-trips through the matcher |
-| `audio-embeds.ts` | `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `AudioEmbed` (barrel, `index.ts:234-235`); `hasTranscriptionBelow` (module-only) | Audio-embed scan over note content: `![[*.mp3\|wav\|m4a\|ogg\|flac\|webm\|aac]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout. Imports `./callouts` only. Re-exported by the `audio` barrel; used by summarize/index, transcription/ (direct from `shared`) |
+| `audio-embeds.ts` | `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `AudioEmbed` (barrel, `index.ts:237-238`); `hasTranscriptionBelow` (module-only) | Audio-embed scan over note content: `![[*.mp3\|wav\|m4a\|ogg\|flac\|webm\|aac]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout. Imports `./callouts` only. Re-exported by the `audio` barrel; used by summarize/index, transcription/ (direct from `shared`) |
 | `audio-embeds.test.ts` | Tests | Embed detection, already-transcribed skip (legacy, callout), line numbers, unresolved files; `hasTranscriptionBelow` incl. the lyrics callout |
-| `video-urls.ts` | `findVideoUrls`, `VideoUrlEmbed` (barrel, `index.ts:236-237`); `hasTranscriptionBelow` (module-only) | Video-URL scan over note content via `findUrls` + `detectPlatform`: skips blockquote lines, undetected and `twitter` URLs, and a URL whose next 3 lines carry a legacy `**Transcription of X**` or a `synapse-transcription` callout. Imports `./callouts`, `./url-classifier`, `./url-detector`. Re-exported by the `video` barrel; used by video/index (type), transcription/ |
+| `video-urls.ts` | `findVideoUrls`, `VideoUrlEmbed` (barrel, `index.ts:239-240`); `hasTranscriptionBelow` (module-only) | Video-URL scan over note content via `findUrls` + `detectPlatform`: skips blockquote lines, undetected and `twitter` URLs, and a URL whose next 3 lines carry a legacy `**Transcription of X**` or a `synapse-transcription` callout. Imports `./callouts`, `./url-classifier`, `./url-detector`. Re-exported by the `video` barrel; used by video/index (type), transcription/ |
 | `video-urls.test.ts` | Tests | Moved from `video/note-scanner.test.ts`: URL detection per platform, markdown links, twitter skip, already-transcribed skip, line numbers; `hasTranscriptionBelow` |
-| `image-embeds.ts` | `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `ImageEmbed` (barrel, `index.ts:238-239`); `hasExtractionBelow` (module-only) | Image-embed scan over note content: `![[*.png\|jpg\|jpeg\|gif\|webp\|bmp\|tiff]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**OCR of X**` or a `synapse-ocr` callout. Imports `./callouts` only. Re-exported by the `image` barrel; used by image/index (type), transcription/ |
+| `image-embeds.ts` | `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `ImageEmbed` (barrel, `index.ts:241-242`); `hasExtractionBelow` (module-only) | Image-embed scan over note content: `![[*.png\|jpg\|jpeg\|gif\|webp\|bmp\|tiff]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**OCR of X**` or a `synapse-ocr` callout. Imports `./callouts` only. Re-exported by the `image` barrel; used by image/index (type), transcription/ |
 | `image-embeds.test.ts` | Tests | Moved from `image/note-scanner.test.ts`: embed detection, already-extracted skip, line numbers, unresolved files |
 | `media-embed.ts` | `mediaEmbedFor`, `buildMediaEmbedLines` | Downloaded-media embed lines (#561): one builder for the `![[file]]` + blank line every write site puts above a transcription/summary callout; gated on `video.embedInNote`, dedupes against the note content when given. No imports. Used by `transcription/url-transcription.ts`, `video/index.ts`, `summarize/index.ts` |
 | `media-embed.test.ts` | Tests | File-name-only link, folder-only path, on/off, no download, already-embedded, different file embedded |
@@ -694,15 +708,17 @@ function scoreLyricsContent(content: string): number
 | `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests (sort order exercised through `getSuggestions`) |
 | `open-scan-folder-picker.ts` | `openScanFolderPicker` | Unified scan-folder picker wrapper over `ScanFolderPickerModal` (root-first sort via `suggestFolders`, so Enter-on-open scans the whole vault); `onChoose(ScanScope)`. Used by main (`fire`) and the elaboration, enrichment, illustrate, summarize, organize, rem folder-scan commands |
 | `open-scan-folder-picker.test.ts` | Tests | Scan folder picker tests |
-| `scan-scope.ts` | `ScanScope`, `ScanTarget`, `toScanScope`, `scanScopeLabel` | Folder-scan scope model (#589); processing-source only, candidate/index lookups stay vault-wide via `getIncludedMarkdownFiles` |
+| `job-operations.ts` | `JOB_OP_MARKER`, `jobOpId`, `jobIdOf`, `JobOperationLog`, `JobOperation`, `JobOperationState` (barrel `index.ts:75-76`) | Job tagging for public-API jobs (#624): op-id tag helpers + the per-job operation log `NotificationManager.jobOps` keeps. No imports |
+| `operation-outcome.ts` | `OperationOutcome`, `OperationStatus` (barrel `index.ts:74`, types) | Shared result of a module operation (#624); imports `CacheUse` type only |
+| `scan-scope.ts` | `ScanScope`, `ScanTarget`, `toScanScope`, `scanScopeLabel` | Folder-scan scope model (#589); `ScanScope.jobId` (#624) carries a public-API job id through to the scan's `jobOpId` calls and survives `toScanScope`; processing-source only, candidate/index lookups stay vault-wide via `getIncludedMarkdownFiles` |
 | `scan-scope.test.ts` | Tests | Scope normalization + labels |
 | `scan-folder-picker-modal.ts` | `ScanFolderPickerModal`, `ScanFolderSuggestion`, `ROOT_LABEL`, `ROOT_TOP_LEVEL_LABEL` | Scan picker with top-level-only root row + Shift+Enter non-recursive choice (#589); Shift+Enter goes through the feature-detected `chooser.useSelectedItem` (`scan-folder-picker-modal.ts:30`), no-op when absent |
 | `scan-folder-picker-modal.test.ts` | Tests | Row order, scope returned per row/modifier, Shift+Enter registration |
-| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:204` (direct import; section reset), `settings-ui/global-sections.ts:525` (via barrel; reset all), `elaboration/index.ts:534` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:17` cites the settle-once pattern in a comment only, no import |
+| `confirm-modal.ts` | `ConfirmModal`, `ConfirmModalOptions` | Reusable settle-once yes/no confirmation modal (#420); Escape/click-away resolves `false`. Consumers: `shared/settings-section.ts:204` (direct import; section reset), `settings-ui/global-sections.ts:525` (via barrel; reset all), `elaboration/index.ts:535` (via barrel; stale-body accept guard, #552). `transcription/time-range-modal.ts:17` cites the settle-once pattern in a comment only, no import |
 | `confirm-modal.test.ts` | Tests | ConfirmModal tests |
 | `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |
 | `settings-reset.test.ts` | Tests | Reset helper tests |
-| `id-utils.ts` | `generateId`, `randomToken`, `isValidCheckpointId` | ID generation, CSPRNG temp-name token, and validation for checkpoint paths (barrel: `index.ts:196`) |
+| `id-utils.ts` | `generateId`, `randomToken`, `isValidCheckpointId` | ID generation, CSPRNG temp-name token, and validation for checkpoint paths (barrel: `index.ts:199`) |
 | `checkpoint-types.ts` | `CheckpointModule`, `CheckpointStatus`, `CheckpointWorkItem`, `DeferredTask`, `Checkpoint` | Checkpoint data model types |
 | `checkpoint-manager.ts` | `CheckpointManager` | CRUD and lifecycle management for resumable operation checkpoints |
 | `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
@@ -851,12 +867,12 @@ Write concurrency: per-checkpoint mutex via `withLock()` prevents concurrent rea
 - Status bar integration (shows active operation count)
 - In-progress registry (#577): `inProgress` lists running proposal-producing operations for the unified sidebar; opt-in per call via `startOperation(label, id, meta)` (cancellable rows) or `trackInProgress(label, meta)` (toast-less, non-cancellable rows)
 - Styling via `styles.css` classes (prefix `synapse-notice`), loaded/unloaded with the plugin
-- Secret redaction on every error path via `redactSecrets` — `error()`, `notifyError()`, and the operation `error()` `console.error` all route through `showErrorNotice`/`redactSecrets`. Source ref: `notifications.ts:321` (operation-error console sink), `notifications.ts:467` (`error()`), `notifications.ts:555` (`notifyError()`)
+- Secret redaction on every error path via `redactSecrets` — `error()`, `notifyError()`, and the operation `error()` `console.error` all route through `showErrorNotice`/`redactSecrets`. Source ref: `notifications.ts:328` (operation-error console sink), `notifications.ts:493` (`error()`), `notifications.ts:581` (`notifyError()`)
 - `info()` and `success()` accept optional `action?: NoticeAction` 3rd param — renders an action button on the toast (floors duration to 8s, then auto-dismiss)
-- `infoSticky(message, action)` — duration-0 dismissible action toast that stays up until the user clicks the action or clicks the toast; used by `UpdateChecker` for the "update available" prompt. Source ref: `notifications.ts:441`
+- `infoSticky(message, action)` — duration-0 dismissible action toast that stays up until the user clicks the action or clicks the toast; used by `UpdateChecker` for the "update available" prompt. Source ref: `notifications.ts:467`
 - `error(message)` — persistent (until clicked) error toast; clicking copies the redacted text to the clipboard. `notifyError(context, error)` wraps an error object + context label through the same sink
 - `OperationHandle.finish(message?, action?)` accepts optional `action?: NoticeAction` — completion toast includes a button that runs `action.onClick()` then hides the toast
-- `dispose()` — tears down every in-flight tracked operation (stops its `setInterval` + hides its notice, clears the map). Called from `main.ts` `onunload()` so disabling the plugin mid-operation never leaves an orphaned 400ms timer firing against a detached toast; also clears `inProgress`. Source ref: `notifications.ts:183`
+- `dispose()` — tears down every in-flight tracked operation (stops its `setInterval` + hides its notice, clears the map). Called from `main.ts` `onunload()` so disabling the plugin mid-operation never leaves an orphaned 400ms timer firing against a detached toast; also clears `inProgress`. Source ref: `notifications.ts:186`
 - One-shot `info()`/`success()`/`error()` calls WITHOUT an action are equal-message throttled within `NOTICE_THROTTLE_MS` (3s) via private `isThrottled` (#396): a second identical `${level}:${message}` toast inside the window is dropped (prevents per-item loop floods, e.g. a per-image notice). Tracked-operation toasts, `confirm()`, action notices (`showActionNotice`/`infoSticky`), and `notifyError()` are exempt. `dispose()` also clears the `lastShown` dedup map
 
 ## Validation Rules
@@ -931,7 +947,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `isTwitterUrl` | elaboration/proposer, enrichment/index |
 | `sanitizeUrl` | video/index, video/audio-extractor, transcription/duration-detector, transcription/youtube-captions; in-layer: content-fetcher (`fetchHtmlDocument`, `content-fetcher.ts:42`), tweet-fetcher, reddit-fetcher, url-classifier |
 | `sanitizePublicUrl` | illustrate/asset-writer (`illustrate/asset-writer.ts:36`), illustrate/linked-pages (`illustrate/linked-pages.ts:21`) |
-| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:195`), organize/index (`organize/index.ts:445,544,603`) |
+| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:195`), organize/index (`organize/index.ts:446,545,604`) |
 | `sanitizePath` | video/audio-extractor |
 | `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, image/index, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `parseFrontmatter` | enrichment/index, enrichment/enrichment-applier, tidy/index |

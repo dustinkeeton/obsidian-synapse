@@ -33,6 +33,9 @@ jobs:
 
       - name: Test
         run: npm test
+        env:
+          # settings-tab.test.ts peaks near 3 GB: stub-element vi.fn spies are never released (#635).
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Version consistency check
         run: node scripts/version-bump.mjs --check

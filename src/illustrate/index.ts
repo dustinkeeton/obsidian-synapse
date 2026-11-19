@@ -8,6 +8,7 @@ import {
 	stripUnresolvedLinks,
 	scanScopeLabel, type ScanTarget, settleOnThrow,
 } from '../shared';
+import { jobOpId } from '../shared';
 import type {
 	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
 	NotificationManager, CheckpointManager, NoteOperationQueue, InsertionAnchor, SourceContext, SourceImage, RegionLocator, ResolveInsertionOptions,
@@ -185,6 +186,11 @@ export class IllustrateModule implements FeatureModule {
 		return null;
 	}
 
+	/** Why a folder scan would produce nothing, before it starts; null when it can run. The public API refuses the scan with it (#624). */
+	scanBlocker(): string | null {
+		return this.hasOutputKind() ? null : NOTHING_ENABLED_MESSAGE;
+	}
+
 	/** False when a run has no output kind it can produce (no photo provider, Mermaid off). */
 	private hasOutputKind(): boolean {
 		const { mermaid } = this.getSettings().illustrate;
@@ -343,7 +349,7 @@ export class IllustrateModule implements FeatureModule {
 			return 0;
 		}
 		const scopeLabel = folderLabel ? `Scanning ${folderLabel}` : 'Scanning vault';
-		const scanOp = this.notifications.startOperation(`${scopeLabel} for notes to illustrate`, 'illustrate-vault-scan', { kind: 'illustrate', target: folderLabel ?? 'Whole vault' });
+		const scanOp = this.notifications.startOperation(`${scopeLabel} for notes to illustrate`, jobOpId('illustrate-vault-scan', target), { kind: 'illustrate', target: folderLabel ?? 'Whole vault' });
 		let allFiles = getMarkdownFiles(this.plugin.app, target);
 		if (onlyFile) allFiles = allFiles.filter((f) => f.path === onlyFile.path);
 		const eligible: TFile[] = [];
@@ -383,7 +389,7 @@ export class IllustrateModule implements FeatureModule {
 			items: checkpointItems,
 		});
 		await this.checkpointManager.addDeferredTask(checkpoint.id, { id: generateId(), type: 'refresh-sidebar-view', data: {} });
-		const genOp = this.notifications.startOperation('Generating illustration proposals', 'illustrate-vault-generate', { kind: 'illustrate', target: folderLabel ?? 'Whole vault' });
+		const genOp = this.notifications.startOperation('Generating illustration proposals', jobOpId('illustrate-vault-generate', target), { kind: 'illustrate', target: folderLabel ?? 'Whole vault' });
 		return settleOnThrow(genOp, 'Illustration generation failed', () => this.runBatch(genOp, checkpoint.id, checkpointItems, 'Generating illustration proposals'));
 	}
 
