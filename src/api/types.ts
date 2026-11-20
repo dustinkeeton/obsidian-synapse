@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
 import type { AIFeatureId, AIProvider, EffortLevel, SynapseSettings, TranscriptionProvider } from '../settings';
-import type { AIResponseInfo, AIUsage, CacheUse, ChatMessage, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
+import type { ActivityEntry, ActivityLog, AIResponseInfo, AIUsage, CacheUse, ChatMessage, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
 import type { FeatureModules } from '../modules';
 import type { PipelineModuleKey, PipelineModuleMap } from '../pipeline';
 import type { ProposalKind } from '../views';
@@ -280,6 +280,20 @@ export interface ApiStatus {
 	continuableDeepDives: ApiContinuableDeepDive[] | null;
 }
 
+/** `events.since` result (#627); never rejects. */
+export interface ApiEventPage {
+	ok: boolean;
+	error?: string;
+	/** Oldest first; text fields are redacted. */
+	entries: ActivityEntry[];
+	/** Pass to the next `since` call: the last returned `seq`, else the cursor given. */
+	cursor: number;
+	/** More entries follow this page. */
+	more: boolean;
+	/** Entries after the cursor were rotated out of the log before this read. */
+	missed: boolean;
+}
+
 /** The object at `app.plugins.plugins.synapse.api`. */
 export interface SynapseApi {
 	readonly version: number;
@@ -306,6 +320,10 @@ export interface SynapseApi {
 		/** Running and recently finished jobs, without their operations. */
 		list(): ApiJob[];
 	};
+	events: {
+		/** Activity after `cursor` (default 0: every kept entry), oldest first, at most `limit` (default 100, max 500). */
+		since(cursor?: number, limit?: number): Promise<ApiEventPage>;
+	};
 	proposals: {
 		list(kind?: ProposalKind): Promise<ApiProposalList>;
 		accept(kind: ProposalKind, id: string, options?: ApiAcceptOptions): Promise<ApiResult>;
@@ -322,4 +340,6 @@ export interface SynapseApiDeps {
 	scanFns: PipelineModuleMap;
 	notifications: NotificationManager;
 	checkpointManager: CheckpointManager;
+	/** The activity log `events.since` reads (#627). */
+	activityLog: ActivityLog;
 }

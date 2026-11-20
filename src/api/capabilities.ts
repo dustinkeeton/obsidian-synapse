@@ -235,6 +235,15 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 		long: false,
 	},
 	{
+		name: 'events.since',
+		description: 'Activity log entries (operation finish lines, errors, cancels, toasts; redacted) after a cursor, oldest first; returns { ok, entries: [{ seq, at, level, message, opId?, label?, jobId? }], cursor, more, missed }. Pass the returned cursor to read on; missed means entries were rotated out of the log',
+		params: [
+			{ name: 'cursor', description: 'The last seq already read; default 0 (every kept entry)', required: false, schema: { type: 'integer', minimum: 0 } },
+			{ name: 'limit', description: 'At most this many entries; default 100, at most 500', required: false, schema: { type: 'integer', minimum: 1, maximum: 500 } },
+		],
+		long: false,
+	},
+	{
 		name: 'proposals.list',
 		description: 'List pending proposals, optionally of one kind',
 		params: [{ ...proposalKind, required: false }],

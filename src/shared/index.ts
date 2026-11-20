@@ -183,6 +183,8 @@ export {
 } from './settings-migrations';
 export type { SettingsMigration } from './settings-migrations';
 export { migrateDataFolder, LEGACY_DATA_FOLDER, DATA_FOLDER } from './data-folder-migration';
+export { ActivityLog, ACTIVITY_LOG_PATH, ACTIVITY_LOG_ROTATED_PATH, ACTIVITY_LOG_MAX_BYTES, ACTIVITY_MESSAGE_MAX_CHARS, DEFAULT_EVENTS_LIMIT, MAX_EVENTS_LIMIT } from './activity-log';
+export type { ActivityEntry, ActivityInput, ActivityLevel, ActivityLogAdapter, ActivityPage } from './activity-log';
 export { deepMergeSettings } from './settings-merge';
 export { voiceInstruction, VOICE_OPTIONS } from './voice';
 export type { VoiceMode, VoiceSettings } from './voice';

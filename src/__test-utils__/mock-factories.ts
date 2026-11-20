@@ -2,6 +2,7 @@ import { vi, type Mock } from 'vitest';
 import { TFile, TFolder } from '../__mocks__/obsidian';
 import { NoteOperationQueue } from '../shared';
 import type { ModuleDeps } from '../shared';
+import type { ActivityLogAdapter } from '../shared/activity-log';
 
 /**
  * Create a TFile instance for testing.
@@ -178,5 +179,24 @@ export function makeModuleDeps(overrides: Partial<ModuleDeps> = {}): ModuleDeps 
 		registrar: {} as never,
 		noteQueue: new NoteOperationQueue(),
 		...overrides,
+	};
+}
+
+/** An in-memory vault adapter over a path -> text map. */
+export function memoryAdapter(files = new Map<string, string>()): ActivityLogAdapter & { files: Map<string, string> } {
+	const folders = new Set<string>();
+	return {
+		files,
+		exists: async (path) => files.has(path) || folders.has(path),
+		read: async (path) => {
+			const text = files.get(path);
+			if (text === undefined) throw new Error(`ENOENT ${path}`);
+			return text;
+		},
+		write: async (path, data) => { files.set(path, data); },
+		append: async (path, data) => { files.set(path, (files.get(path) ?? '') + data); },
+		remove: async (path) => { files.delete(path); },
+		rename: async (from, to) => { files.set(to, files.get(from) ?? ''); files.delete(from); },
+		mkdir: async (path) => { folders.add(path); },
 	};
 }

@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 import { redactSecrets, redactError } from './redact';
 import { InProgressRegistry, type InProgressMeta } from './in-progress-registry';
 import { JobOperationLog, jobIdOf } from './job-operations';
+import type { ActivityInput, ActivityLevel } from './activity-log';
 
 export type NoticeLevel = 'info' | 'progress' | 'success' | 'warning' | 'error';
 
@@ -171,6 +172,29 @@ export class NotificationManager {
 	readonly inProgress = new InProgressRegistry();
 	/** Operations started under a job id (`jobOpId`), running or finished, for the public API's jobs (#624). */
 	readonly jobOps = new JobOperationLog();
+	/** Receives every operation end and one-shot toast (#627); main.ts points it at the ActivityLog. */
+	private activitySink: ((entry: ActivityInput) => void) | null = null;
+
+	setActivitySink(sink: ((entry: ActivityInput) => void) | null): void {
+		this.activitySink = sink;
+	}
+
+	/** Hand an entry to the activity sink; a sink failure never reaches the caller. */
+	private logActivity(level: ActivityLevel, message: string, op?: { id: string; label: string }): void {
+		if (!this.activitySink) return;
+		const entry: ActivityInput = { level, message };
+		if (op) {
+			entry.opId = op.id;
+			entry.label = op.label;
+			const jobId = jobIdOf(op.id);
+			if (jobId) entry.jobId = jobId;
+		}
+		try {
+			this.activitySink(entry);
+		} catch {
+			// Logging is best-effort.
+		}
+	}
 
 	setStatusBarEl(el: HTMLElement): void {
 		this.statusBarEl = el;
@@ -447,12 +471,14 @@ export class NotificationManager {
 	 */
 	info(message: string, duration = 4000, action?: NoticeAction): void {
 		if (action) {
+			this.logActivity('info', message);
 			this.showActionNotice(message, 'info', Math.max(duration, ACTION_NOTICE_DURATION), action);
 			return;
 		}
 		// Suppress an identical info toast fired again within the dedup window
 		// (#396) — e.g. the same per-image message emitted once per loop iteration.
 		if (this.isThrottled('info', message)) return;
+		this.logActivity('info', message);
 		const notice = new Notice(`Synapse: ${message}`, duration);
 		styleNotice(notice, 'info');
 	}
@@ -465,6 +491,7 @@ export class NotificationManager {
 	 * Used for the "update available" prompt, which must persist until acted on.
 	 */
 	infoSticky(message: string, action: NoticeAction): void {
+		this.logActivity('info', message);
 		this.showActionNotice(message, 'info', 0, action, { dismissible: true });
 	}
 
@@ -474,11 +501,13 @@ export class NotificationManager {
 	 */
 	success(message: string, duration = 4000, action?: NoticeAction): void {
 		if (action) {
+			this.logActivity('success', message);
 			this.showActionNotice(message, 'success', Math.max(duration, ACTION_NOTICE_DURATION), action);
 			return;
 		}
 		// Suppress an identical success toast fired again within the dedup window (#396).
 		if (this.isThrottled('success', message)) return;
+		this.logActivity('success', message);
 		const notice = new Notice(`Synapse: ${message}`, duration);
 		styleNotice(notice, 'success');
 	}
@@ -496,6 +525,7 @@ export class NotificationManager {
 		// completeOperation) and contextual notifyError() unthrottled, since both
 		// reach showErrorNotice directly and are exempt per the dedup design.
 		if (this.isThrottled('error', message)) return;
+		this.logActivity('error', message);
 		this.showErrorNotice(message);
 	}
 
@@ -580,6 +610,7 @@ export class NotificationManager {
 	 */
 	notifyError(context: string, error: unknown): void {
 		const message = error instanceof Error ? error.message : String(error);
+		this.logActivity('error', `${context} — ${message}`);
 		this.showErrorNotice(`${context} — ${message}`);
 		console.error(`[Synapse] ${context}:`, redactSecrets(message));
 	}
@@ -593,6 +624,7 @@ export class NotificationManager {
 		action?: NoticeAction
 	): void {
 		op.state = newState;
+		this.logActivity(newState === 'done' ? 'finish' : newState === 'error' ? 'error' : 'cancelled', message, op);
 		stopEllipsis(op.ellipsisInterval);
 		op.notice.hide();
 		// Completion/error/cancel notices are normal dismissible toasts. When an

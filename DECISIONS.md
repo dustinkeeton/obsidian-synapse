@@ -6,6 +6,27 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-19: Keep an activity log an agent can read (#627)
+
+**Context**: Finish lines, warnings and errors appeared only as toasts and console lines. An agent driving Synapse through the API couldn't see what happened, especially for work the user started.
+
+**Decision**:
+- `NotificationManager` hands every operation end and every toast it shows to an activity sink.
+- `main.ts` points the sink at an `ActivityLog`, which appends redacted JSON lines to `.synapse/activity.jsonl`.
+- Each entry carries a `seq` that keeps increasing across restarts. `api.events.since(cursor)` pages entries after a cursor.
+- At 512 KB the file rotates to `activity.1.jsonl`, and only that one older file is kept.
+
+**Alternatives considered**: An in-memory ring buffer. It is simpler, but it empties on every reload, so an agent couldn't read what happened while it was away.
+
+**Rationale**: Logging at the notification layer covers every feature without touching any of them, because the cache and System 1 reports are already in the finish lines. A file under `.synapse/` is already excluded from every feature, and syncing it stays the user's choice.
+
+**Impact**:
+- The log holds about 1 MB at most.
+- A write failure drops that entry and never affects the operation.
+- Messages are redacted with the same `redactSecrets` the error toasts use.
+
+---
+
 ## 2026-11-19: Let an agent write the text, through the same code path (#626)
 
 **Context**: An agent that runs on a subscription, such as Claude Code, can't lend Synapse its credentials, and Synapse never handles them. Every elaboration or deep dive it started still spent the plugin's API key, and nothing showed what a job cost.
