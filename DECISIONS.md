@@ -15,6 +15,7 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 - `main.ts` points the sink at an `ActivityLog`, which appends redacted JSON lines to `.synapse/activity.jsonl`.
 - Each entry carries a `seq` that keeps increasing across restarts. `api.events.since(cursor)` pages entries after a cursor.
 - At 512 KB the file rotates to `activity.1.jsonl`, and only that one older file is kept.
+- Before each write the log checks the file's size. If another device's synced writes changed it, the log reads it again and carries on from its last `seq`. Two devices writing at the very same moment can still repeat a `seq`; a per-device file would avoid that, but no one needs it yet.
 
 **Alternatives considered**: An in-memory ring buffer. It is simpler, but it empties on every reload, so an agent couldn't read what happened while it was away.
 

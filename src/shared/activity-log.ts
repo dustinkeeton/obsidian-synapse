@@ -4,7 +4,7 @@ import { redactSecrets } from './redact';
 export const ACTIVITY_LOG_PATH = `${DATA_FOLDER}/activity.jsonl`;
 /** The previous file after a rotation; older entries are dropped. */
 export const ACTIVITY_LOG_ROTATED_PATH = `${DATA_FOLDER}/activity.1.jsonl`;
-/** The current file rotates once an append would take it past this many bytes (UTF-16 length, close enough for a cap). */
+/** The current file rotates once an append would take it past this many bytes. */
 export const ACTIVITY_LOG_MAX_BYTES = 512 * 1024;
 export const ACTIVITY_MESSAGE_MAX_CHARS = 2000;
 export const DEFAULT_EVENTS_LIMIT = 100;
@@ -38,7 +38,7 @@ export interface ActivityPage {
 	cursor: number;
 	/** More entries after this page. */
 	more: boolean;
-	/** Entries after the cursor were rotated away before this read. */
+	/** Entries after the cursor were rotated away, or the cursor is past the newest entry because the log was deleted; the page then starts from the oldest kept entry. */
 	missed: boolean;
 }
 
@@ -51,6 +51,11 @@ export interface ActivityLogAdapter {
 	remove(path: string): Promise<void>;
 	rename(from: string, to: string): Promise<void>;
 	mkdir(path: string): Promise<void>;
+	stat(path: string): Promise<{ size: number } | null>;
+}
+
+function byteLength(text: string): number {
+	return new TextEncoder().encode(text).length;
 }
 
 function parseLines(text: string): ActivityEntry[] {
@@ -79,7 +84,7 @@ export class ActivityLog {
 	private chain: Promise<void>;
 
 	constructor(private adapter: ActivityLogAdapter, private now: () => number = () => Date.now()) {
-		this.chain = this.init().catch(() => undefined);
+		this.chain = this.load().catch(() => undefined);
 	}
 
 	/** Queue an entry; resolves nothing, never throws. */
@@ -91,14 +96,18 @@ export class ActivityLog {
 	async since(cursor = 0, limit = DEFAULT_EVENTS_LIMIT): Promise<ActivityPage> {
 		await this.chain;
 		const kept = [...await this.readFile(ACTIVITY_LOG_ROTATED_PATH), ...await this.readFile(ACTIVITY_LOG_PATH)];
-		const after = kept.filter((entry) => entry.seq > cursor);
+		const newest = kept.length > 0 ? kept[kept.length - 1].seq : 0;
+		// A cursor past the newest entry means the files were deleted and seq restarted: read from the start.
+		const restarted = cursor > newest;
+		const from = restarted ? 0 : cursor;
+		const after = kept.filter((entry) => entry.seq > from);
 		const entries = after.slice(0, Math.min(Math.max(1, limit), MAX_EVENTS_LIMIT));
 		const oldest = kept[0]?.seq;
 		return {
 			entries,
-			cursor: entries.length > 0 ? entries[entries.length - 1].seq : cursor,
+			cursor: entries.length > 0 ? entries[entries.length - 1].seq : from,
 			more: after.length > entries.length,
-			missed: oldest !== undefined && oldest > cursor + 1,
+			missed: restarted || (oldest !== undefined && oldest > from + 1),
 		};
 	}
 
@@ -107,12 +116,13 @@ export class ActivityLog {
 		return this.chain;
 	}
 
-	private async init(): Promise<void> {
+	/** Read size, torn tail and last seq from the files; seq never goes backwards. */
+	private async load(): Promise<void> {
 		const current = await this.readText(ACTIVITY_LOG_PATH);
-		this.size = current.length;
+		this.size = byteLength(current);
 		this.torn = current.length > 0 && !current.endsWith('\n');
 		const last = parseLines(current).pop() ?? parseLines(await this.readText(ACTIVITY_LOG_ROTATED_PATH)).pop();
-		this.seq = last?.seq ?? 0;
+		this.seq = Math.max(this.seq, last?.seq ?? 0);
 	}
 
 	private async append(input: ActivityInput): Promise<void> {
@@ -120,12 +130,18 @@ export class ActivityLog {
 		if (input.opId) entry.opId = input.opId;
 		if (input.label) entry.label = clip(input.label);
 		if (input.jobId) entry.jobId = input.jobId;
-		const line = `${this.torn ? '\n' : ''}${JSON.stringify(entry)}\n`;
 		if (!(await this.adapter.exists(DATA_FOLDER))) await this.adapter.mkdir(DATA_FOLDER);
-		if (this.size > 0 && this.size + line.length > ACTIVITY_LOG_MAX_BYTES) await this.rotate();
+		// Another device (a synced vault) or the user changed the file since our last write: re-read it first.
+		if (((await this.adapter.stat(ACTIVITY_LOG_PATH))?.size ?? 0) !== this.size) {
+			await this.load();
+			entry.seq = this.seq + 1;
+		}
+		const line = `${this.torn ? '\n' : ''}${JSON.stringify(entry)}\n`;
+		const bytes = byteLength(line);
+		if (this.size > 0 && this.size + bytes > ACTIVITY_LOG_MAX_BYTES) await this.rotate();
 		if (this.size === 0 && !(await this.adapter.exists(ACTIVITY_LOG_PATH))) await this.adapter.write(ACTIVITY_LOG_PATH, line);
 		else await this.adapter.append(ACTIVITY_LOG_PATH, line);
-		this.size += line.length;
+		this.size += bytes;
 		this.seq = entry.seq;
 		this.torn = false;
 	}

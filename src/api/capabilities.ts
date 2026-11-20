@@ -236,7 +236,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	},
 	{
 		name: 'events.since',
-		description: 'Activity log entries (operation finish lines, errors, cancels, toasts; redacted) after a cursor, oldest first; returns { ok, entries: [{ seq, at, level, message, opId?, label?, jobId? }], cursor, more, missed }. Pass the returned cursor to read on; missed means entries were rotated out of the log',
+		description: 'Activity log entries (operation finish lines, errors, cancels, toasts; redacted) after a cursor, oldest first; returns { ok, entries: [{ seq, at, level, message, opId?, label?, jobId? }], cursor, more, missed }. Pass the returned cursor to read on; missed means entries were rotated out of the log, or the log was deleted and reading restarted from its oldest entry. The log syncs with the vault; two devices writing at once can repeat a seq',
 		params: [
 			{ name: 'cursor', description: 'The last seq already read; default 0 (every kept entry)', required: false, schema: { type: 'integer', minimum: 0 } },
 			{ name: 'limit', description: 'At most this many entries; default 100, at most 500', required: false, schema: { type: 'integer', minimum: 1, maximum: 500 } },

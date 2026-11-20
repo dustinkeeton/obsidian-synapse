@@ -198,5 +198,9 @@ export function memoryAdapter(files = new Map<string, string>()): ActivityLogAda
 		remove: async (path) => { files.delete(path); },
 		rename: async (from, to) => { files.set(to, files.get(from) ?? ''); files.delete(from); },
 		mkdir: async (path) => { folders.add(path); },
+		stat: async (path) => {
+			const text = files.get(path);
+			return text === undefined ? null : { size: new TextEncoder().encode(text).length };
+		},
 	};
 }

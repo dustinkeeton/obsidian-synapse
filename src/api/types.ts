@@ -290,7 +290,7 @@ export interface ApiEventPage {
 	cursor: number;
 	/** More entries follow this page. */
 	more: boolean;
-	/** Entries after the cursor were rotated out of the log before this read. */
+	/** Entries after the cursor were rotated out, or the cursor is past the newest entry (the log was deleted); the page then starts from the oldest kept entry. */
 	missed: boolean;
 }
 

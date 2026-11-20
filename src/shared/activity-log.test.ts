@@ -51,6 +51,32 @@ describe('ActivityLog (#627)', () => {
 		expect((await log.since(page.entries[0].seq - 1)).missed).toBe(false);
 	});
 
+	it('reports a cursor past a deleted log as missed and reads from the start', async () => {
+		const adapter = memoryAdapter();
+		const first = new ActivityLog(adapter);
+		for (const message of ['a', 'b', 'c']) first.record({ level: 'info', message });
+		const { cursor } = await first.since();
+		adapter.files.clear();
+
+		const restarted = new ActivityLog(adapter);
+		expect(await restarted.since(cursor)).toMatchObject({ entries: [], cursor: 0, more: false, missed: true });
+		restarted.record({ level: 'info', message: 'after' });
+		expect(await restarted.since(cursor)).toMatchObject({ entries: [{ seq: 1, message: 'after' }], cursor: 1, missed: true });
+		expect((await restarted.since(1)).missed).toBe(false);
+	});
+
+	it('continues after entries another writer appended to the same file', async () => {
+		const adapter = memoryAdapter();
+		const log = new ActivityLog(adapter);
+		log.record({ level: 'info', message: 'here' });
+		await log.flush();
+		await adapter.append(ACTIVITY_LOG_PATH, '{"seq":2,"at":"x","level":"info","message":"élsewhere"}\n');
+		log.record({ level: 'info', message: 'here again' });
+		log.record({ level: 'info', message: 'and again' });
+		const page = await log.since();
+		expect(page.entries.map((e) => [e.seq, e.message])).toEqual([[1, 'here'], [2, 'élsewhere'], [3, 'here again'], [4, 'and again']]);
+	});
+
 	it('drops an entry whose write fails without breaking later ones', async () => {
 		const adapter = memoryAdapter();
 		const log = new ActivityLog(adapter);
