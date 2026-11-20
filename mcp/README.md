@@ -59,7 +59,7 @@ A verb's result comes back as structured content. A result with `ok: false` is r
 Long verbs (`elaborate`, `scanFolder` and the `deepDive_*` tools) start a job, and the tool follows it:
 
 - When the client asks for progress, it sends a notification each time the job's status line changes, and repeats the last line every 5 seconds, so a client that resets its own timeout on progress keeps waiting.
-- Cancelling the tool call cancels the job, the same as pressing Cancel on its toast. That includes a client giving up on its own timeout, so on a client that does not reset its timeout on progress, set `SYNAPSE_MCP_MAX_WAIT_MS` below that timeout. The tool then returns the job still running, and `jobs_wait` follows it without cancelling it.
+- Cancelling the tool call cancels the job, the same as pressing Cancel on its toast. That includes a client giving up on its own timeout, so on a client that does not reset its timeout on progress, set `SYNAPSE_MCP_MAX_WAIT_MS` below that timeout. The tool then returns the job still running, and `jobs_wait` follows it without cancelling it. That limit is checked between polls, so it doesn't cut short a sampling request that is still out. On such a client, also set `SYNAPSE_MCP_SAMPLING=off`, or a `SYNAPSE_MCP_SAMPLING_TIMEOUT_MS` below its timeout, and answer `job.requests` with `jobs_commit`.
 - It returns what `jobs_wait` returns, `{ ok, timedOut, job }`, with the verb's result on `job.result`. A job still running after `SYNAPSE_MCP_MAX_WAIT_MS` comes back with `timedOut: true`. Follow it with `jobs_wait`.
 
 ## Letting the client's model write the text
