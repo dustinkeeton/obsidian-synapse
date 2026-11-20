@@ -9,7 +9,8 @@ import {
 	scanScopeLabel, type ScanTarget, settleOnThrow, assertVaultRelativePath,
 } from '../shared';
 import { jobOpId } from '../shared';
-import type { CacheUse, Checkpoint, CheckpointWorkItem, DecisionRequestOptions, DeferredTask, ModuleDeps, FeatureModule, OperationHandle } from '../shared';
+import { acceptApplied, acceptNotApplied, acceptWrote, PROPOSAL_NOT_FOUND, PROPOSAL_NOT_PENDING, SOURCE_NOTE_MISSING } from '../shared';
+import type { AcceptResult, CacheUse, Checkpoint, CheckpointWorkItem, DecisionRequestOptions, DeferredTask, ModuleDeps, FeatureModule, OperationHandle } from '../shared';
 import type { MoveRecord } from '../shared';
 import { describeRun, emptyTally, tallyResult } from './run-summary';
 import type { RunTally } from './run-summary';
@@ -126,11 +127,6 @@ export class OrganizeModule implements FeatureModule {
 	/** Get all pending proposals (for potential future unified view integration). */
 	async getPendingProposals(): Promise<OrganizeProposal[]> {
 		return this.store.loadPendingProposals();
-	}
-
-	/** One proposal in any status; null when missing. Lets the public API confirm what an accept did (#623). */
-	async getProposal(id: string): Promise<OrganizeProposal | null> {
-		return this.store.loadProposal(id);
 	}
 
 	/**
@@ -424,23 +420,23 @@ export class OrganizeModule implements FeatureModule {
 	 * view refresh; used by batch auto-accept so callers emit one summary
 	 * Notice and refresh once. (Error and "cannot move" Notices still fire.)
 	 */
-	async acceptProposal(id: string, options?: { silent?: boolean; runId?: string }): Promise<void> {
+	async acceptProposal(id: string, options?: { silent?: boolean; runId?: string }): Promise<AcceptResult> {
 		const queued = await this.store.loadProposal(id);
 		if (!queued) {
-			this.notifications.info('Proposal not found');
-			return;
+			this.notifications.info(PROPOSAL_NOT_FOUND);
+			return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		}
 		// Keyed on the pre-move path; work queued behind us finds no file there and exits early.
-		await this.noteQueue.run(queued.sourceNotePath, () => this.applyAccept(id, options));
+		return this.noteQueue.run(queued.sourceNotePath, () => this.applyAccept(id, options));
 	}
 
 	/** Queue-free core of acceptProposal; runs holding the note's queue slot (#483). */
-	private async applyAccept(id: string, options?: { silent?: boolean; runId?: string; file?: TFile }): Promise<void> {
+	private async applyAccept(id: string, options?: { silent?: boolean; runId?: string; file?: TFile }): Promise<AcceptResult> {
 		const proposal = await this.store.loadProposal(id);
-		if (!proposal) return;
+		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		// Guard against double-acceptance (cascade safety): only act on a
 		// still-pending proposal so the note is never moved twice.
-		if (proposal.status !== 'pending') return;
+		if (proposal.status !== 'pending') return acceptNotApplied('skipped', PROPOSAL_NOT_PENDING);
 
 		try {
 			assertVaultRelativePath(proposal.proposedDirectory);
@@ -451,9 +447,9 @@ export class OrganizeModule implements FeatureModule {
 				? options.file
 				: this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 			if (!(file instanceof TFile)) {
-				this.notifications.info('Source note no longer exists');
+				this.notifications.info(SOURCE_NOTE_MISSING);
 				await this.store.updateProposalStatus(id, 'rejected');
-				return;
+				return acceptNotApplied('failed', SOURCE_NOTE_MISSING);
 			}
 
 			const candidatePath = normalizePath(
@@ -466,7 +462,7 @@ export class OrganizeModule implements FeatureModule {
 				this.notifications.info(
 					`Cannot move -- a file already exists at ${candidatePath}`
 				);
-				return;
+				return acceptNotApplied('conflict', `A file already exists at ${candidatePath}`);
 			}
 
 			// Save snapshot for undo
@@ -498,6 +494,7 @@ export class OrganizeModule implements FeatureModule {
 				}
 				await this.onViewRefreshNeeded?.();
 			}
+			return acceptApplied([newPath]);
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			this.notifications.notifyError('Failed to accept proposal', error);
@@ -514,7 +511,8 @@ export class OrganizeModule implements FeatureModule {
 	private async maybeAutoAccept(proposalId: string, file: TFile, runId: string, batch = false): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
 		// Callers already hold the note's queue slot (#483), so apply directly.
-		await this.applyAccept(proposalId, { silent: batch, runId, file });
+		const result = await this.applyAccept(proposalId, { silent: batch, runId, file });
+		if (!acceptWrote(result)) return false;
 		if (!batch) {
 			this.notifications.info('Auto-accepted organize proposal');
 		}

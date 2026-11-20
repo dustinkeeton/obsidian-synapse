@@ -1,5 +1,5 @@
 import { normalizePath, TFile, TFolder } from 'obsidian';
-import { redactSecrets } from '../shared';
+import { acceptWrote, redactSecrets } from '../shared';
 import type { FeatureSettingsKey, OperationOutcome } from '../shared';
 import { PROPOSAL_KINDS } from '../views';
 import type { ProposalKind } from '../views';
@@ -106,7 +106,7 @@ function toRegenerateTarget(target: ApiRegenerateTarget): { proposalId: string }
 /** Build the versioned public API (#623). Verbs reach modules only through `deps`, take every answer a modal would ask for, and resolve to a structured result. */
 export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 	const { app, modules } = deps;
-	const adapters = buildProposalAdapters(app, modules);
+	const adapters = buildProposalAdapters(modules);
 	const jobs = new JobRegistry(deps.notifications);
 
 	const disabled = (feature: FeatureSettingsKey, label: string): string | null =>
@@ -261,9 +261,11 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 				if (invalid || !isProposalKind(kind)) return failure(invalid ?? `Unknown proposal kind: ${String(kind)}`);
 				if (!(await adapters[kind].list()).some((p) => p.id === id)) return failure(`No pending ${kind} proposal with id ${id}`);
 				const outcome = await adapters[kind].accept(id, options ?? {});
-				return outcome.applied
-					? { ok: true, message: 'Proposal accepted', written: outcome.written, proposals: [id], cacheUse: null }
-					: { ...failure(outcome.error ?? 'Proposal was not applied'), proposals: [id] };
+				if (acceptWrote(outcome)) {
+					const message = outcome.status === 'partial' ? `Proposal partly accepted: ${outcome.reason ?? 'some items were not applied'}` : 'Proposal accepted';
+					return { ok: true, message, written: outcome.written, proposals: [id], cacheUse: null, acceptStatus: outcome.status };
+				}
+				return { ...failure(outcome.reason ?? 'Proposal was not applied'), proposals: [id], acceptStatus: outcome.status };
 			}, asIs),
 
 			reject: (kind, id) => settle(async () => {

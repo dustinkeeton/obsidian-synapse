@@ -11,7 +11,8 @@ import {
 	fireAndForget, reviewAction, openScanFolderPicker, trackAiCache, withCacheReport,
 	stripUnresolvedLinks, wikilinkTargets, settleOnThrow, combineAIOptions,
 } from '../shared';
-import type { AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import { acceptApplied, acceptNotApplied, acceptWrote, PROPOSAL_NOT_FOUND, PROPOSAL_NOT_PENDING, SOURCE_NOTE_MISSING } from '../shared';
+import type { AcceptResult, AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
 import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator, proposalContentKey } from './proposer';
@@ -500,15 +501,15 @@ export class ElaborationModule implements FeatureModule {
 	 * Notice and refresh once. It also turns the stale-body guard into a skip
 	 * instead of a confirm modal. `options.onStale` overrides that guard:
 	 * `confirm` asks (the default), `skip` leaves the proposal pending, `replace`
-	 * overwrites the edited note. Returns `true` only when the note was rewritten.
+	 * overwrites the edited note. A stale-body skip is a `conflict`, a declined confirm `skipped`.
 	 */
 	async acceptProposal(
 		id: string,
 		editedContent?: string,
 		options?: AcceptOptions
-	): Promise<boolean> {
+	): Promise<AcceptResult> {
 		const proposal = await this.store.load(id);
-		if (!proposal) return false;
+		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		return this.noteQueue.run(
 			proposal.sourceNotePath,
 			() => this.applyProposal(id, editedContent, options)
@@ -517,34 +518,33 @@ export class ElaborationModule implements FeatureModule {
 
 	/**
 	 * Queue-free core of acceptProposal; runs holding the note's queue slot (#483).
-	 * Returns `true` only when the note was rewritten; a stale-body skip or a
-	 * declined confirm leaves the proposal pending and returns `false`.
+	 * A stale-body skip or a declined confirm leaves the proposal pending.
 	 */
 	private async applyProposal(
 		id: string,
 		editedContent?: string,
 		options?: AcceptOptions
-	): Promise<boolean> {
+	): Promise<AcceptResult> {
 		const proposal = await this.store.load(id);
-		if (!proposal) return false;
+		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		// Guard against double-acceptance (cascade safety): a proposal that is
 		// no longer pending has already been applied — never apply it twice.
-		if (proposal.status !== 'pending') return false;
+		if (proposal.status !== 'pending') return acceptNotApplied('skipped', PROPOSAL_NOT_PENDING);
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
-		if (!(file instanceof TFile)) return false;
+		if (!(file instanceof TFile)) return acceptNotApplied('failed', SOURCE_NOTE_MISSING);
 
 		// Stale-body guard: accept overwrites, so never clobber edits made after generation.
 		const current = await this.plugin.app.vault.read(file);
 		const onStale = options?.onStale ?? (options?.silent ? 'skip' : 'confirm');
 		if (current !== proposal.originalContent && onStale !== 'replace') {
-			if (onStale === 'skip') return false;
+			if (onStale === 'skip') return acceptNotApplied('conflict', 'The note changed since the proposal was generated');
 			const confirmed = await new ConfirmModal(this.plugin.app, {
 				title: 'Note changed since this proposal was generated',
 				message: `"${file.basename}" was edited after this elaboration was proposed. Accepting replaces the note's current content with the proposed rewrite.`,
 				confirmLabel: 'Replace',
 			}).openAndConfirm();
-			if (!confirmed) return false;
+			if (!confirmed) return acceptNotApplied('skipped', 'Cancelled: the note changed since the proposal was generated');
 		}
 
 		const rewritten = sanitizeRewrittenBody(editedContent ?? proposal.proposedAdditions);
@@ -568,7 +568,7 @@ export class ElaborationModule implements FeatureModule {
 			await this.refreshView();
 		}
 		this.onProposalAccepted?.(proposal.sourceNotePath, { sourceUrls: extractUrls(body), producedRegion: { kind: 'whole-note' } });
-		return true;
+		return acceptApplied([proposal.sourceNotePath]);
 	}
 
 	/**
@@ -582,7 +582,7 @@ export class ElaborationModule implements FeatureModule {
 	private async maybeAutoAccept(proposal: Proposal, batch = false): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
 		// Callers already hold the note's queue slot (#483), so apply directly.
-		const applied = await this.applyProposal(proposal.id, proposal.proposedAdditions, { silent: batch });
+		const applied = acceptWrote(await this.applyProposal(proposal.id, proposal.proposedAdditions, { silent: batch }));
 		if (applied && !batch) {
 			this.notifications.info(`Auto-accepted elaboration for ${proposal.sourceNotePath}`);
 		}

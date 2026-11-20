@@ -24,7 +24,7 @@ class TitleModule {
   acceptProposal(
     id: string,
     options?: { silent?: boolean; resolution?: TitleDuplicateStrategy }
-  ): Promise<TitleAcceptOutcome>   // queue wrapper over private applyAccept (#483), keyed on the PRE-rename path
+  ): Promise<AcceptResult>   // shared/accept-result (#633); queue wrapper over private applyAccept (#483), keyed on the PRE-rename path
   rejectProposal(id: string): Promise<void>   // no note write; unqueued
 }
 
@@ -34,15 +34,9 @@ function renderTitleSettings(ctx: SettingsSectionContext): void  // re-exported 
 
 Note: `TitleModule` does NOT take a `CheckpointManager`. Title proposals are single-note operations; no checkpoint support.
 
-Exported types (all declared in `types.ts`, re-exported at `index.ts:16`): `TitleProposal`, `TitleProposalTrigger`, `TitleProposalStatus`, `TitleDuplicateStrategy`, `TitleAcceptOutcome` (`types.ts:48`)
+Exported types (all declared in `types.ts`, re-exported at `index.ts:16`): `TitleProposal`, `TitleProposalTrigger`, `TitleProposalStatus`, `TitleDuplicateStrategy`
 
-```ts
-type TitleAcceptOutcome =
-  | { status: 'renamed'; path: string }
-  | { status: 'merged'; into: string }
-  | { status: 'conflict'; target: string }
-  | { status: 'skipped' }
-```
+Accept results (`AcceptResult`, `shared/accept-result.ts`, #633): `applied` with `written: [renamed path]` or `[merge target]`; `conflict` (reason `"<target>" already exists`); `failed` (note gone, or invalid stored title); `skipped` (proposal missing or not pending). The private `applyAccept` returns `TitleAcceptResult = AcceptResult & { merged?: boolean }` (index.ts) so `maybeAutoAccept` can announce "Auto-merged into".
 
 ## Internal File Map
 
@@ -55,7 +49,7 @@ type TitleAcceptOutcome =
 | `backlink-remediation.ts` | `collectInboundLinks`, `rewriteLinkText`, `rewriteContent` | Inbound-link snapshot + display-text-preserving rewrite for accepted renames (#485); folder-qualified links follow the note to its new folder (#581) |
 | `settings-section.ts` | `renderTitleSettings` | Title settings accordion (enabled toggle + duplicate-handling dropdown) (#408) |
 | `title-detector.ts` | re-exports `isUntitled` | Thin re-export of `isUntitled` through the `../shared` barrel (never the internal `shared/title-detector` file, per the shared-import rule); canonical home is `shared/title-detector.ts` |
-| `types.ts` | -- | All title types, incl. `TitleAcceptOutcome` (types.ts:48) |
+| `types.ts` | -- | All title types |
 
 ## TitleSuggester (`title-suggester.ts`)
 
@@ -145,25 +139,25 @@ proposeFromMismatch(file, filePath, options?)  [private, holds the note's queue 
   --> build proposal {trigger:'content-mismatch', contentKey:key}; flag conflictsWith
   --> store.save; maybeAutoAccept; reviewAction toast; refreshView
 
-acceptProposal(id, options?)  -> TitleAcceptOutcome
-  --> store.load(id); { status:'skipped' } if not found
+acceptProposal(id, options?)  -> AcceptResult
+  --> store.load(id); skipped 'Proposal not found' if not found
   --> noteQueue.run(proposal.sourceNotePath, () => applyAccept(id, options))  [#483, silent; keyed on
       the PRE-rename path — work queued behind us under the old path runs afterwards, finds no file
       and exits early, which is preferred over re-keying (that would mean holding two keys)]
 
-applyAccept(id, options?)  [private, holds the source note's queue slot]  -> TitleAcceptOutcome
+applyAccept(id, options?)  [private, holds the source note's queue slot]  -> TitleAcceptResult
   --> store.load(id) AGAIN (guard evaluated under the slot, not on a pre-wait snapshot)
-  --> guard: { status:'skipped' } if proposal.status !== 'pending'
-  --> if source note no longer a TFile: info notice, updateStatus 'rejected', refreshView, { status:'skipped' }
-  --> if stored proposedTitle contains / \ or a null byte, or is empty / only dots after trim (index.ts:363): info notice, updateStatus 'rejected', refreshView, { status:'skipped' }
+  --> guard: skipped 'Proposal is not pending' if proposal.status !== 'pending'
+  --> if source note no longer a TFile: info notice, updateStatus 'rejected', refreshView, failed 'Source note no longer exists'
+  --> if stored proposedTitle contains / \ or a null byte, or is empty / only dots after trim (index.ts:363): info notice, updateStatus 'rejected', refreshView, failed 'Proposed title is not a valid note name'
   --> targetPath = computeTargetPath(file, proposedTitle); collision = a different file occupies targetPath  [live recheck #408]
   --> snapshot inbound links: collectInboundLinks(app, file) BEFORE any rename/merge (#485)
-  --> no collision: vault.rename(file, targetPath), remediateBacklinks, accepted, announce --> { status:'renamed', path }
+  --> no collision: vault.rename(file, targetPath), remediateBacklinks, accepted, announce --> applied [targetPath]
   --> collision: resolution = options.resolution ?? (shouldAutoAccept() ? settings.title.duplicateHandling : undefined)
-        --> no resolution (plain manual accept): persist conflictsWith, info 'choose Add suffix or Merge', stay pending --> { status:'conflict', target }
-        --> 'merge' & target is TFile: mergeNotes(file, existing), remediateBacklinks(-> existing.path), accepted, announce --> { status:'merged', into }
-        --> 'merge' & target not a TFile: info 'Nothing to merge into — renamed instead', rename, remediateBacklinks, accepted --> { status:'renamed', path }
-        --> 'iterate': findAvailableVaultPath(targetPath), rename to free suffixed path, remediateBacklinks, accepted --> { status:'renamed', path }
+        --> no resolution (plain manual accept): persist conflictsWith, info 'choose Add suffix or Merge', stay pending --> conflict '"<target>" already exists'
+        --> 'merge' & target is TFile: mergeNotes(file, existing), remediateBacklinks(-> existing.path), accepted, announce --> applied [existing.path], merged: true
+        --> 'merge' & target not a TFile: info 'Nothing to merge into — renamed instead', rename, remediateBacklinks, accepted --> applied [targetPath]
+        --> 'iterate': findAvailableVaultPath(targetPath), rename to free suffixed path, remediateBacklinks, accepted --> applied [freePath]
   --> on rename/process throw: notifyError, rethrow Error('Rename failed: ...')
 
 remediateBacklinks(refs, oldPath, newPath)  [private, #485]
@@ -203,12 +197,6 @@ interface TitleProposal {
   contentKey?: string      // input-keyed dedup hash; optional for pre-#408 proposals
   conflictsWith?: string   // same-folder collision target captured at proposal time (UI hint; re-validated live)
 }
-
-type TitleAcceptOutcome =
-  | { status: 'renamed'; path: string }
-  | { status: 'merged'; into: string }
-  | { status: 'conflict'; target: string }
-  | { status: 'skipped' }
 ```
 
 ## Commands
@@ -239,8 +227,8 @@ Out: constructed by `modules/registry.ts:14` (TitleModule); `main.ts:196` wires 
 - Remediation is deterministic (no AI text); a folder-qualified link whose folder matches the old note's (case-insensitive) moves to the new note's folder so a cross-folder merge never leaves it dangling (#581; private `retargetLinkpath`, backlink-remediation.ts:84, helper `folderPrefix` backlink-remediation.ts:98). Bare links and links with a non-matching folder keep their written folder.
 - No `CheckpointManager` — title proposals are always single-note, never batched.
 - Per-note serialization (#483): `checkUntitled`, `checkMismatch`, and `acceptProposal` each acquire the note's `NoteOperationQueue` slot exactly ONCE (silently — no `onWait`) and delegate to a private core (`proposeUntitled`, `proposeFromMismatch`, `applyAccept`) that must never re-enter the queue. `checkTitle` only routes and takes no slot itself. `maybeAutoAccept` runs inside `proposeUntitled`/`proposeFromMismatch`, so it calls `applyAccept` directly (index.ts:68), never `acceptProposal`. Backlink remediation writes to OTHER notes and stays unqueued by design (a second key would introduce lock ordering).
-- `acceptProposal` guards against double-acceptance: returns `{ status: 'skipped' }` if `proposal.status !== 'pending'`. The guard lives in `applyAccept`, which re-loads the proposal under the queue slot so a wait cannot leave the decision on stale state.
-- Collision is rechecked LIVE at accept time (#408): `computeTargetPath` is recomputed and a stale `conflictsWith` never drives a rename. A plain manual Accept on a live collision NEVER overwrites — it surfaces "Add suffix or Merge" and leaves the proposal pending (`{ status: 'conflict' }`). Auto-accept derives the resolution from `settings.title.duplicateHandling`.
+- `acceptProposal` guards against double-acceptance: returns `skipped` if `proposal.status !== 'pending'`. The guard lives in `applyAccept`, which re-loads the proposal under the queue slot so a wait cannot leave the decision on stale state.
+- Collision is rechecked LIVE at accept time (#408): `computeTargetPath` is recomputed and a stale `conflictsWith` never drives a rename. A plain manual Accept on a live collision NEVER overwrites — it surfaces "Add suffix or Merge" and leaves the proposal pending (`conflict`). Auto-accept derives the resolution from `settings.title.duplicateHandling`.
 - `iterate` renames to the next free `-1`/`-2` path via `findAvailableVaultPath`; `merge` folds the note into the existing one (frontmatter union — target wins scalars, tags+aliases unioned — bodies joined by a horizontal rule) and trashes the source (recoverable). `merge` falls back to a plain rename when the target is not a TFile.
 - Reject-loop dedup (#408): both check methods skip when an existing proposal has the same `contentKey` and `status !== 'accepted'`. Editing the note changes the content hash → key → a new proposal is allowed; an `accepted` proposal never blocks.
 - `contentKey` is computed from inputs BEFORE the AI call (sampled output would otherwise vary every run).
@@ -257,10 +245,10 @@ Out: constructed by `modules/registry.ts:14` (TitleModule); `main.ts:196` wires 
 | AI call fails in `checkUntitled`/`checkMismatch` | Caught; `console.warn('[Synapse] Title suggestion failed ...' / 'Title mismatch check failed ...')`; no user notice (flow is silent) |
 | Note content empty/whitespace | Silent return; no proposal generated |
 | Suggested title empty or itself `isUntitled()` | Silent return; no proposal saved (`checkUntitled`) |
-| `acceptProposal`: source note missing | `notifications.info('Source note no longer exists')`; proposal marked `rejected`; returns `{ status: 'skipped' }` |
-| `acceptProposal`: stored `proposedTitle` contains `/`, `\`, a null byte, or is empty / only dots after trim (index.ts:363) | `notifications.info('Proposed title is not a valid note name')`; proposal marked `rejected`; returns `{ status: 'skipped' }`; no rename |
-| `acceptProposal`: live collision, no resolution (plain manual accept) | `notifications.info('"<title>" already exists — choose Add suffix or Merge')`; proposal stays pending; returns `{ status: 'conflict' }` |
-| `acceptProposal`: merge target is not a TFile | `notifications.info('Nothing to merge into — renamed instead')`; plain rename; returns `{ status: 'renamed' }` |
+| `acceptProposal`: source note missing | `notifications.info('Source note no longer exists')`; proposal marked `rejected`; returns `failed` |
+| `acceptProposal`: stored `proposedTitle` contains `/`, `\`, a null byte, or is empty / only dots after trim (index.ts:363) | `notifications.info('Proposed title is not a valid note name')`; proposal marked `rejected`; returns `failed`; no rename |
+| `acceptProposal`: live collision, no resolution (plain manual accept) | `notifications.info('"<title>" already exists — choose Add suffix or Merge')`; proposal stays pending; returns `conflict` |
+| `acceptProposal`: merge target is not a TFile | `notifications.info('Nothing to merge into — renamed instead')`; plain rename; returns `applied` with the renamed path |
 | `acceptProposal`: `vault.rename`/`vault.process` throws | `notifications.notifyError('Failed to rename note', error)`; rethrows `Error('Rename failed: <msg>')` |
 | Persisted proposal JSON fails `isTitleProposal` guard | File skipped during load (`title-store.ts:7`) |
 

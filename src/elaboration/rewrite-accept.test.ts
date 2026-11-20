@@ -307,27 +307,27 @@ describe('ElaborationModule accept rewrites the note body (#552)', () => {
 			expect((await mod.getPendingProposals())[0]?.status).toBe('pending');
 		});
 
-		it('onStale: skip leaves a changed note pending without the modal and returns false', async () => {
+		it('onStale: skip leaves a changed note pending without the modal and returns a conflict', async () => {
 			const mod = build('Stub.');
 			const proposal = await generatePending(mod);
 			const edited = 'Stub. Plus an edit made after the proposal.';
 			harness.setContent(edited);
 
-			const applied = await mod.acceptProposal(proposal.id, undefined, { onStale: 'skip' });
+			const result = await mod.acceptProposal(proposal.id, undefined, { onStale: 'skip' });
 
-			expect(applied).toBe(false);
+			expect(result).toEqual({ status: 'conflict', written: [], reason: 'The note changed since the proposal was generated' });
 			expect(confirmModalCtor).not.toHaveBeenCalled();
 			expect(harness.content()).toBe(edited);
 		});
 
-		it('onStale: replace rewrites a changed note without the modal and returns true', async () => {
+		it('onStale: replace rewrites a changed note without the modal and reports it applied', async () => {
 			const mod = build('Stub.');
 			const proposal = await generatePending(mod);
 			harness.setContent('Stub. Plus an edit made after the proposal.');
 
-			const applied = await mod.acceptProposal(proposal.id, undefined, { onStale: 'replace' });
+			const result = await mod.acceptProposal(proposal.id, undefined, { onStale: 'replace' });
 
-			expect(applied).toBe(true);
+			expect(result).toEqual({ status: 'applied', written: [proposal.sourceNotePath] });
 			expect(confirmModalCtor).not.toHaveBeenCalled();
 			expect(harness.content()).toBe(REWRITE + '\n');
 		});

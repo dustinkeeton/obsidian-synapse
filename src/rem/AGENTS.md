@@ -19,11 +19,10 @@ class RemModule {
   remScanNote(filePath: string, options?: { postOp?: boolean }): Promise<RemProposal | null>   // index.ts:137; takes the note's queue slot once (#585); postOp silences info notices + result toast + auto-accept notices
   remScanDirectory(target?: ScanTarget, _skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // _skipConfirmation currently unused
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>
-  acceptProposal(id: string, acceptedMatchTexts: string[], options?: { silent?: boolean }): Promise<void>
+  acceptProposal(id: string, acceptedMatchTexts: string[], options?: { silent?: boolean }): Promise<AcceptResult>   // shared/accept-result (#633)
   rejectProposal(id: string): Promise<void>
   undoProposal(id: string): Promise<void>
   getPendingProposals(): Promise<RemProposal[]>
-  getProposal(id: string): Promise<RemProposal | null>   // index.ts:533; any status; api.proposals.accept reads it to confirm an accept applied (#623)
 }
 ```
 
@@ -137,12 +136,14 @@ remScanDirectory(target?, skipConfirmation?, onlyFile?)
   --> on success: complete() + dispatchDeferredTasks
   --> withCacheReport('REM scan complete -- N notes with linkable mentions' | 'Resumed -- generated N proposals', cacheUses, 'note') finish Notice — one aggregated cache line, one CacheUse per note scanned (#527) + reviewAction({ generated: created>0, shouldAutoAccept, openProposalView }): "Review" shown only when NOT auto-accepting (#366); separate "Auto-accepted ..." info Notice when autoAcceptedCount > 0
 
-acceptProposal(id, acceptedMatchTexts, options?)
-  --> guard: only 'pending' proposals (cascade safety)
+acceptProposal(id, acceptedMatchTexts, options?)   -> AcceptResult (#633)
+  --> guard: only 'pending' proposals (cascade safety); missing / not pending -> skipped; note gone -> failed
+  --> no accepted text matches a candidate: proposal rejected, skipped
   --> vault.process(file, (data) => { originalContent = data; outcome = applier.apply(data, accepted); applied > 0 ? outcome.content : data })
-  --> applied === 0: info Notice "No links inserted ...", proposal stays pending (#575)
+  --> applied === 0: info Notice "No links inserted ...", proposal stays pending (#575), conflict
   --> store.updateStatus(id, 'accepted'|'partially-accepted', applied candidates' matchedTexts, originalContent)
   --> dropped > 0: info Notice "Skipped N link(s) whose text changed since the REM scan" (#575)
+  --> applied [sourceNotePath], or partial with a reason naming deselected links and links that no longer matched
 
 undoProposal(id)
   --> load proposal.originalContent snapshot

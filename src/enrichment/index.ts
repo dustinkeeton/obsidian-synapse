@@ -10,7 +10,8 @@ import {
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, openScanFolderPicker,
 	trackAiCache, withCacheReport, settleOnThrow, wrapUntrusted,
 } from '../shared';
-import type { CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import type { AcceptResult, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
+import { acceptApplied, acceptNotApplied, acceptWrote, PROPOSAL_NOT_FOUND, PROPOSAL_NOT_PENDING, SOURCE_NOTE_MISSING } from '../shared';
 import { EnrichmentApplier } from './enrichment-applier';
 import { EnrichmentStore } from './enrichment-store';
 import { LinkResolver } from './link-resolver';
@@ -121,11 +122,6 @@ export class EnrichmentModule implements FeatureModule {
 	/** Get all pending proposals (called by main.ts for the unified view). */
 	async getPendingProposals(): Promise<EnrichmentProposal[]> {
 		return this.store.loadPending();
-	}
-
-	/** One proposal in any status; null when missing. Lets the public API confirm what an accept did (#623). */
-	async getProposal(id: string): Promise<EnrichmentProposal | null> {
-		return this.store.load(id);
 	}
 
 	/**
@@ -579,14 +575,14 @@ export class EnrichmentModule implements FeatureModule {
 	}
 
 	/** Accept selected items in a proposal (every item when `accepted` is omitted). Called from unified view and the public API. */
-	async acceptSelectedFromView(
+	async acceptProposal(
 		id: string,
 		accepted?: AcceptedItems,
 		options?: { silent?: boolean }
-	): Promise<void> {
+	): Promise<AcceptResult> {
 		const proposal = await this.store.load(id);
-		if (!proposal) return;
-		await this.noteQueue.run(
+		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
+		return this.noteQueue.run(
 			proposal.sourceNotePath,
 			() => this.acceptSelected(id, accepted ?? this.buildAcceptAll(proposal.result), options)
 		);
@@ -620,7 +616,7 @@ export class EnrichmentModule implements FeatureModule {
 		if (!proposal || proposal.status !== 'pending') return false;
 		const acceptAll = this.buildAcceptAll(proposal.result);
 		// Callers already hold the note's queue slot (#483), so apply directly.
-		await this.acceptSelected(proposalId, acceptAll, { silent: batch });
+		if (!acceptWrote(await this.acceptSelected(proposalId, acceptAll, { silent: batch }))) return false;
 		if (!batch) {
 			this.notifications.info(`Auto-accepted enrichment for ${proposal.sourceNotePath}`);
 		}
@@ -638,11 +634,11 @@ export class EnrichmentModule implements FeatureModule {
 		id: string,
 		accepted: AcceptedItems,
 		options?: { silent?: boolean }
-	): Promise<void> {
+	): Promise<AcceptResult> {
 		const proposal = await this.store.load(id);
-		if (!proposal) return;
+		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		// Guard against double-acceptance (cascade safety).
-		if (proposal.status !== 'pending') return;
+		if (proposal.status !== 'pending') return acceptNotApplied('skipped', PROPOSAL_NOT_PENDING);
 
 		const hasItems =
 			accepted.tags.length > 0 ||
@@ -652,7 +648,10 @@ export class EnrichmentModule implements FeatureModule {
 
 		if (!hasItems) {
 			await this.rejectFromView(id);
-			return;
+			return acceptNotApplied('skipped', 'No items selected; the proposal was rejected');
+		}
+		if (!(this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath) instanceof TFile)) {
+			return acceptNotApplied('failed', SOURCE_NOTE_MISSING);
 		}
 
 		await this.applier.apply(proposal, accepted);
@@ -681,6 +680,7 @@ export class EnrichmentModule implements FeatureModule {
 			this.notifications.success(`Enrichment ${status}`);
 			await this.refreshView();
 		}
+		return acceptApplied([proposal.sourceNotePath], status === 'partially-accepted', status === 'partially-accepted' ? 'Some items were not selected' : undefined);
 	}
 
 	private async rejectProposalBatch(ids: string[]): Promise<void> {

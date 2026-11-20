@@ -200,7 +200,7 @@ describe('relocations into existing folders are proposals', () => {
 		await mod.organizeNote(note);
 		const [proposal] = savedProposals();
 
-		await mod.acceptProposal(proposal.id as string);
+		expect(await mod.acceptProposal(proposal.id as string)).toEqual({ status: 'applied', written: ['Media/film.md'] });
 
 		expect(createFolderSpy).not.toHaveBeenCalledWith('Media');
 		expect(renameSpy).toHaveBeenCalledWith(note, 'Media/film.md');

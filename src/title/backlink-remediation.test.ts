@@ -334,7 +334,7 @@ describe('TitleModule backlink remediation (#485)', () => {
 		await h.mod.checkUntitled(SOURCE);
 		const p = await firstPending(h.mod);
 
-		await h.mod.acceptProposal(p.id, { resolution: 'merge' });
+		expect(await h.mod.acceptProposal(p.id, { resolution: 'merge' })).toMatchObject({ status: 'applied', written: [TARGET] });
 
 		expect(h.trashSpy).toHaveBeenCalledTimes(1);
 		expect(h.contents.get('Refs/A.md')).toBe('See [[Neural Networks|the draft]].');
@@ -390,7 +390,7 @@ describe('TitleModule backlink remediation (#485)', () => {
 
 		const outcome = await h.mod.acceptProposal(p.id);
 
-		expect(outcome.status).toBe('renamed');
+		expect(outcome).toEqual({ status: 'applied', written: [NEW] });
 		expect(h.contents.get('Refs/A.md')).toBe('See [[Untitled]].'); // untouched, not corrupted
 		expect(h.contents.get('Refs/B.md')).toBe('Also [[Neural Networks|Untitled]].');
 		expect(warn).toHaveBeenCalled();
@@ -408,6 +408,6 @@ describe('TitleModule backlink remediation (#485)', () => {
 
 		const outcome = await h.mod.acceptProposal(p.id);
 
-		expect(outcome.status).toBe('renamed');
+		expect(outcome).toEqual({ status: 'applied', written: [NEW] });
 	});
 });

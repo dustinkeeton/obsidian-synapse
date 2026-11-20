@@ -1,38 +1,18 @@
-import { normalizePath, TFile } from 'obsidian';
-import type { App } from 'obsidian';
+import { acceptNotApplied } from '../shared';
+import type { AcceptResult } from '../shared';
 import type { FeatureModules } from '../modules';
 import type { ProposalKind } from '../views';
 import type { ApiAcceptOptions, ApiProposal } from './types';
 
-/** What one accept did; `applied: false` carries the reason in `error`. */
-export interface AcceptOutcome {
-	applied: boolean;
-	written: string[];
-	error?: string;
-}
-
 /** Per-kind bridge from the public verbs to a module's proposal methods. */
 export interface ProposalAdapter {
 	list(): Promise<ApiProposal[]>;
-	accept(id: string, options: ApiAcceptOptions): Promise<AcceptOutcome>;
+	accept(id: string, options: ApiAcceptOptions): Promise<AcceptResult>;
 	reject(id: string): Promise<void>;
 }
 
 function plural(count: number, noun: string): string {
 	return `${count} ${noun}${count === 1 ? '' : 's'}`;
-}
-
-const APPLIED_STATUSES = new Set(['accepted', 'partially-accepted']);
-
-/** For modules whose accept returns nothing: applied only when the stored status says so (a module may reject instead). */
-async function appliedFromStatus(
-	getProposal: (id: string) => Promise<{ status: string } | null>,
-	id: string,
-	written: string[]
-): Promise<AcceptOutcome> {
-	const status = (await getProposal(id))?.status;
-	if (status && APPLIED_STATUSES.has(status)) return { applied: true, written };
-	return { applied: false, written: [], error: `Proposal was not applied (status: ${status ?? 'missing'})` };
 }
 
 /** `items` must be a non-empty subset of what the proposal offers. */
@@ -43,11 +23,7 @@ function invalidItems(items: string[] | undefined, offered: string[]): string | 
 	return unknown.length > 0 ? `Unknown items: ${unknown.join(', ')}` : null;
 }
 
-function noteExists(app: App, path: string): boolean {
-	return app.vault.getAbstractFileByPath(normalizePath(path)) instanceof TFile;
-}
-
-export function buildProposalAdapters(app: App, modules: FeatureModules): Record<ProposalKind, ProposalAdapter> {
+export function buildProposalAdapters(modules: FeatureModules): Record<ProposalKind, ProposalAdapter> {
 	const { elaboration, enrichment, organize, deepDive, title, rem, illustrate } = modules;
 
 	const elaborationAdapter: ProposalAdapter = {
@@ -56,12 +32,8 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 			...(p.generation ? { generation: p.generation } : {}),
 		})),
 		accept: async (id, options) => {
-			const proposal = (await elaboration.getPendingProposals()).find((p) => p.id === id);
-			if (!proposal) return { applied: false, written: [], error: 'Proposal not found or not pending' };
-			if (!noteExists(app, proposal.sourceNotePath)) return { applied: false, written: [], error: `Source note no longer exists: ${proposal.sourceNotePath}` };
-			const applied = await elaboration.acceptProposal(id, options.content, { onStale: options.force ? 'replace' : 'skip' });
-			if (applied) return { applied, written: [proposal.sourceNotePath] };
-			return { applied, written: [], error: 'Not applied: the note changed since the proposal was generated (pass force: true to replace it)' };
+			const result = await elaboration.acceptProposal(id, options.content, { onStale: options.force ? 'replace' : 'skip' });
+			return result.status === 'conflict' ? { ...result, reason: `${result.reason ?? 'The note changed'} (pass force: true to replace it)` } : result;
 		},
 		reject: (id) => elaboration.rejectProposal(id),
 	};
@@ -78,11 +50,7 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 				`${p.result.frontmatter.length} frontmatter field${p.result.frontmatter.length === 1 ? '' : 's'}`,
 			].join(', '),
 		})),
-		accept: async (id) => {
-			const proposal = (await enrichment.getPendingProposals()).find((p) => p.id === id);
-			await enrichment.acceptSelectedFromView(id);
-			return appliedFromStatus((pid) => enrichment.getProposal(pid), id, proposal ? [proposal.sourceNotePath] : []);
-		},
+		accept: (id) => enrichment.acceptProposal(id),
 		reject: (id) => enrichment.rejectFromView(id),
 	};
 
@@ -90,12 +58,7 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 		list: async () => (await organize.getPendingProposals()).map((p) => ({
 			kind: 'organize', id: p.id, notePath: p.sourceNotePath, createdAt: p.createdAt, summary: `Move to ${p.proposedDirectory}`,
 		})),
-		accept: async (id) => {
-			const proposal = (await organize.getPendingProposals()).find((p) => p.id === id);
-			await organize.acceptProposal(id);
-			const moved = proposal ? normalizePath(`${proposal.proposedDirectory}/${proposal.sourceNotePath.split('/').pop() ?? ''}`) : null;
-			return appliedFromStatus((pid) => organize.getProposal(pid), id, moved && noteExists(app, moved) ? [moved] : []);
-		},
+		accept: (id) => organize.acceptProposal(id),
 		reject: (id) => organize.rejectProposal(id),
 	};
 
@@ -109,13 +72,7 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 			summary: `Create note on "${p.topic.title}" (depth ${p.depth})`,
 			...(p.generation ? { generation: p.generation } : {}),
 		})),
-		accept: async (id) => {
-			const proposal = (await deepDive.getPendingProposals()).find((p) => p.id === id);
-			const applied = await deepDive.acceptProposal(id);
-			return applied
-				? { applied, written: proposal ? [proposal.proposedPath] : [] }
-				: { applied, written: [], error: 'Proposal not found or not pending' };
-		},
+		accept: (id) => deepDive.acceptProposal(id),
 		reject: (id) => deepDive.rejectProposal(id),
 	};
 
@@ -124,13 +81,8 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 			kind: 'title', id: p.id, notePath: p.sourceNotePath, createdAt: p.createdAt, summary: `Rename to "${p.proposedTitle}"`,
 		})),
 		accept: async (id, options) => {
-			const outcome = await title.acceptProposal(id, options.resolution ? { resolution: options.resolution } : undefined);
-			switch (outcome.status) {
-				case 'renamed': return { applied: true, written: [outcome.path] };
-				case 'merged': return { applied: true, written: [outcome.into] };
-				case 'conflict': return { applied: false, written: [], error: `"${outcome.target}" already exists; pass resolution "iterate" or "merge"` };
-				default: return { applied: false, written: [], error: 'Proposal not found, not pending, or its note is gone' };
-			}
+			const result = await title.acceptProposal(id, options.resolution ? { resolution: options.resolution } : undefined);
+			return result.status === 'conflict' ? { ...result, reason: `${result.reason ?? 'The target exists'}; pass resolution "iterate" or "merge"` } : result;
 		},
 		reject: (id) => title.rejectProposal(id),
 	};
@@ -146,12 +98,11 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 		})),
 		accept: async (id, options) => {
 			const proposal = (await rem.getPendingProposals()).find((p) => p.id === id);
-			if (!proposal) return { applied: false, written: [], error: 'Proposal not found or not pending' };
+			if (!proposal) return acceptNotApplied('skipped', 'Proposal not found or not pending');
 			const offered = proposal.candidates.map((c) => c.matchedText);
 			const bad = invalidItems(options.items, offered);
-			if (bad) return { applied: false, written: [], error: bad };
-			await rem.acceptProposal(id, options.items ?? offered);
-			return appliedFromStatus((pid) => rem.getProposal(pid), id, [proposal.sourceNotePath]);
+			if (bad) return acceptNotApplied('failed', bad);
+			return rem.acceptProposal(id, options.items ?? offered);
 		},
 		reject: (id) => rem.rejectProposal(id),
 	};
@@ -167,12 +118,11 @@ export function buildProposalAdapters(app: App, modules: FeatureModules): Record
 		})),
 		accept: async (id, options) => {
 			const proposal = (await illustrate.getPendingProposals()).find((p) => p.id === id);
-			if (!proposal) return { applied: false, written: [], error: 'Proposal not found or not pending' };
+			if (!proposal) return acceptNotApplied('skipped', 'Proposal not found or not pending');
 			const offered = proposal.items.map((item) => item.id);
 			const bad = invalidItems(options.items, offered);
-			if (bad) return { applied: false, written: [], error: bad };
-			await illustrate.acceptProposal(id, options.items ?? offered);
-			return appliedFromStatus((pid) => illustrate.getProposal(pid), id, [proposal.sourceNotePath]);
+			if (bad) return acceptNotApplied('failed', bad);
+			return illustrate.acceptProposal(id, options.items ?? offered);
 		},
 		reject: (id) => illustrate.rejectProposal(id),
 	};

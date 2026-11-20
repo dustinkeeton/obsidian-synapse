@@ -68,7 +68,7 @@ describe('EnrichmentModule Review toast action (#366)', () => {
 		).mockResolvedValue('enrich-1');
 		// Auto-accept re-loads the proposal then applies it; isolate the apply.
 		vi.spyOn(EnrichmentStore.prototype, 'load').mockResolvedValue(pendingProposal('enrich-1'));
-		vi.spyOn(EnrichmentModule.prototype, 'acceptSelectedFromView').mockResolvedValue(undefined);
+		vi.spyOn(EnrichmentModule.prototype, 'acceptProposal').mockResolvedValue({ status: 'applied', written: [] });
 	});
 
 	afterEach(() => vi.restoreAllMocks());

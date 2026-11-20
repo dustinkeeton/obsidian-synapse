@@ -71,6 +71,7 @@ const apiResultSchema = okSchema({
 	endReason: { type: 'string', enum: ['cap', 'exhausted', 'cancelled', 'error'] },
 	remainingTopics: int,
 	count: { type: ['integer', 'null'] },
+	acceptStatus: { type: 'string', enum: ['applied', 'partial', 'skipped', 'conflict', 'failed'] },
 });
 
 const jobStartSchema = okSchema({ jobId: str });

@@ -471,7 +471,7 @@ describe('RemModule', () => {
 			app.vault.read.mockResolvedValue('Foo line\nBar line');
 			const module = await loadedModule();
 
-			await module.acceptProposal('p1', ['Foo', 'Bar']);
+			expect(await module.acceptProposal('p1', ['Foo', 'Bar'])).toEqual({ status: 'applied', written: ['notes/A.md'] });
 
 			const written = (await app.vault.process.mock.results[0].value) as unknown as string;
 			expect(written).toContain('[[Foo]]');
@@ -486,7 +486,7 @@ describe('RemModule', () => {
 			app.vault.read.mockResolvedValue('Foo line\nBar line');
 			const module = await loadedModule();
 
-			await module.acceptProposal('p1', ['Foo']);
+			expect(await module.acceptProposal('p1', ['Foo'])).toEqual({ status: 'partial', written: ['notes/A.md'], reason: 'Some links were not selected' });
 
 			expect(updateStatusSpy).toHaveBeenCalledWith(
 				'p1',
@@ -501,7 +501,7 @@ describe('RemModule', () => {
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/A.md'));
 			const module = await loadedModule();
 
-			await module.acceptProposal('p1', ['Nonexistent']);
+			expect((await module.acceptProposal('p1', ['Nonexistent'])).status).toBe('skipped');
 
 			expect(updateStatusSpy).toHaveBeenCalledWith('p1', 'rejected');
 			expect(app.vault.process).not.toHaveBeenCalled();
@@ -535,7 +535,7 @@ describe('RemModule', () => {
 			app.vault.read.mockResolvedValue('Foo line\nsomething else');
 			const module = await loadedModule();
 
-			await module.acceptProposal('p1', ['Foo', 'Bar']);
+			expect(await module.acceptProposal('p1', ['Foo', 'Bar'])).toEqual({ status: 'partial', written: ['notes/A.md'], reason: '1 link no longer matched the note' });
 
 			expect(updateStatusSpy).toHaveBeenCalledWith('p1', 'partially-accepted', ['Foo'], 'Foo line\nsomething else');
 			expect(notifications.info).toHaveBeenCalledWith(expect.stringContaining('Skipped 1 link'));
@@ -547,7 +547,7 @@ describe('RemModule', () => {
 			app.vault.read.mockResolvedValue('rewritten note');
 			const module = await loadedModule();
 
-			await module.acceptProposal('p1', ['Foo', 'Bar']);
+			expect((await module.acceptProposal('p1', ['Foo', 'Bar'])).status).toBe('conflict');
 
 			const written = (await app.vault.process.mock.results[0].value) as unknown as string;
 			expect(written).toBe('rewritten note');

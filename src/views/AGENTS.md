@@ -204,20 +204,20 @@ Output: callbacks return `Promise<void>`; modules mutate the vault/proposal stor
 
 ```ts
 new UnifiedProposalView(leaf, {
-  onElaborationAccept: (id, content) => elaboration.acceptProposal(id, content),
+  onElaborationAccept: (id, content) => elaboration.acceptProposal(id, content).then(() => {}),
   onElaborationReject: (id) => elaboration.rejectProposal(id),
-  onEnrichmentAcceptSelected: (id, accepted) => enrichment.acceptSelectedFromView(id, accepted),
+  onEnrichmentAcceptSelected: (id, accepted) => enrichment.acceptProposal(id, accepted).then(() => {}),
   onEnrichmentReject: (id) => enrichment.rejectFromView(id),
-  onOrganizeAccept: (id) => organize.acceptProposal(id),
+  onOrganizeAccept: (id) => organize.acceptProposal(id).then(() => {}),
   onOrganizeReject: (id) => organize.rejectProposal(id),
-  onDeepDiveAccept: (id) => deepDive.acceptProposal(id),
+  onDeepDiveAccept: (id) => deepDive.acceptProposal(id).then(() => {}),
   onDeepDiveReject: (id) => deepDive.rejectProposal(id),
   onTitleAccept: (id, resolution) =>
     title.acceptProposal(id, resolution ? { resolution } : undefined).then(() => {}),
   onTitleReject: (id) => title.rejectProposal(id),
-  onRemAcceptSelected: (id, texts) => rem.acceptProposal(id, texts),
+  onRemAcceptSelected: (id, texts) => rem.acceptProposal(id, texts).then(() => {}),
   onRemReject: (id) => rem.rejectProposal(id),
-  onIllustrateAcceptSelected: (id, itemIds) => illustrate.acceptProposal(id, itemIds),
+  onIllustrateAcceptSelected: (id, itemIds) => illustrate.acceptProposal(id, itemIds).then(() => {}),
   onIllustrateReject: (id) => illustrate.rejectProposal(id),
   onDeepDiveContinue: (runId) => deepDive.continueRun(runId).then(() => {}),
   onDeepDiveDiscardContinuation: (runId) => deepDive.discardContinuation(runId).then(() => {}),

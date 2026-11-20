@@ -73,6 +73,8 @@ export type { ModuleDeps, FeatureModule, FeatureSettingsKey } from './feature-mo
 export { FolderPickerModal } from './folder-picker-modal';
 export { openScanFolderPicker } from './open-scan-folder-picker';
 export type { OperationOutcome, OperationStatus } from './operation-outcome';
+export { acceptApplied, acceptNotApplied, acceptWrote, PROPOSAL_NOT_FOUND, PROPOSAL_NOT_PENDING, SOURCE_NOTE_MISSING } from './accept-result';
+export type { AcceptResult, AcceptStatus } from './accept-result';
 export { JOB_OP_MARKER, jobOpId, jobIdOf, JobOperationLog } from './job-operations';
 export type { JobOperation, JobOperationState } from './job-operations';
 export { ScanFolderPickerModal } from './scan-folder-picker-modal';

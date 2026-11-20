@@ -19,11 +19,10 @@ class OrganizeModule {
   onload(): Promise<void>
   onunload(): void
   getPendingProposals(): Promise<OrganizeProposal[]>
-  getProposal(id: string): Promise<OrganizeProposal | null>   // index.ts:132; any status; api.proposals.accept reads it to confirm an accept applied (#623)
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>      // index.ts:140
   organizeNote(file: TFile): Promise<OrganizeResult | null>        // index.ts:233
   scanDirectory(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:298; returns the proposal count
-  acceptProposal(id: string, options?: { silent?: boolean; runId?: string }): Promise<void>   // index.ts:427
+  acceptProposal(id: string, options?: { silent?: boolean; runId?: string }): Promise<AcceptResult>   // shared/accept-result (#633); applied with [the moved path]
   rejectProposal(id: string): Promise<void>
   undoOrganizeRun(): Promise<void>                                 // index.ts:571; command 'undo-organize-run'
 }
@@ -198,15 +197,16 @@ organizeNote(file) / scanDirectory() / resumeFromCheckpoint()
           --> { proposalCreated: true, movedDirectly: autoAccepted, autoAccepted, placement }
 
 acceptProposal(id, options?)                              [public, index.ts:427]
-  --> OrganizeStore.loadProposal(id)  [null -> "Proposal not found"]
+  --> OrganizeStore.loadProposal(id)  [null -> "Proposal not found", skipped]
   --> noteQueue.run(proposal.sourceNotePath, () => applyAccept(id, options))
         applyAccept(id, options?)                         [queue-free core, index.ts:438]
-          --> re-load proposal (double-accept guard evaluated UNDER the slot)
+          --> re-load proposal (double-accept guard evaluated UNDER the slot; not pending -> skipped)
           --> assertVaultRelativePath(proposedDirectory)    [index.ts:446; throws -> notifyError + rethrow, nothing created or moved]
           --> ensureFolder(proposedDirectory)             [no-op for 'move'; creates the folder for 'new-directory']
           --> OrganizeStore.saveSnapshot({ runId: options.runId ?? generateId() })
           --> vault.rename(options.file ?? lookup, newPath)   [changes the note's queue key]
-          --> OrganizeStore.updateProposalStatus('accepted')
+          --> note gone -> proposal rejected, failed; destination occupied -> conflict, proposal stays pending
+          --> OrganizeStore.updateProposalStatus('accepted') -> applied [newPath]
           --> unless silent: writeOrganizeSummary(moveRecords)  [DIFFERENT note, unqueued;
                                                   Mermaid move diagram ->
                                                   .synapse/organize/summaries/]
@@ -343,7 +343,7 @@ Out: nothing is imported by another feature. `modules/registry.ts:111-116` wraps
 - No relocation without a proposal: `organizeFile` never calls `vault.rename`; only `applyAccept` does (via accept or `maybeAutoAccept`). Intake's `moveWhenDone` fallback therefore handles notes that organize only proposed.
 - Double-acceptance guard lives in `applyAccept`, not `acceptProposal`: the proposal is re-loaded inside the queue slot and the call no-ops if `proposal.status !== 'pending'`, so a pre-wait snapshot can never authorize a second move (index.ts:443).
 - Stored paths are re-validated before use with `assertVaultRelativePath` (rejects empty, absolute, `..` segment, null byte): `proposal.proposedDirectory` in `applyAccept` (index.ts:446), `snapshot.originalPath` in `undoOrganize` (index.ts:545) and in the `undoOrganizeRun` loop (index.ts:604, recorded as skipped).
-- `maybeAutoAccept` must call `applyAccept`, never `acceptProposal` — it already runs under the note's queue key (#483) — and passes the live `TFile`.
+- `maybeAutoAccept` must call `applyAccept`, never `acceptProposal` — it already runs under the note's queue key (#483) — and passes the live `TFile`. It returns true only when the accept moved the note (`acceptWrote`), so `movedDirectly` / `autoAccepted` are false for a note gone or a destination occupied (#633).
 - A move proposal is skipped (null) when a file already exists at the destination; accept re-checks and refuses to overwrite.
 - Batch scan coalesces near-identical proposed directories via `batchProposedDirs` map — variants like "model"/"models" resolve to a single folder (#172).
 - `organizeConfidenceThreshold` has one meaning in both lanes: confidence required before a new folder is proposed. Existing-folder acceptance is `PLACEMENT_MAJORITY` (0.5) AND `FIRST_ROUND_SUPPORT` (0.25), both fixed, in the lane and `minScoreThreshold` (0.6, hardcoded at the `determineAction` call site) in System 2.

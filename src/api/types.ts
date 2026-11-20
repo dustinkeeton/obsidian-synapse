@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
 import type { AIFeatureId, AIProvider, EffortLevel, SynapseSettings, TranscriptionProvider } from '../settings';
-import type { ActivityEntry, ActivityLog, AIResponseInfo, AIUsage, CacheUse, ChatMessage, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
+import type { AcceptStatus, ActivityEntry, ActivityLog, AIResponseInfo, AIUsage, CacheUse, ChatMessage, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
 import type { FeatureModules } from '../modules';
 import type { PipelineModuleKey, PipelineModuleMap } from '../pipeline';
 import type { ProposalKind } from '../views';
@@ -130,6 +130,11 @@ export interface DeepDiveRunResult extends ApiResult {
 	endReason?: ApiDeepDiveEndReason;
 	/** Set when `endReason` is `cap`: topics left for `deepDive.continue`. */
 	remainingTopics?: number;
+}
+
+/** `proposals.accept` (#633): `ok` is true for `applied` and `partial`; `error` carries the reason otherwise. */
+export interface ApiAcceptResult extends ApiResult {
+	acceptStatus?: AcceptStatus;
 }
 
 export interface ScanFolderResult extends ApiResult {
@@ -328,7 +333,7 @@ export interface SynapseApi {
 	};
 	proposals: {
 		list(kind?: ProposalKind): Promise<ApiProposalList>;
-		accept(kind: ProposalKind, id: string, options?: ApiAcceptOptions): Promise<ApiResult>;
+		accept(kind: ProposalKind, id: string, options?: ApiAcceptOptions): Promise<ApiAcceptResult>;
 		reject(kind: ProposalKind, id: string): Promise<ApiResult>;
 	};
 }

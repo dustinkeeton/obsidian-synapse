@@ -91,7 +91,7 @@ describe('DeepDiveModule Review toast action (#366)', () => {
 		};
 
 		// Auto-accept walks the generated tree and creates notes; isolate the apply.
-		vi.spyOn(DeepDiveModule.prototype, 'acceptProposal').mockResolvedValue(true);
+		vi.spyOn(DeepDiveModule.prototype, 'acceptProposal').mockResolvedValue({ status: 'applied', written: [] });
 	});
 
 	afterEach(() => vi.restoreAllMocks());
