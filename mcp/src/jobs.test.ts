@@ -34,6 +34,20 @@ describe('runJob (#628)', () => {
 		expect(call).toHaveBeenCalledWith('jobs.wait', ['j1', 5000]);
 	});
 
+	it('repeats the last progress line as a heartbeat while a slow sampling request runs', async () => {
+		const call = script([wait(job('awaiting-output', { progress: { message: 'Generating' }, requests: [{ id: 'r1', feature: null, messages: [] }] })), wait(job('completed'))], [wait(job('running'))]);
+		const progress = vi.fn(async (_n: number, _line: string) => undefined);
+		const sample = async () => {
+			await new Promise((resolve) => setTimeout(resolve, 60));
+			return { role: 'assistant' as const, model: 'm', content: { type: 'text' as const, text: 'x' } };
+		};
+		await runJob(call, 'deepDive.run', [], ctx({ pollMs: 10, progress, sample: sample as never }));
+		const calls = progress.mock.calls;
+		expect(calls.length).toBeGreaterThanOrEqual(4);
+		expect(calls.every(([, line]) => line === 'Generating')).toBe(true);
+		expect(calls.map(([n]) => n)).toEqual(calls.map((_, i) => i + 1));
+	});
+
 	it('returns the start failure as a jobs.wait-shaped result', async () => {
 		const call = vi.fn(async () => ({ ok: false, error: 'Note not found' }));
 		await expect(runJob(call, 'deepDive.run', ['x.md'], ctx())).resolves.toEqual({ ok: false, timedOut: false, job: null, error: 'Note not found' });

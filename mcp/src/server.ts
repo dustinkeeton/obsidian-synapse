@@ -5,7 +5,7 @@ import {
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Capabilities, VerbSpec } from './api-types.js';
 import type { CallVerb } from './jobs.js';
-import { DEFAULT_MAX_WAIT_MS, DEFAULT_POLL_MS, runJob } from './jobs.js';
+import { DEFAULT_MAX_WAIT_MS, DEFAULT_POLL_MS, DEFAULT_SAMPLING_TIMEOUT_MS, runJob } from './jobs.js';
 import { listResources, readResource } from './resources.js';
 import { positionalArgs, toolName, toolsFromCapabilities } from './tools.js';
 import { VERSION } from './version.js';
@@ -17,6 +17,8 @@ export interface ServerOptions {
 	pollMs?: number;
 	/** Off: never ask the client's model, even when it offers sampling. */
 	sampling?: boolean;
+	/** How long one sampling request may take, the user's approval included. */
+	samplingTimeoutMs?: number;
 }
 
 const INSTRUCTIONS = 'Synapse is an Obsidian plugin that elaborates, enriches, organizes and deep-dives notes. Each tool is one verb of its public API, called inside the running Obsidian. Most changes arrive as proposals: list them with proposals_list, then proposals_accept or proposals_reject. Long verbs run as jobs. Read what happened, including work the user started, with events_since.';
@@ -73,7 +75,7 @@ export function createServer(options: ServerOptions): Server {
 					method: 'notifications/progress',
 					params: { progressToken, progress, message: line },
 				}),
-				sample: canSample ? (params) => server.createMessage(params, { signal: extra.signal }) : undefined,
+				sample: canSample ? (params) => server.createMessage(params, { signal: extra.signal, timeout: options.samplingTimeoutMs ?? DEFAULT_SAMPLING_TIMEOUT_MS }) : undefined,
 			}));
 		} catch (error) {
 			return errorResult(message(error));

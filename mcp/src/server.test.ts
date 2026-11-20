@@ -5,6 +5,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { CreateMessageRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { createServer } from './server.js';
 import type { CallVerb } from './jobs.js';
+import { DEFAULT_SAMPLING_TIMEOUT_MS } from './jobs.js';
 import { pluginCapabilities } from './__fixtures__/plugin.js';
 import { VERSION } from './version.js';
 
@@ -70,7 +71,20 @@ describe('synapse-mcp server (#628)', () => {
 		expect(sample).toHaveBeenCalledTimes(1);
 		expect(sample.mock.calls[0]![0].params).toMatchObject({ systemPrompt: 'Policy', messages: [{ role: 'user', content: { type: 'text', text: 'Expand A' } }] });
 		expect(call).toHaveBeenCalledWith('jobs.commit', ['j1', [{ requestId: 'r1', text: 'Expanded body', model: 'client-model', stopReason: 'endTurn' }], 0]);
-		expect(onprogress.mock.calls.map(([p]) => p.message)).toEqual(['Elaborating A', 'Proposal generated']);
+		// Heartbeats may repeat a line; the distinct lines arrive in order.
+		expect([...new Set(onprogress.mock.calls.map(([p]) => p.message))]).toEqual(['Elaborating A', 'Proposal generated']);
+	});
+
+	it('gives a sampling request far longer than the SDK\'s 60-second default', async () => {
+		const server = createServer({ call: await fakePlugin(), pollMs: 10 });
+		const createMessage = vi.spyOn(server, 'createMessage');
+		const client = new Client({ name: 'test', version: '1' }, { capabilities: { sampling: {} } });
+		client.setRequestHandler(CreateMessageRequestSchema, async () => ({ role: 'assistant' as const, model: 'm', content: { type: 'text' as const, text: 'x' } }));
+		const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+		await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+		await client.callTool({ name: 'elaborate', arguments: { notePath: 'A.md' } });
+		expect(createMessage.mock.calls[0]![1]).toMatchObject({ timeout: DEFAULT_SAMPLING_TIMEOUT_MS });
+		expect(DEFAULT_SAMPLING_TIMEOUT_MS).toBeGreaterThan(20 * 60_000);
 	});
 
 	it('hands the requests back when the client cannot sample', async () => {

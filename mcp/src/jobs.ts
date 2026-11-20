@@ -13,13 +13,15 @@ export interface JobRunContext {
 	sample?: (params: CreateMessageRequest['params']) => Promise<CreateMessageResult>;
 	/** How long to follow the job before returning it still running. */
 	maxWaitMs: number;
-	/** Length of each `jobs.wait` inside Obsidian, i.e. the progress refresh interval. */
+	/** Length of each `jobs.wait` inside Obsidian, and the progress heartbeat interval. */
 	pollMs: number;
 	now?: () => number;
 }
 
 export const DEFAULT_MAX_WAIT_MS = 10 * 60 * 1000;
 export const DEFAULT_POLL_MS = 5000;
+/** Under the plugin's 30-minute request expiry, so a slow reply or a user's approval still lands. */
+export const DEFAULT_SAMPLING_TIMEOUT_MS = 25 * 60 * 1000;
 
 function progressLine(wait: JobWait): string | null {
 	const progress = wait.job?.progress;
@@ -39,8 +41,13 @@ export async function runJob(call: CallVerb, verb: string, args: readonly unknow
 	const deadline = now() + ctx.maxWaitMs;
 	const cancel = () => { void call('jobs.cancel', [jobId]).catch(() => undefined); };
 	ctx.signal.addEventListener('abort', cancel, { once: true });
+	// Progress goes out on every new status line and as a heartbeat every pollMs, sampling included,
+	// so a client that resets its own timeout on progress never gives up (and cancels) a slow job.
 	let ticks = 0;
 	let lastLine: string | null = null;
+	const report = (line: string) => { if (ctx.progress) void ctx.progress(++ticks, line).catch(() => undefined); };
+	const heartbeat = ctx.progress ? setInterval(() => report(lastLine ?? 'Waiting for the job'), ctx.pollMs) : undefined;
+	heartbeat?.unref?.();
 	try {
 		let wait: JobWait | null = null;
 		for (;;) {
@@ -49,9 +56,9 @@ export async function runJob(call: CallVerb, verb: string, args: readonly unknow
 			wait = await call('jobs.wait', [jobId, Math.max(0, Math.min(ctx.pollMs, remaining))]) as JobWait;
 			if (ctx.signal.aborted || !wait.ok || !wait.job) return wait;
 			const line = progressLine(wait);
-			if (ctx.progress && line && line !== lastLine) {
+			if (line && line !== lastLine) {
 				lastLine = line;
-				await ctx.progress(++ticks, line).catch(() => undefined);
+				report(line);
 			}
 			if (wait.job.status === 'awaiting-output') {
 				if (!ctx.sample) return { ...wait, timedOut: false };
@@ -64,6 +71,7 @@ export async function runJob(call: CallVerb, verb: string, args: readonly unknow
 			if (wait.job.status !== 'running') return { ...wait, timedOut: false };
 		}
 	} finally {
+		clearInterval(heartbeat);
 		ctx.signal.removeEventListener('abort', cancel);
 	}
 }

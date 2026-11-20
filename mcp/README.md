@@ -48,6 +48,7 @@ Settings, all optional, go in the environment:
 | `OBSIDIAN_CLI` | `obsidian` | Path to the Obsidian CLI. Set it when the client's `PATH` does not include it, as with some desktop apps |
 | `SYNAPSE_MCP_MAX_WAIT_MS` | `600000` (10 minutes) | How long a long tool follows its job before returning it still running |
 | `SYNAPSE_MCP_SAMPLING` | on | `off` stops the server from asking the client's model for text |
+| `SYNAPSE_MCP_SAMPLING_TIMEOUT_MS` | `1500000` (25 minutes) | How long one sampling request may take, including the user's approval. Synapse fails an unanswered request after 30 minutes |
 
 ## Tools
 
@@ -57,8 +58,8 @@ A verb's result comes back as structured content. A result with `ok: false` is r
 
 Long verbs (`elaborate`, `scanFolder` and the `deepDive_*` tools) start a job, and the tool follows it:
 
-- It sends a progress notification each time the job's status line changes, when the client asks for progress.
-- Cancelling the tool call cancels the job, the same as pressing Cancel on its toast.
+- When the client asks for progress, it sends a notification each time the job's status line changes, and repeats the last line every 5 seconds, so a client that resets its own timeout on progress keeps waiting.
+- Cancelling the tool call cancels the job, the same as pressing Cancel on its toast. That includes a client giving up on its own timeout, so on a client that does not reset its timeout on progress, set `SYNAPSE_MCP_MAX_WAIT_MS` below that timeout. The tool then returns the job still running, and `jobs_wait` follows it without cancelling it.
 - It returns what `jobs_wait` returns, `{ ok, timedOut, job }`, with the verb's result on `job.result`. A job still running after `SYNAPSE_MCP_MAX_WAIT_MS` comes back with `timedOut: true`. Follow it with `jobs_wait`.
 
 ## Letting the client's model write the text

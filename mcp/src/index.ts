@@ -16,5 +16,6 @@ const server = createServer({
 	call: (verb, args) => bridge.call(verb, args),
 	maxWaitMs: positiveInt('SYNAPSE_MCP_MAX_WAIT_MS'),
 	sampling: process.env.SYNAPSE_MCP_SAMPLING !== 'off',
+	samplingTimeoutMs: positiveInt('SYNAPSE_MCP_SAMPLING_TIMEOUT_MS'),
 });
 await server.connect(new StdioServerTransport());
