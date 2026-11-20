@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ContentAnalyzer } from './content-analyzer';
+import { JobCallRefusedError } from '../shared/ai-options';
 import { createMockApp } from '../__test-utils__/mock-factories';
 import { DEFAULT_SETTINGS } from '../settings';
 import type { App } from 'obsidian';
@@ -150,4 +151,16 @@ describe('ContentAnalyzer', () => {
 			expect(systemPrompt).toMatch(/broad|umbrella/i);
 		});
 	});
+
+	describe('extractTopics — public-API job refusals (#626)', () => {
+		it('rethrows a refused job call without retrying or falling back to tags', async () => {
+			mockComplete.mockClear();
+			mockComplete.mockRejectedValueOnce(new JobCallRefusedError('This job reached its limit of 1 model call'));
+			const analyzer = makeAnalyzer();
+
+			await expect(analyzer.extractTopics('Body', ['ml'])).rejects.toThrow('limit of 1 model call');
+			expect(mockComplete).toHaveBeenCalledTimes(1);
+		});
+	});
 });
+

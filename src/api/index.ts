@@ -5,11 +5,12 @@ import { PROPOSAL_KINDS } from '../views';
 import type { ProposalKind } from '../views';
 import { buildCapabilities } from './capabilities';
 import { buildProposalAdapters } from './proposals';
-import { buildStatus, featureCapabilities } from './status';
+import { buildStatus, defaultBilling, featureCapabilities } from './status';
+import { JobGeneration } from './external';
 import { validateArgs } from './validate';
 import { JobRegistry } from './jobs';
 import type {
-	ApiDeepDiveEndReason, ApiJobStart, ApiProposal, ApiRegenerateTarget, ApiResult, ApiScanFeature, DeepDiveRunResult, ScanFolderResult, SynapseApi, SynapseApiDeps,
+	ApiDeepDiveEndReason, ApiGenerationOptions, ApiJobStart, ApiProposal, ApiRegenerateTarget, ApiResult, ApiScanFeature, DeepDiveRunResult, ScanFolderResult, SynapseApi, SynapseApiDeps,
 } from './types';
 import { API_VERSION } from './types';
 
@@ -20,8 +21,10 @@ export type {
 	ApiDeepDiveRunOptions, ApiRegenerateTarget, ApiProposal, ApiProposalList, ApiAcceptOptions, ApiKeySource, ApiFeatureCapability,
 	ApiParamSpec, ApiVerbSpec, ApiCapabilities, ApiAIStatus, ApiCheckpointStatus, ApiStatus,
 	ApiJob, ApiJobCancel, ApiJobLookup, ApiJobStart, ApiJobStatus, ApiJobWait,
+	ApiBilling, ApiGenerationOptions, ApiGenerationRequest, ApiGenerationOutput, ApiJobUsage, ApiContinuableDeepDive, ApiDeepDiveEndReason, ApiDeepDiveContinueOptions,
 } from './types';
 export { JobRegistry, MAX_FINISHED_JOBS, FINISHED_JOB_TTL_MS, DEFAULT_WAIT_MS, MAX_WAIT_MS } from './jobs';
+export { ExternalRequests, JobGeneration, EXTERNAL_REPLY_TIMEOUT_MS } from './external';
 
 /** Scan features whose output is proposals, so `scanFolder` can report the new ids. */
 const SCAN_PROPOSAL_KIND: Partial<Record<ApiScanFeature, ProposalKind>> = {
@@ -89,6 +92,12 @@ function isProposalKind(kind: unknown): kind is ProposalKind {
 	return typeof kind === 'string' && (PROPOSAL_KINDS as readonly string[]).includes(kind);
 }
 
+/** Split a generating verb's options into its billing and call cap and the rest, which go to the module. */
+function splitGeneration<T extends ApiGenerationOptions>(options: T | undefined): [ApiGenerationOptions, Omit<T, keyof ApiGenerationOptions>] {
+	const { billing, maxCalls, ...rest } = options ?? ({} as T);
+	return [{ billing, maxCalls }, rest];
+}
+
 function toRegenerateTarget(target: ApiRegenerateTarget): { proposalId: string } | { notePath: string } {
 	if (typeof target !== 'string') return target;
 	return target.endsWith('.md') ? { notePath: target } : { proposalId: target };
@@ -110,6 +119,21 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 
 	const pending = async (kind: ProposalKind | undefined): Promise<ApiProposal[]> => (kind ? adapters[kind].list() : []);
 
+	const generationFor = (feature: 'elaboration' | 'deep-dive', options: ApiGenerationOptions): JobGeneration =>
+		new JobGeneration(options.billing ?? defaultBilling(deps.getSettings(), feature), options.maxCalls ?? null);
+
+	/** Start a generating verb as a job (#626): its model calls carry the job's billing, cap and usage meter. */
+	const startGeneration = <T extends ApiResult>(
+		verb: string,
+		feature: 'elaboration' | 'deep-dive',
+		options: ApiGenerationOptions,
+		run: (job: { jobId: string; ai: ReturnType<JobGeneration['aiOptions']> }) => Promise<T>,
+	): ApiJobStart => {
+		const generation = generationFor(feature, options);
+		const jobId = jobs.start(verb, (id) => settle<T>(() => run({ jobId: id, ai: generation.aiOptions() }), (failed) => failed as T), generation);
+		return { ok: true, jobId };
+	};
+
 	return {
 		version: API_VERSION,
 
@@ -117,15 +141,14 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 
 		status: () => buildStatus(deps),
 
-		elaborate: (notePath) => settle(async () => {
-			const invalid = validateArgs('elaborate', [notePath]);
-			if (invalid) return failure(invalid);
-			const off = disabled('elaboration', FEATURE_LABEL.elaboration);
-			if (off) return failure(off);
+		elaborate: async (notePath, options) => {
+			const refused = validateArgs('elaborate', [notePath, options]) ?? disabled('elaboration', FEATURE_LABEL.elaboration);
+			if (refused) return jobRefused(refused);
 			const file = noteFile(notePath);
-			if (!file) return failure(`Note not found: ${notePath}`);
-			return fromOutcome(await modules.elaboration.scanNote(file, true));
-		}, asIs),
+			if (!file) return jobRefused(`Note not found: ${notePath}`);
+			return startGeneration('elaborate', 'elaboration', options ?? {}, async (job) =>
+				fromOutcome(await modules.elaboration.scanNote(file, true, job)));
+		},
 
 		scanFolder: async (feature, folder, options) => {
 			const refused = validateArgs('scanFolder', [feature, folder, options])
@@ -160,10 +183,9 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 				const refused = validateArgs('deepDive.run', [notePath, options]) ?? disabled('deepDive', FEATURE_LABEL.deepDive);
 				if (refused) return jobRefused(refused);
 				if (!noteFile(notePath)) return jobRefused(`Note not found: ${notePath}`);
-				const jobId = jobs.start('deepDive.run', (id) => settle<DeepDiveRunResult>(async () => {
-					return fromRunOutcome(await modules.deepDive.run(notePath, { ...options, jobId: id }));
-				}, asIs));
-				return { ok: true, jobId };
+				const [generation, runOptions] = splitGeneration(options);
+				return startGeneration('deepDive.run', 'deep-dive', generation, async (job) =>
+					fromRunOutcome(await modules.deepDive.run(notePath, { ...runOptions, ...job })));
 			},
 
 			continue: async (runId, options) => {
@@ -173,20 +195,19 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 				if (!continuable.some((run) => run.runId === runId)) {
 					return jobRefused(`No capped deep dive with id ${runId} has topics left (see status().continuableDeepDives)`);
 				}
-				const jobId = jobs.start('deepDive.continue', (id) => settle<DeepDiveRunResult>(async () => {
-					return fromRunOutcome(await modules.deepDive.continueRun(runId, { ...options, jobId: id }));
-				}, asIs));
-				return { ok: true, jobId };
+				const [generation, continueOptions] = splitGeneration(options);
+				return startGeneration('deepDive.continue', 'deep-dive', generation, async (job) =>
+					fromRunOutcome(await modules.deepDive.continueRun(runId, { ...continueOptions, ...job })));
 			},
 
-			regenerate: (target) => settle<DeepDiveRunResult>(async () => {
-				const invalid = validateArgs('deepDive.regenerate', [target]);
-				if (invalid) return failure(invalid);
-				const off = disabled('deepDive', FEATURE_LABEL.deepDive);
-				if (off) return failure(off);
-				const outcome = await modules.deepDive.regenerate(toRegenerateTarget(target));
-				return { ...fromOutcome(outcome), runId: outcome.runId };
-			}, asIs),
+			regenerate: async (target, options) => {
+				const refused = validateArgs('deepDive.regenerate', [target, options]) ?? disabled('deepDive', FEATURE_LABEL.deepDive);
+				if (refused) return jobRefused(refused);
+				return startGeneration<DeepDiveRunResult>('deepDive.regenerate', 'deep-dive', options ?? {}, async (job) => {
+					const outcome = await modules.deepDive.regenerate(toRegenerateTarget(target), job);
+					return { ...fromOutcome(outcome), runId: outcome.runId };
+				});
+			},
 		},
 
 		jobs: {
@@ -201,6 +222,10 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 			cancel: (id) => {
 				const invalid = validateArgs('jobs.cancel', [id]);
 				return invalid ? { ok: false, stoppedOperations: 0, error: invalid } : jobs.cancel(id);
+			},
+			commit: async (id, outputs, timeoutMs) => {
+				const invalid = validateArgs('jobs.commit', [id, outputs, timeoutMs]);
+				return invalid ? { ok: false, timedOut: false, job: null, error: invalid } : jobs.commit(id, outputs, timeoutMs);
 			},
 			list: () => jobs.list(),
 		},

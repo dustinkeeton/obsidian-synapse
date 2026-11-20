@@ -108,7 +108,12 @@ export interface DeepDiveRunOptions {
 	autoAccept?: boolean;
 	/** Public-API job running this deep dive (#624); its operations are tagged with `jobOpId`. Not persisted. */
 	jobId?: string;
+	/** Joined into every model call of the run (#626): the job's call cap, usage total and external generator. Not persisted. */
+	ai?: AIRequestOptions;
 }
+
+/** A public-API job running `regenerate` (#626). Not persisted. */
+export type DeepDiveJobOptions = Pick<DeepDiveRunOptions, 'jobId' | 'ai'>;
 
 /** What a deep-dive run, or a regeneration, did: proposals created (run) or rewritten (regenerate), notes written. */
 export interface DeepDiveOutcome extends OperationOutcome {

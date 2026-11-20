@@ -3,7 +3,8 @@ import { TFolder } from 'obsidian';
 import { createSynapseApi, API_VERSION, VERB_DEFINITIONS } from './index';
 import type { SynapseApi } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
-import { NotificationManager, jobOpId } from '../shared';
+import { AIClient, NotificationManager, UNTRUSTED_CONTENT_POLICY, jobOpId } from '../shared';
+import type { AIRequestOptions } from '../shared';
 import { createMockApp, mockFile } from '../__test-utils__/mock-factories';
 import type { FeatureModules } from '../modules';
 import type { PipelineModuleMap } from '../pipeline';
@@ -230,27 +231,6 @@ describe('createSynapseApi (#623)', () => {
 		});
 	});
 
-	describe('elaborate', () => {
-		it('returns the proposal id and cache use', async () => {
-			const result = await api.elaborate(NOTE);
-			expect(result).toEqual({ ok: true, message: 'Proposal generated', written: [], proposals: ['e2'], cacheUse: { ai: true } });
-		});
-
-		it('refuses a missing note and a disabled feature', async () => {
-			expect((await api.elaborate('notes/Nope.md')).error).toContain('Note not found');
-			settings.elaboration.enabled = false;
-			expect((await api.elaborate(NOTE)).error).toContain('disabled');
-			expect(modules.elaboration.scanNote).not.toHaveBeenCalled();
-		});
-
-		it('never rejects; a thrown error comes back redacted', async () => {
-			modules.elaboration.scanNote.mockRejectedValueOnce(new Error('upstream said sk-ant-api03-abcdefghijklmnop'));
-			const result = await api.elaborate(NOTE);
-			expect(result.ok).toBe(false);
-			expect(result.error).not.toContain('abcdefghijklmnop');
-		});
-	});
-
 	/** Start a long verb and wait for its job; fails the test when no job started. */
 	async function runJob(start: Promise<{ ok: boolean; jobId?: string; error?: string }>) {
 		const started = await start;
@@ -259,6 +239,31 @@ describe('createSynapseApi (#623)', () => {
 		expect(waited.timedOut).toBe(false);
 		return waited.job!;
 	}
+
+	describe('elaborate', () => {
+		it('runs as a job and reports the proposal id and cache use', async () => {
+			const job = await runJob(api.elaborate(NOTE));
+			expect(modules.elaboration.scanNote).toHaveBeenCalledWith(expect.objectContaining({ path: NOTE }) as unknown, true, { jobId: job.id, ai: expect.any(Object) as unknown });
+			expect(job).toMatchObject({ verb: 'elaborate', status: 'completed', usage: { billing: 'plugin-key', calls: 0, maxCalls: null } });
+			expect(job.result).toEqual({ ok: true, message: 'Proposal generated', written: [], proposals: ['e2'], cacheUse: { ai: true } });
+		});
+
+		it('refuses a missing note, a disabled feature and bad options without starting a job', async () => {
+			expect((await api.elaborate('notes/Nope.md')).error).toContain('Note not found');
+			expect((await api.elaborate(NOTE, { billing: 'free' } as never)).ok).toBe(false);
+			expect((await api.elaborate(NOTE, { maxCalls: 0 })).ok).toBe(false);
+			settings.elaboration.enabled = false;
+			expect((await api.elaborate(NOTE)).error).toContain('disabled');
+			expect(modules.elaboration.scanNote).not.toHaveBeenCalled();
+		});
+
+		it('never rejects; a thrown error fails the job, redacted', async () => {
+			modules.elaboration.scanNote.mockRejectedValueOnce(new Error('upstream said sk-ant-api03-abcdefghijklmnop'));
+			const job = await runJob(api.elaborate(NOTE));
+			expect(job.status).toBe('failed');
+			expect(job.error).not.toContain('abcdefghijklmnop');
+		});
+	});
 
 	describe('scanFolder', () => {
 		it('runs the scan as a job without confirmation and reports new proposal ids', async () => {
@@ -349,7 +354,7 @@ describe('createSynapseApi (#623)', () => {
 	describe('deepDive', () => {
 		it('runs as a job, passing options and the job id through', async () => {
 			const job = await runJob(api.deepDive.run(NOTE, { depth: 2, maxNotes: 5 }));
-			expect(modules.deepDive.run).toHaveBeenCalledWith(NOTE, { depth: 2, maxNotes: 5, jobId: job.id });
+			expect(modules.deepDive.run).toHaveBeenCalledWith(NOTE, { depth: 2, maxNotes: 5, jobId: job.id, ai: expect.any(Object) as unknown });
 			expect(job).toMatchObject({ verb: 'deepDive.run', status: 'completed', result: { ok: true, runId: 'run1', proposals: ['d1', 'd2'] } });
 		});
 
@@ -374,7 +379,7 @@ describe('createSynapseApi (#623)', () => {
 
 		it('continues a capped run as a job (#625)', async () => {
 			const job = await runJob(api.deepDive.continue('run1', { maxNotes: 10 }));
-			expect(modules.deepDive.continueRun).toHaveBeenCalledWith('run1', { maxNotes: 10, jobId: job.id });
+			expect(modules.deepDive.continueRun).toHaveBeenCalledWith('run1', { maxNotes: 10, jobId: job.id, ai: expect.any(Object) as unknown });
 			expect(job).toMatchObject({ verb: 'deepDive.continue', status: 'completed', result: { ok: true, runId: 'run1', proposals: ['d3'], endReason: 'exhausted' } });
 		});
 
@@ -385,10 +390,147 @@ describe('createSynapseApi (#623)', () => {
 		});
 
 		it('reads a .md string as a note path and anything else as a proposal id', async () => {
-			await api.deepDive.regenerate('Deep Dives/A.md');
-			await api.deepDive.regenerate('abc123');
-			expect(modules.deepDive.regenerate).toHaveBeenNthCalledWith(1, { notePath: 'Deep Dives/A.md' });
-			expect(modules.deepDive.regenerate).toHaveBeenNthCalledWith(2, { proposalId: 'abc123' });
+			const first = await runJob(api.deepDive.regenerate('Deep Dives/A.md'));
+			await runJob(api.deepDive.regenerate('abc123'));
+			expect(first.verb).toBe('deepDive.regenerate');
+			expect(modules.deepDive.regenerate).toHaveBeenNthCalledWith(1, { notePath: 'Deep Dives/A.md' }, { jobId: first.id, ai: expect.any(Object) as unknown });
+			expect(modules.deepDive.regenerate).toHaveBeenNthCalledWith(2, { proposalId: 'abc123' }, expect.any(Object) as unknown);
+		});
+	});
+
+	describe('external generation (#626)', () => {
+		type Job = { jobId?: string; ai?: AIRequestOptions };
+		const failed = (message: string) => ({ status: 'failed', message, proposalIds: [], writtenPaths: [], cacheUse: {} });
+
+		/** scanNote as the module runs it: a job-tagged op around one real AIClient call per prompt. */
+		function elaborateWith(prompts: string[]) {
+			modules.elaboration.scanNote.mockImplementation((async (_file: unknown, _userInvoked: unknown, job: Job) => {
+				const op = notifications.startOperation('Scanning', jobOpId(`scan-${NOTE}`, job));
+				try {
+					const client = new AIClient(() => settings, 'elaboration');
+					const texts: string[] = [];
+					for (const prompt of prompts) texts.push(await client.complete(prompt, 'You rewrite notes.', job.ai));
+					op.finish('Proposal generated');
+					return { status: 'completed', message: texts.join(' | '), proposalIds: ['e3'], writtenPaths: [], cacheUse: {} };
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					op.error(message);
+					return failed(message);
+				}
+			}) as never);
+		}
+
+		async function awaitingJob(options: Parameters<SynapseApi['elaborate']>[1] = { billing: 'external' }) {
+			const started = await api.elaborate(NOTE, options);
+			const waited = await api.jobs.wait(started.jobId!);
+			expect(waited).toMatchObject({ ok: true, timedOut: false, job: { status: 'awaiting-output' } });
+			return waited.job!;
+		}
+
+		it('hands the exact request to the caller and applies its output', async () => {
+			elaborateWith(['Rewrite this stub']);
+			const job = await awaitingJob();
+			expect(job.requests).toHaveLength(1);
+			const [request] = job.requests!;
+			expect(request.feature).toBe('elaboration');
+			expect(request.messages[0]).toMatchObject({ role: 'system' });
+			expect(request.messages[0].content).toContain(UNTRUSTED_CONTENT_POLICY);
+			expect(request.messages[1]).toEqual({ role: 'user', content: 'Rewrite this stub' });
+
+			const committed = await api.jobs.commit(job.id, [{ requestId: request.id, text: 'A fuller note', model: 'claude-opus-5-5', usage: { inputTokens: 10, outputTokens: 5 } }]);
+			expect(committed.job).toMatchObject({
+				status: 'completed',
+				result: { ok: true, message: 'A fuller note' },
+				usage: { billing: 'external', calls: 1, maxCalls: null, inputTokens: 10, outputTokens: 5 },
+			});
+			expect(committed.job).not.toHaveProperty('requests');
+		});
+
+		it('returns from commit at the next request of a multi-call job', async () => {
+			elaborateWith(['first', 'second']);
+			const job = await awaitingJob();
+			const next = await api.jobs.commit(job.id, [{ requestId: job.requests![0].id, text: 'one' }]);
+			expect(next.job).toMatchObject({ status: 'awaiting-output' });
+			expect(next.job!.requests![0].messages[1].content).toBe('second');
+			const done = await api.jobs.commit(job.id, [{ requestId: next.job!.requests![0].id, text: 'two' }]);
+			expect(done.job).toMatchObject({ status: 'completed', result: { message: 'one | two' }, usage: { calls: 2 } });
+		});
+
+		it('defaults to the feature setting, and a per-call billing overrides it', async () => {
+			settings.elaboration.agentBilling = 'external';
+			elaborateWith(['stub']);
+			const job = await awaitingJob({});
+			expect(job.usage?.billing).toBe('external');
+			api.jobs.cancel(job.id);
+
+			const keyed = await runJob(api.elaborate(NOTE, { billing: 'plugin-key', maxCalls: 1 }));
+			expect(keyed.usage).toMatchObject({ billing: 'plugin-key', maxCalls: 1 });
+		});
+
+		it('refuses invalid outputs without applying any', async () => {
+			elaborateWith(['stub']);
+			const job = await awaitingJob();
+			const requestId = job.requests![0].id;
+			const unknown = await api.jobs.commit(job.id, [{ requestId, text: 'ok' }, { requestId: 'req-nope', text: 'x' }]);
+			expect(unknown).toMatchObject({ ok: false, error: 'No pending request with id req-nope', job: { status: 'awaiting-output' } });
+			expect((await api.jobs.commit(job.id, [{ requestId, text: 'a' }, { requestId, text: 'b' }])).error).toContain('answered twice');
+			expect((await api.jobs.commit(job.id, [])).error).toBe('No outputs given');
+			expect((await api.jobs.commit(job.id, [{ requestId } as never])).ok).toBe(false);
+			expect((await api.jobs.commit(job.id, [{ requestId, text: 'done' }])).job?.status).toBe('completed');
+			expect((await api.jobs.commit(job.id, [{ requestId, text: 'again' }])).error).toBe(`Job ${job.id} already completed`);
+		});
+
+		it('refuses commit on a job that bills the plugin key', async () => {
+			let release!: () => void;
+			modules.elaboration.scanNote.mockImplementationOnce(() => new Promise((resolve) => {
+				release = () => resolve({ status: 'completed', message: 'Proposal generated', proposalIds: [], writtenPaths: [], cacheUse: { ai: false } });
+			}));
+			const started = await api.elaborate(NOTE, { billing: 'plugin-key' });
+			expect((await api.jobs.commit(started.jobId!, [{ requestId: 'r', text: 't' }])).error).toBe(`Job ${started.jobId} does not use external billing`);
+			release();
+			expect((await api.jobs.wait(started.jobId!)).job?.status).toBe('completed');
+		});
+
+		it('discards a truncated output, failing the job', async () => {
+			elaborateWith(['stub']);
+			const job = await awaitingJob();
+			const done = await api.jobs.commit(job.id, [{ requestId: job.requests![0].id, text: 'cut', truncated: true }]);
+			expect(done.job).toMatchObject({ status: 'failed', error: expect.stringContaining('output limit') as unknown });
+		});
+
+		it('jobs.cancel fails the request the job waits on', async () => {
+			elaborateWith(['stub']);
+			const job = await awaitingJob();
+			expect(api.jobs.cancel(job.id)).toEqual({ ok: true, stoppedOperations: 1 });
+			const done = await api.jobs.wait(job.id);
+			expect(done.job).toMatchObject({ status: 'cancelled', result: { ok: false, error: 'Job cancelled' } });
+		});
+
+		it('a toast Cancel fails the request the job waits on', async () => {
+			elaborateWith(['stub']);
+			const job = await awaitingJob();
+			notifications.cancelOperation(jobOpId(`scan-${NOTE}`, { jobId: job.id }));
+			expect((await api.jobs.wait(job.id)).job).toMatchObject({ status: 'cancelled' });
+		});
+
+		it('stops at maxCalls', async () => {
+			elaborateWith(['first', 'second']);
+			const job = await awaitingJob({ billing: 'external', maxCalls: 1 });
+			const done = await api.jobs.commit(job.id, [{ requestId: job.requests![0].id, text: 'one' }]);
+			expect(done.job).toMatchObject({ status: 'failed', error: 'This job reached its limit of 1 model call', usage: { calls: 1, maxCalls: 1 } });
+		});
+
+		it('passes billing to deep dive verbs, not as module options', async () => {
+			await runJob(api.deepDive.run(NOTE, { depth: 2, billing: 'plugin-key', maxCalls: 3 }));
+			expect(modules.deepDive.run).toHaveBeenCalledWith(NOTE, { depth: 2, jobId: expect.any(String) as unknown, ai: expect.any(Object) as unknown });
+		});
+
+		it('status reports each feature\'s default billing', async () => {
+			settings.deepDive.agentBilling = 'external';
+			const status = await api.status();
+			expect(status.ai['deep-dive'].billing).toBe('external');
+			expect(status.ai.elaboration.billing).toBe('plugin-key');
+			expect(status.ai.tidy.billing).toBe('plugin-key');
 		});
 	});
 

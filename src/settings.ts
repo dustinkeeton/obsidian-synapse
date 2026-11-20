@@ -233,6 +233,9 @@ export interface ProposalSettings {
 	includeBacklinkContext: boolean;
 }
 
+/** Who generates the text when an external agent runs a feature through the public API (#626): Synapse with its key, or the agent itself. */
+export type AgentBilling = 'plugin-key' | 'external';
+
 export interface ElaborationSettings {
 	enabled: boolean;
 	proposalFolderPath: string;
@@ -240,6 +243,8 @@ export interface ElaborationSettings {
 	autoScanInterval: number;
 	detection: DetectionSettings;
 	proposal: ProposalSettings;
+	/** Default billing for agent-run elaboration (#626); commands run in Obsidian always use the key. */
+	agentBilling: AgentBilling;
 }
 
 export interface PostProcessingSettings {
@@ -371,6 +376,8 @@ export interface DeepDiveSettings {
 	autoOrganizeOnAccept: boolean;
 	/** Run REM on each accepted note so links are added only to notes that exist (#581). */
 	autoRemOnAccept: boolean;
+	/** Default billing for agent-run deep dives (#626); commands run in Obsidian always use the key. */
+	agentBilling: AgentBilling;
 }
 
 export interface RemSettings {
@@ -578,6 +585,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 			includeSourceContext: true,
 			includeBacklinkContext: true,
 		},
+		agentBilling: 'plugin-key',
 	},
 	audio: {
 		enabled: true,
@@ -679,6 +687,7 @@ export const DEFAULT_SETTINGS: SynapseSettings = {
 		autoEnrichOnAccept: true,
 		autoOrganizeOnAccept: false,
 		autoRemOnAccept: true,
+		agentBilling: 'plugin-key',
 	},
 	title: {
 		enabled: true,

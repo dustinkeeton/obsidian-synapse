@@ -1,13 +1,13 @@
 import type { App } from 'obsidian';
 import type { AIFeatureId, AIProvider, EffortLevel, SynapseSettings, TranscriptionProvider } from '../settings';
-import type { AIResponseInfo, CacheUse, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
+import type { AIResponseInfo, AIUsage, CacheUse, ChatMessage, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
 import type { FeatureModules } from '../modules';
 import type { PipelineModuleKey, PipelineModuleMap } from '../pipeline';
 import type { ProposalKind } from '../views';
 
 /**
  * Bumped on any breaking change to the shapes below once a release ships them; additive changes keep it.
- * Unstable until epic #629 ships: #624 changes the long verbs to return jobs.
+ * Unstable until epic #629 ships: #624 changes the long verbs to return jobs, #626 makes every generating verb one.
  */
 export const API_VERSION = 1;
 
@@ -34,7 +34,50 @@ export interface ApiJobStart {
 	error?: string;
 }
 
-export type ApiJobStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+/** `awaiting-output`: an external-billing job is waiting for `jobs.commit` to answer its `requests` (#626). */
+export type ApiJobStatus = 'running' | 'awaiting-output' | 'completed' | 'failed' | 'cancelled';
+
+/** Who generates a verb's text (#626): Synapse with the key in its settings, or the caller through `jobs.commit`. */
+export type ApiBilling = 'plugin-key' | 'external';
+
+/** Options every generating verb takes (#626). */
+export interface ApiGenerationOptions {
+	/** Default: the feature's `agentBilling` setting. */
+	billing?: ApiBilling;
+	/** Refuse model calls past this many in the job; the call that would exceed it fails the job. Default: no cap. */
+	maxCalls?: number;
+}
+
+/** A model request an external-billing job is waiting on (#626). `messages` are final: untrusted content is fenced and the first system message carries the untrusted-content policy. */
+export interface ApiGenerationRequest {
+	id: string;
+	/** The AI feature id whose prompt this is, e.g. `deep-dive`. */
+	feature: AIFeatureId | null;
+	messages: ChatMessage[];
+	createdAt: string;
+	/** The request fails, and with it the job, if no output arrives by then. */
+	expiresAt: string;
+}
+
+/** The caller's answer to one request. `truncated: true` discards it as a provider's output-limit stop would. */
+export interface ApiGenerationOutput {
+	requestId: string;
+	text: string;
+	/** Recorded as the proposal's `generation.model`; default `external`. */
+	model?: string;
+	stopReason?: string;
+	truncated?: boolean;
+	usage?: AIUsage;
+}
+
+/** A generating job's model calls (#626). Tokens count dispatched and external calls as reported; cache replays and joined calls add none. */
+export interface ApiJobUsage {
+	billing: ApiBilling;
+	calls: number;
+	maxCalls: number | null;
+	inputTokens: number;
+	outputTokens: number;
+}
 
 /** A job as `jobs.get` / `jobs.wait` report it. */
 export interface ApiJob {
@@ -51,6 +94,10 @@ export interface ApiJob {
 	result?: ApiResult;
 	/** Why it failed; secrets redacted. */
 	error?: string;
+	/** While `awaiting-output`: the model requests to answer with `jobs.commit`. */
+	requests?: ApiGenerationRequest[];
+	/** Generating verbs only (#626). */
+	usage?: ApiJobUsage;
 	/** Every operation the job started, in start order; omitted by `jobs.list`. */
 	operations?: { id: string; message: string; state: 'running' | 'done' | 'error' | 'cancelled'; current?: number; total?: number }[];
 }
@@ -71,7 +118,7 @@ export interface ApiJobCancel {
 
 export interface ApiJobWait {
 	ok: boolean;
-	/** True when the timeout passed first; `job` then shows it still running. */
+	/** True when the timeout passed first; `job` then shows it still running. `wait` and `commit` also return when the job is `awaiting-output`. */
 	timedOut: boolean;
 	job: ApiJob | null;
 	error?: string;
@@ -110,14 +157,14 @@ export interface ApiContinuableDeepDive {
 	createdAt: string;
 }
 
-export interface ApiDeepDiveContinueOptions {
+export interface ApiDeepDiveContinueOptions extends ApiGenerationOptions {
 	/** Cap for this pass; default the run's own cap. */
 	maxNotes?: number;
 	/** Default the run's own setting. */
 	autoAccept?: boolean;
 }
 
-export interface ApiDeepDiveRunOptions {
+export interface ApiDeepDiveRunOptions extends ApiGenerationOptions {
 	/** 1-6; default `deepDive.maxDepth`. */
 	depth?: number;
 	/** Default `deepDive.maxNotesPerRun`. */
@@ -205,6 +252,8 @@ export interface ApiAIStatus {
 	/** `null` = Default (no effort field sent). */
 	effort: EffortLevel | null;
 	keySource: ApiKeySource;
+	/** Default billing of agent calls (#626): the feature's `agentBilling` setting for elaboration and deep dive, else `plugin-key`. */
+	billing: ApiBilling;
 }
 
 export interface ApiCheckpointStatus {
@@ -236,7 +285,8 @@ export interface SynapseApi {
 	readonly version: number;
 	capabilities(): ApiCapabilities;
 	status(): Promise<ApiStatus>;
-	elaborate(notePath: string): Promise<ApiResult>;
+	/** Starts a job whose result is an `ApiResult`. */
+	elaborate(notePath: string, options?: ApiGenerationOptions): Promise<ApiJobStart>;
 	/** Starts a job whose result is a `ScanFolderResult`. */
 	scanFolder(feature: ApiScanFeature, folder: string, options?: ApiScanOptions): Promise<ApiJobStart>;
 	deepDive: {
@@ -244,12 +294,15 @@ export interface SynapseApi {
 		run(notePath: string, options?: ApiDeepDiveRunOptions): Promise<ApiJobStart>;
 		/** Starts a job generating a capped run's remaining topics; result is a `DeepDiveRunResult`. */
 		continue(runId: string, options?: ApiDeepDiveContinueOptions): Promise<ApiJobStart>;
-		regenerate(target: ApiRegenerateTarget): Promise<DeepDiveRunResult>;
+		/** Starts a job whose result is a `DeepDiveRunResult`. */
+		regenerate(target: ApiRegenerateTarget, options?: ApiGenerationOptions): Promise<ApiJobStart>;
 	};
 	jobs: {
 		get(id: string): ApiJobLookup;
 		wait(id: string, timeoutMs?: number): Promise<ApiJobWait>;
 		cancel(id: string): ApiJobCancel;
+		/** Answer an `awaiting-output` job's requests, then wait as `wait` does (#626). Nothing is applied when any output is invalid. */
+		commit(id: string, outputs: ApiGenerationOutput[], timeoutMs?: number): Promise<ApiJobWait>;
 		/** Running and recently finished jobs, without their operations. */
 		list(): ApiJob[];
 	};

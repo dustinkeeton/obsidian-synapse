@@ -1,5 +1,5 @@
 import { App, TFile } from 'obsidian';
-import { AIClient, arrayBufferToBase64, NotificationManager, preprocessImage, redactError, visionModelOverride } from '../shared';
+import { AIClient, arrayBufferToBase64, NotificationManager, preprocessImage, redactError, visionModelOverride, isJobCallRefused } from '../shared';
 import type { AIRequestOptions, ContentBlock } from '../shared';
 import { SynapseSettings } from '../settings';
 
@@ -86,6 +86,7 @@ export class ImageAnalyzer {
 					results.push(analysis);
 				}
 			} catch (error) {
+				if (isJobCallRefused(error)) throw error;
 				console.warn(`[Synapse] Failed to analyze image ${ref.path}:`, redactError(error));
 				// Graceful degradation -- skip this image and continue
 			}

@@ -5,6 +5,7 @@ import { SynapseSettings, DEFAULT_SETTINGS } from '../settings';
 import type { ChatMessage, ContentBlock } from './types';
 import { voiceInstruction } from './voice';
 import { UNTRUSTED_CONTENT_POLICY } from './untrusted-content';
+import { combineAIOptions } from './ai-options';
 
 const mockRequestUrl = vi.mocked(requestUrl);
 
@@ -993,5 +994,78 @@ describe('AIClient — response info (#625)', () => {
 
 		await expect(new AIClient(() => settings).chat(QUESTION, { onResponse })).rejects.toThrow(/output limit/);
 		expect(onResponse).not.toHaveBeenCalled();
+	});
+});
+
+describe('AIClient — external generation and call hooks (#626)', () => {
+	const QUESTION: ChatMessage[] = [{ role: 'system', content: 'Be brief.' }, { role: 'user', content: 'Hello' }];
+	const anthropicReply = { status: 200, json: { content: [{ type: 'text', text: 'hi' }], stop_reason: 'end_turn' }, text: '', headers: {} };
+	const settingsFor = () => makeSettings((s) => { s.ai.provider = 'anthropic'; s.ai.model = 'opus'; s.ai.apiKey = 'k'; s.ai.cacheResponses = true; });
+
+	beforeEach(() => mockRequestUrl.mockReset());
+
+	it('sends the final messages to the external generator and reports its reply', async () => {
+		const external = vi.fn(async () => ({ text: 'from agent', model: 'claude-x', stopReason: 'end_turn', usage: { inputTokens: 4, outputTokens: 2 } }));
+		const onResponse = vi.fn();
+		const beforeCall = vi.fn();
+
+		const text = await new AIClient(settingsFor, 'deep-dive').chat(QUESTION, { external, onResponse, beforeCall });
+
+		expect(text).toBe('from agent');
+		expect(mockRequestUrl).not.toHaveBeenCalled();
+		expect(beforeCall).toHaveBeenCalledTimes(1);
+		const request = (external.mock.calls[0] as unknown as [{ feature: string; messages: ChatMessage[] }])[0];
+		expect(request.feature).toBe('deep-dive');
+		expect(request.messages[0].content).toContain(UNTRUSTED_CONTENT_POLICY);
+		expect(request.messages[1]).toEqual({ role: 'user', content: 'Hello' });
+		expect(onResponse).toHaveBeenCalledWith({ provider: 'external', model: 'claude-x', stopReason: 'end_turn', usage: { inputTokens: 4, outputTokens: 2 } });
+	});
+
+	it('neither reads nor fills the response cache', async () => {
+		const client = new AIClient(settingsFor);
+		mockRequestUrl.mockResolvedValue(anthropicReply);
+		await client.chat(QUESTION);
+
+		expect(await client.chat(QUESTION, { external: async () => ({ text: 'external' }) })).toBe('external');
+		expect(await client.chat(QUESTION, { external: async () => ({ text: 'again' }) })).toBe('again');
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+	});
+
+	it('throws on a truncated or textless external reply', async () => {
+		const client = new AIClient(settingsFor);
+		const onResponse = vi.fn();
+		await expect(client.chat(QUESTION, { external: async () => ({ text: 'partial', truncated: true }), onResponse })).rejects.toThrow('output limit');
+		await expect(client.chat(QUESTION, { external: async () => ({}) as never })).rejects.toThrow('no text');
+		expect(onResponse).not.toHaveBeenCalled();
+	});
+
+	it('runs beforeCall before a dispatch but not for a cache replay, and a throw refuses the call', async () => {
+		const client = new AIClient(settingsFor);
+		mockRequestUrl.mockResolvedValue(anthropicReply);
+		const beforeCall = vi.fn();
+		await client.chat(QUESTION, { beforeCall });
+		await client.chat(QUESTION, { beforeCall });
+		expect(beforeCall).toHaveBeenCalledTimes(1);
+
+		await expect(client.chat([{ role: 'user', content: 'other' }], { beforeCall: () => { throw new Error('cap'); } })).rejects.toThrow('cap');
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('combineAIOptions (#626)', () => {
+	it('runs every callback in order and lets later fields win', () => {
+		const calls: string[] = [];
+		const external = async () => ({ text: '' });
+		const combined = combineAIOptions(
+			{ onResponse: () => calls.push('a'), model: 'one' },
+			undefined,
+			{ onResponse: () => calls.push('b'), beforeCall: () => calls.push('call'), bypassCache: true },
+			{ model: 'two', external, bypassCache: false },
+		);
+		combined.onResponse?.({ provider: 'external', model: 'm' });
+		combined.beforeCall?.();
+		expect(calls).toEqual(['a', 'b', 'call']);
+		expect(combined).toMatchObject({ model: 'two', external, bypassCache: true });
+		expect(combined.onCacheHit).toBeUndefined();
 	});
 });

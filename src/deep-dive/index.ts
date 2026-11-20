@@ -7,7 +7,7 @@ import {
 	NotificationManager, readNote, writeNote, wordCount,
 	CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport,
-	stripUnresolvedLinks, assertVaultRelativePath, mergeCacheUse, jobOpId,
+	stripUnresolvedLinks, assertVaultRelativePath, mergeCacheUse, jobOpId, combineAIOptions, isJobCallRefused,
 } from '../shared';
 import type { AIRequestOptions, AIResponseInfo, CacheUse, OperationStatus, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { DeepDiveStore } from './deep-dive-store';
@@ -27,6 +27,7 @@ import { TopicAnalyzer } from './topic-analyzer';
 import type {
 	ContinuableDeepDiveRun,
 	DeepDiveEndReason,
+	DeepDiveJobOptions,
 	DeepDiveOutcome,
 	DeepDiveProposal,
 	DeepDiveRegenerateTarget,
@@ -61,6 +62,7 @@ interface TaskSource {
 export type {
 	ContinuableDeepDiveRun,
 	DeepDiveEndReason,
+	DeepDiveJobOptions,
 	DeepDiveOutcome,
 	DeepDiveRegenerateTarget,
 	DeepDiveRunOptions,
@@ -285,7 +287,7 @@ export class DeepDiveModule implements FeatureModule {
 	 * confirmation, then generate. `run` is the same flow with the answers supplied.
 	 */
 	private async deepDive(file: TFile): Promise<void> {
-		const prepared = await this.prepareRun(file);
+		const prepared = await this.prepareRun(file, {});
 		if (!prepared.ok) return;
 		const { newTopics } = prepared;
 
@@ -318,7 +320,7 @@ export class DeepDiveModule implements FeatureModule {
 		if (!(file instanceof TFile)) {
 			return failedOutcome(`Note not found: ${notePath}`);
 		}
-		const prepared = await this.prepareRun(file, options.jobId);
+		const prepared = await this.prepareRun(file, options);
 		if (!prepared.ok) return failedOutcome(prepared.message, prepared.cacheUse, prepared.cancelled ? 'cancelled' : 'failed');
 		const depth = clampDepth(options.depth ?? this.getSettings().deepDive.maxDepth);
 		const outcome = await this.startRun(file, prepared.content, prepared.newTopics, { ...options, depth });
@@ -332,7 +334,7 @@ export class DeepDiveModule implements FeatureModule {
 	 * The store/vault write re-reads the proposal under its note's queue slot, so an
 	 * accept that lands mid-generation is honored. Rejected proposals are refused.
 	 */
-	async regenerate(target: DeepDiveRegenerateTarget): Promise<DeepDiveOutcome> {
+	async regenerate(target: DeepDiveRegenerateTarget, job: DeepDiveJobOptions = {}): Promise<DeepDiveOutcome> {
 		const proposal = await this.findProposal(target);
 		if (!proposal) return failedOutcome('No deep dive proposal matches that target');
 		if (proposal.status === 'rejected') return failedOutcome(`Proposal ${proposal.id} was rejected; nothing to regenerate`);
@@ -346,13 +348,13 @@ export class DeepDiveModule implements FeatureModule {
 		const cacheUse: CacheUse = {};
 		const op = this.notifications.startOperation(
 			`Regenerating ${proposal.topic.title}`,
-			`deep-dive-regenerate-${proposal.id}`, { kind: 'deep-dive', target: proposal.proposedPath }
+			jobOpId(`deep-dive-regenerate-${proposal.id}`, job), { kind: 'deep-dive', target: proposal.proposedPath }
 		);
 		try {
 			let generation: AIResponseInfo | undefined;
 			const content = await this.generator.generateContent(
 				proposal.topic, source.title, proposal.sourceNotePath, source.content,
-				{ ...trackAiCache(cacheUse), bypassCache: true, onResponse: (info) => { generation = info; } }
+				combineAIOptions(trackAiCache(cacheUse), { bypassCache: true, onResponse: (info) => { generation = info; } }, job.ai)
 			);
 			const written = await this.noteQueue.run(proposal.proposedPath, () => this.applyRegenerated(proposal.id, content, generation));
 			if (typeof written === 'string') {
@@ -423,7 +425,7 @@ export class DeepDiveModule implements FeatureModule {
 	}
 
 	/** Exclusion check, read, topic extraction; every stop is already toasted when this returns `ok: false`. */
-	private async prepareRun(file: TFile, jobId?: string): Promise<PreparedRun> {
+	private async prepareRun(file: TFile, job: DeepDiveJobOptions): Promise<PreparedRun> {
 		const scanUse: CacheUse = {};
 		const stop = (message: string): PreparedRun => ({ ok: false, message, cacheUse: scanUse });
 
@@ -444,13 +446,14 @@ export class DeepDiveModule implements FeatureModule {
 
 		const scanOp = this.notifications.startOperation(
 			`Analyzing ${file.basename}`,
-			jobOpId(`deep-dive-scan-${file.path}`, { jobId }), { kind: 'deep-dive', target: file.path }
+			jobOpId(`deep-dive-scan-${file.path}`, job), { kind: 'deep-dive', target: file.path }
 		);
 
 		let rootTopics: ExtractedTopic[];
 		try {
-			rootTopics = await this.analyzer.extractTopics(content, file.basename, [], trackAiCache(scanUse));
+			rootTopics = await this.analyzer.extractTopics(content, file.basename, [], combineAIOptions(trackAiCache(scanUse), job.ai));
 		} catch (error) {
+			if (scanOp.cancelled) return { ok: false, message: 'Deep dive cancelled', cacheUse: scanUse, cancelled: true };
 			const msg = error instanceof Error ? error.message : String(error);
 			scanOp.error(`Topic extraction failed -- ${msg}`);
 			return stop(`Topic extraction failed -- ${msg}`);
@@ -505,7 +508,7 @@ export class DeepDiveModule implements FeatureModule {
 		run.pending = { tasks, processedCount: 0 };
 		await this.store.saveRun(run);
 		const checkpointId = await this.createRunCheckpoint(run, file, tasks);
-		return this.runGeneration(file, content, run, checkpointId, options.jobId);
+		return this.runGeneration(file, content, run, checkpointId, options);
 	}
 
 	/** A checkpoint over `tasks`, so an interrupted run resumes; its deferred task refreshes the sidebar (I1). */
@@ -572,7 +575,7 @@ export class DeepDiveModule implements FeatureModule {
 			if (options.maxNotes !== undefined) run.maxNotes = Math.max(1, Math.floor(options.maxNotes));
 			if (options.autoAccept !== undefined) run.autoAccept = options.autoAccept;
 			const checkpointId = await this.createRunCheckpoint(run, rootFile, run.pending.tasks);
-			return await this.runGeneration(rootFile, rootContent, run, checkpointId, options.jobId);
+			return await this.runGeneration(rootFile, rootContent, run, checkpointId, options);
 		} finally {
 			this.continuing.delete(run.id);
 		}
@@ -593,7 +596,7 @@ export class DeepDiveModule implements FeatureModule {
 	 * A failure (e.g. the connection dropping when iOS suspends the app) keeps the
 	 * checkpoint active so the run resumes where it stopped.
 	 */
-	private async runGeneration(rootFile: TFile, rootContent: string, run: DeepDiveRun, checkpointId: string, jobId?: string): Promise<DeepDiveOutcome> {
+	private async runGeneration(rootFile: TFile, rootContent: string, run: DeepDiveRun, checkpointId: string, job: DeepDiveJobOptions = {}): Promise<DeepDiveOutcome> {
 		const settings = this.getSettings().deepDive;
 		const maxNotes = run.maxNotes ?? settings.maxNotesPerRun;
 		const autoAccept = run.autoAccept ?? this.shouldAutoAccept();
@@ -601,7 +604,7 @@ export class DeepDiveModule implements FeatureModule {
 		run.pending = pending;
 		run.status = 'in-progress';
 		delete run.endReason;
-		const genOp = this.notifications.startOperation('Generating deep dive', jobOpId(`deep-dive-generate-${run.id}`, { jobId }), { kind: 'deep-dive', target: rootFile.path });
+		const genOp = this.notifications.startOperation('Generating deep dive', jobOpId(`deep-dive-generate-${run.id}`, job), { kind: 'deep-dive', target: rootFile.path });
 		const sources = new Map<string, TaskSource>();
 		const cacheUses: CacheUse[] = [];
 		const generatedIds: string[] = [];
@@ -610,6 +613,17 @@ export class DeepDiveModule implements FeatureModule {
 			...(run.endReason ? { endReason: run.endReason } : {}),
 			...(run.endReason === 'cap' ? { remainingTopics: pending.tasks.length } : {}),
 		});
+		// Discards the checkpoint on user cancellation (C3).
+		const endCancelled = async (): Promise<DeepDiveOutcome> => {
+			run.status = 'cancelled';
+			run.endReason = 'cancelled';
+			delete run.pending;
+			await this.store.saveRun(run);
+			await this.checkpointManager.discard(checkpointId);
+			this.notifications.info('Deep dive cancelled');
+			await this.onViewRefreshNeeded?.();
+			return outcome('cancelled', 'Deep dive cancelled');
+		};
 		const stopPauseNotice = this.watchMobilePause();
 
 		try {
@@ -626,10 +640,10 @@ export class DeepDiveModule implements FeatureModule {
 
 				const { topic } = task;
 				const cacheUse: CacheUse = {};
-				const aiOpts = trackAiCache(cacheUse);
+				const aiOpts = combineAIOptions(trackAiCache(cacheUse), job.ai);
 				let generation: AIResponseInfo | undefined;
 				const noteContent = await this.generator.generateContent(
-					topic, source.title, source.path, source.content, { ...aiOpts, onResponse: (info) => { generation = info; } }
+					topic, source.title, source.path, source.content, combineAIOptions(aiOpts, { onResponse: (info) => { generation = info; } })
 				);
 				const proposedPath = await this.buildProposedPath(topic.title, rootFile, source.parentProposedPath, aiOpts);
 
@@ -639,7 +653,8 @@ export class DeepDiveModule implements FeatureModule {
 				if (task.depth + 1 < run.maxDepth) {
 					try {
 						childTopics = await this.analyzer.extractTopics(noteContent, topic.title, childAncestors, aiOpts);
-					} catch {
+					} catch (error) {
+						if (isJobCallRefused(error)) throw error;
 						childTopics = [];
 					}
 				}
@@ -703,52 +718,45 @@ export class DeepDiveModule implements FeatureModule {
 				await this.store.saveRun(run);
 			}
 
-			const endReason: DeepDiveEndReason = genOp.cancelled ? 'cancelled' : pending.tasks.length > 0 ? 'cap' : 'exhausted';
-			run.status = genOp.cancelled ? 'cancelled' : 'completed';
+			if (genOp.cancelled) return await endCancelled();
+			const endReason: DeepDiveEndReason = pending.tasks.length > 0 ? 'cap' : 'exhausted';
+			run.status = 'completed';
 			run.endReason = endReason;
 			if (endReason !== 'cap') delete run.pending;
 			await this.store.saveRun(run);
 
-			let result: DeepDiveOutcome;
-			if (genOp.cancelled) {
-				// Discard checkpoint on user cancellation (C3)
-				await this.checkpointManager.discard(checkpointId);
-				this.notifications.info('Deep dive cancelled');
-				result = outcome('cancelled', 'Deep dive cancelled');
-			} else {
-				// Mark checkpoint completed and dispatch deferred tasks (I1)
-				const deferred = await this.checkpointManager.complete(checkpointId);
-				this.dispatchDeferredTasks(deferred);
-				const depthSummary = Object.entries(run.stats.byDepth)
-					.map(([d, c]) => `depth ${d}: ${c}`)
-					.join(', ');
-				// Review action only when proposals were generated AND deep-dive
-				// auto-accept is off — auto-accept (applied right after) creates
-				// every note, leaving nothing to review (#366).
-				const capNote = endReason === 'cap'
-					? ` -- stopped at the ${maxNotes}-note cap with ${pending.tasks.length} ${pending.tasks.length === 1 ? 'topic' : 'topics'} left`
-					: '';
-				const finishLine = withCacheReport(`Generated ${run.stats.totalProposals} proposals (${depthSummary})${capNote}`, cacheUses, 'proposal');
-				genOp.finish(
-					finishLine,
-					endReason === 'cap'
-						? { label: 'Continue', onClick: () => fireAndForget(this.continueRun(run.id), 'Continue deep dive') }
-						: reviewAction({
-							generated: run.stats.totalProposals > 0,
-							shouldAutoAccept: () => autoAccept,
-							openProposalView: this.onOpenProposalView,
-						})
-				);
+			// Mark checkpoint completed and dispatch deferred tasks (I1)
+			const deferred = await this.checkpointManager.complete(checkpointId);
+			this.dispatchDeferredTasks(deferred);
+			const depthSummary = Object.entries(run.stats.byDepth)
+				.map(([d, c]) => `depth ${d}: ${c}`)
+				.join(', ');
+			// Review action only when proposals were generated AND deep-dive
+			// auto-accept is off — auto-accept (applied right after) creates
+			// every note, leaving nothing to review (#366).
+			const capNote = endReason === 'cap'
+				? ` -- stopped at the ${maxNotes}-note cap with ${pending.tasks.length} ${pending.tasks.length === 1 ? 'topic' : 'topics'} left`
+				: '';
+			const finishLine = withCacheReport(`Generated ${run.stats.totalProposals} proposals (${depthSummary})${capNote}`, cacheUses, 'proposal');
+			genOp.finish(
+				finishLine,
+				endReason === 'cap'
+					? { label: 'Continue', onClick: () => fireAndForget(this.continueRun(run.id), 'Continue deep dive') }
+					: reviewAction({
+						generated: run.stats.totalProposals > 0,
+						shouldAutoAccept: () => autoAccept,
+						openProposalView: this.onOpenProposalView,
+					})
+			);
 
-				// Auto-accept the whole generated tree if enabled (#228), in
-				// creation order so navigation resolves. Skipped on cancellation.
-				const accepted = autoAccept ? await this.autoAcceptRun(generatedIds) : [];
-				result = outcome('completed', finishLine, accepted);
-			}
-
+			// Auto-accept the whole generated tree if enabled (#228), in
+			// creation order so navigation resolves. Skipped on cancellation.
+			const accepted = autoAccept ? await this.autoAcceptRun(generatedIds) : [];
 			await this.onViewRefreshNeeded?.();
-			return result;
+			return outcome('completed', finishLine, accepted);
 		} catch (error) {
+			// A cancel that rejected a model call in flight (e.g. an external request, #626) ends the run as cancelled.
+			if (genOp.cancelled) return await endCancelled();
 			// Keep the run and checkpoint resumable; generated proposals stay saved.
 			run.endReason = 'error';
 			try {
@@ -898,7 +906,8 @@ export class DeepDiveModule implements FeatureModule {
 					const safeName = safeNoteName(topicTitle);
 					return normalizePath(`${directory}/${safeName}.md`);
 				}
-			} catch {
+			} catch (error) {
+				if (isJobCallRefused(error)) throw error;
 				// Fall back to nested if the suggestion fails
 			}
 		}

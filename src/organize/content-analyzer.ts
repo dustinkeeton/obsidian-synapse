@@ -1,6 +1,6 @@
 import { App, TFile, getAllTags } from 'obsidian';
 import { SynapseSettings } from '../settings';
-import { AIClient, isRecord, parseFrontmatter, parseJson, redactError, sanitizeAIResponse, withRetry, wrapUntrusted } from '../shared';
+import { AIClient, isJobCallRefused, isRecord, parseFrontmatter, parseJson, redactError, sanitizeAIResponse, withRetry, wrapUntrusted } from '../shared';
 import type { AIRequestOptions, DecisionLane, DecisionRequestOptions } from '../shared';
 import { PlacementDecider } from './placement-decider';
 import { ContentAnalysis, NoteTopic, Placement } from './types';
@@ -124,11 +124,13 @@ export class ContentAnalyzer {
 			const raw = await withRetry(
 				() => this.aiClient.complete(contextParts.join('\n'), SYSTEM_PROMPT, aiOpts),
 				2,
-				2000
+				2000,
+				(error) => !isJobCallRefused(error)
 			);
 
 			return this.parseTopicResponse(sanitizeAIResponse(raw));
-		} catch {
+		} catch (error) {
+			if (isJobCallRefused(error)) throw error;
 			// Fall back to tag-based heuristics
 			return this.topicsFromTags(tags);
 		}
