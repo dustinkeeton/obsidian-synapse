@@ -21,7 +21,7 @@ describe('toolsFromCapabilities (#628)', () => {
 		expect(run.outputSchema).toEqual(capabilities.verbs.find((verb) => verb.name === 'jobs.wait')!.result);
 		expect(tools.find((tool) => tool.name === 'jobs_list')!.outputSchema).toMatchObject({ properties: { value: { type: 'array' } }, required: ['value'] });
 		expect(tools.find((tool) => tool.name === 'status')!.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
-		expect(tools.find((tool) => tool.name === 'proposals_accept')!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+		for (const name of ['proposals_accept', 'elaborate', 'jobs_commit']) expect(tools.find((tool) => tool.name === name)!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
 	});
 });
 

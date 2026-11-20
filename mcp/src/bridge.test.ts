@@ -1,10 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
-import { BridgeError, ObsidianBridge, buildExpression, parseOutput } from './bridge.js';
+import { mkdtemp, readdir } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { BridgeError, INLINE_ARGS_MAX_CHARS, ObsidianBridge, buildExpression, parseOutput } from './bridge.js';
+
+const nodeRequire = createRequire(import.meta.url);
 
 /** Runs an expression the way `obsidian eval` does, against a stand-in `app`, and formats it as the CLI prints. */
 async function evaluate(expression: string, api: unknown): Promise<string> {
 	const app = { plugins: { plugins: { synapse: api === undefined ? undefined : { api } } } };
-	const value = await (new Function('app', `return ${expression}`) as (app: unknown) => Promise<string>)(app);
+	const value = await (new Function('app', 'require', `return ${expression}`) as (app: unknown, require: NodeRequire) => Promise<string>)(app, nodeRequire);
 	return `=> ${value}\n`;
 }
 
@@ -69,6 +75,24 @@ describe('ObsidianBridge (#628)', () => {
 		expect(runner.mock.calls[1]![1]).toBe(660_000);
 		await bridge.call('jobs.commit', ['j', []]);
 		expect(runner.mock.calls[2]![1]).toBe(90_000);
+	});
+
+	it('stages long arguments in a temp file the expression reads and deletes, keeping the argv string small', async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), 'synapse-mcp-test-'));
+		const api = fakeApi();
+		const runner = vi.fn(async (args: string[], _timeout: number) => evaluate(args[1]!.slice('code='.length), api));
+		const bridge = new ObsidianBridge({ runner, tempDir });
+		const reply = `${'é" \\ \n'.repeat(40_000)}end`;
+		await expect(bridge.call('echo', ['j1', [{ requestId: 'r1', text: reply }], 0])).resolves.toEqual({ args: ['j1', [{ requestId: 'r1', text: reply }], 0], count: 3 });
+		expect(runner.mock.calls[0]![0][1]!.length).toBeLessThan(INLINE_ARGS_MAX_CHARS);
+		expect(await readdir(tempDir)).toEqual([]);
+
+		runner.mockRejectedValueOnce(new BridgeError('The Obsidian CLI failed'));
+		await expect(bridge.call('echo', [reply])).rejects.toThrow('The Obsidian CLI failed');
+		expect(await readdir(tempDir)).toEqual([]);
+
+		await bridge.call('echo', ['short']);
+		expect(runner.mock.calls.at(-1)![0][1]).not.toContain('readFileSync');
 	});
 
 	it('names the missing CLI', async () => {

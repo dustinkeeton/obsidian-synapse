@@ -48,8 +48,8 @@ export async function runJob(call: CallVerb, verb: string, args: readonly unknow
 	const report = (line: string) => { if (ctx.progress) void ctx.progress(++ticks, line).catch(() => undefined); };
 	const heartbeat = ctx.progress ? setInterval(() => report(lastLine ?? 'Waiting for the job'), ctx.pollMs) : undefined;
 	heartbeat?.unref?.();
+	let wait: JobWait | null = null;
 	try {
-		let wait: JobWait | null = null;
 		for (;;) {
 			const remaining = deadline - now();
 			if (remaining <= 0 && wait) return { ...wait, timedOut: true };
@@ -70,6 +70,10 @@ export async function runJob(call: CallVerb, verb: string, args: readonly unknow
 			}
 			if (wait.job.status !== 'running') return { ...wait, timedOut: false };
 		}
+	} catch (error) {
+		// The job outlives a failed call into Obsidian, so its id goes back with the error.
+		const reason = error instanceof Error ? error.message : String(error);
+		return { ok: false, timedOut: false, job: wait?.job ?? null, jobId, error: `${reason}. Job ${jobId} may still be running in Obsidian: follow it with jobs_wait, answer its requests with jobs_commit, or stop it with jobs_cancel.` };
 	} finally {
 		clearInterval(heartbeat);
 		ctx.signal.removeEventListener('abort', cancel);

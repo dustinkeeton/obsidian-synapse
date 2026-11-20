@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { CreateMessageRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CreateMessageRequestSchema, ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { createServer } from './server.js';
 import type { CallVerb } from './jobs.js';
 import { DEFAULT_SAMPLING_TIMEOUT_MS } from './jobs.js';
@@ -101,6 +101,28 @@ describe('synapse-mcp server (#628)', () => {
 		expect(await client.callTool({ name: 'status', arguments: {} })).toMatchObject({ isError: true, content: [{ text: 'The Obsidian CLI failed: no vault open' }] });
 		expect(await client.callTool({ name: 'status', arguments: { extra: 1 } })).toMatchObject({ isError: true, content: [{ text: 'Unknown argument for status: extra' }] });
 		expect(await client.callTool({ name: 'nope', arguments: {} })).toMatchObject({ isError: true, content: [{ text: 'Unknown tool: nope' }] });
+	});
+
+	it('re-reads a verb cached as unavailable before refusing it, and tells the client its tools changed', async () => {
+		const call = await fakePlugin();
+		const capabilities = await call('capabilities', []) as { verbs: { name: string; available: boolean }[] };
+		const scan = capabilities.verbs.find((verb) => verb.name === 'scanFolder')!;
+		scan.available = false;
+		const plugin = call.getMockImplementation()!;
+		call.mockImplementation(async (verb, args) => {
+			if (verb === 'capabilities') return structuredClone(capabilities);
+			if (verb === 'scanFolder') return { ok: false, error: 'Folder not found' };
+			return plugin(verb, args);
+		});
+		const { client } = await connect(call, false);
+		const changed = vi.fn();
+		client.setNotificationHandler(ToolListChangedNotificationSchema, changed);
+		expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain('scanFolder');
+
+		scan.available = true;
+		const result = await client.callTool({ name: 'scanFolder', arguments: { feature: 'tidy', folder: 'Missing' } });
+		expect(result).toMatchObject({ isError: true, structuredContent: { ok: false, error: 'Folder not found' } });
+		await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce());
 	});
 
 	it('serves status, proposals, jobs and capped deep dives as resources', async () => {

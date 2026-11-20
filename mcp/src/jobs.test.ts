@@ -78,6 +78,20 @@ describe('runJob (#628)', () => {
 		expect(declined.samplingError).toContain('Sampling failed: User declined. Answer job.requests with jobs_commit');
 	});
 
+	it('returns the job id with a failed call into Obsidian, so the agent can follow or cancel the job', async () => {
+		const call = script([wait(job('awaiting-output', { requests: [{ id: 'r1', feature: null, messages: [] }] }))]);
+		call.mockImplementation(async (verb: string) => {
+			if (verb === 'deepDive.run') return { ok: true, jobId: 'j1' };
+			if (verb === 'jobs.wait') return wait(job('awaiting-output', { requests: [{ id: 'r1', feature: null, messages: [] }] }));
+			throw new Error('The Obsidian CLI failed: spawn E2BIG');
+		});
+		const sample = async () => ({ role: 'assistant' as const, model: 'm', content: { type: 'text' as const, text: 'x' } });
+		const result = await runJob(call, 'deepDive.run', [], ctx({ sample: sample as never }));
+		expect(result).toMatchObject({ ok: false, timedOut: false, jobId: 'j1', job: { id: 'j1', status: 'awaiting-output' } });
+		expect(result.error).toContain('The Obsidian CLI failed: spawn E2BIG. Job j1 may still be running in Obsidian');
+		expect(call).not.toHaveBeenCalledWith('jobs.cancel', expect.anything());
+	});
+
 	it('cancels the job when the tool call is cancelled', async () => {
 		const controller = new AbortController();
 		const call = vi.fn(async (verb: string): Promise<unknown> => {

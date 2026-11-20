@@ -40,25 +40,33 @@ function toolResult(value: unknown): CallToolResult {
 
 export function createServer(options: ServerOptions): Server {
 	const server = new Server({ name: 'synapse-mcp', title: 'Synapse', version: VERSION }, {
-		capabilities: { tools: {}, resources: {} },
+		capabilities: { tools: { listChanged: true }, resources: {} },
 		instructions: INSTRUCTIONS,
 	});
 	let verbs: Map<string, VerbSpec> | null = null;
+	/** The available verbs the client last listed, to tell it when they change. */
+	let listed: string | null = null;
 
-	/** Reads the plugin's verbs and remembers them, so a tool call skips the lookup until an unknown name arrives. */
-	const loadCapabilities = async (): Promise<Capabilities> => {
+	/**
+	 * Reads the plugin's verbs and remembers them, so a tool call skips the lookup until an unknown or unavailable name arrives.
+	 * A re-read outside a listing that finds a different set of available verbs sends tools/list_changed.
+	 */
+	const loadCapabilities = async (listing: boolean): Promise<Capabilities> => {
 		const capabilities = await options.call('capabilities', []) as Capabilities;
 		verbs = new Map(capabilities.verbs.map((verb) => [toolName(verb.name), verb]));
+		const available = capabilities.verbs.filter((verb) => verb.available).map((verb) => verb.name).sort().join(',');
+		if (!listing && listed !== null && available !== listed) void server.sendToolListChanged().catch(() => undefined);
+		if (listing || listed !== null) listed = available;
 		return capabilities;
 	};
 
 	server.setRequestHandler(ListToolsRequestSchema, async () => {
-		return { tools: toolsFromCapabilities(await loadCapabilities()) };
+		return { tools: toolsFromCapabilities(await loadCapabilities(true)) };
 	});
 
 	server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 		try {
-			if (!verbs?.has(request.params.name)) await loadCapabilities();
+			if (!verbs?.get(request.params.name)?.available) await loadCapabilities(false);
 			const verb = verbs?.get(request.params.name);
 			if (!verb) return errorResult(`Unknown tool: ${request.params.name}`);
 			if (!verb.available) return errorResult(`${verb.name} is unavailable: the feature it needs is turned off in Synapse's settings`);
