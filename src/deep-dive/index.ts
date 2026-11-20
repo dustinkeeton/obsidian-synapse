@@ -169,27 +169,39 @@ export class DeepDiveModule implements FeatureModule {
 
 	private async applyRename(oldPath: string, newPath: string): Promise<void> {
 		if (oldPath === newPath) return;
-		const moved = (path: string): string | null => {
-			if (path === oldPath) return newPath;
-			return path.startsWith(`${oldPath}/`) ? `${newPath}${path.slice(oldPath.length)}` : null;
-		};
-		for (const proposal of await this.store.loadAllProposals()) {
-			// A pending proposal's path names a note not written yet, so only accepted ones follow.
-			const note = proposal.status === 'accepted' ? moved(proposal.proposedPath) : null;
+		if (!await this.store.mayReference(oldPath, this.getSettings().deepDive.noteOutputFolder)) return;
+		const inside = (path: string): string | null => (path.startsWith(`${oldPath}/`) ? `${newPath}${path.slice(oldPath.length)}` : null);
+		const moved = (path: string): string | null => (path === oldPath ? newPath : inside(path));
+		// An accepted note follows any rename. A pending note is not written yet: its planned path follows a moved
+		// folder, but an exact match means another file took that name.
+		const plan = (proposal: DeepDiveProposal) => (proposal.status === 'accepted' ? moved : inside)(proposal.proposedPath);
+		for (const scanned of await this.store.loadAllProposals()) {
+			if (!plan(scanned) && !moved(scanned.sourceNotePath)) continue;
+			// Re-read: an accept or regenerate may have saved the proposal since the scan.
+			const proposal = await this.store.loadProposal(scanned.id);
+			if (!proposal) continue;
+			const note = plan(proposal);
 			const source = moved(proposal.sourceNotePath);
 			if (!note && !source) continue;
-			if (note) proposal.proposedPath = note;
-			if (source) proposal.sourceNotePath = source;
+			const paths = { ...(note ? { proposedPath: note } : {}), ...(source ? { sourceNotePath: source } : {}) };
+			Object.assign(proposal, paths);
+			this.store.followProposal(proposal.id, paths);
 			await this.store.saveProposal(proposal);
 		}
-		for (const run of await this.store.loadAllRuns()) {
+		for (const { id } of await this.store.loadAllRuns()) {
+			const run = await this.store.loadRun(id);
+			if (!run) continue;
 			const syllabus = this.syllabusPathFor(run);
 			const root = moved(run.rootNotePath);
 			const movedSyllabus = moved(syllabus);
 			if (!root && !movedSyllabus) continue;
-			if (root) run.rootNotePath = root;
-			// Pinned, so renaming the root never starts a second syllabus under the new name.
-			run.syllabusPath = movedSyllabus ?? syllabus;
+			// A syllabus already written is pinned, so a renamed root never starts a second one under its new name.
+			const paths = {
+				rootNotePath: root ?? run.rootNotePath,
+				syllabusPath: movedSyllabus ?? run.syllabusPath ?? (this.noteExists(syllabus) ? syllabus : undefined),
+			};
+			Object.assign(run, paths);
+			this.store.followRun(run.id, paths);
 			await this.store.saveRun(run);
 		}
 	}

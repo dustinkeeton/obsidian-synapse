@@ -430,20 +430,48 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(files.get(newPath)).toContain('Fresh body about Backpropagation.');
 		});
 
-		it('follows a moved folder for accepted notes and child sources, leaving pending paths alone', async () => {
+		it('follows a moved folder for accepted notes, child sources and pending planned paths', async () => {
 			proposals.set('p1', proposal({ status: 'accepted' }));
 			proposals.set('child', proposal({ id: 'child', sourceNotePath: oldPath, proposedPath: 'Deep Dives/Root/Backpropagation/Chain Rule.md' }));
 
 			await mod.followRename('Deep Dives/Root', 'Archive/Root');
 
 			expect(proposals.get('p1')?.proposedPath).toBe('Archive/Root/Backpropagation.md');
-			expect(proposals.get('child')).toMatchObject({ sourceNotePath: 'Archive/Root/Backpropagation.md', proposedPath: 'Deep Dives/Root/Backpropagation/Chain Rule.md' });
+			expect(proposals.get('child')).toMatchObject({ sourceNotePath: 'Archive/Root/Backpropagation.md', proposedPath: 'Archive/Root/Backpropagation/Chain Rule.md' });
 		});
 
-		it('follows a renamed root note, keeping the syllabus where it is, then a renamed syllabus', async () => {
+		it('leaves a pending planned path alone when another file is renamed onto or away from that exact name', async () => {
+			proposals.set('p1', proposal({}));
+			await mod.followRename(oldPath, 'Notes/Other.md');
+			expect(proposals.get('p1')?.proposedPath).toBe(oldPath);
+		});
+
+		it('keeps an accept that lands between the scan and the save', async () => {
+			proposals.set('p1', proposal({ status: 'accepted' }));
+			proposals.set('child', proposal({ id: 'child', sourceNotePath: oldPath, proposedPath: 'Deep Dives/Root/Backpropagation/Chain Rule.md' }));
+			vi.mocked(DeepDiveStore.prototype.loadAllProposals).mockImplementationOnce(async () => {
+				const scanned = [...proposals.values()].map((p) => structuredClone(p));
+				proposals.set('child', { ...proposals.get('child')!, status: 'accepted' });
+				return scanned;
+			});
+
+			await mod.followRename(oldPath, 'Notes/Backprop.md');
+
+			expect(proposals.get('child')).toMatchObject({ status: 'accepted', sourceNotePath: 'Notes/Backprop.md' });
+		});
+
+		it('derives the syllabus from a renamed root while none has been written', async () => {
+			savedRun = run();
+			await mod.followRename('notes/Root.md', 'notes/Base.md');
+			expect(savedRun?.rootNotePath).toBe('notes/Base.md');
+			expect(savedRun?.syllabusPath).toBeUndefined();
+		});
+
+		it('follows a renamed root note, keeping the written syllabus where it is, then a renamed syllabus', async () => {
 			savedRun = run();
 			proposals.set('p1', proposal({ status: 'accepted' }));
 			const syllabus = syllabusPath('notes/Root.md', settings.deepDive.noteOutputFolder);
+			files.set(syllabus, '# Syllabus');
 
 			await mod.followRename('notes/Root.md', 'notes/Base.md');
 			expect(savedRun).toMatchObject({ rootNotePath: 'notes/Base.md', syllabusPath: syllabus });

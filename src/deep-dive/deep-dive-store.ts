@@ -2,6 +2,10 @@ import { App, normalizePath } from 'obsidian';
 import { SynapseSettings } from '../settings';
 import { ensureFolder, isRecord, readJsonFile } from '../shared';
 import { DeepDiveProposal, DeepDiveProposalStatus, DeepDiveRun } from './types';
+import { syllabusPath } from './syllabus-navigator';
+
+type ProposalPaths = Partial<Pick<DeepDiveProposal, 'proposedPath' | 'sourceNotePath'>>;
+type RunPaths = Pick<DeepDiveRun, 'rootNotePath' | 'syllabusPath'>;
 
 /**
  * Structural guard for a persisted {@link DeepDiveProposal}. Requires the
@@ -56,6 +60,14 @@ export class DeepDiveStore {
 	private savesDuringBuild: Map<string, boolean> | null = null;
 	/** The build in flight; a concurrent `loadCappedRuns` waits for it instead of starting a second one. */
 	private building: Promise<void> | null = null;
+	/** Every note path a record points at, and run roots (#632); rebuilt when the file listing changes or a path is followed. */
+	private pathIndex: { listing: string; paths: Set<string>; roots: Set<string> } | null = null;
+	/**
+	 * Paths moved by a followed rename (#632), applied on every later save, so a copy loaded before the rename
+	 * (an accept in flight, the generation loop's in-memory run) never writes the old path back.
+	 */
+	private readonly followedProposals = new Map<string, ProposalPaths>();
+	private readonly followedRuns = new Map<string, RunPaths>();
 
 	constructor(
 		private app: App,
@@ -82,6 +94,8 @@ export class DeepDiveStore {
 	// ── Proposals ──
 
 	async saveProposal(proposal: DeepDiveProposal): Promise<void> {
+		const followed = this.followedProposals.get(proposal.id);
+		if (followed) Object.assign(proposal, followed);
 		await ensureFolder(this.app, this.proposalFolder);
 		const fileName = this.proposalFileName(proposal);
 		const path = normalizePath(`${this.proposalFolder}/${fileName}`);
@@ -183,6 +197,11 @@ export class DeepDiveStore {
 
 	async saveRun(run: DeepDiveRun): Promise<void> {
 		if (!isSafeRunId(run.id)) throw new Error('Invalid deep dive run id');
+		const followed = this.followedRuns.get(run.id);
+		if (followed) {
+			run.rootNotePath = followed.rootNotePath;
+			run.syllabusPath = followed.syllabusPath;
+		}
 		await ensureFolder(this.app, this.runFolder);
 		const path = normalizePath(`${this.runFolder}/${run.id}.json`);
 		await this.app.vault.adapter.write(path, JSON.stringify(run, null, 2));
@@ -241,6 +260,43 @@ export class DeepDiveStore {
 			if (run) runs.push(run);
 		}
 		return runs;
+	}
+
+	// ── Rename following (#632) ──
+
+	/** Records a proposal's moved paths; this and every later save of the proposal carries them. */
+	followProposal(id: string, paths: ProposalPaths): void {
+		this.followedProposals.set(id, { ...this.followedProposals.get(id), ...paths });
+		this.pathIndex = null;
+	}
+
+	/** Records a run's moved root and syllabus; this and every later save of the run carries them. */
+	followRun(id: string, paths: RunPaths): void {
+		this.followedRuns.set(id, paths);
+		this.pathIndex = null;
+	}
+
+	/** Whether any record may point at `path` or inside it, so an unrelated rename reads no record. */
+	async mayReference(path: string, noteOutputFolder: string): Promise<boolean> {
+		const listing = JSON.stringify([await this.listFiles(this.proposalFolder), await this.listFiles(this.runFolder)]);
+		if (this.pathIndex?.listing !== listing) {
+			const paths = new Set<string>();
+			const roots = new Set<string>();
+			for (const proposal of await this.loadAllProposals()) {
+				paths.add(proposal.proposedPath);
+				paths.add(proposal.sourceNotePath);
+			}
+			for (const run of await this.loadAllRuns()) {
+				roots.add(run.rootNotePath);
+				paths.add(run.rootNotePath);
+				if (run.syllabusPath) paths.add(run.syllabusPath);
+			}
+			this.pathIndex = { listing, paths, roots };
+		}
+		const under = (candidate: string) => candidate === path || candidate.startsWith(`${path}/`);
+		for (const candidate of this.pathIndex.paths) if (under(candidate)) return true;
+		for (const root of this.pathIndex.roots) if (under(syllabusPath(root, noteOutputFolder))) return true;
+		return false;
 	}
 
 	// ── Helpers ──
