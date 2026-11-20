@@ -254,8 +254,8 @@ const MAX_IMAGES_PER_NOTE = 5
 
 - Finds wiki-link (`![[image.png]]`) and markdown (`![alt](path)`) refs; skips external `http(s)` markdown URLs (vault images only).
 - Caps at `MAX_IMAGES_PER_NOTE` (5).
-- Resolves via `metadataCache.getFirstLinkpathDest`; reads binary; downscales over `settings.image.maxImageSizeMb` (default 5) MB via `preprocessImage` from the `../shared` barrel (image-analyzer.ts:117; downscale surfaced via `notifications.info`, 3s dedup #396).
-- Passes the vision model per call: `aiClient.chat(..., { ...aiOpts, model: visionModelOverride(settings) })` (image-analyzer.ts:150); `settings.ai.model` is never mutated.
+- Resolves via `metadataCache.getFirstLinkpathDest`; reads binary; downscales over `settings.image.maxImageSizeMb` (default 5) MB via `preprocessImage` from the `../shared` barrel (image-analyzer.ts:118; downscale surfaced via `notifications.info`, 3s dedup #396).
+- Passes the vision model per call: `aiClient.chat(..., { ...aiOpts, model: visionModelOverride(settings) })` (image-analyzer.ts:151); `settings.ai.model` is never mutated.
 - Graceful degradation: warns (through `redactError`) and skips individual image failures; `gatherImageContext` swallows analyzer errors, also logging through `redactError` (proposer.ts:417).
 
 ## Configuration
@@ -314,7 +314,7 @@ Via `CommandRegistrar.register(...)` in `onload()`; all gated on `elaboration.en
 | type `SettingsSectionContext` | `../shared` | settings-section.ts |
 | `CommandRegistrar`, `isInFlow` | `../commands` | index.ts |
 
-No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:430). `index.ts` no longer imports `buildCallout` / `CALLOUT_TYPES`; `CALLOUT_TYPES.elaboration` and its CSS remain in `shared/callouts.ts` + `styles.css` only to render notes elaborated before #552.
+No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny local `VIDEO_HOST_PATTERN` instead of importing `video/url-detector` (proposer.ts:431). `index.ts` no longer imports `buildCallout` / `CALLOUT_TYPES`; `CALLOUT_TYPES.elaboration` and its CSS remain in `shared/callouts.ts` + `styles.css` only to render notes elaborated before #552.
 
 ## Invariants / Gotchas
 
@@ -331,5 +331,5 @@ No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny lo
 - `ImageAnalyzer` imports `preprocessImage` from the `../shared` barrel (image-analyzer.ts:2); this module has no `../image` import.
 - `onOpenProposalView` is the third wired callback (#340) alongside `onProposalAccepted` and `onViewRefreshNeeded`; the operation toast's "Review" action is centralized in `reviewAction(...)` (#366) and only appears when a proposal stays pending after any auto-accept.
 - The unified sidebar view (`src/views/unified-proposal-view.ts`) is the only review surface; the legacy `proposal-view.ts` / `proposal-modal.ts` were removed.
-- `ImageAnalyzer.analyzeImage` selects the vision model via `AIRequestOptions.model` on the single `chat()` call (image-analyzer.ts:150); no settings mutation, so concurrent callers cannot observe it.
+- `ImageAnalyzer.analyzeImage` selects the vision model via `AIRequestOptions.model` on the single `chat()` call (image-analyzer.ts:151); no settings mutation, so concurrent callers cannot observe it.
 - `onunload` (index.ts:124-127) clears `scanInterval` and nulls the field, so a later `onload` cannot double-clear a stale handle.

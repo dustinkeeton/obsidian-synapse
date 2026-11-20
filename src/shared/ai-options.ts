@@ -1,5 +1,18 @@
 import type { AIRequestOptions } from './ai-client';
 
+/**
+ * A public-API job refused a model call (#626): its call cap was reached, it was cancelled, or an external
+ * request expired. Callers that fall back on an ordinary AI failure must rethrow this, so the job stops
+ * instead of silently producing less.
+ */
+export class JobCallRefusedError extends Error {
+	readonly name = 'JobCallRefusedError';
+}
+
+export function isJobCallRefused(error: unknown): error is JobCallRefusedError {
+	return error instanceof JobCallRefusedError;
+}
+
 /** Per-call options combined left to right: callbacks all run, in order; later scalar fields win; `bypassCache` is set when any sets it. */
 export function combineAIOptions(...list: (AIRequestOptions | undefined)[]): AIRequestOptions {
 	const opts = list.filter((o): o is AIRequestOptions => o !== undefined);

@@ -1,5 +1,5 @@
 export { AIClient, extractGeminiResponseText, replyMeta } from './ai-client';
-export { combineAIOptions } from './ai-options';
+export { combineAIOptions, JobCallRefusedError, isJobCallRefused } from './ai-options';
 export type { AIRequestOptions, AIResponseInfo, AIUsage, ExternalAIRequest, ExternalAIReply, ExternalGenerator } from './ai-client';
 export { AI_FEATURE_IDS, EFFORT_LEVELS, anthropicMaxTokens, aiRequestTimeoutMs, LONG_AI_REQUEST_TIMEOUT_MS, hasEffortControl, effortStepsFor, switchDefaultProvider, effortWireValue, effortFor, aiOverrideFor, apiKeyForProvider, resolveAIConfig, visionModelOverride, extraProviders, transcriptionKeyProvider } from './ai-config';
 export type { ResolvedAIConfig } from './ai-config';

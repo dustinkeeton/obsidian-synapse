@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ExternalRequests, JobGeneration } from './external';
+import { JobCallRefusedError } from '../shared';
 
 const REQUEST = { feature: 'elaboration' as const, messages: [{ role: 'user' as const, content: 'Hi' }] };
 
@@ -13,6 +14,7 @@ describe('ExternalRequests (#626)', () => {
 		expect(requests.list()[0]).toMatchObject({ createdAt: new Date(0).toISOString(), expiresAt: new Date(60_000).toISOString() });
 		vi.advanceTimersByTime(60_000);
 		await expect(reply).rejects.toThrow('within 1 minutes');
+		await expect(reply).rejects.toBeInstanceOf(JobCallRefusedError);
 		expect(requests.list()).toEqual([]);
 	});
 
@@ -21,6 +23,7 @@ describe('ExternalRequests (#626)', () => {
 		const pending = requests.generate(REQUEST);
 		requests.close('Job cancelled');
 		await expect(pending).rejects.toThrow('Job cancelled');
+		await expect(pending).rejects.toBeInstanceOf(JobCallRefusedError);
 		await expect(requests.generate(REQUEST)).rejects.toThrow('Job cancelled');
 		expect(requests.commit([{ requestId: 'x', text: 'y' }])).toBe('Job cancelled');
 	});
@@ -56,7 +59,8 @@ describe('JobGeneration (#626)', () => {
 		const opts = new JobGeneration('external', 2).aiOptions();
 		opts.beforeCall?.();
 		opts.beforeCall?.();
-		expect(() => opts.beforeCall?.()).toThrow('limit of 2 model calls');
+		expect(() => opts.beforeCall?.()).toThrow(new JobCallRefusedError('This job reached its limit of 2 model calls'));
+		expect(() => opts.beforeCall?.()).toThrow(JobCallRefusedError);
 		expect(opts.external).toBeTypeOf('function');
 	});
 });

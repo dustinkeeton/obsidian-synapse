@@ -216,7 +216,7 @@ const pending = await api.proposals.list('deep-dive');
 await api.proposals.accept('deep-dive', pending.items[0].id);
 ```
 
-The agent can also write the text itself, so Synapse spends no API credit. Pass `billing: 'external'` to `elaborate` or a `deepDive` call, or turn on **Agents generate the text** in that feature's settings. The job then pauses at each model call with status `awaiting-output`, and its `requests` hold the exact messages Synapse would have sent. The agent answers with `jobs.commit`, and Synapse checks and writes the text just as it would a reply from your key:
+The agent can also write the text itself, so elaboration and deep dive spend no API credit on it. Pass `billing: 'external'` to `elaborate` or a `deepDive` call, or turn on **Agents generate the text** in that feature's settings. The job then pauses at each model call with status `awaiting-output`, and its `requests` hold the exact messages Synapse would have sent. The agent answers with `jobs.commit`, and Synapse checks and writes the text just as it would a reply from your key:
 
 ```js
 const { jobId } = await api.elaborate('Inbox/stub.md', { billing: 'external', maxCalls: 5 });
@@ -234,7 +234,7 @@ job.usage;   // { billing: 'external', calls, maxCalls, inputTokens, outputToken
 - Anything that calls a model, and any folder scan, starts a job and returns its id right away; `jobs.wait` and `jobs.get` report progress and the result. Other actions return `{ ok, message, error, written, proposals, cacheUse }` directly. Nothing throws. When `ok` is false, `error` says why. Calls check their arguments first, so a typo in an option is refused instead of ignored.
 - Calls take every answer a dialog would ask for, so nothing waits on a click. An elaboration whose note you edited after it was generated is skipped unless you pass `{ force: true }`.
 - `status()` reports where each feature's key comes from, never the key, whether agents generate its text, and lists deep dives that stopped at their note cap with topics left.
-- `maxCalls` on a call that generates text fails the job once it would make more model calls than that. `job.usage` totals the calls and tokens. A request nobody answers within 30 minutes fails the job, so the note it was working on isn't left locked. Cancelling the job fails the request it is waiting on.
+- `maxCalls` on a call that generates text fails the job once it would make more model calls than that. `job.usage` totals the calls and tokens. With external billing, only the feature's own calls are routed to the agent: follow-on steps after an accept, auto-accept included (enrichment, title checks, REM, illustrate, organize), still use your key and are not counted in `job.usage` or `maxCalls`. A request nobody answers within 30 minutes fails the job, so the note it was working on isn't left locked. Cancelling the job fails the request it is waiting on.
 - Elaboration and deep-dive proposals record which provider and model wrote them, why the model stopped, and the token counts when the provider reports them. `proposals.list` includes this as `generation`.
 - Calls go through the same queue, exclusions, toasts and safety steps as the commands. A disabled feature refuses its calls.
 
@@ -377,7 +377,7 @@ One toggle per proposal type -- Elaboration, Enrichment, Organize, Deep dive, Ti
 | Detect TODO markers | Flag notes containing TODO, TBD, FIXME, PLACEHOLDER | On |
 | Detect empty sections | Flag notes with headings but no content | On |
 | Include backlinks and tags as context | Give the prompt excerpts from notes linking to the stub and titles of notes sharing its tags | On |
-| Agents generate the text | When an agent runs elaboration through the API, its own model writes the text and Synapse spends no API credit; commands you run always use your key | Off |
+| Agents generate the text | When an agent runs elaboration through the API, its own model writes the text instead of your key. Commands you run, and follow-on steps after an accept (enrichment, title check), still use your key | Off |
 | Excluded tags | Notes carrying these tags are skipped | `no-elaborate` |
 
 ### Intake folder
@@ -474,7 +474,7 @@ One toggle per proposal type -- Elaboration, Enrichment, Organize, Deep dive, Ti
 | Nesting mode | Nested, flat, or auto-organize | Nested |
 | Auto-enrich on accept | Trigger enrichment when a note is accepted | On |
 | Auto-organize on accept | Trigger organize when a note is accepted | Off |
-| Agents generate the text | When an agent runs a deep dive through the API, its own model writes the text and Synapse spends no API credit; commands you run always use your key | Off |
+| Agents generate the text | When an agent runs a deep dive through the API, its own model writes the text instead of your key. Commands you run, and follow-on steps after an accept (enrichment, title check, REM, illustrate, organize), still use your key | Off |
 
 ### Title
 

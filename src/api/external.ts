@@ -1,4 +1,4 @@
-import { generateId } from '../shared';
+import { generateId, JobCallRefusedError } from '../shared';
 import type { AIRequestOptions, ExternalAIReply, ExternalGenerator } from '../shared';
 import type { ApiBilling, ApiGenerationOutput, ApiGenerationRequest, ApiJobUsage } from './types';
 
@@ -25,13 +25,13 @@ export class ExternalRequests {
 
 	readonly generate: ExternalGenerator = (request) => new Promise<ExternalAIReply>((resolve, reject) => {
 		if (this.closedReason !== null) {
-			reject(new Error(this.closedReason));
+			reject(new JobCallRefusedError(this.closedReason));
 			return;
 		}
 		const id = `req${generateId()}`;
 		const createdAt = this.now();
 		const timer = window.setTimeout(() => {
-			this.reject(id, new Error(`No output arrived for request ${id} within ${Math.round(this.timeoutMs / 60000)} minutes`));
+			this.reject(id, new JobCallRefusedError(`No output arrived for request ${id} within ${Math.round(this.timeoutMs / 60000)} minutes`));
 		}, this.timeoutMs);
 		this.pending.set(id, {
 			request: {
@@ -77,7 +77,7 @@ export class ExternalRequests {
 	close(reason: string): void {
 		if (this.closedReason !== null) return;
 		this.closedReason = reason;
-		for (const id of [...this.pending.keys()]) this.reject(id, new Error(reason));
+		for (const id of [...this.pending.keys()]) this.reject(id, new JobCallRefusedError(reason));
 	}
 
 	/** Resolves once a request is pending (at once when one already is); `dispose` drops the listener. */
@@ -125,7 +125,7 @@ export class JobGeneration {
 		const opts: AIRequestOptions = {
 			beforeCall: () => {
 				if (this.maxCalls !== null && this.calls >= this.maxCalls) {
-					throw new Error(`This job reached its limit of ${this.maxCalls} model ${this.maxCalls === 1 ? 'call' : 'calls'}`);
+					throw new JobCallRefusedError(`This job reached its limit of ${this.maxCalls} model ${this.maxCalls === 1 ? 'call' : 'calls'}`);
 				}
 				this.calls++;
 			},

@@ -5,7 +5,7 @@ import { selectDepth } from './depth-selector-modal';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeModuleDeps } from '../__test-utils__/mock-factories';
 import type { Plugin, TFile } from 'obsidian';
-import { AIClient, ENRICHMENT_END, ENRICHMENT_START, NoteOperationQueue } from '../shared';
+import { AIClient, ENRICHMENT_END, ENRICHMENT_START, NoteOperationQueue, JobCallRefusedError } from '../shared';
 import type { DeepDiveProposal, DeepDiveRun } from './types';
 
 vi.mock('./depth-selector-modal', () => ({
@@ -215,6 +215,25 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(savedRun?.pending).toBeUndefined();
 			expect(checkpoints.discard).toHaveBeenCalled();
 			expect(genOp.error).not.toHaveBeenCalled();
+		});
+
+		it('stops with a resumable error when the job refuses a child-topic extraction, instead of dropping the subtree (#626)', async () => {
+			const complete = vi.mocked(AIClient.prototype.complete);
+			const base = complete.getMockImplementation()!;
+			complete.mockImplementation(async (user, system, opts) => {
+				opts?.beforeCall?.();
+				return base(user, system, opts);
+			});
+			let calls = 0;
+			const ai = { beforeCall: () => { if (++calls > 2) throw new JobCallRefusedError('This job reached its limit of 2 model calls'); } };
+
+			const outcome = await mod.run('notes/Root.md', { depth: 2, ai });
+
+			expect(outcome).toMatchObject({ status: 'failed', endReason: 'error' });
+			expect(outcome.message).toContain('limit of 2 model calls');
+			expect(outcome.proposalIds).toEqual([]);
+			expect(savedRun).toMatchObject({ status: 'in-progress', endReason: 'error' });
+			expect(checkpoints.discard).not.toHaveBeenCalled();
 		});
 
 		it('ends as cancelled when a cancel rejects topic extraction (#626)', async () => {

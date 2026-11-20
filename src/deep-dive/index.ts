@@ -7,7 +7,7 @@ import {
 	NotificationManager, readNote, writeNote, wordCount,
 	CheckpointManager, NoteOperationQueue, generateId, fireAndForget,
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport,
-	stripUnresolvedLinks, assertVaultRelativePath, mergeCacheUse, jobOpId, combineAIOptions,
+	stripUnresolvedLinks, assertVaultRelativePath, mergeCacheUse, jobOpId, combineAIOptions, isJobCallRefused,
 } from '../shared';
 import type { AIRequestOptions, AIResponseInfo, CacheUse, OperationStatus, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { DeepDiveStore } from './deep-dive-store';
@@ -653,7 +653,8 @@ export class DeepDiveModule implements FeatureModule {
 				if (task.depth + 1 < run.maxDepth) {
 					try {
 						childTopics = await this.analyzer.extractTopics(noteContent, topic.title, childAncestors, aiOpts);
-					} catch {
+					} catch (error) {
+						if (isJobCallRefused(error)) throw error;
 						childTopics = [];
 					}
 				}
@@ -905,7 +906,8 @@ export class DeepDiveModule implements FeatureModule {
 					const safeName = safeNoteName(topicTitle);
 					return normalizePath(`${directory}/${safeName}.md`);
 				}
-			} catch {
+			} catch (error) {
+				if (isJobCallRefused(error)) throw error;
 				// Fall back to nested if the suggestion fails
 			}
 		}

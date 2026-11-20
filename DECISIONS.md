@@ -23,7 +23,8 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 **Impact**:
 - An agent's text gets no extra trust. Its requests already carry fenced content and the policy line.
 - Elaboration holds the note's queue slot while it waits, so an unanswered request fails after 30 minutes, and cancelling the job fails it at once.
-- External calls skip the response cache. Folder scans, the other features, the System 1 lane, and commands run in Obsidian always use their own keys.
+- External calls skip the response cache. Folder scans, the other features, follow-on steps after an accept (enrichment, title checks, REM), the System 1 lane, and commands run in Obsidian always use their own keys.
+- A refused call (cap reached, cancel, expired request) is a typed `JobCallRefusedError`. Fallbacks that would otherwise swallow an AI failure rethrow it, so the job stops instead of quietly producing a smaller deep dive.
 - Breaking API change while it is unstable: `elaborate` and `deepDive.regenerate` return `{ ok, jobId }` instead of a result.
 
 ---
