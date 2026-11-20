@@ -119,7 +119,8 @@ export class ActivityLog {
 	/** Read size, torn tail and last seq from the files; seq never goes backwards. */
 	private async load(): Promise<void> {
 		const current = await this.readText(ACTIVITY_LOG_PATH);
-		this.size = byteLength(current);
+		// stat, not the decoded text: a cut multi-byte character decodes larger than it is on disk.
+		this.size = (await this.adapter.stat(ACTIVITY_LOG_PATH))?.size ?? 0;
 		this.torn = current.length > 0 && !current.endsWith('\n');
 		const last = parseLines(current).pop() ?? parseLines(await this.readText(ACTIVITY_LOG_ROTATED_PATH)).pop();
 		this.seq = Math.max(this.seq, last?.seq ?? 0);

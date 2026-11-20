@@ -77,6 +77,23 @@ describe('ActivityLog (#627)', () => {
 		expect(page.entries.map((e) => [e.seq, e.message])).toEqual([[1, 'here'], [2, 'élsewhere'], [3, 'here again'], [4, 'and again']]);
 	});
 
+	it('takes the size from disk, so a cut multi-byte character does not reload the file on every append', async () => {
+		const adapter = memoryAdapter(new Map([[ACTIVITY_LOG_PATH, '{"seq":1,"at":"x","level":"info","message":"cut \uFFFD']]));
+		const stat = adapter.stat.bind(adapter);
+		// On disk the U+FFFD is one stray byte; the decoded text counts three.
+		vi.spyOn(adapter, 'stat').mockImplementation(async (path) => {
+			const real = await stat(path);
+			return real && path === ACTIVITY_LOG_PATH ? { size: real.size - 2 } : real;
+		});
+		const log = new ActivityLog(adapter);
+		await log.flush();
+		const read = vi.spyOn(adapter, 'read');
+		log.record({ level: 'info', message: 'one' });
+		log.record({ level: 'info', message: 'two' });
+		await log.flush();
+		expect(read).not.toHaveBeenCalled();
+	});
+
 	it('drops an entry whose write fails without breaking later ones', async () => {
 		const adapter = memoryAdapter();
 		const log = new ActivityLog(adapter);
