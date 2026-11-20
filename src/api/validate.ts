@@ -3,21 +3,28 @@ import { VERB_DEFINITIONS } from './capabilities';
 type Schema = Record<string, unknown>;
 
 function typeError(value: unknown, schema: Schema, at: string): string | null {
+	if (Array.isArray(schema.type)) {
+		const types = schema.type as string[];
+		if (value === null && types.includes('null')) return null;
+		return types.some((type) => type !== 'null' && typeError(value, { type }, at) === null) ? null : `${at} must be ${types.join(' or ')}`;
+	}
 	switch (schema.type) {
 		case 'string': return typeof value === 'string' ? null : `${at} must be a string`;
 		case 'boolean': return typeof value === 'boolean' ? null : `${at} must be true or false`;
 		case 'integer': return Number.isInteger(value) ? null : `${at} must be an integer`;
+		case 'number': return typeof value === 'number' ? null : `${at} must be a number`;
+		case 'null': return value === null ? null : `${at} must be null`;
 		case 'array': return Array.isArray(value) ? null : `${at} must be an array`;
 		case 'object': return value !== null && typeof value === 'object' && !Array.isArray(value) ? null : `${at} must be an object`;
 		default: return null;
 	}
 }
 
-/** Checks the JSON Schema subset `VERB_DEFINITIONS` uses: type, enum, minimum, maximum, properties, required, additionalProperties: false, items, oneOf. */
-function check(value: unknown, schema: Schema, at: string): string | null {
+/** Checks the JSON Schema subset `VERB_DEFINITIONS` uses: type (one or a list), enum, minimum, maximum, properties, required, additionalProperties: false, items, oneOf. */
+export function checkSchema(value: unknown, schema: Schema, at: string): string | null {
 	if (Array.isArray(schema.oneOf)) {
 		const branches = schema.oneOf as Schema[];
-		const errors = branches.map((branch) => check(value, branch, at));
+		const errors = branches.map((branch) => checkSchema(value, branch, at));
 		if (errors.includes(null)) return null;
 		// Report against a branch of the value's own type, so `{ proposalId: 1 }` hears about proposalId, not "must be a string".
 		const sameType = branches.findIndex((branch) => typeError(value, branch, at) === null);
@@ -32,11 +39,12 @@ function check(value: unknown, schema: Schema, at: string): string | null {
 	}
 	if (Array.isArray(value) && schema.items) {
 		for (const [i, item] of value.entries()) {
-			const error = check(item, schema.items as Schema, `${at}[${i}]`);
+			const error = checkSchema(item, schema.items as Schema, `${at}[${i}]`);
 			if (error) return error;
 		}
 	}
-	if (schema.type === 'object' && value && typeof value === 'object') {
+	const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+	if (types.includes('object') && value !== null && typeof value === 'object' && !Array.isArray(value)) {
 		const properties = (schema.properties ?? {}) as Record<string, Schema>;
 		const missing = ((schema.required ?? []) as string[]).find((key) => (value as Record<string, unknown>)[key] === undefined);
 		if (missing) return `${at}.${missing} is required`;
@@ -46,7 +54,7 @@ function check(value: unknown, schema: Schema, at: string): string | null {
 				continue;
 			}
 			if (field === undefined) continue;
-			const error = check(field, properties[key], `${at}.${key}`);
+			const error = checkSchema(field, properties[key], `${at}.${key}`);
 			if (error) return error;
 		}
 	}
@@ -63,7 +71,7 @@ export function validateArgs(verb: string, args: readonly unknown[]): string | n
 			if (param.required) return `${param.name} is required`;
 			continue;
 		}
-		const error = check(value, param.schema, param.name);
+		const error = checkSchema(value, param.schema, param.name);
 		if (error) return error;
 	}
 	return null;

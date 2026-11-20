@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TFolder } from 'obsidian';
 import { createSynapseApi, API_VERSION, VERB_DEFINITIONS } from './index';
 import type { SynapseApi } from './index';
+import { checkSchema } from './validate';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { AIClient, ActivityLog, NotificationManager, UNTRUSTED_CONTENT_POLICY, jobOpId } from '../shared';
 import type { AIRequestOptions } from '../shared';
@@ -137,6 +138,41 @@ describe('createSynapseApi (#623)', () => {
 
 	it('exposes its version', () => {
 		expect(api.version).toBe(API_VERSION);
+	});
+
+	it('every verb result matches the result schema its definition declares (#628)', async () => {
+		const results: Record<string, unknown[]> = {};
+		const add = (verb: string, value: unknown) => { (results[verb] ??= []).push(value); };
+		add('capabilities', api.capabilities());
+		add('status', await api.status());
+		const started = await api.deepDive.run(NOTE);
+		add('deepDive.run', started);
+		add('deepDive.run', await api.deepDive.run('missing.md'));
+		add('elaborate', await api.elaborate(NOTE));
+		add('scanFolder', await api.scanFolder('elaboration', 'notes'));
+		add('deepDive.continue', await api.deepDive.continue('run1'));
+		add('deepDive.regenerate', await api.deepDive.regenerate('d1'));
+		add('jobs.wait', await api.jobs.wait(started.jobId ?? ''));
+		add('jobs.wait', await api.jobs.wait('nope'));
+		add('jobs.get', api.jobs.get(started.jobId ?? ''));
+		add('jobs.get', api.jobs.get('nope'));
+		add('jobs.cancel', api.jobs.cancel(started.jobId ?? ''));
+		add('jobs.commit', await api.jobs.commit(started.jobId ?? '', [{ requestId: 'r', text: 't' }]));
+		add('jobs.list', api.jobs.list());
+		add('events.since', await api.events.since());
+		add('proposals.list', await api.proposals.list());
+		add('proposals.accept', await api.proposals.accept('organize', 'o1'));
+		add('proposals.reject', await api.proposals.reject('title', 't1'));
+		add('proposals.accept', await api.proposals.accept('title', 'nope'));
+
+		expect(Object.keys(results).sort()).toEqual(VERB_DEFINITIONS.map((v) => v.name).sort());
+		for (const { name, result } of VERB_DEFINITIONS) {
+			for (const value of results[name]) expect(checkSchema(value, result, name)).toBeNull();
+		}
+		const waited = results['jobs.wait'][0] as { job: Record<string, unknown> | null };
+		expect(waited.job).not.toBeNull();
+		const jobsWait = VERB_DEFINITIONS.find((v) => v.name === 'jobs.wait')!.result;
+		expect(checkSchema({ ...waited, job: { ...waited.job, progress: { message: 1 } } }, jobsWait, 'jobs.wait')).toBe('jobs.wait.job.progress.message must be a string');
 	});
 
 	describe('capabilities', () => {

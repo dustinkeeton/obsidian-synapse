@@ -51,24 +51,86 @@ const proposalId: ApiParamSpec = {
 	schema: { type: 'string' },
 };
 
+const str = { type: 'string' };
+const int = { type: 'integer' };
+const bool = { type: 'boolean' };
+const strings = { type: 'array', items: str };
+const okSchema = (properties: Record<string, unknown> = {}, required: string[] = []) => ({
+	type: 'object',
+	properties: { ok: bool, error: str, ...properties },
+	required: ['ok', ...required],
+});
+
+/** `ApiResult`: what a finished job's verb produced, and what proposals.accept / reject return. */
+const apiResultSchema = okSchema({
+	message: str,
+	written: { type: ['array', 'null'], items: str },
+	proposals: strings,
+	cacheUse: { type: ['object', 'null'] },
+	runId: str,
+	endReason: { type: 'string', enum: ['cap', 'exhausted', 'cancelled', 'error'] },
+	remainingTopics: int,
+	count: { type: ['integer', 'null'] },
+});
+
+const jobStartSchema = okSchema({ jobId: str });
+
+const jobSchema = {
+	type: 'object',
+	properties: {
+		id: str,
+		verb: str,
+		status: { type: 'string', enum: ['running', 'awaiting-output', 'completed', 'failed', 'cancelled'] },
+		startedAt: str,
+		finishedAt: str,
+		progress: { type: ['object', 'null'], properties: { message: str, current: { type: 'number' }, total: { type: 'number' } } },
+		result: apiResultSchema,
+		error: str,
+		requests: {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: { id: str, feature: { type: ['string', 'null'] }, messages: { type: 'array' }, createdAt: str, expiresAt: str },
+				required: ['id', 'messages'],
+			},
+		},
+		usage: { type: 'object', properties: { billing: str, calls: int, maxCalls: { type: ['integer', 'null'] }, inputTokens: int, outputTokens: int } },
+		operations: { type: 'array', items: { type: 'object', properties: { id: str, message: str, state: str } } },
+	},
+	required: ['id', 'verb', 'status', 'startedAt'],
+};
+
+const jobOrNull = { oneOf: [jobSchema, { type: 'null' }] };
+const jobWaitSchema = okSchema({ timedOut: bool, job: jobOrNull }, ['timedOut']);
+
 /** Every verb on the api object; the MCP shim (#628) generates its tools from this list. */
 export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 	{
 		name: 'capabilities',
 		description: 'List verbs, enabled features, and which features have a usable key',
 		params: [],
+		result: { type: 'object', properties: { apiVersion: int, pluginVersion: str, verbs: { type: 'array' }, features: { type: 'object' } }, required: ['apiVersion', 'pluginVersion', 'verbs', 'features'] },
 		long: false,
 	},
 	{
 		name: 'status',
 		description: 'Plugin and settings versions, per-feature provider/model/effort, key source and default billing, running operations, interrupted checkpoints, capped deep dives',
 		params: [],
+		result: {
+			type: 'object',
+			properties: {
+				apiVersion: int, pluginVersion: str, settingsVersion: int, features: { type: 'object' }, ai: { type: 'object' }, transcription: { type: 'object' }, systemOne: { type: 'object' },
+				inProgress: { type: 'array' }, checkpoints: { type: ['array', 'null'] }, continuableDeepDives: { type: ['array', 'null'] },
+			},
+			required: ['apiVersion', 'pluginVersion', 'features', 'ai'],
+		},
 		long: false,
 	},
 	{
 		name: 'elaborate',
 		description: 'Generate an elaboration proposal for one note as a job (auto-accepted when that setting is on); returns { ok, jobId }. Job result: { ok, message, error, written (the note, when auto-accepted), proposals, cacheUse }',
 		params: [notePath, generationOptions],
+		result: jobStartSchema,
 		long: true,
 		feature: 'elaboration',
 	},
@@ -95,6 +157,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 				schema: { type: 'object', properties: { recursive: { type: 'boolean', default: true } }, additionalProperties: false },
 			},
 		],
+		result: jobStartSchema,
 		long: true,
 		feature: SYNAPSE_PIPELINE.map((phase) => phase.key),
 	},
@@ -119,6 +182,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 				},
 			},
 		],
+		result: jobStartSchema,
 		long: true,
 		feature: 'deepDive',
 	},
@@ -142,6 +206,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 				},
 			},
 		],
+		result: jobStartSchema,
 		long: true,
 		feature: 'deepDive',
 	},
@@ -160,6 +225,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 				],
 			},
 		}, generationOptions],
+		result: jobStartSchema,
 		long: true,
 		feature: 'deepDive',
 	},
@@ -167,6 +233,7 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 		name: 'jobs.get',
 		description: 'A job\'s status, progress, operations, and its result once finished; returns { ok, job, error } (ok: false for a bad, unknown or expired id)',
 		params: [jobId],
+		result: okSchema({ job: jobOrNull }),
 		long: false,
 	},
 	{
@@ -181,12 +248,14 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 				schema: { type: 'integer', minimum: 0, maximum: 600000 },
 			},
 		],
+		result: jobWaitSchema,
 		long: false,
 	},
 	{
 		name: 'jobs.cancel',
 		description: 'Cancel a running job, the same as pressing Cancel on its toast; returns { ok, stoppedOperations }. Work outside its operations (deep dive auto-accept) still finishes',
 		params: [jobId],
+		result: okSchema({ stoppedOperations: int }),
 		long: false,
 	},
 	{
@@ -226,12 +295,14 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 				schema: { type: 'integer', minimum: 0, maximum: 600000 },
 			},
 		],
+		result: jobWaitSchema,
 		long: false,
 	},
 	{
 		name: 'jobs.list',
 		description: 'Running and recently finished jobs (the last 50, for up to an hour), without their operations',
 		params: [],
+		result: { type: 'array', items: jobSchema },
 		long: false,
 	},
 	{
@@ -241,12 +312,21 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 			{ name: 'cursor', description: 'The last seq already read; default 0 (every kept entry)', required: false, schema: { type: 'integer', minimum: 0 } },
 			{ name: 'limit', description: 'At most this many entries; default 100, at most 500', required: false, schema: { type: 'integer', minimum: 1, maximum: 500 } },
 		],
+		result: okSchema({
+			entries: { type: 'array', items: { type: 'object', properties: { seq: int, at: str, level: str, message: str, opId: str, label: str, jobId: str }, required: ['seq', 'at', 'level', 'message'] } },
+			cursor: int,
+			more: bool,
+			missed: bool,
+		}, ['entries', 'cursor', 'more', 'missed']),
 		long: false,
 	},
 	{
 		name: 'proposals.list',
 		description: 'List pending proposals, optionally of one kind',
 		params: [{ ...proposalKind, required: false }],
+		result: okSchema({
+			items: { type: 'array', items: { type: 'object', properties: { kind: str, id: str, notePath: str, sourceNotePath: str, createdAt: str, summary: str, items: strings, generation: { type: 'object' } }, required: ['kind', 'id', 'notePath'] } },
+		}, ['items']),
 		long: false,
 	},
 	{
@@ -271,12 +351,14 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 				},
 			},
 		],
+		result: apiResultSchema,
 		long: false,
 	},
 	{
 		name: 'proposals.reject',
 		description: 'Reject a pending proposal (deep dive also rejects its children)',
 		params: [proposalKind, proposalId],
+		result: apiResultSchema,
 		long: false,
 	},
 ];

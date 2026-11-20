@@ -2,14 +2,14 @@
 
 Versioned public API for external agents (#623, epic #629). `main.ts:265-273` builds it after every module has loaded and assigns it to `SynapsePlugin.api`, so it is reachable as `app.plugins.plugins.synapse.api` (e.g. from the Obsidian CLI `eval`). `null` before `onload` finishes and after `onunload`.
 
-**Unstable until epic #629 ships.** No release carries this API before then, so its shape can still change without a version bump (#628 adds result descriptions to `capabilities()`). `API_VERSION` starts counting breaking changes from the first release that ships it.
+**Unstable until epic #629 ships.** No release carries this API before then, so its shape can still change without a version bump. `API_VERSION` starts counting breaking changes from the first release that ships it.
 
 ## Public API (`index.ts`)
 
 ```ts
 function createSynapseApi(deps: SynapseApiDeps): SynapseApi   // index.ts:107
 const API_VERSION = 1                                          // types.ts:12; bump on a breaking shape change once released
-const VERB_DEFINITIONS: readonly VerbDefinition[]              // capabilities.ts:55; the source #628 generates MCP tools from
+const VERB_DEFINITIONS: readonly VerbDefinition[]              // capabilities.ts:107; the source the MCP shim (`mcp/`, #628) generates its tools from
 
 interface SynapseApiDeps {
   app: App
@@ -93,7 +93,7 @@ interface ApiGenerationOutput { requestId; text; model?; stopReason?; truncated?
 ## Verb contract
 
 - Never throws: every verb body runs in `settle` (index.ts:83), including a job's body; a throw becomes `{ ok: false, error }`. `proposals.list` catches its own failure into `{ ok: false, items: [] }`; `status()` reports `checkpoints: null` when the checkpoint folder can't be read, and `continuableDeepDives: null` when deep dive is off or its runs can't be read; `capabilities()` is pure.
-- Arguments are checked first against the verb's `VERB_DEFINITIONS` schemas (`validateArgs`, validate.ts:57; the subset used: type, enum, minimum, maximum, properties, required, additionalProperties: false, items, oneOf). A bad argument (e.g. `maxNotes: NaN`, `depth: 7`, an unknown option, an unknown kind or feature) returns `ok: false` and calls nothing.
+- Arguments are checked first against the verb's `VERB_DEFINITIONS` schemas (`validateArgs`, validate.ts:64, over `checkSchema`, validate.ts:24; the subset used: type (one or a list, incl. `number` and `null`), enum, minimum, maximum, properties, required, additionalProperties: false, items, oneOf). A bad argument (e.g. `maxNotes: NaN`, `depth: 7`, an unknown option, an unknown kind or feature) returns `ok: false` and calls nothing.
 - Feature gate: a verb whose feature has `settings.<key>.enabled === false` returns `ok: false` and calls nothing (mirrors the palette command not registering).
 - No modal: verbs take every answer a modal asks for. `deepDive.run` skips `selectDepth` and the confirm (`DeepDiveModule.run`); `scanFolder` passes `skipConfirmation = true`; elaboration accept passes `onStale: 'skip'`, or `'replace'` with `force: true`; title accept without `resolution` returns the conflict instead of renaming.
 - Queueing: verbs call the modules' PUBLIC entry points, which take the note's `NoteOperationQueue` slot once (#483). The api layer never acquires a slot itself.
@@ -153,7 +153,7 @@ A module may reject a proposal inside its accept (REM / illustrate with nothing 
 - Key source (`keySourceFor`, status.ts:9): `default-key` (the provider is `ai.provider` and `ai.apiKey` is set), `provider-key` (`ai.providerKeys[provider]` set), `local` (Ollama, local Whisper), `missing`. No key value is ever read into a result.
 - `status().ai`: one entry per `AI_FEATURE_IDS` via `resolveAIConfig` (provider, model, effort or null for Default, key source, default `billing`, #626). `transcription` uses `transcriptionKeyProvider`. `systemOne` reports `provider-key` / `missing`.
 - `status().features` / `capabilities().features`: keyed by every `FeatureModules` key. `available: false` = module not built (video on mobile). `keyReady`: audio and video read the transcription key; a key with an AI feature id reads that id; intake is `null`.
-- `capabilities().verbs`: `VERB_DEFINITIONS` with `available` = its feature (when it names one) enabled and built. Each param carries a JSON Schema.
+- `capabilities().verbs`: `VERB_DEFINITIONS` with `available` = its feature (when it names one) enabled and built. Each param carries a JSON Schema, and each verb a `result` JSON Schema of what it resolves to (#628; objects list their fields and allow others; a long verb's is `ApiJobStart`). The MCP shim declares these as tool output schemas, which MCP clients enforce; `api.test.ts` checks real results of every verb, failures included, against them with `checkSchema`.
 
 ## Dependencies
 
@@ -167,5 +167,6 @@ Out: `main.ts` only.
 |------|--------|
 | `external.test.ts` | `ExternalRequests` expiry, close, `whenAwaiting`; `JobGeneration` call and token totals (cached / joined skipped), `maxCalls` refusal; every refusal is a `JobCallRefusedError` (#626) |
 | `../shared/activity-log.test.ts` | `ActivityLog` (append + redaction + cursor paging, seq across restart, torn line, rotation + `missed`, cursor past a deleted log, another writer's lines, failed write); the `NotificationManager` sink (op ends with op id / label / job, shown toasts, throwing sink) (#627) |
+| `api.test.ts` (result schemas) | every verb's real results, success and failure, match its declared `result` schema (#628) |
 | `jobs.test.ts` | `JobRegistry`: id at once + progress, failed via result / op error / throw, cancel via `jobs.cancel` and via the toast, wait timeout, unknown ids, list without operations, TTL + cap pruning |
 | `api.test.ts` | version; capabilities (verb list + schemas, every verb name resolves to a function, disabled feature, missing key, unbuilt module); status (resolved config, no key in output, unreadable checkpoints); argument validation (deepDive.run options, regenerate target forms, required path); events.since (a job's op end after a cursor, paging, bad arguments, read failure; #627); elaborate as a job (result mapping, refusals, redacted throw); external generation (#626: exact request with the policy, commit applies output + usage, multi-request commit loop, setting default vs per-call billing, invalid outputs apply none, commit on a plugin-key job, truncated output, cancel via `jobs.cancel` and via the toast, `maxCalls`, billing kept out of module options, `status().ai[*].billing`); scanFolder as a job (no-confirm call with jobId, new ids, root, failed via op error, cancel, refusals start no job, availability across scan features); deepDive.run as a job (options + jobId, missing note, failed outcome, endReason + remainingTopics); deepDive.continue (job, refusals); status continuableDeepDives; proposal `generation`; jobs verb argument checks; regenerate mapping; proposals list (all kinds, store failure) / accept (elaboration onStale + missing note, REM default and invalid items, illustrate subset, module-side rejection, enrichment, organize moved path, deep-dive boolean, title conflict) / refusals |

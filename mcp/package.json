@@ -1,0 +1,31 @@
+{
+	"name": "synapse-mcp",
+	"version": "0.1.0",
+	"description": "MCP stdio server that exposes the Synapse Obsidian plugin's public API to agents through the Obsidian CLI.",
+	"type": "module",
+	"bin": {
+		"synapse-mcp": "dist/index.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"license": "AGPL-3.0-only",
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "1.32.2"
+	},
+	"devDependencies": {
+		"@emnapi/core": "1.11.1",
+		"@emnapi/runtime": "1.11.1",
+		"@types/node": "22.19.1",
+		"typescript": "5.9.3",
+		"vitest": "4.1.12"
+	}
+}
