@@ -20,7 +20,7 @@ export type {
 	SynapseApi, SynapseApiDeps, ApiResult, DeepDiveRunResult, ScanFolderResult, ApiScanFeature, ApiScanOptions,
 	ApiDeepDiveRunOptions, ApiRegenerateTarget, ApiProposal, ApiProposalList, ApiAcceptOptions, ApiKeySource, ApiFeatureCapability,
 	ApiParamSpec, ApiVerbSpec, ApiCapabilities, ApiAIStatus, ApiCheckpointStatus, ApiStatus,
-	ApiJob, ApiJobCancel, ApiJobLookup, ApiJobStart, ApiJobStatus, ApiJobWait,
+	ApiJob, ApiJobCancel, ApiJobLookup, ApiJobStart, ApiJobStatus, ApiJobWait, ApiEventPage,
 	ApiBilling, ApiGenerationOptions, ApiGenerationRequest, ApiGenerationOutput, ApiJobUsage, ApiContinuableDeepDive, ApiDeepDiveEndReason, ApiDeepDiveContinueOptions,
 } from './types';
 export { JobRegistry, MAX_FINISHED_JOBS, FINISHED_JOB_TTL_MS, DEFAULT_WAIT_MS, MAX_WAIT_MS } from './jobs';
@@ -228,6 +228,19 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 				return invalid ? { ok: false, timedOut: false, job: null, error: invalid } : jobs.commit(id, outputs, timeoutMs);
 			},
 			list: () => jobs.list(),
+		},
+
+		events: {
+			since: async (cursor, limit) => {
+				const empty = { entries: [], cursor: typeof cursor === 'number' ? cursor : 0, more: false, missed: false };
+				const invalid = validateArgs('events.since', [cursor, limit]);
+				if (invalid) return { ok: false, error: invalid, ...empty };
+				try {
+					return { ok: true, ...await deps.activityLog.since(cursor, limit) };
+				} catch (error) {
+					return { ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)), ...empty };
+				}
+			},
 		},
 
 		proposals: {

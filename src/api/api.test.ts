@@ -3,9 +3,9 @@ import { TFolder } from 'obsidian';
 import { createSynapseApi, API_VERSION, VERB_DEFINITIONS } from './index';
 import type { SynapseApi } from './index';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
-import { AIClient, NotificationManager, UNTRUSTED_CONTENT_POLICY, jobOpId } from '../shared';
+import { AIClient, ActivityLog, NotificationManager, UNTRUSTED_CONTENT_POLICY, jobOpId } from '../shared';
 import type { AIRequestOptions } from '../shared';
-import { createMockApp, mockFile } from '../__test-utils__/mock-factories';
+import { createMockApp, memoryAdapter, mockFile } from '../__test-utils__/mock-factories';
 import type { FeatureModules } from '../modules';
 import type { PipelineModuleMap } from '../pipeline';
 
@@ -97,6 +97,7 @@ describe('createSynapseApi (#623)', () => {
 	let api: SynapseApi;
 	let listIncomplete: ReturnType<typeof vi.fn>;
 	let notifications: NotificationManager;
+	let activityLog: ActivityLog;
 
 	beforeEach(() => {
 		settings = structuredClone(DEFAULT_SETTINGS);
@@ -119,6 +120,8 @@ describe('createSynapseApi (#623)', () => {
 			organize: vi.fn(async () => 0),
 		};
 		notifications = new NotificationManager();
+		activityLog = new ActivityLog(memoryAdapter());
+		notifications.setActivitySink((entry) => activityLog.record(entry));
 		listIncomplete = vi.fn(async () => []);
 		api = createSynapseApi({
 			app: app as never,
@@ -128,6 +131,7 @@ describe('createSynapseApi (#623)', () => {
 			scanFns,
 			notifications,
 			checkpointManager: { listIncomplete } as never,
+			activityLog,
 		});
 	});
 
@@ -534,7 +538,29 @@ describe('createSynapseApi (#623)', () => {
 		});
 	});
 
-	describe('proposals', () => {
+	describe('events (#627)', () => {
+		it('reads a job\'s operation ends from the activity log after a cursor', async () => {
+			const job = await runJob(api.elaborate(NOTE, { billing: 'external' }).then(async (started) => {
+				notifications.startOperation('Scanning', jobOpId(`scan-${NOTE}`, { jobId: started.jobId })).finish('Proposal generated');
+				return started;
+			}));
+			notifications.info('Something else');
+
+			const first = await api.events.since(0, 1);
+			expect(first).toMatchObject({ ok: true, entries: [{ seq: 1, level: 'finish', message: 'Proposal generated', jobId: job.id, label: 'Scanning' }], cursor: 1, more: true, missed: false });
+			const rest = await api.events.since(first.cursor);
+			expect(rest).toMatchObject({ ok: true, entries: [{ seq: 2, level: 'info', message: 'Something else' }], cursor: 2, more: false });
+		});
+
+		it('refuses bad arguments and reports a read failure instead of rejecting', async () => {
+			expect(await api.events.since(-1)).toMatchObject({ ok: false, entries: [], cursor: -1 });
+			expect((await api.events.since(0, 501)).ok).toBe(false);
+			vi.spyOn(activityLog, 'since').mockRejectedValueOnce(new Error('read failed'));
+			expect(await api.events.since(4)).toEqual({ ok: false, error: 'read failed', entries: [], cursor: 4, more: false, missed: false });
+		});
+	});
+
+		describe('proposals', () => {
 		it('lists every kind with selectable items', async () => {
 			const list = await api.proposals.list();
 			expect(list.ok).toBe(true);

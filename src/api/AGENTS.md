@@ -19,6 +19,7 @@ interface SynapseApiDeps {
   scanFns: PipelineModuleMap         // main.ts moduleMap, called with skipConfirmation = true
   notifications: NotificationManager // .inProgress (status), .jobOps + .cancelJob (jobs)
   checkpointManager: CheckpointManager
+  activityLog: ActivityLog           // events.since (#627)
 }
 
 interface SynapseApi {
@@ -38,6 +39,9 @@ interface SynapseApi {
     cancel(id: string): { ok: boolean; stoppedOperations: number; error? }   // ApiJobCancel; also fails the requests an external job waits on
     commit(id: string, outputs: ApiGenerationOutput[], timeoutMs?: number): Promise<ApiJobWait>   // #626; answer an awaiting-output job's requests, then wait as `wait` does
     list(): ApiJob[]   // without operations
+  }
+  events: {
+    since(cursor?: number, limit?: number): Promise<ApiEventPage>   // #627; never rejects
   }
   proposals: {
     list(kind?: ProposalKind): Promise<{ ok: boolean; error?: string; items: ApiProposal[] }>   // ApiProposalList; never rejects
@@ -135,6 +139,15 @@ A module may reject a proposal inside its accept (REM / illustrate with nothing 
 - Refusals are `JobCallRefusedError` (`shared/ai-options.ts`): `beforeCall` past `maxCalls`, and `ExternalRequests` on close or expiry. Every fallback on a job's call path rethrows it (deep-dive child-topic extraction and auto-organize placement, organize `extractTopics` with no retry, elaboration image analysis), so a refused call ends the job instead of silently dropping a subtree or image context; deep dive then records `endReason: 'error'` with the checkpoint kept (or `cancelled` on a cancel).
 - Not covered: post-op hooks after an accept (auto-accept included: enrichment, title check, REM, illustrate, organize) run outside the job with the plugin key and are not in `usage` / `maxCalls`; the System 1 decision lane (`ai.systemOne`, when on) keeps using its own key; folder scans and the other features always bill the plugin key. Commands run in Obsidian never bill externally.
 
+## Activity log (`events.since`, #627)
+
+- `ActivityLog` (`shared/activity-log.ts`) appends one JSON line per entry to `.synapse/activity.jsonl`: `{ seq, at, level, message, opId?, label?, jobId? }`. `level` is `finish` / `error` / `cancelled` for an operation end, `info` / `success` / `error` for a one-shot toast. `NotificationManager.setActivitySink` (wired in `main.ts`) feeds it every operation end (`completeOperation`) and every shown toast (`info`, `infoSticky`, `success`, `error` after its throttle, `notifyError`). Confirm snackbars and progress updates are not logged.
+- Text is redacted with `redactSecrets` and clipped to 2000 characters. `seq` continues across restarts (read from the file's last line) and rotations, and never goes backwards. Before each append the log compares the file's byte size with its own count; a mismatch (another device appended through a synced vault, or the file was edited) re-reads the file and continues from its last `seq`. Two devices appending at the same moment can still write the same `seq`.
+- Rotation: an append that would take the file past `ACTIVITY_LOG_MAX_BYTES` (512 KB) first moves it to `.synapse/activity.1.jsonl`, replacing the previous one. At most two files, about 1 MB, are kept.
+- Writes are serialized; a failed write drops that entry and never reaches the operation. A torn last line (crash mid-append) is skipped, and the next entry starts on a new line.
+- `events.since(cursor = 0, limit = 100)`: entries with `seq > cursor`, oldest first, at most `limit` (max 500), after pending writes flush. Returns `{ ok, entries, cursor, more, missed }`: `cursor` is the last returned `seq` (else the one given), and `missed` means entries after the cursor were rotated away. A cursor past the newest kept entry (the files were deleted, so `seq` restarted) also returns `missed: true` and reads from the start, with `cursor` 0 when the log is empty. Argument errors and read failures come back as `ok: false` with an empty page.
+- `.synapse/` is covered by the default exclusions; whether it syncs off the device is the user's sync setting.
+
 ## Status and capabilities (`status.ts`, `capabilities.ts`)
 
 - Key source (`keySourceFor`, status.ts:9): `default-key` (the provider is `ai.provider` and `ai.apiKey` is set), `provider-key` (`ai.providerKeys[provider]` set), `local` (Ollama, local Whisper), `missing`. No key value is ever read into a result.
@@ -144,7 +157,7 @@ A module may reject a proposal inside its accept (REM / illustrate with nothing 
 
 ## Dependencies
 
-In: `./validate.ts` (schema checks over `VERB_DEFINITIONS`), `./jobs.ts` (`JobRegistry`), `./external.ts` (`JobGeneration`, `ExternalRequests`); `shared/` (`redactSecrets`, `generateId`, `JobOperation` / `OperationOutcome` / `AIRequestOptions` / `ExternalGenerator` / `ChatMessage` / `AIUsage` types, `resolveAIConfig`, `AI_FEATURE_IDS`, `transcriptionKeyProvider`; types), `pipeline/` (`SYNAPSE_PIPELINE` runtime, `PipelineModuleMap` / `PipelineModuleKey` types), `views/` (`PROPOSAL_KINDS` runtime, `ProposalKind` type), `settings.ts` and `modules/` (types only), `obsidian` (`TFile`, `TFolder`, `normalizePath`). No feature barrel import: modules arrive through `deps.modules`.
+In: `./validate.ts` (schema checks over `VERB_DEFINITIONS`), `./jobs.ts` (`JobRegistry`), `./external.ts` (`JobGeneration`, `ExternalRequests`); `shared/` (`redactSecrets`, `generateId`, `ActivityLog` / `ActivityEntry` types, `JobOperation` / `OperationOutcome` / `AIRequestOptions` / `ExternalGenerator` / `ChatMessage` / `AIUsage` types, `resolveAIConfig`, `AI_FEATURE_IDS`, `transcriptionKeyProvider`; types), `pipeline/` (`SYNAPSE_PIPELINE` runtime, `PipelineModuleMap` / `PipelineModuleKey` types), `views/` (`PROPOSAL_KINDS` runtime, `ProposalKind` type), `settings.ts` and `modules/` (types only), `obsidian` (`TFile`, `TFolder`, `normalizePath`). No feature barrel import: modules arrive through `deps.modules`.
 
 Out: `main.ts` only.
 
@@ -153,5 +166,6 @@ Out: `main.ts` only.
 | File | Covers |
 |------|--------|
 | `external.test.ts` | `ExternalRequests` expiry, close, `whenAwaiting`; `JobGeneration` call and token totals (cached / joined skipped), `maxCalls` refusal; every refusal is a `JobCallRefusedError` (#626) |
+| `../shared/activity-log.test.ts` | `ActivityLog` (append + redaction + cursor paging, seq across restart, torn line, rotation + `missed`, cursor past a deleted log, another writer's lines, failed write); the `NotificationManager` sink (op ends with op id / label / job, shown toasts, throwing sink) (#627) |
 | `jobs.test.ts` | `JobRegistry`: id at once + progress, failed via result / op error / throw, cancel via `jobs.cancel` and via the toast, wait timeout, unknown ids, list without operations, TTL + cap pruning |
-| `api.test.ts` | version; capabilities (verb list + schemas, every verb name resolves to a function, disabled feature, missing key, unbuilt module); status (resolved config, no key in output, unreadable checkpoints); argument validation (deepDive.run options, regenerate target forms, required path); elaborate as a job (result mapping, refusals, redacted throw); external generation (#626: exact request with the policy, commit applies output + usage, multi-request commit loop, setting default vs per-call billing, invalid outputs apply none, commit on a plugin-key job, truncated output, cancel via `jobs.cancel` and via the toast, `maxCalls`, billing kept out of module options, `status().ai[*].billing`); scanFolder as a job (no-confirm call with jobId, new ids, root, failed via op error, cancel, refusals start no job, availability across scan features); deepDive.run as a job (options + jobId, missing note, failed outcome, endReason + remainingTopics); deepDive.continue (job, refusals); status continuableDeepDives; proposal `generation`; jobs verb argument checks; regenerate mapping; proposals list (all kinds, store failure) / accept (elaboration onStale + missing note, REM default and invalid items, illustrate subset, module-side rejection, enrichment, organize moved path, deep-dive boolean, title conflict) / refusals |
+| `api.test.ts` | version; capabilities (verb list + schemas, every verb name resolves to a function, disabled feature, missing key, unbuilt module); status (resolved config, no key in output, unreadable checkpoints); argument validation (deepDive.run options, regenerate target forms, required path); events.since (a job's op end after a cursor, paging, bad arguments, read failure; #627); elaborate as a job (result mapping, refusals, redacted throw); external generation (#626: exact request with the policy, commit applies output + usage, multi-request commit loop, setting default vs per-call billing, invalid outputs apply none, commit on a plugin-key job, truncated output, cancel via `jobs.cancel` and via the toast, `maxCalls`, billing kept out of module options, `status().ai[*].billing`); scanFolder as a job (no-confirm call with jobId, new ids, root, failed via op error, cancel, refusals start no job, availability across scan features); deepDive.run as a job (options + jobId, missing note, failed outcome, endReason + remainingTopics); deepDive.continue (job, refusals); status continuableDeepDives; proposal `generation`; jobs verb argument checks; regenerate mapping; proposals list (all kinds, store failure) / accept (elaboration onStale + missing note, REM default and invalid items, illustrate subset, module-side rejection, enrichment, organize moved path, deep-dive boolean, title conflict) / refusals |

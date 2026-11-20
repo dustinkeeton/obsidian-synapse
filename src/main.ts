@@ -11,7 +11,7 @@ import type { PipelineModuleMap, PostOpHookDeps } from './pipeline';
 import { constructFeatureModules, listFeatureModules, loadFeatureModules, unloadFeatureModules } from './modules';
 import type { FeatureModules } from './modules';
 import {
-	openScanFolderPicker, NotificationManager, CheckpointManager, NoteOperationQueue, TranscriptCache,
+	openScanFolderPicker, NotificationManager, ActivityLog, CheckpointManager, NoteOperationQueue, TranscriptCache,
 	UpdateChecker, fireAndForget, migrateSettings, migrateDataFolder, deepMergeSettings,
 	readSettingsVersion, CURRENT_SETTINGS_VERSION, redactError,
 } from './shared';
@@ -33,6 +33,8 @@ export default class SynapsePlugin extends Plugin {
 	notifications!: NotificationManager;
 	/** Vault-file transcript store behind every URL-transcription path (#488); cleared from Video settings. */
 	transcriptCache!: TranscriptCache;
+	/** `.synapse/activity.jsonl`: every operation end and toast, read by `api.events.since` (#627). */
+	private activityLog!: ActivityLog;
 	/** Versioned public API for external agents (#623): `app.plugins.plugins.synapse.api`; null until onload finishes. */
 	api: SynapseApi | null = null;
 	private checkpointManager!: CheckpointManager;
@@ -52,6 +54,8 @@ export default class SynapsePlugin extends Plugin {
 		registerSynapseIcons();
 		this.notifications = new NotificationManager();
 		await migrateDataFolder(this.app.vault.adapter, this.notifications);
+		this.activityLog = new ActivityLog(this.app.vault.adapter);
+		this.notifications.setActivitySink((entry) => this.activityLog.record(entry));
 		this.addSettingTab(new SynapseSettingTab(this.app, this));
 		if (Platform.isDesktop) {
 			this.notifications.setStatusBarEl(this.addStatusBarItem());
@@ -273,6 +277,7 @@ export default class SynapsePlugin extends Plugin {
 			scanFns: moduleMap,
 			notifications: this.notifications,
 			checkpointManager: this.checkpointManager,
+			activityLog: this.activityLog,
 		});
 		await runFirstRunOnboarding({
 			getSettings,
