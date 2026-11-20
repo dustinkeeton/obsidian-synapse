@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isAbsolute } from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ObsidianBridge } from './bridge.js';
 import { createServer } from './server.js';
@@ -11,10 +12,18 @@ function positiveInt(name: string): number | undefined {
 	return value;
 }
 
+/** The staging folder is read inside Obsidian, whose working directory differs from the shim's, so it must be absolute. */
+function absoluteDir(name: string): string | undefined {
+	const raw = process.env[name];
+	if (raw === undefined || raw === '') return undefined;
+	if (!isAbsolute(raw)) throw new Error(`${name} must be an absolute path`);
+	return raw;
+}
+
 const bridge = new ObsidianBridge({
 	cli: process.env.OBSIDIAN_CLI || undefined,
 	vault: process.env.SYNAPSE_VAULT || undefined,
-	tempDir: process.env.SYNAPSE_MCP_TEMP_DIR || undefined,
+	tempDir: absoluteDir('SYNAPSE_MCP_TEMP_DIR'),
 });
 const server = createServer({
 	call: (verb, args) => bridge.call(verb, args),

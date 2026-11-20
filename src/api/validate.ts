@@ -43,7 +43,8 @@ export function checkSchema(value: unknown, schema: Schema, at: string): string 
 			if (error) return error;
 		}
 	}
-	if (schema.type === 'object' && value && typeof value === 'object') {
+	const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+	if (types.includes('object') && value !== null && typeof value === 'object' && !Array.isArray(value)) {
 		const properties = (schema.properties ?? {}) as Record<string, Schema>;
 		const missing = ((schema.required ?? []) as string[]).find((key) => (value as Record<string, unknown>)[key] === undefined);
 		if (missing) return `${at}.${missing} is required`;

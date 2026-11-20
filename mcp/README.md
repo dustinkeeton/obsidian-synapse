@@ -49,7 +49,7 @@ Settings, all optional, go in the environment:
 | `SYNAPSE_MCP_MAX_WAIT_MS` | `600000` (10 minutes) | How long a long tool follows its job before returning it still running |
 | `SYNAPSE_MCP_SAMPLING` | on | `off` stops the server from asking the client's model for text |
 | `SYNAPSE_MCP_SAMPLING_TIMEOUT_MS` | `1500000` (25 minutes) | How long one sampling request may take, including the user's approval. Synapse fails an unanswered request after 30 minutes |
-| `SYNAPSE_MCP_TEMP_DIR` | the OS temp folder | Where arguments over 8 KB are staged for Obsidian to read. Set it to a folder Obsidian can reach when it runs sandboxed (Flatpak, Snap), for example the vault's `.synapse` folder |
+| `SYNAPSE_MCP_TEMP_DIR` | the OS temp folder | Where arguments over 8 KB are staged for Obsidian to read. Set it to an absolute path Obsidian can reach when it runs sandboxed (Flatpak, Snap), for example `/home/me/My Vault/.synapse` |
 
 ## Tools
 

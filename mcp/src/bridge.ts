@@ -32,7 +32,7 @@ export const INLINE_ARGS_MAX_CHARS = 8 * 1024;
 /** Verbs that wait inside Obsidian; their CLI call must outlive the wait. */
 const WAIT_ARG_INDEX: Record<string, number> = { 'jobs.wait': 1, 'jobs.commit': 2 };
 
-function defaultRunner(cli: string): CliRunner {
+export function defaultRunner(cli: string): CliRunner {
 	return (args, timeoutMs) => new Promise((resolve, reject) => {
 		execFile(cli, args, { timeout: timeoutMs, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'utf8' }, (error, stdout, stderr) => {
 			if (error) {
@@ -41,7 +41,13 @@ function defaultRunner(cli: string): CliRunner {
 					reject(new BridgeError(`The Obsidian CLI (${cli}) was not found. Synapse MCP needs Obsidian 1.12 or later with its command line interface turned on, on desktop.`));
 					return;
 				}
-				reject(new BridgeError(`The Obsidian CLI failed: ${(stderr || stdout || error.message).trim()}`));
+				if ((error as { killed?: boolean }).killed) {
+					reject(new BridgeError(`The Obsidian CLI did not answer within ${Math.ceil(timeoutMs / 1000)} s. The call may still finish inside Obsidian: check status, jobs_list or proposals_list before retrying.`));
+					return;
+				}
+				// error.message repeats the whole command line, generated expression included, so it is never reported.
+				const output = (stderr || stdout).trim();
+				reject(new BridgeError(`The Obsidian CLI failed: ${output || `exit code ${String(error.code ?? 'unknown')}`}`));
 				return;
 			}
 			resolve(stdout);

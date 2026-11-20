@@ -169,6 +169,10 @@ describe('createSynapseApi (#623)', () => {
 		for (const { name, result } of VERB_DEFINITIONS) {
 			for (const value of results[name]) expect(checkSchema(value, result, name)).toBeNull();
 		}
+		const waited = results['jobs.wait'][0] as { job: Record<string, unknown> | null };
+		expect(waited.job).not.toBeNull();
+		const jobsWait = VERB_DEFINITIONS.find((v) => v.name === 'jobs.wait')!.result;
+		expect(checkSchema({ ...waited, job: { ...waited.job, progress: { message: 1 } } }, jobsWait, 'jobs.wait')).toBe('jobs.wait.job.progress.message must be a string');
 	});
 
 	describe('capabilities', () => {

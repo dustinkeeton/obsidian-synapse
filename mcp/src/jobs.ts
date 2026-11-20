@@ -41,6 +41,8 @@ export async function runJob(call: CallVerb, verb: string, args: readonly unknow
 	const deadline = now() + ctx.maxWaitMs;
 	const cancel = () => { void call('jobs.cancel', [jobId]).catch(() => undefined); };
 	ctx.signal.addEventListener('abort', cancel, { once: true });
+	// A cancel that arrived while the start call was in flight has already fired.
+	if (ctx.signal.aborted) cancel();
 	// Progress goes out on every new status line and as a heartbeat every pollMs, sampling included,
 	// so a client that resets its own timeout on progress never gives up (and cancels) a slow job.
 	let ticks = 0;

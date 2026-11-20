@@ -92,6 +92,17 @@ describe('runJob (#628)', () => {
 		expect(call).not.toHaveBeenCalledWith('jobs.cancel', expect.anything());
 	});
 
+	it('cancels the job when the tool call was cancelled during the start call', async () => {
+		const controller = new AbortController();
+		const call = vi.fn(async (verb: string): Promise<unknown> => {
+			if (verb === 'deepDive.run') { controller.abort(); return { ok: true, jobId: 'j1' }; }
+			if (verb === 'jobs.wait') return wait(job('running'), { timedOut: true });
+			return { ok: true, stoppedOperations: 1 };
+		});
+		await runJob(call, 'deepDive.run', [], ctx({ signal: controller.signal }));
+		expect(call.mock.calls.filter(([verb]) => verb === 'jobs.cancel')).toEqual([['jobs.cancel', ['j1']]]);
+	});
+
 	it('cancels the job when the tool call is cancelled', async () => {
 		const controller = new AbortController();
 		const call = vi.fn(async (verb: string): Promise<unknown> => {

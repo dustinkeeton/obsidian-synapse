@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { mkdtemp, readdir } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BridgeError, INLINE_ARGS_MAX_CHARS, ObsidianBridge, buildExpression, parseOutput } from './bridge.js';
+import { BridgeError, INLINE_ARGS_MAX_CHARS, ObsidianBridge, buildExpression, defaultRunner, parseOutput } from './bridge.js';
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -96,6 +96,23 @@ describe('ObsidianBridge (#628)', () => {
 
 		await bridge.call('echo', ['short']);
 		expect(runner.mock.calls.at(-1)![0][1]).not.toContain('readFileSync');
+	});
+
+	it('reports a CLI timeout as one that may still finish, and never echoes the command line', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'synapse-mcp-cli-'));
+		const script = async (name: string, body: string) => {
+			const path = join(dir, name);
+			await writeFile(path, `#!/bin/sh\n${body}\n`);
+			await chmod(path, 0o755);
+			return path;
+		};
+		const code = `code=${buildExpression('status', ['secret-looking argument'])}`;
+		const slow = defaultRunner(await script('slow', 'sleep 5'))(['eval', code], 100);
+		await expect(slow).rejects.toThrow('did not answer within 1 s. The call may still finish inside Obsidian');
+		await expect(slow).rejects.not.toThrow('secret-looking');
+		const failing = defaultRunner(await script('failing', 'exit 3'))(['eval', code], 5000);
+		await expect(failing).rejects.toThrow('The Obsidian CLI failed: exit code 3');
+		await expect(failing).rejects.not.toThrow('secret-looking');
 	});
 
 	it('names the missing CLI', async () => {
