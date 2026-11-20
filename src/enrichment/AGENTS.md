@@ -30,7 +30,7 @@ class EnrichmentModule {
   scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:230
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>   // index.ts:135
   getPendingProposals(): Promise<EnrichmentProposal[]>   // index.ts:122
-  acceptProposal(id: string, accepted?: AcceptedItems, options?: { silent?: boolean }): Promise<AcceptResult>  // queue wrapper over private acceptSelected (#483); omitted `accepted` = every item (buildAcceptAll), used by api.proposals.accept (#623); shared/accept-result (#633): applied / partial [sourceNotePath], skipped (missing, not pending, nothing selected -> rejected), failed (note gone; proposal stays pending)
+  acceptProposal(id: string, accepted?: AcceptedItems, options?: { silent?: boolean }): Promise<AcceptResult>  // queue wrapper over private acceptSelected (#483); omitted `accepted` = every item (buildAcceptAll), used by api.proposals.accept (#623); shared/accept-result (#633): applied / partial [sourceNotePath], skipped (missing, not pending, nothing selected -> rejected), failed (note gone: info notice unless silent, proposal rejected)
   rejectFromView(id: string): Promise<void>   // index.ts:631; no note write; unqueued
 }
 

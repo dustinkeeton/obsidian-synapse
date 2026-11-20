@@ -651,6 +651,9 @@ export class EnrichmentModule implements FeatureModule {
 			return acceptNotApplied('skipped', 'No items selected; the proposal was rejected');
 		}
 		if (!(this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath) instanceof TFile)) {
+			if (!options?.silent) this.notifications.info(SOURCE_NOTE_MISSING);
+			await this.store.updateStatus(id, 'rejected');
+			await this.refreshView();
 			return acceptNotApplied('failed', SOURCE_NOTE_MISSING);
 		}
 

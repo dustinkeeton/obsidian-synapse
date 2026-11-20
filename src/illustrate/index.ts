@@ -491,8 +491,14 @@ export class IllustrateModule implements FeatureModule {
 			this.notifications.success(`Inserted ${inserted} visual${inserted === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} already present)` : ''}`);
 			await this.refreshView();
 		}
+		if (inserted === 0 && assets.length === 0) return acceptNotApplied('skipped', 'Every accepted item is already in the note');
+		const present = accepted.length - inserted;
+		const why = [
+			status === 'partially-accepted' ? 'some items were not selected' : '',
+			present > 0 ? `${present} item${present === 1 ? ' was' : 's were'} already present` : '',
+		].filter(Boolean).join('; ');
 		const written = inserted > 0 ? [file.path, ...assets] : assets;
-		return status === 'accepted' ? acceptApplied(written) : acceptApplied(written, true, 'Some items were not selected');
+		return why ? acceptApplied(written, true, why[0].toUpperCase() + why.slice(1)) : acceptApplied(written);
 	}
 
 	/** `downloaded` collects the vault path of each photo saved. */

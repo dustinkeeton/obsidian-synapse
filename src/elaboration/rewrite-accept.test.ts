@@ -307,6 +307,19 @@ describe('ElaborationModule accept rewrites the note body (#552)', () => {
 			expect((await mod.getPendingProposals())[0]?.status).toBe('pending');
 		});
 
+		it('rejects the proposal and says so when its note is gone (#633)', async () => {
+			const mod = build('Stub.');
+			const proposal = await generatePending(mod);
+			harness.vault.getAbstractFileByPath.mockReturnValue(null);
+			const info = vi.spyOn(notifications, 'info');
+
+			const result = await mod.acceptProposal(proposal.id);
+
+			expect(result).toEqual({ status: 'failed', written: [], reason: 'Source note no longer exists' });
+			expect(info).toHaveBeenCalledWith('Source note no longer exists');
+			expect(await mod.getPendingProposals()).toEqual([]);
+		});
+
 		it('onStale: skip leaves a changed note pending without the modal and returns a conflict', async () => {
 			const mod = build('Stub.');
 			const proposal = await generatePending(mod);

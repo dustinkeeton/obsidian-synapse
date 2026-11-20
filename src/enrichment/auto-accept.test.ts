@@ -200,7 +200,7 @@ describe('EnrichmentModule auto-accept (#228)', () => {
 		expect(applied).toHaveBeenCalledWith('notes/ml.md', { sourceUrls: ['https://example.com/ml', 'https://example.com/dl'], producedRegion: { kind: 'whole-note' } });
 	});
 
-	it('reports an accept whose note is gone as failed and leaves the proposal pending (#633)', async () => {
+	it('reports an accept whose note is gone as failed and rejects the proposal (#633)', async () => {
 		settings.autoAccept.enrichment = false;
 		const mod = build(() => settings.autoAccept.enrichment);
 		await mod.onload();
@@ -209,6 +209,6 @@ describe('EnrichmentModule auto-accept (#228)', () => {
 		((mockPlugin.app.vault as Record<string, unknown>).getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
 		expect(await mod.acceptProposal(pending.id)).toEqual({ status: 'failed', written: [], reason: 'Source note no longer exists' });
-		expect((await mod.getPendingProposals()).map((p) => p.id)).toEqual([pending.id]);
+		expect(await mod.getPendingProposals()).toEqual([]);
 	});
 });

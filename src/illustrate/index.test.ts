@@ -336,7 +336,7 @@ describe('IllustrateModule', () => {
 			const items = [{ id: 'i-photo', kind: 'photo' as const, anchor: '## Habitat', caption: 'Another caption', rationale: '', candidate }];
 			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({ ...proposal(), items });
 			app.vault.read.mockResolvedValue(NOTE + '\n\n![A red panda](https://upload.wikimedia.org/rp.jpg)');
-			await module.acceptProposal('prop1', ['i-photo']);
+			expect(await module.acceptProposal('prop1', ['i-photo'])).toEqual({ status: 'skipped', written: [], reason: 'Every accepted item is already in the note' });
 			expect(app.vault.process).not.toHaveBeenCalled();
 			expect(notifications.success).toHaveBeenCalledWith('Inserted 0 visuals (1 already present)');
 		});
@@ -363,7 +363,9 @@ describe('IllustrateModule', () => {
 				],
 			});
 			const download = vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/red-panda.jpg'));
-			await module.acceptProposal('prop1', ['p1', 'p2']);
+			expect(await module.acceptProposal('prop1', ['p1', 'p2'])).toEqual({
+				status: 'partial', written: ['notes/a.md', 'attachments/red-panda.jpg'], reason: '1 item was already present',
+			});
 			const written = (await app.vault.process.mock.results[0].value) as string;
 			expect(download).toHaveBeenCalledTimes(1);
 			expect(written.split('![[attachments/red-panda.jpg]]')).toHaveLength(2);

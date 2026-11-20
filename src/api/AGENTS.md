@@ -124,7 +124,7 @@ interface ApiGenerationOutput { requestId; text; model?; stopReason?; truncated?
 | rem | `acceptProposal(id, items ?? every matchedText)` | — | candidate `matchedText`s |
 | illustrate | `acceptProposal(id, items ?? every item id)` | — | item ids |
 
-`proposals.accept` maps the result: `applied` / `partial` -> `ok: true`, `written` = the result's paths, message `Proposal accepted` or `Proposal partly accepted: <reason>`; `skipped` / `conflict` / `failed` -> `ok: false`, `error` = the reason. Every result carries `acceptStatus` (`ApiAcceptResult`). `items` must be a non-empty subset of the proposal's items, checked before the module is called (`failed` otherwise). A write error inside the module still throws and is reported by `settle` as `ok: false`.
+`proposals.accept` maps the result: `applied` / `partial` -> `ok: true`, `written` = the result's paths, message `Proposal accepted` or `Proposal partly accepted: <reason>`; `skipped` / `conflict` / `failed` -> `ok: false`, `error` = the reason. Every result carries `acceptStatus` (`ApiAcceptResult`). `items` must be a non-empty subset of the proposal's items, checked before the module is called (`skipped` otherwise). A write error inside the module still throws and is reported by `settle` as `ok: false`.
 
 `ApiProposal.notePath` is the note the proposal changes; for deep dive it is the note it would create, with `sourceNotePath` the topic's source. Elaboration and deep-dive items carry `generation` (`AIResponseInfo`: provider, wire model, `stopReason`, `usage`, `cached`) when the proposal recorded it (#625).
 

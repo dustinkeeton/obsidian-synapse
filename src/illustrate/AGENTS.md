@@ -148,7 +148,7 @@ acceptProposal(id, itemIds)   -> AcceptResult (#633)
   --> items whose synapse-illustrate callout titled `<caption>` (either spelling, `parseCalloutHeader`) or Mermaid body already exist in the note, or photos whose remote fileUrl is already present (or repeats an earlier accepted item's fileUrl), are skipped (alreadyInserted); success notice reports `(N already present)`
   --> one vault.process: blocks.reduce(applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor), resolveOptions(item.region)), block))   // re-resolved live; stored placement is preview only; item.region -> inside the callout with `> ` prefixes
   --> status accepted | partially-accepted, acceptedItemIds
-  --> applied | partial; written = the note when a block was inserted, plus each downloaded photo's vault path
+  --> applied | partial (reason: items deselected and/or N already present); written = the note when a block was inserted, plus each downloaded photo's vault path; nothing inserted or saved -> skipped (proposal still marked accepted)
 ```
 
 ## Dependencies

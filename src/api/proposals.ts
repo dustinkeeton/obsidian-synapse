@@ -101,7 +101,7 @@ export function buildProposalAdapters(modules: FeatureModules): Record<ProposalK
 			if (!proposal) return acceptNotApplied('skipped', 'Proposal not found or not pending');
 			const offered = proposal.candidates.map((c) => c.matchedText);
 			const bad = invalidItems(options.items, offered);
-			if (bad) return acceptNotApplied('failed', bad);
+			if (bad) return acceptNotApplied('skipped', bad);
 			return rem.acceptProposal(id, options.items ?? offered);
 		},
 		reject: (id) => rem.rejectProposal(id),
@@ -121,7 +121,7 @@ export function buildProposalAdapters(modules: FeatureModules): Record<ProposalK
 			if (!proposal) return acceptNotApplied('skipped', 'Proposal not found or not pending');
 			const offered = proposal.items.map((item) => item.id);
 			const bad = invalidItems(options.items, offered);
-			if (bad) return acceptNotApplied('failed', bad);
+			if (bad) return acceptNotApplied('skipped', bad);
 			return illustrate.acceptProposal(id, options.items ?? offered);
 		},
 		reject: (id) => illustrate.rejectProposal(id),

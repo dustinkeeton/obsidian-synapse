@@ -532,7 +532,12 @@ export class ElaborationModule implements FeatureModule {
 		if (proposal.status !== 'pending') return acceptNotApplied('skipped', PROPOSAL_NOT_PENDING);
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
-		if (!(file instanceof TFile)) return acceptNotApplied('failed', SOURCE_NOTE_MISSING);
+		if (!(file instanceof TFile)) {
+			if (!options?.silent) this.notifications.info(SOURCE_NOTE_MISSING);
+			await this.store.updateStatus(id, 'rejected');
+			await this.refreshView();
+			return acceptNotApplied('failed', SOURCE_NOTE_MISSING);
+		}
 
 		// Stale-body guard: accept overwrites, so never clobber edits made after generation.
 		const current = await this.plugin.app.vault.read(file);
