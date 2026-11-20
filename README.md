@@ -242,6 +242,8 @@ job.usage;   // { billing: 'external', calls, maxCalls, inputTokens, outputToken
 - `events.since` reads `.synapse/activity.jsonl`, which records every operation's finish line or error and every message Synapse shows, whether an agent or you started it. Each entry has a `seq` number. Pass the last one you read to get only newer entries. Secrets are removed before anything is written. The file rotates at 512 KB and keeps one older copy, and `missed: true` means some entries after your cursor rotated out, or the log was deleted and reading started again from its first entry. Like the rest of `.synapse/`, it syncs only if your sync setup includes that folder.
 - Calls go through the same queue, exclusions, toasts and safety steps as the commands. A disabled feature refuses its calls.
 
+An MCP client such as Claude Code or Claude Desktop can use the same API as tools without `eval`: the `synapse-mcp` server in [`mcp/`](mcp/README.md) runs each tool as one fixed call through the Obsidian CLI, follows jobs with progress, and lets the client's own model write the text when it supports sampling.
+
 ## FAQ
 
 ### Can I use my Claude Pro/Max plan (or ChatGPT Plus / Gemini Advanced) instead of an API key?

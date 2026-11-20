@@ -6,6 +6,28 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-19: Reach Synapse from MCP through the Obsidian CLI (#628)
+
+**Context**: An agent could drive Synapse only through `obsidian eval`, which runs any code it writes inside Obsidian with full vault and Node access. That is far more power than calling a few verbs needs.
+
+**Decision**:
+- A separate package, `synapse-mcp` in `mcp/`, built on the official MCP SDK. An MCP client starts it over stdio.
+- Each tool call runs one fixed expression through `obsidian eval`. The verb name must be a plain member of the API object, and the arguments travel as a JSON string, so nothing the agent sends becomes code.
+- Tools come from `capabilities()` each time the client lists them. Each verb now declares a `result` JSON Schema, which becomes the tool's output schema, and a plugin test checks real results against it.
+- Long verbs wait for their job, with progress notifications, and cancel it when the call is cancelled. A paused external-billing job is answered through MCP sampling when the client supports it.
+- Dialog answers such as deep-dive depth and folder scope were already verb arguments, so the server asks no follow-up questions through elicitation.
+
+**Alternatives considered**:
+- A port inside the plugin: more to secure, and it doesn't work on mobile either. It stays out of scope (#629).
+- A separate repository: every API change would need a matching change there while the API is still unstable.
+- Hand-written JSON-RPC: the SDK already handles framing, progress, cancellation and sampling.
+
+**Rationale**: The CLI already works on every desktop with Obsidian 1.12+, so the plugin gains no network surface. Generating tools from the plugin keeps them in step with whichever version a vault runs.
+
+**Impact**: `ApiVerbSpec.result` is new. `mcp/` has its own lock file and CI job. The plugin bundle is unchanged. Standalone record: [ADR 002](docs/adr/002-mcp-shim-over-obsidian-cli.md).
+
+---
+
 ## 2026-11-19: Keep an activity log an agent can read (#627)
 
 **Context**: Finish lines, warnings and errors appeared only as toasts and console lines. An agent driving Synapse through the API couldn't see what happened, especially for work the user started.

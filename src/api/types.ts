@@ -233,6 +233,8 @@ export interface ApiVerbSpec {
 	description: string;
 	/** Positional arguments, in order. */
 	params: ApiParamSpec[];
+	/** JSON Schema of what the verb resolves to (#628); objects allow fields it does not list. */
+	result: Record<string, unknown>;
 	/** Returns `{ ok, jobId }` at once and runs as a job; follow it with `jobs.wait` / `jobs.get` (#624). */
 	long: boolean;
 	/** False when the feature it needs is disabled or unavailable. */
