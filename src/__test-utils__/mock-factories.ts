@@ -63,6 +63,7 @@ function buildMockVault() {
 		getMarkdownFiles: vi.fn().mockReturnValue([]),
 		getFiles: vi.fn().mockReturnValue([]),
 		readBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+		on: vi.fn((_name: string, _callback: (...args: never[]) => unknown) => ({})),
 		adapter,
 	};
 }

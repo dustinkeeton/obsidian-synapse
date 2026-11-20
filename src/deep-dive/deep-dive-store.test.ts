@@ -49,6 +49,39 @@ const getSettings = () => ({
 	},
 }) as unknown as import('../settings').SynapseSettings;
 
+describe('DeepDiveStore rename following (#632)', () => {
+	beforeEach(() => mockFiles.clear());
+	const makeRun = (overrides: Partial<DeepDiveRun>): DeepDiveRun => ({
+		id: 'run1', rootNotePath: 'notes/root.md', maxDepth: 2, qualityThreshold: 0.4, proposalIds: [],
+		stats: { totalProposals: 1, byDepth: {}, earlyTerminations: 0 }, createdAt: '2026-11-01T00:00:00.000Z', status: 'completed',
+		...overrides,
+	});
+
+	it('applies followed paths to a stale copy saved later', async () => {
+		const store = new DeepDiveStore(mockApp, getSettings);
+		const stale = makeRun({ id: 'run1', rootNotePath: 'notes/Root.md' });
+		store.followRun('run1', { rootNotePath: 'notes/Base.md', syllabusPath: 'notes/Root syllabus.md' });
+		await store.saveRun(stale);
+		expect(await store.loadRun('run1')).toMatchObject({ rootNotePath: 'notes/Base.md', syllabusPath: 'notes/Root syllabus.md' });
+
+		const proposal = makeProposal({ id: 'p1', sourceNotePath: 'notes/Root.md' });
+		store.followProposal('p1', { sourceNotePath: 'notes/Base.md' });
+		await store.saveProposal(proposal);
+		expect((await store.loadProposal('p1'))?.sourceNotePath).toBe('notes/Base.md');
+	});
+
+	it('says whether any record may point at a path, rebuilding when the files change', async () => {
+		const store = new DeepDiveStore(mockApp, getSettings);
+		await store.saveRun(makeRun({ id: 'run1', rootNotePath: 'notes/Root.md' }));
+		expect(await store.mayReference('Unrelated.md', 'Deep Dives')).toBe(false);
+		expect(await store.mayReference('notes', 'Deep Dives')).toBe(true);
+		expect(await store.mayReference('notes/Ro', 'Deep Dives')).toBe(false);
+
+		await store.saveProposal(makeProposal({ id: 'p2', proposedPath: 'Deep Dives/Root/Topic.md' }));
+		expect(await store.mayReference('Deep Dives/Root/Topic.md', 'Deep Dives')).toBe(true);
+	});
+});
+
 function makeProposal(overrides: Partial<DeepDiveProposal> = {}): DeepDiveProposal {
 	return {
 		id: 'test-id-1',

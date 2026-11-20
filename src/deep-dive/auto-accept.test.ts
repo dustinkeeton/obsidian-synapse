@@ -81,6 +81,7 @@ describe('DeepDiveModule auto-accept guard (#228)', () => {
 		mockPlugin = {
 			app: {
 				vault: {
+					on: vi.fn(() => ({})),
 					read: vi.fn().mockResolvedValue('# Root\n\nroot content'),
 					create: createSpy,
 					modify: modifySpy,

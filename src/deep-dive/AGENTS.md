@@ -24,6 +24,7 @@ class DeepDiveModule {
   acceptProposal(id: string, options?: { silent?: boolean }): Promise<boolean>   // index.ts:185; true when the note was created
   rejectProposal(id: string): Promise<void>                                   // index.ts:269
   run(notePath: string, options?: DeepDiveRunOptions): Promise<DeepDiveOutcome>   // index.ts:318; the command flow with no depth picker or confirm (#623)
+  followRename(oldPath: string, newPath: string): Promise<void>   // #632; vault 'rename' listener (registered in onload) -> accepted proposedPath, every sourceNotePath, run.rootNotePath and the run's syllabus follow a renamed note or folder (prefix match); serialized; skipped unless `DeepDiveStore.mayReference` (path index keyed on the record folders' file listing, rebuilt by `indexPaths` from the records each followed rename already scanned; edits synced from another device that keep the same files go unseen) finds a record under the old path; each matched record is re-read before its save, and `followProposal` / `followRun` make every later save of a stale copy carry the moved paths; a pending proposedPath follows only a moved folder; `applyAccept` writes at the proposedPath `updateProposalStatus` returns, so a move followed mid-accept is honored; a root rename pins run.syllabusPath only when that syllabus note exists
   regenerate(target: DeepDiveRegenerateTarget, job?: DeepDiveJobOptions): Promise<DeepDiveOutcome>   // index.ts:337; rewrite one note from its topic (#623); job (#626) tags the op and joins its AI options
   listContinuableRuns(): Promise<ContinuableDeepDiveRun[]>                       // index.ts:537; DeepDiveStore.loadCappedRuns() (endReason 'cap' with queued topics), newest first, minus any continuing now (#625)
   continueRun(runId: string, options?: Omit<DeepDiveRunOptions, 'depth'>): Promise<DeepDiveOutcome>   // index.ts:556; generate a capped run's queue under a fresh cap (#625)
@@ -176,7 +177,7 @@ run(notePath, options)           [public; api.deepDive.run]
 
 regenerate(target, job?)         [public; api.deepDive.regenerate]
   --> findProposal: by id, or newest non-rejected proposal with proposedPath === notePath
-  --> rejected, or accepted with no file at proposedPath (renamed / moved / deleted since accept) -> ok: false, no AI call
+  --> rejected, or accepted with no file at proposedPath (deleted, or moved while the module was unloaded) -> ok: false, no AI call
   --> source = sourceNotePath read from the vault, else the run's non-rejected proposal at that path (its proposedContent)
   --> NoteGenerator.generateContent(topic, sourceTitle, sourceNotePath, sourceContent, combineAIOptions(trackAiCache(use), { bypassCache: true, onResponse }, job.ai))   [always a fresh reply; its AIResponseInfo replaces proposal.generation]
   --> noteQueue.run(proposedPath, applyRegenerated) (index.ts:376): re-loads the proposal UNDER the slot, so an accept that landed mid-generation is honored
@@ -340,7 +341,7 @@ Out: Nothing consumed by other feature modules. `modules/registry.ts:110-116` co
 - Checkpoint item IDs use the stable format `'topic-<title>'` (C2) so completed items survive restart.
 - Resume state lives in `DeepDiveRun.pending` (`types.ts`), not checkpoint metadata; tasks reference the parent proposal by id instead of copying its content.
 - Auto-accept runs AFTER the full generation loop completes, in creation order (parents before children) so navigation resolves correctly.
-- Syllabus note path: `syllabusPath(rootNotePath, deepDive.noteOutputFolder)` — trashed (not hard-deleted) if all proposals in a run are rejected.
+- Syllabus note path: `run.syllabusPath` when pinned (#632), else `syllabusPath(rootNotePath, deepDive.noteOutputFolder)` — trashed (not hard-deleted) if all proposals in a run are rejected.
 - `onNoteAccepted` and `onOrganizeRequested` fire even under `silent: true` (batch auto-accept); they are the intended acyclic follow-on chain. They fire from inside `applyAccept` while it still holds `proposedPath`'s queue slot, but `main.ts` dispatches both through `fireAndForget` (never awaited), so they simply enqueue behind the accept and read the note it just wrote (#483).
 
 ## Tests

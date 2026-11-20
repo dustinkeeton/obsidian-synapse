@@ -78,7 +78,7 @@ describe('DeepDiveModule interrupted runs', () => {
 		const register = vi.fn();
 		mod = new DeepDiveModule(
 			makeModuleDeps({
-				plugin: { app } as unknown as Plugin,
+				plugin: { app, registerEvent: vi.fn() } as unknown as Plugin,
 				getSettings: () => settings,
 				notifications: notifications as never,
 				checkpointManager: checkpoints as never,

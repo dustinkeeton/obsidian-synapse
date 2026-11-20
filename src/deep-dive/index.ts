@@ -104,6 +104,7 @@ export class DeepDiveModule implements FeatureModule {
 	private analyzer: TopicAnalyzer;
 	private generator: NoteGenerator;
 	private store: DeepDiveStore;
+	private renames: Promise<void> = Promise.resolve();
 	/** Runs `continueRun` is generating right now; a second continue of one is refused. */
 	private readonly continuing = new Set<string>();
 	/** Organize's folder suggestion, injected by the module registry; null means nested placement only. */
@@ -135,6 +136,10 @@ export class DeepDiveModule implements FeatureModule {
 	async onload(): Promise<void> {
 		await this.store.init();
 
+		this.plugin.registerEvent(this.plugin.app.vault.on('rename', (file, oldPath) => {
+			fireAndForget(this.followRename(oldPath, file.path), 'Follow a renamed deep dive note');
+		}));
+
 		this.registrar.register('deep-dive', this.getSettings().deepDive.enabled, {
 			editorCallback: async (_editor, ctx) => {
 				if (ctx.file) {
@@ -151,6 +156,65 @@ export class DeepDiveModule implements FeatureModule {
 	}
 
 	onunload(): void {}
+
+	/**
+	 * Follows a renamed or moved note or folder (#632): accepted notes, source paths, run roots and syllabus notes
+	 * keep pointing at it, so regenerate, nav refresh and continue find them. Renames apply one at a time.
+	 */
+	followRename(oldPath: string, newPath: string): Promise<void> {
+		const next = this.renames.then(() => this.applyRename(normalizePath(oldPath), normalizePath(newPath)));
+		this.renames = next.catch(() => undefined);
+		return next;
+	}
+
+	private async applyRename(oldPath: string, newPath: string): Promise<void> {
+		if (oldPath === newPath) return;
+		if (!await this.store.mayReference(oldPath, this.getSettings().deepDive.noteOutputFolder)) return;
+		const inside = (path: string): string | null => (path.startsWith(`${oldPath}/`) ? `${newPath}${path.slice(oldPath.length)}` : null);
+		const moved = (path: string): string | null => (path === oldPath ? newPath : inside(path));
+		// An accepted note follows any rename. A pending note is not written yet: its planned path follows a moved
+		// folder, but an exact match means another file took that name.
+		const plan = (proposal: DeepDiveProposal) => (proposal.status === 'accepted' ? moved : inside)(proposal.proposedPath);
+		const proposals: DeepDiveProposal[] = [];
+		for (const scanned of await this.store.loadAllProposals()) {
+			proposals.push(scanned);
+			if (!plan(scanned) && !moved(scanned.sourceNotePath)) continue;
+			// Re-read: an accept or regenerate may have saved the proposal since the scan.
+			const proposal = await this.store.loadProposal(scanned.id);
+			if (!proposal) continue;
+			proposals[proposals.length - 1] = proposal;
+			const note = plan(proposal);
+			const source = moved(proposal.sourceNotePath);
+			if (!note && !source) continue;
+			const paths = { ...(note ? { proposedPath: note } : {}), ...(source ? { sourceNotePath: source } : {}) };
+			Object.assign(proposal, paths);
+			this.store.followProposal(proposal.id, paths);
+			await this.store.saveProposal(proposal);
+		}
+		const runs: DeepDiveRun[] = [];
+		for (const { id } of await this.store.loadAllRuns()) {
+			const run = await this.store.loadRun(id);
+			if (!run) continue;
+			runs.push(run);
+			const syllabus = this.syllabusPathFor(run);
+			const root = moved(run.rootNotePath);
+			const movedSyllabus = moved(syllabus);
+			if (!root && !movedSyllabus) continue;
+			// A syllabus already written is pinned, so a renamed root never starts a second one under its new name.
+			const paths = {
+				rootNotePath: root ?? run.rootNotePath,
+				syllabusPath: movedSyllabus ?? run.syllabusPath ?? (this.noteExists(syllabus) ? syllabus : undefined),
+			};
+			Object.assign(run, paths);
+			this.store.followRun(run.id, paths);
+			await this.store.saveRun(run);
+		}
+		this.store.indexPaths(proposals, runs);
+	}
+
+	private syllabusPathFor(run: DeepDiveRun): string {
+		return run.syllabusPath ?? syllabusPath(run.rootNotePath, this.getSettings().deepDive.noteOutputFolder);
+	}
 
 	async getPendingProposals(): Promise<DeepDiveProposal[]> {
 		return this.store.loadPendingProposals();
@@ -201,18 +265,20 @@ export class DeepDiveModule implements FeatureModule {
 
 		try {
 			assertVaultRelativePath(proposal.proposedPath);
-			await this.store.updateProposalStatus(id, 'accepted');
+			// The saved copy carries a folder move followed since the load above (#632), so the note is written there.
+			const accepted = (await this.store.updateProposalStatus(id, 'accepted')) ?? proposal;
+			assertVaultRelativePath(accepted.proposedPath);
 
 			// Links resolve at write time: a rejected or not-yet-accepted parent becomes plain text (#581).
-			const content = stripUnresolvedLinks(proposal.proposedContent, this.plugin.app.metadataCache, proposal.proposedPath);
-			await this.updateRunNavigation(proposal.runId, proposal.proposedPath, content);
+			const content = stripUnresolvedLinks(proposal.proposedContent, this.plugin.app.metadataCache, accepted.proposedPath);
+			await this.updateRunNavigation(proposal.runId, accepted.proposedPath, content);
 
 			if (!options?.silent) {
-				this.notifications.success(`Created ${proposal.proposedPath}`);
+				this.notifications.success(`Created ${accepted.proposedPath}`);
 			}
 
 			// Trigger enrichment on the new note
-			this.onNoteAccepted?.(proposal.proposedPath, {
+			this.onNoteAccepted?.(accepted.proposedPath, {
 				sourceUrls: [...new Set([...(Array.isArray(proposal.topic.relatedUrls) ? proposal.topic.relatedUrls : []), ...extractUrls(proposal.proposedContent)])],
 				producedRegion: { kind: 'whole-note' },
 			});
@@ -220,7 +286,7 @@ export class DeepDiveModule implements FeatureModule {
 			// Trigger organize on the new note if enabled
 			if (this.getSettings().deepDive.autoOrganizeOnAccept) {
 				const file = this.plugin.app.vault.getAbstractFileByPath(
-					normalizePath(proposal.proposedPath)
+					normalizePath(accepted.proposedPath)
 				);
 				if (file instanceof TFile) {
 					this.onOrganizeRequested?.(file);
@@ -339,7 +405,7 @@ export class DeepDiveModule implements FeatureModule {
 		if (!proposal) return failedOutcome('No deep dive proposal matches that target');
 		if (proposal.status === 'rejected') return failedOutcome(`Proposal ${proposal.id} was rejected; nothing to regenerate`);
 		if (proposal.status === 'accepted' && !this.noteExists(proposal.proposedPath)) {
-			return failedOutcome(`Note not found at ${proposal.proposedPath}; it was moved, renamed or deleted after it was accepted`);
+			return failedOutcome(`Note not found at ${proposal.proposedPath}; it was deleted, or moved while deep dive was turned off`);
 		}
 
 		const source = await this.resolveRegenerateSource(proposal);
@@ -379,7 +445,7 @@ export class DeepDiveModule implements FeatureModule {
 		const writtenPaths: string[] = [];
 		if (latest.status === 'accepted') {
 			if (!(await this.rewriteAcceptedNote(latest.proposedPath, content))) {
-				return `Note not found at ${latest.proposedPath}; it was moved, renamed or deleted after it was accepted`;
+				return `Note not found at ${latest.proposedPath}; it was deleted, or moved while deep dive was turned off`;
 			}
 			writtenPaths.push(latest.proposedPath);
 		}
@@ -831,7 +897,7 @@ export class DeepDiveModule implements FeatureModule {
 
 		if (nodes.length === 0) {
 			// All proposals rejected -- remove syllabus if it exists
-			const sPath = syllabusPath(run.rootNotePath, this.getSettings().deepDive.noteOutputFolder);
+			const sPath = this.syllabusPathFor(run);
 			const existingSyllabus = this.plugin.app.vault.getAbstractFileByPath(normalizePath(sPath));
 			if (existingSyllabus instanceof TFile) {
 				// trashFile honors the user's "Deleted files" preference so the
@@ -841,7 +907,7 @@ export class DeepDiveModule implements FeatureModule {
 			return;
 		}
 
-		const sPath = syllabusPath(run.rootNotePath, this.getSettings().deepDive.noteOutputFolder);
+		const sPath = this.syllabusPathFor(run);
 
 		// Write or update the syllabus index note
 		const syllabusContent = renderSyllabusContent(nodes, run, (path) => linkpathFor(this.plugin.app, path));
