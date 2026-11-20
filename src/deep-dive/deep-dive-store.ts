@@ -60,8 +60,14 @@ export class DeepDiveStore {
 	private savesDuringBuild: Map<string, boolean> | null = null;
 	/** The build in flight; a concurrent `loadCappedRuns` waits for it instead of starting a second one. */
 	private building: Promise<void> | null = null;
-	/** Every note path a record points at, and run roots (#632); rebuilt when the file listing changes or a path is followed. */
+	/**
+	 * Every note path a record points at, and run roots (#632), keyed by the record folders' file listing.
+	 * Records are named by topic and id, so an edit that keeps the same files (one synced from another device)
+	 * goes unseen until the listing changes: the same multi-device limit as the activity log (#639).
+	 */
 	private pathIndex: { listing: string; paths: Set<string>; roots: Set<string> } | null = null;
+	/** The listing `mayReference` last checked, which `indexPaths` keys its rebuild on. */
+	private checkedListing = '';
 	/**
 	 * Paths moved by a followed rename (#632), applied on every later save, so a copy loaded before the rename
 	 * (an accept in flight, the generation loop's in-memory run) never writes the old path back.
@@ -140,11 +146,13 @@ export class DeepDiveStore {
 		return all.filter(p => p.runId === runId);
 	}
 
-	async updateProposalStatus(id: string, status: DeepDiveProposalStatus): Promise<void> {
+	/** Returns the proposal as saved, followed paths included (#632); null when it is gone. */
+	async updateProposalStatus(id: string, status: DeepDiveProposalStatus): Promise<DeepDiveProposal | null> {
 		const proposal = await this.loadProposal(id);
-		if (!proposal) return;
+		if (!proposal) return null;
 		proposal.status = status;
 		await this.saveProposal(proposal);
+		return proposal;
 	}
 
 	async deleteProposal(id: string): Promise<void> {
@@ -267,36 +275,42 @@ export class DeepDiveStore {
 	/** Records a proposal's moved paths; this and every later save of the proposal carries them. */
 	followProposal(id: string, paths: ProposalPaths): void {
 		this.followedProposals.set(id, { ...this.followedProposals.get(id), ...paths });
-		this.pathIndex = null;
 	}
 
 	/** Records a run's moved root and syllabus; this and every later save of the run carries them. */
 	followRun(id: string, paths: RunPaths): void {
 		this.followedRuns.set(id, paths);
-		this.pathIndex = null;
 	}
 
 	/** Whether any record may point at `path` or inside it, so an unrelated rename reads no record. */
 	async mayReference(path: string, noteOutputFolder: string): Promise<boolean> {
 		const listing = JSON.stringify([await this.listFiles(this.proposalFolder), await this.listFiles(this.runFolder)]);
-		if (this.pathIndex?.listing !== listing) {
-			const paths = new Set<string>();
-			const roots = new Set<string>();
-			for (const proposal of await this.loadAllProposals()) {
-				paths.add(proposal.proposedPath);
-				paths.add(proposal.sourceNotePath);
-			}
-			for (const run of await this.loadAllRuns()) {
-				roots.add(run.rootNotePath);
-				paths.add(run.rootNotePath);
-				if (run.syllabusPath) paths.add(run.syllabusPath);
-			}
-			this.pathIndex = { listing, paths, roots };
-		}
+		this.checkedListing = listing;
+		if (this.pathIndex?.listing !== listing) this.indexPaths(await this.loadAllProposals(), await this.loadAllRuns());
+		const index = this.pathIndex!;
 		const under = (candidate: string) => candidate === path || candidate.startsWith(`${path}/`);
-		for (const candidate of this.pathIndex.paths) if (under(candidate)) return true;
-		for (const root of this.pathIndex.roots) if (under(syllabusPath(root, noteOutputFolder))) return true;
+		for (const candidate of index.paths) if (under(candidate)) return true;
+		for (const root of index.roots) if (under(syllabusPath(root, noteOutputFolder))) return true;
 		return false;
+	}
+
+	/**
+	 * Rebuilds the index from records already in hand, keyed on the listing `mayReference` checked before they were read,
+	 * so the rest of a folder move's events hit no stale entry and read nothing; a file added since forces a rebuild.
+	 */
+	indexPaths(proposals: readonly DeepDiveProposal[], runs: readonly DeepDiveRun[]): void {
+		const paths = new Set<string>();
+		const roots = new Set<string>();
+		for (const proposal of proposals) {
+			paths.add(proposal.proposedPath);
+			paths.add(proposal.sourceNotePath);
+		}
+		for (const run of runs) {
+			roots.add(run.rootNotePath);
+			paths.add(run.rootNotePath);
+			if (run.syllabusPath) paths.add(run.syllabusPath);
+		}
+		this.pathIndex = { listing: this.checkedListing, paths, roots };
 	}
 
 	// ── Helpers ──

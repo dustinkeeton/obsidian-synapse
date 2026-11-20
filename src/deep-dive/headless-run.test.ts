@@ -481,6 +481,34 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(savedRun?.syllabusPath).toBe('notes/Base syllabus.md');
 		});
 
+		it('writes an accepted note where a folder move followed during the accept put it', async () => {
+			savedRun = run();
+			proposals.set('p1', proposal({}));
+			vi.mocked(DeepDiveStore.prototype.loadProposal).mockImplementationOnce(async (id) => {
+				const loaded = structuredClone(proposals.get(id)!);
+				proposals.set(id, { ...proposals.get(id)!, proposedPath: 'Archive/Root/Backpropagation.md' });
+				return loaded;
+			});
+
+			await mod.acceptProposal('p1', { silent: true });
+
+			const created = app.vault.create.mock.calls.map(([path]) => path as string);
+			expect(created).toContain('Archive/Root/Backpropagation.md');
+			expect(created).not.toContain(oldPath);
+		});
+
+		it('reads no records for the rest of a folder move once its folder event is followed', async () => {
+			proposals.set('p1', proposal({ status: 'accepted' }));
+			const loadAll = vi.mocked(DeepDiveStore.prototype.loadAllProposals);
+			loadAll.mockClear();
+
+			await mod.followRename('Deep Dives/Root', 'Archive/Root');
+			await mod.followRename(oldPath, 'Archive/Root/Backpropagation.md');
+
+			expect(loadAll).toHaveBeenCalledTimes(2);
+			expect(proposals.get('p1')?.proposedPath).toBe('Archive/Root/Backpropagation.md');
+		});
+
 		it('leaves unrelated proposals and runs untouched', async () => {
 			savedRun = run();
 			proposals.set('p1', proposal({ status: 'accepted' }));
