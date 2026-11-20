@@ -96,6 +96,8 @@ export interface DeepDiveRun {
 	maxNotes?: number;
 	/** Per-run auto-accept from `DeepDiveModule.run`; absent = `autoAccept['deep-dive']`. */
 	autoAccept?: boolean;
+	/** Syllabus note path, pinned once the root or the syllabus is renamed (#632); absent = derived from `rootNotePath`. */
+	syllabusPath?: string;
 }
 
 /** Answers the depth picker and confirm modal would ask for, so a run can start without UI. */

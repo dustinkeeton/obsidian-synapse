@@ -29,6 +29,7 @@ function createVault() {
 		files,
 		adapterFiles,
 		vault: {
+			on: vi.fn(() => ({})),
 			getAbstractFileByPath: vi.fn((p: string) => (files.has(p) ? new TFile(p) : null)),
 			getMarkdownFiles: vi.fn(() => [...files.keys()].map((p) => new TFile(p))),
 			read: vi.fn(async (f: TFile) => files.get(f.path) ?? ''),

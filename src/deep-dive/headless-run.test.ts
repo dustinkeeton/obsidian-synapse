@@ -7,6 +7,7 @@ import { createMockApp, mockFile as rawFile, createMockCheckpointManager, makeMo
 import type { Plugin, TFile } from 'obsidian';
 import { AIClient, ENRICHMENT_END, ENRICHMENT_START, NoteOperationQueue, JobCallRefusedError } from '../shared';
 import type { DeepDiveProposal, DeepDiveRun } from './types';
+import { syllabusPath } from './syllabus-navigator';
 
 vi.mock('./depth-selector-modal', () => ({
 	selectDepth: vi.fn(async () => 1),
@@ -102,7 +103,7 @@ describe('DeepDiveModule headless verbs', () => {
 		checkpoints = createMockCheckpointManager();
 		mod = new DeepDiveModule(
 			makeModuleDeps({
-				plugin: { app } as unknown as Plugin,
+				plugin: { app, registerEvent: vi.fn() } as unknown as Plugin,
 				getSettings: () => settings,
 				notifications: notifications as never,
 				checkpointManager: checkpoints as never,
@@ -401,6 +402,73 @@ describe('DeepDiveModule headless verbs', () => {
 		});
 	});
 
+	describe('following renamed notes (#632)', () => {
+		const oldPath = 'Deep Dives/Root/Backpropagation.md';
+		const run = (overrides: Partial<DeepDiveRun> = {}): DeepDiveRun => ({
+			id: 'run1', rootNotePath: 'notes/Root.md', maxDepth: 1, qualityThreshold: 0.4, proposalIds: ['p1'],
+			stats: { totalProposals: 1, byDepth: { 0: 1 }, earlyTerminations: 0 }, createdAt: '2026-11-01T00:00:00.000Z', status: 'completed', ...overrides,
+		});
+
+		it('listens to vault renames and follows them', async () => {
+			proposals.set('p1', proposal({ status: 'accepted' }));
+			const [event, handler] = app.vault.on.mock.calls.find(([name]) => name === 'rename') as unknown as [string, (file: TFile, old: string) => void];
+			expect(event).toBe('rename');
+			handler(mockFile('Notes/Backprop.md'), oldPath);
+			await vi.waitFor(() => expect(proposals.get('p1')?.proposedPath).toBe('Notes/Backprop.md'));
+		});
+
+		it('regenerates an accepted note by its new path after a rename', async () => {
+			proposals.set('p1', proposal({ status: 'accepted' }));
+			const newPath = 'Notes/Backprop.md';
+			files.set(newPath, '---\nparent: "[[Root]]"\n---\nOld body\n');
+
+			await mod.followRename(oldPath, newPath);
+			const outcome = await mod.regenerate({ notePath: newPath });
+
+			expect(outcome.status).toBe('completed');
+			expect(outcome.writtenPaths).toEqual([newPath]);
+			expect(files.get(newPath)).toContain('Fresh body about Backpropagation.');
+		});
+
+		it('follows a moved folder for accepted notes and child sources, leaving pending paths alone', async () => {
+			proposals.set('p1', proposal({ status: 'accepted' }));
+			proposals.set('child', proposal({ id: 'child', sourceNotePath: oldPath, proposedPath: 'Deep Dives/Root/Backpropagation/Chain Rule.md' }));
+
+			await mod.followRename('Deep Dives/Root', 'Archive/Root');
+
+			expect(proposals.get('p1')?.proposedPath).toBe('Archive/Root/Backpropagation.md');
+			expect(proposals.get('child')).toMatchObject({ sourceNotePath: 'Archive/Root/Backpropagation.md', proposedPath: 'Deep Dives/Root/Backpropagation/Chain Rule.md' });
+		});
+
+		it('follows a renamed root note, keeping the syllabus where it is, then a renamed syllabus', async () => {
+			savedRun = run();
+			proposals.set('p1', proposal({ status: 'accepted' }));
+			const syllabus = syllabusPath('notes/Root.md', settings.deepDive.noteOutputFolder);
+
+			await mod.followRename('notes/Root.md', 'notes/Base.md');
+			expect(savedRun).toMatchObject({ rootNotePath: 'notes/Base.md', syllabusPath: syllabus });
+			expect(proposals.get('p1')?.sourceNotePath).toBe('notes/Base.md');
+
+			await mod.followRename(syllabus, 'notes/Base syllabus.md');
+			expect(savedRun?.syllabusPath).toBe('notes/Base syllabus.md');
+		});
+
+		it('leaves unrelated proposals and runs untouched', async () => {
+			savedRun = run();
+			proposals.set('p1', proposal({ status: 'accepted' }));
+			const saveProposal = vi.mocked(DeepDiveStore.prototype.saveProposal);
+			const saveRun = vi.mocked(DeepDiveStore.prototype.saveRun);
+			saveProposal.mockClear();
+			saveRun.mockClear();
+
+			await mod.followRename('Other/Note.md', 'Other/Renamed.md');
+			await mod.followRename('Deep Dives/Root/Backprop', 'Deep Dives/Root/X');
+
+			expect(saveProposal).not.toHaveBeenCalled();
+			expect(saveRun).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('regenerate', () => {
 		it('replaces the recorded generation with the new call\'s (#625)', async () => {
 			proposals.set('p1', proposal({ generation: { provider: 'openai', model: 'gpt-6-luna', stopReason: 'stop' } }));
@@ -467,7 +535,7 @@ describe('DeepDiveModule headless verbs', () => {
 			const outcome = await mod.regenerate({ proposalId: 'p1' });
 
 			expect(outcome.status).toBe('failed');
-			expect(outcome.message).toContain('moved, renamed or deleted');
+			expect(outcome.message).toContain('deleted, or moved while deep dive was turned off');
 			expect(generated).toEqual([]);
 		});
 
