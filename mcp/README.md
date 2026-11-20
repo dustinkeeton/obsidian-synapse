@@ -1,6 +1,6 @@
 # synapse-mcp
 
-An MCP server that lets an agent drive the Synapse Obsidian plugin through its public API. An MCP client such as Claude Code or Claude Desktop starts it over stdio. Each tool call becomes one fixed call to `app.plugins.plugins.synapse.api` through the Obsidian CLI's `eval` command. The agent supplies only arguments, which travel as JSON data and never as code. Arguments over 8 KB, such as a long reply sent to `jobs_commit`, go through a file in the OS temp folder that only your user can read, and the file is deleted after the call. The plugin opens no port.
+An MCP server that lets an agent drive the Synapse Obsidian plugin through its public API. An MCP client such as Claude Code or Claude Desktop starts it over stdio. Each tool call becomes one fixed call to `app.plugins.plugins.synapse.api` through the Obsidian CLI's `eval` command. The agent supplies only arguments, which travel as JSON data and never as code. Arguments over 8 KB, such as a long reply sent to `jobs_commit`, go through a file in the OS temp folder (or `SYNAPSE_MCP_TEMP_DIR`) that only your user can read, and the file is deleted after the call. The plugin opens no port.
 
 The API is unstable until epic #629 ships, and so is this server.
 
@@ -49,6 +49,7 @@ Settings, all optional, go in the environment:
 | `SYNAPSE_MCP_MAX_WAIT_MS` | `600000` (10 minutes) | How long a long tool follows its job before returning it still running |
 | `SYNAPSE_MCP_SAMPLING` | on | `off` stops the server from asking the client's model for text |
 | `SYNAPSE_MCP_SAMPLING_TIMEOUT_MS` | `1500000` (25 minutes) | How long one sampling request may take, including the user's approval. Synapse fails an unanswered request after 30 minutes |
+| `SYNAPSE_MCP_TEMP_DIR` | the OS temp folder | Where arguments over 8 KB are staged for Obsidian to read. Set it to a folder Obsidian can reach when it runs sandboxed (Flatpak, Snap), for example the vault's `.synapse` folder |
 
 ## Tools
 
@@ -56,7 +57,7 @@ The server builds its tools from `capabilities()` whenever the client lists them
 
 A verb's result comes back as structured content. A result with `ok: false` is reported as a tool error, with the result still attached.
 
-Tools that can rewrite or move existing notes are marked destructive: `proposals_accept`, `deepDive_regenerate`, and `elaborate`, `scanFolder` and `jobs_commit`, which write directly when auto-accept is on for the feature.
+Tools that can rewrite or move existing notes are marked destructive: `proposals_accept`, `deepDive_regenerate`, and `elaborate`, `scanFolder`, `deepDive_run`, `deepDive_continue` and `jobs_commit`, which write directly when auto-accept is on. An accepted deep-dive note also rewrites the navigation blocks of the run's earlier notes, and can be organized into another folder.
 
 Long verbs (`elaborate`, `scanFolder` and the `deepDive_*` tools) start a job, and the tool follows it:
 

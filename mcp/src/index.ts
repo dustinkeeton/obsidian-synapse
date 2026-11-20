@@ -11,7 +11,11 @@ function positiveInt(name: string): number | undefined {
 	return value;
 }
 
-const bridge = new ObsidianBridge({ cli: process.env.OBSIDIAN_CLI || undefined, vault: process.env.SYNAPSE_VAULT || undefined });
+const bridge = new ObsidianBridge({
+	cli: process.env.OBSIDIAN_CLI || undefined,
+	vault: process.env.SYNAPSE_VAULT || undefined,
+	tempDir: process.env.SYNAPSE_MCP_TEMP_DIR || undefined,
+});
 const server = createServer({
 	call: (verb, args) => bridge.call(verb, args),
 	maxWaitMs: positiveInt('SYNAPSE_MCP_MAX_WAIT_MS'),

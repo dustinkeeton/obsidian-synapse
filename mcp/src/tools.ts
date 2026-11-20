@@ -3,8 +3,8 @@ import type { Capabilities, VerbSpec } from './api-types.js';
 
 /** Verbs that only read; the rest change notes, proposals or jobs. */
 const READ_ONLY = new Set(['capabilities', 'status', 'jobs.get', 'jobs.wait', 'jobs.list', 'events.since', 'proposals.list']);
-/** Verbs that can rewrite or move an existing note; elaborate, scanFolder and jobs.commit can when auto-accept is on. */
-const DESTRUCTIVE = new Set(['proposals.accept', 'deepDive.regenerate', 'elaborate', 'scanFolder', 'jobs.commit']);
+/** Verbs that can rewrite or move an existing note; the long verbs and jobs.commit can when auto-accept is on (deep dives rewrite nav blocks and may organize). */
+const DESTRUCTIVE = new Set(['proposals.accept', 'deepDive.regenerate', 'deepDive.run', 'deepDive.continue', 'elaborate', 'scanFolder', 'jobs.commit']);
 
 const LONG_TOOL_NOTE = ' Through MCP this tool waits for the job, reporting progress, and returns it as jobs.wait does: { ok, timedOut, job } with the result on job.result. A job still running after the shim\'s wait limit comes back with timedOut: true; follow it with jobs_wait. Cancelling the tool call cancels the job. A job awaiting-output (external billing) is answered through MCP sampling when the client supports it; otherwise it comes back with job.requests to answer with jobs_commit.';
 

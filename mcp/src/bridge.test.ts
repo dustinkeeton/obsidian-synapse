@@ -91,6 +91,9 @@ describe('ObsidianBridge (#628)', () => {
 		await expect(bridge.call('echo', [reply])).rejects.toThrow('The Obsidian CLI failed');
 		expect(await readdir(tempDir)).toEqual([]);
 
+		runner.mockResolvedValueOnce('=> {"synapseMcp":"threw","error":"ENOENT: no such file or directory"}');
+		await expect(bridge.call('echo', [reply])).rejects.toThrow('set SYNAPSE_MCP_TEMP_DIR');
+
 		await bridge.call('echo', ['short']);
 		expect(runner.mock.calls.at(-1)![0][1]).not.toContain('readFileSync');
 	});

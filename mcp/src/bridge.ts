@@ -18,7 +18,7 @@ export interface BridgeOptions {
 	/** Vault name for the CLI's `vault=` option; default the CLI's own choice. */
 	vault?: string;
 	runner?: CliRunner;
-	/** Where long arguments are staged; default the OS temp folder, which Obsidian reads as the same user. */
+	/** Where long arguments are staged; default the OS temp folder, which Obsidian reads as the same user unless it runs sandboxed. */
 	tempDir?: string;
 }
 
@@ -121,6 +121,11 @@ export class ObsidianBridge {
 		try {
 			if (argsFile) await writeFile(argsFile, json, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
 			return parseOutput(verb, await this.runner(cliArgs, timeoutFor(verb, args)));
+		} catch (error) {
+			if (argsFile && error instanceof BridgeError && error.message.includes('ENOENT')) {
+				throw new BridgeError(`${error.message}. Obsidian could not read the staged arguments at ${argsFile}; if it runs sandboxed (Flatpak, Snap), set SYNAPSE_MCP_TEMP_DIR to a folder both can reach.`);
+			}
+			throw error;
 		} finally {
 			if (argsFile) await rm(argsFile, { force: true });
 		}
