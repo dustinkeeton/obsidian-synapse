@@ -355,6 +355,8 @@ export interface SynapseApiDeps {
 	checkpointManager: CheckpointManager;
 	/** The activity log `events.since` reads (#627). */
 	activityLog: ActivityLog;
+	/** Runs `cleanup` when the plugin unloads (`Component.register`). */
+	register: (cleanup: () => void) => void;
 }
 
 /** Per-kind bridge from the public verbs to a module's proposal methods. */

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { JobRegistry, MAX_FINISHED_JOBS, FINISHED_JOB_TTL_MS } from './jobs';
+import { JobGeneration } from './external';
 import { NotificationManager, jobOpId } from '../shared';
 import type { ApiResult } from './types';
 
@@ -41,6 +42,29 @@ describe('JobRegistry (#624)', () => {
 		gate.resolve(OK);
 		const waited = await jobs.wait(id);
 		expect(waited).toMatchObject({ ok: true, timedOut: false, job: { status: 'completed', result: OK } });
+	});
+
+	it('dispose fails pending external requests and clears their expiry timers', async () => {
+		vi.useFakeTimers();
+		const generation = new JobGeneration('external', null);
+		let refused: unknown;
+		const id = jobs.start('elaborate', async () => {
+			try {
+				await generation.external!.generate({ feature: 'elaboration', messages: [] });
+			} catch (error) {
+				refused = error;
+			}
+			return OK;
+		}, generation);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(jobs.get(id).job?.requests).toHaveLength(1);
+		expect(vi.getTimerCount()).toBe(1);
+
+		jobs.dispose();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(String(refused)).toContain('Synapse was unloaded');
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it('fails when the verb fails, with its error', async () => {

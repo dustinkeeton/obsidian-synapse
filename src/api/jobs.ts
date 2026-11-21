@@ -114,6 +114,11 @@ export class JobRegistry {
 		return { ok: true, stoppedOperations };
 	}
 
+	/** Fail every running job's pending external requests and clear their expiry timers; called on plugin unload. */
+	dispose(): void {
+		for (const record of this.jobs.values()) record.generation?.external?.close('Synapse was unloaded');
+	}
+
 	private finish(record: JobRecord, result: ApiResult): void {
 		const ops = this.notifications.jobOps.list(record.id);
 		const failedOp = ops.find((op) => op.state === 'error');

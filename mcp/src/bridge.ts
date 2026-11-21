@@ -4,9 +4,20 @@ import { rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-/** The shim's own failure to reach the plugin (CLI missing, Obsidian closed, plugin off); never a verb's `ok: false`. */
+/** Mirrors the plugin's `shared/redact.ts` pattern; the shim cannot import plugin source. */
+const SECRET_PATTERN = /(?:sk-|key-|dg-|Bearer\s+|Token\s+|anthropic-|AIza)[A-Za-z0-9_-]{8,}/g;
+
+export function redactSecrets(text: string): string {
+	return text.replace(SECRET_PATTERN, '[REDACTED]');
+}
+
+/** The shim's own failure to reach the plugin (CLI missing, Obsidian closed, plugin off); never a verb's `ok: false`. Its message is redacted. */
 export class BridgeError extends Error {
 	override name = 'BridgeError';
+
+	constructor(message: string) {
+		super(redactSecrets(message));
+	}
 }
 
 /** Runs `obsidian <args>` and resolves with its stdout. */

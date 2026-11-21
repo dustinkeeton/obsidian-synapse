@@ -65,7 +65,7 @@ function jobRefused(error: string): ApiJobStart {
 function fromOutcome(outcome: OperationOutcome): ApiResult {
 	const result = { written: outcome.writtenPaths, proposals: outcome.proposalIds, cacheUse: outcome.cacheUse };
 	return outcome.status === 'completed'
-		? { ok: true, message: outcome.message, ...result }
+		? { ok: true, message: redactSecrets(outcome.message), ...result }
 		: { ok: false, error: redactSecrets(outcome.message), ...result };
 }
 
@@ -108,6 +108,7 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 	const { app, modules } = deps;
 	const adapters = buildProposalAdapters(modules);
 	const jobs = new JobRegistry(deps.notifications);
+	deps.register(() => jobs.dispose());
 
 	const disabled = (feature: FeatureSettingsKey, label: string): string | null =>
 		deps.getSettings()[feature].enabled ? null : `${label} is disabled in Synapse settings`;
@@ -262,7 +263,7 @@ export function createSynapseApi(deps: SynapseApiDeps): SynapseApi {
 				if (!(await adapters[kind].list()).some((p) => p.id === id)) return failure(`No pending ${kind} proposal with id ${id}`);
 				const outcome = await adapters[kind].accept(id, options ?? {});
 				if (acceptWrote(outcome)) {
-					const message = outcome.status === 'partial' ? `Proposal partly accepted: ${outcome.reason ?? 'some items were not applied'}` : 'Proposal accepted';
+					const message = outcome.status === 'partial' ? `Proposal partly accepted: ${redactSecrets(outcome.reason ?? 'some items were not applied')}` : 'Proposal accepted';
 					return { ok: true, message, written: outcome.written, proposals: [id], cacheUse: null, acceptStatus: outcome.status };
 				}
 				return { ...failure(outcome.reason ?? 'Proposal was not applied'), proposals: [id], acceptStatus: outcome.status };

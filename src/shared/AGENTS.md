@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-11-17
+last-updated: 2026-11-20
 ---
 
 # Shared Module
@@ -129,15 +129,15 @@ interface OperationHandle {
   readonly cancelled: boolean
 }
 class NotificationManager {
-  readonly inProgress: InProgressRegistry   // :171; fed by startOperation meta + trackInProgress; read by the unified sidebar (#577)
-  readonly jobOps: JobOperationLog   // :173; every op whose id carries a job tag (jobOpId), running or finished; read by api/jobs.ts (#624)
+  readonly inProgress: InProgressRegistry   // :172; fed by startOperation meta + trackInProgress; read by the unified sidebar (#577)
+  readonly jobOps: JobOperationLog   // :174; every op whose id carries a job tag (jobOpId), running or finished; read by api/jobs.ts (#624)
   setActivitySink(sink: ((entry: ActivityInput) => void) | null): void   // :178; #627; receives every operation end (completeOperation: finish / error / cancelled, with opId, label, jobId) and every shown one-shot toast (info, infoSticky, success, error after its throttle, notifyError); a throwing sink is swallowed
   setStatusBarEl(el: HTMLElement): void
-  startOperation(label: string, id?: string, meta?: InProgressMeta): OperationHandle   // :204; a job-tagged id is also recorded in jobOps (start, update, progress, end state) and cancelled at once when its job was already cancelled; meta -> inProgress.begin({ cancellable: true }); no meta -> inProgress.end(opId); update()/progress() forward label/current/total; finish/error/cancel end the entry (completeOperation, keyed on the TrackedOperation object); a handle superseded by a same-id restart never updates/ends the newer run's entry or map slot
-  trackInProgress(label: string, meta: InProgressMeta): () => void   // :352; toast-less work, id `track-N`, cancellable: false; returns the end function (call in `finally`)
+  startOperation(label: string, id?: string, meta?: InProgressMeta): OperationHandle   // :228; a job-tagged id is also recorded in jobOps (start, update, progress, end state) and cancelled at once when its job was already cancelled; meta -> inProgress.begin({ cancellable: true }); no meta -> inProgress.end(opId); update()/progress() forward label/current/total; finish/error/cancel end the entry (completeOperation, keyed on the TrackedOperation object); a handle superseded by a same-id restart never updates/ends the newer run's entry or map slot
+  trackInProgress(label: string, meta: InProgressMeta): () => void   // :382; toast-less work, id `track-N`, cancellable: false; returns the end function (call in `finally`)
   confirm(message: string, options?: { proceedLabel?: string; cancelLabel?: string; level?: NoticeLevel }): Promise<boolean>
-  cancelOperation(id: string): void   // :405; also reached from the sidebar via UnifiedViewCallbacks.onCancelInProgress
-  cancelJob(jobId: string): void   // :341; cancelOperation on each running op tagged with jobId, and marks the job so ops it starts later are cancelled at once (#624)
+  cancelOperation(id: string): void   // :435; also reached from the sidebar via UnifiedViewCallbacks.onCancelInProgress
+  cancelJob(jobId: string): number   // :366; cancelOperation on each running op tagged with jobId, returns how many it stopped, and marks the job so ops it starts later are cancelled at once (#624)
   info(message: string, duration?: number, action?: NoticeAction): void
   infoSticky(message: string, action: NoticeAction): void   // duration 0, dismissible; used by UpdateChecker
   success(message: string, duration?: number, action?: NoticeAction): void
@@ -152,7 +152,17 @@ function jobOpId(base: string, scope?: unknown): string   // `${base}@job:${scop
 function jobIdOf(opId: string): string | null
 type JobOperationState = 'running' | 'done' | 'error' | 'cancelled'
 interface JobOperation { id; label; message; state: JobOperationState; current?; total?; startedAt; endedAt? }
-class JobOperationLog { record(opId, patch); restart(opId, label); list(jobId): JobOperation[]; markCancelled(jobId); isCancelled(jobId); onCancelled(listener: (jobId) => void): () => void; forget(jobId); clear() }   // untagged ids ignored; onCancelled (#626) fires when a tagged op's state first becomes cancelled — api/jobs.ts fails the job's external requests on it
+class JobOperationLog { record(opId, patch); restart(opId, label); list(jobId): JobOperation[]; markCancelled(jobId); isCancelled(jobId); onCancelled(listener: (jobId) => void): () => void; forget(jobId); clear() }   // untagged ids ignored; record() runs label and message through redactSecrets (job-operations.ts:46-48), since agents read them back through the public API; onCancelled (#626) fires when a tagged op's state first becomes cancelled — api/jobs.ts fails the job's external requests on it
+
+// accept-result.ts (#633); barrel index.ts:76-77
+type AcceptStatus = 'applied' | 'partial' | 'skipped' | 'conflict' | 'failed'   // :8; partial = some items written; skipped = proposal missing / not pending / nothing selected / user cancelled; conflict = nothing written, a decision is needed (note changed, target name exists); failed = nothing written, the proposal can no longer apply (note gone, stored path or name invalid)
+interface AcceptResult { status: AcceptStatus; written: string[]; reason?: string }   // :11; what every module's acceptProposal returns; a write error still throws
+function acceptApplied(written: string[], partial?: boolean, reason?: string): AcceptResult   // :19; status 'partial' when partial, else 'applied'
+function acceptNotApplied(status: Exclude<AcceptStatus, 'applied' | 'partial'>, reason: string): AcceptResult   // :23; written []
+function acceptWrote(result: AcceptResult): boolean   // :28; applied or partial
+const PROPOSAL_NOT_FOUND = 'Proposal not found'   // :32
+const PROPOSAL_NOT_PENDING = 'Proposal is not pending'   // :33
+const SOURCE_NOTE_MISSING = 'Source note no longer exists'   // :34
 
 // operation-outcome.ts (#624)
 type OperationStatus = 'completed' | 'failed' | 'cancelled'
@@ -389,7 +399,7 @@ class NoteOperationQueue {
   get size(): number                  // number of paths with queued/running operations (diagnostics/tests)
   run<T>(notePath: string, operation: () => Promise<T>, options?: NoteOperationOptions): Promise<T>
 }
-// One instance per plugin (created in main.ts:60), injected into every module that mutates a note after an AI call.
+// One instance per plugin (created in main.ts:64), injected into every module that mutates a note after an AI call.
 // Chain entries never reject (built from internal resolve-only promises), so a failing operation cannot poison a key;
 // `run` rejections still propagate to the caller and still release the slot (note-operation-queue.ts:46-47).
 
@@ -559,7 +569,7 @@ function voiceInstruction(settings: VoiceSettings): string   // voice rule + VER
 // settings-merge.ts:10 — persisted settings over defaults; nested records recurse, arrays/primitives overwrite; drops __proto__/constructor/prototype keys; NOT a deep clone (untouched nested defaults shared by reference)
 function deepMergeSettings<T extends object>(target: T, source: Record<string, unknown>): T
 
-// data-folder-migration.ts:5 / :6 / :13 — one-time `.auto-notes/` -> `.synapse/` rename at load (main.ts:54); never throws
+// data-folder-migration.ts:5 / :6 / :13 — one-time `.auto-notes/` -> `.synapse/` rename at load (main.ts:56); never throws
 const LEGACY_DATA_FOLDER = '.auto-notes'
 const DATA_FOLDER = '.synapse'
 function migrateDataFolder(adapter: DataAdapter, notifications: NotificationManager): Promise<void>   // absent old folder = silent return; both present = console.warn, no rename; failure = console.error(redactError) + notifications.error
@@ -678,7 +688,7 @@ function scoreLyricsContent(content: string): number
 | `ai-options.ts` | `combineAIOptions`, `JobCallRefusedError`, `isJobCallRefused` | Joins per-call `AIRequestOptions` (#626): chains callbacks, later fields win; the typed job-refusal error. Imports the `AIRequestOptions` type only |
 | `ai-config.ts` | `AI_FEATURE_IDS`, `EFFORT_LEVELS`, `anthropicMaxTokens`, `aiRequestTimeoutMs`, `LONG_AI_REQUEST_TIMEOUT_MS`, `ResolvedAIConfig`, `resolveAIConfig`, `hasEffortControl`, `effortStepsFor`, `effortFor`, `switchDefaultProvider`, `effortWireValue`, `aiOverrideFor`, `apiKeyForProvider`, `visionModelOverride`, `extraProviders`, `transcriptionKeyProvider` | Per-feature provider/model/effort resolution over `ai.overrides` + `ai.providerKeys` + `EFFORT_OPTIONS`; default provider always uses `ai.apiKey`; one key per vendor shared by chat and transcription (`extraProviders` lists the non-default vendors needing a key row) |
 | `ai-client.test.ts` | Tests | Per-provider request/response shapes (Gemini, OpenAI, Anthropic) + `redactSecrets` re-export |
-| `redact.ts` | `redactSecrets`, `redactError` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). `redactSecrets` consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts`, `update-checker.ts`, `notifications.ts`; `redactError(value)` renders a caught error to a redacted log-safe string (stack ?? `name: message` -> redactSecrets) for every raw-error console sink (main, data-folder-migration, onboarding, checkpoints, update-checker, transcript-cache, audio, intake, rem, elaboration x2, shared/image-preprocess, transcription x2, clipboard catches in notifications + video settings, fire-and-forget). Behavior covered by `redact.test.ts` |
+| `redact.ts` | `redactSecrets`, `redactError` | Single source of truth for API-key/token redaction (sk-/key-/dg-/Bearer/Token/anthropic-/AIza). `redactSecrets` consumed by `ai-client.ts`, `credential-validator.ts`, `credential-field.ts`, `update-checker.ts`, `notifications.ts`, `activity-log.ts`, `job-operations.ts`, `safe-request.ts`, `decision-client.ts`, and outside the layer `api/index.ts`, `api/jobs.ts` (the MCP shim keeps its own copy of the pattern, `mcp/src/bridge.ts:8`); `redactError(value)` renders a caught error to a redacted log-safe string (stack ?? `name: message` -> redactSecrets) for every raw-error console sink (main, data-folder-migration, onboarding, checkpoints, update-checker, transcript-cache, audio, intake, rem, elaboration x2, shared/image-preprocess, transcription x2, clipboard catches in notifications + video settings, fire-and-forget). Behavior covered by `redact.test.ts` |
 | `redact.test.ts` | Tests | Redaction pattern tests |
 | `encoding.ts` | `arrayBufferToBase64`, `base64EncodedLength` | Base64 encode + exact encoded-length calc; canonical home reused by audio/image/elaboration |
 | `encoding.test.ts` | Tests | Encoding tests |
@@ -696,7 +706,7 @@ function scoreLyricsContent(content: string): number
 | `file-utils.test.ts` | Tests | `getMarkdownFiles` recursive/non-recursive scope, `getIncludedMarkdownFiles` exclusion filtering, `findAvailableVaultPath` suffixing |
 | `api-utils.ts` | `withRetry`, `sleep`, `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError` | Retry with exponential backoff + per-error `shouldRetry` gate, network-error classification/disclosure. `notifyError` no longer lives here — error display moved to `NotificationManager` |
 | `api-utils.test.ts` | Tests | `classifyNetworkError`, `isTransientNetworkError`, `describeNetworkError`, `withRetry` |
-| `validation.ts` | `sanitizeUrl`, `sanitizePublicUrl`, `isPrivateHost`, `sanitizePath`, `assertVaultRelativePath` (the three new ones re-exported on the barrel's last line, `index.ts:246`), `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
+| `validation.ts` | `sanitizeUrl`, `sanitizePublicUrl`, `isPrivateHost`, `sanitizePath`, `assertVaultRelativePath` (the three new ones re-exported on the barrel's last line, `index.ts:248`), `ensureWithinVault`, `sanitizeAIResponse`, `stripCodeFences`, `blockquoteOriginal`, `parseTimestamp`, `validateTimeRange`, `formatTimeRange`, `TimeRange` | Input validation, output sanitization, time-range parsing |
 | `validation.test.ts` | Tests | Validation tests |
 | `url-detector.ts` | `detectPlatform`, `isSupportedUrl`, `Platform`, `UrlDetectionResult` | Regex platform detection (moved here from video/) |
 | `url-detector.test.ts` | Tests | URL detection tests (moved here from video/) |
@@ -712,11 +722,11 @@ function scoreLyricsContent(content: string): number
 | `frontmatter-utils.test.ts` | Tests | Frontmatter tests; `splitRawFrontmatter` describe (`:127`): byte-for-byte raw block, no-frontmatter case, mid-document `---` not matched, body boundary agrees with `parseFrontmatter`, block without trailing newline |
 | `callouts.ts` | `CALLOUT_TYPES`, `CALLOUT_BASES`, `buildCallout`, `calloutHeaderToken`, `calloutHeaderLine`, `calloutIdentity`, `calloutHeaderSource`, `parseCalloutHeader`, `isCalloutHeader`, `hasCallout`, `calloutForTranscriptionResult`, `ENRICHMENT_START`, `ENRICHMENT_END`, `CalloutType`, `CalloutBase` | Unified callout registry, builder and matcher for AI content (#554). Callouts are written `> [!<base>|<identity>]` (`CALLOUT_BASES` picks the base; `calloutHeaderLine` is the only header writer); readers accept that form and the legacy bare `> [!synapse-*]` through `calloutIdentity` / `isCalloutHeader` / `calloutHeaderSource`. `calloutForTranscriptionResult` selects callout type and verb based on `schemaId` |
 | `callouts.test.ts` | Tests | Every type has a base; header token/line; identity + matcher for both spellings (nested prefix, fold marker, base-only `[!summary]` rejected); `calloutHeaderSource` fragment; `buildCallout` round-trips through the matcher |
-| `audio-embeds.ts` | `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `AudioEmbed` (barrel, `index.ts:240-241`); `hasTranscriptionBelow` (module-only) | Audio-embed scan over note content: `![[*.mp3\|wav\|m4a\|ogg\|flac\|webm\|aac]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout. Imports `./callouts` only. Re-exported by the `audio` barrel; used by summarize/index, transcription/ (direct from `shared`) |
+| `audio-embeds.ts` | `findAudioEmbeds`, `AUDIO_EXTENSIONS`, `AUDIO_EMBED_REGEX`, `AudioEmbed` (barrel, `index.ts:242-243`); `hasTranscriptionBelow` (module-only) | Audio-embed scan over note content: `![[*.mp3\|wav\|m4a\|ogg\|flac\|webm\|aac]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**Transcription of X**`, a `synapse-transcription` callout, or a `synapse-lyrics` callout. Imports `./callouts` only. Re-exported by the `audio` barrel; used by summarize/index, transcription/ (direct from `shared`) |
 | `audio-embeds.test.ts` | Tests | Embed detection, already-transcribed skip (legacy, callout), line numbers, unresolved files; `hasTranscriptionBelow` incl. the lyrics callout |
-| `video-urls.ts` | `findVideoUrls`, `VideoUrlEmbed` (barrel, `index.ts:242-243`); `hasTranscriptionBelow` (module-only) | Video-URL scan over note content via `findUrls` + `detectPlatform`: skips blockquote lines, undetected and `twitter` URLs, and a URL whose next 3 lines carry a legacy `**Transcription of X**` or a `synapse-transcription` callout. Imports `./callouts`, `./url-classifier`, `./url-detector`. Re-exported by the `video` barrel; used by video/index (type), transcription/ |
+| `video-urls.ts` | `findVideoUrls`, `VideoUrlEmbed` (barrel, `index.ts:244-245`); `hasTranscriptionBelow` (module-only) | Video-URL scan over note content via `findUrls` + `detectPlatform`: skips blockquote lines, undetected and `twitter` URLs, and a URL whose next 3 lines carry a legacy `**Transcription of X**` or a `synapse-transcription` callout. Imports `./callouts`, `./url-classifier`, `./url-detector`. Re-exported by the `video` barrel; used by video/index (type), transcription/ |
 | `video-urls.test.ts` | Tests | Moved from `video/note-scanner.test.ts`: URL detection per platform, markdown links, twitter skip, already-transcribed skip, line numbers; `hasTranscriptionBelow` |
-| `image-embeds.ts` | `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `ImageEmbed` (barrel, `index.ts:244-245`); `hasExtractionBelow` (module-only) | Image-embed scan over note content: `![[*.png\|jpg\|jpeg\|gif\|webp\|bmp\|tiff]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**OCR of X**` or a `synapse-ocr` callout. Imports `./callouts` only. Re-exported by the `image` barrel; used by image/index (type), transcription/ |
+| `image-embeds.ts` | `findImageEmbeds`, `IMAGE_EXTENSIONS`, `IMAGE_EMBED_REGEX`, `ImageEmbed` (barrel, `index.ts:246-247`); `hasExtractionBelow` (module-only) | Image-embed scan over note content: `![[*.png\|jpg\|jpeg\|gif\|webp\|bmp\|tiff]]` resolved via `metadataCache.getFirstLinkpathDest`; skips an embed whose next 3 lines carry a legacy `**OCR of X**` or a `synapse-ocr` callout. Imports `./callouts` only. Re-exported by the `image` barrel; used by image/index (type), transcription/ |
 | `image-embeds.test.ts` | Tests | Moved from `image/note-scanner.test.ts`: embed detection, already-extracted skip, line numbers, unresolved files |
 | `media-embed.ts` | `mediaEmbedFor`, `buildMediaEmbedLines` | Downloaded-media embed lines (#561): one builder for the `![[file]]` + blank line every write site puts above a transcription/summary callout; gated on `video.embedInNote`, dedupes against the note content when given. No imports. Used by `transcription/url-transcription.ts`, `video/index.ts`, `summarize/index.ts` |
 | `media-embed.test.ts` | Tests | File-name-only link, folder-only path, on/off, no download, already-embedded, different file embedded |
@@ -729,7 +739,8 @@ function scoreLyricsContent(content: string): number
 | `folder-picker-modal.test.ts` | Tests | FolderPickerModal tests (sort order exercised through `getSuggestions`) |
 | `open-scan-folder-picker.ts` | `openScanFolderPicker` | Unified scan-folder picker wrapper over `ScanFolderPickerModal` (root-first sort via `suggestFolders`, so Enter-on-open scans the whole vault); `onChoose(ScanScope)`. Used by main (`fire`) and the elaboration, enrichment, illustrate, summarize, organize, rem folder-scan commands |
 | `open-scan-folder-picker.test.ts` | Tests | Scan folder picker tests |
-| `job-operations.ts` | `JOB_OP_MARKER`, `jobOpId`, `jobIdOf`, `JobOperationLog`, `JobOperation`, `JobOperationState` (barrel `index.ts:76-77`) | Job tagging for public-API jobs (#624): op-id tag helpers + the per-job operation log `NotificationManager.jobOps` keeps. No imports |
+| `job-operations.ts` | `JOB_OP_MARKER`, `jobOpId`, `jobIdOf`, `JobOperationLog`, `JobOperation`, `JobOperationState` (barrel `index.ts:78-79`) | Job tagging for public-API jobs (#624): op-id tag helpers + the per-job operation log `NotificationManager.jobOps` keeps; `record` redacts label and message. Imports `redactSecrets` (`./redact`) only |
+| `accept-result.ts` | `AcceptResult`, `AcceptStatus` (types), `acceptApplied`, `acceptNotApplied`, `acceptWrote`, `PROPOSAL_NOT_FOUND`, `PROPOSAL_NOT_PENDING`, `SOURCE_NOTE_MISSING` (barrel `index.ts:76-77`) | Result of every module's `acceptProposal` (#633): status, vault paths written, reason. No imports |
 | `operation-outcome.ts` | `OperationOutcome`, `OperationStatus` (barrel `index.ts:75`, types) | Shared result of a module operation (#624); imports `CacheUse` type only |
 | `scan-scope.ts` | `ScanScope`, `ScanTarget`, `toScanScope`, `scanScopeLabel` | Folder-scan scope model (#589); `ScanScope.jobId` (#624) carries a public-API job id through to the scan's `jobOpId` calls and survives `toScanScope`; processing-source only, candidate/index lookups stay vault-wide via `getIncludedMarkdownFiles` |
 | `scan-scope.test.ts` | Tests | Scope normalization + labels |
@@ -739,7 +750,7 @@ function scoreLyricsContent(content: string): number
 | `confirm-modal.test.ts` | Tests | ConfirmModal tests |
 | `settings-reset.ts` | `sectionHasReset`, `applySectionReset`, `sectionMatchesDefaults`, `applyResetAll` | Per-section and global reset-to-defaults over `DEFAULT_SETTINGS` (`structuredClone`); `general`/`ai`/`audio` keys reset field subsets rather than whole groups. Imports `../settings` (DEFAULT_SETTINGS) |
 | `settings-reset.test.ts` | Tests | Reset helper tests |
-| `id-utils.ts` | `generateId`, `randomToken`, `isValidCheckpointId` | ID generation, CSPRNG temp-name token, and validation for checkpoint paths (barrel: `index.ts:202`) |
+| `id-utils.ts` | `generateId`, `randomToken`, `isValidCheckpointId` | ID generation, CSPRNG temp-name token, and validation for checkpoint paths (barrel: `index.ts:204`) |
 | `checkpoint-types.ts` | `CheckpointModule`, `CheckpointStatus`, `CheckpointWorkItem`, `DeferredTask`, `Checkpoint` | Checkpoint data model types |
 | `checkpoint-manager.ts` | `CheckpointManager` | CRUD and lifecycle management for resumable operation checkpoints |
 | `checkpoint-manager.test.ts` | Tests | CheckpointManager tests |
@@ -933,8 +944,8 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | Utility | Used By |
 |---------|---------|
 | `AIClient` | elaboration/proposer, elaboration/image-analyzer, audio/post-processor, image/extractor, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index, summarize/summarizer, organize/content-analyzer, deep-dive/topic-analyzer, deep-dive/note-generator, rem/semantic-matcher, title/title-suggester |
-| `redactSecrets` | ai-client (safeRequest error bodies + API-error wrap), credential-validator (probe error messages), credential-field (Test-button validation-catch chip message), update-checker (fetch-failure detail), notifications (`error`/`notifyError`/operation-error toast + console paths) |
-| `redactError` | main (settings-migration console sink only, `main.ts:306`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, shared/image-preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
+| `redactSecrets` | ai-client (safeRequest error bodies + API-error wrap), credential-validator (probe error messages), credential-field (Test-button validation-catch chip message), update-checker (fetch-failure detail), notifications (`error`/`notifyError`/operation-error toast + console paths), activity-log (every entry's message and label, #627), job-operations (`JobOperationLog.record` label + message), safe-request (upstream bodies), decision-client (lane errors), api/index (job error and completed message, accept reasons), api/jobs (job failure results, a failed op's message) |
+| `redactError` | main (settings-migration console sink only, `main.ts:315`), shared/data-folder-migration, onboarding/onboarding (`runFirstRunOnboarding` catch), checkpoints/checkpoint-recovery, update-checker (unexpected-error catch), shared/transcript-cache, elaboration/proposer, elaboration/image-analyzer, audio/index, intake/index, rem/semantic-matcher, shared/image-preprocess (downscale fallback), transcription/caption-strategy, transcription/youtube-captions, notifications (clipboard-copy catch), video/settings-section (clipboard-copy catch), fire-and-forget (every raw-error `console.warn`/`console.error` sink). Enforced by the `synapse/no-unredacted-console` lint rule (#418) |
 | `withCacheReport` / `trackAiCache` / `transcriptCacheUse` / `mergeCacheUse` | audio/index, video/index, transcription/insert-url-transcript, summarize/index, tidy/index, elaboration/index, enrichment/index, deep-dive/index, organize/index, rem/index, title/index, image/index (#527 finish messages) |
 | `reviewAction` | elaboration, enrichment, organize, deep-dive, title, rem (Review completion-toast gate, #366) |
 | `hashString` / `contentKey` | ai-client (response cache key), elaboration/proposer + elaboration (proposal dedup content keys), title (title content keys) |
@@ -943,8 +954,8 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `migrateSettings` / `readSettingsVersion` / `CURRENT_SETTINGS_VERSION` | main (loadSettings migration runner), settings (DEFAULT_SETTINGS version stamp) |
 | `voiceInstruction` | elaboration/proposer, deep-dive/note-generator, summarize/summarizer (#540) |
 | `VOICE_OPTIONS` | settings-ui/voice-setting |
-| `deepMergeSettings` | main (`loadSettings`, `main.ts:310`: migrated raw record over `DEFAULT_SETTINGS`) |
-| `migrateDataFolder` | main (`onload`, `main.ts:54`, right after `NotificationManager` construction) |
+| `deepMergeSettings` | main (`loadSettings`, `main.ts:319`: migrated raw record over `DEFAULT_SETTINGS`) |
+| `migrateDataFolder` | main (`onload`, `main.ts:56`, right after `NotificationManager` construction) |
 | `extractGeminiResponseText` | ai-client (callGemini), audio/transcriber (Gemini provider) |
 | `arrayBufferToBase64` / `base64EncodedLength` | image/extractor, elaboration/image-analyzer, audio/transcriber (Gemini inline audio), shared/image-preprocess (`base64EncodedLength` only) |
 | `preprocessImage` | image/extractor, elaboration/image-analyzer (both via the barrel) |
@@ -952,7 +963,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `NotificationManager` | all feature modules (injected via `ModuleDeps`) |
 | `CheckpointManager` | main (creates), elaboration, audio, video, image, enrichment, summarize, organize, deep-dive, rem (all injected via `ModuleDeps`) |
 | `ModuleDeps` / `FeatureModule` / `FeatureSettingsKey` | every feature module (`implements FeatureModule`, `constructor(deps: ModuleDeps, ...)`), modules/registry (`FeatureModules` mapped over `FeatureSettingsKey`; construct/load/unload loops), main (builds the ONE `ModuleDeps`, `main.ts:64-71`), `__test-utils__/mock-factories.makeModuleDeps` |
-| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:60`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via `ModuleDeps`), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
+| `NoteOperationQueue` | main (creates the ONE shared instance, `main.ts:64`), audio, video, image, elaboration, enrichment, title, summarize, tidy, organize, deep-dive (all injected via `ModuleDeps`), transcription/insert-url-transcript (`InsertUrlTranscriptDeps.noteQueue`) |
 | `fetchArticleContent` / `fetchPageContent` | summarize/index, intake/index |
 | `classifyUrl` / `extractUrls` | intake (URL routing), elaboration/index, enrichment/index, deep-dive/index, illustrate/index (source URLs) |
 | `findAudioEmbeds` / `AUDIO_EXTENSIONS` / `AUDIO_EMBED_REGEX` / `AudioEmbed` | summarize/index (`collectTargets`), audio/index (barrel re-export + `AudioEmbed` params), transcription/ (via the `audio` barrel) |
@@ -968,7 +979,7 @@ Mid-segment wildcards (e.g. `dir/*.md`) are out of scope for v1 and fall through
 | `isTwitterUrl` | elaboration/proposer, enrichment/index |
 | `sanitizeUrl` | video/index, video/audio-extractor, transcription/duration-detector, transcription/youtube-captions; in-layer: content-fetcher (`fetchHtmlDocument`, `content-fetcher.ts:42`), tweet-fetcher, reddit-fetcher, url-classifier |
 | `sanitizePublicUrl` | illustrate/asset-writer (`illustrate/asset-writer.ts:36`), illustrate/linked-pages (`illustrate/linked-pages.ts:21`) |
-| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:203`), organize/index (`organize/index.ts:446,545,604`) |
+| `assertVaultRelativePath` | deep-dive/index (`deep-dive/index.ts:268,271`), organize/index (`organize/index.ts:442,543,602`) |
 | `sanitizePath` | video/audio-extractor |
 | `sanitizeAIResponse` | elaboration/index, elaboration/proposer, audio/post-processor, image/index, enrichment/metadata-classifier, enrichment/topic-extractor, enrichment/prompt-builder, tidy/index |
 | `parseFrontmatter` | enrichment/index, enrichment/enrichment-applier, tidy/index |

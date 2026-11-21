@@ -21,7 +21,9 @@ describe('toolsFromCapabilities (#628)', () => {
 		expect(run.outputSchema).toEqual(capabilities.verbs.find((verb) => verb.name === 'jobs.wait')!.result);
 		expect(tools.find((tool) => tool.name === 'jobs_list')!.outputSchema).toMatchObject({ properties: { value: { type: 'array' } }, required: ['value'] });
 		expect(tools.find((tool) => tool.name === 'status')!.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
-		for (const name of ['proposals_accept', 'elaborate', 'deepDive_run', 'deepDive_continue', 'jobs_commit']) expect(tools.find((tool) => tool.name === name)!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+		for (const name of ['proposals_accept', 'proposals_reject', 'elaborate', 'deepDive_run', 'deepDive_continue', 'jobs_commit']) expect(tools.find((tool) => tool.name === name)!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+		for (const name of ['proposals_accept', 'elaborate', 'deepDive_run', 'deepDive_continue', 'deepDive_regenerate', 'jobs_commit']) expect(tools.find((tool) => tool.name === name)!.annotations).toMatchObject({ openWorldHint: true });
+		for (const name of ['status', 'proposals_list', 'proposals_reject', 'jobs_cancel']) expect(tools.find((tool) => tool.name === name)!.annotations).toMatchObject({ openWorldHint: false });
 	});
 });
 

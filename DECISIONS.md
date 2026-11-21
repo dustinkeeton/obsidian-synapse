@@ -6,6 +6,72 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 
 ---
 
+## 2026-11-20: Pre-release audit of the agent surface — an agent gets no path a click doesn't
+
+**Context**: Audit of the agent control surface (epic #629: `src/api/`, `mcp/`, the activity log, job operations, accept results, deep-dive rename following) before 1.7.0, on branch `audit-629`. No critical or high issue was found. Several gaps let an agent's call do or reveal slightly more than the same action from the Obsidian UI.
+
+**Decision**: Close each gap where the value enters or leaves, and keep the API's shape.
+
+| Gap | Fix | Where |
+|-----|-----|-------|
+| Elaborating one note (`elaborate`, which bypasses the stub gate) and deep-dive continue and regenerate did not check exclusion rules | A note excluded by path rule or tag now fails the job before any model call | `elaboration/index.ts`, `deep-dive/index.ts` |
+| Job-operation labels and messages reached the API unredacted | `JobOperationLog` runs them through `redactSecrets`, like every other sink | `shared/job-operations.ts` |
+| `maxNotes` through the API had no ceiling | Capped at 100, the settings slider's ceiling, in the verb schema | `api/capabilities.ts` |
+| **Low**: the MCP shim's own errors (CLI output) were not redacted | `BridgeError` redacts its message with the plugin's secret pattern; the shim can't import plugin code, so it mirrors it | `mcp/src/bridge.ts` |
+| **Low**: unloading the plugin left pending external requests and their 30-minute timers alive | `JobRegistry.dispose()`, registered through `Component.register`, fails them with "Synapse was unloaded" | `api/jobs.ts`, `api/index.ts`, `main.ts` |
+| **Low**: success messages and partial-accept reasons were not redacted; tool hints undersold some tools | Both redacted. `proposals_reject` is marked destructive; the long verbs, `proposals_accept` and `jobs_commit` are marked open-world | `api/index.ts`, `mcp/src/tools.ts` |
+
+**Alternatives considered**: None recorded.
+
+**Rationale**: The API promises the same guards as the UI. A check at the module entry point or the output sink covers every caller at once and can't be bypassed by a new verb.
+
+**Impact**:
+- An agent can no longer generate text for a note the user excluded.
+- MCP clients that honor tool hints will ask before rejecting proposals and will know which tools can send note text out.
+- README's privacy section now says an agent with external billing receives the note text it asks for.
+- Tests: 3494 plugin and 32 MCP, all passing; `npm audit` reports 0 vulnerabilities in both packages.
+
+---
+
+## 2026-11-20: One accept result for every proposal kind (#633)
+
+**Context**: Each module's `acceptProposal` returned something different, from nothing to a boolean. The API had to re-read stored status, guess organize's new path, and keep API-only `getProposal` methods to tell a caller what an accept did.
+
+**Decision**:
+- Every `acceptProposal` returns `AcceptResult` (`shared/accept-result.ts`): status `applied`, `partial`, `skipped`, `conflict` or `failed`, the vault paths written, and a reason.
+- A write error still throws, so a real failure is never mistaken for a skip.
+- Enrichment's `acceptSelectedFromView` is renamed `acceptProposal`.
+- `proposals.accept` passes the result through and reports `acceptStatus`.
+- An accept whose note is gone is refused; an illustrate accept whose items are already all present is `skipped`.
+
+**Alternatives considered**: None recorded.
+
+**Rationale**: The module that does the write knows what it wrote. Reporting it at the source removes three workarounds in the API layer.
+
+**Impact**: Every proposal module's accept signature changed. The API's adapters shrank to pass-throughs.
+
+---
+
+## 2026-11-20: Deep dive follows notes you rename or move (#632)
+
+**Context**: Deep-dive records store paths: each accepted note, its source note, the run's root and its syllabus. After a rename, regenerate by path, nav refresh and continue could no longer find them, and a renamed root could make a second syllabus appear.
+
+**Decision**:
+- A vault `rename` listener updates every record under the old path. A folder move is matched by prefix; a still-pending proposal moves only with its folder.
+- A path index (`DeepDiveStore.mayReference`) skips renames no record points at.
+- Each matched record is re-read before it is saved, so a stale copy never overwrites the move. An accept in flight writes at the path the move gave it.
+- A renamed root pins the run's `syllabusPath`, so no second syllabus is created.
+
+**Alternatives considered**: None recorded.
+
+**Rationale**: Users rename and reorganize notes, and organize moves them on accept. Records that follow keep regenerate, continue and navigation working without a lookup by content.
+
+**Impact**:
+- `DeepDiveRun.syllabusPath` is new and optional; absent means "derive it from the root".
+- Edits synced from another device that keep the same files go unseen by the path index.
+
+---
+
 ## 2026-11-19: Reach Synapse from MCP through the Obsidian CLI (#628)
 
 **Context**: An agent could drive Synapse only through `obsidian eval`, which runs any code it writes inside Obsidian with full vault and Node access. That is far more power than calling a few verbs needs.

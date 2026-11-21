@@ -278,6 +278,7 @@ export default class SynapsePlugin extends Plugin {
 			notifications: this.notifications,
 			checkpointManager: this.checkpointManager,
 			activityLog: this.activityLog,
+			register: (cleanup) => this.register(cleanup),
 		});
 		await runFirstRunOnboarding({
 			getSettings,
