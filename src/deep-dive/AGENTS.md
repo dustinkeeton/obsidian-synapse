@@ -21,7 +21,7 @@ class DeepDiveModule {
   onunload(): void
   getPendingProposals(): Promise<DeepDiveProposal[]>                          // index.ts:155
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>                 // index.ts:160
-  acceptProposal(id: string, options?: { silent?: boolean }): Promise<boolean>   // index.ts:185; true when the note was created
+  acceptProposal(id: string, options?: { silent?: boolean }): Promise<AcceptResult>   // shared/accept-result (#633); applied with [the created note's path] when the note was created
   rejectProposal(id: string): Promise<void>                                   // index.ts:269
   run(notePath: string, options?: DeepDiveRunOptions): Promise<DeepDiveOutcome>   // index.ts:318; the command flow with no depth picker or confirm (#623)
   followRename(oldPath: string, newPath: string): Promise<void>   // #632; vault 'rename' listener (registered in onload) -> accepted proposedPath, every sourceNotePath, run.rootNotePath and the run's syllabus follow a renamed note or folder (prefix match); serialized; skipped unless `DeepDiveStore.mayReference` (path index keyed on the record folders' file listing, rebuilt by `indexPaths` from the records each followed rename already scanned; edits synced from another device that keep the same files go unseen) finds a record under the old path; each matched record is re-read before its save, and `followProposal` / `followRun` make every later save of a stale copy carry the moved paths; a pending proposedPath follows only a moved folder; `applyAccept` writes at the proposedPath `updateProposalStatus` returns, so a move followed mid-accept is honored; a root rename pins run.syllabusPath only when that syllabus note exists
@@ -323,8 +323,8 @@ Out: Nothing consumed by other feature modules. `modules/registry.ts:110-116` co
 | User cancels mid-generation (`genOp.cancelled`) | run.status='cancelled', `checkpointManager.discard`, info Notice; partial proposals stay saved (index.ts:721-728) |
 | Run reaches its note cap with topics left (#625) | `endReason: 'cap'`, status `completed`, `run.pending` kept; finish toast names the cap and the topics left with a Continue action; listed by `listContinuableRuns` |
 | Generation loop throws (e.g. iOS backgrounding drops the connection after `safeRequest`'s retries) | `endReason: 'error'`; run stays `in-progress` with `run.pending`, checkpoint kept active, `genOp.error('Deep dive interrupted -- ...')`; resume via `resumeFromCheckpoint` |
-| `acceptProposal` on missing proposal | info Notice "Proposal not found"; no-op BEFORE taking the queue slot (index.ts:187-189) |
-| `applyAccept` on non-pending proposal | silent no-op (double-accept guard, re-checked under the slot) (index.ts:200) |
+| `acceptProposal` on missing proposal | info Notice "Proposal not found"; returns `skipped` BEFORE taking the queue slot |
+| `applyAccept` on non-pending proposal | silent `skipped` (double-accept guard, re-checked under the slot) |
 | `applyAccept` on a stored `proposedPath` that is empty, absolute, or has a `..` segment or null byte | `assertVaultRelativePath` throws (index.ts:203) before the status update and any write; proposal stays `pending`; same `notifyError` + rethrow as a write failure |
 | `applyAccept` write failure | `notifyError`, then rethrows `Accept proposal failed: <msg>`; the `noteQueue.run` rejection propagates to the caller and still releases the slot (index.ts:236-237) |
 | `DeepDiveStore.saveRun` with a run id outside `/^[A-Za-z0-9_-]+$/` | throws `Invalid deep dive run id` (deep-dive-store.ts:185); nothing written |

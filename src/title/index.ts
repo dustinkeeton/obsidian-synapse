@@ -3,17 +3,20 @@ import { SynapseSettings } from '../settings';
 import {
 	AIClient, NotificationManager, NoteOperationQueue, generateId, readNote, isPathExcluded, reviewAction,
 	findAvailableVaultPath, parseFrontmatter, serializeFrontmatter, mergeTags, normalizeFrontmatterTags,
-	trackAiCache, withCacheReport,
+	trackAiCache, withCacheReport, acceptApplied, acceptNotApplied, PROPOSAL_NOT_FOUND, PROPOSAL_NOT_PENDING, SOURCE_NOTE_MISSING,
 } from '../shared';
-import type { CacheUse, ModuleDeps, FeatureModule } from '../shared';
+import type { AcceptResult, CacheUse, ModuleDeps, FeatureModule } from '../shared';
 import { TitleProposalStore } from './title-store';
 import { collectInboundLinks, rewriteContent, InboundLinkRef } from './backlink-remediation';
 import { TitleSuggester } from './title-suggester';
 import { isUntitled } from './title-detector';
 import { titleContentKey } from './content-key';
-import type { TitleProposal, TitleDuplicateStrategy, TitleAcceptOutcome } from './types';
+import type { TitleProposal, TitleDuplicateStrategy } from './types';
 
-export type { TitleProposal, TitleProposalTrigger, TitleProposalStatus, TitleDuplicateStrategy, TitleAcceptOutcome } from './types';
+export type { TitleProposal, TitleProposalTrigger, TitleProposalStatus, TitleDuplicateStrategy } from './types';
+
+/** `merged` tells auto-accept to announce "merged into" rather than a rename (#408). */
+type TitleAcceptResult = AcceptResult & { merged?: boolean };
 export { isUntitled } from './title-detector';
 
 export class TitleModule implements FeatureModule {
@@ -66,10 +69,9 @@ export class TitleModule implements FeatureModule {
 		// the originally proposed title (#408). Callers already hold the note's
 		// queue slot (#483), so apply directly.
 		const outcome = await this.applyAccept(proposal.id, { silent: true });
-		if (outcome.status === 'renamed') {
-			this.notifications.info(withCacheReport(`Auto-accepted title "${this.baseName(outcome.path)}"`, [cacheUse]));
-		} else if (outcome.status === 'merged') {
-			this.notifications.info(withCacheReport(`Auto-merged into "${this.baseName(outcome.into)}"`, [cacheUse]));
+		if (outcome.status === 'applied') {
+			const name = this.baseName(outcome.written[0]);
+			this.notifications.info(withCacheReport(outcome.merged ? `Auto-merged into "${name}"` : `Auto-accepted title "${name}"`, [cacheUse]));
 		}
 		return true;
 	}
@@ -323,8 +325,8 @@ export class TitleModule implements FeatureModule {
 	 * - Collision + `merge` → fold this note into the existing one and trash it.
 	 *
 	 * Auto-accept passes `silent: true` and lets the resolution default to
-	 * `settings.title.duplicateHandling`. Returns a {@link TitleAcceptOutcome} so
-	 * auto-accept can announce the real result.
+	 * `settings.title.duplicateHandling`. `written` holds the renamed path or the
+	 * merge target; a collision with no resolution is a `conflict` naming the target.
 	 *
 	 * Every resolving branch remediates inbound links afterwards, preserving
 	 * each link's rendered display text (#485) — see {@link remediateBacklinks}.
@@ -332,9 +334,9 @@ export class TitleModule implements FeatureModule {
 	async acceptProposal(
 		id: string,
 		options?: { silent?: boolean; resolution?: TitleDuplicateStrategy }
-	): Promise<TitleAcceptOutcome> {
+	): Promise<AcceptResult> {
 		const queued = await this.store.load(id);
-		if (!queued) return { status: 'skipped' };
+		if (!queued) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		// Keyed on the pre-rename path; work queued behind us finds no file there and exits early.
 		return this.noteQueue.run(
 			queued.sourceNotePath,
@@ -346,25 +348,25 @@ export class TitleModule implements FeatureModule {
 	private async applyAccept(
 		id: string,
 		options?: { silent?: boolean; resolution?: TitleDuplicateStrategy }
-	): Promise<TitleAcceptOutcome> {
+	): Promise<TitleAcceptResult> {
 		const proposal = await this.store.load(id);
-		if (!proposal) return { status: 'skipped' };
+		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		// Guard against double-acceptance (cascade safety): never rename twice.
-		if (proposal.status !== 'pending') return { status: 'skipped' };
+		if (proposal.status !== 'pending') return acceptNotApplied('skipped', PROPOSAL_NOT_PENDING);
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!(file instanceof TFile)) {
-			this.notifications.info('Source note no longer exists');
+			this.notifications.info(SOURCE_NOTE_MISSING);
 			await this.store.updateStatus(id, 'rejected');
 			await this.refreshView();
-			return { status: 'skipped' };
+			return acceptNotApplied('failed', SOURCE_NOTE_MISSING);
 		}
 
 		if (/[\\/\0]/.test(proposal.proposedTitle) || /^\.*$/.test(proposal.proposedTitle.trim())) {
 			this.notifications.info('Proposed title is not a valid note name');
 			await this.store.updateStatus(id, 'rejected');
 			await this.refreshView();
-			return { status: 'skipped' };
+			return acceptNotApplied('failed', 'Proposed title is not a valid note name');
 		}
 
 		const targetPath = this.computeTargetPath(file, proposal.proposedTitle);
@@ -384,7 +386,7 @@ export class TitleModule implements FeatureModule {
 				await this.remediateBacklinks(inboundLinks, oldPath, targetPath);
 				await this.store.updateStatus(id, 'accepted');
 				await this.announceAccept(options?.silent, `Renamed to "${this.baseName(targetPath)}"`);
-				return { status: 'renamed', path: targetPath };
+				return acceptApplied([targetPath]);
 			}
 
 			// Live collision. Manual plain Accept supplies no resolution and must
@@ -401,7 +403,7 @@ export class TitleModule implements FeatureModule {
 					`"${proposal.proposedTitle}" already exists — choose Add suffix or Merge`
 				);
 				await this.refreshView();
-				return { status: 'conflict', target: targetPath };
+				return acceptNotApplied('conflict', `"${targetPath}" already exists`);
 			}
 
 			if (resolution === 'merge') {
@@ -412,7 +414,7 @@ export class TitleModule implements FeatureModule {
 					await this.remediateBacklinks(inboundLinks, oldPath, existing.path);
 					await this.store.updateStatus(id, 'accepted');
 					await this.announceAccept(options?.silent, `Merged into "${this.baseName(existing.path)}"`);
-					return { status: 'merged', into: existing.path };
+					return { ...acceptApplied([existing.path]), merged: true };
 				}
 				// Nothing mergeable at the target (e.g. a folder) — fall back to a
 				// plain rename so the accept still resolves, with a heads-up.
@@ -421,7 +423,7 @@ export class TitleModule implements FeatureModule {
 				await this.remediateBacklinks(inboundLinks, oldPath, targetPath);
 				await this.store.updateStatus(id, 'accepted');
 				if (!options?.silent) await this.refreshView();
-				return { status: 'renamed', path: targetPath };
+				return acceptApplied([targetPath]);
 			}
 
 			// resolution === 'iterate': suffix before the extension so the existing
@@ -431,7 +433,7 @@ export class TitleModule implements FeatureModule {
 			await this.remediateBacklinks(inboundLinks, oldPath, freePath);
 			await this.store.updateStatus(id, 'accepted');
 			await this.announceAccept(options?.silent, `Renamed to "${this.baseName(freePath)}"`);
-			return { status: 'renamed', path: freePath };
+			return acceptApplied([freePath]);
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			this.notifications.notifyError('Failed to rename note', error);

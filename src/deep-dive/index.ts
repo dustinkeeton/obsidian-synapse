@@ -9,7 +9,8 @@ import {
 	isPathExcluded, matchesExcludeTag, findMatchingRule, reviewAction, trackAiCache, withCacheReport,
 	stripUnresolvedLinks, assertVaultRelativePath, mergeCacheUse, jobOpId, combineAIOptions, isJobCallRefused,
 } from '../shared';
-import type { AIRequestOptions, AIResponseInfo, CacheUse, OperationStatus, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
+import { acceptApplied, acceptNotApplied, acceptWrote, PROPOSAL_NOT_FOUND, PROPOSAL_NOT_PENDING } from '../shared';
+import type { AcceptResult, AIRequestOptions, AIResponseInfo, CacheUse, OperationStatus, Checkpoint, CheckpointWorkItem, DeferredTask, ModuleDeps, FeatureModule } from '../shared';
 import { DeepDiveStore } from './deep-dive-store';
 import { NoteGenerator } from './note-generator';
 import { scoreQuality } from './quality-scorer';
@@ -246,22 +247,22 @@ export class DeepDiveModule implements FeatureModule {
 	 * Notice and refreshes once. The enrichment / organize follow-on hooks
 	 * still fire (they are the intended, acyclic chain).
 	 */
-	async acceptProposal(id: string, options?: { silent?: boolean }): Promise<boolean> {
+	async acceptProposal(id: string, options?: { silent?: boolean }): Promise<AcceptResult> {
 		const queued = await this.store.loadProposal(id);
 		if (!queued) {
-			this.notifications.info('Proposal not found');
-			return false;
+			this.notifications.info(PROPOSAL_NOT_FOUND);
+			return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		}
 		return this.noteQueue.run(queued.proposedPath, () => this.applyAccept(id, options));
 	}
 
-	/** Queue-free core of acceptProposal; runs holding the new note's queue slot (#483). True when the note was created. */
-	private async applyAccept(id: string, options?: { silent?: boolean }): Promise<boolean> {
+	/** Queue-free core of acceptProposal; runs holding the new note's queue slot (#483). */
+	private async applyAccept(id: string, options?: { silent?: boolean }): Promise<AcceptResult> {
 		const proposal = await this.store.loadProposal(id);
-		if (!proposal) return false;
+		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		// Guard against double-acceptance (cascade safety): never create the
 		// note twice for the same proposal.
-		if (proposal.status !== 'pending') return false;
+		if (proposal.status !== 'pending') return acceptNotApplied('skipped', PROPOSAL_NOT_PENDING);
 
 		try {
 			assertVaultRelativePath(proposal.proposedPath);
@@ -296,7 +297,7 @@ export class DeepDiveModule implements FeatureModule {
 			if (!options?.silent) {
 				await this.onViewRefreshNeeded?.();
 			}
-			return true;
+			return acceptApplied([accepted.proposedPath]);
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);
 			this.notifications.notifyError('Failed to accept proposal', error);
@@ -317,8 +318,8 @@ export class DeepDiveModule implements FeatureModule {
 		for (const id of proposalIds) {
 			// acceptProposal re-loads and re-checks pending, so a child whose
 			// parent was already accepted is still safe.
-			const proposal = await this.store.loadProposal(id);
-			if (proposal && await this.acceptProposal(id, { silent: true })) created.push(proposal.proposedPath);
+			const result = await this.acceptProposal(id, { silent: true });
+			if (acceptWrote(result)) created.push(...result.written);
 		}
 		if (created.length > 0) {
 			this.notifications.info(

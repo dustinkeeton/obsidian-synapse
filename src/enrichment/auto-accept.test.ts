@@ -194,8 +194,21 @@ describe('EnrichmentModule auto-accept (#228)', () => {
 		expect(applied).not.toHaveBeenCalled();
 
 		const [pending] = await mod.getPendingProposals();
-		await mod.acceptSelectedFromView(pending.id, { tags: ['reference'], internalLinks: [], externalLinks: [], frontmatter: [] });
+		const result = await mod.acceptProposal(pending.id, { tags: ['reference'], internalLinks: [], externalLinks: [], frontmatter: [] });
+		expect(result).toEqual({ status: 'partial', written: ['notes/ml.md'], reason: 'Some items were not selected' });
 		expect(applied).toHaveBeenCalledTimes(1);
 		expect(applied).toHaveBeenCalledWith('notes/ml.md', { sourceUrls: ['https://example.com/ml', 'https://example.com/dl'], producedRegion: { kind: 'whole-note' } });
+	});
+
+	it('reports an accept whose note is gone as failed and rejects the proposal (#633)', async () => {
+		settings.autoAccept.enrichment = false;
+		const mod = build(() => settings.autoAccept.enrichment);
+		await mod.onload();
+		await mod.enrich('notes/ml.md', 'manual');
+		const [pending] = await mod.getPendingProposals();
+		((mockPlugin.app.vault as Record<string, unknown>).getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+		expect(await mod.acceptProposal(pending.id)).toEqual({ status: 'failed', written: [], reason: 'Source note no longer exists' });
+		expect(await mod.getPendingProposals()).toEqual([]);
 	});
 });

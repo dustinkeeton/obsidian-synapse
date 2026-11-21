@@ -57,7 +57,7 @@ describe('RemModule Review toast action (#366)', () => {
 			'gatherCandidates'
 		).mockResolvedValue([candidate()]);
 		// Auto-accept rewrites the note body; isolate the apply.
-		vi.spyOn(RemModule.prototype, 'acceptProposal').mockResolvedValue(undefined);
+		vi.spyOn(RemModule.prototype, 'acceptProposal').mockResolvedValue({ status: 'applied', written: [] });
 	});
 
 	afterEach(() => vi.restoreAllMocks());

@@ -60,6 +60,7 @@ interface ApiResult {
 }
 DeepDiveRunResult = ApiResult & { runId?; endReason?: 'cap' | 'exhausted' | 'cancelled' | 'error'; remainingTopics? }   // endReason / remainingTopics from run and continue (#625)
 ScanFolderResult = ApiResult & { count: number | null }   // the scan's own return; null when it returns void (summarize)
+ApiAcceptResult = ApiResult & { acceptStatus?: 'applied' | 'partial' | 'skipped' | 'conflict' | 'failed' }   // proposals.accept (#633); unset when the call is refused before the module runs or the module throws
 
 interface ApiJobStart { ok: boolean; jobId?: string; error? }   // jobId exactly when ok
 interface ApiGenerationOptions { billing?: 'plugin-key' | 'external'; maxCalls?: number }   // #626; billing default = the feature's agentBilling setting
@@ -111,19 +112,19 @@ interface ApiGenerationOutput { requestId; text; model?; stopReason?; truncated?
 
 ## Proposal adapters (`proposals.ts`)
 
-`buildProposalAdapters(app, modules)` (proposals.ts:50) returns `Record<ProposalKind, ProposalAdapter>`, so a new proposal kind fails to compile until it has one.
+`buildProposalAdapters(modules)` returns `Record<ProposalKind, ProposalAdapter>`, so a new proposal kind fails to compile until it has one. Each `accept` returns the module's `AcceptResult` (`shared/accept-result.ts`, #633) unchanged, except where noted.
 
-| Kind | accept call | `applied` from | `written` | `items` |
-|------|-------------|----------------|-----------|---------|
-| elaboration | `acceptProposal(id, content, { onStale })`; refused first when the source note is gone | its boolean (false = note changed since generation) | source note | — |
-| enrichment | `acceptSelectedFromView(id)` (every item) | stored status `accepted` / `partially-accepted` (`getProposal`) | source note | — |
-| organize | `acceptProposal(id)` | stored status | `<proposedDirectory>/<basename>` when that file exists | — |
-| deep-dive | `acceptProposal(id)` | its boolean | `proposedPath` | — |
-| title | `acceptProposal(id, { resolution })` | `TitleAcceptOutcome` (`conflict` -> error naming the target) | renamed path or merge target | — |
-| rem | `acceptProposal(id, items ?? every matchedText)` | stored status | source note | candidate `matchedText`s |
-| illustrate | `acceptProposal(id, items ?? every item id)` | stored status | source note | item ids |
+| Kind | accept call | adapter change | `items` |
+|------|-------------|----------------|---------|
+| elaboration | `acceptProposal(id, content, { onStale: force ? 'replace' : 'skip' })` | `conflict` reason gains "(pass force: true to replace it)" | — |
+| enrichment | `acceptProposal(id)` (every item) | — | — |
+| organize | `acceptProposal(id)` | — | — |
+| deep-dive | `acceptProposal(id)` | — | — |
+| title | `acceptProposal(id, { resolution })` | `conflict` reason gains "; pass resolution \"iterate\" or \"merge\"" | — |
+| rem | `acceptProposal(id, items ?? every matchedText)` | — | candidate `matchedText`s |
+| illustrate | `acceptProposal(id, items ?? every item id)` | — | item ids |
 
-A module may reject a proposal inside its accept (REM / illustrate with nothing applicable, organize with the note gone, enrichment with nothing to add); the stored-status check reports that as `ok: false`, `Proposal was not applied (status: rejected)`. `items` must be a non-empty subset of the proposal's items, checked before the module is called. Enrichment, organize, REM and illustrate expose `getProposal(id)` for this check.
+`proposals.accept` maps the result: `applied` / `partial` -> `ok: true`, `written` = the result's paths, message `Proposal accepted` or `Proposal partly accepted: <reason>`; `skipped` / `conflict` / `failed` -> `ok: false`, `error` = the reason. Every result carries `acceptStatus` (`ApiAcceptResult`). `items` must be a non-empty subset of the proposal's items, checked before the module is called (`skipped` otherwise). A write error inside the module still throws and is reported by `settle` as `ok: false`.
 
 `ApiProposal.notePath` is the note the proposal changes; for deep dive it is the note it would create, with `sourceNotePath` the topic's source. Elaboration and deep-dive items carry `generation` (`AIResponseInfo`: provider, wire model, `stopReason`, `usage`, `cached`) when the proposal recorded it (#625).
 

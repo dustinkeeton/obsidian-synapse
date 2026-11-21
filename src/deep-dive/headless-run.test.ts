@@ -257,7 +257,7 @@ describe('DeepDiveModule headless verbs', () => {
 		});
 
 		it('accepts every generated note when autoAccept is true, regardless of the setting', async () => {
-			const accept = vi.spyOn(mod, 'acceptProposal').mockResolvedValue(true);
+			const accept = vi.spyOn(mod, 'acceptProposal').mockImplementation(async (id) => ({ status: 'applied', written: [`notes/${id}.md`] }));
 
 			const outcome = await mod.run('notes/Root.md', { depth: 1, autoAccept: true });
 
@@ -359,7 +359,7 @@ describe('DeepDiveModule headless verbs', () => {
 
 		it('auto-accepts only the proposals this pass generates', async () => {
 			const first = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1, autoAccept: false });
-			const accept = vi.spyOn(mod, 'acceptProposal').mockResolvedValue(true);
+			const accept = vi.spyOn(mod, 'acceptProposal').mockImplementation(async (id) => ({ status: 'applied', written: [`notes/${id}.md`] }));
 
 			const outcome = await mod.continueRun(first.runId!, { autoAccept: true });
 
@@ -490,7 +490,7 @@ describe('DeepDiveModule headless verbs', () => {
 				return loaded;
 			});
 
-			await mod.acceptProposal('p1', { silent: true });
+			expect(await mod.acceptProposal('p1', { silent: true })).toEqual({ status: 'applied', written: ['Archive/Root/Backpropagation.md'] });
 
 			const created = app.vault.create.mock.calls.map(([path]) => path as string);
 			expect(created).toContain('Archive/Root/Backpropagation.md');

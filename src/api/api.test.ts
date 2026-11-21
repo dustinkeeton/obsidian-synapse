@@ -5,7 +5,7 @@ import type { SynapseApi } from './index';
 import { checkSchema } from './validate';
 import { DEFAULT_SETTINGS, SynapseSettings } from '../settings';
 import { AIClient, ActivityLog, NotificationManager, UNTRUSTED_CONTENT_POLICY, jobOpId } from '../shared';
-import type { AIRequestOptions } from '../shared';
+import type { AcceptResult, AIRequestOptions } from '../shared';
 import { createMockApp, memoryAdapter, mockFile } from '../__test-utils__/mock-factories';
 import type { FeatureModules } from '../modules';
 import type { PipelineModuleMap } from '../pipeline';
@@ -37,25 +37,23 @@ function fakeModules() {
 	const modules = {
 		elaboration: {
 			getPendingProposals: elaboration.pending,
-			acceptProposal: vi.fn(async () => true),
+			acceptProposal: vi.fn(async (): Promise<AcceptResult> => ({ status: 'applied', written: [NOTE] })),
 			rejectProposal: vi.fn(async () => undefined),
 			scanNote: vi.fn(async () => ({ status: 'completed', message: 'Proposal generated', proposalIds: ['e2'], writtenPaths: [], cacheUse: { ai: true } })),
 		},
 		enrichment: {
 			getPendingProposals: enrichment.pending,
-			getProposal: enrichment.get,
-			acceptSelectedFromView: vi.fn(async (id: string) => enrichment.set(id, 'accepted')),
+			acceptProposal: vi.fn(async (): Promise<AcceptResult> => ({ status: 'applied', written: [NOTE] })),
 			rejectFromView: vi.fn(),
 		},
 		organize: {
 			getPendingProposals: organize.pending,
-			getProposal: organize.get,
-			acceptProposal: vi.fn(async (id: string) => organize.set(id, 'accepted')),
+			acceptProposal: vi.fn(async (): Promise<AcceptResult> => ({ status: 'applied', written: ['Archive/Root.md'] })),
 			rejectProposal: vi.fn(),
 		},
 		deepDive: {
 			getPendingProposals: deepDive.pending,
-			acceptProposal: vi.fn(async () => true),
+			acceptProposal: vi.fn(async (): Promise<AcceptResult> => ({ status: 'applied', written: ['Deep Dives/A.md'] })),
 			rejectProposal: vi.fn(),
 			run: vi.fn(async (_path: string, _options: unknown) => ({ status: 'completed', message: 'Generated 2 proposals', runId: 'run1', proposalIds: ['d1', 'd2'], writtenPaths: [], cacheUse: {} })),
 			regenerate: vi.fn(async (_target: unknown) => ({ status: 'completed', message: 'Regenerated', runId: 'run1', proposalIds: ['d1'], writtenPaths: ['Deep Dives/A.md'], cacheUse: {} })),
@@ -66,19 +64,17 @@ function fakeModules() {
 		},
 		title: {
 			getPendingProposals: title.pending,
-			acceptProposal: vi.fn(async () => ({ status: 'conflict', target: 'notes/Better.md' })),
+			acceptProposal: vi.fn(async (): Promise<AcceptResult> => ({ status: 'conflict', written: [], reason: '"notes/Better.md" already exists' })),
 			rejectProposal: vi.fn(),
 		},
 		rem: {
 			getPendingProposals: rem.pending,
-			getProposal: rem.get,
-			acceptProposal: vi.fn(async (id: string) => rem.set(id, 'partially-accepted')),
+			acceptProposal: vi.fn(async (): Promise<AcceptResult> => ({ status: 'partial', written: [NOTE], reason: '1 link no longer matched the note' })),
 			rejectProposal: vi.fn(),
 		},
 		illustrate: {
 			getPendingProposals: illustrate.pending,
-			getProposal: illustrate.get,
-			acceptProposal: vi.fn(async (id: string) => illustrate.set(id, 'accepted')),
+			acceptProposal: vi.fn(async (): Promise<AcceptResult> => ({ status: 'applied', written: [NOTE] })),
 			rejectProposal: vi.fn(),
 			scanBlocker: (): string | null => null,
 		},
@@ -623,17 +619,25 @@ describe('createSynapseApi (#623)', () => {
 			expect(modules.elaboration.acceptProposal).toHaveBeenNthCalledWith(2, 'e1', undefined, { onStale: 'replace' });
 		});
 
-		it('says the elaboration note is gone rather than changed', async () => {
-			modules.stores.elaboration.items[0].sourceNotePath = 'notes/Gone.md';
+		it('passes the module\'s reason through when the note is gone', async () => {
+			modules.elaboration.acceptProposal.mockResolvedValueOnce({ status: 'failed', written: [], reason: 'Source note no longer exists' });
 			const result = await api.proposals.accept('elaboration', 'e1');
-			expect(result.error).toContain('no longer exists');
-			expect(modules.elaboration.acceptProposal).not.toHaveBeenCalled();
+			expect(result).toMatchObject({ ok: false, error: 'Source note no longer exists', acceptStatus: 'failed', written: [] });
 		});
 
-		it('accepts every REM link by default and counts partially-accepted as applied', async () => {
+		it('tells the agent how to replace an elaboration whose note changed', async () => {
+			modules.elaboration.acceptProposal.mockResolvedValueOnce({ status: 'conflict', written: [], reason: 'The note changed since the proposal was generated' });
+			const result = await api.proposals.accept('elaboration', 'e1');
+			expect(result).toMatchObject({ ok: false, acceptStatus: 'conflict' });
+			expect(result.error).toContain('force: true');
+		});
+
+		it('accepts every REM link by default and reports a partial accept as ok with its reason', async () => {
 			const result = await api.proposals.accept('rem', 'r1');
 			expect(modules.rem.acceptProposal).toHaveBeenCalledWith('r1', ['alpha', 'beta']);
-			expect(result).toMatchObject({ ok: true, written: [NOTE], proposals: ['r1'] });
+			expect(result).toMatchObject({
+				ok: true, acceptStatus: 'partial', written: [NOTE], proposals: ['r1'], message: 'Proposal partly accepted: 1 link no longer matched the note',
+			});
 		});
 
 		it.each([[[]], [['gamma']]])('refuses REM items %j without calling the module', async (items) => {
@@ -648,28 +652,23 @@ describe('createSynapseApi (#623)', () => {
 			expect(result.ok).toBe(true);
 		});
 
-		it('reports a proposal the module rejected during accept as not applied', async () => {
-			modules.enrichment.acceptSelectedFromView.mockImplementationOnce(async (id: string) => modules.stores.enrichment.set(id, 'rejected'));
+		it('reports an accept the module skipped as not applied', async () => {
+			modules.enrichment.acceptProposal.mockResolvedValueOnce({ status: 'skipped', written: [], reason: 'Proposal is not pending' });
 			const result = await api.proposals.accept('enrichment', 'n1');
-			expect(result).toMatchObject({ ok: false, error: 'Proposal was not applied (status: rejected)' });
+			expect(result).toMatchObject({ ok: false, error: 'Proposal is not pending', acceptStatus: 'skipped' });
 		});
 
-		it('accepts enrichment with every item and organize with the moved path', async () => {
-			expect(await api.proposals.accept('enrichment', 'n1')).toMatchObject({ ok: true, written: [NOTE] });
-			expect(modules.enrichment.acceptSelectedFromView).toHaveBeenCalledWith('n1');
+		it('returns the paths each module reports writing', async () => {
+			expect(await api.proposals.accept('enrichment', 'n1')).toMatchObject({ ok: true, acceptStatus: 'applied', written: [NOTE], message: 'Proposal accepted' });
+			expect(modules.enrichment.acceptProposal).toHaveBeenCalledWith('n1');
 			expect(await api.proposals.accept('organize', 'o1')).toMatchObject({ ok: true, written: ['Archive/Root.md'] });
-		});
-
-		it('maps the deep-dive accept boolean', async () => {
 			expect(await api.proposals.accept('deep-dive', 'd1')).toMatchObject({ ok: true, written: ['Deep Dives/A.md'] });
-			modules.deepDive.acceptProposal.mockResolvedValueOnce(false);
-			expect((await api.proposals.accept('deep-dive', 'd1')).ok).toBe(false);
 		});
 
 		it('reports a title collision instead of resolving it', async () => {
 			const result = await api.proposals.accept('title', 't1');
-			expect(result.ok).toBe(false);
-			expect(result.error).toContain('resolution');
+			expect(result).toMatchObject({ ok: false, acceptStatus: 'conflict' });
+			expect(result.error).toBe('"notes/Better.md" already exists; pass resolution "iterate" or "merge"');
 		});
 
 		it('refuses an unknown kind or a proposal that is not pending', async () => {

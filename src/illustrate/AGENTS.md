@@ -18,11 +18,10 @@ class IllustrateModule {
   onunload(): void
   getPendingProposals(): Promise<IllustrateProposal[]>
   scanBlocker(): string | null   // index.ts:190; NOTHING_ENABLED_MESSAGE when no photo provider and Mermaid off, else null; scanVault exits on it, api.scanFolder refuses with it (#624)
-  getProposal(id: string): Promise<IllustrateProposal | null>   // index.ts:159; any status; api.proposals.accept reads it to confirm an accept applied (#623)
   illustrateNote(filePath: string, ctx?: SourceContext): Promise<void>   // single note, Review toast (info notice + no-op when no provider and Mermaid are enabled); with ctx (post-op): silent, word gate + exclusions only, source images first, optional linked-page fetch, placed INSIDE ctx.producedRegion when it is a callout; skipped while a run for the path is in flight, when a proposal is already pending, or when the region already holds a synapse-illustrate callout
   scanVault(target?: ScanTarget, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>  // index.ts:345; PipelineScanFn; returns 0 with an info notice when no provider and Mermaid are enabled
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>       // index.ts:396
-  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void>  // index.ts:449; queued write
+  acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<AcceptResult>  // queued write; shared/accept-result (#633)
   rejectProposal(id: string): Promise<void>
 }
 
@@ -143,11 +142,13 @@ illustrateNote(path) / scanVault(folder?, skip?, onlyFile?) / resumeFromCheckpoi
   --> checkpoint completeItem per note; complete -> deferred refresh-sidebar-view
   --> in-progress rows (#577): startOperation meta { kind: 'illustrate', target } on op ids `illustrate-<path>` (single note), `illustrate-vault-scan` + `illustrate-vault-generate` (target = folderLabel ?? 'Whole vault'), `illustrate-resume` (no target)
 
-acceptProposal(id, itemIds)
+acceptProposal(id, itemIds)   -> AcceptResult (#633)
+  --> missing / not pending -> skipped; note gone -> failed; nothing selected -> proposal rejected, skipped
   --> under noteQueue.run(path): photos downloaded first (AssetWriter) unless !preferDownload; failure -> remote URL embed + info notice
   --> items whose synapse-illustrate callout titled `<caption>` (either spelling, `parseCalloutHeader`) or Mermaid body already exist in the note, or photos whose remote fileUrl is already present (or repeats an earlier accepted item's fileUrl), are skipped (alreadyInserted); success notice reports `(N already present)`
   --> one vault.process: blocks.reduce(applyInsertion(acc, resolveInsertionPoint(acc, anchorFor(anchor), resolveOptions(item.region)), block))   // re-resolved live; stored placement is preview only; item.region -> inside the callout with `> ` prefixes
   --> status accepted | partially-accepted, acceptedItemIds
+  --> applied | partial (reason: items deselected and/or N already present); written = the note when a block was inserted, plus each downloaded photo's vault path; nothing inserted or saved -> skipped (proposal still marked accepted)
 ```
 
 ## Dependencies

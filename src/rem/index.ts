@@ -4,7 +4,8 @@ import type { SynapseSettings } from '../settings';
 import type { CommandRegistrar } from '../commands';
 import type { NotificationManager, CheckpointManager, ModuleDeps, FeatureModule, NoteOperationQueue } from '../shared';
 import { jobOpId } from '../shared';
-import type { CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
+import type { AcceptResult, CacheUse, DeferredTask, CheckpointWorkItem } from '../shared';
+import { acceptApplied, acceptNotApplied, acceptWrote, PROPOSAL_NOT_FOUND, PROPOSAL_NOT_PENDING, SOURCE_NOTE_MISSING } from '../shared';
 import type { RemProposal, RemLinkCandidate } from './types';
 import { generateId, getMarkdownFiles, linkpathFor, openScanFolderPicker, fireAndForget, isPathExcluded, matchesExcludeTag, findMatchingRule, redactError, reviewAction, trackAiCache, withCacheReport, settleOnThrow, type ScanTarget, scanScopeLabel, toScanScope } from '../shared';
 import { MentionScanner } from './mention-scanner';
@@ -408,17 +409,17 @@ export class RemModule implements FeatureModule {
 		id: string,
 		acceptedMatchTexts: string[],
 		options?: { silent?: boolean }
-	): Promise<void> {
+	): Promise<AcceptResult> {
 		const proposal = await this.store.load(id);
-		if (!proposal) return;
+		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
 		// Guard against double-acceptance (cascade safety): never rewrite the
 		// note's body text twice for the same proposal.
-		if (proposal.status !== 'pending') return;
+		if (proposal.status !== 'pending') return acceptNotApplied('skipped', PROPOSAL_NOT_PENDING);
 
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!(file instanceof TFile)) {
-			this.notifications.info('Source note no longer exists');
-			return;
+			this.notifications.info(SOURCE_NOTE_MISSING);
+			return acceptNotApplied('failed', SOURCE_NOTE_MISSING);
 		}
 
 		const tFile = file;
@@ -431,7 +432,7 @@ export class RemModule implements FeatureModule {
 		if (accepted.length === 0) {
 			await this.store.updateStatus(id, 'rejected');
 			await this.refreshView();
-			return;
+			return acceptNotApplied('skipped', 'No links selected; the proposal was rejected');
 		}
 
 		// Validate scan-time offsets against the FRESH content; capture it as the undo snapshot.
@@ -446,7 +447,7 @@ export class RemModule implements FeatureModule {
 
 		if (applied === 0) {
 			this.notifications.info('No links inserted: the note changed since the REM scan. Run REM on it again.');
-			return;
+			return acceptNotApplied('conflict', 'The note changed since the REM scan; run REM on it again');
 		}
 
 		const appliedTexts = [...new Set(appliedCandidates.map(c => c.matchedText))];
@@ -467,6 +468,12 @@ export class RemModule implements FeatureModule {
 			);
 			await this.refreshView();
 		}
+		const partial = status === 'partially-accepted';
+		const why = [
+			accepted.length < proposal.candidates.length ? 'some links were not selected' : '',
+			dropped > 0 ? `${dropped} link${dropped === 1 ? '' : 's'} no longer matched the note` : '',
+		].filter(Boolean).join('; ');
+		return acceptApplied([proposal.sourceNotePath], partial, partial && why ? why[0].toUpperCase() + why.slice(1) : undefined);
 	}
 
 	/**
@@ -478,7 +485,7 @@ export class RemModule implements FeatureModule {
 	private async maybeAutoAccept(proposal: RemProposal, batch = false): Promise<boolean> {
 		if (!this.shouldAutoAccept()) return false;
 		const allMatchTexts = [...new Set(proposal.candidates.map(c => c.matchedText))];
-		await this.acceptProposal(proposal.id, allMatchTexts, { silent: batch });
+		if (!acceptWrote(await this.acceptProposal(proposal.id, allMatchTexts, { silent: batch }))) return false;
 		if (!batch) {
 			this.notifications.info(`Auto-accepted REM links for ${proposal.sourceNotePath}`);
 		}
@@ -527,11 +534,6 @@ export class RemModule implements FeatureModule {
 	 */
 	async getPendingProposals(): Promise<RemProposal[]> {
 		return this.store.loadPending();
-	}
-
-	/** One proposal in any status; null when missing. Lets the public API confirm what an accept did (#623). */
-	async getProposal(id: string): Promise<RemProposal | null> {
-		return this.store.load(id);
 	}
 
 	/**

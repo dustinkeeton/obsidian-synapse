@@ -311,7 +311,7 @@ describe('TitleModule duplicate handling (#408)', () => {
 
 		const outcome = await h.mod.acceptProposal(p.id);
 
-		expect(outcome).toEqual({ status: 'skipped' });
+		expect(outcome).toEqual({ status: 'failed', written: [], reason: 'Proposed title is not a valid note name' });
 		expect(h.renameSpy).not.toHaveBeenCalled();
 		expect(await h.mod.getPendingProposals()).toHaveLength(0);
 	});

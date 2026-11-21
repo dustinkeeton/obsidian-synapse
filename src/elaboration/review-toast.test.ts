@@ -88,7 +88,7 @@ describe('ElaborationModule Review toast action (#366)', () => {
 		vi.spyOn(ProposalStore.prototype, 'save').mockResolvedValue(undefined);
 		// Auto-accept applies the proposal; stub the apply so the toast gating is
 		// isolated from vault mutation.
-		vi.spyOn(ElaborationModule.prototype, 'acceptProposal').mockResolvedValue(true);
+		vi.spyOn(ElaborationModule.prototype, 'acceptProposal').mockResolvedValue({ status: 'applied', written: [] });
 	});
 
 	afterEach(() => vi.restoreAllMocks());

@@ -8,9 +8,9 @@ import {
 	stripUnresolvedLinks,
 	scanScopeLabel, type ScanTarget, settleOnThrow,
 } from '../shared';
-import { jobOpId } from '../shared';
+import { jobOpId, acceptApplied, acceptNotApplied, acceptWrote, PROPOSAL_NOT_FOUND, PROPOSAL_NOT_PENDING, SOURCE_NOTE_MISSING } from '../shared';
 import type {
-	CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
+	AcceptResult, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule,
 	NotificationManager, CheckpointManager, NoteOperationQueue, InsertionAnchor, SourceContext, SourceImage, RegionLocator, ResolveInsertionOptions,
 } from '../shared';
 import { NoteAnalyzer } from './note-analyzer';
@@ -153,11 +153,6 @@ export class IllustrateModule implements FeatureModule {
 
 	async getPendingProposals(): Promise<IllustrateProposal[]> {
 		return this.store.loadPending();
-	}
-
-	/** One proposal in any status; null when missing. Lets the public API confirm what an accept did (#623). */
-	async getProposal(id: string): Promise<IllustrateProposal | null> {
-		return this.store.load(id);
 	}
 
 	/** Providers enabled in settings, in preference order. */
@@ -446,13 +441,14 @@ export class IllustrateModule implements FeatureModule {
 	}
 
 	/** Insert the accepted items into the note; photos are downloaded first unless the setting says otherwise. */
-	async acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<void> {
+	async acceptProposal(id: string, acceptedItemIds: string[], options?: { silent?: boolean }): Promise<AcceptResult> {
 		const proposal = await this.store.load(id);
-		if (!proposal || proposal.status !== 'pending') return;
+		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
+		if (proposal.status !== 'pending') return acceptNotApplied('skipped', PROPOSAL_NOT_PENDING);
 		const file = this.plugin.app.vault.getAbstractFileByPath(proposal.sourceNotePath);
 		if (!(file instanceof TFile)) {
-			this.notifications.info('Source note no longer exists');
-			return;
+			this.notifications.info(SOURCE_NOTE_MISSING);
+			return acceptNotApplied('failed', SOURCE_NOTE_MISSING);
 		}
 		const cache = this.plugin.app.metadataCache;
 		const accepted = proposal.items
@@ -460,9 +456,10 @@ export class IllustrateModule implements FeatureModule {
 			.map((item) => ({ ...item, caption: stripUnresolvedLinks(item.caption, cache, file.path) }));
 		if (accepted.length === 0) {
 			await this.rejectProposal(id);
-			return;
+			return acceptNotApplied('skipped', 'No items selected; the proposal was rejected');
 		}
 		let inserted = 0;
+		const assets: string[] = [];
 		await this.noteQueue.run(file.path, async () => {
 			const current = await this.plugin.app.vault.read(file);
 			const seen = new Set<string>();
@@ -475,7 +472,7 @@ export class IllustrateModule implements FeatureModule {
 			});
 			const blocks: Array<{ item: IllustrateItem; block: string }> = [];
 			for (const item of fresh) {
-				blocks.push({ item, block: stripUnresolvedLinks(await this.buildBlock(item, file), cache, file.path) });
+				blocks.push({ item, block: stripUnresolvedLinks(await this.buildBlock(item, file, assets), cache, file.path) });
 			}
 			if (blocks.length === 0) return;
 			// Re-resolve against the live note: the stored placement is only the review preview.
@@ -494,13 +491,23 @@ export class IllustrateModule implements FeatureModule {
 			this.notifications.success(`Inserted ${inserted} visual${inserted === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} already present)` : ''}`);
 			await this.refreshView();
 		}
+		if (inserted === 0 && assets.length === 0) return acceptNotApplied('skipped', 'Every accepted item is already in the note');
+		const present = accepted.length - inserted;
+		const why = [
+			status === 'partially-accepted' ? 'some items were not selected' : '',
+			present > 0 ? `${present} item${present === 1 ? ' was' : 's were'} already present` : '',
+		].filter(Boolean).join('; ');
+		const written = inserted > 0 ? [file.path, ...assets] : assets;
+		return why ? acceptApplied(written, true, why[0].toUpperCase() + why.slice(1)) : acceptApplied(written);
 	}
 
-	private async buildBlock(item: IllustrateItem, note: TFile): Promise<string> {
+	/** `downloaded` collects the vault path of each photo saved. */
+	private async buildBlock(item: IllustrateItem, note: TFile, downloaded: string[]): Promise<string> {
 		if (item.kind !== 'photo') return buildMermaidItemBlock(item);
 		if (!this.getSettings().illustrate.preferDownload) return buildPhotoBlock(item, null);
 		try {
 			const asset = await this.assets.download(item.candidate, note);
+			downloaded.push(asset.path);
 			return buildPhotoBlock(item, asset.path);
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
@@ -519,7 +526,7 @@ export class IllustrateModule implements FeatureModule {
 		if (!this.shouldAutoAccept()) return false;
 		const proposal = await this.store.load(id);
 		if (!proposal || proposal.status !== 'pending') return false;
-		await this.acceptProposal(id, proposal.items.map((item) => item.id), { silent: batch });
+		if (!acceptWrote(await this.acceptProposal(id, proposal.items.map((item) => item.id), { silent: batch }))) return false;
 		if (!batch) this.notifications.info(`Auto-accepted illustrations for ${proposal.sourceNotePath}`);
 		return true;
 	}

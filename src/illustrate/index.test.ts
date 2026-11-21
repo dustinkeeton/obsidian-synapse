@@ -96,7 +96,8 @@ describe('IllustrateModule', () => {
 		it('downloads the photo, inserts both blocks at their anchors, and marks the proposal accepted', async () => {
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
 			vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/red-panda.jpg'));
-			await module.acceptProposal('prop1', ['i-photo', 'i-diagram']);
+			const result = await module.acceptProposal('prop1', ['i-photo', 'i-diagram']);
+			expect(result).toEqual({ status: 'applied', written: ['notes/a.md', 'attachments/red-panda.jpg'] });
 			const written = (await app.vault.process.mock.results[0].value) as string;
 			expect(written).toContain('## Habitat\nForests.\n\n![[attachments/red-panda.jpg]]\n\n> [!note|synapse-illustrate] A red panda\n> Source: [Red panda.jpg](https://commons.wikimedia.org/wiki/File:Red_panda.jpg) · License: [CC BY-SA](https://cc.example/by-sa) · Jane\n\n## Lifecycle');
 			expect(written).toContain('## Lifecycle\nBirth to death.\n\n```mermaid\nflowchart TD\nA --> B\n```');
@@ -107,7 +108,8 @@ describe('IllustrateModule', () => {
 		it('falls back to a remote embed when the download fails and reports partial acceptance', async () => {
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
 			vi.spyOn(AssetWriter.prototype, 'download').mockRejectedValue(new Error('offline'));
-			await module.acceptProposal('prop1', ['i-photo']);
+			const result = await module.acceptProposal('prop1', ['i-photo']);
+			expect(result).toEqual({ status: 'partial', written: ['notes/a.md'], reason: 'Some items were not selected' });
 			const written = (await app.vault.process.mock.results[0].value) as string;
 			expect(written).toContain('![A red panda](https://upload.wikimedia.org/rp.jpg)');
 			expect(notifications.info.mock.calls[0][0]).toContain('offline');
@@ -139,10 +141,10 @@ describe('IllustrateModule', () => {
 
 		it('rejects when nothing is selected and refuses non-pending proposals', async () => {
 			app.vault.getAbstractFileByPath.mockReturnValue(mockFile('notes/a.md'));
-			await module.acceptProposal('prop1', []);
+			expect((await module.acceptProposal('prop1', [])).status).toBe('skipped');
 			expect(IllustrateStore.prototype.updateStatus).toHaveBeenCalledWith('prop1', 'rejected');
 			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({ ...proposal(), status: 'accepted' });
-			await module.acceptProposal('prop1', ['i-photo']);
+			expect(await module.acceptProposal('prop1', ['i-photo'])).toEqual({ status: 'skipped', written: [], reason: 'Proposal is not pending' });
 			expect(app.vault.process).not.toHaveBeenCalled();
 		});
 	});
@@ -334,7 +336,7 @@ describe('IllustrateModule', () => {
 			const items = [{ id: 'i-photo', kind: 'photo' as const, anchor: '## Habitat', caption: 'Another caption', rationale: '', candidate }];
 			vi.mocked(IllustrateStore.prototype.load).mockResolvedValue({ ...proposal(), items });
 			app.vault.read.mockResolvedValue(NOTE + '\n\n![A red panda](https://upload.wikimedia.org/rp.jpg)');
-			await module.acceptProposal('prop1', ['i-photo']);
+			expect(await module.acceptProposal('prop1', ['i-photo'])).toEqual({ status: 'skipped', written: [], reason: 'Every accepted item is already in the note' });
 			expect(app.vault.process).not.toHaveBeenCalled();
 			expect(notifications.success).toHaveBeenCalledWith('Inserted 0 visuals (1 already present)');
 		});
@@ -361,7 +363,9 @@ describe('IllustrateModule', () => {
 				],
 			});
 			const download = vi.spyOn(AssetWriter.prototype, 'download').mockResolvedValue(mockFile('attachments/red-panda.jpg'));
-			await module.acceptProposal('prop1', ['p1', 'p2']);
+			expect(await module.acceptProposal('prop1', ['p1', 'p2'])).toEqual({
+				status: 'partial', written: ['notes/a.md', 'attachments/red-panda.jpg'], reason: '1 item was already present',
+			});
 			const written = (await app.vault.process.mock.results[0].value) as string;
 			expect(download).toHaveBeenCalledTimes(1);
 			expect(written.split('![[attachments/red-panda.jpg]]')).toHaveLength(2);

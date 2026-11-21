@@ -48,7 +48,7 @@ class EnrichmentModule implements FeatureModule {
   resumeFromCheckpoint(checkpoint: Checkpoint): Promise<void>   // index.ts:124
   scanVault(folderPath?: string, skipConfirmation?: boolean, onlyFile?: TFile): Promise<number>   // index.ts:217
   enrich(filePath: string, trigger: EnrichmentTrigger, options?: { postOp?: boolean }): Promise<void>   // index.ts:409; queued per note
-  acceptSelectedFromView(id: string, accepted: AcceptedItems, options?: { silent?: boolean }): Promise<void>   // index.ts:563; queued per note
+  acceptProposal(id: string, accepted?: AcceptedItems, options?: { silent?: boolean }): Promise<AcceptResult>   // queued per note; omitted accepted = every item (#633)
   rejectFromView(id: string): Promise<void>               // index.ts:612; no note write
 }
 
@@ -119,7 +119,7 @@ gated on enrichment.enabled && enrichment.autoEnrich:
 All dispatched via fireAndForget (post-op-hooks.ts:43) from inside the primary operation's NoteOperationQueue slot (#483).
 
 Proposals surface in UnifiedProposalView ('synapse-proposals'); accept/reject wired at main.ts:146-147
-  onEnrichmentAcceptSelected(id, accepted) --> acceptSelectedFromView(id, accepted)
+  onEnrichmentAcceptSelected(id, accepted) --> acceptProposal(id, accepted)
   onEnrichmentReject(id)                   --> rejectFromView(id)
 Pipeline phase: main.ts:95 (scanVault); sidebar source: main.ts:111 (getPendingProposals); checkpoint resume: main.ts:124
 ```

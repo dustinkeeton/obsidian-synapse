@@ -300,7 +300,7 @@ src/
 │   ├── content-key.ts      #   titleContentKey() — input-keyed dedup so a rejected title isn't re-proposed (#408)
 │   ├── backlink-remediation.ts # Snapshot inbound links before a rename, rewrite them after with display text preserved (#485)
 │   ├── settings-section.ts #   Settings UI: enabled toggle + duplicate-handling dropdown
-│   ├── types.ts            #   TitleProposal, trigger/status types, TitleDuplicateStrategy, TitleAcceptOutcome
+│   ├── types.ts            #   TitleProposal, trigger/status types, TitleDuplicateStrategy
 │   └── title-detector.ts   #   Re-exports isUntitled from ../shared (canonical home is shared/)
 │
 ├── shared/                 # Cross-cutting utilities (base layer)
