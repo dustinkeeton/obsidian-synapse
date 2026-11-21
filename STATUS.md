@@ -2,7 +2,7 @@
 
 **Last updated**: 2026-11-20
 **Version**: 1.6.0 (released 2026-11-17); 1.7.0 in pre-release audit
-**Health**: Green — **3494/3494 plugin tests passing (233 files)** and **33/33 MCP shim tests (5 files)**. `npm audit` reports **0 vulnerabilities** in the plugin (production and dev) and in `mcp/`. No critical or high finding in shipped code.
+**Health**: Green — **3496/3496 plugin tests passing (233 files)** and **33/33 MCP shim tests (5 files)**. `npm audit` reports **0 vulnerabilities** in the plugin (production and dev) and in `mcp/`. No critical or high finding in shipped code.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 

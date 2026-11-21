@@ -29,7 +29,7 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 - An agent can no longer generate text for a note the user excluded.
 - MCP clients that honor tool hints will ask before rejecting proposals and will know which tools can send note text out.
 - README's privacy section now says an agent with external billing receives the note text it asks for.
-- Tests: 3494 plugin and 33 MCP, all passing; `npm audit` reports 0 vulnerabilities in both packages.
+- Tests: 3496 plugin and 33 MCP, all passing; `npm audit` reports 0 vulnerabilities in both packages.
 
 ---
 
