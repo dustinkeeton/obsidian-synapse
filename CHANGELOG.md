@@ -5,6 +5,12 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] - 2026-11-21
+
+### Fixed
+
+- Clears a failure in Obsidian's automated plugin review caused by a test helper in the bundled MCP server's source. The plugin itself is unchanged.
+
 ## [1.7.0] - 2026-11-21
 
 ### Added
