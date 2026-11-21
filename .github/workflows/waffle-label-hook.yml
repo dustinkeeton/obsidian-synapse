@@ -40,7 +40,7 @@ jobs:
       - name: Render missing wafflestack resources
         id: waffle-render
         env:
-          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.20.0'
+          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.21.0'
         run: |
           set -euo pipefail
           fail() { echo "::error title=waffle-render::$*"; exit 1; }
@@ -312,7 +312,7 @@ jobs:
       - name: Render missing wafflestack resources
         id: waffle-render
         env:
-          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.20.0'
+          TRUSTED_TOOLKIT: 'github:dustinkeeton/wafflestack#v0.21.0'
         run: |
           set -euo pipefail
           fail() { echo "::error title=waffle-render::$*"; exit 1; }

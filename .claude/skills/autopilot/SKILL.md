@@ -7,6 +7,15 @@ argument-hint: "[#N #M …, a label, `milestone:<name>`, or `all-open`] [+autome
 
 # Autopilot — plan → implement → PR over the backlog
 
+Before any commit-producing operation, including sync/audit/merge commits, apply `git-workflow`'s
+**Commit policy inspection** in the actual worktree and forward the selected runtime profile to
+delegates/responders. Stricter profiles validate the configured identity inputs and select exact
+trailers without weakening repository security requirements. Profile selection never grants commit authorization. On missing signing
+or credit prerequisites stop; `prepare-only` hands off without committing, pushing or opening a PR.
+History rewrites whose effective authors/trailers cannot be inspected must be handed off; do not
+replace existing authors just to satisfy a profile. Remote merge identity/signing is controlled by
+the hosting service, not this inspector: hand off if the requested profile cannot be honored there.
+
 The primitives for an autonomous agency loop already exist and this skill is the **only** thing that composes them: `/issue` writes specs, `/delegate` turns issues into PRs, the required `doctor` check gates merges, and `delegate.autoMerge` proves post-green merge works. Autopilot runs the whole cycle over a **supplied list of issues** so a human no longer has to drive plan → accept → delegate → accept → merge → repeat by hand.
 
 Autopilot is a **prose playbook that composes other skills** — it adds an orchestration loop and a plan→implement handoff on top of machinery that already exists. It does **not** re-implement classification, worktree isolation, PR creation, or board sync: those are the `delegate` skill's job, invoked here in batch mode. It does **not** re-implement branch/worktree teardown: that is the `clean-up` skill's job. Read those skills; this one only wires them together and adds the per-issue plan artifact.
@@ -25,7 +34,7 @@ Cross-referenced, never duplicated:
 ## Worktree launch prerequisite
 
 Before **every** worker launch in a created or reused checkout, run
-`(cd "<absolute-worktree-path>" && npx --yes github:dustinkeeton/wafflestack#v0.20.0 prepare-worktree --cwd "$PWD" --json)`
+`(cd "<absolute-worktree-path>" && npx --yes github:dustinkeeton/wafflestack#v0.21.0 prepare-worktree --cwd "$PWD" --json)`
 using the configured feature-capable CLI outside that worker session. Run from inside the
 destination so relative development runners use its own toolkit; install its dependencies
 first if needed. Require exit 0 and `ready` or `no-op`;
@@ -209,7 +218,7 @@ Runs from item 3, after the wait, before the final PR. `main` reaches `<integ>` 
 
 3. **Conflicts.** List them with `git -C <gate> diff --name-only --diff-filter=U`.
    - **`CHANGELOG.md`, alone or with the lock** → resolve it first, only when it is additive-only: from the main checkout, `node .claude/skills/autopilot/changelog-merge.mjs -C <gate> --write`. It reads git's merge stages and resolves only when each side's change against the merge base adds lines and removes or edits none, every added line falls inside the base's single `## [Unreleased]` section, and no added line is a heading. Additions may sit in different `###` subsections of that section. It keeps main's added entries, then `<integ>`'s. An entry is a top-level bullet with its continuation lines. Lines a side adds before its first bullet continue the entry above: an identical such lead-in on both sides is kept once, and an `<integ>` lead-in holds when it would follow a bullet main added, or when the two lead-ins share a line but differ (trailing whitespace ignored), or when main's lead-in leaves the entry above (it ends in a blank line before an `<integ>` line indented under two spaces, or holds a blank line followed by such a line); a main-only lead-in is written before `<integ>`'s. A whole entry both sides add at the start or end of the same point is kept once; an entry whose bullet line both sides add among different entries at that point holds, even when its continuation lines differ. Lines that different entries merely share, such as a `**Consumer impact:**` line, stay in both. Exit 0 → `git -C <gate> add CHANGELOG.md` and record `CHANGELOG.md additive conflict auto-resolved`, then list the conflicts again: if only the lock remains, go on to the next bullet; if none remain, `git -c user.email={{git.botEmail}} -c user.name={{git.botName}} -C <gate> commit --no-edit --cleanup=strip`. Exit 1 (`HOLD:`) or 2 (`ERROR:`) → abort and hold as for anything else, with the script's line in the hold comment.
-   - **Exactly `.waffle/waffle.lock.json`** → resolve it the usual way: take main's lock, then re-render. Run `git -C <gate> checkout --theirs -- .waffle/waffle.lock.json` and `git -C <gate> add .waffle/waffle.lock.json`, then, in `<gate>`, `npm install`. If `git -C <gate> diff --name-only` or `git -C <gate> ls-files --others --exclude-standard` prints anything, the install changed or created files (a rewritten or new `package-lock.json`, say): abort and hold as for any other conflict. Otherwise, in `<gate>`, run `npx --yes github:dustinkeeton/wafflestack#v0.20.0 render`, then `git -C <gate> add -A`. If the re-rendered lock's `toolkitVersion` differs from the one in `git -C <gate> show origin/main:.waffle/waffle.lock.json`, abort and hold: the render would revert main's toolkit version. List the conflicts again; if none remain, `git -c user.email={{git.botEmail}} -c user.name={{git.botName}} -C <gate> commit --no-edit --cleanup=strip`, which drops git's `# Conflicts:` comment block from the message.
+   - **Exactly `.waffle/waffle.lock.json`** → resolve it the usual way: take main's lock, then re-render. Run `git -C <gate> checkout --theirs -- .waffle/waffle.lock.json` and `git -C <gate> add .waffle/waffle.lock.json`, then, in `<gate>`, `npm install`. If `git -C <gate> diff --name-only` or `git -C <gate> ls-files --others --exclude-standard` prints anything, the install changed or created files (a rewritten or new `package-lock.json`, say): abort and hold as for any other conflict. Otherwise, in `<gate>`, run `npx --yes github:dustinkeeton/wafflestack#v0.21.0 render`, then `git -C <gate> add -A`. If the re-rendered lock's `toolkitVersion` differs from the one in `git -C <gate> show origin/main:.waffle/waffle.lock.json`, abort and hold: the render would revert main's toolkit version. List the conflicts again; if none remain, `git -c user.email={{git.botEmail}} -c user.name={{git.botName}} -C <gate> commit --no-edit --cleanup=strip`, which drops git's `# Conflicts:` comment block from the message.
    - **Anything else** (source, `CHANGELOG.md` outside the carve-out above, the other decision docs, rendered files) → `git -C <gate> merge --abort`, remove `<gate>` and the local sync branch, push nothing, and **hold** (below), listing the conflicts in the hold comment. The run **never picks a winner**.
 4. **Checks.** Stage 1's mechanical checks run here, in `<gate>`, before anything is pushed. Unless step 3 already ran it, run `npm install` in `<gate>`, then apply step 3's check: if `git -C <gate> diff --name-only` or `git -C <gate> ls-files --others --exclude-standard` prints anything, **hold**. Record `git -C <gate> rev-parse HEAD` as `<gateHead>`: the sync merge, or `origin/<integ>` when no sync was needed. Then, in order:
    - **Overwrites.** From the main checkout, list the PRs merged into `<integ>` and pass them to the overwrite detector, adding `--pr sync=<gateHead>` last only when step 2 merged:
@@ -237,7 +246,7 @@ Runs from item 3, after the wait, before the final PR. `main` reaches `<integ>` 
 
 Each must exit 0 in `<gate>` (`autopilot.integrationChecks`):
 
-- `npx --yes github:dustinkeeton/wafflestack#v0.20.0 doctor --allow-missing`
+- `npx --yes github:dustinkeeton/wafflestack#v0.21.0 doctor --allow-missing`
 
 The overwrite detector is a signal, not a verdict. It matches whole lines, so a line that still exists elsewhere in the same file hides its own removal. It walks each PR's branch from its merge commit, so a rebase-merged PR shows only its last commit, and a squash-merged PR has no branch to walk, so every removal it makes is a finding. A rebase rewrites history: a conflict resolved during Step 3's implement-ahead pre-gate rebase looks like an ordinary commit built on the earlier PR, so here it prints a `NOTE:`. Step 3's `--rebase` check catches that drop before the push instead, and item 4 holds the final PR on it.
 

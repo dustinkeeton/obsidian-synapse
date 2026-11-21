@@ -41,7 +41,7 @@ read/update-item query catalog (statuses, dates, milestones, sprint planning) se
 
 ## The standard board spec
 
-Encoded here as the canonical target (modeled on the "Obsidian Synapse" reference board that
+Encoded here as the canonical target (the board shape
 `github-project-management`'s date heuristics already assume). "Standardizing" a board means
 reconciling it toward this:
 
