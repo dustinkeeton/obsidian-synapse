@@ -13,6 +13,7 @@ import type { DetectionResult, Proposal } from './types';
 // path that creates a reviewable elaboration item.
 vi.mock('./detector', () => ({
 	PlaceholderDetector: class MockPlaceholderDetector {
+		isExcluded = vi.fn(() => false);
 		constructor(_app: unknown, _getSettings: unknown) {}
 		detect = vi.fn(
 			async (file: TFile): Promise<DetectionResult> => ({

@@ -1,15 +1,7 @@
 import { acceptNotApplied } from '../shared';
-import type { AcceptResult } from '../shared';
 import type { FeatureModules } from '../modules';
 import type { ProposalKind } from '../views';
-import type { ApiAcceptOptions, ApiProposal } from './types';
-
-/** Per-kind bridge from the public verbs to a module's proposal methods. */
-export interface ProposalAdapter {
-	list(): Promise<ApiProposal[]>;
-	accept(id: string, options: ApiAcceptOptions): Promise<AcceptResult>;
-	reject(id: string): Promise<void>;
-}
+import type { ProposalAdapter } from './types';
 
 function plural(count: number, noun: string): string {
 	return `${count} ${noun}${count === 1 ? '' : 's'}`;

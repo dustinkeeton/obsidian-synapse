@@ -1,5 +1,5 @@
 import type { ImageAnalysis } from './image-analyzer';
-import type { AIResponseInfo, OperationOutcome } from '../shared';
+import type { AIRequestOptions, AIResponseInfo, OperationOutcome } from '../shared';
 
 export type DetectionReason =
 	| { type: 'short-note'; wordCount: number }
@@ -40,3 +40,15 @@ export interface Proposal {
 
 /** What one `scanNote` call did: the proposal generated, and the note when auto-accept rewrote it. `failed` = stopped on an error or produced nothing. */
 export type ElaborationOutcome = OperationOutcome;
+
+/** A public-API job running `scanNote` (#624, #626): its op is tagged with `jobOpId`; `ai` joins every model call. Not persisted. */
+export interface ElaborationJobOptions {
+	jobId?: string;
+	ai?: AIRequestOptions;
+}
+
+/** `acceptProposal` options: `silent` for batch auto-accept; `onStale` overrides the stale-body guard. */
+export interface ElaborationAcceptOptions {
+	silent?: boolean;
+	onStale?: 'confirm' | 'skip' | 'replace';
+}

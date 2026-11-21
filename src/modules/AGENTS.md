@@ -1,5 +1,5 @@
 ---
-last-updated: 2026-11-09
+last-updated: 2026-11-20
 ---
 
 # Modules Registry
@@ -60,7 +60,7 @@ function unloadFeatureModules(modules: FeatureModules): void                    
 | `summarize` | `SummarizeModule` | all | `transcribeUrl` (`wiring.transcribeUrl` result passed through whole, keeping `cached`/`aiCached`, #527), `transcribeAudio` (`vault.readBinary` -> `built.audio.transcribe` -> `{ text, aiCached }`) |
 | `tidy` | `TidyModule` | all | none |
 | `organize` | `OrganizeModule` | all | `() => settings.autoAccept.organize` |
-| `deepDive` | `DeepDiveModule` | all | `() => settings.autoAccept['deep-dive']`; `(text, aiOpts) => built.organize.suggestDirectory(text, aiOpts)` (`registry.ts:111-116`; organize precedes deep-dive in the list for this reason) |
+| `deepDive` | `DeepDiveModule` | all | `() => settings.autoAccept['deep-dive']`; `(text, aiOpts) => organize.suggestDirectory(text, aiOpts)` with `organize = builtModule(built, 'organize')` (`registry.ts:112-115`; organize precedes deep-dive in the list for this reason) |
 | `title` | `TitleModule` | all | `() => settings.autoAccept.title` |
 | `rem` | `RemModule` | all | `() => settings.autoAccept.rem` |
 | `illustrate` | `IllustrateModule` | all | `() => settings.autoAccept.illustrate` |
@@ -76,7 +76,7 @@ function unloadFeatureModules(modules: FeatureModules): void                    
 
 ## Wiring (main.ts)
 
-`main.ts:64-85` builds `ModuleDeps` and calls `constructFeatureModules`; the `ModuleWiring` closures resolve `SynapsePlugin.urlTranscription` / `synapseRunner`, which `main.ts:88-105` builds right after construction (they only run at operation time). `main.ts:185-189` assigns `onViewRefreshNeeded` / `onOpenProposalView` on every module exposing those slots, then `loadFeatureModules`; `onunload` (`main.ts:292`) calls `unloadFeatureModules`.
+`main.ts:68-88` builds `ModuleDeps` and calls `constructFeatureModules`; the `ModuleWiring` closures resolve `SynapsePlugin.urlTranscription` / `synapseRunner`, which `main.ts:92-109` builds right after construction (they only run at operation time). `main.ts:192-196` assigns `onViewRefreshNeeded` / `onOpenProposalView` on every module exposing those slots, then `loadFeatureModules`; `onunload` (`main.ts:294`) calls `unloadFeatureModules`.
 
 ## Dependencies
 

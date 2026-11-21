@@ -20,6 +20,18 @@
         "note": "main.ts builds one ModuleDeps bundle; the registry constructs every feature; coordination layers get features by injection."
       },
       {
+        "id": "agents",
+        "label": "Agent control surface",
+        "focus": [
+          "agent",
+          "mcp",
+          "api",
+          "notefeatures",
+          "storage"
+        ],
+        "note": "An agent reaches Synapse through the synapse-mcp shim and Obsidian's CLI; api/ calls the same module entry points as the palette commands."
+      },
+      {
         "id": "base",
         "label": "Base layer and storage",
         "focus": [
@@ -53,7 +65,7 @@
       "label": "main.ts",
       "sublabel": "SynapsePlugin · lifecycle glue",
       "pos": [
-        420,
+        720,
         40
       ],
       "size": [
@@ -67,7 +79,7 @@
       "label": "modules/registry.ts",
       "sublabel": "constructs · loads · unloads",
       "pos": [
-        420,
+        720,
         160
       ],
       "size": [
@@ -82,7 +94,7 @@
       "label": "views/",
       "sublabel": "proposal sidebar · actions sidebar",
       "pos": [
-        800,
+        1100,
         40
       ],
       "size": [
@@ -96,7 +108,7 @@
       "label": "pipeline/ · intake/ · checkpoints/",
       "sublabel": "Fire Synapse runner · inbox watcher",
       "pos": [
-        40,
+        340,
         160
       ],
       "size": [
@@ -111,7 +123,7 @@
       "label": "Note features",
       "sublabel": "elaboration · enrichment · summarize · tidy · organize · …",
       "pos": [
-        350,
+        650,
         300
       ],
       "size": [
@@ -125,7 +137,7 @@
       "label": "Media features",
       "sublabel": "audio · video · image OCR · URL router",
       "pos": [
-        800,
+        1100,
         160
       ],
       "size": [
@@ -139,7 +151,7 @@
       "label": "shared/ + commands/",
       "sublabel": "AIClient · note queue · transcript cache · callouts",
       "pos": [
-        365,
+        665,
         440
       ],
       "size": [
@@ -152,13 +164,13 @@
       "id": "storage",
       "type": "database",
       "label": ".synapse/",
-      "sublabel": "proposal · checkpoint · transcript JSON",
+      "sublabel": "proposals · checkpoints · transcripts · activity log",
       "pos": [
-        40,
+        340,
         580
       ],
       "size": [
-        260,
+        300,
         64
       ]
     },
@@ -168,7 +180,7 @@
       "label": "AI providers",
       "sublabel": "OpenAI · Anthropic · Gemini · Ollama",
       "pos": [
-        415,
+        715,
         580
       ],
       "size": [
@@ -182,7 +194,7 @@
       "label": "Transcription APIs",
       "sublabel": "Whisper · Deepgram · Gemini",
       "pos": [
-        1000,
+        1300,
         440
       ],
       "size": [
@@ -196,7 +208,7 @@
       "label": "Video sources",
       "sublabel": "captions · yt-dlp + ffmpeg (desktop)",
       "pos": [
-        1100,
+        1400,
         160
       ],
       "size": [
@@ -210,7 +222,7 @@
       "label": "Photo libraries",
       "sublabel": "Wikimedia Commons · Openverse",
       "pos": [
-        860,
+        1160,
         300
       ],
       "size": [
@@ -224,13 +236,57 @@
       "label": "TypeSafe Jev",
       "sublabel": "System 1 decisions · opt-in",
       "pos": [
-        760,
+        1060,
         580
       ],
       "size": [
         220,
         64
       ]
+    },
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "MCP client / agent",
+      "sublabel": "e.g. Claude Code",
+      "pos": [
+        40,
+        160
+      ],
+      "size": [
+        220,
+        64
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "security",
+      "label": "mcp/ · synapse-mcp",
+      "sublabel": "stdio server · opens no port",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        220,
+        72
+      ],
+      "tag": "separate package"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "api/",
+      "sublabel": "verbs · jobs · events.since",
+      "pos": [
+        340,
+        300
+      ],
+      "size": [
+        230,
+        72
+      ],
+      "tag": "never throws"
     }
   ],
   "connections": [
@@ -243,7 +299,7 @@
       "fromSide": "bottom",
       "toSide": "top",
       "labelAt": [
-        570,
+        870,
         132
       ]
     },
@@ -257,7 +313,7 @@
       "toSide": "top",
       "via": [
         [
-          155,
+          455,
           72
         ]
       ]
@@ -281,7 +337,7 @@
       "fromSide": "bottom",
       "toSide": "top",
       "labelAt": [
-        570,
+        870,
         262
       ]
     },
@@ -293,7 +349,7 @@
       "fromSide": "right",
       "toSide": "left",
       "labelAt": [
-        715,
+        1015,
         178
       ]
     },
@@ -304,14 +360,7 @@
       "label": "scan fns · resume",
       "variant": "dashed",
       "fromSide": "bottom",
-      "toSide": "left",
-      "via": [
-        [
-          155,
-          336
-        ]
-      ],
-      "labelSegment": 1
+      "toSide": "top"
     },
     {
       "id": "note-base",
@@ -322,7 +371,7 @@
       "fromSide": "bottom",
       "toSide": "top",
       "labelAt": [
-        600,
+        900,
         406
       ]
     },
@@ -335,7 +384,7 @@
       "toSide": "top",
       "via": [
         [
-          170,
+          490,
           476
         ]
       ]
@@ -349,7 +398,7 @@
       "fromSide": "bottom",
       "toSide": "top",
       "labelAt": [
-        575,
+        875,
         546
       ]
     },
@@ -362,11 +411,11 @@
       "toSide": "top",
       "via": [
         [
-          930,
+          1230,
           262
         ],
         [
-          1100,
+          1400,
           262
         ]
       ],
@@ -380,7 +429,7 @@
       "fromSide": "right",
       "toSide": "left",
       "labelAt": [
-        1080,
+        1380,
         242
       ]
     },
@@ -392,7 +441,7 @@
       "fromSide": "right",
       "toSide": "left",
       "labelAt": [
-        780,
+        1080,
         318
       ]
     },
@@ -402,6 +451,37 @@
       "to": "systemone",
       "label": "typed questions",
       "variant": "dashed"
+    },
+    {
+      "id": "agent-mcp",
+      "from": "agent",
+      "to": "mcp",
+      "label": "MCP tools",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "mcp-api",
+      "from": "mcp",
+      "to": "api",
+      "label": "obsidian eval",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -12
+    },
+    {
+      "id": "api-note",
+      "from": "api",
+      "to": "notefeatures",
+      "label": "entry points",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        610,
+        392
+      ]
     }
   ],
   "cards": [
@@ -417,7 +497,7 @@
       "dot": "emerald",
       "title": "Acyclic by injection",
       "items": [
-        "pipeline/, intake/, checkpoints/ never import a feature; shared/ and commands/ import none",
+        "pipeline/, intake/, checkpoints/, api/ never import a feature; shared/ and commands/ import none",
         "Only feature → feature runtime import: video → audio; the audio, video and image note scanners live in shared/"
       ]
     },
@@ -428,6 +508,14 @@
         "AI calls go through one AIClient over requestUrl; yt-dlp/ffmpeg are desktop-only",
         "Illustrate sends an AI-proposed search query, never note text",
         "System 1 decisions (TypeSafe) are off by default; turned on, note text goes to Jev"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Agents drive the same code",
+      "items": [
+        "synapse-mcp runs each tool as one fixed obsidian eval expression; arguments travel as JSON, never as code",
+        "Long verbs are jobs; with external billing the agent writes the text and it takes the normal checks and queue-held write"
       ]
     }
   ]

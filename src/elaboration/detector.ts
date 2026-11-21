@@ -50,7 +50,8 @@ export class PlaceholderDetector {
 		return { notePath: file.path, reasons };
 	}
 
-	private isExcluded(file: TFile): boolean {
+	/** Path exclusion rule or excluded tag; every entry point refuses these notes, user-invoked ones included. */
+	isExcluded(file: TFile): boolean {
 		const settings = this.getSettings();
 		return (
 			isPathExcluded(file.path, 'elaboration', settings) ||

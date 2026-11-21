@@ -3,7 +3,8 @@ import { chmod, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BridgeError, INLINE_ARGS_MAX_CHARS, ObsidianBridge, buildExpression, defaultRunner, parseOutput } from './bridge.js';
+import { fileURLToPath } from 'node:url';
+import { BridgeError, INLINE_ARGS_MAX_CHARS, ObsidianBridge, buildExpression, defaultRunner, parseOutput, redactSecrets, SECRET_PATTERN } from './bridge.js';
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -57,6 +58,33 @@ describe('buildExpression + parseOutput (#628)', () => {
 		expect(() => parseOutput('status', '')).toThrow('Unexpected output from the Obsidian CLI: (none)');
 		expect(() => parseOutput('status', '=> not json')).toThrow('not JSON');
 		expect(() => parseOutput('status', '=> {"other":1}')).toThrow('unexpected result');
+	});
+
+	it('redacts secrets in a thrown verb\'s error and in CLI output', async () => {
+		const thrown = parseOutput.bind(null, 'status', '=> {"synapseMcp":"threw","error":"upstream said sk-ant-api03-abcdefghijklmnop"}');
+		expect(thrown).toThrow('status threw inside Obsidian: upstream said [REDACTED]');
+		expect(() => parseOutput('status', 'Error: Bearer abcdefghijklmnop rejected')).toThrow('Obsidian could not run status: Error: [REDACTED] rejected');
+		const dir = await mkdtemp(join(tmpdir(), 'synapse-mcp-cli-'));
+		const path = join(dir, 'leaky');
+		await writeFile(path, '#!/bin/sh\necho "key AIzaSyAbcdefghijklmnop" >&2\nexit 1\n');
+		await chmod(path, 0o755);
+		const failing = defaultRunner(path)(['eval', 'code=1'], 5000);
+		await expect(failing).rejects.toThrow('The Obsidian CLI failed: key [REDACTED]');
+	});
+});
+
+describe('redactSecrets', () => {
+	it('matches the plugin\'s shared/redact.ts on every key shape', async () => {
+		const pluginRedact = fileURLToPath(new URL('../../src/shared/redact.ts', import.meta.url));
+		const plugin = await import(/* @vite-ignore */ pluginRedact) as { redactSecrets: (text: string) => string; SECRET_PATTERN: RegExp };
+		expect(SECRET_PATTERN.source).toBe(plugin.SECRET_PATTERN.source);
+		expect(SECRET_PATTERN.flags).toBe(plugin.SECRET_PATTERN.flags);
+		const samples = [
+			'sk-abcdefghijklmnop', 'sk-ant-api03-abcdefghijklmnop', 'key-abcdefghijklmnop', 'dg-abcdefghijklmnop',
+			'Bearer abcdefghijklmnop', 'Token abcdefghijklmnop', 'anthropic-abcdefghijklmnop', 'AIzaSyAbcdefghijklmnop',
+			'no secret here', 'sk-short',
+		];
+		for (const sample of samples) expect(redactSecrets(`x ${sample} y`)).toBe(plugin.redactSecrets(`x ${sample} y`));
 	});
 });
 

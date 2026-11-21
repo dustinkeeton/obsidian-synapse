@@ -93,6 +93,7 @@ describe('createSynapseApi (#623)', () => {
 	let app: ReturnType<typeof createMockApp>;
 	let api: SynapseApi;
 	let listIncomplete: ReturnType<typeof vi.fn>;
+	let cleanups: (() => void)[];
 	let notifications: NotificationManager;
 	let activityLog: ActivityLog;
 
@@ -120,6 +121,7 @@ describe('createSynapseApi (#623)', () => {
 		activityLog = new ActivityLog(memoryAdapter());
 		notifications.setActivitySink((entry) => activityLog.record(entry));
 		listIncomplete = vi.fn(async () => []);
+		cleanups = [];
 		api = createSynapseApi({
 			app: app as never,
 			pluginVersion: '9.9.9',
@@ -129,6 +131,7 @@ describe('createSynapseApi (#623)', () => {
 			notifications,
 			checkpointManager: { listIncomplete } as never,
 			activityLog,
+			register: (cleanup) => { cleanups.push(cleanup); },
 		});
 	});
 
@@ -228,6 +231,7 @@ describe('createSynapseApi (#623)', () => {
 	describe('argument validation', () => {
 		it.each([
 			[{ maxNotes: Number.NaN }, 'options.maxNotes must be an integer'],
+			[{ maxNotes: 101 }, 'options.maxNotes must be at most 100'],
 			[{ depth: 0 }, 'options.depth must be at least 1'],
 			[{ depth: 7 }, 'options.depth must be at most 6'],
 			[{ autoAccept: 'yes' }, 'options.autoAccept must be true or false'],
@@ -282,6 +286,12 @@ describe('createSynapseApi (#623)', () => {
 			expect(modules.elaboration.scanNote).toHaveBeenCalledWith(expect.objectContaining({ path: NOTE }) as unknown, true, { jobId: job.id, ai: expect.any(Object) as unknown });
 			expect(job).toMatchObject({ verb: 'elaborate', status: 'completed', usage: { billing: 'plugin-key', calls: 0, maxCalls: null } });
 			expect(job.result).toEqual({ ok: true, message: 'Proposal generated', written: [], proposals: ['e2'], cacheUse: { ai: true } });
+		});
+
+		it('redacts a secret in a completed outcome message', async () => {
+			modules.elaboration.scanNote.mockResolvedValueOnce({ status: 'completed', message: 'Done with sk-ant-api03-abcdefghijklmnop', proposalIds: [], writtenPaths: [], cacheUse: {} } as never);
+			const job = await runJob(api.elaborate(NOTE));
+			expect(job.result).toMatchObject({ ok: true, message: 'Done with [REDACTED]' });
 		});
 
 		it('refuses a missing note, a disabled feature and bad options without starting a job', async () => {
@@ -482,6 +492,16 @@ describe('createSynapseApi (#623)', () => {
 			expect(committed.job).not.toHaveProperty('requests');
 		});
 
+		it('cancels a job awaiting output when the plugin unloads', async () => {
+			elaborateWith(['Rewrite this stub']);
+			const job = await awaitingJob();
+			expect(cleanups).toHaveLength(1);
+			for (const cleanup of cleanups) cleanup();
+			const waited = await api.jobs.wait(job.id);
+			expect(waited.job?.status).toBe('cancelled');
+			expect(waited.job?.requests ?? []).toEqual([]);
+		});
+
 		it('returns from commit at the next request of a multi-call job', async () => {
 			elaborateWith(['first', 'second']);
 			const job = await awaitingJob();
@@ -650,6 +670,12 @@ describe('createSynapseApi (#623)', () => {
 			const result = await api.proposals.accept('illustrate', 'i1', { items: ['y'] });
 			expect(modules.illustrate.acceptProposal).toHaveBeenCalledWith('i1', ['y']);
 			expect(result.ok).toBe(true);
+		});
+
+		it('redacts a secret in a partial accept reason', async () => {
+			modules.enrichment.acceptProposal.mockResolvedValueOnce({ status: 'partial', written: [NOTE], reason: 'key sk-ant-api03-abcdefghijklmnop' });
+			const result = await api.proposals.accept('enrichment', 'n1');
+			expect(result).toMatchObject({ ok: true, message: 'Proposal partly accepted: key [REDACTED]' });
 		});
 
 		it('reports an accept the module skipped as not applied', async () => {

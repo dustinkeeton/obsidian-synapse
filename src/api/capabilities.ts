@@ -1,13 +1,11 @@
 import type { FeatureSettingsKey } from '../shared';
 import { SYNAPSE_PIPELINE } from '../pipeline';
 import { PROPOSAL_KINDS } from '../views';
-import type { ApiCapabilities, ApiFeatureCapability, ApiParamSpec, ApiVerbSpec } from './types';
+import type { ApiCapabilities, ApiFeatureCapability, ApiParamSpec, ApiVerbSpec, VerbDefinition } from './types';
 import { API_VERSION } from './types';
 
-type VerbDefinition = Omit<ApiVerbSpec, 'available'> & {
-	/** The verb is available while any of these features is enabled and built; omitted = always. */
-	feature?: FeatureSettingsKey | readonly FeatureSettingsKey[];
-};
+/** The settings slider's ceiling for deep dive notes per run; an agent's run is held to the same (cost bound). */
+const MAX_NOTES_PER_RUN = 100;
 
 const jobId: ApiParamSpec = {
 	name: 'id',
@@ -169,13 +167,13 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 			notePath,
 			{
 				name: 'options',
-				description: `depth (1-6), maxNotes, autoAccept; each defaults to its setting. ${generationHelp}`,
+				description: `depth (1-6), maxNotes (1-100), autoAccept; each defaults to its setting. ${generationHelp}`,
 				required: false,
 				schema: {
 					type: 'object',
 					properties: {
 						depth: { type: 'integer', minimum: 1, maximum: 6 },
-						maxNotes: { type: 'integer', minimum: 1 },
+						maxNotes: { type: 'integer', minimum: 1, maximum: MAX_NOTES_PER_RUN },
 						autoAccept: { type: 'boolean' },
 						...generationProperties,
 					},
@@ -194,12 +192,12 @@ export const VERB_DEFINITIONS: readonly VerbDefinition[] = [
 			{ name: 'runId', description: 'The capped run (deepDive.run result runId, or status().continuableDeepDives)', required: true, schema: { type: 'string' } },
 			{
 				name: 'options',
-				description: `maxNotes (cap for this pass), autoAccept; each defaults to the run's own. ${generationHelp}`,
+				description: `maxNotes (cap for this pass, 1-100), autoAccept; each defaults to the run's own. ${generationHelp}`,
 				required: false,
 				schema: {
 					type: 'object',
 					properties: {
-						maxNotes: { type: 'integer', minimum: 1 },
+						maxNotes: { type: 'integer', minimum: 1, maximum: MAX_NOTES_PER_RUN },
 						autoAccept: { type: 'boolean' },
 						...generationProperties,
 					},

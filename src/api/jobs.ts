@@ -114,6 +114,14 @@ export class JobRegistry {
 		return { ok: true, stoppedOperations };
 	}
 
+	/** Cancel every running job's operations and fail its pending external requests; called on plugin unload. */
+	dispose(): void {
+		for (const record of this.jobs.values()) {
+			if (record.status === 'running') this.notifications.cancelJob(record.id);
+			record.generation?.external?.close('Synapse was unloaded');
+		}
+	}
+
 	private finish(record: JobRecord, result: ApiResult): void {
 		const ops = this.notifications.jobOps.list(record.id);
 		const failedOp = ops.find((op) => op.state === 'error');

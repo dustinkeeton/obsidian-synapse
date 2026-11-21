@@ -1,10 +1,10 @@
 # Architecture Overview
 
-**Last updated**: 2026-11-17 · **Version**: 1.5.0
+**Last updated**: 2026-11-20 · **Version**: 1.6.0 (the agent control surface, epic #629, is merged but unreleased)
 
-Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
+Synapse is an Obsidian plugin that layers AI-powered features over a vault: note elaboration (a full-body rewrite of stub notes, with image analysis), audio transcription, video transcription, image OCR, note enrichment, summarization, note tidying, semantic organization, recursive deep-dive note generation, title proposals, in-place wikilink discovery (REM), and Illustrate (licensed reference photos, optionally Mermaid diagrams and charts, #213). Two coordination layers tie them together — a **Fire Synapse pipeline** that runs the features in a fixed order over a folder or note, and an **intake** watcher that auto-processes notes dropped into an inbox. A third entry point is for **agents**: a versioned API object inside the plugin, and a separate `synapse-mcp` server (`mcp/`) that lets an MCP client call it. It runs on both desktop and mobile. YouTube URLs transcribe from their captions on every platform (#184); downloading video with yt-dlp/ffmpeg (captionless YouTube, TikTok, Instagram) and time-range clipping are desktop-only.
 
-The codebase has **26 modules under `src/`** (api, audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (320 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `api/` (#623) is the public API that external agents call. `illustrate/` (#213) is the newest feature module, shipped in 1.3.0.
+The codebase has **26 modules under `src/`** (api, audio, brand-icons, changelog, checkpoints, commands, deep-dive, elaboration, enrichment, illustrate, image, intake, modules, onboarding, organize, pipeline, properties-fold, rem, settings-ui, shared, summarize, tidy, title, transcription, video, views) plus top-level glue: `main.ts` (329 lines) and `settings.ts`. Five of those are thin folders behind an `index.ts`: `settings-ui/` (Obsidian settings tab), `onboarding/` (pure first-run welcome, #89), `brand-icons/` (Synapse SVG icons), `changelog/` (in-app "What's new", #375), and `properties-fold/` (auto-fold note Properties, #381). Two are lifecycle helpers added in 1.1.0: `modules/` (the feature-module registry, #504) and `checkpoints/` (checkpoint recovery UX, #496). `api/` (#623) is the public API that external agents call; `mcp/` beside `src/` is its MCP server, a separate Node package never bundled into `main.js` (#628). `illustrate/` (#213) is the newest feature module, shipped in 1.3.0.
 
 > **Note**: This plugin was previously named "Auto Notes" and was rebranded to "Synapse" in March 2026. The data folder was renamed from `.auto-notes/` to `.synapse/`, with automatic one-time migration on load.
 
@@ -18,7 +18,7 @@ The codebase has **26 modules under `src/`** (api, audio, brand-icons, changelog
 - **`pipeline/`** runs features in order; **`intake/`** decides what to feed the pipeline. Neither imports a feature module directly — `main.ts` injects the features into them. This is what keeps the dependency graph acyclic.
 - **`views/`** holds the two sidebars: the **unified proposal view** (review/accept every proposal type, with an **In progress** section listing the operations still producing proposals, #577) and the **Synapse actions view** (registry-driven, touch-friendly buttons so mobile users reach any command without the palette).
 - **`transcription/`** holds the transcription modals and the **URL tier router** (#184): YouTube captions over plain HTTP first, desktop yt-dlp/ffmpeg second. It reaches `audio` and `video` only through callbacks injected by `main.ts`. Every URL path shares one router built over a **persistent transcript cache** (`shared/transcript-cache.ts`, #488), so a URL is transcribed once and reused by the modal, summarize, and intake.
-- **`api/`** is the versioned public API at `app.plugins.plugins.synapse.api` (#623). An agent or script calls `status()`, `capabilities()` and modal-free verbs (deep dive run and regenerate, elaborate, folder scans, proposal accept and reject). Deep dives and folder scans start a job and return its id; `jobs.wait`, `jobs.get` and `jobs.cancel` follow it (#624). Each verb returns a structured result and never throws. Like `checkpoints/`, it reaches the features only through what `main.ts` hands it.
+- **`api/`** is the versioned public API at `app.plugins.plugins.synapse.api` (#623). An agent or script calls `status()`, `capabilities()` and modal-free verbs (deep dive run, continue and regenerate, elaborate, folder scans, proposal list, accept and reject). Every verb that runs for long or calls a model starts a **job** and returns its id; `jobs.wait`, `jobs.get` and `jobs.cancel` follow it (#624). Each verb returns a structured result and never throws. Like `checkpoints/`, it reaches the features only through what `main.ts` hands it. See [Agent Control Surface](#agent-control-surface-epic-629).
 - **`checkpoints/`** owns the checkpoint *recovery* UX (#496) — the delayed startup "interrupted operations" prompt, the `manage-checkpoints` command, and the sidebar's resume/discard buttons. Persistence stays in `shared/checkpoint-manager.ts`; resume reaches a feature module only through an injected handler map.
 - **No links to missing notes** (#581). Every write of AI-generated or fetched text passes through `stripUnresolvedLinks` (`shared/link-guard.ts`), which turns a `[[link]]` to a note that doesn't exist into plain text (alias kept as the visible text). Embeds and code are left alone, and an elaboration accept keeps links already in the note and links the user typed during review.
 - **One note, one operation at a time.** A single `NoteOperationQueue` (`shared/note-operation-queue.ts`, #483) is injected into every module that reads a note, calls the AI, and writes it back, so two features never interleave writes on the same note.
@@ -29,7 +29,7 @@ The codebase has **26 modules under `src/`** (api, audio, brand-icons, changelog
 
 ## System Diagram
 
-**Interactive version:** [`docs/diagrams/synapse-system.html`](docs/diagrams/synapse-system.html) (self-contained HTML; open it in a browser). It shows `main.ts` handing one `ModuleDeps` bundle to `modules/registry.ts`, the registry constructing the note and media feature modules, every feature standing on the `shared/` + `commands/` base layer, the coordination layers reaching features only by injection, the outside services Synapse reaches — AI providers, the opt-in TypeSafe Jev decision lane, transcription APIs, YouTube captions / yt-dlp, and the two photo libraries — and the `.synapse/` JSON it keeps on disk. Its source is [`docs/diagrams/synapse-system.json`](docs/diagrams/synapse-system.json).
+**Interactive version:** [`docs/diagrams/synapse-system.html`](docs/diagrams/synapse-system.html) (self-contained HTML; open it in a browser). It shows `main.ts` handing one `ModuleDeps` bundle to `modules/registry.ts`, the registry constructing the note and media feature modules, every feature standing on the `shared/` + `commands/` base layer, the coordination layers reaching features only by injection, the agent path (an MCP client → `synapse-mcp` → `api/` → the feature modules), the outside services Synapse reaches — AI providers, the opt-in TypeSafe Jev decision lane, transcription APIs, YouTube captions / yt-dlp, and the two photo libraries — and the `.synapse/` JSON it keeps on disk. Its source is [`docs/diagrams/synapse-system.json`](docs/diagrams/synapse-system.json).
 
 The same topology, inline:
 
@@ -66,6 +66,7 @@ graph TB
             Ill["Illustrate<br/>(licensed photos · Mermaid)"]
         end
 
+        Api["api/<br/>(public verbs · jobs · events)"]
         Commands["Commands<br/>(registry · base layer)"]
         Shared["Shared Layer<br/>AIClient · DecisionClient + confidence router (#558) · NoteOperationQueue · Notifications · Validation<br/>Callouts (native bases) · Insertion points · Image preprocessing · URL Detection"]
     end
@@ -77,6 +78,11 @@ graph TB
         Caps["YouTube captions<br/>(HTTP · no install)"]
         Tools["CLI Tools<br/>yt-dlp · ffmpeg"]
         Photos["Photo libraries<br/>Wikimedia Commons · Openverse"]
+    end
+
+    subgraph AgentSide["Agent side (outside Obsidian)"]
+        Agent["MCP client / agent"]
+        MCP["synapse-mcp (mcp/)<br/>stdio · opens no port"]
     end
 
     Main --> Settings
@@ -116,6 +122,10 @@ graph TB
     Trans --> Caps
     Summ -.->|URL transcription injected| Trans
     Intake -.->|injected transcribeUrlToNote| Trans
+    Main --> Api
+    Agent -->|MCP tools| MCP
+    MCP -->|obsidian eval · JSON args| Api
+    Api -.->|module public entry points| Features
 
     style Trans fill:#f9f,stroke:#333
     style Sidebar fill:#bbf,stroke:#333
@@ -127,6 +137,7 @@ graph TB
     style Commands fill:#fde,stroke:#333
     style Shared fill:#def,stroke:#333
     style Image fill:#e8f5e9,stroke:#333
+    style Api fill:#fde,stroke:#333
 ```
 
 Both `shared/` and `commands/` are **base layers**: every feature may depend on them, but they depend on no feature module. `pipeline/`, `intake/`, `checkpoints/`, and `api/` reach the features only through dependencies injected by `main.ts`, never by importing them. `modules/registry.ts` is the one file (besides the settings tab) that imports every feature barrel — it sits at the top, so the whole graph stays acyclic.
@@ -137,7 +148,7 @@ Both `shared/` and `commands/` are **base layers**: every feature may depend on 
 
 ```
 src/
-├── main.ts                 # Plugin entry — lifecycle glue only (306 lines, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, callback injection
+├── main.ts                 # Plugin entry — lifecycle glue only (329 lines, #496/#504): settings load/save, service construction, registry-driven module lifecycle, view/ribbon/command registration, callback injection
 ├── settings.ts             # Type definitions, defaults, MODEL_OPTIONS + TRANSCRIPTION_MODEL_OPTIONS (#521) + SYSTEM_ONE_MODEL_OPTIONS (#558); type-only imports (ProposalKind, ExclusionRule, TitleDuplicateStrategy, IllustrateSettings, VoiceMode)
 ├── settings-ui/            # SynapseSettingTab — declarative SETTINGS_SECTIONS list (#506); cross-feature sections in global-sections.ts; voice card (voice-setting.ts, #540); System 1 rows (system-one-credentials.ts, #558); About support tiles from FUNDING_LINKS (funding.ts, #529)
 ├── onboarding/             # Pure first-run welcome logic (#89): planFirstRun, needsApiKey, runFirstRunOnboarding
@@ -154,9 +165,10 @@ src/
 │   ├── capabilities.ts     #   VERB_DEFINITIONS (name, JSON-schema params) + capabilities()
 │   ├── status.ts           #   status(): resolved provider/model/effort, key source, in-progress, checkpoints
 │   ├── proposals.ts        #   Per-kind accept/reject/list adapters
-│   ├── jobs.ts             #   JobRegistry: long verbs as jobs (#624); status/progress from the ops a job tags
+│   ├── jobs.ts             #   JobRegistry: long verbs as jobs (#624); status/progress from the ops a job tags; dispose() on unload
+│   ├── external.ts         #   JobGeneration + ExternalRequests: external billing, per-job call cap and usage total (#626)
 │   ├── validate.ts         #   Argument checks against VERB_DEFINITIONS schemas
-│   └── types.ts            #   SynapseApi, ApiResult, API_VERSION
+│   └── types.ts            #   SynapseApi, ApiResult, VerbDefinition, API_VERSION
 │
 ├── checkpoints/            # Checkpoint recovery UX (#496)
 │   ├── checkpoint-recovery.ts # CheckpointRecoveryModule: startup prompt (3 s), manage-checkpoints command, resume/discard
@@ -275,9 +287,9 @@ src/
 │   ├── note-generator.ts   #   AI content generation for topics — plain prose, no [[wikilinks]] (#581)
 │   ├── quality-scorer.ts   #   Local heuristic quality scoring
 │   ├── syllabus-navigator.ts # Traversal ordering, syllabus index, navigation; links via linkpathFor, folder-qualified on a name clash (#611)
-│   ├── deep-dive-store.ts  #   Proposal + run persistence; run ids must match /^[A-Za-z0-9_-]+$/ (2026-11-17)
+│   ├── deep-dive-store.ts  #   Proposal + run persistence; run ids must match /^[A-Za-z0-9_-]+$/ (2026-11-17); mayReference path index for rename following (#632)
 │   ├── types.ts            #   Proposal/run/topic types (incl. the saved resume queue, #595), TraversalNode / NavigationContext, + the SuggestDirectory injection contract (no organize import)
-│   └── index.ts            #   DeepDiveModule orchestrator; auto-organize nesting calls the injected suggestDirectory callback; an interrupted run resumes from its saved queue (#595); AI-chosen titles pass through safeNoteName
+│   └── index.ts            #   DeepDiveModule orchestrator; auto-organize nesting calls the injected suggestDirectory callback; an interrupted run resumes from its saved queue (#595); modal-free run / regenerate (#623), continueRun for capped runs (#625), followRename (#632); AI-chosen titles pass through safeNoteName
 │
 ├── illustrate/             # Insert Media (#213): licensed photos + opt-in Mermaid diagrams/charts (#549); opt-in module
 │   ├── note-analyzer.ts    #   One AI call -> validated spots (photo | diagram | chart); photo-only prompt when illustrate.mermaid is off
@@ -311,6 +323,11 @@ src/
 │   ├── decision-client.ts  #   DecisionClient — System 1 lane over TypeSafe /v1/systemone (choice · score · noul), budget chunking, 429/529 retry (#558)
 │   ├── confidence-router.ts#   routeByConfidence / partitionByConfidence — act above the floor, generative fallback exactly once (#558)
 │   ├── redact.ts           #   redactSecrets() (strings) + redactError() (raw caught errors) — single source of truth for API-key/token redaction
+│   ├── activity-log.ts     #   ActivityLog — redacted .synapse/activity.jsonl, rotated at 512 KB, paged by since(cursor) (#627)
+│   ├── job-operations.ts   #   jobOpId / JobOperationLog — ops tagged <id>@job:<jobId>; labels and messages redacted (#624)
+│   ├── operation-outcome.ts#   OperationOutcome — completed / failed / cancelled, proposal ids, written paths (#624)
+│   ├── accept-result.ts    #   AcceptResult — what every module's acceptProposal did: applied / partial / skipped / conflict / failed (#633)
+│   ├── ai-options.ts       #   combineAIOptions, replyMeta, JobCallRefusedError (#625, #626)
 │   ├── note-operation-queue.ts # NoteOperationQueue — path-keyed FIFO so read → AI → write cycles on one note never interleave (#483)
 │   ├── feature-module.ts   #   ModuleDeps + FeatureModule + FeatureSettingsKey — the contract every feature module implements (#504)
 │   ├── transcript-cache.ts #   TranscriptCache — persistent media-URL transcript store, LRU-capped at 200 entries / 4M chars (#488)
@@ -318,7 +335,7 @@ src/
 │   ├── no-speech.ts        #   NoSpeechDetectedError + hasSpeechContent/isWorthPostProcessing — typed no-speech outcome (#524)
 │   ├── settings-merge.ts   #   deepMergeSettings — prototype-safe deep merge over DEFAULT_SETTINGS (#496)
 │   ├── data-folder-migration.ts # migrateDataFolder — one-time .auto-notes → .synapse rename (#496)
-│   ├── settings-migrations.ts # Version-stamped migration runner (#93): migrateSettings/readSettingsVersion/CURRENT_SETTINGS_VERSION (now 4)
+│   ├── settings-migrations.ts # Version-stamped migration runner (#93): migrateSettings/readSettingsVersion/CURRENT_SETTINGS_VERSION (now 8)
 │   ├── hash-utils.ts       #   hashString/contentKey — dependency-free input-keyed hashing for idempotency (#395)
 │   ├── untrusted-content.ts#   wrapUntrusted() / stripUntrustedMarkers() / UNTRUSTED_CONTENT_POLICY — prompt-injection fence with a per-block random id, used by every AI feature (#398, #620)
 │   ├── review-action.ts    #   reviewAction() — centralized "Review" completion-toast gate (#366)
@@ -382,6 +399,15 @@ src/
     ├── proposal-styles.ts        # Semantic color tokens + card/badge class helpers
     ├── types.ts                  # UnifiedItem, UnifiedViewCallbacks
     └── index.ts                  # Barrel export
+
+mcp/                            # synapse-mcp (#628): separate Node package, own lock file + CI job; never bundled into main.js
+├── src/bridge.ts               #   ObsidianBridge: one fixed `obsidian eval` expression per call (execFile, no shell); args as JSON, over 8 KB via a 0600 temp file; BridgeError messages redacted
+├── src/tools.ts                #   One MCP tool per available verb, from capabilities(); read-only / destructive / open-world hints
+├── src/jobs.ts                 #   runJob: follow a job with jobs.wait, progress + heartbeat, cancel on abort
+├── src/sampling.ts             #   External-billing requests answered through MCP sampling
+├── src/resources.ts            #   synapse://status, proposals, jobs, deep-dives/continuable
+├── src/server.ts               #   createServer: re-lists tools on every tools/list
+└── src/index.ts                #   stdio entry; SYNAPSE_VAULT, OBSIDIAN_CLI and other env settings
 ```
 
 ---
@@ -1039,6 +1065,14 @@ Score = topicCount x 0.3    min(1.0, childTopics / 3)
 Below qualityThreshold (default 0.4) -> stop recursion for this branch
 ```
 
+### Renamed notes stay tracked (#632)
+
+**A deep dive follows its notes when you rename or move them.** A vault `rename` listener updates every stored record that points at the old path: an accepted note's path, each source note path, the run's root note, and its syllabus. A whole folder move is matched by prefix. A still-pending proposal's path moves only with its folder. Renames that touch no deep-dive record are skipped through a path index, and each matched record is re-read before it is saved, so a stale copy never overwrites the move.
+
+### Capped runs continue (#625)
+
+A run that stops at `maxNotesPerRun` ends with `endReason: cap` and keeps its queue. **Continue** — on the finish toast, the sidebar's "Capped deep dives" banner, or `api.deepDive.continue` — generates the rest under a fresh cap in the same run.
+
 ---
 
 ## Enrichment Architecture
@@ -1094,6 +1128,87 @@ summarizer.ts
 
 ---
 
+## Agent Control Surface (epic #629)
+
+**An agent drives Synapse through the same module code a user does, never through a port.** Epic #629 added a public API object inside the plugin (`src/api/`) and an MCP server outside it (`mcp/`). Both are merged after 1.6.0 and still unstable: no release carries them yet, so their shape can change without a version bump.
+
+> **Note**: `API_VERSION` (`src/api/types.ts`) starts counting breaking changes only from the first release that ships the API.
+
+### How a call travels
+
+```mermaid
+sequenceDiagram
+    participant Agent as MCP client / agent
+    participant Shim as synapse-mcp (mcp/)
+    participant CLI as Obsidian CLI (eval)
+    participant Api as api/ (in the plugin)
+    participant Mod as Feature module
+    Agent->>Shim: tool call, e.g. deepDive_run
+    Shim->>CLI: one fixed expression, arguments as a JSON string
+    CLI->>Api: api.deepDive.run(notePath, options)
+    Api->>Api: check arguments against the verb's JSON Schema
+    Api->>Mod: public entry point (takes the note's queue slot)
+    Api-->>Shim: { ok, jobId } at once
+    loop until the job ends
+        Shim->>Api: jobs.wait(jobId)
+        Api-->>Shim: status + progress line
+        Shim-->>Agent: progress notification
+    end
+    Shim-->>Agent: job result (structured content)
+```
+
+### What an agent can call
+
+| Group | Verbs | Behavior |
+|-------|-------|----------|
+| **Describe** | `capabilities()`, `status()` | Verb list with JSON Schemas for params and result; resolved provider/model per feature and where each key comes from, never the key |
+| **Generate (jobs)** | `elaborate`, `scanFolder`, `deepDive.run`, `deepDive.continue`, `deepDive.regenerate` | Return `{ ok, jobId }` at once; the work runs as a job |
+| **Follow jobs** | `jobs.get`, `jobs.wait`, `jobs.cancel`, `jobs.commit`, `jobs.list` | Progress, cancel (the toast's Cancel path), and answering external-billing requests |
+| **Read history** | `events.since` | Pages the activity log after a cursor |
+| **Review** | `proposals.list`, `proposals.accept`, `proposals.reject` | Accept takes every answer a modal would ask for (`force`, `items`, `resolution`, `content`) |
+
+### Rules every verb follows
+
+- **Never throws.** Every verb resolves to a structured result; a thrown error becomes `{ ok: false, error }`.
+- **Checked before it runs.** A bad argument (an unknown option, `depth: 7`, `maxNotes` past 100) returns `ok: false` and calls nothing.
+- **Off means off.** A verb whose feature is disabled in settings refuses, as the palette command would not register.
+- **Same safety as a click.** Verbs call the modules' public entry points, so the note queue, exclusion rules, link stripping and toasts all apply. Since the 2026-11-20 audit, an agent-run elaboration or deep dive on an excluded note fails its job.
+- **Redacted output.** Messages, errors, partial-accept reasons and job-operation lines pass through `redactSecrets`.
+
+### Jobs
+
+- **Tagged operations** — the job id rides into the module, which names its scan and generate operations `<op id>@job:<job id>` (`shared/job-operations.ts`). The job reads progress, failure and cancellation from them.
+- **Status order** — cancelled beats failed beats completed.
+- **Kept in memory** — finished jobs stay for 1 hour, the last 50; they end with the plugin.
+- **On unload** — pending external requests fail with "Synapse was unloaded" and their timers are cleared (2026-11-20).
+
+### Who writes the text: billing
+
+- **`plugin-key` (default)** — Synapse calls the provider with its own key, as for any command.
+- **`external`** — the job pauses at each model call with status `awaiting-output` and the final, fenced messages. The agent answers with `jobs.commit`; the text then takes the same post-processing and queue-held write as a provider reply. The MCP shim answers through MCP sampling when the client supports it.
+- **Limits** — an unanswered request fails after 30 minutes; `maxCalls` caps model calls per job; every job reports `usage` (calls and tokens).
+- **Where it applies** — only `elaborate` and the `deepDive` verbs. The default comes from each feature's **Agents generate the text** setting (`agentBilling`).
+
+### Activity log
+
+Every operation end and shown toast is appended, redacted, to `.synapse/activity.jsonl` (#627). It rotates to `activity.1.jsonl` at 512 KB and keeps one older file, so an agent can read what happened while it was away.
+
+### Accept results
+
+Every module's `acceptProposal` now returns one `AcceptResult` (`shared/accept-result.ts`, #633): status `applied`, `partial`, `skipped`, `conflict` or `failed`, the vault paths written, and a reason. A write error still throws. An accept whose note is gone is refused.
+
+### The MCP shim
+
+| Piece | What it does |
+|-------|--------------|
+| **Tools** | One per available verb (`deepDive.run` → `deepDive_run`), rebuilt from `capabilities()` on every `tools/list`, so tools match the vault's plugin version |
+| **Long tools** | Follow the job in 5 s slices up to 10 minutes, with progress and a heartbeat; cancelling the call cancels the job |
+| **Hints** | Read-only, destructive (can rewrite or move notes, or delete proposals) and open-world (can send note text to a provider) |
+| **Resources** | `synapse://status`, `synapse://proposals`, `synapse://jobs`, `synapse://deep-dives/continuable` |
+| **Setup** | `mcp/README.md`; the decision record is [ADR 002](docs/adr/002-mcp-shim-over-obsidian-cli.md) |
+
+---
+
 ## Storage Layer
 
 All module data is stored as individual JSON files under `.synapse/`:
@@ -1112,7 +1227,7 @@ All module data is stored as individual JSON files under `.synapse/`:
 |   +-- summaries/{name}.md       # Mermaid move diagrams
 +-- deep-dive/
 |   +-- {id}.json                 # Individual note proposals
-|   +-- runs/{id}.json            # Run metadata (stats, depth breakdown)
+|   +-- runs/{id}.json            # Run metadata (stats, depth breakdown, endReason; queue kept on a capped run, #625; syllabusPath pinned after a rename, #632)
 +-- title-proposals/              # Title
 |   +-- {id}.json                 # Title rename proposals
 +-- rem/                          # REM
@@ -1121,6 +1236,7 @@ All module data is stored as individual JSON files under `.synapse/`:
 |   +-- {id}.json                 # Per-note item proposals (photo candidates with license + attribution, Mermaid source)
 +-- checkpoints/                  # Checkpoint/resume
 |   +-- {id}.json                 # Operation state (completed + remaining items)
++-- activity.jsonl                # Activity log (#627): redacted JSON lines; rotates to activity.1.jsonl at 512 KB; read by api.events.since
 +-- transcript-cache.json         # Media-URL transcript store (#488): { version: 1, entries } keyed by canonical URL (+ time range); LRU 200 entries / 4M chars
 +-- temp/                         # Temporary video/audio (auto-cleaned)
 ```
@@ -1329,12 +1445,12 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Outbound-URL scheme check | Illustrate writes only `http:`/`https:` provider URLs into a note (`httpUrlOrEmpty`); any other scheme degrades the link or remote embed to plain caption text (2026-10-06). A local or private-network host degrades the same way (2026-11-09). Since 2026-11-09 the URL's `( ) < >` and whitespace are percent-encoded so it cannot close a markdown `(url)`, and link text and attribution lose `[` `]` and line breaks | `illustrate/inserter.ts:6-19` |
 | Download type check | An Illustrate download whose `Content-Type` is present and not `image/*` is rejected, so only image bytes enter the vault (2026-11-09) | `illustrate/asset-writer.ts:46-50` |
 | Public-host check | Illustrate refuses a download or a linked-page fetch whose host is loopback, private-network, link-local, or unqualified (`sanitizePublicUrl` → `isPrivateHost`): the download fails, the linked page is skipped. It checks the hostname only, so it cannot see where DNS or a redirect lands. Links the user wrote into a note, fetched by summarize and elaboration, still allow local addresses by design (2026-11-09) | `shared/validation.ts`; `illustrate/asset-writer.ts:36`, `illustrate/linked-pages.ts:21` |
-| Stored-path re-validation | A path read back from a stored proposal or snapshot is checked before it is written or renamed to (`assertVaultRelativePath`: not empty, not absolute, no `..` segment, no null byte) — deep-dive accept, organize accept, organize undo (single note and whole run, which lists a bad path as skipped). Title accept rejects a stored title that contains a path separator or is only dots (2026-11-09) | `shared/validation.ts`; `deep-dive/index.ts:176`, `organize/index.ts:440,539,598`, `title/index.ts:362` |
-| Stored-id checks | Checkpoint ids must match `/^[a-z0-9]+$/`; deep-dive run ids read back from proposals and checkpoints must match `/^[A-Za-z0-9_-]+$/` before they become a file name (`saveRun` throws, `loadRun` returns null; 2026-11-17) | `shared/id-utils.ts`, `deep-dive/deep-dive-store.ts:32` |
+| Stored-path re-validation | A path read back from a stored proposal or snapshot is checked before it is written or renamed to (`assertVaultRelativePath`: not empty, not absolute, no `..` segment, no null byte) — deep-dive accept, organize accept, organize undo (single note and whole run, which lists a bad path as skipped). Title accept rejects a stored title that contains a path separator or is only dots (2026-11-09) | `shared/validation.ts`; `deep-dive/index.ts:203`, `organize/index.ts:446,545,604`, `title/index.ts:363` |
+| Stored-id checks | Checkpoint ids must match `/^[a-z0-9]+$/`; deep-dive run ids read back from proposals and checkpoints must match `/^[A-Za-z0-9_-]+$/` before they become a file name (`saveRun` throws, `loadRun` returns null; 2026-11-17) | `shared/id-utils.ts`, `deep-dive/deep-dive-store.ts:42` |
 | Redirect pinning | A Reddit share page may only redirect the follow-up fetch to a Reddit URL, re-run through `sanitizeUrl` first (2026-10-06) | `shared/reddit-fetcher.ts:203-206` |
 | Temp-file cleanup | Clipped-audio source copy and ffmpeg output are unlinked in a `finally` on every exit path, so a failed clip never leaves vault audio in the OS temp dir (2026-10-06). Since 2026-11-09 `VideoModule.processUrl` and `downloadVideoToVault` do the same for the extracted audio and the downloaded video | `audio/index.ts:237-243`, `video/index.ts:106-151`, `video/index.ts:329-346` |
 | Unguessable temp names | Every file Synapse creates in the OS temp dir is named `synapse-<kind>-<timestamp>-<random>`, the suffix from `randomToken()` (CSPRNG hex), not a timestamp alone (2026-11-09) | `shared/id-utils.ts:16`; `audio/index.ts`, `video/audio-extractor.ts`, `transcription/duration-detector.ts` |
-| Safe deep-dive file names | AI-chosen topic titles pass through `safeNoteName`: path separators and reserved characters become `-`, leading dots are stripped (no `..` segment, no hidden file), empty becomes "Untitled" (2026-11-09) | `deep-dive/index.ts:690` |
+| Safe deep-dive file names | AI-chosen topic titles pass through `safeNoteName`: path separators and reserved characters become `-`, leading dots are stripped (no `..` segment, no hidden file), empty becomes "Untitled" (2026-11-09) | `deep-dive/index.ts:944` |
 | Undocumented Obsidian APIs | Feature-detected, never assumed: `app.commands` (actions sidebar shows a "run it from the command palette" notice), `metadataCache.getBacklinksForFile` (no backlink rewrite), `SuggestModal` `chooser.useSelectedItem` (Shift+Enter does nothing), `app.setting.open` / `openTabById` (update notice falls back to a plain message; `revealSettingsSection` does nothing) | `views/command-runner.ts:33-42`, `title/backlink-remediation.ts:45`, `shared/scan-folder-picker-modal.ts:30`, `shared/update-checker.ts:218-230`, `shared/settings-section.ts:140-153` |
 | Release workflow inputs | Tag/version strings pass through `env` with a strict `X.Y.Z` check — no expression interpolation into the shell (2026-10-06) | `.github/workflows/release.yml`, `.github/workflows/tag-on-version-bump.yml` |
 | Pinned CI actions | Every third-party GitHub Action is referenced by full commit SHA, with the version in a trailing comment, so a moved tag cannot change what CI or a release runs (2026-11-09). Since 2026-11-17 `ci.yml` declares `permissions: contents: read` like `waffle-doctor.yml`; `release.yml` and `tag-on-version-bump.yml` get `contents: write` + `id-token: write` + `attestations: write`; `waffle-label-hook.yml` grants per-job write scopes (issues, and contents + pull requests for the implement job) | `.github/workflows/*.yml` |
@@ -1344,6 +1460,8 @@ Path exclusion is centralized (#307): the per-module `excludeFolders` fields wer
 | Credential validation | Live key probe is one minimal authenticated GET (a POST for TypeSafe, which has no GET surface); result is **ephemeral** (never persisted) and routed through `redactSecrets` so an echoed key can't reach the status chip | `shared/credential-validator.ts`, `shared/provider-metadata.ts` |
 | Idempotent updates | `%% synapse-enrichment-start/end %%` markers | `enrichment/enrichment-applier.ts` |
 | Prototype pollution | `deepMergeSettings` skips `__proto__`, `constructor`, `prototype` keys | `shared/settings-merge.ts` |
+| Agent API surface | No port: an agent reaches Synapse only through Obsidian's CLI `eval` or console. Arguments are checked against each verb's JSON Schema before anything runs (`maxNotes` capped at 100, the settings slider's ceiling). Verbs call the modules' public entry points, so exclusion rules and the note queue apply; agent-run elaboration and deep dive (run, continue, regenerate) refuse an excluded note. Every message, error, partial-accept reason and job-operation line is redacted. On unload, pending external requests fail and their 30-minute timers are cleared (2026-11-20) | `src/api/`, `shared/job-operations.ts`, `elaboration/index.ts`, `deep-dive/index.ts` |
+| MCP shim | The verb name must be a plain own member of the API object; arguments travel as a JSON string literal, never as code; `execFile` with no shell. Arguments over 8 KB go through a 0600 temp file the expression deletes. `BridgeError` messages pass through the same secret pattern as `redactSecrets`. Tools that can delete proposals or rewrite notes are marked destructive (`proposals_reject` included since 2026-11-20); tools that can send note text to a provider are marked open-world | `mcp/src/bridge.ts`, `mcp/src/tools.ts` |
 | Lifecycle hygiene | `NotificationManager.dispose()` tears down in-flight ellipsis timers + hides notices on unload (no orphaned `setInterval`) and clears the in-progress registry | `shared/notifications.ts`, `main.ts:onunload()` |
 
 ### Audit history
@@ -1352,6 +1470,7 @@ No audit pass has found a critical or high vulnerability. `data.json` (live API 
 
 | Pass | Outcome |
 |------|---------|
+| 2026-11-20 (pre-release 1.7.0, branch `audit-629`, agent control surface) | No critical or high issue. Closed: agent-run elaboration and deep dive now honor exclusion rules; job-operation labels and messages, success messages and partial-accept reasons are redacted; `maxNotes` capped at 100 through the API. Three Low findings fixed: the MCP shim redacts its own error messages; unload fails pending external requests and clears their timers; `proposals_reject` is marked destructive and the long verbs, `proposals_accept` and `jobs_commit` open-world. Tests: 3494 plugin, 32 MCP, all passing |
 | 2026-11-17 (release readiness, branch `release-readiness-audit`) | No critical or high issue in shipped code. `ci.yml` made read-only; deep-dive run ids validated; the Gemini transcriber URL-encodes the model id; summarize's settings-reveal logic moved to `shared/settings-section.ts`. `npm audit`: 0 production, 12 high in dev tooling (`picomatch`), not fixed. Graph re-verified acyclic |
 | 2026-11-09 (pre-release, whole codebase) | Fenced the two remaining places fetched text reached a prompt unfenced (summarize content, enrichment tweet text); made Illustrate's provider-supplied URL, link text, and attribution unable to forge markdown and rejected non-image downloads; gave OS-temp files random names and removed video temp files on every exit path; sanitized deep-dive file names; feature-detected the undocumented Obsidian APIs. Module type contracts moved into each module's `types.ts`. **Follow-up round, same day:** Illustrate refuses local and private-network hosts; audio post-processing fences the transcript; stored proposal and snapshot paths are re-validated before use; CI actions are pinned to commit SHAs; dev-dependency advisories cleared (`npm audit` reports 0 vulnerabilities); four dead files removed and the note scanners moved to `shared/`, leaving `video → audio` as the only runtime feature → feature import. Graph re-verified acyclic |
 | 2026-10-06 (`chore/audit-2026-10-06`) | Graph re-verified acyclic after the module-boundary refactor (per-call `model`, `shared/image-preprocess`, injected `suggestDirectory`, `AudioClipper`). Five defense-in-depth closures — provider-URL scheme check, Reddit redirect pinning, `--` on the yt-dlp duration probe, `sanitizePath` on the dependency probe, clipped-audio temp cleanup — plus release-workflow input hygiene. None was exploitable on its own |
