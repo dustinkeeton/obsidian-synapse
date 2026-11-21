@@ -228,6 +228,7 @@ describe('createSynapseApi (#623)', () => {
 	describe('argument validation', () => {
 		it.each([
 			[{ maxNotes: Number.NaN }, 'options.maxNotes must be an integer'],
+			[{ maxNotes: 101 }, 'options.maxNotes must be at most 100'],
 			[{ depth: 0 }, 'options.depth must be at least 1'],
 			[{ depth: 7 }, 'options.depth must be at most 6'],
 			[{ autoAccept: 'yes' }, 'options.autoAccept must be true or false'],

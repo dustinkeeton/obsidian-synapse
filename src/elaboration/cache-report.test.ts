@@ -13,6 +13,7 @@ const replayedPaths = vi.hoisted(() => new Set<string>());
 
 vi.mock('./detector', () => ({
 	PlaceholderDetector: class MockPlaceholderDetector {
+		isExcluded = vi.fn(() => false);
 		detect = vi.fn(
 			async (file: TFile): Promise<DetectionResult> => ({
 				notePath: file.path,

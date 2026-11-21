@@ -1,3 +1,5 @@
+import { redactSecrets } from './redact';
+
 /** Op ids ending in this marker plus a job id belong to that job (#624). */
 export const JOB_OP_MARKER = '@job:';
 
@@ -42,6 +44,9 @@ export class JobOperationLog {
 			ops = new Map();
 			this.byJob.set(jobId, ops);
 		}
+		// Agents read these back through the public API (#624): redacted like every other sink.
+		if (patch.label !== undefined) patch = { ...patch, label: redactSecrets(patch.label) };
+		if (patch.message !== undefined) patch = { ...patch, message: redactSecrets(patch.message) };
 		const existing = ops.get(opId);
 		const base: JobOperation = existing ?? { id: opId, label: patch.label ?? '', message: patch.label ?? '', state: 'running', startedAt: Date.now() };
 		ops.set(opId, { ...base, ...patch });

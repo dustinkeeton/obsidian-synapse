@@ -18,6 +18,16 @@ describe('jobOpId / jobIdOf', () => {
 });
 
 describe('JobOperationLog', () => {
+	it('redacts secrets in labels and messages, which agents read back through the API', () => {
+		const log = new JobOperationLog();
+		log.restart('scan@job:j1', 'Scanning sk-ant-abcdefghijklmnopqrstuvwxyz0123');
+		log.record('scan@job:j1', { state: 'error', message: 'Request failed: Bearer sk-abcdefghijklmnopqrstuvwxyz0123456789' });
+
+		const [op] = log.list('j1');
+		expect(op.label).not.toContain('sk-ant-abcdefghijklmnopqrstuvwxyz0123');
+		expect(op.message).not.toContain('sk-abcdefghijklmnopqrstuvwxyz0123456789');
+	});
+
 	it('keeps one record per op, merging later changes', () => {
 		const log = new JobOperationLog();
 		log.restart('scan@job:j1', 'Scanning');

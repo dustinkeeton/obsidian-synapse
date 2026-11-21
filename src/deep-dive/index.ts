@@ -409,6 +409,10 @@ export class DeepDiveModule implements FeatureModule {
 			return failedOutcome(`Note not found at ${proposal.proposedPath}; it was deleted, or moved while deep dive was turned off`);
 		}
 
+		const sourceFile = this.plugin.app.vault.getAbstractFileByPath(normalizePath(proposal.sourceNotePath));
+		if (sourceFile instanceof TFile && this.isExcluded(sourceFile)) {
+			return failedOutcome(`Skipped — "${sourceFile.path}" is excluded from deep dive`);
+		}
 		const source = await this.resolveRegenerateSource(proposal);
 		if (!source) return failedOutcome(`Source note not found: ${proposal.sourceNotePath}`);
 
@@ -636,6 +640,7 @@ export class DeepDiveModule implements FeatureModule {
 		if (!(rootFile instanceof TFile) || rootContent === null) {
 			return refuse(`Source note not found: ${run.rootNotePath}. Discard its remaining topics from the proposal sidebar.`);
 		}
+		if (this.isExcluded(rootFile)) return refuse(`Skipped — "${rootFile.path}" is excluded from deep dive`);
 		this.continuing.add(run.id);
 		try {
 			run.pending.processedCount = 0;

@@ -18,8 +18,8 @@ export { API_VERSION } from './types';
 export { VERB_DEFINITIONS } from './capabilities';
 export type {
 	SynapseApi, SynapseApiDeps, ApiResult, DeepDiveRunResult, ScanFolderResult, ApiScanFeature, ApiScanOptions,
-	ApiDeepDiveRunOptions, ApiRegenerateTarget, ApiProposal, ApiProposalList, ApiAcceptOptions, ApiKeySource, ApiFeatureCapability,
-	ApiParamSpec, ApiVerbSpec, ApiCapabilities, ApiAIStatus, ApiCheckpointStatus, ApiStatus,
+	ApiDeepDiveRunOptions, ApiRegenerateTarget, ApiProposal, ApiProposalList, ApiAcceptOptions, ApiAcceptResult, ApiKeySource, ApiFeatureCapability,
+	ApiParamSpec, ApiVerbSpec, VerbDefinition, ApiCapabilities, ApiAIStatus, ApiCheckpointStatus, ApiStatus,
 	ApiJob, ApiJobCancel, ApiJobLookup, ApiJobStart, ApiJobStatus, ApiJobWait, ApiEventPage,
 	ApiBilling, ApiGenerationOptions, ApiGenerationRequest, ApiGenerationOutput, ApiJobUsage, ApiContinuableDeepDive, ApiDeepDiveEndReason, ApiDeepDiveContinueOptions,
 } from './types';

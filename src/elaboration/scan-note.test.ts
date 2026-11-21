@@ -165,6 +165,28 @@ describe('ElaborationModule.scanNote — user-invoked elaboration', () => {
 		expect(reasonTypes.length).toBeGreaterThan(0);
 	});
 
+	it('refuses a user-invoked note matched by an exclusion rule without reading or calling the model', async () => {
+		settings.exclusions.push({ pattern: 'private/**', features: ['elaboration'] });
+		const file = mockFile('private/journal.md');
+
+		const outcome = await module.scanNote(file as unknown as TFile);
+
+		expect(outcome.status).toBe('failed');
+		expect(outcome.message).toContain('excluded by rule "private/**"');
+		expect(mockPlugin.app.vault.cachedRead).not.toHaveBeenCalled();
+		expect(sharedCompleteMock).not.toHaveBeenCalled();
+	});
+
+	it('refuses a user-invoked note carrying an excluded tag', async () => {
+		mockPlugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { tags: ['no-elaborate'] } });
+		const file = mockFile('notes/tagged.md');
+
+		const outcome = await module.scanNote(file as unknown as TFile);
+
+		expect(outcome.status).toBe('failed');
+		expect(sharedCompleteMock).not.toHaveBeenCalled();
+	});
+
 	it('does NOT proceed when userInvoked is false and no stubs found', async () => {
 		const longContent = '# Complete Note\n\n' + 'This note has plenty of content and no stubs. '.repeat(20);
 		mockPlugin.app.vault.read.mockResolvedValue(longContent);

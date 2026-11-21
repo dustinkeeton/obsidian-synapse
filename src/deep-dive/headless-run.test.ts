@@ -392,6 +392,18 @@ describe('DeepDiveModule headless verbs', () => {
 			expect((await mod.continueRun(first.runId!)).message).toContain('Source note not found');
 		});
 
+		it('refuses a run whose root note has since been excluded', async () => {
+			const first = await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
+			generated = [];
+			settings.exclusions.push({ pattern: 'notes/**', features: ['deep-dive'] });
+
+			const outcome = await mod.continueRun(first.runId!);
+
+			expect(outcome.status).toBe('failed');
+			expect(outcome.message).toContain('excluded');
+			expect(generated).toEqual([]);
+		});
+
 		it('offers Continue on the finish toast when the run is capped', async () => {
 			await mod.run('notes/Root.md', { depth: 1, maxNotes: 1 });
 			const startOperation = (mod as unknown as { notifications: { startOperation: { mock: { results: Array<{ value: { finish: { mock: { calls: unknown[][] } } } }> } } } }).notifications.startOperation;
@@ -552,6 +564,17 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(opts).toMatchObject({ bypassCache: true, beforeCall: expect.any(Function) as unknown });
 			opts?.beforeCall?.();
 			expect(ai.beforeCall).toHaveBeenCalledTimes(1);
+		});
+
+		it('refuses when the source note is excluded, sending it to no model', async () => {
+			proposals.set('p1', proposal({}));
+			settings.exclusions.push({ pattern: 'notes/**', features: ['deep-dive'] });
+
+			const outcome = await mod.regenerate({ proposalId: 'p1' });
+
+			expect(outcome.status).toBe('failed');
+			expect(outcome.message).toContain('excluded');
+			expect(AIClient.prototype.complete).not.toHaveBeenCalled();
 		});
 
 		it('rewrites a pending proposal in the store without touching the vault', async () => {

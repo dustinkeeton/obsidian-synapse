@@ -9,7 +9,7 @@ Versioned public API for external agents (#623, epic #629). `main.ts:265-273` bu
 ```ts
 function createSynapseApi(deps: SynapseApiDeps): SynapseApi   // index.ts:107
 const API_VERSION = 1                                          // types.ts:12; bump on a breaking shape change once released
-const VERB_DEFINITIONS: readonly VerbDefinition[]              // capabilities.ts:107; the source the MCP shim (`mcp/`, #628) generates its tools from
+const VERB_DEFINITIONS: readonly VerbDefinition[]              // capabilities.ts:103 (type `VerbDefinition`, types.ts); the source the MCP shim (`mcp/`, #628) generates its tools from
 
 interface SynapseApiDeps {
   app: App
@@ -94,7 +94,7 @@ interface ApiGenerationOutput { requestId; text; model?; stopReason?; truncated?
 ## Verb contract
 
 - Never throws: every verb body runs in `settle` (index.ts:83), including a job's body; a throw becomes `{ ok: false, error }`. `proposals.list` catches its own failure into `{ ok: false, items: [] }`; `status()` reports `checkpoints: null` when the checkpoint folder can't be read, and `continuableDeepDives: null` when deep dive is off or its runs can't be read; `capabilities()` is pure.
-- Arguments are checked first against the verb's `VERB_DEFINITIONS` schemas (`validateArgs`, validate.ts:64, over `checkSchema`, validate.ts:24; the subset used: type (one or a list, incl. `number` and `null`), enum, minimum, maximum, properties, required, additionalProperties: false, items, oneOf). A bad argument (e.g. `maxNotes: NaN`, `depth: 7`, an unknown option, an unknown kind or feature) returns `ok: false` and calls nothing.
+- Arguments are checked first against the verb's `VERB_DEFINITIONS` schemas (`validateArgs`, validate.ts:64, over `checkSchema`, validate.ts:24; the subset used: type (one or a list, incl. `number` and `null`), enum, minimum, maximum, properties, required, additionalProperties: false, items, oneOf). A bad argument (e.g. `maxNotes: NaN` or past 100, the settings slider's ceiling, `depth: 7`, an unknown option, an unknown kind or feature) returns `ok: false` and calls nothing.
 - Feature gate: a verb whose feature has `settings.<key>.enabled === false` returns `ok: false` and calls nothing (mirrors the palette command not registering).
 - No modal: verbs take every answer a modal asks for. `deepDive.run` skips `selectDepth` and the confirm (`DeepDiveModule.run`); `scanFolder` passes `skipConfirmation = true`; elaboration accept passes `onStale: 'skip'`, or `'replace'` with `force: true`; title accept without `resolution` returns the conflict instead of renaming.
 - Queueing: verbs call the modules' PUBLIC entry points, which take the note's `NoteOperationQueue` slot once (#483). The api layer never acquires a slot itself.
@@ -112,7 +112,7 @@ interface ApiGenerationOutput { requestId; text; model?; stopReason?; truncated?
 
 ## Proposal adapters (`proposals.ts`)
 
-`buildProposalAdapters(modules)` returns `Record<ProposalKind, ProposalAdapter>`, so a new proposal kind fails to compile until it has one. Each `accept` returns the module's `AcceptResult` (`shared/accept-result.ts`, #633) unchanged, except where noted.
+`buildProposalAdapters(modules)` returns `Record<ProposalKind, ProposalAdapter>` (`ProposalAdapter` in types.ts), so a new proposal kind fails to compile until it has one. Each `accept` returns the module's `AcceptResult` (`shared/accept-result.ts`, #633) unchanged, except where noted.
 
 | Kind | accept call | adapter change | `items` |
 |------|-------------|----------------|---------|

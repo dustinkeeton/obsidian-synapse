@@ -55,11 +55,11 @@ interface Proposal {
 
 // index.ts private queue cores (#483): every public entry point above acquires the note's
 // NoteOperationQueue slot ONCE and delegates to one of these, which must never re-enter the queue.
-interface ElaborationJobOptions { jobId?: string; ai?: AIRequestOptions }   // #626; a public-API job running scanNote (call cap, usage meter, external generator); never persisted
+interface ElaborationJobOptions { jobId?: string; ai?: AIRequestOptions }   // types.ts; #626; a public-API job running scanNote (call cap, usage meter, external generator); never persisted
 private generateForNote(file: TFile, userInvoked: boolean, op: OperationHandle, ai?: AIRequestOptions): Promise<ElaborationOutcome>   // index.ts:427; core of scanNote; proposer.generate(result, key, combineAIOptions(trackAiCache(cacheUse), ai))
 // types.ts: ElaborationOutcome = shared OperationOutcome { status: completed | failed | cancelled; message; proposalIds (the generated proposal); writtenPaths (the note when auto-accept rewrote it); cacheUse } (barrel-exported, #624)
 private generateForBatch(detection: DetectionResult): Promise<{ proposal: Proposal | null; autoAccepted: boolean; cacheUse: CacheUse }>   // index.ts:179; per-note core for scanVault + resumeFromCheckpoint; cacheUse filled via trackAiCache (#527)
-private applyProposal(id: string, editedContent?: string, options?: AcceptOptions): Promise<AcceptResult>   // core of acceptProposal, re-loads the proposal under the slot
+private applyProposal(id: string, editedContent?: string, options?: ElaborationAcceptOptions): Promise<AcceptResult>   // core of acceptProposal, re-loads the proposal under the slot
 private maybeAutoAccept(proposal: Proposal, batch?: boolean): Promise<boolean>   // true only when applyProposal's result wrote (`acceptWrote`), so a stale-body skip is not counted as accepted
 
 // proposer.ts (NOT re-exported from index.ts; consumed internally by index.ts)
@@ -327,7 +327,7 @@ No feature-to-feature imports (architecture rule); `proposer.ts` keeps a tiny lo
 - Frontmatter survives accept byte-for-byte via `splitRawFrontmatter`, never `parseFrontmatter` + `serializeFrontmatter` (which re-serialises YAML); a note without frontmatter gets no `---` block. The written file ends in exactly one newline.
 - `maybeAutoAccept` must return whether `applyProposal` wrote, never an unconditional `true`: the batch "Auto-accepted N" count derives from it.
 - Per-note serialization (#483): public `scanNote` / `scanVault` / `resumeFromCheckpoint` / `acceptProposal` acquire the note's `NoteOperationQueue` slot exactly ONCE; the private cores (`generateForNote`, `generateForBatch`, `applyProposal`) must never re-enter it (self-deadlock). `maybeAutoAccept` is called from inside a core and therefore calls `applyProposal` directly, never `acceptProposal`. Only `scanNote` passes `onWait` (user-invoked); batch and accept paths queue silently.
-- `scanNote(userInvoked=true)` bypasses the stub gate: a synthetic `user-requested` reason is created so the proposer always runs, except where the dedup guard (`duplicate`/`cap`) or the anti-fabrication guards apply.
+- `scanNote(userInvoked=true)` bypasses the stub gate: a synthetic `user-requested` reason is created so the proposer always runs, except for a note matched by an exclusion rule or excluded tag (refused before any read, the same as every other single-note command), or where the dedup guard (`duplicate`/`cap`) or the anti-fabrication guards apply.
 - `ImageAnalyzer` imports `preprocessImage` from the `../shared` barrel (image-analyzer.ts:2); this module has no `../image` import.
 - `onOpenProposalView` is the third wired callback (#340) alongside `onProposalAccepted` and `onViewRefreshNeeded`; the operation toast's "Review" action is centralized in `reviewAction(...)` (#366) and only appears when a proposal stays pending after any auto-accept.
 - The unified sidebar view (`src/views/unified-proposal-view.ts`) is the only review surface; the legacy `proposal-view.ts` / `proposal-modal.ts` were removed.

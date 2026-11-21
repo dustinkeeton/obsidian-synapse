@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
-import type { AIFeatureId, AIProvider, EffortLevel, SynapseSettings, TranscriptionProvider } from '../settings';
-import type { AcceptStatus, ActivityEntry, ActivityLog, AIResponseInfo, AIUsage, CacheUse, ChatMessage, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
+import type { AgentBilling, AIFeatureId, AIProvider, EffortLevel, SynapseSettings, TranscriptionProvider } from '../settings';
+import type { AcceptResult, AcceptStatus, ActivityEntry, ActivityLog, AIResponseInfo, AIUsage, CacheUse, ChatMessage, CheckpointManager, FeatureSettingsKey, InProgressEntry, NotificationManager } from '../shared';
 import type { FeatureModules } from '../modules';
 import type { PipelineModuleKey, PipelineModuleMap } from '../pipeline';
 import type { ProposalKind } from '../views';
@@ -38,7 +38,7 @@ export interface ApiJobStart {
 export type ApiJobStatus = 'running' | 'awaiting-output' | 'completed' | 'failed' | 'cancelled';
 
 /** Who generates a verb's text (#626): Synapse with the key in its settings, or the caller through `jobs.commit`. */
-export type ApiBilling = 'plugin-key' | 'external';
+export type ApiBilling = AgentBilling;
 
 /** Options every generating verb takes (#626). */
 export interface ApiGenerationOptions {
@@ -246,6 +246,12 @@ export interface ApiVerbSpec {
 	available: boolean;
 }
 
+/** One `VERB_DEFINITIONS` entry: a verb's spec before availability is resolved. */
+export type VerbDefinition = Omit<ApiVerbSpec, 'available'> & {
+	/** The verb is available while any of these features is enabled and built; omitted = always. */
+	feature?: FeatureSettingsKey | readonly FeatureSettingsKey[];
+};
+
 export interface ApiCapabilities {
 	apiVersion: number;
 	pluginVersion: string;
@@ -349,4 +355,11 @@ export interface SynapseApiDeps {
 	checkpointManager: CheckpointManager;
 	/** The activity log `events.since` reads (#627). */
 	activityLog: ActivityLog;
+}
+
+/** Per-kind bridge from the public verbs to a module's proposal methods. */
+export interface ProposalAdapter {
+	list(): Promise<ApiProposal[]>;
+	accept(id: string, options: ApiAcceptOptions): Promise<AcceptResult>;
+	reject(id: string): Promise<void>;
 }

@@ -9,7 +9,7 @@ import {
 	NotificationManager, sanitizeAIResponse, stripCodeFences, CheckpointManager,
 	NoteOperationQueue, generateId, ConfirmModal, splitRawFrontmatter,
 	fireAndForget, reviewAction, openScanFolderPicker, trackAiCache, withCacheReport,
-	stripUnresolvedLinks, wikilinkTargets, settleOnThrow, combineAIOptions,
+	stripUnresolvedLinks, wikilinkTargets, settleOnThrow, combineAIOptions, findMatchingRule,
 } from '../shared';
 import { acceptApplied, acceptNotApplied, acceptWrote, PROPOSAL_NOT_FOUND, PROPOSAL_NOT_PENDING, SOURCE_NOTE_MISSING } from '../shared';
 import type { AcceptResult, AIRequestOptions, CacheUse, Checkpoint, CheckpointWorkItem, DeferredTask, OperationHandle, ModuleDeps, FeatureModule } from '../shared';
@@ -17,19 +17,9 @@ import { PlaceholderDetector } from './detector';
 import { ProposalStore } from './proposal-store';
 import { ProposalGenerator, proposalContentKey } from './proposer';
 import { DetectionResult, ElaborationOutcome, Proposal } from './types';
+import type { ElaborationAcceptOptions, ElaborationJobOptions } from './types';
 
-export type { DetectionReason, DetectionResult, ElaborationOutcome, Proposal } from './types';
-
-/** A public-API job running `scanNote` (#624, #626): its op is tagged with `jobOpId`; `ai` joins every model call. Not persisted. */
-export interface ElaborationJobOptions {
-	jobId?: string;
-	ai?: AIRequestOptions;
-}
-
-interface AcceptOptions {
-	silent?: boolean;
-	onStale?: 'confirm' | 'skip' | 'replace';
-}
+export type { DetectionReason, DetectionResult, ElaborationAcceptOptions, ElaborationJobOptions, ElaborationOutcome, Proposal } from './types';
 
 export class ElaborationModule implements FeatureModule {
 	private plugin: Plugin;
@@ -435,6 +425,15 @@ export class ElaborationModule implements FeatureModule {
 		const done = (ok: boolean, message: string, extra: Partial<ElaborationOutcome> = {}): ElaborationOutcome =>
 			({ status: ok ? 'completed' : 'failed', message, proposalIds: [], writtenPaths: [], cacheUse, ...extra });
 		try {
+			// An excluded note never reaches a model, even when invoked directly or through the API (#307).
+			if (this.detector.isExcluded(file)) {
+				const rule = findMatchingRule(file.path, 'elaboration', this.getSettings());
+				const message = rule
+					? `Skipped — "${file.path}" is excluded by rule "${rule.pattern}"`
+					: 'Note is excluded from elaboration (excluded tag)';
+				op.finish(message);
+				return done(false, message);
+			}
 			const detectorResult = await this.detector.detect(file);
 
 			// When user explicitly invoked elaboration, bypass the stub gate:
@@ -506,7 +505,7 @@ export class ElaborationModule implements FeatureModule {
 	async acceptProposal(
 		id: string,
 		editedContent?: string,
-		options?: AcceptOptions
+		options?: ElaborationAcceptOptions
 	): Promise<AcceptResult> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
@@ -523,7 +522,7 @@ export class ElaborationModule implements FeatureModule {
 	private async applyProposal(
 		id: string,
 		editedContent?: string,
-		options?: AcceptOptions
+		options?: ElaborationAcceptOptions
 	): Promise<AcceptResult> {
 		const proposal = await this.store.load(id);
 		if (!proposal) return acceptNotApplied('skipped', PROPOSAL_NOT_FOUND);
