@@ -70,7 +70,7 @@ config:
       - .waffle/waffle.local.yaml
       - .waffle/extensions/**
   doctor:
-    toolkitRef: github:dustinkeeton/wafflestack#v0.20.0
+    toolkitRef: github:dustinkeeton/wafflestack#v0.21.0
     # This repo deliberately gitignores some renders (.agents/, .codex/, and the
     # .claude skills that embed the local overlay) — tolerate absent files in CI,
     # still fail on hand-edited ones. Keeps the workflow managed instead of ejected.

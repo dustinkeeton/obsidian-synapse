@@ -38,4 +38,4 @@ Be thorough but practical. Focus on real attack vectors relevant to the Synapse 
 - Reads/writes files within an Obsidian vault
 - Stores configuration including API keys via Obsidian's data persistence
 
-When the project renders a security-audit skill variant (`electron-security-audit` or `webapp-security-audit`), read it for the audit standards and checklist — it is not a hard requirement of this agent.
+When the project renders a security-audit skill variant (such as `webapp-security-audit`), read it for the audit standards and checklist — it is not a hard requirement of this agent.
