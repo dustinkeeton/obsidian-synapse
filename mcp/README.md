@@ -2,7 +2,7 @@
 
 An MCP server that lets an agent drive the Synapse Obsidian plugin through its public API. An MCP client such as Claude Code or Claude Desktop starts it over stdio. Each tool call becomes one fixed call to `app.plugins.plugins.synapse.api` through the Obsidian CLI's `eval` command. The agent supplies only arguments, which travel as JSON data and never as code. Arguments over 8 KB, such as a long reply sent to `jobs_commit`, go through a file in the OS temp folder (or `SYNAPSE_MCP_TEMP_DIR`) that only your user can read, and the file is deleted after the call. The plugin opens no port.
 
-The API is unstable until epic #629 ships, and so is this server.
+The server builds its tools from the plugin's API at run time, so it works with any Synapse version from 1.7.0 on.
 
 ## Requirements
 

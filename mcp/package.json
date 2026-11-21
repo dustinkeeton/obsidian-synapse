@@ -1,6 +1,7 @@
 {
 	"name": "synapse-mcp",
 	"version": "0.1.0",
+	"private": true,
 	"description": "MCP stdio server that exposes the Synapse Obsidian plugin's public API to agents through the Obsidian CLI.",
 	"type": "module",
 	"bin": {
