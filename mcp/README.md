@@ -57,7 +57,7 @@ The server builds its tools from `capabilities()` whenever the client lists them
 
 A verb's result comes back as structured content. A result with `ok: false` is reported as a tool error, with the result still attached.
 
-Tools that can rewrite or move existing notes, or delete proposals, are marked destructive: `proposals_accept`, `proposals_reject`, `deepDive_regenerate`, and `elaborate`, `scanFolder`, `deepDive_run`, `deepDive_continue` and `jobs_commit`, which write directly when auto-accept is on. An accepted deep-dive note also rewrites the navigation blocks of the run's earlier notes, and can be organized into another folder.
+Tools that can rewrite or move existing notes, or reject proposals (a deep-dive reject also rejects its children and rewrites the run's navigation blocks), are marked destructive: `proposals_accept`, `proposals_reject`, `deepDive_regenerate`, and `elaborate`, `scanFolder`, `deepDive_run`, `deepDive_continue` and `jobs_commit`, which write directly when auto-accept is on. An accepted deep-dive note also rewrites the navigation blocks of the run's earlier notes, and can be organized into another folder.
 
 Tools that can send note text to an AI provider or the web are marked open-world: the long verbs, `proposals_accept` (an accept can run enrichment, title, REM, illustrate or organize afterwards) and `jobs_commit`.
 

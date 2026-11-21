@@ -409,9 +409,9 @@ export class DeepDiveModule implements FeatureModule {
 			return failedOutcome(`Note not found at ${proposal.proposedPath}; it was deleted, or moved while deep dive was turned off`);
 		}
 
-		const sourceFile = this.plugin.app.vault.getAbstractFileByPath(normalizePath(proposal.sourceNotePath));
-		if (sourceFile instanceof TFile && this.isExcluded(sourceFile)) {
-			return failedOutcome(`Skipped — "${sourceFile.path}" is excluded from deep dive`);
+		for (const path of proposal.status === 'accepted' ? [proposal.sourceNotePath, proposal.proposedPath] : [proposal.sourceNotePath]) {
+			const file = this.plugin.app.vault.getAbstractFileByPath(normalizePath(path));
+			if (file instanceof TFile && this.isExcluded(file)) return failedOutcome(`Skipped — "${file.path}" is excluded from deep dive`);
 		}
 		const source = await this.resolveRegenerateSource(proposal);
 		if (!source) return failedOutcome(`Source note not found: ${proposal.sourceNotePath}`);

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BridgeError, INLINE_ARGS_MAX_CHARS, ObsidianBridge, buildExpression, defaultRunner, parseOutput, redactSecrets } from './bridge.js';
+import { BridgeError, INLINE_ARGS_MAX_CHARS, ObsidianBridge, buildExpression, defaultRunner, parseOutput, redactSecrets, SECRET_PATTERN } from './bridge.js';
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -76,7 +76,9 @@ describe('buildExpression + parseOutput (#628)', () => {
 describe('redactSecrets', () => {
 	it('matches the plugin\'s shared/redact.ts on every key shape', async () => {
 		const pluginRedact = fileURLToPath(new URL('../../src/shared/redact.ts', import.meta.url));
-		const plugin = await import(/* @vite-ignore */ pluginRedact) as { redactSecrets: (text: string) => string };
+		const plugin = await import(/* @vite-ignore */ pluginRedact) as { redactSecrets: (text: string) => string; SECRET_PATTERN: RegExp };
+		expect(SECRET_PATTERN.source).toBe(plugin.SECRET_PATTERN.source);
+		expect(SECRET_PATTERN.flags).toBe(plugin.SECRET_PATTERN.flags);
 		const samples = [
 			'sk-abcdefghijklmnop', 'sk-ant-api03-abcdefghijklmnop', 'key-abcdefghijklmnop', 'dg-abcdefghijklmnop',
 			'Bearer abcdefghijklmnop', 'Token abcdefghijklmnop', 'anthropic-abcdefghijklmnop', 'AIzaSyAbcdefghijklmnop',

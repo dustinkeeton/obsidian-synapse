@@ -18,7 +18,7 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 | Job-operation labels and messages reached the API unredacted | `JobOperationLog` runs them through `redactSecrets`, like every other sink | `shared/job-operations.ts` |
 | `maxNotes` through the API had no ceiling | Capped at 100, the settings slider's ceiling, in the verb schema | `api/capabilities.ts` |
 | **Low**: the MCP shim's own errors (CLI output) were not redacted | `BridgeError` redacts its message with the plugin's secret pattern; the shim can't import plugin code, so it mirrors it | `mcp/src/bridge.ts` |
-| **Low**: unloading the plugin left pending external requests and their 30-minute timers alive | `JobRegistry.dispose()`, registered through `Component.register`, fails them with "Synapse was unloaded" | `api/jobs.ts`, `api/index.ts`, `main.ts` |
+| **Low**: unloading the plugin left pending external requests and their 30-minute timers alive, and plugin-key jobs kept running | `JobRegistry.dispose()`, registered through `Component.register`, cancels running jobs and fails pending requests with "Synapse was unloaded" | `api/jobs.ts`, `api/index.ts`, `main.ts` |
 | **Low**: success messages and partial-accept reasons were not redacted; tool hints undersold some tools | Both redacted. `proposals_reject` is marked destructive; the long verbs, `proposals_accept` and `jobs_commit` are marked open-world | `api/index.ts`, `mcp/src/tools.ts` |
 
 **Alternatives considered**: None recorded.
@@ -29,7 +29,7 @@ Decisions that cross a locked constraint (stack, dependencies, platform boundari
 - An agent can no longer generate text for a note the user excluded.
 - MCP clients that honor tool hints will ask before rejecting proposals and will know which tools can send note text out.
 - README's privacy section now says an agent with external billing receives the note text it asks for.
-- Tests: 3494 plugin and 32 MCP, all passing; `npm audit` reports 0 vulnerabilities in both packages.
+- Tests: 3494 plugin and 33 MCP, all passing; `npm audit` reports 0 vulnerabilities in both packages.
 
 ---
 

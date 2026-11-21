@@ -24,7 +24,7 @@ interface SynapseApiDeps {
   notifications: NotificationManager // .inProgress (status), .jobOps + .cancelJob (jobs)
   checkpointManager: CheckpointManager
   activityLog: ActivityLog           // events.since (#627)
-  register: (cleanup: () => void) => void   // main.ts passes Component.register; on unload JobRegistry.dispose() fails pending external requests and clears their 30-min timers
+  register: (cleanup: () => void) => void   // main.ts passes Component.register; on unload JobRegistry.dispose() cancels running jobs and fails pending external requests (clearing their 30-min timers)
 }
 
 interface SynapseApi {
@@ -93,7 +93,7 @@ interface ApiGenerationOutput { requestId; text; model?; stopReason?; truncated?
 - `progress` is the newest running tagged op's line, else the last one's.
 - Cancel: `jobs.cancel(id)` -> `NotificationManager.cancelJob(id)`, which runs `cancelOperation` on each running tagged op (the toast's Cancel path), returns how many it stopped (`stoppedOperations`), and cancels any tagged op the job starts afterwards. Deep dive checks its topic-scan op after extraction, so a cancel there ends the run before any run record or checkpoint exists.
 - Refusals before a job starts also include an illustrate scan with nothing enabled (`IllustrateModule.scanBlocker()`, which its scan would otherwise exit on silently).
-- Unload: `JobRegistry.dispose()` (jobs.ts:118-120, registered through `deps.register` at index.ts:111) closes every job's `ExternalRequests` with `Synapse was unloaded`, failing pending requests and clearing their expiry timers. A running plugin-key job is not cancelled: `notifications.dispose()` (shared/notifications.ts:210-222) hides its toasts and clears `jobOps` but marks no op cancelled.
+- Unload: `JobRegistry.dispose()` (jobs.ts:118-123, registered through `deps.register` at index.ts:111) closes every job's `ExternalRequests` with `Synapse was unloaded`, failing pending requests and clearing their expiry timers, and first runs `notifications.cancelJob` on every running job, so a plugin-key job stops at its next cancellation check. `Component.register` cleanups run before `onunload()`, so the ops are still there to cancel.
 - Retention: finished jobs are kept up to `MAX_FINISHED_JOBS` (50) and `FINISHED_JOB_TTL_MS` (1 h); pruning on `start` / `get` / `wait` / `list` also forgets their op log. Jobs live in memory only and end with the plugin.
 - Not backed by `InProgressRegistry` alone: that registry holds only proposal-producing ops with `meta`, which summarize and tidy scans don't pass. `jobOps` covers every tagged op.
 

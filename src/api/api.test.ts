@@ -492,13 +492,14 @@ describe('createSynapseApi (#623)', () => {
 			expect(committed.job).not.toHaveProperty('requests');
 		});
 
-		it('fails a job awaiting output when the plugin unloads', async () => {
+		it('cancels a job awaiting output when the plugin unloads', async () => {
 			elaborateWith(['Rewrite this stub']);
 			const job = await awaitingJob();
 			expect(cleanups).toHaveLength(1);
 			for (const cleanup of cleanups) cleanup();
 			const waited = await api.jobs.wait(job.id);
-			expect(waited.job).toMatchObject({ status: 'failed', error: expect.stringContaining('Synapse was unloaded') as unknown });
+			expect(waited.job?.status).toBe('cancelled');
+			expect(waited.job?.requests ?? []).toEqual([]);
 		});
 
 		it('returns from commit at the next request of a multi-call job', async () => {

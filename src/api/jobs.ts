@@ -114,9 +114,12 @@ export class JobRegistry {
 		return { ok: true, stoppedOperations };
 	}
 
-	/** Fail every running job's pending external requests and clear their expiry timers; called on plugin unload. */
+	/** Cancel every running job's operations and fail its pending external requests; called on plugin unload. */
 	dispose(): void {
-		for (const record of this.jobs.values()) record.generation?.external?.close('Synapse was unloaded');
+		for (const record of this.jobs.values()) {
+			if (record.status === 'running') this.notifications.cancelJob(record.id);
+			record.generation?.external?.close('Synapse was unloaded');
+		}
 	}
 
 	private finish(record: JobRecord, result: ApiResult): void {

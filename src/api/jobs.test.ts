@@ -67,6 +67,21 @@ describe('JobRegistry (#624)', () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
+	it('dispose cancels a running plugin-key job\'s operations', async () => {
+		const gate = deferred<ApiResult>();
+		let op: ReturnType<NotificationManager['startOperation']> | undefined;
+		const id = jobs.start('deepDive.run', (jobId) => {
+			op = notifications.startOperation('Generating', jobOpId('deep-dive-generate', { jobId }));
+			return gate.promise;
+		});
+
+		jobs.dispose();
+
+		expect(op?.cancelled).toBe(true);
+		gate.resolve(OK);
+		expect((await jobs.wait(id)).job?.status).toBe('cancelled');
+	});
+
 	it('fails when the verb fails, with its error', async () => {
 		const id = jobs.start('deepDive.run', async () => ({ ...OK, ok: false, error: 'No topics found' }));
 		expect((await jobs.wait(id)).job).toMatchObject({ status: 'failed', error: 'No topics found' });

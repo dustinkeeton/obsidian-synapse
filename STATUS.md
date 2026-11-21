@@ -2,7 +2,7 @@
 
 **Last updated**: 2026-11-20
 **Version**: 1.6.0 (released 2026-11-17); 1.7.0 in pre-release audit
-**Health**: Green — **3494/3494 plugin tests passing (233 files)** and **32/32 MCP shim tests (5 files)**. `npm audit` reports **0 vulnerabilities** in the plugin (production and dev) and in `mcp/`. No critical or high finding in shipped code.
+**Health**: Green — **3494/3494 plugin tests passing (233 files)** and **33/33 MCP shim tests (5 files)**. `npm audit` reports **0 vulnerabilities** in the plugin (production and dev) and in `mcp/`. No critical or high finding in shipped code.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
 
@@ -31,7 +31,7 @@
 
 - **Pre-release audit for 1.7.0 (2026-11-20, branch `audit-629`)** of the agent control surface:
   - **Committed**: agent-run elaboration and deep dive honor exclusion rules; job-operation lines are redacted; `maxNotes` is capped at 100 through the API.
-  - **Three Low findings fixed (uncommitted)**: the MCP shim redacts its own error messages; unloading the plugin fails pending external requests and clears their timers; success messages and partial-accept reasons are redacted, and the MCP tool hints now mark `proposals_reject` destructive and generating tools open-world.
+  - **Three Low findings fixed**: the MCP shim redacts its own error messages; unloading the plugin fails pending external requests and clears their timers; success messages and partial-accept reasons are redacted, and the MCP tool hints now mark `proposals_reject` destructive and generating tools open-world.
 - **Open follow-ups**: organize moves leave folder-qualified links dangling (#613); AI streaming (#614), OpenAI Responses API (#615), structured output (#616), Ollama capability discovery (#617), Gemini continuation (#618); video description and uploader in notes (#631); auto-enrich once per chain (#536); self-hosted mobile extraction tier (#181, #182); UX review (#465); toast cancel progress (#269).
 
 ## Module Status (21 modules; five thin folders omitted)

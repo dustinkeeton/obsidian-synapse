@@ -577,6 +577,18 @@ describe('DeepDiveModule headless verbs', () => {
 			expect(AIClient.prototype.complete).not.toHaveBeenCalled();
 		});
 
+		it('refuses when the accepted note has been moved into an excluded folder', async () => {
+			proposals.set('p1', proposal({ status: 'accepted', proposedPath: 'private/Backpropagation.md' }));
+			files.set('private/Backpropagation.md', 'Old body');
+			settings.exclusions.push({ pattern: 'private/**', features: ['deep-dive'] });
+
+			const outcome = await mod.regenerate({ proposalId: 'p1' });
+
+			expect(outcome).toMatchObject({ status: 'failed', message: 'Skipped — "private/Backpropagation.md" is excluded from deep dive' });
+			expect(AIClient.prototype.complete).not.toHaveBeenCalled();
+			expect(files.get('private/Backpropagation.md')).toBe('Old body');
+		});
+
 		it('rewrites a pending proposal in the store without touching the vault', async () => {
 			proposals.set('p1', proposal({}));
 

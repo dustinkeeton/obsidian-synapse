@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /** Mirrors the plugin's `shared/redact.ts` pattern; the shim cannot import plugin source. */
-const SECRET_PATTERN = /(?:sk-|key-|dg-|Bearer\s+|Token\s+|anthropic-|AIza)[A-Za-z0-9_-]{8,}/g;
+export const SECRET_PATTERN = /(?:sk-|key-|dg-|Bearer\s+|Token\s+|anthropic-|AIza)[A-Za-z0-9_-]{8,}/g;
 
 export function redactSecrets(text: string): string {
 	return text.replace(SECRET_PATTERN, '[REDACTED]');
