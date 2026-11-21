@@ -6,7 +6,7 @@ last-updated: 2026-11-20
 
 Versioned public API for external agents (#623, epic #629). `main.ts:272-282` builds it after every module has loaded and assigns it to `SynapsePlugin.api`, so it is reachable as `app.plugins.plugins.synapse.api` (e.g. from the Obsidian CLI `eval`). `null` before `onload` finishes and after `onunload`.
 
-**Unstable until epic #629 ships.** No release carries this API before then, so its shape can still change without a version bump. `API_VERSION` starts counting breaking changes from the first release that ships it.
+**Stable from 1.7.0.** `API_VERSION` (`types.ts:12`, now 1) bumps on any change that would break an existing caller: a removed or renamed verb, parameter or result field, a narrowed accepted value, or a changed meaning. Adding a verb, an optional parameter or a result field is not breaking.
 
 ## Public API (`index.ts`)
 

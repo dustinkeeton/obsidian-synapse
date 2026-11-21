@@ -195,7 +195,7 @@ For the reviewer-facing counterpart to this section -- the desktop-only Node usa
 
 ## Scripting Synapse from an agent
 
-Synapse has an API at `app.plugins.plugins.synapse.api`. It is still being built and may change before the release that ships it. An agent such as Claude Code, or a script, can drive it through the Obsidian CLI's `eval` command or the developer console, without clicking through modals.
+Synapse has an API at `app.plugins.plugins.synapse.api`. `capabilities().version` is the API version, and it goes up only when a change would break existing callers. An agent such as Claude Code, or a script, can drive it through the Obsidian CLI's `eval` command or the developer console, without clicking through modals.
 
 ```js
 const api = app.plugins.plugins.synapse.api;

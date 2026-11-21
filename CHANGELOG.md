@@ -5,6 +5,35 @@ All notable changes to Synapse will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-11-21
+
+### Added
+
+- Agents and scripts can drive Synapse through a public API at `app.plugins.plugins.synapse.api`, reachable from the Obsidian CLI's `eval` command. It reports status and capabilities, runs elaboration, folder scans and deep dives without opening dialogs, and lists, accepts and rejects proposals. Long operations run as jobs an agent can follow, wait on and cancel
+- An MCP server, `synapse-mcp`, offers the same API as tools to MCP clients such as Claude Code and Claude Desktop. It is built from the `mcp` folder of this repository; setup is in its README
+- An agent can write the text for elaboration and deep dive itself, so those features spend no API credit on it. Turn on **Agents generate the text** in either feature's settings, or ask for it per call. Commands you run in Obsidian always use your key
+- Agents can read an activity log of every operation result and message Synapse shows. It is kept in `.synapse/activity.jsonl`, with secrets removed
+- A deep dive that stops at its note limit keeps its remaining topics. Continue it from the finish message, or from the new **Capped deep dives** banner in the review sidebar
+- Elaboration and deep dive proposals record which model wrote them and why it stopped
+
+### Changed
+
+- Deep dives follow notes you rename or move. Regenerate, navigation links, the syllabus and Continue keep working after an accepted note, the root note or its folder moves, and notes still to be accepted are written into the moved folder
+
+### Fixed
+
+- Accepting a proposal whose note has been deleted now says so and removes the proposal. Before, an enrichment proposal for a deleted note was marked accepted without changing anything
+- Auto-accept summaries count only proposals that actually changed a note. Organize no longer reports a note as moved when its destination was taken
+- Accepting illustrations that are already in the note no longer counts as inserting them
+
+### Security
+
+- Agents can reach only what you allow. Elaboration and deep dive refuse notes your exclusion rules or excluded tags cover, including when an agent runs them, and an agent can't regenerate a deep-dive note you've moved into an excluded folder. **Elaborate current note** now refuses an excluded note too, as the other features already did
+- Secrets are removed from every message an agent can read: job progress and errors, success messages, and errors from the MCP server
+- A deep dive an agent starts is limited to 100 notes, the same as the setting
+- The MCP server marks tools that change or reject proposals as destructive, and tools that reach AI providers as such, so a client can ask before running them
+- Turning Synapse off stops any job an agent started and ends requests still waiting for an agent's answer, so no note stays locked
+
 ## [1.6.0] - 2026-11-17
 
 ### Added

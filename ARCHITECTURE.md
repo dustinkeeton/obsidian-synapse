@@ -1130,7 +1130,7 @@ summarizer.ts
 
 ## Agent Control Surface (epic #629)
 
-**An agent drives Synapse through the same module code a user does, never through a port.** Epic #629 added a public API object inside the plugin (`src/api/`) and an MCP server outside it (`mcp/`). Both are merged after 1.6.0 and still unstable: no release carries them yet, so their shape can change without a version bump.
+**An agent drives Synapse through the same module code a user does, never through a port.** Epic #629 added a public API object inside the plugin (`src/api/`) and an MCP server outside it (`mcp/`). Both ship in 1.7.0. From that release on, the API is stable: `API_VERSION` goes up only for a change that would break an existing caller.
 
 > **Note**: `API_VERSION` (`src/api/types.ts`) starts counting breaking changes only from the first release that ships the API.
 

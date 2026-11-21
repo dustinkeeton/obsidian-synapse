@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-11-20
-**Version**: 1.6.0 (released 2026-11-17); 1.7.0 in pre-release audit
+**Last updated**: 2026-11-21
+**Version**: 1.7.0 (release PR open; ships when merged). Previous release 1.6.0, 2026-11-17
 **Health**: Green — **3496/3496 plugin tests passing (233 files)** and **33/33 MCP shim tests (5 files)**. `npm audit` reports **0 vulnerabilities** in the plugin (production and dev) and in `mcp/`. No critical or high finding in shipped code.
 
 > Snapshot only. Decision history lives in `DECISIONS.md`; architecture in `ARCHITECTURE.md`.
@@ -13,7 +13,7 @@
 - **Agents can now drive Synapse** (epic #629, unreleased): a versioned API at `app.plugins.plugins.synapse.api` and a separate `synapse-mcp` server in `mcp/`. Neither opens a port.
 - **Settings schema is at v8** (`CURRENT_SETTINGS_VERSION`, `shared/settings-migrations.ts:25`).
 
-## Merged Since 1.6.0 (unreleased, planned for 1.7.0)
+## In 1.7.0
 
 | Change | What it gives |
 |--------|---------------|
@@ -29,7 +29,7 @@
 
 ## Current Focus
 
-- **Pre-release audit for 1.7.0 (2026-11-20, branch `audit-629`)** of the agent control surface:
+- **Pre-release audit for 1.7.0 (2026-11-20, merged)** of the agent control surface:
   - **Committed**: agent-run elaboration and deep dive honor exclusion rules; job-operation lines are redacted; `maxNotes` is capped at 100 through the API.
   - **Three Low findings fixed**: the MCP shim redacts its own error messages; unloading the plugin fails pending external requests and clears their timers; success messages and partial-accept reasons are redacted, and the MCP tool hints now mark `proposals_reject` destructive and generating tools open-world.
 - **Open follow-ups**: organize moves leave folder-qualified links dangling (#613); AI streaming (#614), OpenAI Responses API (#615), structured output (#616), Ollama capability discovery (#617), Gemini continuation (#618); video description and uploader in notes (#631); auto-enrich once per chain (#536); self-hosted mobile extraction tier (#181, #182); UX review (#465); toast cancel progress (#269).
@@ -38,7 +38,7 @@
 
 | Module | Role | Status |
 |--------|------|--------|
-| api | Public API for agents: verbs, jobs, external billing, events (#623–#628) | Working (unstable until released) |
+| api | Public API for agents: verbs, jobs, external billing, events (#623–#628) | Working (stable from 1.7.0) |
 | modules | Feature-module registry: construct / gated load / reverse unload (#504) | Working |
 | checkpoints | Startup interrupted-operation prompt, `manage-checkpoints`, sidebar resume/discard | Working |
 | elaboration | Stub detection → full-body rewrite proposal (image-aware, backlink context) | Working |
